@@ -205,8 +205,8 @@ producer means `SKILL.md` tells the agent to write the file and no script does. 
 `evals/skills/budget.json` is a finding (`--budget` points elsewhere; null or absent = `ceiling unset`). CI shows the line
 because it runs the bare gesture as its own step before pytest (`-q` hides a passing test's output and `--durations=30`
 lists only the 30 slowest tests); the pytest wrapper's bare-gesture run asserts the same ceiling under xdist load. The
-ceiling, once set, is recorded in `budget.json` beside the three CI job logs it was derived from; until then it reads `ceiling unset` and
-enforces nothing.
+ceiling (1.0s) and the three CI job logs behind it (0.09s, 0.14s, 0.10s, unloaded, macOS 3.12) are recorded in `budget.json`; the
+xdist-load ratio there is a local measurement, and the timer wraps the checks only (not interpreter start).
 
 ## Phase context budget — instruction bill by agent
 

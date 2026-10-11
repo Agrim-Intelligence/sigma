@@ -486,4 +486,5 @@ def test_malformed_budget_is_a_finding(tmp_path, text):
 def test_shipped_budget_is_parseable():
     d = json.loads(BUDGET.read_text(encoding="utf-8"))
     c = d["ceiling_seconds"]
-    assert c is None or (isinstance(c, (int, float)) and c > 0)
+    assert isinstance(c, (int, float)) and not isinstance(c, bool) and c > 0
+    assert len(d["measured"]) == 3 and c >= max(m["wall_seconds"] for m in d["measured"])

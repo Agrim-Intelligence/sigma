@@ -1,1 +1,9 @@
-{"ceiling_seconds": null, "measured": []}
+{
+  "ceiling_seconds": 1.0,
+  "measured": [
+    {"run": 38126458651, "attempt": 1, "job": 114431724753, "wall_seconds": 0.09},
+    {"run": 38126458651, "attempt": 2, "job": 114431884009, "wall_seconds": 0.14},
+    {"run": 38126458651, "attempt": 3, "job": 114432016800, "wall_seconds": 0.10}
+  ],
+  "derivation": "max measured 0.14s (macOS-latest, Python 3.12, standalone CI step, unloaded) x about 7 = 1.0s. 1.0s is a floor chosen above shared-runner timer noise and above the pytest-under-xdist case; the xdist ratio was measured only locally (12 busy loops: 0.15-0.17s vs 0.10-0.13s unloaded, about 1.4x), never on CI. Scope: the pull-request leg; the weekly 'full' legs (Ubuntu, other Pythons) are unmeasured."
+}
