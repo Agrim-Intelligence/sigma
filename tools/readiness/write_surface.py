@@ -56,7 +56,7 @@ def _rest_verb(token):                # `-X DELETE`, `--method=DELETE`, `-XDELET
 
 
 _GH_API_WRITES = {"comment_issue", "add_labels", "remove_label", "create_issue", "close_issue", "edit_issue", "add_assignees",
-                  "create_pr", "merge_pr", "merge_pr_pinned", "create_pr_nondraft", "comment_pr", "merge_pr_gh"}
+                  "create_pr", "merge_pr", "merge_pr_pinned", "create_pr_nondraft", "comment_pr", "merge_pr_gh", "close_pr_gh"}
 
 
 def _is_gh_api_write_call(func):
@@ -79,10 +79,10 @@ def _metadata(path, function, rule):
             ("exact --yes-enable-merge-queue admin consent", "high"),
         ("skills/sigma-status/scripts/merge_queue_enable.py", "create_merge_queue_ruleset", "gh-api-write"):
             ("exact --yes-enable-merge-queue admin consent", "high"),
-        ("skills/sigma-loop/scripts/work.py", "merge_design", "gh-pr"):
-            ("work.enabled; work.auto_merge != off", "high"),
-        ("skills/sigma-loop/scripts/work.py", "close_design", "gh-pr"):
-            ("ungated", "high"),
+        ("skills/sigma-loop/scripts/work.py", "merge_design", "gh-api-write"):
+            ("work.enabled; work.auto_merge != off; one non-idempotent REST PUT pulls/N/merge pinned to the vetted head sha via gh_api.merge_pr_gh (ONE `gh pr merge` fallback only on a primary rate limit while GraphQL is available); no retry; an ambiguous outcome is reconciled by a REST read of the PR, never counted as merged without a positive MERGED (#895 slice 4b-3)", "high"),
+        ("skills/sigma-loop/scripts/work.py", "close_design", "gh-api-write"):
+            ("ungated (risk-reducing direction); a REST comment POST then PATCH state=closed via gh_api.close_pr_gh (ONE `gh pr close` fallback per the write policy); no retry; an ambiguous outcome is reconciled by a REST read, never counted as closed without a positive CLOSED (#895 slice 4b-3)", "high"),
         ("skills/sigma-loop/scripts/work.py", "merge", "gh-pr"):
             ("work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR", "high"),
         ("skills/sigma-loop/scripts/work.py", "post_review", "gh-api-write"):

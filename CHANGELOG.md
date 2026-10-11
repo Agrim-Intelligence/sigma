@@ -4,6 +4,17 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Design-PR merge and close go REST (#895, slice 4b-3; refs #895).** goal-review's `merge-design` is
+  `gh_api.merge_pr_gh` (REST `PUT pulls/N/merge`, pinned to the head sha the design-identity check vetted; ONE
+  `gh pr merge` fallback on a primary rate limit only) and `close-design` is `gh_api.close_pr_gh` (comment POST,
+  then `PATCH state=closed`). No retry any more (a merge is not idempotent). After a failure that may have landed
+  the outcome is reconciled by a REST read of the PR's `state`: only a positive MERGED/CLOSED counts, and an empty,
+  truncated, malformed or unreadable answer reads "outcome unconfirmed", never success (the old "open list came
+  back empty" inference is gone). `verify_merge.py` (ready/create/merge, the attended rebase tail) is NOT moved and
+  stays GraphQL, so that tail still cannot run in a cloud session. UNMEASURED live: every body and status here is
+  from GitHub's docs or fakes. Ratchet (printed `scan()`): work.py 5 -> 3, TOTAL 45 -> 43. Write-surface:
+  `merge_design`/`close_design` become `gh-api-write` rows (`close_pr_gh` joins the scanner's set). Details:
+  `docs/cloud-sessions.md`.
 - **A cloud session can reach the merge PUT (#895, slice 4b-2; refs #895).** The three GraphQL reads that stopped a
   `CLAUDE_CODE_REMOTE` merge are REST: `merge_rights` reads `GET repos/{owner}/{repo}` `.permissions` (fails closed
   on a missing, malformed or all-false object), `protection()` unions classic protection with

@@ -53,8 +53,10 @@ def _runner(handlers):
                 return resp(line) if callable(resp) else resp
         if "rev-parse HEAD" in line:
             return HEAD_SHA          # gate()'s stale-head check (#197); override via a handler
-        if prfake.merge_put(7) in line:
+        if prfake.merge_put(7) in line or re.search(r"pulls/\d+/merge --method PUT", line):
             return prfake.rest_merged()   # #895 4b-1: the REST merge lands, as an unmatched `gh pr merge` did
+        if re.search(r"pulls/\d+ --method PATCH .*state=closed", line):
+            return json.dumps({"state": "closed"})    # #895 4b-3: the REST design-PR close lands
         if "remote get-url" in line:
             return REMOTE_URL        # what feature_sync.repo_slug falls back to (#1577)
         return ""
@@ -9261,7 +9263,8 @@ def design_fallback(monkeypatch, tmp_path):
         inner = real(run, cwd)
 
         def r(args):
-            if args[0] == "api":
+            mutation = "--method" in args and args[args.index("--method") + 1] in ("PUT", "PATCH", "POST")
+            if args[0] == "api" and not mutation:      # reads fail over; the REST WRITES reach the fake
                 err = RuntimeError("gh: Server Error (HTTP 502)")
                 err.hint = "gh: Server Error (HTTP 502)"
                 raise err
@@ -9270,19 +9273,40 @@ def design_fallback(monkeypatch, tmp_path):
     monkeypatch.setattr(work, "_pr_api_run", adapt)
 
 
+def _design_merge_calls(calls):
+    """Every REST merge PUT (`pulls/N/merge`) in a recorded call list. The mutation is a `gh api` call
+    since #895 4b-3, so a negative `not _design_merge_calls(calls)` assertion is only non-vacuous if it
+    matches THIS shape (the old `gh pr merge` argv no longer exists on the REST path)."""
+    return [c for c in calls if "--method PUT" in " ".join(map(str, c[1])) and "/merge" in " ".join(map(str, c[1]))]
+
+
+def _design_close_calls(calls):
+    """Every REST close PATCH (`pulls/N` with `state=closed`) in a recorded call list."""
+    return [c for c in calls if "--method PATCH" in " ".join(map(str, c[1])) and "/pulls/" in " ".join(map(str, c[1]))]
+
+
+def _design_comment_calls(calls):
+    return [c for c in calls if "--method POST" in " ".join(map(str, c[1])) and "/comments" in " ".join(map(str, c[1]))]
+
+
 def _design_pr_spy(calls, replies=None):
     """A `run` stand-in that records every call and answers `gh pr list` from a queue of canned
-    JSON replies (default: one empty list, i.e. "no open PR"). Non-`gh pr list` calls (the actual
-    merge/close mutation) succeed with empty output unless the queue is exhausted, in which case
-    they raise -- lets a single spy drive both the lookup and the mutation in one test."""
+    JSON replies (default: one empty list, i.e. "no open PR"). The REST merge PUT answers the documented
+    `merged: true` body and the close PATCH `state: closed` (#895 4b-3); everything else succeeds with empty
+    output unless the list queue is exhausted, in which case it raises."""
     replies = list(replies) if replies is not None else ["[]"]
 
     def _fake(cwd, argv):
         calls.append((cwd, list(argv)))
+        line = " ".join(map(str, argv))
         if argv[:3] == ["gh", "pr", "list"]:
             if not replies:
                 raise RuntimeError("no more canned gh pr list replies")
             return replies.pop(0)
+        if "--method PUT" in line and "/merge" in line:
+            return prfake.rest_merged()
+        if "--method PATCH" in line and "/pulls/" in line:
+            return json.dumps({"state": "closed"})
         return ""
     return _fake
 
@@ -9309,6 +9333,7 @@ def _valid_design_row(**overrides):
         "headRefName": "sdlc/9",
         "files": [{"path": ".sdlc/design/9.md"}, {"path": ".sdlc/design/9-in-brief.md"}],
         "changedFiles": 2,
+        "headRefOid": "a" * 40,
     }
     if paths is not None:
         row["files"] = [{"path": p} for p in paths]
@@ -9324,8 +9349,11 @@ def test_merge_design_merges_an_open_mergeable_pr():
     pr = json.dumps([_valid_design_row(mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
     result = lp.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_design_pr_spy(calls, [pr]))
     assert result == "merged PR #42"
-    merge_calls = [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
-    assert merge_calls and merge_calls[0][1] == ["gh", "pr", "merge", "42", "--squash"]
+    merge_calls = _design_merge_calls(calls)
+    assert len(merge_calls) == 1
+    assert merge_calls[0][1][:2] == ["gh", "api"] and "/pulls/42/merge" in merge_calls[0][1][2]
+    assert "merge_method=squash" in merge_calls[0][1] and "sha=" + "a" * 40 in merge_calls[0][1]
+    assert not any(c[1][:3] == ["gh", "pr", "merge"] for c in calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9334,7 +9362,7 @@ def test_merge_design_reports_conflicts_without_attempting_a_merge():
     pr = json.dumps([_valid_design_row(mergeable="CONFLICTING", mergeStateStatus="DIRTY")])
     result = work.merge_design(".sdlc", ON, "9", run=_design_pr_spy(calls, [pr]))
     assert "conflicts" in result and "42" in result
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
+    assert not _design_merge_calls(calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9369,8 +9397,8 @@ def test_merge_design_uses_the_configured_merge_method():
     pr = json.dumps([_valid_design_row(number=5, mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
     cfg = {"work": {"enabled": True, "auto_merge": "always", "merge_method": "rebase"}}
     work.merge_design(".sdlc", cfg, "9", run=_design_pr_spy(calls, [pr]))
-    merge_calls = [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
-    assert merge_calls[0][1] == ["gh", "pr", "merge", "5", "--rebase"]
+    merge_calls = _design_merge_calls(calls)
+    assert "merge_method=rebase" in merge_calls[0][1] and "/pulls/5/merge" in merge_calls[0][1][2]
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9416,10 +9444,10 @@ def test_find_design_pr_refuses_on_more_than_one_open_pr_rather_than_guessing():
         calls.append((cwd, list(argv)))
         return two
     m = work.merge_design(".sdlc", ON, "9", run=_spy_two)
-    assert "guess" in m and not [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
+    assert "guess" in m and not _design_merge_calls(calls)
     calls.clear()
     c = work.close_design(".sdlc", ON, "9", run=_spy_two)
-    assert "guess" in c and not [c2 for c2 in calls if c2[1][:3] == ["gh", "pr", "close"]]
+    assert "guess" in c and not _design_close_calls(calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9429,8 +9457,11 @@ def test_close_design_closes_an_open_pr_with_the_given_comment():
     result = work.close_design(".sdlc", ON, "9", run=_design_pr_spy(calls, [pr]),
                                comment="goal-review: REJECTED")
     assert result == "closed PR #7"
-    close_calls = [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
-    assert close_calls[0][1] == ["gh", "pr", "close", "7", "--comment", "goal-review: REJECTED"]
+    close_calls = _design_close_calls(calls)
+    comments = _design_comment_calls(calls)
+    assert len(close_calls) == 1 and "/pulls/7" in close_calls[0][1][2] and "state=closed" in close_calls[0][1]
+    assert len(comments) == 1 and "body=goal-review: REJECTED" in comments[0][1]
+    assert calls.index(comments[0]) < calls.index(close_calls[0])     # comment first, as `gh pr close --comment`
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9491,81 +9522,169 @@ def test_close_design_cli_dispatches_with_an_optional_comment_flag(tmp_path, cap
     rc = work.main(["work.py", "close-design", d, "9", "--comment", "goal-review: REJECTED"])
     assert rc == 0
     assert "closed PR #3" in capsys.readouterr().out
-    close_calls = [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
-    assert "--comment" in close_calls[0][1]
+    assert _design_close_calls(calls) and "body=goal-review: REJECTED" in _design_comment_calls(calls)[0][1]
 
 
-@pytest.mark.usefixtures("design_fallback")
-def test_merge_design_retries_once_on_a_transient_gh_failure():
-    """`_retry_gh`'s one-retry contract (round 2 finding 2)."""
-    attempts = {"n": 0}
-    pr = json.dumps([_valid_design_row(number=8, mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
-    def _flaky(cwd, argv):
+def _ambiguous_design_run(calls, row, view_reply, put_error="connection dropped after the write may have landed"):
+    """The design list answers `row` once (and again if asked), every REST WRITE raises `put_error` (no gh
+    stderr, so an ambiguous `other_unparsed` failure that may have landed), and the reconcile READ
+    (`gh pr view` after the REST read 502s into its one fallback) answers `view_reply`."""
+    def _run(cwd, argv):
+        calls.append((cwd, list(argv)))
+        line = " ".join(map(str, argv))
         if argv[:3] == ["gh", "pr", "list"]:
-            return pr
-        attempts["n"] += 1
-        if attempts["n"] == 1:
-            raise RuntimeError("transient")
+            return row
+        if argv[:3] == ["gh", "pr", "view"]:
+            if isinstance(view_reply, Exception):
+                raise view_reply
+            return view_reply
+        if "--method" in argv and argv[argv.index("--method") + 1] in ("PUT", "PATCH"):
+            raise RuntimeError(put_error)
         return ""
-    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_flaky, sleep=NOSLEEP)
-    assert result == "merged PR #8"
-    assert attempts["n"] == 2                                 # exactly one retry, not more
+    return _run
 
 
 @pytest.mark.usefixtures("design_fallback")
-def test_merge_design_gives_up_after_two_failures():
-    pr = json.dumps([_valid_design_row(number=8, mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
-    def _always_fails(cwd, argv):
+def test_merge_design_never_retries_an_ambiguous_merge():
+    """#895 4b-3: a merge is non-idempotent. ONE PUT, no retry, no `gh pr merge` fallback."""
+    calls = []
+    pr = json.dumps([_valid_design_row(number=8)])
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9",
+                               run=_ambiguous_design_run(calls, pr, RuntimeError("down")), sleep=NOSLEEP)
+    assert result.startswith("could not merge PR #8")
+    assert len(_design_merge_calls(calls)) == 1
+    assert not any(c[1][:3] == ["gh", "pr", "merge"] for c in calls)
+
+
+@pytest.mark.usefixtures("design_fallback")
+def test_merge_design_reports_success_when_the_reply_was_lost_but_the_pr_is_merged():
+    """The PUT's reply never arrived but a READ of the PR says MERGED -> merged, confirmed by the read."""
+    calls = []
+    pr = json.dumps([_valid_design_row(number=8)])
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9",
+                               run=_ambiguous_design_run(calls, pr, json.dumps({"state": "MERGED"})), sleep=NOSLEEP)
+    assert result == "merged PR #8 (confirmed on re-read after an unconfirmed reply)"
+    assert len(_design_merge_calls(calls)) == 1
+
+
+@pytest.mark.usefixtures("design_fallback")
+def test_merge_design_reports_failure_when_the_re_read_finds_the_pr_still_open():
+    pr = json.dumps([_valid_design_row(number=8)])
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", sleep=NOSLEEP,
+                               run=_ambiguous_design_run([], pr, json.dumps({"state": "OPEN"})))
+    assert result.startswith("could not merge PR #8") and "still open" in result
+
+
+@pytest.mark.usefixtures("design_fallback")
+@pytest.mark.parametrize("reply", ["", "   ", "null", "{}", "[]", '{"state":', '{"state": "weird"}',
+                                   '{"state": null}', "<html>proxy</html>", RuntimeError("down")],
+                         ids=["blank", "spaces", "null", "empty-object", "list", "truncated", "unknown-state",
+                              "null-state", "html", "unreadable"])
+def test_merge_and_close_design_never_count_a_degraded_re_read_as_proof(reply):
+    """THE control: after an ambiguous write, an empty / truncated / malformed / unreadable re-read answers
+    nothing. It must not read as 'it merged' or 'it closed' (the old 'no open PR left' inference did)."""
+    pr = json.dumps([_valid_design_row(number=8)])
+    m = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_ambiguous_design_run([], pr, reply), sleep=NOSLEEP)
+    assert m.startswith("could not merge PR #8") and "unconfirmed" in m and not m.startswith("merged")
+    c = work.close_design(".sdlc", ON, "9", run=_ambiguous_design_run([], pr, reply))
+    assert c.startswith("could not close PR #8") and "unconfirmed" in c and not c.startswith("closed")
+
+
+@pytest.mark.usefixtures("design_fallback")
+def test_close_design_reports_success_when_the_reply_was_lost_but_the_pr_is_closed():
+    calls = []
+    pr = json.dumps([_valid_design_row(number=7)])
+    result = work.close_design(".sdlc", ON, "9",
+                               run=_ambiguous_design_run(calls, pr, json.dumps({"state": "CLOSED"})))
+    assert result == "closed PR #7 (confirmed on re-read after an unconfirmed reply)"
+    assert len(_design_close_calls(calls)) == 1
+
+
+@pytest.mark.usefixtures("design_fallback")
+def test_close_design_a_merged_pr_is_not_reported_as_closed():
+    """The re-read says MERGED: somebody else landed it. `closed PR` would tell a human the opposite."""
+    pr = json.dumps([_valid_design_row(number=7)])
+    result = work.close_design(".sdlc", ON, "9",
+                               run=_ambiguous_design_run([], pr, json.dumps({"state": "MERGED"})))
+    assert result.startswith("could not close PR #7") and "closed PR #7" not in result[:12]
+
+
+@pytest.mark.usefixtures("design_fallback")
+@pytest.mark.parametrize("reply", ["", "{}", "null", '{"merged": false}', '{"merged":', "[]", "<html>"],
+                         ids=["blank", "empty-object", "null", "merged-false", "truncated", "list", "html"])
+def test_merge_design_a_degraded_2xx_put_reply_is_never_success(reply):
+    """A 200 with a body that is not `merged: true` raises inside gh_api and is then reconciled by a read; a
+    read that is also unusable leaves it unconfirmed. Never 'merged PR'."""
+    pr = json.dumps([_valid_design_row(number=8)])
+
+    def _run(cwd, argv):
+        line = " ".join(map(str, argv))
         if argv[:3] == ["gh", "pr", "list"]:
             return pr
-        raise RuntimeError("still down")
-    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_always_fails, sleep=NOSLEEP)
-    assert "could not merge" in result
+        if "--method PUT" in line:
+            return reply
+        if argv[:3] == ["gh", "pr", "view"]:
+            return ""
+        return ""
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_run, sleep=NOSLEEP)
+    assert result.startswith("could not merge PR #8") and "unconfirmed" in result
 
 
 @pytest.mark.usefixtures("design_fallback")
-def test_merge_design_reports_success_when_a_retry_error_actually_landed():
-    """Code review, #2482: `gh pr merge` is NOT idempotent -- if the first attempt landed on
-    GitHub's own side but the response never reached this process, `_retry_gh`'s second attempt
-    fails against an already-merged PR. Simulated here: the merge call always raises, but the
-    RE-CHECK `gh pr list` (called after the retry gives up) returns empty -- the PR is gone,
-    i.e. it landed. Must report success, not the generic "could not merge" false negative."""
-    calls = {"list": 0}
-    pr = json.dumps([_valid_design_row(number=8, mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
-    def _lands_but_errors(cwd, argv):
-        if argv[:3] == ["gh", "pr", "list"]:
-            calls["list"] += 1
-            return pr if calls["list"] == 1 else "[]"   # gone by the re-check -- it landed
-        raise RuntimeError("connection dropped after the merge actually succeeded")
-    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_lands_but_errors, sleep=NOSLEEP)
-    assert result == "merged PR #8 (confirmed on re-check after a retry error)"
-
-
-@pytest.mark.usefixtures("design_fallback")
-def test_merge_design_still_reports_failure_when_the_retry_error_was_a_genuine_failure():
-    """The other half: if the re-check STILL finds the PR open, the merge genuinely never landed
-    -- must not be misread as success just because a re-check happened."""
-    pr = json.dumps([_valid_design_row(number=8, mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
-    def _genuinely_fails(cwd, argv):
-        if argv[:3] == ["gh", "pr", "list"]:
-            return pr                            # still open on every re-check too
-        raise RuntimeError("still down")
-    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_genuinely_fails, sleep=NOSLEEP)
-    assert "could not merge" in result
-
-
-@pytest.mark.usefixtures("design_fallback")
-def test_close_design_reports_success_when_a_retry_error_actually_landed():
-    """Mirrors merge_design's own re-check-before-reporting-failure fix, for close."""
-    calls = {"list": 0}
+@pytest.mark.parametrize("reply", ["", "{}", "null", '{"state": "open"}', '{"state":', "[]"],
+                         ids=["blank", "empty-object", "null", "still-open", "truncated", "list"])
+def test_close_design_a_degraded_2xx_patch_reply_is_never_success(reply):
     pr = json.dumps([_valid_design_row(number=7)])
-    def _lands_but_errors(cwd, argv):
+
+    def _run(cwd, argv):
+        line = " ".join(map(str, argv))
         if argv[:3] == ["gh", "pr", "list"]:
-            calls["list"] += 1
-            return pr if calls["list"] == 1 else "[]"
-        raise RuntimeError("connection dropped after the close actually succeeded")
-    result = work.close_design(".sdlc", ON, "9", run=_lands_but_errors, sleep=NOSLEEP)
-    assert result == "closed PR #7 (confirmed on re-check after a retry error)"
+            return pr
+        if "--method PATCH" in line:
+            return reply
+        return ""
+    result = work.close_design(".sdlc", ON, "9", run=_run)
+    assert result.startswith("could not close PR #7") and not result.startswith("closed")
+
+
+@pytest.mark.usefixtures("design_fallback")
+def test_merge_design_a_definite_refusal_does_not_reconcile_and_does_not_fall_back():
+    """HTTP 409 (head moved) is a definite refusal: no re-read, no `gh pr merge`, a plain 'could not merge'."""
+    calls = []
+    pr = json.dumps([_valid_design_row(number=8)])
+    err = RuntimeError("gh: Head branch was modified (HTTP 409)")
+    err.hint = "gh: Head branch was modified (HTTP 409)"
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_ambiguous_design_run(calls, pr, "{}", err.hint),
+                               sleep=NOSLEEP)
+    assert result == "could not merge PR #8 (see stderr for detail)"
+    assert not any(c[1][:3] == ["gh", "pr", "view"] for c in calls)
+
+
+@pytest.mark.usefixtures("design_fallback")
+def test_merge_design_refuses_a_row_without_a_head_sha():
+    """No vetted head to pin -> no merge call at all."""
+    calls = []
+    pr = json.dumps([_valid_design_row(number=8, headRefOid="")])
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_design_pr_spy(calls, [pr, pr, pr]), sleep=NOSLEEP)
+    assert result.startswith("could not merge PR #8")
+    assert not _design_merge_calls(calls)
+
+
+@pytest.mark.usefixtures("design_fallback")
+def test_close_design_a_failed_comment_closes_nothing():
+    calls = []
+    pr = json.dumps([_valid_design_row(number=7)])
+
+    def _run(cwd, argv):
+        calls.append((cwd, list(argv)))
+        if argv[:3] == ["gh", "pr", "list"]:
+            return pr
+        if "--method" in argv and argv[argv.index("--method") + 1] == "POST":
+            raise RuntimeError("comment lost")
+        return json.dumps({"state": "OPEN"}) if argv[:3] == ["gh", "pr", "view"] else ""
+    result = work.close_design(".sdlc", ON, "9", run=_run, comment="goal-review: REJECTED")
+    assert result.startswith("could not close PR #7")
+    assert not _design_close_calls(calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9677,25 +9796,25 @@ def test_close_design_and_merge_design_cli_both_act_on_the_same_repo_pr_never_th
         _valid_design_row(number=42),
     ])
     calls = []
-    def _spy(cwd, argv):
-        calls.append((cwd, list(argv)))
-        return mixed
-    monkeypatch.setattr(work, "_run", _spy)
+    inner = _design_pr_spy(calls, [mixed, mixed])
+    monkeypatch.setattr(work, "_run", inner)
     rc = work.main(["work.py", "merge-design", d, "9"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "merged PR #42" in out
-    merge_calls = [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
-    assert merge_calls and merge_calls[0][1][3] == "42"
-    assert not any(c[1][3] == "43" for c in merge_calls)
+    merge_calls = _design_merge_calls(calls)
+    assert merge_calls and "/pulls/42/merge" in merge_calls[0][1][2]
+    assert not any("/pulls/43/" in c[1][2] for c in merge_calls)
     calls.clear()
+    inner = _design_pr_spy(calls, [mixed])
+    monkeypatch.setattr(work, "_run", inner)
     rc2 = work.main(["work.py", "close-design", d, "9", "--comment", "goal-review: REJECTED"])
     out2 = capsys.readouterr().out
     assert rc2 == 0
     assert "closed PR #42" in out2
-    close_calls = [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
-    assert close_calls and close_calls[0][1][3] == "42"
-    assert not any(c[1][3] == "43" for c in close_calls)
+    close_calls = _design_close_calls(calls)
+    assert close_calls and "/pulls/42" in close_calls[0][1][2]
+    assert not any("/pulls/43" in c[1][2] for c in close_calls + _design_comment_calls(calls))
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9863,14 +9982,14 @@ def test_close_design_and_merge_design_cli_both_refuse_a_row_with_a_boolean_pr_n
     assert rc == 0
     assert "True" not in out
     assert "could not check for a design PR" in out
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
+    assert not _design_merge_calls(calls)
     calls.clear()
     rc2 = work.main(["work.py", "close-design", d, "9", "--comment", "goal-review: REJECTED"])
     out2 = capsys.readouterr().out
     assert rc2 == 0
     assert "True" not in out2
     assert "could not check for a design PR" in out2
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
+    assert not _design_close_calls(calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9904,13 +10023,13 @@ def test_close_design_and_merge_design_cli_both_refuse_a_fork_pr(tmp_path, capsy
     assert rc == 0
     assert "merged PR #42" not in out
     assert "could not check for a design PR" in out and "fork" in out
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
+    assert not _design_merge_calls(calls)
     rc2 = work.main(["work.py", "close-design", d, "9", "--comment", "goal-review: REJECTED"])
     out2 = capsys.readouterr().out
     assert rc2 == 0
     assert "closed PR #42" not in out2
     assert "could not check for a design PR" in out2 and "fork" in out2
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
+    assert not _design_close_calls(calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9930,13 +10049,13 @@ def test_close_design_and_merge_design_cli_both_refuse_a_code_shaped_pr(tmp_path
     assert rc == 0
     assert "merged PR #42" not in out
     assert "could not check for a design PR" in out
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
+    assert not _design_merge_calls(calls)
     rc2 = work.main(["work.py", "close-design", d, "9", "--comment", "goal-review: REJECTED"])
     out2 = capsys.readouterr().out
     assert rc2 == 0
     assert "closed PR #42" not in out2
     assert "could not check for a design PR" in out2
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
+    assert not _design_close_calls(calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9962,7 +10081,7 @@ def test_close_design_and_merge_design_cli_never_echo_a_malicious_extra_file_pat
     assert "merged PR #42" not in out
     assert "could not check for a design PR" in out
     assert "#123" not in out
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
+    assert not _design_merge_calls(calls)
     calls.clear()
     rc2 = work.main(["work.py", "close-design", d, "9", "--comment", "goal-review: REJECTED"])
     out2 = capsys.readouterr().out
@@ -9970,7 +10089,7 @@ def test_close_design_and_merge_design_cli_never_echo_a_malicious_extra_file_pat
     assert "closed PR #42" not in out2
     assert "could not check for a design PR" in out2
     assert "#123" not in out2
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
+    assert not _design_close_calls(calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9992,7 +10111,7 @@ def test_close_design_and_merge_design_cli_never_echo_a_malicious_headRefName(
     assert "merged PR #42" not in out
     assert "could not check for a design PR" in out
     assert "#999" not in out
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
+    assert not _design_merge_calls(calls)
     calls.clear()
     rc2 = work.main(["work.py", "close-design", d, "9", "--comment", "goal-review: REJECTED"])
     out2 = capsys.readouterr().out
@@ -10000,7 +10119,7 @@ def test_close_design_and_merge_design_cli_never_echo_a_malicious_headRefName(
     assert "closed PR #42" not in out2
     assert "could not check for a design PR" in out2
     assert "#999" not in out2
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
+    assert not _design_close_calls(calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -10013,75 +10132,6 @@ def test_find_design_pr_refuses_a_padded_reply_with_a_duplicate_path():
     pr, err = work._find_design_pr(".sdlc", ON, "9", lambda cwd, argv: json.dumps([row]))
     assert pr is None
     assert err and "lists a path more than once" in err
-
-
-@pytest.mark.usefixtures("design_fallback")
-def test_merge_design_reports_failure_not_success_when_the_recheck_finds_a_fork_row():
-    """A fork sharing the branch name existing on the RE-CHECK proves nothing about whether
-    OUR merge landed -- must not be read as the "(None, None) == gone" success shape. The
-    fork row is `_valid_design_row(isCrossRepository=True)` per the structural rule."""
-    calls = {"list": 0}
-    pr = json.dumps([_valid_design_row(number=8, mergeable="MERGEABLE",
-                                        mergeStateStatus="CLEAN")])
-    fork = json.dumps([_valid_design_row(number=99, isCrossRepository=True)])
-    def _run(cwd, argv):
-        if argv[:3] == ["gh", "pr", "list"]:
-            calls["list"] += 1
-            return pr if calls["list"] == 1 else fork
-        raise RuntimeError("connection dropped after the merge may or may not have landed")
-    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_run, sleep=NOSLEEP)
-    assert "could not merge" in result
-    assert "confirmed on re-check" not in result
-
-
-@pytest.mark.usefixtures("design_fallback")
-def test_close_design_reports_failure_not_success_when_the_recheck_finds_a_fork_row():
-    calls = {"list": 0}
-    pr = json.dumps([_valid_design_row(number=7)])
-    fork = json.dumps([_valid_design_row(number=99, isCrossRepository=True)])
-    def _run(cwd, argv):
-        if argv[:3] == ["gh", "pr", "list"]:
-            calls["list"] += 1
-            return pr if calls["list"] == 1 else fork
-        raise RuntimeError("connection dropped after the close may or may not have landed")
-    result = work.close_design(".sdlc", ON, "9", run=_run)
-    assert "could not close" in result
-    assert "confirmed on re-check" not in result
-
-
-@pytest.mark.usefixtures("design_fallback")
-def test_merge_design_reports_failure_not_success_when_the_recheck_finds_a_code_shaped_row():
-    calls = {"list": 0}
-    pr = json.dumps([_valid_design_row(number=8, mergeable="MERGEABLE",
-                                        mergeStateStatus="CLEAN")])
-    code_pr = json.dumps([_valid_design_row(
-        number=55, paths=[".sdlc/design/9.md", ".sdlc/design/9-in-brief.md",
-                           "skills/sigma-loop/scripts/work.py"])])
-    def _run(cwd, argv):
-        if argv[:3] == ["gh", "pr", "list"]:
-            calls["list"] += 1
-            return pr if calls["list"] == 1 else code_pr
-        raise RuntimeError("connection dropped after the merge may or may not have landed")
-    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_run, sleep=NOSLEEP)
-    assert "could not merge" in result
-    assert "confirmed on re-check" not in result
-
-
-@pytest.mark.usefixtures("design_fallback")
-def test_close_design_reports_failure_not_success_when_the_recheck_finds_a_code_shaped_row():
-    calls = {"list": 0}
-    pr = json.dumps([_valid_design_row(number=7)])
-    code_pr = json.dumps([_valid_design_row(
-        number=55, paths=[".sdlc/design/9.md", ".sdlc/design/9-in-brief.md",
-                           "skills/sigma-loop/scripts/work.py"])])
-    def _run(cwd, argv):
-        if argv[:3] == ["gh", "pr", "list"]:
-            calls["list"] += 1
-            return pr if calls["list"] == 1 else code_pr
-        raise RuntimeError("connection dropped after the close may or may not have landed")
-    result = work.close_design(".sdlc", ON, "9", run=_run)
-    assert "could not close" in result
-    assert "confirmed on re-check" not in result
 
 
 # --- #895 4a-2 PR B: the design-PR list goes REST first (list + pulls/N + pulls/N/files) -----------------
@@ -10114,6 +10164,92 @@ def test_rest_design_finds_merges_and_names_the_head_owner_from_the_slug(design_
     assert not any(c.startswith("gh pr list") for c in run.calls)
 
 
+def test_rest_design_merge_is_one_pinned_put_to_the_slug_repo_and_close_is_comment_then_patch(design_rest):
+    run = _design_run([{"number": 42}])
+    assert work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=run, sleep=NOSLEEP) == "merged PR #42"
+    puts = [c for c in run.calls if "--method PUT" in c]
+    assert puts == ["gh api repos/acme/app/pulls/42/merge --method PUT -f merge_method=squash -f sha=" + prfake.HEAD]
+    run = _design_run([{"number": 42}])
+    assert work.close_design(".sdlc", ON, "9", run=run, comment="why") == "closed PR #42"
+    writes = [c for c in run.calls if "--method POST" in c or "--method PATCH" in c]
+    assert writes == ["gh api repos/acme/app/issues/42/comments --method POST -f body=why",
+                      "gh api repos/acme/app/pulls/42 --method PATCH -f state=closed"]
+    assert not any(c.startswith(("gh pr merge", "gh pr close", "gh pr comment")) for c in run.calls)
+
+
+def test_rest_design_a_primary_rate_limit_on_the_put_falls_back_to_gh_pr_merge_once(design_rest):
+    limited = RuntimeError("gh api: gh: API rate limit exceeded (HTTP 429)")
+    run = _design_run([{"number": 42}], ("pulls/42/merge --method PUT", limited))
+    assert work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=run, sleep=NOSLEEP) == "merged PR #42"
+    fb = [c for c in run.calls if c.startswith("gh pr merge")]
+    assert fb == ["gh pr merge 42 --squash --match-head-commit " + prfake.HEAD + " --repo acme/app"]
+
+
+@pytest.mark.parametrize("fail", [RuntimeError("gh api: gh: Server Error (HTTP 502)"),
+                                  RuntimeError("gh api: gh: connection reset by peer"),
+                                  RuntimeError("gh api: gh: You have exceeded a secondary rate limit (HTTP 403)")],
+                         ids=["5xx", "transport", "secondary-rate-limit"])
+def test_rest_design_an_ambiguous_put_failure_never_falls_back_and_is_reconciled_by_a_read(design_rest, fail):
+    run = _design_run([{"number": 42}], ("pulls/42/merge --method PUT", fail))
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=run, sleep=NOSLEEP)
+    assert result.startswith("could not merge PR #42")          # the design pull reads OPEN: not merged
+    assert not any(c.startswith("gh pr merge") for c in run.calls)
+    assert len([c for c in run.calls if "--method PUT" in c]) == 1
+
+
+def _reread(first, later):
+    """A `pulls/42` GET handler: the identity lookup (first read) sees an open design PR, every later read
+    (the reconcile after an ambiguous write) sees `later`."""
+    seen = {"n": 0}
+
+    def answer(line):
+        seen["n"] += 1
+        return first if seen["n"] == 1 else later
+    return answer
+
+
+@pytest.mark.parametrize("later,expect", [
+    (prfake.rest_pull(number=42, state="MERGED", headRefName="sdlc/9"), "merged PR #42 (confirmed on re-read"),
+    (prfake.rest_pull(number=42, state="CLOSED", headRefName="sdlc/9"), "closed without merging on re-read"),
+    (prfake.rest_pull(number=42, state="OPEN", headRefName="sdlc/9"), "still open on re-read"),
+    ("", "outcome unconfirmed"), ('{"state":', "outcome unconfirmed")],
+    ids=["merged", "closed-unmerged", "open", "blank", "truncated"])
+def test_rest_design_merge_reconcile_uses_the_rest_pull_read_in_a_cloud_session(design_rest, monkeypatch, later, expect):
+    """CLAUDE_CODE_REMOTE: no GraphQL, so the reconcile is the REST `pulls/42` read alone (merged_at/merged -> MERGED)."""
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    first = json.dumps(prfake.design_pull())
+    run = _design_run([{"number": 42}], ("pulls/42/merge --method PUT", RuntimeError("gh api: gh: Server Error (HTTP 502)")),
+                      (prfake.pull_get(42), _reread(first, later)))
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=run, sleep=NOSLEEP)
+    assert expect in result
+    assert not any(c.startswith(("gh pr merge", "gh pr view")) for c in run.calls)
+    assert len([c for c in run.calls if "--method PUT" in c]) == 1
+
+
+@pytest.mark.parametrize("later,expect", [
+    (prfake.rest_pull(number=42, state="CLOSED", headRefName="sdlc/9"), "closed PR #42 (confirmed on re-read"),
+    (prfake.rest_pull(number=42, state="MERGED", headRefName="sdlc/9"), "merged by someone else on re-read"),
+    (prfake.rest_pull(number=42, state="OPEN", headRefName="sdlc/9"), "still open on re-read"),
+    ("", "outcome unconfirmed")], ids=["closed", "merged", "open", "blank"])
+def test_rest_design_close_reconcile_uses_the_rest_pull_read_in_a_cloud_session(design_rest, monkeypatch, later, expect):
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    first = json.dumps(prfake.design_pull())
+    run = _design_run([{"number": 42}], ("pulls/42 --method PATCH", RuntimeError("gh api: gh: connection reset by peer")),
+                      (prfake.pull_get(42), _reread(first, later)))
+    result = work.close_design(".sdlc", ON, "9", run=run)
+    assert expect in result
+    assert not any(c.startswith(("gh pr close", "gh pr view")) for c in run.calls)
+
+
+def test_rest_design_in_a_cloud_session_a_rate_limit_does_not_fall_back(design_rest, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    limited = RuntimeError("gh api: gh: API rate limit exceeded (HTTP 429)")
+    run = _design_run([{"number": 42}], ("pulls/42/merge --method PUT", limited))
+    assert work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=run, sleep=NOSLEEP) == (
+        "could not merge PR #42 (see stderr for detail)")
+    assert not any(c.startswith("gh pr merge") for c in run.calls)
+
+
 def test_rest_design_without_a_slug_uses_ghs_owner_placeholder(design_rest):
     """MEASURED: `{owner}` expands INSIDE the query string from the cwd's remote. Only used when the slug is unknown."""
     run = _design_run([{"number": 42}], slug=False)
@@ -10129,7 +10265,8 @@ def test_rest_design_enriches_every_field_the_callers_read(design_rest):
     assert err is None
     assert pr == {"number": 42, "url": "https://x/42", "mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY",
                   "isCrossRepository": False, "headRefName": "sdlc/9",
-                  "files": [{"path": p} for p in prfake.DESIGN_PATHS], "changedFiles": 2}
+                  "files": [{"path": p} for p in prfake.DESIGN_PATHS], "changedFiles": 2,
+                  "headRefOid": prfake.HEAD}
     # 1 list + (pull + files) per row: the documented 1 + 2N cost
     assert len([c for c in run.calls if c.startswith("gh api")]) == 3
 
@@ -10217,7 +10354,7 @@ def test_rest_design_a_502_falls_back_to_gh_pr_list_exactly_once(design_rest):
     assert err is None and pr["number"] == 42
     fb = [c for c in run.calls if c.startswith("gh pr list")]
     assert fb == ["gh pr list --repo acme/app --head sdlc/9 --state open --limit 30 --json "
-                  "number,url,mergeable,mergeStateStatus,isCrossRepository,headRefName,files,changedFiles"]
+                  "number,url,mergeable,mergeStateStatus,isCrossRepository,headRefName,files,changedFiles,headRefOid"]
 
 
 @pytest.mark.parametrize("fail", [RuntimeError("gh api: gh: Not Found (HTTP 404)"),
