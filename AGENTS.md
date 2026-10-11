@@ -151,7 +151,7 @@ New `gh issue|pr|project|label` call sites do not go in new places: `tests/test_
 ratchet (`skills/sigma-loop/scripts/gh_api.py` is the helper; the baseline only goes down). Run
 `$HOME/.sigma-venv312/bin/python -m pytest tests/test_no_direct_gh.py`
 (generic form: `python -m pytest tests/test_no_direct_gh.py`); the shapes it cannot see are listed in
-[cloud sessions](docs/cloud-sessions.md). Cloud sessions: detection and reporting only, see that page.
+[cloud sessions](docs/cloud-sessions.md). Cloud sessions: REST-first, the end-to-end run is unmeasured, see that page. Skill prose has its own ratchet: `tests/test_no_direct_gh_prose.py`.
 
 ## Output
 

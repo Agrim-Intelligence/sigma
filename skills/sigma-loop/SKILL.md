@@ -1,7 +1,7 @@
 ---
 name: sigma-loop
 description: Autonomously run backlog goals through phase agents, verified PRs, and park/continue until stopped or budgeted. Use for unattended runs or /sigma-loop.
-allowed-tools: Bash(python3 *), Bash(gh issue view *)
+allowed-tools: Bash(python3 *), Bash(gh issue view *), Bash(gh api *)
 ---
 
 ## Codex path resolution
@@ -92,8 +92,8 @@ Then repeat until the helper says stop:
    `references/running.md`). One subagent PER PHASE, **tier `off` included** (`record done` is REFUSED without each, #684).
    Artifacts pass between phases through the filesystem, not shared context. Then read the goal and
    run it through the full SDLC (research → plan → plan-review → implement → review) — each phase
-   via its **executor**. `$goal` is a **file path** in local mode (read it) or a **GitHub
-   issue number** in github mode (`gh issue view "$goal"`).
+   via its **executor**. `$goal` is a **file path** (local) or a **GitHub
+   issue number** in github mode (`gh api repos/{owner}/{repo}/issues/"$goal"`).
 
    **The maker must not be the checker (`config.review.independent`, default on); asked, not proved.**
    Every review gate (plan-review, pre-PR code review, post-PR review at step 6) is asked to run as a

@@ -33,8 +33,8 @@ already-printed stderr line works in EITHER mode and needs no branching. If the 
 missing (`model_selection` isn't `"auto"`, or the pick predates this line reaching stdout in your
 log), fall back to running `resolve` yourself: in local mode `resolve "$goal" .sdlc` as before; in
 github mode, fetch the issue's real text FIRST, title on the first line
-(`gh issue view "$goal" --json title,body --jq '.title + "\n\n" + (.body // "")'`, POSIX
-shell — a haiku signal counts only in the title, #2827) and pass that text as the argument, never
+(`gh api repos/{owner}/{repo}/issues/"$goal" --jq '.title + "\n\n" + (.body // "")'`,
+POSIX shell — a haiku signal counts only in the title, #2827) and pass that text as the argument, never
 the bare `"$goal"`. Whatever tier you end up with
 (`haiku`/`sonnet`/`opus`/`fable`) is the GOAL's ceiling; `signal` (from either the stderr line or
 your own fallback `why`/`resolve` call) is the literal text the regex matched (`migrat`, `secur`)
@@ -117,7 +117,7 @@ run it through the full SDLC (goal → research → plan → plan-review →
 implement → review) — each phase via its **executor** (the `superpowers`/`code-review` companion on
 Claude if installed, else Sigma's portable `sigma-brainstorm`/`sigma-research`/`sigma-plan`/
 `sigma-implement`/`sigma-review`/`sigma-verify`; each skill's resolution header picks). `$goal` is a **file path** in local mode (read the file) or a **GitHub issue
-number** in github mode (`gh issue view "$goal"` to read it).
+number** in github mode (`gh api repos/{owner}/{repo}/issues/"$goal"` to read it).
 
 **P1 GOAL records acceptance before Research or code.** Run
 `python3 "${CLAUDE_SKILL_DIR}/scripts/acceptance.py" record .sdlc "$goal"`.
@@ -205,7 +205,7 @@ verdict (the block reason just posted or recorded) plus a live pointer to what c
 for `plan-review`/`code-review`, re-run the dispatch gesture above for that gate, redirect included
 (a fresh `/tmp/brief-<stem>.md` pointing at the current plan file or worktree diff, and the brief a
 re-reviewed plan's verdict is recorded against); for `pr-review`, publish a fresh `--output`
-generation, whose brief already resolves to the live `gh pr diff <PR#>` — never the earlier
+generation, whose brief already resolves to the live PR diff — never the earlier
 review's transcript pasted in by hand. Step 6's worked example (the
 post-PR cycle) carries a code-enforced cap (`work.max_review_cycles`); plan-review and
 pre-PR/code-review have no equivalent counter.

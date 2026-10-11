@@ -29,7 +29,8 @@ NOT COVERED (documented gaps; each pinned by a "documented gap" test below, so w
 conscious edit): string-form / shell-string calls (`"issue view".split()`); argv built incrementally
 (`args = ["issue"]; args += ["edit"]`, `.append`/`.extend`); lists whose first element is a variable
 (`[cmd, ...]`); a call that passes its arguments to a wrapper as positional strings
-(`_gh("issue", "view")`); skill prose (.md, .tmpl); SHELL SCRIPTS (skills/**/*.sh, hooks/*.sh) -- 9
+(`_gh("issue", "view")`); `.tmpl` prose (`.md` under skills/ is now partly covered by tests/test_no_direct_gh_prose.py: loop-path
+commands only; the allowlisted lines stay uncovered); SHELL SCRIPTS (skills/**/*.sh, hooks/*.sh) -- 9
 files today, a grep found no `gh` reference in any of them, but nothing keeps that true. The ratchet
 therefore guarantees "no new list-literal gh issue|pr|project|label call", not "no new gh call".
 

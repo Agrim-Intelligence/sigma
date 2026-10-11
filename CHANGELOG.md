@@ -9,7 +9,16 @@ All notable changes to Sigma are recorded here, newest first.
   row per mutation form with its `must_be_red_by` gates) and `catalogue.py check`, a read-only schema checker run in
   the fast suite: rejects an unknown gate id, an empty `must_be_red_by`, a row whose only gate is pending, and a row
   that drifts from `mutators.py`. Test-first and phase-record suites are deliberately not listed (measured green).
-
+- **Loop-path skill prose is REST-first (#895, slice 6; refs #895).** The agent instructions in sigma-loop
+  (SKILL, running, picking, landing), sigma-goal, sigma-retro, sigma-model, sigma-triage, sigma-scope, sigma-context
+  and sigma-radar now read and label issues with `gh api repos/{owner}/{repo}/...` instead of `gh issue view|list|edit`
+  and `gh pr view`; `Bash(gh api *)` is added to those skills' `allowed-tools` (old grants kept). New
+  `tests/test_no_direct_gh_prose.py` keeps bare `gh issue|pr|project|label <verb>` out of skill prose (allowlisted
+  exceptions carry a reason) and checks the grant. `docs/cloud-sessions.md` gains "Running the loop in a Claude Code
+  cloud session" with owner smoke-test steps. The `Bash(gh api *)` grant is as broad as the gh issue/pr grants beside it (not narrowed; per-endpoint allowlist is the follow-up). NOT run in a real Claude Code cloud session. Still open:
+  `review_context.py` briefs still tell reviewers to run `gh pr diff` (line 594) and `gh issue view` (lines 606, 651,
+  817, 830), and the `work.py:130` `mechanism` string still says a cloud session stops at the GraphQL `merge_rights`
+  read.
 - **Board gate when GraphQL is unavailable (#895, slice 5; refs #895).** New `GitHubSource.board_active`
   (`project.enabled` AND `gh_api.graphql_available()`): when GraphQL is off (`CLAUDE_CODE_REMOTE`,
   `SIGMA_GH_GRAPHQL=off`) every Projects v2 call (card moves, field writes, archive, backlog seeding, the Phase

@@ -117,9 +117,8 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/predict.py" resolve-profile "<goal>" .sdlc
 
 For a GitHub issue number, pass its actual title and body as the first argument — **the title on
 the first line**, e.g. from
-`gh issue view N --json title,body --jq '.title + "\n\n" + (.body // "")'`
-(POSIX shell, run by the calling skill, which grants `gh issue view`; plain `--json` prints
-one-line JSON, which reads as all title) — and the issue
+`gh api repos/{owner}/{repo}/issues/N --jq '.title + "\n\n" + (.body // "")'`
+(POSIX shell, run by the calling skill, which grants `gh api`; the `--jq` puts the title first) — and the issue
 number as a final argument: `python3 "${CLAUDE_SKILL_DIR}/scripts/predict.py" resolve
 "<title-then-body text>" .sdlc "<issue-number>"`. This classifies the text while recording
 `model_choice` under the issue ID. The three-argument local-file form above is unchanged.

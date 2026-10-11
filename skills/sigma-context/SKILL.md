@@ -1,7 +1,7 @@
 ---
 name: sigma-context
 description: Recall prior goals, graph findings, and conventions as a cited brief before a goal. Use at goal start or /sigma-context.
-allowed-tools: Bash(python3 *), Bash(graphify *), Bash(gh issue *)
+allowed-tools: Bash(python3 *), Bash(graphify *), Bash(gh issue *), Bash(gh api *)
 ---
 
 ## Codex path resolution
@@ -35,8 +35,7 @@ touch are the query seeds):
    `python3 "${CLAUDE_SKILL_DIR}/../sigma-kg/scripts/kg.py" gap log "<the unanswered question>" .sdlc`
    (deduped + fail-open; it becomes the backlog the loop can later fill). Review the running list with
    `kg.py gap list .sdlc`.
-2. **Recall past decisions/findings** on those components: `gh issue list --state all --search
-   "<components>"`, then read the top issues' 🔒 Critical Insight comments (github mode), or skim
+2. **Recall past decisions/findings** on those components: `gh api "search/issues?q=repo:{owner}/{repo}+is:issue+<components>"` (join the terms with `+` in the URL), then read the top issues' 🔒 Critical Insight comments (github mode), or skim
    `.sdlc/journey/` (local mode).
 3. **Re-read the governing conventions — north-star first.** Resolve it, never stat it (`.sdlc/` is
    gitignored, so the file is absent from any goal worktree — #1778): `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/north_star.py"`.
