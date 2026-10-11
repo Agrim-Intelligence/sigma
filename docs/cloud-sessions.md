@@ -567,6 +567,19 @@ UNMEASURED live: the PUT / PATCH / comment POST bodies and statuses (derived fro
 `state` value, the `headRefOid` field of `gh pr list --json` on the fallback, and everything through a real cloud
 session. Tests use injected runners and the fake gh only.
 
+## Runner seams (#895 slice 3b)
+
+Six `["gh", *args]` seam literals no longer spell the argv themselves: `ledger._run_gh`, `feature_owner._run_gh`,
+`cross_repo._run_gh`, `status._github_counts` (x2) and `board_setup.Board.gh` now go through `gh_api.run_gh`
+(returns `(rc, out, err)`; a timeout is `(124, "", ...)`; any other exception propagates) or `gh_api.gh_argv`
+(`["gh", *str args]`). These were already `gh api ...` calls (the board seam also runs `gh api graphql`, i.e. Projects v2,
+which stays slice 5), so this is a spelling change, not a behaviour migration. The ledger seam now loads
+`gh_api.py` on first use in each process (the hook path pays that load; latency UNMEASURED). One behaviour change: a timeout now exists where none did (ledger 15 s, because a
+PreToolUse hook reaches it, a judgement and UNMEASURED; feature_owner 120 s; cross_repo keeps its 30 s). `close_pr_gh`
+now also rejects a 200 whose body says `merged: true`. Cost: the same single `gh` spawn per call, no per-item
+growth. NOT moved: every `label create` (slice 3c), `sources.note()`, `define.py`, `status.py`'s no-sources
+fallback, `doctor.py`, the board sites (slice 5), `work.py` x3, `verify_merge.py` x3. Nothing here is tested live.
+
 ## What this does NOT do
 
 - `read_issue`, `list_issues_gh`, the seven issue write helpers and the six PR read helpers (`view_pr_gh`,
@@ -584,7 +597,7 @@ session. Tests use injected runners and the fake gh only.
 
 `tests/test_no_direct_gh.py` stops direct `gh issue|pr|project|label` call sites from growing
 (baseline 101 sites in 21 files at slice 1, 94 after #895 slice 2a, 84 after slice 2b, 74 after slice 2c, 57 after slice 3a,
-50 after slice 4a-1, 48 after slice 4a-2 PR A, 47 after PR B, 46 after slice 4b-1, 45 after slice 4b-2; it only goes down). Run
+50 after slice 4a-1, 48 after slice 4a-2 PR A, 47 after PR B, 46 after slice 4b-1, 45 after slice 4b-2, 43 after 4b-3, 37 after 3b; it only goes down). Run
 `$HOME/.sigma-venv312/bin/python -m pytest tests/test_no_direct_gh.py`
 (generic form: `python -m pytest tests/test_no_direct_gh.py`).
 It covers list literals only. Shapes it CANNOT see: string-form or shell-string calls

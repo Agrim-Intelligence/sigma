@@ -1,63 +1,42 @@
-# #895 slice 3 retro (P7 RETRO, advisory, autonomous mode)
+# #895 slice 3b retro (P7)
 
-Evidence read: acceptance/895.md, plans/895.md, research/895.md, research/895-controls.md,
-`git -C .sdlc/work/895 diff --stat` (30 files, +2385/-526). Full-suite verify was still running in the
-worktree when this was written, so no pass count is claimed here.
+PR body `Refs #895` (does not close). Nothing here was tested live; every claim is from unit tests and `scan()`.
 
-## What shipped
-- 17 issue WRITE list-literal sites (comment, create, edit body, close, add/remove label, add-assignee)
-  in 7 files moved onto `gh_api` over REST: sources.py, triage.py, define/assign/dossier/promote/unpark paths.
-- `gh_api.py` (+303): write policy table (one REST attempt, at most one GraphQL fallback, never retried;
-  fallback on primary rate limit for any write, on 5xx for idempotent writes only; none on 422/404/403/secondary
-  limit/ambiguous transport). Doc-vs-table test keeps docs/cloud-sessions.md honest.
-- Feature-label refusal kept as two layers (wrapper guard + `_issue_*` verify) before any create/add.
-- No-direct-gh baseline ratchet 74 -> 57 (exactly the 17 migrated sites); write-surface.json/md updated.
-- Controls log: C1-C24 each broken, seen red, reverted, green (incl. C22d on the documented
-  `check . docs/launch/write-surface.json` gesture). Red-before-implement recorded for steps 1-6.
+## Delivered vs scope
+- Original 3b scope: wrapper seams AND label create. Delivered: the seams plus a `close_pr_gh` merged-PR guard. Label create x4 (sources x3, triage x1) deferred to 3c.
+- New in `gh_api.py`: `run_gh(args, timeout=120) -> (rc, out, err)` (timeout -> 124) and `gh_argv(args)`.
+- Moved onto them: `ledger._run_gh` (15 s cap), `feature_owner._run_gh`, `cross_repo._run_gh`, `status._github_counts` x2, `board_setup.Board.gh` (gh_api loaded lazily, directly by path, not via sources).
+- `close_pr_gh.rest()` now rejects a 200 body with `merged: true`.
+- Ratchet: `scan()` TOTAL 43 -> 37 (printed). BASELINE: cross_repo, feature_owner, ledger, board_setup removed; status 3 -> 1. One `write-surface.json` row added for `run_gh`.
+- Diff: 18 files, 536+/265-. Plan estimated 15; the extra three are `write-surface.json`, the plan and the dossier.
+- Why label create waited: it needs ~38 files, 5 subprocess fakes taught a REST POST handler, the gqlfake `_REST_WRITE_RE` change, and `write_surface._GH_API_WRITES` gaining `create_label`. That is over the ~25-file cap.
 
-## What remains of #895
-- Slice 3b: `note()` (sources.py:3275), already REST-last-resort, carries owner-accepted #1986
-  duplicate-on-retry ruling that contradicts the no-retry default; needs a policy decision.
-- Slice 3c: the 5 `label create` sites (sources.py:1682, 1746, 3746; triage.py:2267; define.py:215);
-  needs a decision on REST label creation.
-- Slices 4-7: PR writes, project/board writes, lifecycle label swaps (`_swap_labels`, D-4 REST swap,
-  `_set_board_status`), remaining reads (status.py:174 stays by design). Ratchet stands at 57.
+## Residual debt
+- `sources.note()`: owner-accepted duplicate-on-retry ruling kept; not moved.
+- `define.py` x2: `_label_create_argv` must keep creating `feature:*` labels (`create_label` would refuse them); `_repo_labels`.
+- `status.py:174`: the "sources failed to load" fallback is still a direct `gh`.
+- `doctor.py` x5: 4 board sites plus the `_gh_runner` seam (same kind as the ones moved here).
+- Board sites (sources x16, board_migrate x2) belong to slice 5.
+- `work.py` x3 and `verify_merge.py` x3 are untouched.
 
-## Lessons (audit trail)
-- Plan corruption by piecemeal edits: plans/895.md was patched repeatedly in small edits across review rounds
-  and drifted (contradictory step numbering, restated acceptance, D5 narrowed late). Lesson: after N edits to a
-  plan, rewrite or re-read it whole before dispatching; do not stack incremental patches.
-- Implementer background-wait stall: the implementer parked on a background wait (verify/test run) and stalled
-  the slot with no liveness signal. Lesson: bound waits (timeout + poll) or run verify foreground; a waiting
-  agent must be distinguishable from a dead one (LIVENESS).
-- Controls paid for themselves: C3/C4/C5 each tripped 7-9 tests, so the policy table is genuinely armed.
+## Lessons (proposed only; no CLAUDE.md/AGENTS.md edit)
+- Moving a wrapper seam is a spelling change, and the ratchet counts spelling. These five seams were already `gh api` calls, so 43 -> 37 is not 6 fewer REST migrations. Report ratchet drops as "sites moved", not "calls migrated".
+- Plan-review found 5 blockers on the label half and 4 more on the seams. Counting files before committing to scope (the ~38 figure) is what made the split defensible.
+- Implement found that `write_surface.py` needed a `run_gh` row, which the plan said it would not. The plan's "expected green with no edit" was a prediction, not a run. Run the gate during planning.
+- A new primitive was justified because `bounded_runner` raises on non-zero exit and returns stdout only. Each seam needs a different failure shape (rc 124, RuntimeError, `""`).
+- Delegation spies fail before the change, so they are the red-first tests for a pure move. Characterisation tests pass today and go red only under a Control.
 
-## Residual debt (none of it tracked yet unless noted)
-- `remove_label` keeps a 404 no-op because exact GitHub 404 bodies are unmeasured; it can mask "issue missing".
-- `complete()` is comment-then-close as two non-atomic writes; a failure between them (or a retry of the
-  caller) can leave a duplicate comment. Documented, not fixed.
-- Shim test loose regex: the C23 shim-vacuity controls rely on a path-matching regex looser than the exact
-  endpoint; a wrong-but-similar path could pass. Tighten to full-path equality.
-- UNMEASURED (named, never claimed): REST label auto-create on POST /issues and /labels; primary rate limit
-  never partially executing a write (incl. 429); 404 bodies for label-absent vs issue-missing; secondary-limit
-  wording; REST assignee drop and `GET user` cost; request counts and latency vs `gh issue`; real Claude Code
-  cloud-session behaviour. All need a scratch repo; none was available.
-- Priority promotion with a failed remove can leave a stale lower label (D5, narrowed to min-rank self-heal).
+## Unmeasured
+- The ledger 15 s cap is a judgement. `decision_gate.py` reaches it from a PreToolUse hook with no hook timeout.
+- Hook latency from loading `gh_api.py` (~1,500 lines) per fresh process: not measured.
+- 405/422 on PATCH of a merged PR: derived from docs, never observed. Only the 200 + `merged:true` path has a test.
+- Before this change none of the three wrappers had any timeout. Now each does; the live effect is unobserved.
 
-## Structural / product reflection
-- Multi-site smell resolved by the policy table; the two-layer feature-label guard is the shared contract.
-- Deferred roots: note() and `label create` are structural defers (a missing REST label primitive) -> 3b/3c.
-- Direction: advances REST-first goal; north-star not read (not required for this audit note).
-- Nothing rotted in standing docs; plans/895.md should be archived once #895 closes (it is the plan-gate input).
-
-## Proposals (parked, NOT applied; need owner approval)
-| Lesson | Store | Proposed edit |
-|---|---|---|
-| Rewrite a plan whole after >N review patches | standing rule | add to sigma-plan-review guidance: re-read plan end to end before implement |
-| Agents must not block on background waits unbounded | standing rule | require timeout+poll in implementer dispatch brief |
-| Tighten shim path match to equality | audit trail / follow-up goal | file under 3a debt on #895 |
-
-GRADE: partial
-Gaps: criteria 1 and 2 evidenced by the diff and controls log; criterion 3 (baseline, docs claim only what
-was measured) evidenced by C22/C24, but remaining sites 3b/3c/4-7 are tracked on #895 and full verify was not
-yet confirmed at write time.
+## Proposed entry list for 3c
+1. `gh_api.create_label` (REST POST); classify 422 "already exists" as success; carry the `--force` / `feature:*` refusal over; retarget `test_label_create_no_force` at it.
+2. Convert sources x3 and triage x1 `label create` sites.
+3. Subprocess fakes (5): add a REST POST labels handler. gqlfake: extend `_REST_WRITE_RE`.
+4. `write_surface._GH_API_WRITES` gains `create_label`; update the `write-surface.json` rows.
+5. Cost: state the 10x/100x cost of a 422 POST plus GET per existing label; consider listing once, then creating only the missing labels.
+6. Leave `define.py` out unless `create_label` gets a deliberate opt-in for `feature:*`.
+7. Docs: CHANGELOG, `cloud-sessions.md`, `label-model.md`. Bring the ~27 label-test files along.

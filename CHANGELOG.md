@@ -4,6 +4,14 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Six runner seams go through `gh_api` (#895, slice 3b; refs #895).** `ledger._run_gh`, `feature_owner._run_gh`,
+  `cross_repo._run_gh`, `status._github_counts` (x2) and `board_setup.Board.gh` now use the new `gh_api.run_gh`
+  (rc/out/err, a timeout is 124) and `gh_api.gh_argv`. These were already `gh api` calls: a spelling change, not a
+  migration to REST. A timeout now exists where none did (ledger 15 s, a judgement and unmeasured; feature_owner
+  120 s; cross_repo 30 s). `close_pr_gh` also rejects a 200 body with `merged: true`. NOT yet REST: every `label
+  create` site (sources x3, triage x1 = slice 3c), `sources.note()` (owner ruling), `define.py` x2, `status.py`'s
+  no-sources fallback, `doctor.py`, the board sites (slice 5), `work.py` x3, `verify_merge.py` x3. Nothing is tested
+  live. Ratchet (printed `scan()`): TOTAL 43 -> 37. Details: `docs/cloud-sessions.md`.
 - **Design-PR merge and close go REST (#895, slice 4b-3; refs #895).** goal-review's `merge-design` is
   `gh_api.merge_pr_gh` (REST `PUT pulls/N/merge`, pinned to the head sha the design-identity check vetted; ONE
   `gh pr merge` fallback on a primary rate limit only) and `close-design` is `gh_api.close_pr_gh` (comment POST,

@@ -3451,3 +3451,73 @@ def test_comment_pr_primary_rate_limit_in_a_cloud_session_makes_zero_fallback_ca
         with pytest.raises(Exception):
             g.comment_pr(run, 7, "x", repo="o/r", env=env)
         assert run.pr_fb() == [] and len(run.calls) == 1
+
+
+# ---------------------------------------------------------------- run_gh / gh_argv (#895 slice 3b)
+
+class _Proc:
+    def __init__(self, rc=0, out="", err=""):
+        self.returncode, self.stdout, self.stderr = rc, out, err
+
+
+def test_run_gh_passes_rc_out_err_through(monkeypatch):
+    """RED BEFORE THE CHANGE (no `run_gh`). The one `["gh", *str args]` spawner: rc/out/err verbatim."""
+    g = _mod("gh_api")
+    seen = {}
+
+    def fake(argv, **kw):
+        seen["argv"], seen["kw"] = argv, kw
+        return _Proc(3, "o", "e")
+    monkeypatch.setattr(g.subprocess, "run", fake)
+    assert g.run_gh(["api", 7], timeout=9) == (3, "o", "e")
+    assert seen["argv"] == ["gh", "api", "7"] and seen["kw"]["timeout"] == 9
+
+
+def test_run_gh_timeout_is_124_with_a_message(monkeypatch):
+    """RED BEFORE THE CHANGE. A timeout is a synthetic (124, "", text), not an exception."""
+    g = _mod("gh_api")
+
+    def boom(argv, **kw):
+        raise subprocess.TimeoutExpired(argv, 5)
+    monkeypatch.setattr(g.subprocess, "run", boom)
+    assert g.run_gh(["api", "x"], timeout=5) == (124, "", "gh: the call timed out after 5s")
+
+
+def test_run_gh_lets_a_missing_binary_propagate(monkeypatch):
+    """RED BEFORE THE CHANGE. Every non-timeout exception propagates unchanged (as the old inline calls did)."""
+    g = _mod("gh_api")
+
+    def boom(argv, **kw):
+        raise FileNotFoundError("gh")
+    monkeypatch.setattr(g.subprocess, "run", boom)
+    with pytest.raises(FileNotFoundError):
+        g.run_gh(["api", "x"])
+
+
+def test_gh_argv_prefixes_gh_and_stringifies():
+    """RED BEFORE THE CHANGE."""
+    g = _mod("gh_api")
+    args = ["api", 3]
+    out = g.gh_argv(args)
+    assert out == ["gh", "api", "3"] and out is not args
+
+
+def test_close_pr_gh_a_200_with_merged_true_is_never_success():
+    """RED BEFORE THE CHANGE: a merged PR reads `state: closed`; the 200 body must not count as a close."""
+    run = CFake(patch_ok='{"state": "closed", "merged": true}')
+    out = _close(run)
+    assert isinstance(out, Exception) and run.fb() == []
+
+
+def test_close_pr_gh_a_200_with_merged_false_or_absent_still_closes():
+    """CHARACTERISATION (green today)."""
+    assert _close(CFake(patch_ok='{"state": "closed", "merged": false}'))["closed"] is True
+    assert _close(CFake())["closed"] is True
+
+
+@pytest.mark.parametrize("hint", ["HTTP 405: Method Not Allowed", "HTTP 422: Validation Failed"])
+def test_close_pr_gh_405_and_422_never_fall_back(hint):
+    """CHARACTERISATION (green today): neither status falls back to the CLI."""
+    run = CFake(patch_exc=RuntimeError(hint))
+    out = _close(run)
+    assert isinstance(out, Exception) and run.fb() == []
