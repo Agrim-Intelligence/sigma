@@ -665,9 +665,11 @@ def test_a_hung_gh_is_killed_with_its_whole_process_group(tmp_path, monkeypatch)
     while _alive(grandchild) and time.monotonic() < deadline:
         time.sleep(0.05)
     assert not _alive(grandchild), "the hung gh's own child outlived the kill"
+    # `_alive` shells out to `ps` through the same patched Popen on Linux, so count spawns from here, not from zero.
+    before = len(spawned)
     with pytest.raises(pr.BoardCallTimeout, match="earlier"):  # nothing else runs this boundary
         run(["project", "item-edit"])
-    assert len(spawned) == 1, "the second call must raise without spawning"     # not a wall-clock bound
+    assert len(spawned) == before, "the second call must raise without spawning"     # not a wall-clock bound
 
 
 @pytest.mark.skipif(os.name != "posix", reason="process groups are POSIX; Windows uses taskkill /T")
