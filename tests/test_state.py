@@ -406,6 +406,31 @@ def test_done_refusal_boundary_at_exact_equality_is_still_accepted():
         assert st.done_refusal(base, g) is None
 
 
+def test_a_dead_holders_run_neither_anchors_its_goal_nor_is_charged_before_any_prune():
+    """#955, the liveness filter at its own seam (`live_session_records`). A holder whose pid is
+    dead, its marker not yet pruned by a `start`/`next`, must not anchor its goal's verify
+    freshness (the checkout's later start does) and must not be charged unattributed spend.
+    tests/test_run_cursor_955.py's AC-4 pin cannot see a dropped filter: its bare `start-run` then
+    resets the dead session's block, which refuses the same evidence for another reason. Control:
+    making `live_session_records` skip `session_pid_live` turns both assertions red."""
+    import os, time
+    st = _state()
+    dead = subprocess.Popen([sys.executable, "-c", "pass"]); dead.wait()
+    with tempfile.TemporaryDirectory() as d:
+        base, g = _sdlc(d)
+        sessions = pathlib.Path(base) / "state" / "sessions"; sessions.mkdir()
+        t0 = time.time() - 30
+        for pid, held in ((dead.pid, ["0001-x"]), (os.getpid(), [])):
+            (sessions / f"{pid}.active").write_text(json.dumps(
+                {"in_flight": held, "settled_admissions": 0, "run": st.fresh_session_run(t0)}))
+        st.start_run(base, now=t0 + 20)
+        assert st.goal_run_started_at(base, g) == t0 + 20
+        st.add_tokens(base, 50)
+        runs = {path.name: json.loads(path.read_text())["run"]["tokens"]
+                for path in sessions.glob("*.active")}
+        assert runs == {f"{dead.pid}.active": 0, f"{os.getpid()}.active": 50}
+
+
 # --- #498: run-id attribution so a CONCURRENT sibling's green can't satisfy THIS run's record done -
 # F11/#341 only rejects a STALE green (older than this run's start). A concurrent sibling worker on
 # the SAME goal writes a green (exit 0) NEWER than this run's start, so it passed the freshness gate

@@ -7,7 +7,7 @@ design-PR list and the review gate's CHANGES_REQUESTED half). It
 does not claim that `/sigma-loop` works in a Claude Code cloud session: that has not
 been measured (no cloud session was available), and it is the follow-up smoke run. REST migration is in
 progress, not complete: the remaining PR reads (the sibling list R5, `reviewDecision`, `_unresolved_threads`), PR
-writes (4b/4c) and the board remain.
+writes (4b/4c) remain; the board is skipped, not migrated (slice 5, below).
 
 ## What the proxy blocks
 
@@ -29,7 +29,7 @@ holds no secrets and a stale "unavailable" self-heals. `/sigma-doctor` never pro
 
 When the check says unavailable, `/sigma-doctor` prints one advisory row,
 `GitHub GraphQL unavailable (cloud proxy)`, marked OK (a permanent condition the user cannot fix, not a
-MISSING gap). It names the features turned off or degraded: board/Projects mirroring, `gh pr merge --auto`,
+MISSING gap). It names the features turned off or degraded: board/Projects mirroring (SKIPPED, not failed), `gh pr merge --auto`,
 `timelineItems` (blocker/dependency edges), and `gh issue|pr` via GraphQL until migrated (slices 3-4).
 
 ## REST-first issue reads (#895 slice 2a)
@@ -189,7 +189,7 @@ does not change ordering. `PUT /labels` is not used.
 
 Deferred, still open on #895: `note()` (already REST as its last resort, with the owner-accepted
 duplicate-on-retry ruling that this policy contradicts), every `label create`, lifecycle label swaps, the
-D-4 REST swap, board and project writes, PR writes.
+D-4 REST swap, PR writes (the board is skipped in cloud, slice 5).
 
 UNMEASURED, not claimed: REST label auto-create on `POST /issues` and `POST /labels`; that a primary
 rate-limit rejection (including 429) never partially executes a write; exact 404 bodies ("label not on
@@ -573,12 +573,40 @@ Six `["gh", *args]` seam literals no longer spell the argv themselves: `ledger._
 `cross_repo._run_gh`, `status._github_counts` (x2) and `board_setup.Board.gh` now go through `gh_api.run_gh`
 (returns `(rc, out, err)`; a timeout is `(124, "", ...)`; any other exception propagates) or `gh_api.gh_argv`
 (`["gh", *str args]`). These were already `gh api ...` calls (the board seam also runs `gh api graphql`, i.e. Projects v2,
-which stays slice 5), so this is a spelling change, not a behaviour migration. The ledger seam now loads
+which slice 5 gates rather than migrates), so this is a spelling change, not a behaviour migration. The ledger seam now loads
 `gh_api.py` on first use in each process (the hook path pays that load; latency UNMEASURED). One behaviour change: a timeout now exists where none did (ledger 15 s, because a
 PreToolUse hook reaches it, a judgement and UNMEASURED; feature_owner 120 s; cross_repo keeps its 30 s). `close_pr_gh`
 now also rejects a 200 whose body says `merged: true`. Cost: the same single `gh` spawn per call, no per-item
 growth. NOT moved: every `label create` (slice 3c), `sources.note()`, `define.py`, `status.py`'s no-sources
-fallback, `doctor.py`, the board sites (slice 5), `work.py` x3, `verify_merge.py` x3. Nothing here is tested live.
+fallback, `doctor.py`, the board sites (gated by slice 5, still `gh`), `work.py` x3, `verify_merge.py` x3. Nothing here is tested live.
+
+## Board (#895 slice 5)
+
+One gate, `GitHubSource.board_active` = `discovery.github.project.enabled` AND GitHub GraphQL reachable
+(`gh_api.graphql_available()`, environment only: no probe, no network). When GraphQL is unavailable
+(`CLAUDE_CODE_REMOTE`, or `SIGMA_GH_GRAPHQL=off`) every Projects v2 call the loop makes is SKIPPED, not failed:
+never raised, never parks a goal, and `sdlc:*` labels remain the source of truth. Exactly ONE stderr notice per
+process (`phase_report.py` runs as a fresh process per phase boundary, so a cloud user can see it at each
+boundary; a long-lived watch daemon prints it once ever):
+
+    sigma: GitHub GraphQL is unavailable here (cloud proxy or SIGMA_GH_GRAPHQL=off); Projects board calls are skipped this run. sdlc:* labels remain the source of truth.
+
+Off in cloud: Projects v2 card moves, custom/priority field writes, archive, backlog seeding, the Phase field, and
+the board-queue pick (it falls back to the label queue). `promote`, `unpark` and `auto_unpark` read `board_active`,
+so a skipped board never prints a false "board card did not move" hint. `/sigma-status` appends
+`board: skipped (GraphQL unavailable); labels are the source of truth` when the board is configured and skipped,
+and the doctor's pick-path row says `board skipped: GraphQL unavailable`.
+
+Still GraphQL, deliberately NOT gated (label writes and timeline reads, not the board): `_swap_labels`,
+`_label_node_ids`, `_issue_node_id`, and `reconcile`'s timeline reads. Also ungated: the operator-invoked
+`board_migrate.py`, `board_setup.py`, `board_layout.py` and the doctor's own board reads; they run on an explicit
+human gesture, already fail open to could-not-check or refuse without the `project` scope, and a silent skip would
+hide the failure the operator invoked them to see.
+
+Cost: one environment lookup per guarded call, O(1), no growth. Recovery: unset the variable or set
+`SIGMA_GH_GRAPHQL=on`; the next process mirrors again and the existing backlog sync re-seeds skipped cards.
+MEASURED: a recording-fake test (the board-gate test) and the unchanged boardfake suites. NOT tested in a
+real Claude Code cloud session.
 
 ## What this does NOT do
 

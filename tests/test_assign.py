@@ -820,10 +820,11 @@ def test_start_drain_reports_start_run_failure_without_raising(tmp_path, monkeyp
     plan = _plan(_issue("a", "Foundation"))
     report = _report({"a": "201"}, ["a"])
 
-    def boom(sdlc_dir):
+    def boom(sdlc_dir, now=None):
         raise RuntimeError("could not create state dir")
 
-    monkeypatch.setattr(assign.state, "start_run", boom)
+    # #955: the start runs inside `loop.begin_run`, so the checkout reset it calls is loop's state.
+    monkeypatch.setattr(assign.loop.state, "start_run", boom)
     result = assign.execute(str(sdlc), _config(), plan, report, "engine", "amy",
                             assign.PATH_START_SELF, source=src)
 
