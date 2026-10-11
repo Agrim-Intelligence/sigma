@@ -4,7 +4,10 @@
 Quickstart, followed literally on a fresh repository, get one goal to `done`? It is the control for
 epic #227 (plugin install -> `/sigma-init` -> one goal to done), built in #237.
 
-It runs in CI on every push (`tests/test_onboarding_control.py`; the only skip is Windows, `os.name == "nt"`), with
+On a pull request and on a push to main the `onboarding-control` job (macOS, parallel to the required `test` job) runs the plain gesture under
+`evals/regression/budget.py` (wall time against `evals/regression/budget.json`) and only the `-k planted` tests of
+`tests/test_onboarding_control.py` (#879); the rest of that file is in the job's SLOW list and runs in the nightly and
+on-demand `full` job (the whole file, so the planted tests run there twice). The only skip is Windows, `os.name == "nt"`. It has
 no secrets, no network and no model session. CI runs it WITHOUT `--install`: the host plugin CLIs
 are not on CI runners, so the install lines are parsed and checked there, and run only by hand.
 
@@ -250,7 +253,8 @@ end` did run at every phase boundary and printed its honest line, recorded as-is
 `cost: unavailable on this host (phase ran inline within a nested session; no top-level transcript
 to window ...)`.
 
-CI shape: `tests/test_onboarding_control.py`, 40 tests (the green runs come from ONE subprocess
+CI shape (as first measured, #237; the file has since grown to 76 tests and takes 7m35s at 74 tests with `-n 4` on a
+laptop, which is why only the planted tests ride the PR job): `tests/test_onboarding_control.py`, 40 tests (the green runs come from ONE subprocess
 run of the documented gesture), 55.5s on Python 3.12 and 47.0s on 3.10 (this Mac, from the
 checkout); the PR #306 repro through the CLI is ~20s of that.
 
@@ -325,3 +329,33 @@ gh repo delete "$R" --yes         # needs the delete_repo scope: gh auth refresh
 ```
 
 Deviations from the fake-gh run above are the finding: each one is filed as its own issue.
+
+## CI wiring, the wall-time budget and the planted regressions (#879)
+
+The PR `onboarding-control` job (macOS, Python 3.12; its own job so the required `test` job, which measured 31 and 35 minutes in its pytest subset against a 45 minute timeout, does not grow by the 6 minutes these steps cost there) runs:
+
+```
+python3 evals/regression/budget.py          # the plain gesture above; prints "onboarding-control wall time: Xs, ceiling Ys"
+python -m pytest tests/test_onboarding_control.py -k planted -q -n 2
+```
+
+`budget.py` exits with the control's own code, or 1 when the wall time is over `ceiling_seconds` in
+`evals/regression/budget.json`, or 2 when that file is unreadable; a null ceiling is "unset": it prints and does not fail.
+The ceiling is a margin over wall times read from real `test` job logs, never a laptop number (the laptop run is about 2
+minutes; see the file for the CI runs, their count and the max). The job is not a required check (the owner adds it to the ruleset if wanted); until then a red job is visible on the PR and
+blocks nothing. The lever for a slow runner is re-running the job; a wrong ceiling is repaired by a PR that edits
+`budget.json` with new measured runs.
+
+The planted-regression gesture (AC-4, AC-7 of #809), run in a scratch copy with the plain, flagless command:
+
+```
+python3 evals/regression/mutators.py apply drop-review-recording --form code --root <scratch>
+(cd <scratch> && python3 tools/onboarding_control.py)     # exit 1, github/process RED at assert:review chain posted sigma:approve through post-review
+python3 evals/regression/mutators.py apply skip-plan-review --form code --root <scratch2>
+(cd <scratch2> && python3 tools/onboarding_control.py)    # exit 1, github/process RED at assert:negative probe printed the plan-review refusal
+```
+
+Caveat on the review red: with `drop-review-recording` the merge parks, so there is no done record and the property
+`process.review_marker_in_store` prints NOT EVALUABLE (which is not red); the red that names the review is the control's own
+assertion on the review chain. A run that reaches the property id is the narrower hand-written mutation pinned by
+`test_plain_gesture_names_review_property_when_review_recording_is_broken` (that one passes `--variant process`).

@@ -3,6 +3,7 @@
 `validate_job` is the guard; each `test_*_rejected` breaks the workflow text one documented way and
 demands the guard raise, so a guard that cannot fail is caught here (a red control, not decoration)."""
 import importlib.util
+import json
 import re
 import subprocess
 import sys
@@ -17,7 +18,7 @@ GESTURE = 'python3 evals/regression/control.py run --changed-files "$RUNNER_TEMP
 
 def job(text):
     assert "\n  regression-control:" in text, "regression-control job missing"
-    return text.split("\n  regression-control:", 1)[1]
+    return text.split("\n  regression-control:", 1)[1].split("\n  onboarding-control:", 1)[0]
 
 
 def validate_job(text):
@@ -87,3 +88,53 @@ def test_anchor_file_change_selects_its_rows_and_unrelated_change_selects_none()
                                       "disable-secret-scan/commit-noop"}
     assert select(rows, gates, args, {"skills/sigma-loop/scripts/scrub.py"})
     assert select(rows, gates, args, {"README.md", "docs/launch/review-plan.md"}) == []
+
+
+# ---- #879: the `onboarding-control` job runs the plain control against the budget and the planted regressions
+
+BUDGET_STEP = "python3 evals/regression/budget.py"
+PLANTED_STEP = "python -m pytest tests/test_onboarding_control.py -k planted -q -n 2"
+
+
+def validate_onboarding_job(text):
+    assert "\n  onboarding-control:" in text, "onboarding-control job missing"
+    j = text.split("\n  onboarding-control:", 1)[1]
+    assert "\n  regression-control:" not in j, "onboarding-control must be the last job"
+    head = "\n".join(ln for ln in j.split("steps:", 1)[0].splitlines() if not ln.lstrip().startswith("#"))
+    assert "github.event_name == 'pull_request'" in head, "job does not run on pull_request"
+    j = "\n".join(ln for ln in j.splitlines() if not ln.lstrip().startswith("#"))
+    assert re.search(rf"^\s+run: {re.escape(BUDGET_STEP)}$", j, re.M), "onboarding job must run the budget step"
+    assert PLANTED_STEP in j, "onboarding job must run the planted-regression tests"
+    assert "continue-on-error" not in j, "the budget step must be able to fail the job"
+
+
+def test_onboarding_job_runs_the_control_against_the_budget():
+    validate_onboarding_job(WORKFLOW.read_text(encoding="utf-8"))
+    budget = json.loads((ROOT / "evals" / "regression" / "budget.json").read_text(encoding="utf-8"))
+    assert budget["ceiling_seconds"] is None or budget["ceiling_seconds"] > 0
+
+
+def test_onboarding_job_without_the_budget_step_is_rejected():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    broken = text.replace(BUDGET_STEP, "true")
+    assert broken != text
+    with pytest.raises(AssertionError, match="budget step"):
+        validate_onboarding_job(broken)
+
+
+def test_onboarding_job_without_the_planted_tests_is_rejected():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    broken = text.replace(" -k planted", "")
+    assert broken != text
+    with pytest.raises(AssertionError, match="planted-regression"):
+        validate_onboarding_job(broken)
+
+
+
+def test_onboarding_job_not_run_on_pull_request_is_rejected():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    broken = text.replace("    if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}\n    runs-on: macos-latest\n    timeout-minutes: 30",
+                          "    if: ${{ github.event_name == 'schedule' }}\n    runs-on: macos-latest\n    timeout-minutes: 30")
+    assert broken != text
+    with pytest.raises(AssertionError, match="pull_request"):
+        validate_onboarding_job(broken)
