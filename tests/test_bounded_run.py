@@ -13,6 +13,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -167,6 +168,19 @@ def test_verify_needs_trust_and_a_scratch_worktree(tmp_path, monkeypatch):
     assert "scratch worktree" in conflated.run_verify(command, scratch, 30).detail, "the two diagnostics must differ"
 
 
+def after(path):
+    """An injected clock that jumps past any deadline once `path` exists. Its FIRST call, the one that computes the
+    deadline, always reads 0: a command that announces before `run_group` reaches that call (a loaded host) must not
+    push the deadline to the far future and leave the run waiting out the full budget (#1153)."""
+    calls = []
+
+    def clock():
+        first = not calls
+        calls.append(1)
+        return 10 ** 6 if (not first and path.exists()) else 0.0
+    return clock
+
+
 def test_overrun_stops_the_whole_group(tmp_path, monkeypatch):
     """On overrun the shell and its grandchild are both gone; stopping only the direct child leaves the grandchild.
 
@@ -179,7 +193,7 @@ def test_overrun_stops_the_whole_group(tmp_path, monkeypatch):
 
     def attempt(module, name):
         pidfile = tmp_path / (name + ".pid")
-        clock = lambda: 10 ** 6 if pidfile.exists() else 0.0            # noqa: E731 - a deterministic seam
+        clock = after(pidfile)                                          # a deterministic seam
         result = module.run_group("sleep 60 & echo $! > %s; wait" % pidfile, tmp_path, 60, shell=True,
                                   term_grace=2, clock=clock)
         return result, support.pid_in(pidfile)
@@ -210,9 +224,6 @@ def test_term_comes_before_kill(tmp_path, monkeypatch):
     The budget is 60 s and the runner's clock is injected: it jumps past the deadline only once the command has
     announced (after installing its signal handling), so the request cannot arrive before the handler exists."""
     br = support.load("bounded_run")
-
-    def after(path):
-        return lambda: 10 ** 6 if path.exists() else 0.0                # a deterministic seam
 
     ready, mark = tmp_path / "ready", tmp_path / "graceful"
     polite = "trap 'echo term > %s; exit 0' TERM; : > %s; sleep 60 & wait" % (mark, ready)
@@ -373,3 +384,25 @@ def test_environment_pins_and_location_variables(tmp_path, monkeypatch):
     assert seen_by_the_command(no_pin).get("GIT_ASKPASS") == "/bin/evil", "the askpass pin is what blanks it"
     no_strip = support.variant("bounded_run", ("if key not in LOCATION_VARS}", "if True}"))
     assert seen_by_the_command(no_strip).get("GIT_DIR") == "/nonexistent-920", "the strip is what removes it"
+
+
+def test_a_command_that_announces_before_the_deadline_is_taken_still_times_out(tmp_path, monkeypatch):
+    """#1153, deterministic: hold `run_group` between the spawn and its first clock read until the command has announced,
+    the order a loaded host produces. With a clock that jumps on the announcement and no first-call guard the deadline
+    lands in the far future and the run is reported `ok` after the command ends; with the guard it is a timeout."""
+    br = support.load("bounded_run")
+    real = os.set_blocking
+
+    def held(fd, flag):
+        end = time.monotonic() + 10
+        while not (tmp_path / "up").exists() and time.monotonic() < end:
+            time.sleep(0.01)
+        return real(fd, flag)
+    monkeypatch.setattr(os, "set_blocking", held)
+    command = ": > %s; sleep 5" % (tmp_path / "up")
+    naive = lambda: 10 ** 6 if (tmp_path / "up").exists() else 0.0      # noqa: E731 - the clock without the guard
+    unguarded = br.run_group(command, tmp_path, 60, shell=True, term_grace=1, clock=naive)
+    assert unguarded.outcome == br.OK, "control: the unguarded clock must be the broken one: %r" % (tuple(unguarded),)
+    (tmp_path / "up").unlink()
+    guarded = br.run_group(command, tmp_path, 60, shell=True, term_grace=1, clock=after(tmp_path / "up"))
+    assert guarded.outcome == br.TIMEOUT and guarded.seconds < 4, tuple(guarded)

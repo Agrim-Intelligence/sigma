@@ -80,6 +80,7 @@ ledger = _load("ledger")
 hsg = _load("hard_stop_guard")      # decision rubric slice 10: a no-op until hard_stops.enabled is true
 legacy = _load("legacy")             # #239: PR directives/markers written under the previous name
 scrub_module = _load("scrub")
+post_guard = _load("post_guard")      # #375: opt-in refusal of private-reference text (SIGMA_LEAK_PATTERNS)
 scrub = scrub_module.scrub
 gh_session = _load("gh_session")     # #78: tell a Remote session's gh proxy block apart from a real
                                       # auth failure — see that module's own docstring for the two
@@ -1381,6 +1382,7 @@ def _run(cwd, argv):
     any `gh` failure that ISN'T this proxy block) never matches, so this is a no-op for every other
     error this function has always raised — the raw detail is still there, just no longer the whole
     story when there's a better one to tell."""
+    post_guard.check(argv)                 # #375: opt-in; a no-op unless SIGMA_LEAK_PATTERNS is set
     env = None
     if str(argv[0]) == "git":
         # A caller's repository-location variables (a hook's GIT_INDEX_FILE, a stray GIT_DIR) would send

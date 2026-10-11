@@ -89,6 +89,12 @@ def pytest_configure(config):
 
 
 @pytest.fixture(autouse=True)
+def _no_host_leak_patterns(monkeypatch):
+    """#375: a developer shell that exports SIGMA_LEAK_PATTERNS must not change a test's result."""
+    monkeypatch.delenv("SIGMA_LEAK_PATTERNS", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _no_live_gh(request, monkeypatch):
     """#1495: fail loud, naming the call site, on any `subprocess.run` that would invoke the real
     `gh` CLI -- unless this test is marked `@pytest.mark.live_gh`."""

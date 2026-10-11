@@ -147,6 +147,7 @@ def _load(name):
 
 
 gh_session = _load("gh_session")
+post_guard = _load("post_guard")      # #375
 
 CACHE_TTL_SECONDS = 900
 CACHE_FILE = "gh-capability.json"
@@ -211,6 +212,7 @@ def classify(exc):
 
 
 def _default_run(args):
+    post_guard.check(args)                # #375: opt-in; a no-op unless SIGMA_LEAK_PATTERNS is set
     proc = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=120)
     if proc.returncode != 0:
         hint = proc.stderr.strip() or "is `gh` installed and authenticated? run `gh auth status`"

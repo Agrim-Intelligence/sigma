@@ -186,7 +186,9 @@ evidence with `--verdict unblock`; a block's own evidence cannot be reused. The 
 boundary reject a post-review call without that evidence. An `inline` route passes its verdict
 explicitly to `run-resolved-review` with `--verdict` and `--reason`. An ambiguous post is recovered
 with `work.py reconcile-review-post .sdlc "$goal" --evidence "$REVIEW_EVIDENCE"`, never by posting
-again. See `landing.md` for all three.
+again. A host refusal of `post-review` (e.g. auto mode denying it as self-approval) is never retried or
+routed around: `record parked "host refused review"`; the README's attended fallback applies.
+See `landing.md` for all three.
 
 **A block redispatches the fix to a fresh subagent — never resume the one that got blocked, or
 the one that blocked it.** This specializes "one subagent PER PHASE" above to the fix→re-review

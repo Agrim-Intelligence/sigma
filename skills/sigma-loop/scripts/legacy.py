@@ -50,7 +50,7 @@ INTERNAL_ENV = frozenset({"SIGMA_RUN_ID", "SIGMA_AUTOWATCH_HOP", "SIGMA_SESSION_
 #: export would hide that notice by accident.
 POST_RENAME_ENV = frozenset({"SIGMA_ALLOW_COEXIST", "SIGMA_HOST", "SIGMA_CODEX_CMD", "SIGMA_GH_GRAPHQL",
                              "SIGMA_GH_BREAKER_COOLDOWN",
-                             "SIGMA_UPKEEP_JOB"})   # #801, #895, #917
+                             "SIGMA_UPKEEP_JOB", "SIGMA_LEAK_PATTERNS"})   # #801, #895, #917, #375
 
 #: The schema ids (kind@version) whose spelling changed only in its brand segment. A previous-name id
 #: of any OTHER kind or version is not understood: it reads as itself (so it matches nothing Sigma

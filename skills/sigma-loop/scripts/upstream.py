@@ -184,6 +184,7 @@ def _load(name):
 ledger = _load("ledger")            # the `to`-addressed transport that already exists
 state = _load("state")              # `unsafe_goal_reason`, the shared path-component guard
 work = _load("work")                # `stem`: the one goal -> filename rule in this plugin
+post_guard = _load("post_guard")      # #375
 legacy = _load("legacy")            # #239: an index written under the previous name reads too
 
 _CROSS_REPO = None
@@ -761,6 +762,11 @@ def _file_upstream(repo, title, why, body, run, masks=()):
         return {"issue": None, "url": None,
                 "error": "the redaction pass is unavailable, so nothing was published to a "
                          "repository this project does not own"}
+    call = ["api", "-X", "POST", "repos/%s/issues" % repo, "-f", "title=" + heading, "-f", "body=" + text]
+    try:
+        post_guard.check(call)
+    except RuntimeError as exc:           # #375: a private reference never reaches another repository
+        return {"issue": None, "url": None, "error": str(exc)}
     try:
         code, out, err = run(["api", "-X", "POST", "repos/%s/issues" % repo,
                               "-f", "title=" + heading,
