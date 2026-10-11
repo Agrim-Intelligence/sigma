@@ -161,8 +161,6 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/loop.py | _reconcile_stamp | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/loop.py | _reserve_goal_slot | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/loop.py | _session_claim | fs-write | 1 | ungated | medium |
-| skills/sigma-loop/scripts/loop.py | _session_locked | fs-write | 1 | ungated | medium |
-| skills/sigma-loop/scripts/loop.py | _session_write | fs-remove | 2 | ungated | high |
 | skills/sigma-loop/scripts/loop.py | _try_acquire_claim_lock | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/loop.py | _write | fs-remove | 2 | ungated | high |
 | skills/sigma-loop/scripts/loop.py | _write | fs-write | 1 | ungated | medium |
@@ -206,6 +204,8 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/sources.py | _ensure_labels | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _ensure_priority_field | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _ensure_status_field | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/sigma-loop/scripts/sources.py | _gh_json | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
+| skills/sigma-loop/scripts/sources.py | _graphql | graphql-mutation | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _issue_add_assignees | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |
 | skills/sigma-loop/scripts/sources.py | _issue_add_labels | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |
 | skills/sigma-loop/scripts/sources.py | _issue_close | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |
@@ -213,6 +213,7 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/sources.py | _issue_create | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |
 | skills/sigma-loop/scripts/sources.py | _issue_edit_body | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |
 | skills/sigma-loop/scripts/sources.py | _issue_remove_label | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |
+| skills/sigma-loop/scripts/sources.py | _run_gh | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _set_board_status | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _swap_labels | graphql-mutation | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _sync_backlog | gh-project | 1 | discovery.source == github; board writes require project.enabled | medium |
@@ -232,6 +233,8 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/state.py | phase_end_lock | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/state.py | reanchor_content | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/state.py | refuse_symlinks | fs-write | 1 | creates missing parent directories under .sdlc only, one level at a time, after an lstat symlink refusal (#708) | medium |
+| skills/sigma-loop/scripts/state.py | session_locked | fs-write | 1 | ungated | medium |
+| skills/sigma-loop/scripts/state.py | session_write | fs-remove | 2 | ungated | high |
 | skills/sigma-loop/scripts/supervise_daemon.py | _capture_codex | fs-remove | 2 | Codex host only; removes only the fixed .sdlc/state/supervisor.agent-last transient message before launch and after inspection under the per-checkout OS lock | high |
 | skills/sigma-loop/scripts/supervise_daemon.py | _codex_main | fs-write | 2 | Codex host only; state directory creation follows explicit host selection, and supervisor log/tail writes run under the per-checkout OS lock after enabled-plugin preflight | medium |
 | skills/sigma-loop/scripts/supervise_daemon.py | main | fs-write | 4 | ungated | medium |

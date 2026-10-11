@@ -586,3 +586,16 @@ def test_github_counts_real_gh_argv_starts_with_gh():
         base = _gh_sdlc(d)
         _status().summary(str(base), run=lambda args: seen.append(list(args)) or "[]")
     assert seen and all(c[0] == "gh" for c in seen)
+
+
+def test_board_skipped_segment_shown_only_when_board_on_and_graphql_off(tmp_path, monkeypatch):
+    import json
+    st = _status()
+    base = tmp_path / ".sdlc"; base.mkdir()
+    on = {"discovery": {"source": "github", "github": {"project": {"enabled": True}}}}
+    (base / "config.json").write_text(json.dumps(on))
+    assert st._board_skipped_segment(str(base)) == ""            # GraphQL available: silent
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "1")
+    assert "board: skipped (GraphQL unavailable)" in st._board_skipped_segment(str(base))
+    (base / "config.json").write_text(json.dumps({"discovery": {"source": "github", "github": {}}}))
+    assert st._board_skipped_segment(str(base)) == ""            # board not configured: silent

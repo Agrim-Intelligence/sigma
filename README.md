@@ -82,12 +82,18 @@ it does not force. It parks on:
   parked (needs a decision), so the review queue separates the two.
 
 It halts on the **per-run budgets** (`config.json` → `budget`) — `max_iterations`, `max_minutes`
-(wall-clock from the run's start), `max_tokens` (cost-equivalent tokens from fully priced Claude
-phase reports or explicit `loop.py spend`), and `max_codex_raw_tokens` (measured Codex phase input
-+ output tokens, including cached input). The two token counters use different units and never
+(wall-clock from the session's own `start`), `max_tokens` (cost-equivalent tokens from fully priced
+Claude phase reports or explicit `loop.py spend`), and `max_codex_raw_tokens` (measured Codex phase
+input + output tokens, including cached input). The two token counters use different units and never
 mix. Codex's token ceiling is a **phase-boundary admission stop**, not a quota or billing cap: it
 checks the next pick after measured phases finish and does not include orchestrator or unmeasured
-turns. Keep `max_minutes` and a goal-count ceiling for those gaps. Each key enforces only when set;
+turns. Keep `max_minutes` and a goal-count ceiling for those gaps. A run, and so every budget, belongs
+to the session that started it: the token ceilings count the phases (and `loop.py spend <dir>
+<tokens> <goal>` reports) of goals that session holds, and spend that names no goal, or a goal no
+live session holds, is charged to every live session, so it over-counts rather than escapes a
+ceiling. Another session's `start` in the same checkout neither resets nor inherits them, so **N
+concurrent sessions may together spend N x each ceiling** — the same as N sequential runs. Size the
+ceilings with that in mind if you run sessions side by side. Each key enforces only when set;
 an absent/zero key enforces nothing. When a Claude model is absent from the rate card, every phase
 end warns that `max_tokens` did not count its turns and `/sigma-doctor` reports the same coverage
 gap. Independently,
@@ -2128,7 +2134,11 @@ call, which testably IS the same stable value across your routine's separate com
 `session-active` first: `ACTIVE` means at least one PID is live and its lease is fresh; the firing
 exits immediately. `FREE` means every entry is absent, has a dead PID, or has an expired lease.
 Multiple concurrent sessions register independently — one session ending never erases another's
-entry, and `loop.py next`/`next-batch` skip goals another live session claimed. In Codex Desktop,
+entry, and `loop.py next`/`next-batch` skip goals another live session claimed. Each also keeps its
+own run: its budgets (above), and the verify-evidence freshness of the goals it holds, are anchored
+to its own `start`, so one session's `start` never voids another's passing verify. A goal no live
+session holds (one armed by `/sigma-goal`, or awaiting merge after `record review`) is anchored to
+the checkout's latest `start`, as before. In Codex Desktop,
 separate tasks may share `$PPID`; Sigma also keys their entries by the validated
 `CODEX_THREAD_ID`. If one such task dies while its shared host PID remains alive, its entry expires
 after the configured lease TTL (12 hours by default); `session-end` clears it sooner on a clean exit.

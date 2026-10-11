@@ -615,7 +615,7 @@ def promote(sdlc_dir, config, numbers, source=None, run=None, apply=True, demote
         # not a problem there: a label-queue adopter has no card to move, and warning them on every
         # single promotion would be pure noise. Only a repo that actually has a board can have a
         # card stuck behind its label.
-        if not moved and source.project_enabled:
+        if not moved and source.board_active:
             # NOT a failure of the promotion -- the label landed and the issue IS across the gate on
             # a label-queue repo. But on a board-authoritative one the card is now the thing holding
             # it back, and saying so is the entire point of `_set_board_status` returning an honest

@@ -382,7 +382,7 @@ def compute_unpark_actions(sdlc_dir, config, source, issues, run=None, open_cach
             # unpark only when EVERY action for that issue succeeded -- so emitting this
             # unconditionally would make every label-queue adopter's unparks read as failures and
             # suppress their audit comment and cooldown credit. No board, no card to move.
-            if getattr(source, "project_enabled", False):
+            if getattr(source, "board_active", False):
                 actions.append({"action": "set-status", "issue": n, "detail": source.col["ready"],
                                 "result": None, "error": None})
         resolved[n] = sorted(refs, key=int)
