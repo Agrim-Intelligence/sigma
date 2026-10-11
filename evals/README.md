@@ -201,8 +201,12 @@ with no card, or a reworded pinned sentence, turns it red naming the skill (an e
 gesture on it has a passing fixture, otherwise `pinned` (a verbatim gate) or `described`. A gesture's `--help`
 behaviour is not repeated in cards: it is held by `test_every_script_answers_help_without_side_effects` (`*.py`) and
 `test_shell_scripts_have_a_help_handler` (`*.sh`, grep only) in `tests/test_script_help.py`. A card's `agent`
-producer means `SKILL.md` tells the agent to write the file and no script does. Not measured: the full runner's wall
-time on the real tree.
+producer means `SKILL.md` tells the agent to write the file and no script does. Wall time (#1047): every run prints `smoke wall: N.NNs, ceiling M.MMs` and a run slower than `ceiling_seconds` in
+`evals/skills/budget.json` is a finding (`--budget` points elsewhere; null or absent = `ceiling unset`). CI shows the line
+because it runs the bare gesture as its own step before pytest (`-q` hides a passing test's output and `--durations=30`
+lists only the 30 slowest tests); the pytest wrapper's bare-gesture run asserts the same ceiling under xdist load. The
+ceiling, once set, is recorded in `budget.json` beside the three CI job logs it was derived from; until then it reads `ceiling unset` and
+enforces nothing.
 
 ## Phase context budget — instruction bill by agent
 
