@@ -90,8 +90,24 @@ def _run(argv, cwd):
     return subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True, timeout=120)
 
 
-def _scratch_tree(tmp_path, scrub_edit=None, check_edit=None, with_scrub=True):
+_TINY_OK = """import pytest
+KNOWN_DEFECTS = {("H01", "x", 0): 1}
+
+
+def test_ok():
+    assert True
+
+
+@pytest.mark.xfail(strict=True)
+def test_tracked():
+    assert False
+"""
+
+
+def _scratch_tree(tmp_path, scrub_edit=None, check_edit=None, with_scrub=True, hostile=_TINY_OK):
     (tmp_path / "evals" / "safety").mkdir(parents=True)
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_hostile_inputs.py").write_text(hostile)
     text = CHECK_PATH.read_text()
     if check_edit:
         edited = check_edit(text)
@@ -264,7 +280,7 @@ def test_no_finding_line_contains_a_generated_value(monkeypatch, capsys):
     c = _check()
     flipped = tuple((n, h, g, "accepted" if x == "refused" else "refused", s) for n, h, g, x, s in c.TABLE)
     monkeypatch.setattr(c, "TABLE", flipped)
-    assert c.main([]) == 1
+    assert c.main([], hostile=False) == 1
     out = capsys.readouterr()
     shape = re.compile(r"^check\.py: FINDING \S+ \S+ [0-9a-f]{10}: ")
     lines = out.out.splitlines()
@@ -277,7 +293,7 @@ def test_no_finding_line_contains_a_generated_value(monkeypatch, capsys):
 
 def test_main_exit_codes(capsys, tmp_path):
     c = _check()
-    assert c.main([]) == 0
+    assert c.main([], hostile=False) == 0
     assert re.match(r"^check\.py: ok\b", capsys.readouterr().out)
     # refusals: exit 2, nothing on stdout
     broken_import = tmp_path / "broken.py"
@@ -295,12 +311,12 @@ def test_main_exit_codes(capsys, tmp_path):
 def test_malformed_table_refuses(monkeypatch, capsys):
     c = _check()
     monkeypatch.setattr(c, "TABLE", c.TABLE[:1] + (("x", "y"),))
-    assert c.main([]) == 2
+    assert c.main([], hostile=False) == 2
     got = capsys.readouterr()
     assert got.out == "" and "REFUSED" in got.err
     bad = ((c.TABLE[0][0], c.TABLE[0][1], c.TABLE[0][2], "maybe", 0),)
     monkeypatch.setattr(c, "TABLE", bad)
-    assert c.main([]) == 2
+    assert c.main([], hostile=False) == 2
 
 
 _NEEDED = ("_SECRET_PATTERN_SPECS", "SHAPE_RULES", "COMMIT_SHAPE_RULES", "commit_secret_hits",
@@ -337,7 +353,7 @@ def test_unexpected_probe_exception_is_exit_2(monkeypatch, capsys):
     def boom(text):
         raise AttributeError("probe")
     monkeypatch.setattr(c, "load_scrub", lambda path: _fake(commit_secret_hits=boom))
-    assert c.main([]) == 2
+    assert c.main([], hostile=False) == 2
     got = capsys.readouterr()
     assert got.out == "" and got.err.startswith("check.py: REFUSED")
 
@@ -345,7 +361,7 @@ def test_unexpected_probe_exception_is_exit_2(monkeypatch, capsys):
 def test_refused_by_finding_names_rule_and_no_value(monkeypatch, capsys):
     c = _check()
     monkeypatch.setattr(c, "TABLE", _with_row("authorization-header", expect="accepted"))
-    assert c.main([]) == 1
+    assert c.main([], hostile=False) == 1
     out = capsys.readouterr().out
     assert "refused-by:credential-assignment" in out
     value = c.generate(_row("authorization-header"))
@@ -455,4 +471,70 @@ def _banned(source):
 def test_check_py_stays_write_free():
     assert _banned("import subprocess\nopen('f', 'w')\np.mkdir()\nshutil.rmtree(p)\nf.write('x')\n") \
         == ["subprocess", "open", "mkdir", "rmtree", "write"]
-    assert _banned(CHECK_PATH.read_text()) == []
+    # the one sanctioned spawn: the hostile-fixture pytest subprocess (#1051)
+    assert _banned(CHECK_PATH.read_text()) == ["subprocess", "run"]
+    assert "subprocess.run(argv" in CHECK_PATH.read_text()
+
+
+# ---------------------------------------------------------------- hostile fixtures (#1051)
+
+
+def _hostile(tmp_path, body, known='{("H01", "x", 0): 1}'):
+    f = tmp_path / "test_hostile_inputs.py"
+    f.write_text("import pytest\nKNOWN_DEFECTS = %s\n%s" % (known, body))
+    return _C.run_hostile(f)
+
+
+_OK = "def test_a():\n    pass\n"
+_XF = "@pytest.mark.xfail(strict=True)\ndef test_t():\n    assert False\n"
+
+
+def test_hostile_real_file_counts_seven():
+    assert _C.known_defects(ROOT / "tests" / "test_hostile_inputs.py") == 7
+
+
+def test_hostile_green_on_only_tracked_failures(tmp_path):
+    assert _hostile(tmp_path, _OK + _XF) == []
+
+
+def test_hostile_red_on_unexpected_pass(tmp_path):
+    out = _hostile(tmp_path, _OK + "@pytest.mark.xfail(strict=True)\ndef test_t():\n    pass\n")
+    assert any("hostile-failed" in f or "hostile-xpassed" in f for f in out)
+    assert any("hostile-xfail-count" in f for f in out)
+
+
+def test_hostile_red_on_new_failure(tmp_path):
+    out = _hostile(tmp_path, _OK + _XF + "def test_new():\n    assert False\n")
+    assert any("hostile-failed" in f for f in out)
+
+
+def test_hostile_red_on_count_drift(tmp_path):
+    out = _hostile(tmp_path, _OK + _XF, known='{("H01", "x", 0): 1, ("H02", "x", 0): 2}')
+    assert any("hostile-xfail-count" in f for f in out)
+
+
+def test_hostile_red_on_skip(tmp_path):
+    out = _hostile(tmp_path, _OK + _XF + "@pytest.mark.skip\ndef test_s():\n    pass\n")
+    assert any("hostile-skipped" in f for f in out)
+
+
+def test_hostile_refuses_without_defect_map_or_file(tmp_path):
+    for call in (lambda: _hostile(tmp_path, _OK, known="1"), lambda: _C.run_hostile(tmp_path / "nope.py")):
+        try:
+            call()
+        except _C.Refusal:
+            continue
+        raise AssertionError("expected a Refusal")
+
+
+def test_gesture_red_on_tracked_defect_that_stops_failing(tmp_path):
+    _scratch_tree(tmp_path, hostile=_TINY_OK.replace("assert False", "assert True"))
+    done = _run(_gesture(), tmp_path)
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "hostile-fixtures" in done.stdout
+
+
+def test_gesture_refuses_when_pytest_summary_unreadable(tmp_path):
+    _scratch_tree(tmp_path, hostile="KNOWN_DEFECTS = {}\nraise SystemExit(0)\n")
+    done = _run(_gesture(), tmp_path)
+    assert done.returncode == 2 and done.stdout == "" and "REFUSED" in done.stderr, done.stdout + done.stderr
