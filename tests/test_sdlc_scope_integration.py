@@ -176,8 +176,8 @@ def test_single_issue_plan_grounded_in_a_resolved_target_becomes_a_real_local_go
         assert len(files) == 1
         text = _read(files[0])
         assert "Config editor UI" in text
-        assert "status: proposed" in text                  # goal_label defaults False -- filed, not actionable
-        assert "Labels: priority:P2, sdlc:needs-confirmation" in text
+        assert "status: pending" in text                   # armed at filing (rubric slice 17): queued, never the retired proposed state
+        assert "Labels: priority:P2" in text and "needs-confirmation" not in text
 
 
 def test_multi_issue_plan_with_epic_and_dependency_creates_real_linked_files():
@@ -222,7 +222,7 @@ def test_multi_issue_plan_with_epic_and_dependency_creates_real_linked_files():
 def test_compiled_report_flows_into_resolve_assignment_and_file_and_stop():
     """The real report `scope.py` just wrote is handed straight to `assign.resolve_assignment` +
     `assign.execute(path=file-and-stop)` -- no re-shaping in between. Every issue must stay exactly
-    as compile_plan left it (status: proposed) since file-and-stop's whole contract is "nothing else
+    as compile_plan left it (status: pending, queued) since file-and-stop's whole contract is "nothing else
     happens"."""
     import tempfile
     with tempfile.TemporaryDirectory() as d:
@@ -244,7 +244,7 @@ def test_compiled_report_flows_into_resolve_assignment_and_file_and_stop():
 
         files = _goal_files(sdlc)
         assert len(files) == 1
-        assert "status: proposed" in _read(files[0])        # untouched -- file-and-stop's own contract
+        assert "status: pending" in _read(files[0])         # untouched -- file-and-stop starts nothing (it is queued, as filed)
 
 
 def test_compiled_report_flows_into_start_now_self_computes_the_real_wave_schedule():
@@ -271,7 +271,7 @@ def test_compiled_report_flows_into_start_now_self_computes_the_real_wave_schedu
 
         schema_num, ui_num = int(report["issues"]["schema"]), int(report["issues"]["ui"])
         assert result["workflow"]["waves"] == [[schema_num], [ui_num]]
-        assert result["promoted"] == []          # documented local-goals degrade, not a regression
+        assert result["promoted"] == [schema_num, ui_num]    # the issues were armed at filing (rubric slice 17); promote reports them
         assert any("github discovery mode" in w for w in result["warnings"])
         assert result["plan_file"] and pathlib.Path(result["plan_file"]).exists()
         plan_md = _read(result["plan_file"])

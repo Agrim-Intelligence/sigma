@@ -1430,7 +1430,7 @@ def _feature_scope_ok(source, goal, unit):
     read is not evidence the goal belongs here.
 
     NOT A REFUSAL IN THE `_scope_ok_at_pick`/`_owner_ok_at_pick` SENSE, and it must run BEFORE
-    both. Those two hold a goal for a human (`sdlc:needs-confirmation`, a comment, a ledger line)
+    both. Those two hold a goal for a human (a park, or with triage off `sdlc:needs-confirmation`; a comment, a ledger line)
     because the goal itself has a problem. This one is not about the goal at all -- it is this
     run's own narrowing, and the goal is perfectly fine for the run that IS scoped to its unit. So
     nothing is written to it: no label, no overlay, no comment, no claim. It is simply passed
@@ -2218,13 +2218,14 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
         # would be unpickable by anyone until something cleared it.
         # #1477: the scope check runs on the unit `attach_at_pick` just RESOLVED, so it reads no
         # issue of its own. A goal declaring a unit from a repo that unit does not list is refused
-        # here rather than parked: it becomes `sdlc:needs-confirmation` (inert until its owner
+        # here and the goal is held: parked as scope_hold (with ai_filed.triage.enabled false, `sdlc:needs-confirmation`
+        # as before; inert until its owner
         # promotes it -- a scope expansion needs a DECISION, unlike a missing label, which
         # self-heals), joins this call's `skip` set, and the pick moves on. Same lock discipline as
         # the line above it: the refusal path leaves the loop without reaching the `try/finally`
         # below, so the claim lock is released explicitly or the goal is unpickable by anyone.
         # #1479: and then WHO FILED IT. Same lock, same moment, same refusal shape as the scope
-        # check above -- `sdlc:needs-confirmation`, inert until its owner promotes it -- but a
+        # check above -- a park declared owner_hold (or the old label, triage off), inert until its owner acts -- but a
         # different question: that one asks whether the unit may touch this repo, this one asks
         # whether the person who opened the issue was entitled to put work on this board at all.
         # Short-circuited behind it deliberately: a goal already held for scope must not also be
@@ -4108,8 +4109,10 @@ def _reconcile_one(sdlc_dir, config, source, goal, run, now, results):
 
 
 def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transition="park",
-            merged_pr=False, retry_close=False, housekeeping=True):
-    """`housekeeping` (#465): False only from the merge-reconcile pass, which holds
+            merged_pr=False, retry_close=False, housekeeping=True, qkind=None):
+    """`qkind` (#994): a declared question kind; appends one machine line to the text handed to
+    `source.park` (and only there). None keeps the comment byte-identical.
+    `housekeeping` (#465): False only from the merge-reconcile pass, which holds
     `merge-reconcile.lock`, so the worktree sweep is not run under it. NOT `merged_pr`: every ordinary
     `record done` on a PR-bearing goal sets that too.
     `merged_pr` (#255 (1)): the caller confirmed the goal's PR merged by a REST read just now;
@@ -4194,10 +4197,13 @@ def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transit
         # `inspect.signature` mirrors the same capability-check spirit as `hasattr(source, "fail")`
         # one line up -- ask what the source can actually do before calling it that way, the same
         # discipline this function already applies to `fail()`.
+        park_text = detail or result
+        if qkind is not None:                      # #994: the declared kind rides inside the text
+            park_text = park_text + "\n" + _load("qkind").render_line(qkind)
         if tier is not None and "tier" in inspect.signature(source.park).parameters:
-            source.park(goal, detail or result, tier=tier)
+            source.park(goal, park_text, tier=tier)
         else:
-            source.park(goal, detail or result)
+            source.park(goal, park_text)
     # Single atomic patch (#531) -- the old load_cursor-then-save_cursor pair spanned two calls,
     # so two concurrent _record()s could each read the same pre-increment cursor and lose one.
     state.advance_cursor(sdlc_dir, f"last: {pathlib.Path(goal).name} -> {result}")
@@ -5807,10 +5813,11 @@ USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> [--se
          "phases <dir> <goal> | waive-phases <dir> <goal> research,retro --reason <why> | "
          "precheck <dir> <goal> | "
          "qc <dir> <goal> | decompose-check <dir> <goal> | design-check <dir> <goal> | "
-          "spend-approval <dir> <goal> --action \"<text>\" | "
+          "spend-approval <dir> <goal> --action \"<text>\" [--class <name>] | "
          "mark-designed <dir> <goal> | feature-frontier <dir> <unit> | "
          "note <dir> <goal> <text> | "
          "record <dir> <goal> done|review|parked|failed [reason] | reconcile-merges <dir> | "
+         "record <dir> <goal> parked \"<text>\" --qkind <kind> | "
          "agent-beat <dir> <goal> | "
          "release <dir> <goal> [reason] | "
          "spend <dir> <tokens> [goal] [--k v ...] | emit <dir> <goal> <kind> [--k v ...] | "
@@ -6365,6 +6372,11 @@ def _dispatch(argv):
         # positional-vs-flag disambiguation (amendment C, ~line 1480 below), one position later.
         reason = argv[5] if len(argv) > 5 and not argv[5].startswith("--") else ""
         flags = _flags(argv[6:] if reason else argv[5:])
+        qkind = flags.get("qkind")
+        if qkind is not None and qkind not in _load("qkind").QKINDS:
+            print(f"loop.py record: unknown --qkind {qkind!r} "
+                  f"(expected one of {', '.join(_load('qkind').QKINDS)})", file=sys.stderr)
+            return 2
         retro_grade = flags.get("retro-grade")
         if retro_grade is not None and retro_grade not in ledger.RETRO_GRADES:
             print(f"loop.py record: unknown grade {retro_grade!r} "
@@ -6374,6 +6386,14 @@ def _dispatch(argv):
         # passing evidence from `loop.py verify` — the sigma-verify prose gate, enforced.
         # _enforce_enabled (not a strict `is True`): F17/#342 — `enforce: 1` / `"true"` must not
         # silently skip this gate just because they aren't the literal bool `True`.
+        if argv[4] == "done" and _load("hard_stop_guard").enabled(config):
+            # decision rubric slice 10: the downstream net. A logged action that matches a hard-stop class and has
+            # no recorded permission-use or park is refused. Closed (the default), this block is never entered.
+            unrecorded = _load("hard_stop_guard").record_done_net(_load("actionlog").read_goal(argv[2], argv[3]), config)
+            if unrecorded:
+                print("REFUSED: hard-stop action(s) in the log with no recorded permission or park: "
+                      + "; ".join(unrecorded[:3]), file=sys.stderr)
+                return 4
         if argv[4] == "done" and _enforce_enabled(config.get("verify") or {}):
             # unsafe goal -> ValueError from _evidence_path (see state.unsafe_goal_reason);
             # caught here (exit 2, matching verify_goal's own unsafe-goal convention) instead of
@@ -6485,9 +6505,9 @@ def _dispatch(argv):
                 return 2
         if merged_pr:
             _record(argv[2], sources.get_source(argv[2], config), argv[3], argv[4],
-                    reason, retro_grade=retro_grade, merged_pr=True); return 0
+                    reason, retro_grade=retro_grade, merged_pr=True, qkind=qkind); return 0
         _record(argv[2], sources.get_source(argv[2], config), argv[3], argv[4],
-                reason, retro_grade=retro_grade); return 0
+                reason, retro_grade=retro_grade, qkind=qkind); return 0
     if len(argv) >= 4 and argv[1] == "claim":       # #1962: claim a goal you already chose
         _coexist_notice(argv[2], "loop.py claim", once=True)    # #251/#314: once per run
         config = state.load_config(argv[2])
