@@ -45,6 +45,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip pytest pytest-xdist
+      - name: per-skill smoke runner (prints its own wall time against evals/skills/budget.json, #1047)
+        run: python3 evals/skills/smoke.py
       - name: pytest (subset)
         run: python -m pytest tests/ $SLOW -rs -q -n auto --durations=30
       - name: no retired skill prefix left in any tracked path or file (#523)
