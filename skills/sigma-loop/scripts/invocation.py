@@ -44,6 +44,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 try:
@@ -60,6 +61,7 @@ DEFAULT_TIMEOUT, TIMEOUT_RANGE = 30, (5, 120)
 LOCK_WAIT_S = 5.0
 MAX_PRUNE = 50
 MAX_RESPONSE = 65536
+MAX_REQUEST = 32768
 _B64ID = re.compile(r"[A-Za-z0-9_-]{43}")
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 _RECEIPT = re.compile(r"[A-Za-z0-9_.-]{1,128}")
@@ -126,27 +128,51 @@ def settings(sdlc_dir):
     return out
 
 
-def _any_pin(repo):
-    env = {"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", "HOME": os.environ.get("HOME", "")}
-    try:
-        # Pins live in git-local config, so outside a repository none can exist (local-only mode).
-        inside = subprocess.run(["git", "-C", repo, "rev-parse", "--git-dir"], capture_output=True,
-                                text=True, timeout=10, env=env)
-        if inside.returncode != 0:
-            # Only "no .git anywhere above" proves there is no repository; a .git that git cannot
-            # read (corrupt, hostile) is UNKNOWN, which fails closed.
-            return _has_dotgit(repo)
-        proc = subprocess.run(["git", "-C", repo, "config", "--local", "--get-regexp",
-                               r"^sigma\.invocation\.adapter\."],
-                              capture_output=True, text=True, timeout=10, env=env)
-    except (OSError, subprocess.SubprocessError):
-        return True                     # cannot tell: fail CLOSED (assume a pin exists)
-    return proc.returncode != 1         # git exits 1 only for "no matching key"; any other code = unknown
-
-
-def _has_dotgit(repo):
+def _git_config_file(repo):
+    """The repository's local config FILE (where `git config --local` writes), found without running
+    git: walk up for `.git`; a `gitdir:` file (linked worktree) is followed and its `commondir`
+    honoured. -> Path, or None when there is no repository above `repo`."""
     p = pathlib.Path(repo)
-    return any((q / ".git").exists() or os.path.lexists(q / ".git") for q in (p, *p.parents))
+    for q in (p, *p.parents):
+        dot = q / ".git"
+        if dot.is_dir():
+            gitdir = dot
+        elif dot.is_file():
+            try:
+                text = dot.read_text(encoding="utf-8", errors="replace").strip()
+            except OSError:
+                return dot                       # exists but unreadable: caller treats as unknown
+            if not text.startswith("gitdir:"):
+                return dot
+            gitdir = (q / text[len("gitdir:"):].strip()).resolve()
+        else:
+            continue
+        common = gitdir / "commondir"
+        if common.is_file():
+            try:
+                gitdir = (gitdir / common.read_text(encoding="utf-8").strip()).resolve()
+            except OSError:
+                return common
+        return gitdir / "config"
+    return None
+
+
+def _any_pin(repo):
+    """True when the local git config could hold an operator pin. NO subprocess: one file read, so the
+    unconfigured default costs a stat and can never be broken by a git failure. A pin written by
+    `git config --local sigma.invocation.adapter.<id>.path|sha256` lands in that file as a section
+    named `sigma "invocation.adapter.<id>"`, so the text `invocation.adapter` is the marker (a
+    superset: a stray mention only makes the gate stricter, never looser). A file that exists but
+    cannot be read is UNKNOWN and fails closed; garbage text without the marker is simply no pin."""
+    cfg = _git_config_file(repo)
+    if cfg is None:
+        return False
+    try:
+        return "invocation.adapter" in cfg.read_text(encoding="utf-8", errors="replace").lower()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
 
 
 def _repo(sdlc_dir):
@@ -206,6 +232,47 @@ def load_adapter(repo, adapter_id):
     return data
 
 
+def _kill_group(proc):
+    """SIGKILL the process group of the adapter WE started (start_new_session: pgid == its pid)."""
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(proc.pid, signal.SIGKILL)
+    with contextlib.suppress(Exception):
+        proc.wait(timeout=5)
+
+
+def _bounded_io(proc, request, timeout):
+    """Write the request, read AT MOST MAX_RESPONSE+1 bytes of stdout (never an unbounded buffer),
+    then wait for exit; any overrun kills the adapter's group. -> the bytes read."""
+    if len(request) > MAX_REQUEST:
+        _kill_group(proc)
+        raise Refused("invocation request too large")
+    deadline = time.monotonic() + timeout
+    try:
+        proc.stdin.write(request)
+        proc.stdin.close()
+    except OSError:
+        pass                                   # the adapter exited early; its stdout/exit decide
+    box = []
+    reader = threading.Thread(target=lambda: box.append(proc.stdout.read(MAX_RESPONSE + 1)), daemon=True)
+    reader.start()
+    reader.join(max(0.0, deadline - time.monotonic()))
+    if reader.is_alive():
+        _kill_group(proc)
+        raise Refused("adapter timed out after %ds" % timeout)
+    out = box[0] if box else b""
+    if len(out) > MAX_RESPONSE:
+        _kill_group(proc)
+        raise Refused("adapter response too large")
+    try:
+        proc.wait(timeout=max(0.1, deadline - time.monotonic()))
+    except subprocess.TimeoutExpired:
+        _kill_group(proc)
+        raise Refused("adapter timed out after %ds" % timeout)
+    if proc.returncode != 0:
+        raise Refused("adapter exited nonzero")
+    return out
+
+
 def run_adapter(sdlc_dir, data, verb, request, timeout):
     """Run the verified bytes (a private 0700 copy), one JSON request on stdin, one line back."""
     scratch = _dir(sdlc_dir)
@@ -226,18 +293,7 @@ def run_adapter(sdlc_dir, data, verb, request, timeout):
                                     start_new_session=True, cwd=tmp)
         except OSError as exc:
             raise Refused("adapter could not be executed (%s)" % exc.__class__.__name__)
-        try:
-            out, _ = proc.communicate(request, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(proc.pid, signal.SIGKILL)
-            proc.communicate()
-            raise Refused("adapter timed out after %ds" % timeout)
-        if proc.returncode != 0:
-            raise Refused("adapter exited nonzero")
-        if len(out) > MAX_RESPONSE:
-            raise Refused("adapter response too large")
-        return out
+        return _bounded_io(proc, request, timeout)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -285,7 +341,7 @@ def parse_response(raw, challenge):
     if not isinstance(obj, dict) or tuple(sorted(obj)) != _RESPONSE_KEYS or canonical(obj) != line:
         raise Refused("adapter response is not the canonical seven-field receipt")
     csha = sha256_hex(canonical(challenge).encode())
-    if (obj["v"] != V or obj["action_id"] != challenge["action_id"]
+    if (type(obj["v"]) is not int or obj["v"] != V or obj["action_id"] != challenge["action_id"]
             or obj["adapter_id"] != challenge["adapter_id"] or obj["challenge_sha256"] != csha):
         raise Refused("receipt is not bound to this challenge")
     if not isinstance(obj["receipt_id"], str) or not _RECEIPT.fullmatch(obj["receipt_id"]):

@@ -11475,3 +11475,57 @@ def test_a_retry_of_an_already_prepared_post_needs_no_fresh_receipt(tmp_path):
     second = _runner([])
     again = work.post_review(d, cfg, goal, run=run_for(second), verdict="approve", evidence=str(evidence))
     assert not again.startswith("PARK: the invocation") and not any(_posted(c) for c in second.calls)
+
+
+def test_an_unexpected_adapter_side_exception_parks_never_posts(tmp_path, monkeypatch):
+    d, cfg, goal = _adapter_rig(tmp_path, "ok")
+    real = work._load
+
+    def boom(name, *a, **k):
+        if name == "invocation":
+            raise RuntimeError("boom")
+        return real(name, *a, **k)
+    monkeypatch.setattr(work, "_load", boom)
+    run = _runner([])
+    out = _post_review(d, cfg, goal, run, "approve")
+    assert out.startswith("PARK: invocation check failed") and not any(_posted(c) for c in run.calls)
+
+
+def test_the_receipt_is_bound_to_this_pr_head_and_brief(tmp_path):
+    d, cfg, goal = _adapter_rig(tmp_path, "ok")
+    evidence, head = _review_chain(d, goal, "approve")
+    bound = json.loads(pathlib.Path(evidence).read_text())
+    pr = int(work._record(d, goal)["pr"])
+
+    def run(cwd, argv):
+        if prfake.is_pr_get(argv, pr):
+            return prfake.rest_pull(number=pr, headRefOid=head)
+        return _comment_reply(99)
+    assert "posted" in work.post_review(d, cfg, goal, run=run, verdict="approve", evidence=str(evidence))
+    sent = json.loads(pathlib.Path(str(tmp_path / "adapter-rig" / "ran.mark") + ".request").read_text())
+    assert (sent["pr"], sent["head_sha"], sent["brief_sha256"], sent["kind"]) == (
+        pr, head, bound["brief_sha256"], "review-post")
+    assert sent["payload_sha256"] == hashlib.sha256(pathlib.Path(evidence).read_bytes()).hexdigest()
+
+
+def test_evidence_changed_after_the_adapter_check_parks_with_no_post(tmp_path, monkeypatch):
+    d, cfg, goal = _adapter_rig(tmp_path, "ok")
+    evidence, head = _review_chain(d, goal, "approve")
+    pr = int(work._record(d, goal)["pr"])
+    real = work._invocation_refusal
+
+    def check_then_tamper(*a):
+        out = real(*a)
+        p = pathlib.Path(a[-1])
+        p.write_text(p.read_text() + " ")
+        return out
+    monkeypatch.setattr(work, "_invocation_refusal", check_then_tamper)
+    calls = []
+
+    def run(cwd, argv):
+        calls.append(" ".join(map(str, argv)))
+        if prfake.is_pr_get(argv, pr):
+            return prfake.rest_pull(number=pr, headRefOid=head)
+        return _comment_reply(99)
+    out = work.post_review(d, cfg, goal, run=run, verdict="approve", evidence=str(evidence))
+    assert out.startswith("PARK: review evidence changed") and not any(_posted(c) for c in calls)

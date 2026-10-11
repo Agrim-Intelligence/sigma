@@ -4,8 +4,9 @@ Some hosts refuse the loop's own approval step as self-approval (Claude Code's a
 first live run, #612), and nothing inside Sigma can prove a phase-end line reached a host. An
 environment marker (`CLAUDECODE`, `CODEX_THREAD_ID`, `review.host`) cannot settle either: the agent
 controls its own environment. So authority is delegated to an **adapter you install and pin outside
-the repository**. Off by default; with it off the only cost is one `git config` lookup per approve post
-or phase end (no state, no output change), and the attended fallback in the
+the repository**. Off by default; with it off the only cost is one read of the local git config file per approve post
+or phase end (no subprocess, no state, no output change; a corrupt config without the pin marker is
+simply "no pin"), and the attended fallback in the
 README ("Before you start `/sigma-loop`") applies.
 
 ## What it is, and is not
@@ -70,6 +71,15 @@ canonical line with `v, action_id, adapter_id, challenge_sha256, receipt_id, sta
 fields, non-canonical JSON, a different challenge, a reused `receipt_id`, a nonzero exit or stdout
 beyond one line refuse. `adapter describe --stdio` must answer the capabilities `diagnose` checks.
 
+## Behaviour changes even with the adapter off
+
+- The one-line coexistence notice (`coexist.notice_line`) no longer prints the Codex config path for
+  anyone unless a fresh adapter receipt names Codex; it says the old plugin is also enabled in Codex
+  and points at `coexist.py check`, which still lists every detected step and path. This is a change
+  for Codex-only machines too (the existing test assertion was flipped to match).
+- The pin marker check is the text `invocation.adapter` in the repository's local git config file; a
+  stray mention only makes the gate stricter.
+
 ## Failure modes and recovery
 
 | Failure | Result | Recovery |
@@ -78,6 +88,7 @@ beyond one line refuse. `adapter describe --stdio` must answer the capabilities 
 | crash after receipt, before the post | the receipt was already consumed (single use) | rerun `post-review`; a new receipt is asked for |
 | retry of a post that already has a request | no receipt asked: it only reconciles by marker, so an adapter outage cannot block recovery | `reconcile-review-post` / rerun |
 | receipt used | single use (`consumed`) | a new challenge |
+| a `state/review-posts/<sha>.json` pre-created by the same user | skips the adapter (the retry rule) and reconciles by marker; it cannot cause a remote approve, but can leave a false local "posted" record and a `review_posted` ledger entry | inspect the PR; delete the local record |
 | ambiguous remote post | existing evidence-marker path (`reconcile-review-post`) | unchanged |
 | Windows / no POSIX locks | refuse | attended review |
 

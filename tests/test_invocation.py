@@ -44,6 +44,7 @@ ADAPTER = textwrap.dedent('''\
                     if MODE != "baddescribe" else {{"v": 2}}))
         sys.exit(0)
     ch = req["challenge"]
+    open(MARK + ".request", "w").write(json.dumps(ch))
     csha = hashlib.sha256(canon(ch).encode()).hexdigest()
     ack = ch["payload_sha256"]
     if "payload_b64" in req:
@@ -59,8 +60,12 @@ ADAPTER = textwrap.dedent('''\
     if MODE == "extra": out["extra"] = 1
     if MODE == "fixedreceipt": out["receipt_id"] = "same"
     if MODE == "nonzero": sys.exit(3)
+    if MODE == "flood":
+        while True: sys.stdout.write("x" * 65536); sys.stdout.flush()
     if MODE == "slow": time.sleep(60)
     line = canon(out)
+    if MODE == "vtrue": line = line.replace('"v":1', '"v":true')
+    if MODE == "vfloat": line = line.replace('"v":1', '"v":1.0')
     if MODE == "noncanonical": line = json.dumps(out, sort_keys=True)
     if MODE == "twolines": line += "\\n" + line
     print(line)
@@ -493,20 +498,52 @@ def test_a_relay_with_no_constructed_block_says_unavailable(tmp_path, capsys):
     assert "no constructed Block B" in capsys.readouterr().err and not r.ran()
 
 
-def test_an_unreadable_git_config_is_treated_as_a_pin_present(tmp_path, monkeypatch):
-    """`_any_pin` may only say 'no pin' for git's exit 1; any other failure refuses."""
+def test_unconfigured_default_runs_no_subprocess_and_survives_a_corrupt_git_config(tmp_path, monkeypatch):
+    """No `invocation` block and no pin: settings() reads one file, spawns nothing, and cannot be
+    broken by git state (the old git-subprocess design parked approvals on a corrupt .git/config)."""
     r = Rig(tmp_path, "claude")
     _unpin(r)
     r.config({})
-    real = subprocess.run
+    (r.repo / ".git" / "config").write_text("[broken\n\x00garbage")
+    monkeypatch.setattr(inv.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("spawned")))
+    monkeypatch.setattr(inv.subprocess, "Popen", lambda *a, **k: (_ for _ in ()).throw(AssertionError("spawned")))
+    assert inv.settings(str(r.sdlc)) is None
 
-    def broken(argv, *a, **kw):
-        if "--get-regexp" in argv:
-            return subprocess.CompletedProcess(argv, 128, "", "fatal: bad config")
-        return real(argv, *a, **kw)
-    monkeypatch.setattr(inv.subprocess, "run", broken)
+
+def test_a_pin_marker_in_a_corrupt_git_config_still_refuses(tmp_path):
+    r = Rig(tmp_path, "claude")
+    r.config({})
+    cfg = r.repo / ".git" / "config"
+    cfg.write_text("[broken\n[sigma \"invocation.adapter.claude\"]\n\tpath = /x\n")
     with pytest.raises(inv.Refused, match="pin exists"):
         inv.settings(str(r.sdlc))
+
+
+def test_an_unreadable_git_config_fails_closed(tmp_path):
+    if os.getuid() == 0:
+        pytest.skip("root reads everything")
+    r = Rig(tmp_path, "claude")
+    _unpin(r)
+    r.config({})
+    cfg = r.repo / ".git" / "config"
+    cfg.chmod(0)
+    try:
+        with pytest.raises(inv.Refused, match="pin exists"):
+            inv.settings(str(r.sdlc))
+    finally:
+        cfg.chmod(0o600)
+
+
+def test_a_linked_worktree_finds_the_pin_in_the_common_config(tmp_path):
+    r = Rig(tmp_path, "claude")
+    subprocess.run(["git", "-C", str(r.repo), "-c", "user.email=a@b", "-c", "user.name=n", "commit",
+                    "-q", "--allow-empty", "-m", "x"], check=True)
+    wt = tmp_path / "wt"
+    subprocess.run(["git", "-C", str(r.repo), "worktree", "add", "-q", "-b", "b", str(wt)], check=True)
+    (wt / ".sdlc").mkdir()
+    (wt / ".sdlc" / "config.json").write_text("{}")
+    with pytest.raises(inv.Refused, match="pin exists"):
+        inv.settings(str(wt / ".sdlc"))
 
 
 def test_a_directory_outside_any_git_repository_has_no_pin_and_stays_off(tmp_path):
@@ -514,17 +551,6 @@ def test_a_directory_outside_any_git_repository_has_no_pin_and_stays_off(tmp_pat
     sdlc = tmp_path / "plain" / ".sdlc"
     sdlc.mkdir(parents=True)
     assert inv.settings(str(sdlc)) is None
-
-
-def test_a_corrupt_dotgit_is_unknown_and_fails_closed_not_open(tmp_path):
-    """git cannot read the repository, so 'no pin' cannot be concluded: refuse, do not allow."""
-    r = Rig(tmp_path, "claude")
-    _unpin(r)
-    r.config({})
-    (r.repo / ".git" / "HEAD").write_text("garbage")
-    (r.repo / ".git" / "config").write_text("[broken")
-    with pytest.raises(inv.Refused, match="pin exists"):
-        inv.settings(str(r.sdlc))
 
 
 def test_a_file_replaced_between_lstat_and_open_is_refused(tmp_path, monkeypatch):
@@ -541,3 +567,43 @@ def test_a_file_replaced_between_lstat_and_open_is_refused(tmp_path, monkeypatch
     monkeypatch.setattr(inv.os, "open", swapping)
     with pytest.raises(inv.Refused, match="changed while being opened"):
         inv.load_adapter(str(r.repo), "claude")
+
+
+@pytest.mark.parametrize("mode", ["vtrue", "vfloat"])
+def test_the_abi_version_must_be_the_integer_one(tmp_path, mode):
+    r = Rig(tmp_path, "claude", mode=mode)
+    with pytest.raises(inv.Refused):
+        r.review()
+
+
+def test_a_flooding_adapter_is_cut_off_and_its_group_killed(tmp_path):
+    r = Rig(tmp_path, "claude", mode="flood")
+    import time
+    t0 = time.monotonic()
+    with pytest.raises(inv.Refused, match="too large"):
+        r.review()
+    assert time.monotonic() - t0 < 20
+
+
+def test_an_oversized_request_is_refused_before_it_is_sent(tmp_path):
+    r = Rig(tmp_path, "claude")
+    data = inv.load_adapter(str(r.repo.resolve()), "claude")
+    inv._dir(str(r.sdlc))
+    with pytest.raises(inv.Refused, match="too large"):
+        inv.run_adapter(str(r.sdlc), data, "verify", b"x" * (inv.MAX_REQUEST + 1), 5)
+
+
+def test_a_directory_pin_is_refused_as_not_regular(tmp_path):
+    r = Rig(tmp_path, "claude")
+    d = tmp_path / "adir"
+    d.mkdir()
+    r.pin(str(d), "a" * 64)
+    with pytest.raises(inv.Refused, match="regular"):
+        r.review()
+
+
+def test_load_adapter_itself_refuses_without_fcntl(tmp_path, monkeypatch):
+    r = Rig(tmp_path, "claude")
+    monkeypatch.setattr(inv, "fcntl", None)
+    with pytest.raises(inv.Refused, match="POSIX platform"):
+        inv.load_adapter(str(r.repo.resolve()), "claude")
