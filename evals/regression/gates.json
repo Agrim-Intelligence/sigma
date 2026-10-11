@@ -6,8 +6,8 @@
     {"id": "work-commit-scan", "argv": ["python3", "-m", "pytest", "-q", "tests/test_work.py", "-k", "secret or commit_refus or scan"], "status": "live", "pending_reason": ""},
     {"id": "scrub-tests", "argv": ["python3", "-m", "pytest", "-q", "tests/test_scrub.py"], "status": "live", "pending_reason": ""},
     {"id": "non-key-evaders", "argv": ["python3", "-m", "pytest", "-q", "tests/test_non_key_evaders.py"], "status": "live", "pending_reason": ""},
-    {"id": "skill-smoke", "argv": ["python3", "evals/skills/smoke.py"], "status": "pending", "pending_reason": "skill smoke gesture and its prose-form pins land with the control slice (#808 slice 3)"},
-    {"id": "safety-check", "argv": ["python3", "evals/safety/check.py"], "status": "pending", "pending_reason": "safety check is registered live by the control slice (#808 slice 3), after #1116 settles its gesture"},
+    {"id": "skill-smoke", "argv": ["python3", "evals/skills/smoke.py"], "status": "pending", "pending_reason": "skill smoke is red on the unmutated tree until every skill has a card (#1043); no row lists it yet"},
+    {"id": "safety-check", "argv": ["python3", "evals/safety/check.py"], "status": "live", "pending_reason": ""},
     {"id": "layer1-control", "argv": ["python3", "evals/layer1/control.py"], "status": "pending", "pending_reason": "the model-free layer 1 control (#812) does not exist yet"}
   ]
 }
