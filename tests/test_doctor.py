@@ -7100,7 +7100,9 @@ def test_full_doctor_degrades_a_hanging_ls_remote_to_cannot_verify_within_the_bo
     start = time.monotonic()
     rows = d._preflight_rows(pathlib.Path(base), json.loads(
         (pathlib.Path(base) / "config.json").read_text()), None, shutil.which, False, False)
-    assert time.monotonic() - start < 10
+    # Bound derived from the guard (SIGMA_WATCH_CALL_TIMEOUT=2 per network call, three such calls,
+    # plus the kill grace each) with a stated margin; the stub sleeps 60s, so waiting it out fails.
+    assert time.monotonic() - start < 3 * (2 + pf._KILL_GRACE) + 10
     c = _by_name(rows)
     row = c["base branch 'main' on 'origin' (cannot verify)"]
     assert row["ok"] is False and "timed out" in row["fix"]

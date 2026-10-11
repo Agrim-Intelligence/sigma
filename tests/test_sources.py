@@ -4518,13 +4518,13 @@ def test_mark_in_progress_still_fails_fast_on_a_non_transient_claim_error():
 # gate depending on it. On a fresh repo the label did not exist until someone made it by hand.
 
 
-def test_ensure_labels_creates_the_proposed_label():
+def test_ensure_labels_does_not_create_the_retired_proposed_label():
     src = _mod("sources")
     run = _recording_runner()
     src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "acme/widget"}}},
                      run=run)._ensure_labels()
     created = [c[2] for c in run.calls if c[:2] == ["label", "create"]]
-    assert "sdlc:needs-confirmation" in created
+    assert "sdlc:needs-confirmation" not in created      # #1140: retired, left inert where it exists
 
 
 def test_ensure_labels_creates_every_primary_lifecycle_label():
@@ -4533,8 +4533,7 @@ def test_ensure_labels_creates_every_primary_lifecycle_label():
     src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "acme/widget"}}},
                      run=run)._ensure_labels()
     created = {c[2] for c in run.calls if c[:2] == ["label", "create"]}
-    assert {"sdlc:goal", "sdlc:in-progress", "sdlc:parked", "sdlc:blocked",
-            "sdlc:needs-confirmation"} <= created
+    assert {"sdlc:goal", "sdlc:in-progress", "sdlc:parked", "sdlc:blocked"} <= created
 
 
 def test_proposed_label_defaults_to_needs_confirmation():
@@ -5077,3 +5076,22 @@ def test_append_to_body_is_a_rest_patch_that_raises_and_never_blanks_on_a_degrad
     import pytest
     with pytest.raises(Exception):
         _gh(bad).append_to_body("42", "M")
+
+
+def test_ensure_label_creates_a_missing_label_once_and_skips_an_existing_one():
+    """#1140: on-demand creation of the retired-from-init proposal label."""
+    src = _mod("sources")
+    run = _recording_runner()
+    gh = src.GitHubSource({"discovery": {"source": "github"}}, run=run)
+    assert gh.ensure_label("sdlc:needs-confirmation") is True
+    creates = [c for c in run.calls if c[0:2] == ["label", "create"]]
+    assert len(creates) == 1 and "--force" not in creates[0]
+    names = json.dumps([{"name": "sdlc:needs-confirmation"}])
+    calls2 = []
+
+    def run2(args):
+        calls2.append(list(args))
+        return names if args[0] == "api" else ""
+    gh2 = src.GitHubSource({"discovery": {"source": "github"}}, run=run2)
+    assert gh2.ensure_label("sdlc:needs-confirmation") is False
+    assert not [c for c in calls2 if c[0:2] == ["label", "create"]]

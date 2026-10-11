@@ -2,6 +2,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import types
 
 import pytest
 from skill_corpus import skill_corpus
@@ -540,6 +541,28 @@ def test_create_tracked_issue_queued_does_not_carry_the_goal_label(tmp_path):
     # sdlc:needs-confirmation label is what makes the pending set queryable rather than
     # inferred-from-missing.
     assert "sdlc:needs-confirmation" in src.created["labels"]
+
+
+def test_queued_filing_ensures_the_proposal_label_on_demand(tmp_path):
+    """#1140: init no longer creates sdlc:needs-confirmation, so a queued filing creates it lazily;
+    an actionable filing never touches it."""
+    class Ensuring(FakeSource):
+        ensured = []
+
+        def ensure_label(self, name, color="fbca04"):
+            self.ensured.append(name)
+    sdlc = _project(tmp_path)
+    q = Ensuring(number="63")
+    Ensuring.ensured = []
+    handoff.create_tracked_issue(
+        sdlc, ONL, "0008-x.md", "engine", "a non-urgent follow-up, not worth jumping the backlog",
+        same_area=True, immediately_actionable=False, blocks_goal=False, source=q)
+    assert Ensuring.ensured == ["sdlc:needs-confirmation"]
+    Ensuring.ensured = []
+    handoff.create_tracked_issue(
+        sdlc, ONL, "0009-y.md", "engine", "urgent follow-up",
+        same_area=True, immediately_actionable=True, blocks_goal=False, source=Ensuring(number="64"))
+    assert Ensuring.ensured == []
 
 
 def test_create_tracked_issue_degrades_when_no_backlog_source_is_configured(tmp_path, monkeypatch):
@@ -2554,3 +2577,70 @@ def test_upkeep_finding_is_armed_low(tmp_path):
         run=lambda *a, **k: "", idempotency_key="0123456789abcdef")
     assert src.created["goal_label"] is True and "priority:P4" in src.created["labels"]
     assert report["triage"]["kind"] == "arm"
+
+
+# --- #1139: triage verdict survives a duplicate fold --------------------------------------------
+
+
+def _fold_pack(monkeypatch):
+    monkeypatch.setattr(handoff, "_duplicate_search", lambda *a, **k: {
+        "schema": "brainstorm-dedup/v1",
+        "candidates": [{"ref": "77", "score": 0.91, "state": "open", "strength": "duplicate",
+                        "source": "mirror", "evidence": ["retry"]}],
+        "degraded": []})
+
+
+def _fold(tmp_path, why):
+    src = FakeSource(number="61")
+    handoff.create_tracked_issue(
+        _project(tmp_path), ON, "0009-x.md", "engine", why, same_area=True,
+        immediately_actionable=True, blocks_goal=False, source=src)
+    return [t for g, t in src.notes if g == "77"]
+
+
+def test_folded_force_push_finding_records_its_deny_verdict_on_the_target(tmp_path, monkeypatch):
+    _fold_pack(monkeypatch)
+    notes = _fold(tmp_path, "proposal: git push --force origin main to fix history")
+    assert len(notes) == 2 and "Triage verdict" in notes[1] and "park" in notes[1].lower()
+
+
+def test_folded_secret_shaped_finding_records_its_deny_verdict_on_the_target(tmp_path, monkeypatch):
+    _fold_pack(monkeypatch)
+    fake = "pass" + "word" + " = " + "x" * 20           # obviously fake, built by concatenation
+    notes = _fold(tmp_path, "config leak: " + fake)
+    assert len(notes) == 2 and "Triage verdict" in notes[1]
+
+
+def test_folded_clean_finding_adds_no_verdict_comment(tmp_path, monkeypatch):
+    _fold_pack(monkeypatch)
+    notes = _fold(tmp_path, "retry pool leaks connections on timeout")
+    assert len(notes) == 1 and "Triage verdict" not in notes[0]
+class GuardedSource(TriageSource):
+    """Records the order of create and park and whether the filing-park scope was open at park time."""
+    def __init__(self):
+        super().__init__()
+        self.order, self.scoped = [], None
+
+    def create_dependency(self, title, body, assignee, labels=(), goal_label=True):
+        self.order.append("create")
+        return super().create_dependency(title, body, assignee, labels=labels, goal_label=goal_label)
+
+    def park(self, goal, reason, tier=None):
+        self.order.append("park")
+        self.scoped = not handoff.sources.hsg.guard_issue_write(
+            types.SimpleNamespace(_read_issue=lambda *a, **k: {"labels": [], "body": ""},
+                                  goal_label="g", parked_label="p", follow_up_label="f"),
+            goal, "park", config={"decision_rubric": {"hard_stops": {"enabled": True}}}, ).blocked
+        super().park(goal, reason, tier)
+
+
+def test_filing_park_is_scoped_own_with_priority_label_first(tmp_path):
+    """Deny-list and cap parks run inside the filing-park scope, after a create that already carried priority."""
+    r, src = _file(tmp_path, src=GuardedSource(), why="this change is irreversible once merged")
+    assert src.order == ["create", "park"] and src.scoped is True
+    assert any(l.startswith("priority:") for l in src.created["labels"])
+    assert "sigma-qkind: " in src.parked[0][1] and r["triage"]["kind"] == "park"
+    for _ in range(5):
+        _file(tmp_path)
+    r, src = _file(tmp_path, src=GuardedSource())
+    assert src.scoped is True and "cap" in src.parked[0][1]

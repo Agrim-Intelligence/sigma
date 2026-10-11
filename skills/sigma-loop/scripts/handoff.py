@@ -481,7 +481,8 @@ def _triage_finish(sdlc_dir, config, source, plan, issue, key_goal, report):
     if plan["kind"] == "park":
         text = "Parked at filing: %s\n%s" % (plan["reason"], qkind.render_line(plan["qkind"]))
         try:
-            source.park(str(issue), text)
+            with sources.hsg.filing_park(issue):               # #1136: Sigma's own park keeps its text
+                source.park(str(issue), text)
             ledger.safe_append(sdlc_dir, "park", str(issue), config=config, stream=ledger.EVENTS,
                                reason_class="needs_decision", why=plan["reason"])
         except Exception as exc:                               # noqa: BLE001 - never block the filing
@@ -885,6 +886,12 @@ def create_tracked_issue(sdlc_dir, config, goal, area, why, *,
         # never for immediately_actionable=True: an actionable issue is a real goal, not a proposal.
         if triage is None and not immediately_actionable:
             labels.append(proposed_label(config))
+            # #1140: init no longer creates this label, so create it on demand, just before use.
+            if hasattr(source, "ensure_label"):
+                try:
+                    source.ensure_label(proposed_label(config))
+                except Exception as exc:
+                    report["warnings"].append(f"could not ensure label {proposed_label(config)!r}: {exc}")
         # goal_label is passed only when it DIFFERS from create_dependency's own default (True) --
         # not "goal_label=immediately_actionable" unconditionally -- so a source implementation that
         # predates this parameter (a test double, or a future non-GitHub source) keeps working
@@ -976,6 +983,12 @@ def create_tracked_issue(sdlc_dir, config, goal, area, why, *,
                 except Exception as exc:                        # noqa: BLE001 - never block the park
                     report["warnings"].append(
                         f"could not comment on the existing duplicate issue: {exc}")
+                if triage is not None and triage["kind"] == "park":
+                    # #1139: triage ran first; a folded finding still records its verdict here.
+                    try:
+                        source.note(str(report["issue"]), "Triage verdict for the folded finding: park (%s)" % triage["reason"])
+                    except Exception as exc:                    # noqa: BLE001 - never block the fold
+                        report["warnings"].append(f"could not record the triage verdict: {exc}")
         else:
             if candidates:
                 # weaker (merely "related") matches don't block filing -- but the caller/reviewer
@@ -1229,19 +1242,20 @@ def acknowledge(sdlc_dir, config, issue, state, why="", goal=None, area=None):
     entry = ledger.safe_append(sdlc_dir, "ack", goal or f"issue-{issue}", config=config,
                                issue=int(issue) if str(issue).isdigit() else None,
                                state=state, why=why, area=area)
-    _record_ack(sdlc_dir, config, issue, goal, state, why)
+    _record_ack(sdlc_dir, config, issue, goal, state, why, area)
     return entry
 
 
-def _record_ack(sdlc_dir, config, issue, goal, state, why):
+def _record_ack(sdlc_dir, config, issue, goal, state, why, area=None):
     """Slice 8: with the records part open, an ack also leaves a decision record in the store (no
     issue is touched). Closed: nothing happens. Never raises -- the ledger entry is the primary."""
     try:
         dr = _load("decision_record")
         if not dr.enabled(config):
             return
-        dr.decision_store.append(sdlc_dir, dr.build("ack", issue or goal, "unknown", state, why,
-                                                   dr.how_for("ack")), config)
+        rec = dr.build("ack", issue or goal, "unknown", state, why, dr.how_for("ack"),
+                       area=area or dr.REPO_AREA)
+        dr.point(sdlc_dir, dr.decision_store.append(sdlc_dir, rec, config), rec, config)
     except Exception:                                   # noqa: BLE001 - best-effort side record
         pass
 
