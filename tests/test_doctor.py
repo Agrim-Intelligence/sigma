@@ -7064,7 +7064,8 @@ def _hanging_ls_remote_repo(tmp_path, monkeypatch, cfg):
     stub.mkdir()
     git = stub / "git"
     git.write_text(f"#!{sys.executable}\nimport os, sys, time\n"
-                   "if sys.argv[1:2] == ['ls-remote']:\n    time.sleep(60)\n"
+                   "if sys.argv[1:2] == ['ls-remote']:\n"
+                   f"    open({str(tmp_path / 'ls_remote_called')!r}, 'w').close()\n    time.sleep(60)\n"
                    f"os.execv({real_git!r}, [{real_git!r}] + sys.argv[1:])\n", encoding="utf-8")
     git.chmod(0o755)
     monkeypatch.setenv("PATH", str(stub))                 # no gh on PATH: gh rows stop at "installed"
@@ -7081,7 +7082,11 @@ def test_wizard_status_is_fast_with_a_hanging_ls_remote(tmp_path, monkeypatch):
     spec.loader.exec_module(wiz)
     start = time.monotonic()
     wiz.wizard_status(base, dismissed=set(), allow_cache=False)
-    assert time.monotonic() - start < 2
+    # The property is "never touches the network", asserted directly: the stub leaves a marker if
+    # `ls-remote` is ever run. The wall bound only has to catch waiting out the 60s hang; a 2s bound
+    # failed at 3.1s on a loaded CI runner (every stubbed `git` call pays a Python start-up).
+    assert not (tmp_path / "ls_remote_called").exists()
+    assert time.monotonic() - start < 30
 
 
 @pytest.mark.skipif(os.name == "nt" or not shutil.which("git"), reason="POSIX stub on PATH")
