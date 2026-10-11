@@ -32,6 +32,40 @@ All notable changes to Sigma are recorded here, newest first.
 - **PR `test` job runs the plain onboarding control against a wall-time budget and the planted regressions (#879, slice 5 of #809).** `evals/regression/budget.py` runs `python3 tools/onboarding_control.py` and fails when it exceeds `ceiling_seconds` in `evals/regression/budget.json` (set from measured CI job logs, see the PR); `pytest tests/test_onboarding_control.py -k planted` applies `drop-review-recording` and `skip-plan-review` to a scratch copy and demands the plain gesture exit 1 naming the review chain and the plan-review probe. Adds minutes to the required `test` job (measured on the PR).
 
 - **PR `onboarding-control` job runs the plain onboarding control against a wall-time budget and the planted regressions (#879, slice 5 of #809).** `evals/regression/budget.py` runs `python3 tools/onboarding_control.py` and fails when it exceeds `ceiling_seconds` in `evals/regression/budget.json` (set from measured CI job logs, see the PR); `pytest tests/test_onboarding_control.py -k planted` applies `drop-review-recording` and `skip-plan-review` to a scratch copy and demands the plain gesture exit 1 naming the review chain and the plan-review probe. Runs as its own `onboarding-control` job so the required `test` job does not grow.
+- **Ledger bootstrap joins, never forks, the remote ops branch in a single-branch clone (#1142).**
+  - **The defect:** in a clone whose `remote.origin.fetch` omits the `sdlc-ledger` branch (`git clone
+    --single-branch`, or `--depth N`), `sync.py bootstrap` started a second, unrelated `sdlc-ledger`
+    from the empty tree. Every publish was then rejected non-fast-forward while saying "will retry next
+    tick". Seen in the field against a 325-commit remote branch.
+  - **Fetches name their destination:** every ops-branch fetch (`init`, `pull`, the publish retry,
+    `publish_receipt`, both knowledge verbs, and `merge_observation.resolve_remote_snapshot`) uses
+    `+refs/heads/<b>:refs/remotes/<r>/<b>`. A URL or path `ledger.remote` and a glob branch name are
+    refused by name.
+  - **`init` refuses rather than fork:** it asks `git ls-remote` before starting a branch, and REFUSES
+    (exit 1, nothing created) when the remote has the branch or a configured remote cannot be read.
+  - **Unrelated histories are never rebased:** `publish` and `pull` return `refused: … shares no
+    history …`, or `deferred` when a shallow cut hides the answer. A fixed fetch alone would have
+    grafted the orphan via `-X theirs`, overwriting the shared README/TEAM.md.
+  - **Re-running `sync.py bootstrap .sdlc` re-roots such a clone.**
+    - This clone's own entries files (by host token, or legacy `<actor>-<pid>` name) are published,
+      with same-named ones unioned.
+    - Every other path takes the branch's copy, with an uncommitted local copy saved first.
+    - Another machine's files leave `entries/` for `.sdlc/state/orphaned/`.
+    - The old tip is kept at `refs/sigma/orphaned/<channel>/<stamp>`.
+    - A re-root interrupted after its reset is finished by the next bootstrap.
+    - It retries once when two first-ever bootstraps race.
+  - **Recording the pushed tip:** after a successful push, publish sets the remote-tracking ref to
+    the pushed commit. A narrow-refspec push never moves it, and a stale ref read as every published
+    commit still unpushed.
+  - **Doctor:** the team-ledger row says `DIVERGED`, or names a fetch refspec that cannot see the branch.
+  - **Cost:** one `git merge-base` per pull and per rejected push, 11.7 ms on a 32,500-commit branch. The
+    115.6 ms root walk runs only when merge-base finds no base.
+  - **Re-root cost:** re-root plus publish took 1.07 s onto a branch of 1,000 entries files and 7.53 s
+    onto one of 10,000. That is roughly linear; it includes the TEAM.md render and the push.
+  - **How measured:** `.sdlc/research/1142-measure.py history` and `reroot`, with git 2.46.2 on one
+    laptop at load average 2.5 to 3.4. CI was not measured.
+  - **The re-root is operator-run, never automatic.** A deleted-and-recreated remote branch looks the
+    same, and republishing onto it is a human's call.
 
 - **PR `test` job timeout 30 -> 45 minutes (CI).** The macOS `test` job ran 24-28 minutes on recent main pushes and was cancelled at the 30-minute cap on #1052's and #1129's PR runs (annotation: "exceeded the maximum execution time of 30m0s"), so the cap no longer left headroom. The measured run times are from the Actions API; the new 45 is a margin, not a measurement. The `full` job's 90-minute cap is unchanged.
 

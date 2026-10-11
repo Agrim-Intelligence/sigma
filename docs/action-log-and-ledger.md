@@ -219,6 +219,60 @@ Add `.sdlc/ledger/` to `.gitignore` on your code branch. From then on:
 `sync.py publish` fast-forwards your own entries file onto it; a rejected push fetches, rebases and
 retries rather than forcing — and because nobody shares a file, that replay can't conflict.
 
+**A clone that tracks only one branch still joins the team's ledger.** `git clone --single-branch`,
+and `git clone --depth N` (which implies it), write a fetch refspec for `main` and nothing else. In
+such a clone a plain `git fetch origin sdlc-ledger` never writes `origin/sdlc-ledger`. So every fetch
+`sync.py` makes names its destination (`+refs/heads/<branch>:refs/remotes/<remote>/<branch>`). There
+is no need to widen the refspec. `ledger.remote` must therefore be a remote *name*, not a URL or path;
+a URL is refused by name.
+
+`init` never starts a second history beside the team's. When it cannot fetch the branch, it asks
+`git ls-remote`. If the remote has no such branch, it starts one from the empty tree as before. If the
+remote has the branch, or a configured remote cannot be read, it stops with `REFUSED` and creates
+nothing. Re-run it once the remote is reachable; entries written in the meantime stay in
+`.sdlc/ledger/` and are carried in.
+
+**A ledger that already forked says so, and `bootstrap` repairs it.** A clone bootstrapped by Sigma 1.0.9
+or earlier with a narrow refspec may hold an `sdlc-ledger` branch that shares no commit with the remote's.
+A remote branch that someone deleted and recreated looks the same. No push can fast-forward either
+case, so `publish` and `pull` return `… refused: sdlc-ledger here shares no history with origin/sdlc-ledger …`
+ instead of promising a retry. Neither one ever rebases such a branch onto the
+remote, since that would overwrite the shared README and TEAM.md with this clone's copies.
+`/sigma-doctor`'s team-ledger row says `DIVERGED`. If the remote-tracking ref has never been written,
+the row says the clone's fetch refspec does not cover the branch, and that `sync.py pull .sdlc` fetches
+it by name. The lever is the command you joined with:
+
+```bash
+sync.py bootstrap .sdlc                       # --channel knowledge for the notes branch
+```
+
+It moves this clone's branch onto the remote's and keeps the old tip at
+`refs/sigma/orphaned/<channel>/<UTC stamp>`.
+
+- **This clone's own entries files are kept and published.** A file is this clone's own if its name
+  carries this machine's host token, whatever actor it names, or if it is a legacy `<actor>-<pid>`
+  file of this actor. Where the remote has the same file, the lines it lacks are appended; entries
+  are append-only and read sorted, so nothing is reordered or lost.
+- **Every other path takes the branch's copy.** That includes a teammate's file, README.md, TEAM.md
+  (regenerated on publish) and `.gitattributes`.
+  - An uncommitted local copy it overwrites is first saved under `.sdlc/state/orphaned/<stamp>/` and
+    named in the output.
+  - Another machine's file the remote does not have is moved there too, out of `entries/`, so it is
+    not republished, rendered into TEAM.md, or counted as unpublished. If the old branch did not hold
+    it either, the output names it, because the moved copy is the only one.
+- **The notes branch is different.** Notes carry no host, so every local note is republished through
+  the secret gate.
+
+It never runs on its own. A recreated remote branch may have been recreated on purpose, and whether
+to republish onto it is your call. Stop the watcher first if it is mid-tick. A step that collides with
+it on `index.lock` fails loudly. Re-running `bootstrap` starts over if the re-root stopped before
+moving the branch, and finishes the cleanup if it stopped after.
+
+`git -C .sdlc/ledger reset --hard refs/sigma/orphaned/ledger/<stamp>` (the knowledge worktree is
+`.sdlc/knowledge/analysis`) puts this clone's *branch* back on the old tip. It does not unpublish
+what the re-root already pushed. It also removes from the worktree any file committed since that the
+old tip lacks; those files are still on the remote.
+
 ### The watcher — so a mention actually reaches you
 
 ```bash

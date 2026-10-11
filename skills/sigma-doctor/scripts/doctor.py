@@ -3535,8 +3535,10 @@ def _ledger_delivery_state(base, cfg, now=None):
     and the wizard's unconditional SessionStart hook calls only `check()` (setup_wizard.py's
     `_doctor_check`). `features()` is reached from `doctor.py`'s own CLI alone — i.e. from a
     `/sigma-doctor` the user typed. Judged against `check()`'s own criteria it would pass anyway:
-    two local `git` calls in a directory that already exists, no `claude` CLI, no network, and
-    strictly less than the `gh` reads `features()` already makes for `_pick_path_gate_state`."""
+    a handful of local `git` calls in a directory that already exists (two for the counts, a
+    `merge-base` for #1142's divergence -- plus a root walk only when that finds no base -- and a
+    config read), no `claude` CLI, no network, and strictly less than the `gh` reads `features()`
+    already makes for `_pick_path_gate_state`."""
     try:
         sync = _load_loop_script("sync")
     except Exception:                       # noqa: BLE001 - a load failure is "could not answer"
@@ -3548,19 +3550,43 @@ def _ledger_delivery_state(base, cfg, now=None):
     if pending is None:
         return (" — COULD NOT CHECK what has been published (the ledger worktree did not answer "
                 "git); not an all-clear")
+    # #1142, AHEAD OF EVERY OTHER CLAUSE: the one state no watcher tick can fix. A branch started on
+    # its own (a single-branch clone before #1142) or a remote branch recreated under it shares no
+    # commit with `<remote>/<branch>`, so every publish is refused however live the watcher is.
+    try:
+        shared = sync.history_shared(base, cfg)
+    except Exception:                       # noqa: BLE001 - as above: no claim either way
+        shared = None
+    if shared is False:
+        return (" — DIVERGED: this clone's %s shares no history with %s/%s, so no publish can ever "
+                "land (#1142); `sync.py bootstrap .sdlc` re-roots it and republishes this clone's "
+                "own entries" % (sync.branch(cfg), sync.remote(cfg), sync.branch(cfg)))
     try:
         state, age = sync.watcher_liveness(base, cfg, now=now)
     except Exception:                       # noqa: BLE001 - as above
         state, age = "absent", None
     files, ahead = pending["files"], pending["unpushed_commits"]
+    blind = ""
+    if ahead is None:
+        # #1142: WHY there may be no `<remote>/<branch>` here. In a `--single-branch`/`--depth` clone
+        # nothing but a fetch that names the branch writes it, so a dead watcher leaves it absent
+        # indefinitely -- and absent is exactly when DIVERGED above cannot be proved.
+        try:
+            covers = sync.fetch_refspec_covers(base, cfg)
+        except Exception:                   # noqa: BLE001 - no claim
+            covers = None
+        if covers is False:
+            blind = ("; this clone's fetch refspec does not cover %s (a --single-branch or --depth "
+                     "clone), so only a fetch by name updates %s/%s — `sync.py pull .sdlc` does one"
+                     % (sync.branch(cfg), sync.remote(cfg), sync.branch(cfg)))
     if not files and not ahead:
         if ahead is None:
             # Half-blind, so it says which half. No remote-tracking ref means this clone has never
             # fetched or pushed the ops branch, and reading that as "0 commits behind" would make
             # the never-published case look like the healthiest one on the dashboard.
             return (" — nothing unpublished in the worktree, but COULD NOT COMPARE against %s/%s, "
-                    "so what actually reached the remote is unknown"
-                    % (sync.remote(cfg), sync.branch(cfg)))
+                    "so what actually reached the remote is unknown%s"
+                    % (sync.remote(cfg), sync.branch(cfg), blind))
         return ""
     # THE ROW THAT MATTERS, and the watcher is named as the CAUSE rather than as a nag of its own:
     # a watcher that is not running is harmless while there is nothing waiting, so it is reported
@@ -3581,7 +3607,7 @@ def _ledger_delivery_state(base, cfg, now=None):
                         "" if oldest is None else " (oldest %s)" % sync._ago(oldest)))
     if ahead:
         parts.append("%d commit%s never pushed" % (ahead, "" if ahead == 1 else "s"))
-    return " — BEHIND: %s; %s" % ("; ".join(parts), watcher)
+    return " — BEHIND: %s; %s%s" % ("; ".join(parts), watcher, blind)
 
 
 def _ledger_feature_state(base, cfg, now=None):

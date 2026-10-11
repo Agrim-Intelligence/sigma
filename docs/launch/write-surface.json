@@ -1,6 +1,30 @@
 {
   "entries": [
     {
+      "path": ".sdlc/research/1142-measure.py",
+      "function": "history",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "research measurement script, run by hand; removes only the temporary directory it created with `tempfile.mkdtemp()`",
+      "risk": "high"
+    },
+    {
+      "path": ".sdlc/research/1142-measure.py",
+      "function": "reroot",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "research measurement script, run by hand; removes only the temporary directory it created with `tempfile.mkdtemp()`",
+      "risk": "high"
+    },
+    {
+      "path": ".sdlc/research/1142-measure.py",
+      "function": "reroot",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "research measurement script, run by hand; writes only inside the temporary directory it created",
+      "risk": "medium"
+    },
+    {
       "path": ".sdlc/research/292-benchmark.py",
       "function": "main",
       "rule": "git-ref-write",
@@ -1986,6 +2010,14 @@
     },
     {
       "path": "skills/sigma-loop/scripts/sync.py",
+      "function": "_aside",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "operator-run `sync.py bootstrap` only (#1142), and only after `_shares_history` proves the ops branch shares no commit with the remote's; creates `.sdlc/state/orphaned/<stamp>/<channel>/` to hold files the re-root will not publish, never overwriting an earlier copy",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sync.py",
       "function": "_ensure_gitattributes",
       "rule": "fs-write",
       "count": 1,
@@ -2030,6 +2062,46 @@
       "rule": "git-push",
       "count": 1,
       "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sync.py",
+      "function": "_record_push",
+      "rule": "git-ref-write",
+      "count": 1,
+      "gate": "after a push of HEAD to `<remote>/<branch>` succeeded; sets the local remote-tracking ref to exactly that commit, which a narrow-refspec push does not move (#1142)",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sync.py",
+      "function": "_reroot",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "operator-run `sync.py bootstrap` only (#1142), and only after `_shares_history` proves the ops branch shares no commit with the remote's; removes only its own `.sdlc/state/orphaned/*/ledger/PENDING` markers: a superseded one, and its own once the settle step completes",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sync.py",
+      "function": "_reroot",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "operator-run `sync.py bootstrap` only (#1142), and only after `_shares_history` proves the ops branch shares no commit with the remote's; writes the `.sdlc/state/orphaned/<stamp>/ledger/PENDING` marker (the old tip's hash) that lets the next bootstrap finish an interrupted settle step",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sync.py",
+      "function": "_reroot",
+      "rule": "git-ref-write",
+      "count": 1,
+      "gate": "operator-run `sync.py bootstrap` only (#1142), and only after `_shares_history` proves the ops branch shares no commit with the remote's; writes `refs/sigma/orphaned/<channel>/<stamp>`, a local backup of the old tip that is never pushed",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sync.py",
+      "function": "_resume_reroot",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "operator-run `sync.py bootstrap` only (#1142); removes a `.sdlc/state/orphaned/<stamp>/ledger/PENDING` marker after finishing the settle step it records",
       "risk": "high"
     },
     {
