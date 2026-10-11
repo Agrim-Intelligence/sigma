@@ -1,5 +1,11 @@
 {
-  "ceiling_seconds": null,
-  "measured": [],
-  "derivation": "unset until measured on the pull-request test job (macOS, Python 3.12); see the PR for the runs."
+  "ceiling_seconds": 300,
+  "measured": [
+    {"run": 38150639595, "attempt": 2, "job": 114509847844, "job_name": "test", "wall_seconds": 95.1, "planted_tests_seconds": 263},
+    {"run": 38155905133, "attempt": 1, "job": 114518779079, "job_name": "onboarding-control", "wall_seconds": 82.0, "planted_tests_seconds": 279},
+    {"run": 38155905133, "attempt": 2, "job": 114524929962, "job_name": "onboarding-control", "wall_seconds": 58.6, "planted_tests_seconds": 181},
+    {"run": 38155905133, "attempt": 3, "job": 114525910824, "job_name": "onboarding-control", "wall_seconds": 75.5, "planted_tests_seconds": 254},
+    {"run": 38155905133, "attempt": 4, "job": 114527190618, "job_name": "onboarding-control", "wall_seconds": 60.5, "planted_tests_seconds": 228}
+  ],
+  "derivation": "5 runs of the plain gesture on the macos-latest, Python 3.12 pull-request cell, read from the 'onboarding-control wall time' log line of budget.py; max 95.1s, mean 74.3s. 300s is about 3.2x the max, a margin chosen for shared-runner variance (the five runs span 58.6s to 95.1s); it is a floor for a regression alarm, not a prediction. The 95.1s run came from the same step placed at the end of the required test job, before that step moved to its own job; the other four are the final workflow. Scope: the pull-request macOS cell only; the weekly 'full' legs (Ubuntu, other Pythons) do not run this step and are unmeasured. planted_tests_seconds is the '-k planted' step (2 plain gestures under -n 2), recorded for context and not held to the ceiling."
 }
