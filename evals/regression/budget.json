@@ -1,0 +1,5 @@
+{
+  "ceiling_seconds": null,
+  "measured": [],
+  "derivation": "unset until measured on the pull-request test job (macOS, Python 3.12); see the PR for the runs."
+}

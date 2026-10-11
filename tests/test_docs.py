@@ -60,7 +60,7 @@ def test_documents_all_seven_phases():
 
 def test_distinguishes_shipped_plan_review_from_companions():
     assert "sigma-plan-review" in README                      # the gate this kit ships
-    assert "superpowers" in README and "code-review" in README  # the optional companions
+    assert "superpowers" not in README and "code-review" in README  # superpowers is gone (#1131)
 
 
 def test_documents_both_backlog_sources():

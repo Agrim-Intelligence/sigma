@@ -444,12 +444,12 @@ def test_detects_companions_never_failing_on_absence():
     with tempfile.TemporaryDirectory() as t:
         base = _sdlc(t, {"discovery": {"source": "local-goals"}})
         def run(args):
-            return "superpowers@claude-plugins-official" if args == ["claude", "plugin", "list"] else _runner()(args)
+            return "code-review@claude-plugins-official" if args == ["claude", "plugin", "list"] else _runner()(args)
         checks = d.check(base, run=run)
         names = " | ".join(c["name"] for c in checks)
-        assert "superpowers: present" in names            # detected installed
-        assert "code-review: absent" in names             # detected missing
-        assert all(c["ok"] for c in checks if "superpowers" in c["name"] or "code-review" in c["name"])
+        assert "code-review: present" in names            # detected installed
+        assert "superpowers" not in names                 # no longer probed (#1131)
+        assert all(c["ok"] for c in checks if "code-review" in c["name"])
 
 
 def _codex_plugin_runner(installed, *, latest="1.4.13"):
@@ -481,7 +481,6 @@ def test_codex_doctor_uses_enabled_install_for_floor_version_and_companions(monk
     v = _one_above(d._agents_floor())
     base = _sdlc(tmp_path, {})
     run, calls = _codex_plugin_runner([_codex_entry("sigmaloop", v),
-                                       _codex_entry("superpowers"),
                                        _codex_entry("code-review", installed=False, enabled=False)],
                                       latest=v)
 
@@ -490,7 +489,7 @@ def test_codex_doctor_uses_enabled_install_for_floor_version_and_companions(monk
     floor_row = next(c for c in checks if c["name"].startswith("sigma Codex install:"))
     assert floor_row["ok"] is True and v in floor_row["name"]
     assert names[f"sigma up to date (installed {v})"]["ok"] is True
-    assert "superpowers: present" in names
+    assert not any("superpowers" in n for n in names)
     assert "code-review: absent — portable executor used" in names
     assert calls.count(["codex", "plugin", "list", "--json"]) == 1
     assert not any(a[:2] == ["claude", "plugin"] for a in calls)
@@ -519,7 +518,7 @@ def test_codex_doctor_does_not_show_healthy_when_plugin_list_is_unreadable(monke
     row = next(c for c in checks if c["name"].startswith("sigma Codex install:"))
     assert row["ok"] is False and "unverified" in row["name"]
     assert not any(c["name"].startswith("sigma up to date") for c in checks)
-    assert not any(c["name"].startswith("superpowers: present") for c in checks)
+    assert not any(c["name"].startswith("code-review: present") for c in checks)
     assert calls.count(["codex", "plugin", "list", "--json"]) == 1
 
 
@@ -865,7 +864,7 @@ def test_cheap_only_skips_the_plugin_version_subprocess_and_network_calls():
                        or a[:2] == ["claude", "plugin"] for a in seen)
         names = [c["name"] for c in checks]
         assert not any("sigma up to date" in n for n in names)
-        assert not any("superpowers" in n or "code-review" in n for n in names)
+        assert not any("code-review" in n for n in names)
         # ...and the CHEAP checks are still returned normally -- this is a subset, not a stub.
         assert "project layer" in names
 
@@ -885,7 +884,7 @@ def test_the_default_full_check_still_makes_those_calls():
             "the control never reached the network call"
         assert any(a[:3] == ["claude", "plugin", "list"] for a in seen)
         assert "sigma up to date (installed 0.9.7)" in names
-        assert any("superpowers" in n for n in names)
+        assert any("code-review" in n for n in names)
 
 
 def test_cheap_only_still_reports_real_setup_gaps():
@@ -7066,7 +7065,7 @@ def _hanging_ls_remote_repo(tmp_path, monkeypatch, cfg):
     git = stub / "git"
     git.write_text(f"#!{sys.executable}\nimport os, sys, time\n"
                    "if sys.argv[1:2] == ['ls-remote']:\n"
-                   f"    open({str(tmp_path / 'ls-remote-ran')!r}, 'w').close()\n    time.sleep(60)\n"
+                   f"    open({str(tmp_path / 'ls_remote_called')!r}, 'w').close()\n    time.sleep(60)\n"
                    f"os.execv({real_git!r}, [{real_git!r}] + sys.argv[1:])\n", encoding="utf-8")
     git.chmod(0o755)
     monkeypatch.setenv("PATH", str(stub))                 # no gh on PATH: gh rows stop at "installed"
@@ -7083,10 +7082,10 @@ def test_wizard_status_is_fast_with_a_hanging_ls_remote(tmp_path, monkeypatch):
     spec.loader.exec_module(wiz)
     start = time.monotonic()
     wiz.wizard_status(base, dismissed=set(), allow_cache=False)
-    # Load-tolerant: the wizard's cheap path must never reach the network at all (the stub records
-    # any ls-remote it is asked to run), and the stub sleeps 60s, so waiting it out would blow the
-    # wide bound below by a margin no runner load can close.
-    assert not (tmp_path / "ls-remote-ran").exists(), "the wizard path must not call ls-remote"
+    # The property is "never touches the network", asserted directly: the stub leaves a marker if
+    # `ls-remote` is ever run. The wall bound only has to catch waiting out the 60s hang; a 2s bound
+    # failed at 3.1s on a loaded CI runner (every stubbed `git` call pays a Python start-up).
+    assert not (tmp_path / "ls_remote_called").exists()
     assert time.monotonic() - start < 30
 
 

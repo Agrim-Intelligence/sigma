@@ -4,9 +4,8 @@ A tiny project (`greeter.py` + `test_greeter.py`) with the SDLC kit already init
 (`.sdlc/`), and one real goal queued: **add a `!` to the greeting**
 ([`.sdlc/goals/0001-add-exclaim.md`](.sdlc/goals/0001-add-exclaim.md)).
 
-> You install nothing extra to run this. If the optional `superpowers` + `code-review` companions
-> are already installed, Sigma uses them for the phases they cover; if not, Sigma's portable
-> `sigma-*` executors run the same phases. Plan-review is always Sigma's own `sigma-plan-review`.
+> You install nothing extra to run this. Sigma's `sigma-*` skills run every phase, plan-review
+> included (`sigma-plan-review`). The optional `code-review` plugin adds an extra Review pass.
 
 ## Run it (interactive mode)
 ```

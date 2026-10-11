@@ -189,5 +189,3 @@ finding is the one worth writing down: the accepted ones are visible in the revi
 reasoning for overruling a reviewer exists nowhere else, and it is the first thing anyone asks when
 the same objection comes back a month later.
 
-> On Claude with the companion installed, `superpowers:receiving-code-review` applies this same
-> "verify before you agree" discipline to code review; this is its plan-stage equivalent.

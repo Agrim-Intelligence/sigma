@@ -8,7 +8,7 @@ maintainer-facing provenance ("which platform companion this defers to", "why th
 
 Ten skills carried an identical maintainer-boilerplate tail in their `description:` field, in two
 families:
-  - "Portable executor — prefer superpowers:X on Claude when installed; this is the built-in
+  - "Portable executor — this is the built-in
     equivalent for every other host." (sigma-brainstorm, sigma-implement, sigma-plan, sigma-review,
     sigma-verify)
   - "A conditional-risk review/skill orthogonal to sigma-review; always Sigma's own (no companion
@@ -29,7 +29,7 @@ SKILLS_DIR = ROOT / "skills"
 
 #: the two boilerplate families from #1612, matched loosely enough to catch either wording variant
 #: actually shipped ("review" vs "skill", "when installed" vs "when it's installed", the sigma-review
-#: one naming the code-review plugin instead of a bare superpowers:X).
+#: one naming the code-review plugin).
 _BOILERPLATE_PATTERNS = (
     re.compile(r"Portable executor —"),
     re.compile(r"conditional-risk (?:review|skill) orthogonal to sigma-review"),

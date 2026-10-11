@@ -301,10 +301,9 @@ upkeep entirely. Protect the integration branch; on `feature/*`, grant upkeep's 
 
 To rebase, catch up or land a unit (a `feature/<name>` branch), use the `sigma-rebase` skill; do not run a raw rebase, force-push or merge by hand. Landing is never automatic: the skill asks for an explicit yes first.
 
-**Executors (portable):** this host has no `superpowers` / `code-review` companion, so each phase runs
-via Sigma's portable executor - the disciplines in `skills/sigma-*/SKILL.md` (`sigma-brainstorm` ->
+**Executors (portable):** each phase runs via Sigma's own executor - the disciplines in `skills/sigma-*/SKILL.md` (`sigma-brainstorm` ->
 Goal, `sigma-plan` -> Plan, `sigma-implement` -> Implement, `sigma-review` + `sigma-verify` -> Review).
-Same discipline as the Claude companions, portable.
+Portable, on every host.
 
 **Backlog + helpers (optional):** the loop, model-selection, status and KG helpers are plain, zero-dep
 `python3` - run them from your Sigma checkout via Cursor's terminal, e.g.
@@ -652,7 +651,7 @@ def scaffold_extras(target, flags):
             print("\nsigma-init: north-star already present (kept).")
     if "--cursor" in flags:
         rules_created, rules_skipped = scaffold_cursor_rules(target)
-        # Cursor never has the superpowers/code-review companions - pin companions:off so the portable
+        # Cursor never has the code-review companion - pin companions:off so the portable
         # executors are used without a pointless `claude plugin list` probe (fail-open if config's odd).
         try:
             cfgp = pathlib.Path(target) / ".sdlc" / "config.json"

@@ -714,3 +714,36 @@ def test_plain_gesture_names_review_property_when_review_recording_is_broken(tmp
     lines = dict(re.findall(r"(?m)^onboarding-control: (\S+): (GREEN|RED at [^(]+?) \(", proc.stdout))
     assert proc.returncode == 1, proc.stdout[-2000:]
     assert lines["github/process"] == "RED at assert:process.review_marker_in_store", lines
+
+
+def _planted_plain_gesture(tmp_path, regression):
+    """#879 (AC-4, AC-7): plant `regression` (evals/regression/mutators.py, form `code`) in a scratch copy and
+    run the DOCUMENTED PLAIN gesture there -- `python3 tools/onboarding_control.py`, no --mode, no --variant,
+    no --sigma (the copy's own tools/ and skills/ are what it follows). Not the process-only run above."""
+    sigma = _scratch_copy(tmp_path / "sigma")
+    (sigma / "tools").mkdir()
+    shutil.copy2(TOOL, sigma / "tools" / "onboarding_control.py")
+    planted = subprocess.run([sys.executable, str(ROOT / "evals" / "regression" / "mutators.py"), "apply",
+                              regression, "--form", "code", "--root", str(sigma)],
+                             capture_output=True, text=True, timeout=60)
+    assert planted.returncode == 0, planted.stderr
+    proc = subprocess.run([sys.executable, "tools/onboarding_control.py", "--workdir", str(tmp_path)],
+                          cwd=str(sigma), capture_output=True, text=True, timeout=900)
+    lines = dict(re.findall(r"(?m)^onboarding-control: (\S+): (GREEN|RED at [^(]+?) \(", proc.stdout))
+    return proc, lines
+
+
+def test_planted_drop_review_recording_is_red_at_the_review_chain(tmp_path):
+    proc, lines = _planted_plain_gesture(tmp_path, "drop-review-recording")
+    assert proc.returncode == 1, proc.stdout[-2000:]
+    assert lines["github/process"] == "RED at assert:review chain posted sigma:approve through post-review", lines
+    # the record property needs a merged goal; the planted writer parks the merge, so it is NOT EVALUABLE, not red
+    assert '"name": "process.review_marker_in_store"' in proc.stdout
+    assert all(v == "GREEN" for k, v in lines.items() if k != "github/process"), lines
+
+
+def test_planted_skip_plan_review_is_red_at_the_plan_review_probe(tmp_path):
+    proc, lines = _planted_plain_gesture(tmp_path, "skip-plan-review")
+    assert proc.returncode == 1, proc.stdout[-2000:]
+    assert lines["github/process"] == "RED at assert:negative probe printed the plan-review refusal", lines
+    assert all(v == "GREEN" for k, v in lines.items() if k != "github/process"), lines

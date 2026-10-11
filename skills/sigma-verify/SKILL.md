@@ -17,10 +17,6 @@ For bulky tests or diagnostics, save full output to a scratch file, then inspect
 its exit status and focused matches or a bounded tail. Do not hide failures, and
 keep secrets out of the scratch file. This is guidance, not a measured savings claim.
 
-**Executor resolution (host-aware):**
-- **Claude Code + `superpowers` installed** → prefer **`superpowers:verification-before-completion`** (its richer version).
-- **Otherwise** (Cursor / any host / no companion) → use this. Same discipline, portable.
-
 ## The rule
 **Evidence before claims — always.** Claiming work is complete without verifying it isn't efficiency,
 it's dishonesty. **No completion claim without fresh verification output in this turn** — if you didn't

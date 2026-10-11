@@ -6,7 +6,7 @@ implementer's own diff-time check. SKILL.md is the operational contract an imple
 reads (the same convention `test_sdlc_loop_skill_merge_doc.py` and siblings already rely on for
 `sigma-loop`'s own SKILL.md) -- so pinning the anchors below is a real regression guard, not
 decoration: a future edit that quietly drops this section, or nests it back inside the
-superpowers-preferred branch where a Claude-Code+superpowers reader would never see it, fails one
+branch where a reader would never see it, fails one
 of these for a concrete, named reason.
 
 Each anchor is tied to something that would concretely go wrong if it disappeared -- never a bare
@@ -20,19 +20,11 @@ SKILL = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-impl
 )
 
 
-def test_security_defaults_applies_regardless_of_which_executor_ran():
-    # The file opens with an executor-resolution fork: on Claude Code with `superpowers` installed,
-    # `superpowers:test-driven-development` is preferred over the rest of THIS file's own TDD
-    # guidance -- and that companion file carries no security guidance at all (verified directly
-    # during this issue's plan-review: zero hits for fail-closed/untrusted-input content across
-    # it and its own sibling companions). Without an explicit "regardless" clause, a new security
-    # section nested among the TDD sections below reads as exactly the content that fork tells a
-    # Claude-Code+superpowers reader to skip -- invisible on the very host these three bugs shipped
-    # from.
-    assert "applies regardless of which executor" in SKILL, (
-        "SKILL.md's executor-resolution note does not say the Security defaults section applies "
-        "regardless of which executor ran -- without this, the section is effectively skipped on "
-        "Claude Code + superpowers, the host #1761/#1765/#1767 actually shipped from"
+def test_security_defaults_is_called_out_up_front():
+    # With no executor fork left (#1131) the section is read as part of the one path; the intro still
+    # names it so an implementer reads it before starting, not after.
+    assert "**`## Security defaults (fail-closed, untrusted input)`**" in SKILL, (
+        "SKILL.md's intro no longer points at the Security defaults section"
     )
 
 

@@ -30,7 +30,7 @@ unit-tested but has not been run in Cursor.
 > format follows Cursor's documented convention, but real-session behavior is unverified.
 
 Sigma ships no Cursor plugin manifest (whether Cursor's plugin support could load one is unverified),
-and Cursor has no `UserPromptSubmit` hook or `superpowers`/`code-review`. From the root of your
+and Cursor has no `UserPromptSubmit` hook or `code-review` plugin. From the root of your
 repository, with `<installed-sigma>` your Sigma checkout:
 
 ```
@@ -94,9 +94,8 @@ catch drift (see [`evals/README.md`](../evals/README.md)):
   only `git`; `work.py pr` / `merge` are what need `gh`). The default local source stays zero-dep.
 - **Knowledge graph (optional):** the graph builder — default `graphify` (`pip install graphifyy`);
   off unless `knowledge_graph.enabled` is set.
-- **Companions (optional):** `superpowers` + `code-review` — **auto-used when already installed**,
-  otherwise the **parity-reviewed portable `sigma-*` executors run the phases**. Never required; you
-  install nothing either way.
+- **Companion (optional):** `code-review` — an extra Review pass when installed. Never required:
+  the `sigma-*` executors run every phase.
 - **Dev/test:** `pip install pytest`, then `pytest tests/ -v`. **CI** (GitHub Actions) runs the full
   suite — including the **leakage gate** (`tools/leak_scan.py`: home paths, secret shapes,
   private-key bodies and links into the owner's other repositories; its docstring lists what it
