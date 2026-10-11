@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-review",
+  "kind": "pinned",
+  "gates": [
+    "**The reviewer must not be the author**"
+  ],
+  "scripts": [],
+  "artifacts": []
+}

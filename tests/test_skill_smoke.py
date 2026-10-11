@@ -397,3 +397,48 @@ def test_exercised_script_skill_cards_pass_their_fixtures():
             elif smoke._run_fixture(e["fixture"], ROOT, 60, e.get("expect")):
                 bad.append(f"{s}: {e['path']} fixture fails")
     assert bad == []
+
+
+# --- #1046: cards for the prose-only skills; the runner on the REAL tree (slice 3 of #1043) -------------
+# From here the bare gesture is a gate: every skill directory has a card, every card is clean.
+def _prose_only():
+    return sorted(p.name for p in SKILLS.iterdir()
+                  if p.is_dir() and p.name not in SCRIPT_SKILLS and (p / "SKILL.md").is_file())
+
+
+def test_real_tree_has_no_runner_findings():
+    rows, findings = smoke.check(SKILLS, CARDS)
+    assert rows and findings == []
+
+
+def test_documented_bare_gesture_is_green_on_the_real_tree():
+    gesture = "python3 evals/skills/smoke.py"
+    assert gesture in README.read_text(encoding="utf-8")
+    r = subprocess.run(gesture.split(), cwd=ROOT, capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_empty_probe_directory_turns_the_real_tree_red(tmp_path):
+    import shutil
+    skills = tmp_path / "skills"
+    shutil.copytree(SKILLS, skills, symlinks=True)
+    base = [sys.executable, str(SMOKE), "--root", str(skills)]
+    ok = subprocess.run(base, capture_output=True, text=True, timeout=120)
+    assert ok.returncode == 0, ok.stdout  # the copy is green before the probe, so the red below is the probe's
+    (skills / "sigma-probe").mkdir()
+    r = subprocess.run(base, capture_output=True, text=True, timeout=120)
+    assert r.returncode == 1 and "FINDING skill sigma-probe: no card" in r.stdout
+
+
+def test_prose_only_skills_are_pinned_with_a_gate():
+    names = _prose_only()
+    assert names
+    cards = _cards()
+    bad = [s for s in names if cards.get(s, {}).get("kind") != "pinned" or not cards[s].get("gates")]
+    assert bad == []
+
+
+def test_ordering_pins_are_carded():
+    cards = _cards()
+    assert any("never skip" in g for g in cards["sigma-goal"]["gates"])
+    assert any("last gate before code" in g for g in cards["sigma-plan-review"]["gates"])

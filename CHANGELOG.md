@@ -4,6 +4,10 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Cards for the prose-only skills; the per-skill smoke runner is now a gate (#1046, slice 3 of #805; refs #1043).** One
+  `pinned` card per skill with no script (24 today, derived from disk), each pinning a verbatim sentence from its own
+  `SKILL.md`; `tests/test_skill_smoke.py` runs `python3 evals/skills/smoke.py` on the real tree. Measured: bare run exit 0,
+  0.08 s locally on one machine; not measured in CI (budget is slice 4).
 - **Board gate when GraphQL is unavailable (#895, slice 5; refs #895).** New `GitHubSource.board_active`
   (`project.enabled` AND `gh_api.graphql_available()`): when GraphQL is off (`CLAUDE_CODE_REMOTE`,
   `SIGMA_GH_GRAPHQL=off`) every Projects v2 call (card moves, field writes, archive, backlog seeding, the Phase

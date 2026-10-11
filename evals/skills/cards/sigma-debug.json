@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-debug",
+  "kind": "pinned",
+  "gates": [
+    "no fix without a reproducing test first"
+  ],
+  "scripts": [],
+  "artifacts": []
+}

@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-brainstorm",
+  "kind": "pinned",
+  "gates": [
+    "Turn the idea into an approved design **before any implementation.**"
+  ],
+  "scripts": [],
+  "artifacts": []
+}

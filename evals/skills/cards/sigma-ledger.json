@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-ledger",
+  "kind": "pinned",
+  "gates": [
+    "Claiming a goal and recording `done`/`parked`/`failed` happen **by themselves**"
+  ],
+  "scripts": [],
+  "artifacts": []
+}
