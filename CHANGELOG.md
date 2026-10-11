@@ -6,6 +6,27 @@ All notable changes to Sigma are recorded here, newest first.
 
 - **Resolver CLI probe finding record (#948; refs #941).** `docs/launch/evidence/resolver-cli-probe.md` records the real headless probe of the installed command line for the upkeep resolver: the design-flag table, settings, hooks, credential and billing behaviour, standard input, the budget-flag overshoot and exit code, killed-run metering, and the export-or-worktree choice, with what is still open. Docs only: no product code, flag table or model catalog changed.
 
+- **`work.py start` no longer refuses on the registry files its own sync wrote (#954).** Once the
+  registry is committed (branching-model §14), every pick rewrites `.sdlc/features/units/<unit>.json`
+  and `<unit>.md` in the root checkout, and the next start refused on that dirt and suggested
+  `git stash`. Every shard and page write now records a provenance chain in gitignored
+  `.sdlc/state/features/provenance/` (git blob ids, written under a per-file lock before the
+  replace), and the dirty-root guard exempts a registry file only when its bytes and its committed
+  version are both in that chain, the committed one first. Hand edits, an edit Sigma then wrote over,
+  staged files, mode changes, `index.json` and anything unproven still refuse, and the refusal now
+  names each file (up to 10), prints §15's commit gesture, and no longer suggests `git stash`.
+  Cost: one extra `git status --porcelain=v2 --untracked-files=no -- .sdlc/features` only when every
+  tracked root edit is a registry file, nothing on a clean root (§6e's 4 and 17 are unchanged);
+  measured 33.4 ms against 44.5 ms for the existing v1 status (median of 7, 1,236 tracked files,
+  macOS, git 2.46.2). A registry write costs about 0.8 ms more with a short chain and about 4.3 ms
+  at the 256-entry cap (median and mean of 300 writes, macOS APFS); a guard check with 20 and 200
+  dirty, proven shards took 110 ms and 335 ms. Limits: a root already dirty from an earlier version
+  refuses once until committed; `core.autocrlf`/clean filters, SHA-256 repositories and a `.sdlc`
+  below the git toplevel get no exemption; with no `fcntl` a lost chain entry costs a spurious
+  refusal. Verified with real-git tests (the issue's repro, the documented relative `.sdlc` CLI
+  gesture, two deterministic concurrency seams and a multi-process smoke run), each seen red against
+  the old code or a weakened build. Not measured: Windows, and a live multi-slot loop on an adopter.
+
 - **PR `test` job timeout 30 -> 45 minutes (CI).** The macOS `test` job ran 24-28 minutes on recent main pushes and was cancelled at the 30-minute cap on #1052's and #1129's PR runs (annotation: "exceeded the maximum execution time of 30m0s"), so the cap no longer left headroom. The measured run times are from the Actions API; the new 45 is a margin, not a measurement. The `full` job's 90-minute cap is unchanged.
 
 ## 1.0.9 — 2026-10-11 — REST-first GitHub, the board skip in cloud sessions, and eval additions

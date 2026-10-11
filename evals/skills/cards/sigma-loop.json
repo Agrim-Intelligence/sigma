@@ -190,6 +190,10 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/feature_provenance.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/feature_rebase.py",
       "role": "gesture"
     },
