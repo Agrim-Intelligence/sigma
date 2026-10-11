@@ -23,7 +23,7 @@ All twelve design flags are listed by the tool's own help. `--max-turns` is not 
 | `--no-session-persistence` | works | no transcript is written |
 | `--add-dir <directory>` | works | |
 | `--append-system-prompt "..."` | works | |
-| `--bare` | does NOT authenticate | the call answers "Not logged in": it skips the login and needs an API key (section 3) |
+| `--bare` | does NOT authenticate with the subscription login | the call answers "Not logged in". It was not tried with an API key; that it needs one is an inference (section 3) |
 
 `--model` accepts both the alias (`sonnet`) and the full id (`claude-sonnet-5-5`); the reply names the full id.
 
@@ -34,7 +34,7 @@ With `--output-format json` the reply is one JSON object. Keys seen: `type`, `su
 ## 3. Credential and billing behaviour
 
 - In a normal environment the call authenticates with the user's existing subscription login. In a cleaned environment it also needed `USER`, `LOGNAME`, `SHELL` and `TMPDIR` for the login to be found.
-- An isolated profile does not authenticate: a fresh empty configuration directory answered "Not logged in", and so did a fresh home directory with the real configuration directory named. The login lives outside the configuration directory and is found through the home directory.
+- An isolated profile does not authenticate: a fresh empty configuration directory answered "Not logged in", and so did a fresh home directory with the real configuration directory named. That the login lives outside the configuration directory and is found through the home directory is an inference from these two results, not measured directly.
 - Consequence for the launcher, which builds its environment from nothing with a fresh home: a real run needs a credential the operator chooses by name (an API key variable), or a launcher that keeps the real home. This is a decision for the owner and is not settled here.
 - `total_cost_usd` is reported on every call, including on a subscription login, as a notional figure. Whether and how a subscription login is billed was not measured.
 
@@ -60,7 +60,7 @@ So a model started in a repository with default flags executes that repository's
 
 ## 7. A killed run
 
-A run killed with SIGKILL after 4 seconds left one transcript file (session persistence was on). It holds queue, user and attachment records and no usage record, so the spend of a turn in flight at the kill is not metered anywhere readable. A launcher must charge a killed run the full per-run cap, as the design says.
+One run killed with SIGKILL after 4 seconds (a single observation) left one transcript file (session persistence was on). It holds queue, user and attachment records and no usage record, so the spend of a turn in flight at the kill is not metered anywhere readable. A launcher must charge a killed run the full per-run cap, as the design says.
 
 ## 8. The directory choice: export or a second worktree
 
@@ -68,6 +68,6 @@ Measured: settings isolation (section 4) is a flag, not a property of the direct
 
 ## What this settles and what it leaves open
 
-- Settled: the flag table (eleven of twelve work), the envelope, prompt on standard input, the budget overshoot and exit code, killed-run metering, settings isolation.
+- Measured: the flag table (eleven of twelve work), the envelope, prompt on standard input, the budget overshoot and exit code, settings isolation in the normal authenticated profile. Observed once, not repeated: killed-run metering.
 - Left to the owner: the credential route and billing basis (section 3), and the model catalog ids, which the launcher still keeps as a placeholder.
-- Not covered: a real resolver run on a real conflict (it needs the credential decision), Windows and Linux, and any run on a hosting service.
+- Not covered: a real resolver run on a real conflict (it needs the credential decision), hook and instruction-file behaviour inside an authenticated isolated profile (none could be created), the export-or-worktree choice (section 8 is a recommendation, not a decision), Windows and Linux, and any run on a hosting service.
