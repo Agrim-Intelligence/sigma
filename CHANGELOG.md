@@ -4,6 +4,25 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Six runner seams go through `gh_api` (#895, slice 3b; refs #895).** `ledger._run_gh`, `feature_owner._run_gh`,
+  `cross_repo._run_gh`, `status._github_counts` (x2) and `board_setup.Board.gh` now use the new `gh_api.run_gh`
+  (rc/out/err, a timeout is 124) and `gh_api.gh_argv`. These were already `gh api` calls: a spelling change, not a
+  migration to REST. A timeout now exists where none did (ledger 15 s, a judgement and unmeasured; feature_owner
+  120 s; cross_repo 30 s). `close_pr_gh` also rejects a 200 body with `merged: true`. NOT yet REST: every `label
+  create` site (sources x3, triage x1 = slice 3c), `sources.note()` (owner ruling), `define.py` x2, `status.py`'s
+  no-sources fallback, `doctor.py`, the board sites (slice 5), `work.py` x3, `verify_merge.py` x3. Nothing is tested
+  live. Ratchet (printed `scan()`): TOTAL 43 -> 37. Details: `docs/cloud-sessions.md`.
+- **Design-PR merge and close go REST (#895, slice 4b-3; refs #895).** goal-review's `merge-design` is
+  `gh_api.merge_pr_gh` (REST `PUT pulls/N/merge`, pinned to the head sha the design-identity check vetted; ONE
+  `gh pr merge` fallback on a primary rate limit only) and `close-design` is `gh_api.close_pr_gh` (comment POST,
+  then `PATCH state=closed`). No retry any more (a merge is not idempotent). After a failure that may have landed
+  the outcome is reconciled by a REST read of the PR's `state`: only a positive MERGED/CLOSED counts, and an empty,
+  truncated, malformed or unreadable answer reads "outcome unconfirmed", never success (the old "open list came
+  back empty" inference is gone). `verify_merge.py` (ready/create/merge, the attended rebase tail) is NOT moved and
+  stays GraphQL, so that tail still cannot run in a cloud session. UNMEASURED live: every body and status here is
+  from GitHub's docs or fakes. Ratchet (printed `scan()`): work.py 5 -> 3, TOTAL 45 -> 43. Write-surface:
+  `merge_design`/`close_design` become `gh-api-write` rows (`close_pr_gh` joins the scanner's set). Details:
+  `docs/cloud-sessions.md`.
 ## 1.0.8 — 2026-10-11 — per-session run budgets and REST-first merges
 
 - **A cloud session can reach the merge PUT (#895, slice 4b-2; refs #895).** The three GraphQL reads that stopped a
@@ -89,6 +108,21 @@ All notable changes to Sigma are recorded here, newest first.
   New `landing_preflight.py` library, plus read-only `gh_api.ruleset` and `gh_api.org_ruleset`. Commands starting with
   `cd`, variables, `~`, command substitution or shell wrappers are never checked. **Not seen live:** the real GitHub
   reply shape is faked in tests from the documented fields.
+- **Per-skill smoke cards for the script-bearing skills (#1045, slice 2 of #1043).** New `evals/skills/cards/<skill>.json`
+  for every skill with a `scripts/*.py|sh` file; `library` stems across them equal `test_script_help.LIBRARY_ONLY`. Only
+  skills whose every gesture has a passing read-only fixture are `exercised`; the rest are `pinned` (a verbatim
+  `SKILL.md` gate) and artifact producers are an existing script or `agent`. The bare `python3 evals/skills/smoke.py`
+  stays red for prose-only skills until slice 3 and is not a test gate.
+- **Regression mutation engine (#1056, slice 1 of #808).** New `evals/regression/mutators.py` (stdlib only):
+  `python3 evals/regression/mutators.py apply <regression> --form <form> --root <dir>` breaks one named function body
+  or table entry in a COPY of the tree, resolved with `ast` and never by line number. Regressions: `skip-plan-review`
+  and `drop-review-recording` (form `code`), `disable-secret-scan` (`drop-pattern`, `drop-redactor-only`,
+  `whole-table`, `commit-noop`), `double-context` (`words`, appends the measured words so
+  `python3 evals/phase_context_budget.py` exits 1). Exit 10 anchor missing, 11 ambiguous, 12 mutation changed
+  nothing, each named on stderr; `anchors` lists every anchor. Reading `drop-redactor-only` as dropping the
+  `authorization-header` entry of `_SECRET_PATTERN_SPECS` is an open point for #806. One new write-surface
+  inventory row (`_write_text`). Not measured: Windows, Python 3.10.
+
 - **Live regression entrypoint, slice 1: refusal ladder, NOT RUN rows, credential-safe logging (#884, refs #810).**
   New `evals/regression/live.py` (stdlib only). Run bare it exits 2 with one `live.py: REFUSED [no-credential]: ...`
   line on stderr, nothing on stdout, and one `sigma.regression-result/v1` NOT RUN row under

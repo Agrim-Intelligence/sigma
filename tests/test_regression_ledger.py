@@ -842,6 +842,7 @@ DOCUMENTED_WRITES = {
     ("evals/regression/live.py", "write_row", ".write_text"): (1, "writes the temp file of the atomic row write"),
     ("evals/regression/live.py", "write_row", "os.replace"): (1, "atomic rename of the temp file onto the row"),
     ("evals/regression/live.py", "write_row", ".unlink"): (1, "removes its own leftover temp file"),
+    ("evals/regression/mutators.py", "_write_text", ".write_text"): (1, "the one write of a mutated file, only under the --root copy it is told"),
     ("evals/regression/spend_ledger.py", "Ledger._acquire", "os.open"): (1, "opens or creates the lock file (0600), never data"),
     ("evals/regression/spend_ledger.py", "Ledger._ensure_dir", "os.makedirs"): (1, "the ONE place the ledger directory is created (0700)"),
     ("evals/regression/spend_ledger.py", "_append", "os.open"): (1, "opens the month file O_APPEND|O_CREAT (0600) for the one row"),

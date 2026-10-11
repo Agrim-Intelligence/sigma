@@ -1,0 +1,19 @@
+{
+  "skill": "sigma-audit",
+  "kind": "pinned",
+  "gates": [
+    "It never opens the codebase."
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-audit/scripts/audit-collect.sh",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": ".sdlc/knowledge/audit/<UTC-date>.md",
+      "producer": "agent"
+    }
+  ]
+}

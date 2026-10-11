@@ -1,0 +1,23 @@
+{
+  "skill": "sigma-define",
+  "kind": "pinned",
+  "gates": [
+    "ask, do not infer"
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-define/scripts/define.py",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": ".sdlc/plans/scope/<slug>.plan.json",
+      "producer": "agent"
+    },
+    {
+      "path": ".sdlc/features/",
+      "producer": "skills/sigma-loop/scripts/feature_registry.py"
+    }
+  ]
+}

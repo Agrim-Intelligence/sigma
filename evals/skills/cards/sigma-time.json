@@ -1,0 +1,14 @@
+{
+  "skill": "sigma-time",
+  "kind": "pinned",
+  "gates": [
+    "NEVER state how long something took without running one of the commands below."
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-time/scripts/time_report.py",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": []
+}
