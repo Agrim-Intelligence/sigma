@@ -137,6 +137,14 @@
       "risk": "medium"
     },
     {
+      "path": "evals/regression/mutators.py",
+      "function": "_write_text",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "operator/CI-run; writes only the one file under --root it mutates; never the working tree unless --root says so",
+      "risk": "medium"
+    },
+    {
       "path": "evals/regression/record.py",
       "function": "write_atomic",
       "rule": "fs-remove",
@@ -1078,6 +1086,14 @@
       "rule": "gh-api-write",
       "count": 1,
       "gate": "the injected run is the only transport; write helpers (comment_issue, create_issue, add_labels, remove_label, close_issue, edit_issue, add_assignees) have callers since #895 slice 3a, each through GitHubSource._issue_* with the feature-label guard (create_issue/add_labels refuse feature:* unless it exists); a REST write falls back to GraphQL at most once, never on an ambiguous failure, never in a cloud session; since #895 slice 4b-1 work.merge's direct merge is merge_pr_gh (REST PUT pulls/N/merge with sha; ONE gh pr merge fallback on a primary rate limit only; an unknown outcome is read back, never retried); the scanner sees only this gh invocation, not which helper called it; landing helpers (#931): merge_pr_pinned (explicit merge method, repository and 40-hex head pin all required and validated before any call; no auto-merge, no admin flag, no branch-delete option) and create_pr_nondraft (typed draft false) have no caller yet, and bounded_runner binds a working directory and keeps the exit code; the scanner sees none of them until a caller exists",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/gh_api.py",
+      "function": "run_gh",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "the one gh spawner for the wrapper seams (#895 slice 3b): it runs whatever argv a seam hands it and has no write policy of its own; its callers (ledger._run_gh, feature_owner._run_gh, cross_repo._run_gh) only ever issue read-only gh api GETs (api user, repos/<repo>), each with a bounded timeout (15 s, 120 s, 30 s) and a missing gh propagating; the scanner sees only this spawn, not which seam called it",
       "risk": "low"
     },
     {
@@ -2315,9 +2331,9 @@
     {
       "path": "skills/sigma-loop/scripts/work.py",
       "function": "close_design",
-      "rule": "gh-pr",
+      "rule": "gh-api-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "ungated (risk-reducing direction); a REST comment POST then PATCH state=closed via gh_api.close_pr_gh (ONE `gh pr close` fallback per the write policy); no retry; an ambiguous outcome is reconciled by a REST read, never counted as closed without a positive CLOSED (#895 slice 4b-3)",
       "risk": "high"
     },
     {
@@ -2339,16 +2355,8 @@
     {
       "path": "skills/sigma-loop/scripts/work.py",
       "function": "finish",
-      "rule": "gh-pr",
-      "count": 1,
-      "gate": "work.enabled; confirmed merged PR",
-      "risk": "high"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/work.py",
-      "function": "finish",
       "rule": "git-destructive",
-      "count": 1,
+      "count": 2,
       "gate": "ungated",
       "risk": "high"
     },
@@ -2362,18 +2370,26 @@
     },
     {
       "path": "skills/sigma-loop/scripts/work.py",
-      "function": "merge_design",
-      "rule": "gh-pr",
+      "function": "merge",
+      "rule": "gh-api-write",
       "count": 1,
-      "gate": "work.enabled; work.auto_merge != off",
+      "gate": "work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR; the direct merge is the REST PUT pulls/N/merge with the vetted head sha via gh_api.merge_pr_gh (non-idempotent; an unknown outcome is READ, never re-merged), counted since #895 slice 4b-2",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/work.py",
+      "function": "merge_design",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "work.enabled; work.auto_merge != off; one non-idempotent REST PUT pulls/N/merge pinned to the vetted head sha via gh_api.merge_pr_gh (ONE `gh pr merge` fallback only on a primary rate limit while GraphQL is available); no retry; an ambiguous outcome is reconciled by a REST read of the PR, never counted as merged without a positive MERGED (#895 slice 4b-3)",
       "risk": "high"
     },
     {
       "path": "skills/sigma-loop/scripts/work.py",
       "function": "post_review",
-      "rule": "gh-pr",
+      "rule": "gh-api-write",
       "count": 1,
-      "gate": "ungated",
+      "gate": "evidence-bound to this goal's review generation and head; one non-idempotent REST comment POST via gh_api.comment_pr (ONE `gh pr comment` fallback only on a primary rate limit while GraphQL is available); an ambiguous outcome parks and reconciles by the immutable marker, never re-posts (#895 slice 4b-2)",
       "risk": "medium"
     },
     {

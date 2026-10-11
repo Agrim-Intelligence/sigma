@@ -555,3 +555,34 @@ def test_summary_never_reports_a_blocked_goal_as_pending():
         assert out["pending"] == 2                   # 6 - 1 active - 3 blocked
         assert out["in_progress"] == 1
         assert out["blocked"] == 3                   # surfaced, not just subtracted away
+
+
+# --- #895 slice 3b: the argv seam goes through gh_api.gh_argv ---------------------------------------
+
+def test_github_counts_builds_its_argv_through_gh_api_gh_argv(monkeypatch):
+    """RED BEFORE THE CHANGE (delegation spy): both lambdas call `src.gh_api.gh_argv`. `_load_sources`
+    re-executes sources.py per call, so the spy patches it to return a stub."""
+    import json
+    status = _status()
+    calls = []
+    stub = type("Src", (), {})()
+    stub.gh_api = type("G", (), {"gh_argv": staticmethod(lambda a: ["SPY", *a])})()
+    stub.resolve_assignee_login = lambda r, a: (r(["api", "user"]), "me")[1]
+    stub.fetch_issues_rest = lambda r, repo, labels, cap, assignee=None: (r(["api", "issues"]), [])[1]
+    monkeypatch.setattr(status, "_load_sources", lambda: stub)
+    with tempfile.TemporaryDirectory() as d:
+        base = _gh_sdlc(d)
+        status.summary(str(base), run=lambda args: calls.append(list(args)) or "[]")
+    spied = [c for c in calls if c[0] == "SPY"]
+    assert {tuple(c[1:]) for c in spied} >= {("api", "issues")}
+    assert not [c for c in calls if c[1:] in (["api", "user"], ["api", "issues"]) and c[0] != "SPY"]
+
+
+def test_github_counts_real_gh_argv_starts_with_gh():
+    """CHARACTERISATION (green today)."""
+    import json
+    seen = []
+    with tempfile.TemporaryDirectory() as d:
+        base = _gh_sdlc(d)
+        _status().summary(str(base), run=lambda args: seen.append(list(args)) or "[]")
+    assert seen and all(c[0] == "gh" for c in seen)

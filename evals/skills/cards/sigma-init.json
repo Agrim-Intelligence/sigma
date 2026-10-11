@@ -1,0 +1,55 @@
+{
+  "skill": "sigma-init",
+  "kind": "pinned",
+  "gates": [
+    "it never re-applies a value over"
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-init/scripts/board_layout.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-init/scripts/board_setup.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-init/scripts/board_spec.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-init/scripts/init_flow.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-init/scripts/preflight.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-init/scripts/sdlc_init.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-init/scripts/setup_wizard.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-init/scripts/verify_detect.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-init/scripts/wizard_actions.py",
+      "role": "library"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": ".sdlc/state/init.json",
+      "producer": "skills/sigma-init/scripts/init_flow.py"
+    },
+    {
+      "path": ".sdlc/project.md",
+      "producer": "skills/sigma-init/scripts/sdlc_init.py"
+    }
+  ]
+}

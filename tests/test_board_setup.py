@@ -925,3 +925,48 @@ def test_adoption_keeps_the_humans_lane_order_and_appends_only_what_is_missing(t
     assert rc == 0, text
     assert gh.option_names(board, "Status") == [
         "Todo", "In progress", "Done", "Needs design", "Backlog", "QC", "Blocked", "Parked"]
+
+
+# --------------------------------------------------------------------------- #895 slice 3b: argv via gh_api.gh_argv
+
+def test_board_gh_builds_argv_through_gh_api_gh_argv(tmp_path):
+    """RED BEFORE THE CHANGE (delegation spy)."""
+    seen = []
+    board = bs.Board(_sdlc(tmp_path), runner=lambda argv: (seen.append(list(argv)), (0, "ok", ""))[1])
+    g = bs._gh_api()
+    orig = g.gh_argv
+    g.gh_argv = lambda a: ["SPY", *orig(a)]
+    try:
+        board.gh("api", "x")
+    finally:
+        g.gh_argv = orig
+    assert seen == [["SPY", "gh", "api", "x"]]
+
+
+def test_board_gh_argv_prefix_and_hostname_splice(tmp_path):
+    """CHARACTERISATION (green today)."""
+    seen = []
+    runner = lambda argv: (seen.append(list(argv)), (0, "", ""))[1]
+    sdlc = _sdlc(tmp_path)
+    bs.Board(sdlc, runner=runner).gh("api", "x")
+    bs.Board(sdlc, runner=runner, host="ghe.example").gh("api", "x")
+    bs.Board(sdlc, runner=runner, host="ghe.example").gh("issue", "view")
+    assert seen == [["gh", "api", "x"], ["gh", "api", "--hostname", "ghe.example", "x"], ["gh", "issue", "view"]]
+
+
+def test_board_gh_api_is_loaded_lazily(tmp_path, monkeypatch):
+    """RED BEFORE THE CHANGE (no `_GH_API`): a failing loader breaks the first `Board.gh`, not import/construct."""
+    monkeypatch.setattr(bs, "_GH_API", [], raising=False)
+    monkeypatch.setattr(bs, "_load", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no gh_api")))
+    board = bs.Board(_sdlc(tmp_path), runner=lambda argv: (0, "", ""))
+    with pytest.raises(RuntimeError, match="no gh_api"):
+        board.gh("api", "x")
+
+
+def test_board_gh_api_is_not_loaded_at_import_or_construction(tmp_path):
+    """RED under an import-time `_gh_api()` call (the Control): a freshly executed module has loaded nothing,
+    and constructing a Board loads nothing either."""
+    fresh = _load(SCRIPTS / "board_setup.py", "board_setup_fresh_3b")
+    assert fresh._GH_API == []
+    fresh.Board(_sdlc(tmp_path), runner=lambda argv: (0, "", ""))
+    assert fresh._GH_API == []

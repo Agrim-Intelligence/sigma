@@ -1,0 +1,14 @@
+{
+  "skill": "sigma-dossier",
+  "kind": "pinned",
+  "gates": [
+    "The loop must never try to execute a Dossier"
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-dossier/scripts/dossier.py",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": []
+}

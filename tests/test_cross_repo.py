@@ -33,6 +33,7 @@ module.
 import importlib.util
 import json
 import pathlib
+import subprocess
 import tempfile
 import types
 
@@ -1402,3 +1403,36 @@ def test_a_flagged_decision_with_a_denied_repo_raises_only_the_flag():
         raised = _ledger_lines(base)
         assert [e["to"] for e in raised] == ["feature-owner"]
         assert "contract-first" not in raised[0]["why"]
+
+
+# --------------------------------------------------------------------------- #895 slice 3b: seam via gh_api
+
+def test_run_gh_delegates_to_gh_api_run_gh(monkeypatch):
+    """RED BEFORE THE CHANGE (delegation spy): the wrapper returns `gh_api.run_gh`'s tuple verbatim."""
+    c = _mod()
+    g = c._gh_api()
+    seen = []
+    monkeypatch.setattr(g, "run_gh", lambda args, timeout=120: (seen.append((list(args), timeout)), (1, "o", "e"))[1])
+    assert c._run_gh(["api", "x"]) == (1, "o", "e")
+    assert seen == [(["api", "x"], c.GH_TIMEOUT_SECONDS)]
+
+
+def test_run_gh_timeout_is_124(monkeypatch):
+    """CHARACTERISATION (green today): the timeout shape `_classify_failure` reads."""
+    c = _mod()
+
+    def boom(argv, **kw):
+        raise subprocess.TimeoutExpired(argv, 1)
+    monkeypatch.setattr(subprocess, "run", boom)
+    assert c._run_gh(["api", "x"], timeout=1) == (124, "", "gh: the call timed out after 1s")
+
+
+def test_run_gh_missing_binary_propagates(monkeypatch):
+    """CHARACTERISATION (green today)."""
+    c = _mod()
+
+    def boom(argv, **kw):
+        raise FileNotFoundError("gh")
+    monkeypatch.setattr(subprocess, "run", boom)
+    with pytest.raises(FileNotFoundError):
+        c._run_gh(["api", "x"])

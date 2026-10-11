@@ -325,3 +325,75 @@ def test_fixture_nul_in_argv_is_a_named_finding(tmp_path):
     _exercised(tmp_path, cards)
     _exercised(tmp_path, cards, fixture=[sys.executable, "-c", "pass" + chr(0)])
     _red(*_run(skills, cards), "fixture could not start")
+
+
+# --- #1045: cards for the script-bearing skills (slice 2 of #1043) ------------------------------------
+# Scoped to SCRIPT_SKILLS, derived from disk; never a typed list or count. The bare real-tree runner stays
+# red for prose-only skills until slice 3, so it is not a gate here. A gesture's `--help` behaviour is held
+# by test_every_script_answers_help_without_side_effects (*.py) and test_shell_scripts_have_a_help_handler
+# (*.sh, grep only) in tests/test_script_help.py; the cards do not duplicate it.
+SKILLS = ROOT / "skills"
+CARDS = ROOT / "evals" / "skills" / "cards"
+SCRIPT_SKILLS = sorted({p.parts[-3] for p in SKILLS.glob("*/scripts/*")
+                        if p.is_file() and p.suffix in (".py", ".sh")})
+
+
+def _cards():
+    return {p.stem: json.loads(p.read_text(encoding="utf-8")) for p in sorted(CARDS.glob("*.json"))}
+
+
+def _library_only():
+    s = importlib.util.spec_from_file_location("script_help", ROOT / "tests" / "test_script_help.py")
+    m = importlib.util.module_from_spec(s)
+    s.loader.exec_module(m)
+    return set(m.LIBRARY_ONLY)
+
+
+def test_every_script_skill_has_a_card():
+    assert SCRIPT_SKILLS
+    assert [s for s in SCRIPT_SKILLS if s not in _cards()] == []  # only script skills; no "no extra cards" check
+
+
+def test_script_skill_library_stems_equal_library_only():
+    stems = {pathlib.PurePosixPath(e["path"]).stem
+             for s in SCRIPT_SKILLS for e in _cards().get(s, {}).get("scripts", []) if e.get("role") == "library"}
+    lib = _library_only()
+    assert stems == lib, f"only in cards: {sorted(stems - lib)}; only in LIBRARY_ONLY: {sorted(lib - stems)}"
+
+
+def test_script_skill_cards_have_no_runner_findings():
+    _, findings = smoke.check(SKILLS, CARDS)
+    mine = [f for f in findings if any(f.startswith(p + s + ":") for s in SCRIPT_SKILLS for p in ("skill ", "card "))]
+    assert mine == []
+
+
+def test_script_skill_cards_hold_no_home_or_absolute_paths():
+    home = str(pathlib.Path.home())
+    bad = []
+    for s in SCRIPT_SKILLS:
+        card = _cards().get(s, {})
+        vals = [e.get("path") for e in card.get("scripts", [])]
+        vals += [a.get(k) for a in card.get("artifacts", []) for k in ("path", "producer")]
+        vals += [x for e in card.get("scripts", []) for x in e.get("fixture", [])]
+        for v in vals:
+            if not isinstance(v, str):
+                continue
+            if v.startswith(("/", "~")) or ".." in pathlib.PurePosixPath(v).parts or home in v:
+                bad.append(f"{s}: {v}")
+    assert bad == []  # gates are prose and may quote ~/ paths on purpose; they are not checked here
+
+
+def test_exercised_script_skill_cards_pass_their_fixtures():
+    bad = []
+    for s in SCRIPT_SKILLS:
+        card = _cards().get(s, {})
+        if card.get("kind") != "exercised":
+            continue
+        for e in card["scripts"]:
+            if e["role"] != "gesture":
+                continue
+            if "fixture" not in e:
+                bad.append(f"{s}: {e['path']} has no fixture")
+            elif smoke._run_fixture(e["fixture"], ROOT, 60, e.get("expect")):
+                bad.append(f"{s}: {e['path']} fixture fails")
+    assert bad == []

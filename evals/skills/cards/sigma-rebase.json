@@ -1,0 +1,22 @@
+{
+  "skill": "sigma-rebase",
+  "kind": "pinned",
+  "gates": [
+    "never rebase blind"
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-rebase/scripts/conflict_walk.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-rebase/scripts/rebase_brief.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-rebase/scripts/verify_merge.py",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": []
+}

@@ -163,12 +163,12 @@ def _github_counts(gh_cfg, run, config=None):
         proposed_label = "sdlc:needs-confirmation"
 
     src = _load_sources()
-    login = src.resolve_assignee_login(lambda a: run(["gh", *a]), assignee) if (src and assignee) else None
+    login = src.resolve_assignee_login(lambda a: run(src.gh_api.gh_argv(a)), assignee) if (src and assignee) else None
 
     def n(*labels):
         if src is not None:
             try:
-                issues = src.fetch_issues_rest(lambda a: run(["gh", *a]), repo, list(labels),
+                issues = src.fetch_issues_rest(lambda a: run(src.gh_api.gh_argv(a)), repo, list(labels),
                                                 _COUNT_CAP, assignee=login)
                 return len(issues)
             except Exception:
