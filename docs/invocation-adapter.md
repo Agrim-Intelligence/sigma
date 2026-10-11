@@ -92,6 +92,18 @@ beyond one line refuse. `adapter describe --stdio` must answer the capabilities 
 | ambiguous remote post | existing evidence-marker path (`reconcile-review-post`) | unchanged |
 | Windows / no POSIX locks | refuse | attended review |
 
+## Timeout and denial-of-service disposition
+
+Each is tested red against a weakened build: the adapter runs in its own session and on timeout,
+oversized output or oversized request the **whole process group** is SIGKILLed by its exact pgid (a
+grandchild holding stdout, or a SIGTERM-ignorer, dies with it); stdout is read at most 64 KiB + 1
+(never an unbounded buffer, so a newline-less flood is cut and refused); the request is capped at 32
+KiB; `timeout_seconds` must be an integer 5-120 (0, negative, float, string, bool, null refuse); the
+state lock is never held across the adapter call and its wait is bounded at 5 s; there is no internal
+retry (one adapter run per `authorize`; a retry is a new caller action). Ceiling: an adapter that
+escapes the group with its own `setsid` cannot be killed by Sigma; the call still returns refused on
+time, but the stray process survives.
+
 ## Costs and ceilings
 
 One stable lock file serialises record reads and writes only (never the adapter call); waiting is

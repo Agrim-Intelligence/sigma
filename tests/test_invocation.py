@@ -60,6 +60,16 @@ ADAPTER = textwrap.dedent('''\
     if MODE == "extra": out["extra"] = 1
     if MODE == "fixedreceipt": out["receipt_id"] = "same"
     if MODE == "nonzero": sys.exit(3)
+    if MODE == "grandchild":
+        import subprocess
+        g = subprocess.Popen(["sleep", "60"])            # inherits our stdout/stderr
+        open(MARK + ".pid", "w").write(str(g.pid))
+        sys.exit(0)
+    if MODE == "ignoreterm":
+        import os, signal
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        open(MARK + ".pid", "w").write(str(os.getpid()))
+        time.sleep(60)
     if MODE == "flood":
         while True: sys.stdout.write("x" * 65536); sys.stdout.flush()
     if MODE == "slow": time.sleep(60)
@@ -607,3 +617,77 @@ def test_load_adapter_itself_refuses_without_fcntl(tmp_path, monkeypatch):
     monkeypatch.setattr(inv, "fcntl", None)
     with pytest.raises(inv.Refused, match="POSIX platform"):
         inv.load_adapter(str(r.repo.resolve()), "claude")
+
+
+# ---- timeout / DoS dispositions -------------------------------------------------------------------
+
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _wait_dead(pid, secs=5.0):
+    import time
+    end = time.monotonic() + secs
+    while time.monotonic() < end:
+        if not _alive(pid):
+            return True
+        time.sleep(0.05)
+    return not _alive(pid)
+
+
+@pytest.mark.parametrize("mode", ["grandchild", "ignoreterm"])
+def test_a_grandchild_holding_stdout_or_a_sigterm_ignorer_is_killed_with_its_group(tmp_path, monkeypatch, mode):
+    monkeypatch.setattr(inv, "TIMEOUT_RANGE", (1, 120))
+    r = Rig(tmp_path, "claude", mode=mode)
+    r.config({"adapter": "claude", "timeout_seconds": 1})
+    import time
+    t0 = time.monotonic()
+    with pytest.raises(inv.Refused, match="timed out"):
+        r.review()
+    assert time.monotonic() - t0 < 15
+    pid = int(pathlib.Path(str(r.mark) + ".pid").read_text())
+    assert _wait_dead(pid), "the adapter's process group was not killed"
+
+
+@pytest.mark.parametrize("bad", [0, -1, "30", 30.5, True, None, 121, 4])
+def test_timeout_seconds_is_an_integer_within_5_and_120(tmp_path, bad):
+    r = Rig(tmp_path, "claude")
+    r.config({"adapter": "claude", "timeout_seconds": bad})
+    with pytest.raises(inv.Refused):
+        inv.settings(str(r.sdlc))
+
+
+def test_a_hung_adapter_does_not_hold_the_state_lock(tmp_path, monkeypatch):
+    """The lock is never held across the adapter call: another gate can take it while one hangs."""
+    import threading
+    monkeypatch.setattr(inv, "TIMEOUT_RANGE", (1, 120))
+    r = Rig(tmp_path, "claude", mode="slow")
+    r.config({"adapter": "claude", "timeout_seconds": 3})
+    done = []
+    t = threading.Thread(target=lambda: done.append(_try(r)))
+    t.start()
+    import time
+    time.sleep(1.0)                                   # the adapter is mid-hang now
+    t0 = time.monotonic()
+    with inv._locked(str(r.sdlc)):
+        pass
+    assert time.monotonic() - t0 < 1.0
+    t.join()
+
+
+def _try(r):
+    try:
+        r.review()
+    except inv.Refused as exc:
+        return str(exc)
+
+
+def test_a_failed_authorize_runs_the_adapter_exactly_once_no_internal_retry(tmp_path):
+    r = Rig(tmp_path, "claude", mode="nonzero")
+    with pytest.raises(inv.Refused):
+        r.review()
+    assert r.mark.read_text().count("ran") == 1
