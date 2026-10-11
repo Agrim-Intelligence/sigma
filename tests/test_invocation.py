@@ -525,3 +525,19 @@ def test_a_corrupt_dotgit_is_unknown_and_fails_closed_not_open(tmp_path):
     (r.repo / ".git" / "config").write_text("[broken")
     with pytest.raises(inv.Refused, match="pin exists"):
         inv.settings(str(r.sdlc))
+
+
+def test_a_file_replaced_between_lstat_and_open_is_refused(tmp_path, monkeypatch):
+    r = Rig(tmp_path, "claude")
+    real_open = os.open
+
+    def swapping(path, flags, *a, **kw):
+        if str(path) == str(r.exe):                     # swap the inode after lstat, before open
+            repl = tmp_path / "repl"
+            repl.write_bytes(r.exe.read_bytes())
+            repl.chmod(0o700)
+            os.replace(repl, r.exe)
+        return real_open(path, flags, *a, **kw)
+    monkeypatch.setattr(inv.os, "open", swapping)
+    with pytest.raises(inv.Refused, match="changed while being opened"):
+        inv.load_adapter(str(r.repo), "claude")
