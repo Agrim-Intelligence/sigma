@@ -8,8 +8,9 @@ All notable changes to Sigma are recorded here, newest first.
   (`POST issues/N/comments`); the GraphQL-first `gh issue comment` attempt is gone (none at all in a cloud session) and
   the `sources.py` ratchet drops 20 to 19 (TOTAL 37 to 36). The bounded retry is kept but is a REST re-POST only, for a
   server 5xx or an ambiguous transport failure, classified from gh stderr and the cause chain (never the comment body).
-  These now raise at once with NO retry (`loop.py note` prints FAILED / exit 1): active-account drift (401/403/404) and
-  secondary rate limits; a primary rate limit gets `comment_issue`'s single policy fallback. There is no Sigma-side
+  Behaviour change: secondary rate limits and "unknown owner type" errors, which the old path retried, now raise at once
+  with NO retry (`loop.py note` prints FAILED / exit 1); active-account drift (401/403/404) was never retried and still
+  raises at once; a primary rate limit gets `comment_issue`'s single policy fallback. There is no Sigma-side
   timeout on this path; a gh-reported timeout in stderr is classified transport and retried over REST; a silent hang
   blocks. UNMEASURED. The duplicate-on-retry ruling is retained, REST-only, and deliberately
   contradicts `comment_issue`'s own "may have landed" stance. NOT run in a real Claude Code cloud session (UNMEASURED).
