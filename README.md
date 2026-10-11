@@ -55,9 +55,8 @@ change through seven phases:
   and parks anything that needs a human instead of guessing.
 - **It leaves an audit trail.** Every phase is recorded on the issue (or in a local journal), with
   its cost where the host reports it.
-- **It works with what you have.** If the `superpowers` and `code-review` plugins are installed,
-  Sigma uses them; if not, its own built-in executors run the same phases. There is nothing else to
-  install.
+- **It runs on its own.** Sigma's built-in `sigma-*` skills run every phase. There is nothing else to
+  install; the `code-review` plugin is an optional extra Review pass.
 
 The full list of capabilities is in [docs/features.md](docs/features.md).
 
@@ -233,10 +232,8 @@ source edits behind its own `PreToolUse` hook, note that Sigma's Implement-phase
 through it too — make sure whatever it expects is satisfied.
 
 The plugin installs machine-wide, but its hooks only speak in repos that adopted Sigma (the prompt
-hook checks for `.sdlc/`; the gates and the setup wizard for `.sdlc/config.json`). If the `superpowers` + `code-review` companions are
-**already** in your plugin list, Sigma uses them automatically; if not, the portable `sigma-*`
-executors run the same phases ([details](docs/companions.md#companions-optional-enhancement)) — **nothing to install
-either way**.
+hook checks for `.sdlc/`; the gates and the setup wizard for `.sdlc/config.json`). The `sigma-*` skills run
+every phase ([details](docs/companions.md)) — **nothing else to install**.
 
 See the **[worked walkthrough](examples/hello-sdlc/)** for a runnable end-to-end example.
 
@@ -299,7 +296,7 @@ see which features are live for your config.
 | [Action log and team ledger](docs/action-log-and-ledger.md) | trace what the loop did, or coordinate a team |
 | [Parallelism](docs/parallelism.md) | run several goals or slices at once, and size it to your machine |
 | [Knowledge graph](docs/knowledge-graph.md) | give the loop memory across goals |
-| [Companion plugins](docs/companions.md) | use `superpowers` and `code-review` |
+| [Companion plugins](docs/companions.md) | the optional `code-review` plugin |
 | [Managed settings](docs/managed-settings.md) | enforce settings across an organisation |
 | [Zero-touch routines](docs/routines.md) | trigger the loop on a schedule |
 | [Configuration reference](docs/configuration.md) | see every flag and default |
@@ -339,8 +336,6 @@ documented in [docs/privacy.md](docs/privacy.md). To remove it from a repository
 
 ## Credits
 
-- **[superpowers](https://github.com/obra/superpowers)** by Jesse Vincent
-  ([@obra](https://github.com/obra)) supplies the per-phase execution skills. Optional companion.
 - **[code-review](https://github.com/anthropics/claude-plugins-official)** by Anthropic supplies the
   `/code-review` skill used in the Review phase. Optional companion.
 

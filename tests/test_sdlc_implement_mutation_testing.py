@@ -4,8 +4,8 @@ without exercising the real code path), and stated its rules (red-green-refactor
 names) with no citation to their real source. This mirrors `test_sdlc_implement_security_defaults.py`'s
 own convention exactly: SKILL.md is the operational contract an implementer actually reads, so
 pinning stable anchor phrases in it is a real regression guard, not decoration -- a future edit that
-quietly drops a section, or re-nests it inside the superpowers-preferred branch where a
-Claude-Code+superpowers reader would never see it, fails one of these for a concrete, named reason.
+quietly drops a section, or re-nests it in a branch where a
+reader would never see it, fails one of these for a concrete, named reason.
 
 Every citation below was independently verified against its real source before being pinned here --
 twice. The first Plan-Review round REJECTED an earlier draft's claim that the vacuous-test citation
@@ -26,18 +26,9 @@ SKILL = (pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-impl
 )
 
 
-def test_mutation_testing_applies_regardless_of_which_executor_ran():
-    # Same shape as security-defaults' own executor-resolution clause, and for the same reason: on
-    # Claude Code with `superpowers` installed, the executor-resolution fork tells a reader to go
-    # to `superpowers:test-driven-development` instead of the rest of this file. Without an
-    # explicit "applies regardless" pointer NAMED for this section specifically, a new section
-    # placed among the existing TDD content reads as exactly what that fork tells the reader to
-    # skip. The anchor is a phrase distinct from the existing Security-defaults sentence, so this
-    # test cannot pass merely because THAT unrelated sentence already exists.
-    assert "same kind of cross-cutting addition" in SKILL, (
-        "SKILL.md's executor-resolution note does not point at the Mutation testing section as "
-        "applying regardless of which executor ran -- without this, the section is effectively "
-        "skipped on Claude Code + superpowers"
+def test_mutation_testing_is_called_out_up_front():
+    assert "**`## Mutation testing (prove the\nguard, don't assert it)`**" in SKILL or "Mutation testing (prove the" in SKILL.split("Two things happen")[0], (
+        "SKILL.md's intro no longer points at the Mutation testing section"
     )
 
 
@@ -124,16 +115,9 @@ def test_mutation_testing_points_at_agents_md_reliability_property():
     )
 
 
-def test_mutation_testing_names_what_superpowers_already_has_without_overclaiming_a_total_gap():
-    # Unlike #1894's security-defaults section (a genuine total gap in superpowers, safe to say so
-    # outright), superpowers' own verification-before-completion/SKILL.md already has a narrower
-    # form of mutation testing ("Revert fix -> Run (MUST FAIL) -> Restore -> Run (pass)"). Claiming
-    # a total absence here would be false, and repeating -- inside the very file this goal is about
-    # -- the citation-accuracy failure the goal exists to fix.
+def test_mutation_testing_names_the_revert_pattern():
     assert "Revert fix" in SKILL and "Run (MUST FAIL)" in SKILL, (
-        "SKILL.md's Mutation testing section does not name the real, narrower pattern "
-        "superpowers:verification-before-completion already states -- omitting this would let the "
-        "section imply a total gap on Claude Code that Research disproved"
+        "SKILL.md's Mutation testing section does not name the live-revert pattern"
     )
 
 

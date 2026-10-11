@@ -23,11 +23,9 @@ proposes, writes only the audit-trail note and the (gated, opt-in) KG corpus not
 any north-star or standing-rule change for your approval — it never rewrites your standing docs
 unattended (mirrors how `sigma-kg`'s `maintain` only proposes).
 
-## Executor resolution (host-aware)
-No `superpowers` / `code-review` companion covers retrospective learning, so this is **always
-Sigma's own**. It *complements* the Review phase's `superpowers:verification-before-completion`
-(which asks "is it correct / done?") — it does not duplicate it (this asks "what did we learn, what
-debt remains?"). Pure markdown discipline + `git` / `python3`, so it degrades gracefully on any host.
+## Executor
+Always Sigma's own. It *complements* the Review phase's `sigma-verify` (which asks "is it correct /
+done?") — it does not duplicate it (this asks "what did we learn, what debt remains?"). Pure markdown discipline + `git` / `python3`, so it degrades gracefully on any host.
 
 ## Pre-flight — gather the evidence (repo-auto-detect, fail-open)
 Read what this specific repo offers; skip whatever's absent (never break the run):

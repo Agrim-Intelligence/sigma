@@ -39,7 +39,7 @@ flowchart TB
     SPINE --> OUT(["Verified change + audit trail"])
     SPINE <--> SRC["Backlog source<br/>local files · GitHub issues · Projects board"]
     SPINE <--> KG["Self-improving KG (optional)<br/>write · recall · track→prune→fill gaps"]
-    SPINE -.->|"each phase via an executor"| COMP["Companion on Claude<br/>(superpowers / code-review)<br/>· else portable sigma-* executor"]
+    SPINE -.->|"each phase via an executor"| COMP["sigma-* executor<br/>(optional extra: code-review)"]
 ```
 
 ### How a prompt falls through the phases
