@@ -77,7 +77,10 @@ def _save_cursor(path, cursor):
 
 
 def _excerpt(body):
-    body = " ".join(body.split())                    # flatten; ledger.append flattens again, cheap no-op
+    # flatten -> scrub -> cut, in that order (#1050): cutting the raw text first left a fragment of a secret
+    # straddling the boundary, because the ledger's scrub then saw only half a shape. The ledger scrubs again
+    # and caps at its own 200; both are cheap no-ops on already-clean text.
+    body = ledger._sanitize_free_text(" ".join(body.split()), cap=1 << 30)
     return body if len(body) <= _WHY_EXCERPT_CHARS else body[:_WHY_EXCERPT_CHARS].rstrip() + "..."
 
 
