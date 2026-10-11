@@ -53,8 +53,10 @@ def _runner(handlers):
                 return resp(line) if callable(resp) else resp
         if "rev-parse HEAD" in line:
             return HEAD_SHA          # gate()'s stale-head check (#197); override via a handler
-        if prfake.merge_put(7) in line:
+        if prfake.merge_put(7) in line or re.search(r"pulls/\d+/merge --method PUT", line):
             return prfake.rest_merged()   # #895 4b-1: the REST merge lands, as an unmatched `gh pr merge` did
+        if re.search(r"pulls/\d+ --method PATCH .*state=closed", line):
+            return json.dumps({"state": "closed"})    # #895 4b-3: the REST design-PR close lands
         if "remote get-url" in line:
             return REMOTE_URL        # what feature_sync.repo_slug falls back to (#1577)
         return ""
@@ -197,7 +199,7 @@ def test_ci_repair_cap_falls_back_to_the_existing_failed_outcome_with_the_check_
 def test_merge_routes_a_planted_required_check_failure_to_the_bounded_repair_dispatch(tmp_path):
     d = _sdlc(tmp_path); goal = _started(d)
     run = _runner(_view(status="BLOCKED", checks=(("lint", "FAILURE"),))
-                  + [("gh repo view --json viewerPermission", "ADMIN")])
+                  + _perm())
     # The base gate response deliberately lacks an Actions details URL; its fail-closed repair fallback
     # preserves the named failed outcome instead of issuing an agent a blind instruction.
     out = work.merge(d, ON, goal, run=run, sleep=NOSLEEP)
@@ -402,7 +404,34 @@ def _perm(perm="ADMIN"):
     """merge_rights' permission reads only, for a test whose ONE pull body comes from `_view()` (#895 4a-2).
     No `cross` kwarg on purpose: a fork flag goes on `_view(isCrossRepository=True)`, so it can never be
     silently dropped by a second, shadowed pull body."""
-    return [("viewerPermission", perm), ("nameWithOwner", "acme/app")]
+    return [(PERMISSIONS_READ, permissions_body(perm)), ("nameWithOwner", "acme/app")]
+
+
+#: #895 4b-2: merge_rights reads `gh api repos/{owner}/{repo} --jq .permissions` (REST), so the handler key is
+#: the `--jq` tail, which neither `.allow_auto_merge` nor `.default_branch` (same endpoint) carries.
+PERMISSIONS_READ = "--jq .permissions"
+_PERM_LADDER = ("pull", "triage", "push", "maintain", "admin")
+_PERM_OF = {"READ": "pull", "TRIAGE": "triage", "WRITE": "push", "MAINTAIN": "maintain", "ADMIN": "admin"}
+
+
+def permissions_body(perm="ADMIN"):
+    """The `permissions` object GitHub serves for a viewer whose highest level is `perm` (lower ones true too)."""
+    top = _PERM_LADDER.index(_PERM_OF[perm])
+    return json.dumps({k: _PERM_LADDER.index(k) <= top for k in reversed(_PERM_LADDER)})
+
+
+#: #895 4b-2: post_review's comment is the REST POST (`gh api .../issues/7/comments --method POST -f body=...`).
+#: `_find_evidence_marker` GETs the SAME path, so "something was posted" must test the POST argv, never the path.
+POST_COMMENT = "issues/7/comments --method POST"
+
+
+def _posted(line):
+    """True when `line` (one joined argv) is the review-comment POST: `--method POST` AND `body=`."""
+    return "issues/7/comments" in line and "--method POST" in line and "body=" in line
+
+
+def _comment_reply(cid):
+    return json.dumps({"id": cid, "html_url": f"https://github.example/issues/7#issuecomment-{cid}"})
 
 
 def _protected(checks=("ci",), reviews=0):
@@ -2765,11 +2794,57 @@ def test_unknown_rights_fail_closed(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_view() + [("viewerPermission", RuntimeError("gh: not authenticated"))]
+    run = _runner(_view() + [(PERMISSIONS_READ, RuntimeError("gh: not authenticated"))]
                   + _perm())
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert "could not determine merge rights" in out
     assert not prfake.merge_calls(run.calls)
+
+
+_PERM_ALL = {"admin": True, "maintain": True, "push": True, "triage": True, "pull": True}
+
+
+@pytest.mark.parametrize("body,want", [
+    ({"admin": True, "maintain": True, "push": True, "triage": True, "pull": True}, "ADMIN"),
+    ({"admin": False, "maintain": True, "push": True, "triage": True, "pull": True}, "MAINTAIN"),
+    ({"admin": False, "maintain": False, "push": True, "triage": True, "pull": True}, "WRITE"),
+    ({"admin": False, "maintain": False, "push": False, "triage": True, "pull": True}, "TRIAGE"),
+    ({"admin": False, "maintain": False, "push": False, "triage": False, "pull": True}, "READ"),
+    ({"push": True, "pull": True}, "WRITE"),                       # absent keys read as not granted
+    ({"push": True, "pull": True, "somethingNew": "yes"}, "WRITE"),  # an unknown key is ignored, not a refusal
+])
+def test_viewer_permission_maps_the_highest_true_key(body, want):
+    assert work._viewer_permission(lambda cwd, argv: json.dumps(body), ".") == want
+
+
+@pytest.mark.parametrize("reply", [
+    "", "null", "[]", "42", "not json", "{}", '{"permissions": {}}',
+    json.dumps({k: False for k in _PERM_ALL}),
+    json.dumps({"admin": "true", "push": True}),                   # a string is not a bool
+    json.dumps({"admin": 1, "push": True}),
+    json.dumps({"admin": None, "push": True}),
+], ids=["empty", "null", "list", "int", "nonjson", "emptyobj", "nested", "allfalse", "strtrue", "inttrue", "nulltrue"])
+def test_viewer_permission_raises_on_every_undeterminable_shape(reply):
+    with pytest.raises(Exception):
+        work._viewer_permission(lambda cwd, argv: reply, ".")
+
+
+def test_merge_rights_maps_triage_and_read_to_no_merge_and_write_to_merge(tmp_path):
+    d = _sdlc(tmp_path); g = _started(d)
+    for perm, ok in (("READ", False), ("TRIAGE", False), ("WRITE", True), ("MAINTAIN", True), ("ADMIN", True)):
+        run = _runner(_view() + _perm(perm))
+        got, why = work.merge_rights(d, ON, g, run=run)
+        assert got is ok, (perm, why)
+        if not ok:
+            assert f"{perm.lower()} access on this repo" in why
+
+
+def test_merge_rights_reply_without_permissions_is_could_not_determine(tmp_path):
+    d = _sdlc(tmp_path); g = _started(d)
+    for reply in ("", "null", "{}", '{"permissions": null}'):
+        run = _runner(_view() + [(PERMISSIONS_READ, reply)])
+        ok, why = work.merge_rights(d, ON, g, run=run)
+        assert ok is False and "could not determine merge rights" in why, (reply, why)
 
 
 def test_a_no_rights_outcome_is_not_a_park(tmp_path):
@@ -3631,8 +3706,7 @@ def test_no_graphql_pending_checks_park_without_arming_or_merging(tmp_path, monk
 
 def test_no_graphql_branch_under_claude_code_remote_is_structural_only(tmp_path, monkeypatch):
     """A STRUCTURAL check of the `graphql_available()` branch, NOT a cloud check: `_perm()` fakes the
-    GraphQL `viewerPermission` read that a real cloud session cannot make (see the next test for the
-    real cloud outcome). With CLAUDE_CODE_REMOTE set the same no-arm PARK is taken."""
+    permission read (REST since 4b-2; see the cloud-merge tests for the real cloud outcome). With CLAUDE_CODE_REMOTE set the same no-arm PARK is taken."""
     monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
     d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
     run = _runner(_pending_forever())
@@ -3641,15 +3715,92 @@ def test_no_graphql_branch_under_claude_code_remote_is_structural_only(tmp_path,
     assert prfake.merge_calls(run.calls) == [] and not any("allow_auto_merge" in c for c in run.calls)
 
 
-def test_a_real_cloud_session_still_stops_at_the_graphql_merge_rights_read(tmp_path, monkeypatch):
-    """The REAL current cloud outcome (stated limitation of 4b-1; moving merge_rights' permission read
-    to REST is slice 4b-2): the GraphQL `viewerPermission` read is refused by the proxy, so merge()
-    returns the `opened -- could not determine merge rights` line and sends no merge at all."""
+def test_a_real_cloud_session_with_no_permissions_in_the_reply_still_does_not_merge(tmp_path, monkeypatch):
+    """4b-2 moved the permission read to REST, so the 4b-1 outcome (GraphQL refused -> stop) is gone. What
+    remains fail-closed: a cloud token whose repo reply carries no `permissions` -> no merge."""
     monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
     d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
-    run = _runner(_view() + [("viewerPermission", RuntimeError(
-        "HTTP 403: GitHub GraphQL is not available from Claude Code sessions"))])
+    run = _runner(_view() + [(PERMISSIONS_READ, "")])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PR #7 opened — could not determine merge rights ("), out
+    assert prfake.merge_calls(run.calls) == []
+
+
+CLOUD_MERGE = {"work": {"enabled": True, "auto_merge": "always", "require_review": "changes"}}
+_GQL_REFUSED = RuntimeError("HTTP 403: GitHub GraphQL is not available from Claude Code sessions")
+
+
+def _cloud_reviewless():
+    """The REST reads the `changes` review gate makes: the PR's comments and its review list, both empty."""
+    return [(prfake.comments_get(7), prfake.rest_comments([])), (prfake.reviews_get(7), "[]"), (LINE_COMMENTS_GET, "[]")]
+
+
+def _cloud_merge_run(*served):
+    """A runner for a cloud session: every GraphQL-shaped argv (`gh pr ...`, `gh repo view`, `gh issue`,
+    `graphql`) RAISES; only the REST handlers in `served` answer."""
+    return _runner([("gh pr ", _GQL_REFUSED), ("gh repo view", _GQL_REFUSED), ("gh issue", _GQL_REFUSED),
+                    ("graphql", _GQL_REFUSED), (prfake.merge_put(7), prfake.rest_merged()), *served])
+
+
+def test_a_cloud_session_merges_over_rest_with_every_graphql_call_refused(tmp_path, monkeypatch):
+    """#895 4b-2 end to end: merge_rights (REST `permissions`), protection (RULESETS ONLY here -- classic is a
+    404, as on this repo) and the PUT all go over REST. It also PROVES the protection union: the line must
+    say the base `enforces` something with no `WARNING`, which a classic-only protection() cannot say here.
+    The review gate's thread check is the REST line-comment count here (`[]` => nothing to resolve).
+    UNMEASURED live: the cloud token receiving `permissions`, the rules read and the
+    PUT through the proxy."""
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true"); monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
+    run = _cloud_merge_run(*(_cloud_reviewless() + _view() + _perm() + UNPROTECTED + _ruleset(checks=("ci",), reviews=1)))
+    out = work.merge(d, CLOUD_MERGE, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PR #7 merged"), out
+    assert "WARNING" not in out and "local verify was the only gate" not in out, out
+    assert sum(MERGE_PUT in c for c in run.calls) == 1
+    assert any(PERMISSIONS_READ in c for c in run.calls) and any(RULES_READ in c for c in run.calls)
+    assert not any("viewerPermission" in c or "pr merge" in c or "pr comment" in c for c in run.calls)
+
+
+def test_a_cloud_session_with_a_pr_line_comment_refuses_and_sends_no_put(tmp_path, monkeypatch):
+    """Twin of the D4 cloud merge: the thread read is unavailable, one REST line comment exists, so whether
+    its thread is resolved cannot be proven -> the review gate refuses, no PUT."""
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true"); monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
+    served = [(prfake.comments_get(7), prfake.rest_comments([])), (prfake.reviews_get(7), "[]"),
+              (LINE_COMMENTS_GET, json.dumps([{"id": 1}]))]
+    run = _cloud_merge_run(*(served + _view() + _perm() + UNPROTECTED + _ruleset(checks=("ci",), reviews=1)))
+    out = work.merge(d, CLOUD_MERGE, goal, run=run, sleep=NOSLEEP)
+    assert prfake.merge_calls(run.calls) == [] and not any(MERGE_PUT in c for c in run.calls), run.calls
+    assert "review line comments" in out and "GraphQL is unavailable" in out, out
+
+
+def _cloud_gate(tmp_path, monkeypatch, line_reply):
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true"); monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    cfg = {"work": {"enabled": True, "require_review": "changes"}}
+    d = _sdlc(tmp_path, cfg); g = _started(d)
+    run = _runner([(LINE_COMMENTS_GET, line_reply)] + _review(decision=None))
+    return work.review_gate(d, cfg, g, run=run), run
+
+
+def test_review_gate_no_graphql_empty_line_comments_passes_with_one_rest_read(tmp_path, monkeypatch):
+    got, run = _cloud_gate(tmp_path, monkeypatch, "[]")
+    assert got == (True, ""), got
+    assert sum(LINE_COMMENTS_GET in c and "per_page=1" in c for c in run.calls) == 1
+    assert not any("graphql" in c or "nameWithOwner" in c for c in run.calls)
+
+
+@pytest.mark.parametrize("reply", [json.dumps([{"id": 1}]), "", "not json", "{}", "null",
+                                   RuntimeError("HTTP 502")], ids=["one-comment", "empty", "non-json", "dict", "null", "raises"])
+def test_review_gate_no_graphql_line_comments_or_unreadable_fails_closed(tmp_path, monkeypatch, reply, capsys):
+    (ok, why), _ = _cloud_gate(tmp_path, monkeypatch, reply)
+    assert ok is False and "GraphQL is unavailable" in why and "blocked by" not in why, why
+    assert capsys.readouterr().err.strip() != ""
+
+
+def test_a_cloud_session_without_permissions_in_the_repo_reply_sends_no_put(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
+    run = _cloud_merge_run(*(_cloud_reviewless() + _view() + [(PERMISSIONS_READ, "null")] + UNPROTECTED + _ruleset(checks=("ci",))))
+    out = work.merge(d, CLOUD_MERGE, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 opened — could not determine merge rights ("), out
     assert prfake.merge_calls(run.calls) == []
 
@@ -4505,6 +4656,87 @@ def test_protection_fails_open_when_the_api_returns_non_object_json(tmp_path):
         assert not prfake.merge_calls(run.calls)
 
 
+RULES_READ = "rules/branches/main"
+
+
+def _ruleset(checks=(), reviews=None, extra=()):
+    """The REST `rules/branches/<base>` list for a repo that enforces through RULESETS (MEASURED shape on
+    Agrim-Intelligence/sigma 2026-10-11: `pull_request` + `required_status_checks`, classic protection 404)."""
+    rules = list(extra)
+    if checks:
+        rules.append({"type": "required_status_checks", "ruleset_id": 1,
+                      "parameters": {"required_status_checks": [{"context": c, "integration_id": 15368}
+                                                                for c in checks]}})
+    if reviews is not None:
+        rules.append({"type": "pull_request", "ruleset_id": 1,
+                      "parameters": {"required_approving_review_count": reviews}})
+    return [(RULES_READ, json.dumps(rules))]
+
+
+def _protection(tmp_path, handlers):
+    d = _sdlc(tmp_path); goal = _started(d)
+    run = _runner(handlers)
+    return work.protection(d, ON, goal, run=run), run
+
+
+def test_protection_reads_a_repo_that_enforces_only_through_rulesets(tmp_path):
+    got, run = _protection(tmp_path, UNPROTECTED + _ruleset(checks=("test",), reviews=1))
+    assert got == (True, "`main` enforces 1 required check + 1 required review"), got
+    assert any(RULES_READ in c and "per_page=100" in c for c in run.calls)
+    assert not any("nameWithOwner" in c or "repo view" in c for c in run.calls)
+
+
+def test_protection_encodes_a_slashed_base_in_the_rules_path(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    rec = work._record(d, goal); rec["base"] = "sdlc/895"; work._save(d, goal, rec)
+    run = _runner([("branches/sdlc/895/protection", RuntimeError("HTTP 404")), ("rules/branches/sdlc%2F895", "[]")])
+    work.protection(d, ON, goal, run=run)
+    assert any("rules/branches/sdlc%2F895" in c for c in run.calls)
+
+
+def test_protection_unions_classic_and_ruleset_checks_by_name_and_takes_the_max_reviews(tmp_path):
+    got, _ = _protection(tmp_path, _protected(checks=("ci", "test"), reviews=1)
+                         + _ruleset(checks=("test", "lint"), reviews=2))
+    assert got == (True, "`main` enforces 3 required checks + 2 required reviews"), got
+
+
+@pytest.mark.parametrize("reply", [
+    "", "null", "{}", "42", '"x"', "not json", "[]", "[null, 3, \"x\", []]",
+    json.dumps([{"type": "required_status_checks"}]),
+    json.dumps([{"type": "required_status_checks", "parameters": None}]),
+    json.dumps([{"type": "required_status_checks", "parameters": {"required_status_checks": "ci"}}]),
+    json.dumps([{"type": "required_status_checks", "parameters": {"required_status_checks": [None, 3, {}, {"context": ""},
+                                                                                              {"context": 7}]}}]),
+    json.dumps([{"type": "pull_request", "parameters": {"required_approving_review_count": True}}]),
+    json.dumps([{"type": "pull_request", "parameters": {"required_approving_review_count": "2"}}]),
+    json.dumps([{"type": "pull_request", "parameters": {"required_approving_review_count": -1}}]),
+    json.dumps([{"type": "pull_request"}]),
+], ids=lambda r: r[:30])
+def test_protection_malformed_rules_never_raise_and_never_invent_a_requirement(tmp_path, reply):
+    got, _ = _protection(tmp_path, UNPROTECTED + [(RULES_READ, reply)])
+    assert got == (False, "`main` is not protected — nothing is enforced on merge"), got
+
+
+def test_protection_a_failing_rules_read_leaves_the_classic_result(tmp_path):
+    got, _ = _protection(tmp_path, _protected(checks=("ci",), reviews=0) + [(RULES_READ, RuntimeError("HTTP 500"))])
+    assert got == (True, "`main` enforces 1 required check"), got
+
+
+def test_protection_a_failing_classic_read_leaves_the_ruleset_result(tmp_path):
+    got, _ = _protection(tmp_path, [("branches/main/protection", RuntimeError("HTTP 404"))] + _ruleset(reviews=1))
+    assert got == (True, "`main` enforces 1 required review"), got
+
+
+def test_protection_both_unreadable_is_unchanged_not_protected(tmp_path):
+    got, _ = _protection(tmp_path, UNPROTECTED + [(RULES_READ, RuntimeError("HTTP 403"))])
+    assert got == (False, "`main` is not protected — nothing is enforced on merge")
+
+
+def test_protection_classic_present_but_empty_still_says_requires_no_checks(tmp_path):
+    got, _ = _protection(tmp_path, _protected(checks=(), reviews=0) + _ruleset(extra=[{"type": "deletion"}]))
+    assert got == (False, "`main` is protected but requires no checks or reviews")
+
+
 # --- the policy knob itself ----------------------------------------------------------------------
 
 def test_policy_parses_the_tri_state_and_the_old_booleans(tmp_path):
@@ -5022,7 +5254,8 @@ def _review(decision=None, changes_by=(), unresolved=0, comments=(), comment_aut
     assoc = list(associations) + ["OWNER"] * (len(comments) - len(associations))   # #635: trusted unless a test says otherwise
     rows = [{"body": b, "author": {"login": a}, "authorAssociation": x}
             for b, a, x in zip(comments, authors, assoc)]
-    return _comments(rows, pr_author, pr_get) + [(REVIEWS_GET, review_page), ("reviewDecision", decision_json),
+    return _comments(rows, pr_author, pr_get) + [(REVIEWS_GET, review_page), (LINE_COMMENTS_GET, "[]"),
+                                         ("reviewDecision", decision_json),
                                          ("nameWithOwner", "acme/app"), ("graphql", threads)]
 
 
@@ -5030,6 +5263,8 @@ def _review(decision=None, changes_by=(), unresolved=0, comments=(), comment_aut
 COMMENTS_GET = prfake.comments_get(7)
 #: #895 4a-2 PR B: ... and of its REST review-page read (no overlap with PR_GET `pulls/7 --method GET`).
 REVIEWS_GET = prfake.reviews_get(7)
+#: #895 4b-2 review: the ONE REST read review_gate makes of PR 7's line comments when GraphQL is unavailable.
+LINE_COMMENTS_GET = "pulls/7/comments"
 
 
 def _comments(rows, pr_author=None, pr_get=True):
@@ -5520,12 +5755,62 @@ def _post_review(d, cfg, goal, run, verdict, reason=""):
         if prfake.is_pr_get(argv, pr):                  # #895 4a-1: post_review's REST pulls/<n> read
             return prfake.rest_pull(number=pr, headRefOid=head)
         result = run(cwd, argv)
-        if argv[:3] == ["gh", "pr", "comment"] and not result:
-            return "https://github.example/issues/7#issuecomment-99"
+        if _posted(" ".join(map(str, argv))) and not result:
+            return _comment_reply(99)
         return result
 
     return work.post_review(d, cfg, goal, run=evidence_run, verdict=verdict, reason=reason,
                             evidence=str(evidence))
+
+
+def _receipt(d):
+    return json.loads(next((pathlib.Path(d) / "state" / "review-posts").glob("*.json")).read_text())
+
+
+def test_post_review_receipt_comes_from_the_rest_reply_url_or_id(tmp_path):
+    for reply, want in ((_comment_reply(43), "43"), (json.dumps({"id": 44}), "44")):
+        d = _sdlc(tmp_path / want); goal = _started(d)
+        assert "posted sigma:approve" in _post_review(d, ON, goal, _runner([(POST_COMMENT, reply)]), "approve")
+        assert _receipt(d)["comment_id"] == want and _receipt(d)["state"] == "remote-confirmed"
+
+
+def test_post_review_a_reply_naming_no_comment_id_parks_for_reconciliation(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    out = _post_review(d, ON, goal, _runner([(POST_COMMENT, "{}")]), "approve")
+    assert out.startswith("PARK: review comment posted but its ID could not be confirmed"), out
+
+
+def _cloud_post(tmp_path, monkeypatch, post):
+    """post_review under a cloud-session env: every `gh pr ...` / graphql argv is a refused GraphQL call."""
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true"); monkeypatch.delenv("SIGMA_GH_GRAPHQL", raising=False)
+    d = _sdlc(tmp_path); goal = _started(d)
+    seen = []
+
+    def run(cwd, argv):
+        line = " ".join(map(str, argv)); seen.append(line)
+        if argv[1:2] == ["pr"] or "graphql" in line:
+            raise RuntimeError("HTTP 403: GitHub GraphQL is not available from Claude Code sessions")
+        if _posted(line):
+            if isinstance(post, Exception):
+                raise post
+            return post
+        return ""
+    out = _post_review(d, ON, goal, run, "approve")
+    return out, seen
+
+
+def test_post_review_in_a_cloud_session_posts_over_rest_with_no_graphql_call(tmp_path, monkeypatch):
+    out, seen = _cloud_post(tmp_path, monkeypatch, _comment_reply(77))
+    assert out.startswith("posted sigma:approve"), out
+    assert sum(_posted(c) for c in seen) == 1
+    assert not any(c.split()[1:2] == ["pr"] or "graphql" in c for c in seen), seen
+
+
+def test_post_review_in_a_cloud_session_primary_rate_limit_makes_zero_fallback_calls_and_parks(tmp_path, monkeypatch):
+    out, seen = _cloud_post(tmp_path, monkeypatch, RuntimeError("gh: API rate limit exceeded (HTTP 429)"))
+    assert out.startswith("PARK: remote comment outcome ambiguous"), out
+    assert sum(_posted(c) for c in seen) == 1
+    assert not any(c.split()[1:2] == ["pr"] or "graphql" in c for c in seen), seen
 
 
 def test_post_review_approve_posts_the_marker(tmp_path):
@@ -5533,7 +5818,7 @@ def test_post_review_approve_posts_the_marker(tmp_path):
     run = _runner([])
     out = _post_review(d, ON, goal, run, "approve")
     assert "posted sigma:approve" in out
-    assert any("pr comment" in c and "sigma:approve" in c for c in run.calls)
+    assert any(_posted(c) and "sigma:approve" in c for c in run.calls)
 
 
 def test_post_review_refuses_missing_or_malformed_evidence_before_any_remote_post(tmp_path):
@@ -5541,7 +5826,7 @@ def test_post_review_refuses_missing_or_malformed_evidence_before_any_remote_pos
     d = _sdlc(tmp_path); goal = _started(d)
     missing = _runner([])
     assert "generation-bound evidence" in work.post_review(d, ON, goal, run=missing, verdict="approve")
-    assert not any("pr comment" in call for call in missing.calls)
+    assert not any(_posted(call) for call in missing.calls)
 
     evidence = pathlib.Path(d) / "malformed-evidence.json"
     evidence.write_text(json.dumps({"goal": goal, "verdict": "approve", "pr": 7,
@@ -5549,7 +5834,7 @@ def test_post_review_refuses_missing_or_malformed_evidence_before_any_remote_pos
     malformed = _runner([(PR_GET, prfake.rest_pull(headRefOid="a" * 40))])
     assert "not bound to this goal's current review generation" in work.post_review(
         d, ON, goal, run=malformed, verdict="approve", evidence=str(evidence))
-    assert not any("pr comment" in call for call in malformed.calls)
+    assert not any(_posted(call) for call in malformed.calls)
 
 
 def test_post_review_unblock_posts_a_typed_journal_observation(tmp_path):
@@ -5557,7 +5842,7 @@ def test_post_review_unblock_posts_a_typed_journal_observation(tmp_path):
     d = _sdlc(tmp_path, cfg); goal = _started(d)
     evidence, head = _review_chain(d, goal, "unblock")
     run = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)),
-                   ("pr comment", "https://github.example/issues/7#issuecomment-43")])
+                   (POST_COMMENT, _comment_reply(43))])
     assert work.post_review(d, cfg, goal, run=run, verdict="unblock", evidence=str(evidence)).startswith("posted")
     assert any("sigma:unblock" in call for call in run.calls)
     events = [event for event in journal_events(_load("ledger"), d) if event.get("kind") == "review_posted"]
@@ -5570,7 +5855,7 @@ def test_rollout_census_fails_when_post_review_attempts_a_journal_off_write(tmp_
     d = _sdlc(tmp_path, cfg); goal = _started(d)
     evidence, head = _review_chain(d, goal, "approve")
     run = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)),
-                   ("pr comment", "https://github.example/issues/7#issuecomment-44")])
+                   (POST_COMMENT, _comment_reply(44))])
     assert work.post_review(d, cfg, goal, run=run, verdict="approve", evidence=str(evidence)).startswith("posted")
     assert not [event for event in journal_events(_load("ledger"), d) if event.get("kind") == "review_posted"]
 
@@ -5603,12 +5888,12 @@ def test_evidence_backed_success_post_records_one_typed_review_observation_and_i
     evidence, head = _review_chain(d, goal, "approve")
     evidence = pathlib.Path(evidence)
     run = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)),
-                   ("pr comment", "https://github.example/issues/7#issuecomment-42")])
+                   (POST_COMMENT, _comment_reply(42))])
     assert work.post_review(d, cfg, goal, run=run, verdict="approve", evidence=str(evidence)).startswith("posted")
     events = [event for event in journal_events(_load("ledger"), d) if event.get("kind") == "review_posted"]
     assert len(events) == 1 and events[0]["comment_id"] == 42 and events[0]["head_sha"] == head
     assert work.post_review(d, cfg, goal, run=run, verdict="approve", evidence=str(evidence)).startswith("posted")
-    assert sum("pr comment" in call for call in run.calls) == 1
+    assert sum(_posted(call) for call in run.calls) == 1
 
 
 def test_evidence_backed_retry_after_ambiguous_post_is_reconcile_only(tmp_path):
@@ -5618,13 +5903,13 @@ def test_evidence_backed_retry_after_ambiguous_post_is_reconcile_only(tmp_path):
     evidence, head = _review_chain(d, goal, "approve")
     evidence = pathlib.Path(evidence)
     first = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)),
-                     ("pr comment", RuntimeError("request timed out"))])
+                     (POST_COMMENT, RuntimeError("request timed out"))])
     assert work.post_review(d, cfg, goal, run=first, verdict="approve", evidence=str(evidence)).startswith("PARK:")
-    assert sum("pr comment" in call for call in first.calls) == 1
+    assert sum(_posted(call) for call in first.calls) == 1
     retry = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)),
                      ("issues/7/comments", "[]")])
     assert work.post_review(d, cfg, goal, run=retry, verdict="approve", evidence=str(evidence)).startswith("PARK:")
-    assert not any("pr comment" in call for call in retry.calls)
+    assert not any(_posted(call) for call in retry.calls)
 
 
 def test_evidence_backed_post_parks_before_comment_when_the_pr_head_moved(tmp_path):
@@ -5634,7 +5919,7 @@ def test_evidence_backed_post_parks_before_comment_when_the_pr_head_moved(tmp_pa
     evidence = pathlib.Path(evidence)
     run = _runner([(PR_GET, prfake.rest_pull(headRefOid="c" * 40))])
     assert work.post_review(d, cfg, goal, run=run, verdict="approve", evidence=str(evidence)).startswith("PARK:")
-    assert not any("pr comment" in call for call in run.calls)
+    assert not any(_posted(call) for call in run.calls)
 
 
 def test_remote_review_reconciliation_retries_an_enabled_journal_write_before_repairing(tmp_path, monkeypatch):
@@ -5647,7 +5932,7 @@ def test_remote_review_reconciliation_retries_an_enabled_journal_write_before_re
     monkeypatch.setattr(work.ledger, "safe_append", lambda *args, **kwargs:
                         None if args[1] == "review_posted" else real_append(*args, **kwargs))
     first = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)),
-                     ("pr comment", "https://github.example/issues/7#issuecomment-42")])
+                     (POST_COMMENT, _comment_reply(42))])
     assert work.post_review(d, cfg, goal, run=first, verdict="approve", evidence=str(evidence)).startswith("PARK:")
     request = next((pathlib.Path(d) / "state" / "review-posts").glob("*.json"))
     assert not json.loads(request.read_text()).get("effects_repaired")
@@ -5696,7 +5981,7 @@ def test_post_review_refuses_evidence_hand_written_outside_the_generation_chain(
     run = _runner([(PR_GET, prfake.rest_pull(headRefOid="a" * 40))])
     out = work.post_review(d, ON, goal, run=run, verdict="approve", evidence=str(forged))
     assert "posted" not in out, out
-    assert not any("pr comment" in call for call in run.calls), "a forged approval reached GitHub"
+    assert not any(_posted(call) for call in run.calls), "a forged approval reached GitHub"
 
 
 def test_a_review_result_cannot_be_overwritten_once_written(tmp_path):
@@ -5884,7 +6169,7 @@ def test_documented_unblock_gesture_clears_a_prior_block_on_the_same_revision(tm
                       "--review-result", second["REVIEW_RESULT"]]) == 0
     head = subprocess.run(["git", "-C", worktree, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
     run = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)),
-                   ("pr comment", "https://github.example/issues/7#issuecomment-51")])
+                   (POST_COMMENT, _comment_reply(51))])
     out = work.post_review(d, ON, goal, run=run, verdict="unblock", evidence=second["REVIEW_EVIDENCE"])
     assert out.startswith("posted sigma:unblock"), out
 
@@ -5959,7 +6244,7 @@ def test_post_review_block_carries_the_reasons(tmp_path):
     d = _sdlc(tmp_path); goal = _started(d)
     run = _runner([])
     _post_review(d, ON, goal, run, "block", "missing null check in the parser")
-    posted = next(c for c in run.calls if "pr comment" in c)
+    posted = next(c for c in run.calls if _posted(c))
     assert "sigma:block" in posted and "missing null check" in posted
 
 
@@ -5971,7 +6256,7 @@ def test_post_review_block_reason_is_scrubbed_before_the_public_pr_comment(tmp_p
     run = _runner([])
     _post_review(d, ON, goal, run, "block",
                  "leaked AK" "IAIOSFODNN7EXAMPLE and acme.example.com KEY-123")
-    posted = next(c for c in run.calls if "pr comment" in c)
+    posted = next(c for c in run.calls if _posted(c))
     assert "AK" "IAIOSFODNN7EXAMPLE" not in posted
     assert "[REDACTED:aws-key]" in posted
 
@@ -5980,7 +6265,7 @@ def test_post_review_rejects_a_bad_verdict(tmp_path):
     d = _sdlc(tmp_path); goal = _started(d)
     run = _runner([])
     assert "approve" in work.post_review(d, ON, goal, run=run, verdict="maybe")
-    assert not any("pr comment" in c for c in run.calls)         # nothing posted on a bad verdict
+    assert not any(_posted(c) for c in run.calls)         # nothing posted on a bad verdict
 
 
 def test_post_review_needs_a_pr_first(tmp_path):
@@ -6015,7 +6300,7 @@ def test_post_review_block_does_not_consume_a_cycle_when_the_comment_fails_to_po
     (reasonable, since nothing documented the call as non-idempotent) silently burned the cap with no
     decrement and no sanctioned lever back except hand-editing state/work/<goal>.json."""
     d = _sdlc(tmp_path); goal = _started(d)
-    run = _runner([("pr comment", RuntimeError("API rate limit already exceeded for user ID ..."))])
+    run = _runner([(POST_COMMENT, RuntimeError("API rate limit already exceeded for user ID ..."))])
     out = _post_review(d, ON, goal, run, "block", "x")
     assert out.startswith("PARK: remote comment outcome ambiguous")
     assert work._record(d, goal).get("review_cycles", 0) == 0    # and the state agrees: NOT charged
@@ -6025,7 +6310,7 @@ def test_post_review_a_retry_after_a_failed_post_counts_exactly_one_cycle(tmp_pa
     """The retry itself must not double-count: a failed attempt leaves nothing behind, so a
     SUCCESSFUL retry of the same block is cycle 1, not 2."""
     d = _sdlc(tmp_path); goal = _started(d)
-    failing = _runner([("pr comment", RuntimeError("secondary rate limit"))])
+    failing = _runner([(POST_COMMENT, RuntimeError("secondary rate limit"))])
     assert _post_review(d, ON, goal, failing, "block", "x").startswith("PARK:")
     assert work._record(d, goal).get("review_cycles", 0) == 0
     ok = _runner([])
@@ -6040,7 +6325,7 @@ def test_post_review_hard_caps_the_cycles_and_parks(tmp_path):
     assert _post_review(d, cfg, goal, run, "block", "a").startswith("posted")
     out = _post_review(d, cfg, goal, run, "block", "b")   # 2nd block hits cap=2
     assert out.startswith("PARK:") and "did not converge" in out
-    assert "NOT converged" in [c for c in run.calls if "pr comment" in c][-1]    # the final comment says so
+    assert "NOT converged" in [c for c in run.calls if _posted(c)][-1]    # the final comment says so
 
 
 def test_post_review_default_cap_is_three(tmp_path):
@@ -6059,7 +6344,7 @@ def test_post_review_zero_cap_normalizes_to_the_default_instead_of_disabling_it(
     d = _sdlc(tmp_path, cfg); goal = _started(d); run = _runner([])
     for i in range(2):
         assert _post_review(d, cfg, goal, run, "block", str(i)).startswith("posted")
-    posted = [c for c in run.calls if "pr comment" in c][-1]
+    posted = [c for c in run.calls if _posted(c)][-1]
     assert "cycle 2/3" in posted                        # the effective cap is the default 3, not 0
     out = _post_review(d, cfg, goal, run, "block", "3rd")
     assert out.startswith("PARK:") and "did not converge" in out
@@ -8978,7 +9263,8 @@ def design_fallback(monkeypatch, tmp_path):
         inner = real(run, cwd)
 
         def r(args):
-            if args[0] == "api":
+            mutation = "--method" in args and args[args.index("--method") + 1] in ("PUT", "PATCH", "POST")
+            if args[0] == "api" and not mutation:      # reads fail over; the REST WRITES reach the fake
                 err = RuntimeError("gh: Server Error (HTTP 502)")
                 err.hint = "gh: Server Error (HTTP 502)"
                 raise err
@@ -8987,19 +9273,40 @@ def design_fallback(monkeypatch, tmp_path):
     monkeypatch.setattr(work, "_pr_api_run", adapt)
 
 
+def _design_merge_calls(calls):
+    """Every REST merge PUT (`pulls/N/merge`) in a recorded call list. The mutation is a `gh api` call
+    since #895 4b-3, so a negative `not _design_merge_calls(calls)` assertion is only non-vacuous if it
+    matches THIS shape (the old `gh pr merge` argv no longer exists on the REST path)."""
+    return [c for c in calls if "--method PUT" in " ".join(map(str, c[1])) and "/merge" in " ".join(map(str, c[1]))]
+
+
+def _design_close_calls(calls):
+    """Every REST close PATCH (`pulls/N` with `state=closed`) in a recorded call list."""
+    return [c for c in calls if "--method PATCH" in " ".join(map(str, c[1])) and "/pulls/" in " ".join(map(str, c[1]))]
+
+
+def _design_comment_calls(calls):
+    return [c for c in calls if "--method POST" in " ".join(map(str, c[1])) and "/comments" in " ".join(map(str, c[1]))]
+
+
 def _design_pr_spy(calls, replies=None):
     """A `run` stand-in that records every call and answers `gh pr list` from a queue of canned
-    JSON replies (default: one empty list, i.e. "no open PR"). Non-`gh pr list` calls (the actual
-    merge/close mutation) succeed with empty output unless the queue is exhausted, in which case
-    they raise -- lets a single spy drive both the lookup and the mutation in one test."""
+    JSON replies (default: one empty list, i.e. "no open PR"). The REST merge PUT answers the documented
+    `merged: true` body and the close PATCH `state: closed` (#895 4b-3); everything else succeeds with empty
+    output unless the list queue is exhausted, in which case it raises."""
     replies = list(replies) if replies is not None else ["[]"]
 
     def _fake(cwd, argv):
         calls.append((cwd, list(argv)))
+        line = " ".join(map(str, argv))
         if argv[:3] == ["gh", "pr", "list"]:
             if not replies:
                 raise RuntimeError("no more canned gh pr list replies")
             return replies.pop(0)
+        if "--method PUT" in line and "/merge" in line:
+            return prfake.rest_merged()
+        if "--method PATCH" in line and "/pulls/" in line:
+            return json.dumps({"state": "closed"})
         return ""
     return _fake
 
@@ -9026,6 +9333,7 @@ def _valid_design_row(**overrides):
         "headRefName": "sdlc/9",
         "files": [{"path": ".sdlc/design/9.md"}, {"path": ".sdlc/design/9-in-brief.md"}],
         "changedFiles": 2,
+        "headRefOid": "a" * 40,
     }
     if paths is not None:
         row["files"] = [{"path": p} for p in paths]
@@ -9041,8 +9349,11 @@ def test_merge_design_merges_an_open_mergeable_pr():
     pr = json.dumps([_valid_design_row(mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
     result = lp.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_design_pr_spy(calls, [pr]))
     assert result == "merged PR #42"
-    merge_calls = [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
-    assert merge_calls and merge_calls[0][1] == ["gh", "pr", "merge", "42", "--squash"]
+    merge_calls = _design_merge_calls(calls)
+    assert len(merge_calls) == 1
+    assert merge_calls[0][1][:2] == ["gh", "api"] and "/pulls/42/merge" in merge_calls[0][1][2]
+    assert "merge_method=squash" in merge_calls[0][1] and "sha=" + "a" * 40 in merge_calls[0][1]
+    assert not any(c[1][:3] == ["gh", "pr", "merge"] for c in calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9051,7 +9362,7 @@ def test_merge_design_reports_conflicts_without_attempting_a_merge():
     pr = json.dumps([_valid_design_row(mergeable="CONFLICTING", mergeStateStatus="DIRTY")])
     result = work.merge_design(".sdlc", ON, "9", run=_design_pr_spy(calls, [pr]))
     assert "conflicts" in result and "42" in result
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
+    assert not _design_merge_calls(calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9086,8 +9397,8 @@ def test_merge_design_uses_the_configured_merge_method():
     pr = json.dumps([_valid_design_row(number=5, mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
     cfg = {"work": {"enabled": True, "auto_merge": "always", "merge_method": "rebase"}}
     work.merge_design(".sdlc", cfg, "9", run=_design_pr_spy(calls, [pr]))
-    merge_calls = [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
-    assert merge_calls[0][1] == ["gh", "pr", "merge", "5", "--rebase"]
+    merge_calls = _design_merge_calls(calls)
+    assert "merge_method=rebase" in merge_calls[0][1] and "/pulls/5/merge" in merge_calls[0][1][2]
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9133,10 +9444,10 @@ def test_find_design_pr_refuses_on_more_than_one_open_pr_rather_than_guessing():
         calls.append((cwd, list(argv)))
         return two
     m = work.merge_design(".sdlc", ON, "9", run=_spy_two)
-    assert "guess" in m and not [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
+    assert "guess" in m and not _design_merge_calls(calls)
     calls.clear()
     c = work.close_design(".sdlc", ON, "9", run=_spy_two)
-    assert "guess" in c and not [c2 for c2 in calls if c2[1][:3] == ["gh", "pr", "close"]]
+    assert "guess" in c and not _design_close_calls(calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9146,8 +9457,11 @@ def test_close_design_closes_an_open_pr_with_the_given_comment():
     result = work.close_design(".sdlc", ON, "9", run=_design_pr_spy(calls, [pr]),
                                comment="goal-review: REJECTED")
     assert result == "closed PR #7"
-    close_calls = [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
-    assert close_calls[0][1] == ["gh", "pr", "close", "7", "--comment", "goal-review: REJECTED"]
+    close_calls = _design_close_calls(calls)
+    comments = _design_comment_calls(calls)
+    assert len(close_calls) == 1 and "/pulls/7" in close_calls[0][1][2] and "state=closed" in close_calls[0][1]
+    assert len(comments) == 1 and "body=goal-review: REJECTED" in comments[0][1]
+    assert calls.index(comments[0]) < calls.index(close_calls[0])     # comment first, as `gh pr close --comment`
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9208,81 +9522,169 @@ def test_close_design_cli_dispatches_with_an_optional_comment_flag(tmp_path, cap
     rc = work.main(["work.py", "close-design", d, "9", "--comment", "goal-review: REJECTED"])
     assert rc == 0
     assert "closed PR #3" in capsys.readouterr().out
-    close_calls = [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
-    assert "--comment" in close_calls[0][1]
+    assert _design_close_calls(calls) and "body=goal-review: REJECTED" in _design_comment_calls(calls)[0][1]
 
 
-@pytest.mark.usefixtures("design_fallback")
-def test_merge_design_retries_once_on_a_transient_gh_failure():
-    """`_retry_gh`'s one-retry contract (round 2 finding 2)."""
-    attempts = {"n": 0}
-    pr = json.dumps([_valid_design_row(number=8, mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
-    def _flaky(cwd, argv):
+def _ambiguous_design_run(calls, row, view_reply, put_error="connection dropped after the write may have landed"):
+    """The design list answers `row` once (and again if asked), every REST WRITE raises `put_error` (no gh
+    stderr, so an ambiguous `other_unparsed` failure that may have landed), and the reconcile READ
+    (`gh pr view` after the REST read 502s into its one fallback) answers `view_reply`."""
+    def _run(cwd, argv):
+        calls.append((cwd, list(argv)))
+        line = " ".join(map(str, argv))
         if argv[:3] == ["gh", "pr", "list"]:
-            return pr
-        attempts["n"] += 1
-        if attempts["n"] == 1:
-            raise RuntimeError("transient")
+            return row
+        if argv[:3] == ["gh", "pr", "view"]:
+            if isinstance(view_reply, Exception):
+                raise view_reply
+            return view_reply
+        if "--method" in argv and argv[argv.index("--method") + 1] in ("PUT", "PATCH"):
+            raise RuntimeError(put_error)
         return ""
-    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_flaky, sleep=NOSLEEP)
-    assert result == "merged PR #8"
-    assert attempts["n"] == 2                                 # exactly one retry, not more
+    return _run
 
 
 @pytest.mark.usefixtures("design_fallback")
-def test_merge_design_gives_up_after_two_failures():
-    pr = json.dumps([_valid_design_row(number=8, mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
-    def _always_fails(cwd, argv):
+def test_merge_design_never_retries_an_ambiguous_merge():
+    """#895 4b-3: a merge is non-idempotent. ONE PUT, no retry, no `gh pr merge` fallback."""
+    calls = []
+    pr = json.dumps([_valid_design_row(number=8)])
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9",
+                               run=_ambiguous_design_run(calls, pr, RuntimeError("down")), sleep=NOSLEEP)
+    assert result.startswith("could not merge PR #8")
+    assert len(_design_merge_calls(calls)) == 1
+    assert not any(c[1][:3] == ["gh", "pr", "merge"] for c in calls)
+
+
+@pytest.mark.usefixtures("design_fallback")
+def test_merge_design_reports_success_when_the_reply_was_lost_but_the_pr_is_merged():
+    """The PUT's reply never arrived but a READ of the PR says MERGED -> merged, confirmed by the read."""
+    calls = []
+    pr = json.dumps([_valid_design_row(number=8)])
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9",
+                               run=_ambiguous_design_run(calls, pr, json.dumps({"state": "MERGED"})), sleep=NOSLEEP)
+    assert result == "merged PR #8 (confirmed on re-read after an unconfirmed reply)"
+    assert len(_design_merge_calls(calls)) == 1
+
+
+@pytest.mark.usefixtures("design_fallback")
+def test_merge_design_reports_failure_when_the_re_read_finds_the_pr_still_open():
+    pr = json.dumps([_valid_design_row(number=8)])
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", sleep=NOSLEEP,
+                               run=_ambiguous_design_run([], pr, json.dumps({"state": "OPEN"})))
+    assert result.startswith("could not merge PR #8") and "still open" in result
+
+
+@pytest.mark.usefixtures("design_fallback")
+@pytest.mark.parametrize("reply", ["", "   ", "null", "{}", "[]", '{"state":', '{"state": "weird"}',
+                                   '{"state": null}', "<html>proxy</html>", RuntimeError("down")],
+                         ids=["blank", "spaces", "null", "empty-object", "list", "truncated", "unknown-state",
+                              "null-state", "html", "unreadable"])
+def test_merge_and_close_design_never_count_a_degraded_re_read_as_proof(reply):
+    """THE control: after an ambiguous write, an empty / truncated / malformed / unreadable re-read answers
+    nothing. It must not read as 'it merged' or 'it closed' (the old 'no open PR left' inference did)."""
+    pr = json.dumps([_valid_design_row(number=8)])
+    m = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_ambiguous_design_run([], pr, reply), sleep=NOSLEEP)
+    assert m.startswith("could not merge PR #8") and "unconfirmed" in m and not m.startswith("merged")
+    c = work.close_design(".sdlc", ON, "9", run=_ambiguous_design_run([], pr, reply))
+    assert c.startswith("could not close PR #8") and "unconfirmed" in c and not c.startswith("closed")
+
+
+@pytest.mark.usefixtures("design_fallback")
+def test_close_design_reports_success_when_the_reply_was_lost_but_the_pr_is_closed():
+    calls = []
+    pr = json.dumps([_valid_design_row(number=7)])
+    result = work.close_design(".sdlc", ON, "9",
+                               run=_ambiguous_design_run(calls, pr, json.dumps({"state": "CLOSED"})))
+    assert result == "closed PR #7 (confirmed on re-read after an unconfirmed reply)"
+    assert len(_design_close_calls(calls)) == 1
+
+
+@pytest.mark.usefixtures("design_fallback")
+def test_close_design_a_merged_pr_is_not_reported_as_closed():
+    """The re-read says MERGED: somebody else landed it. `closed PR` would tell a human the opposite."""
+    pr = json.dumps([_valid_design_row(number=7)])
+    result = work.close_design(".sdlc", ON, "9",
+                               run=_ambiguous_design_run([], pr, json.dumps({"state": "MERGED"})))
+    assert result.startswith("could not close PR #7") and "closed PR #7" not in result[:12]
+
+
+@pytest.mark.usefixtures("design_fallback")
+@pytest.mark.parametrize("reply", ["", "{}", "null", '{"merged": false}', '{"merged":', "[]", "<html>"],
+                         ids=["blank", "empty-object", "null", "merged-false", "truncated", "list", "html"])
+def test_merge_design_a_degraded_2xx_put_reply_is_never_success(reply):
+    """A 200 with a body that is not `merged: true` raises inside gh_api and is then reconciled by a read; a
+    read that is also unusable leaves it unconfirmed. Never 'merged PR'."""
+    pr = json.dumps([_valid_design_row(number=8)])
+
+    def _run(cwd, argv):
+        line = " ".join(map(str, argv))
         if argv[:3] == ["gh", "pr", "list"]:
             return pr
-        raise RuntimeError("still down")
-    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_always_fails, sleep=NOSLEEP)
-    assert "could not merge" in result
+        if "--method PUT" in line:
+            return reply
+        if argv[:3] == ["gh", "pr", "view"]:
+            return ""
+        return ""
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_run, sleep=NOSLEEP)
+    assert result.startswith("could not merge PR #8") and "unconfirmed" in result
 
 
 @pytest.mark.usefixtures("design_fallback")
-def test_merge_design_reports_success_when_a_retry_error_actually_landed():
-    """Code review, #2482: `gh pr merge` is NOT idempotent -- if the first attempt landed on
-    GitHub's own side but the response never reached this process, `_retry_gh`'s second attempt
-    fails against an already-merged PR. Simulated here: the merge call always raises, but the
-    RE-CHECK `gh pr list` (called after the retry gives up) returns empty -- the PR is gone,
-    i.e. it landed. Must report success, not the generic "could not merge" false negative."""
-    calls = {"list": 0}
-    pr = json.dumps([_valid_design_row(number=8, mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
-    def _lands_but_errors(cwd, argv):
-        if argv[:3] == ["gh", "pr", "list"]:
-            calls["list"] += 1
-            return pr if calls["list"] == 1 else "[]"   # gone by the re-check -- it landed
-        raise RuntimeError("connection dropped after the merge actually succeeded")
-    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_lands_but_errors, sleep=NOSLEEP)
-    assert result == "merged PR #8 (confirmed on re-check after a retry error)"
-
-
-@pytest.mark.usefixtures("design_fallback")
-def test_merge_design_still_reports_failure_when_the_retry_error_was_a_genuine_failure():
-    """The other half: if the re-check STILL finds the PR open, the merge genuinely never landed
-    -- must not be misread as success just because a re-check happened."""
-    pr = json.dumps([_valid_design_row(number=8, mergeable="MERGEABLE", mergeStateStatus="CLEAN")])
-    def _genuinely_fails(cwd, argv):
-        if argv[:3] == ["gh", "pr", "list"]:
-            return pr                            # still open on every re-check too
-        raise RuntimeError("still down")
-    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_genuinely_fails, sleep=NOSLEEP)
-    assert "could not merge" in result
-
-
-@pytest.mark.usefixtures("design_fallback")
-def test_close_design_reports_success_when_a_retry_error_actually_landed():
-    """Mirrors merge_design's own re-check-before-reporting-failure fix, for close."""
-    calls = {"list": 0}
+@pytest.mark.parametrize("reply", ["", "{}", "null", '{"state": "open"}', '{"state":', "[]"],
+                         ids=["blank", "empty-object", "null", "still-open", "truncated", "list"])
+def test_close_design_a_degraded_2xx_patch_reply_is_never_success(reply):
     pr = json.dumps([_valid_design_row(number=7)])
-    def _lands_but_errors(cwd, argv):
+
+    def _run(cwd, argv):
+        line = " ".join(map(str, argv))
         if argv[:3] == ["gh", "pr", "list"]:
-            calls["list"] += 1
-            return pr if calls["list"] == 1 else "[]"
-        raise RuntimeError("connection dropped after the close actually succeeded")
-    result = work.close_design(".sdlc", ON, "9", run=_lands_but_errors, sleep=NOSLEEP)
-    assert result == "closed PR #7 (confirmed on re-check after a retry error)"
+            return pr
+        if "--method PATCH" in line:
+            return reply
+        return ""
+    result = work.close_design(".sdlc", ON, "9", run=_run)
+    assert result.startswith("could not close PR #7") and not result.startswith("closed")
+
+
+@pytest.mark.usefixtures("design_fallback")
+def test_merge_design_a_definite_refusal_does_not_reconcile_and_does_not_fall_back():
+    """HTTP 409 (head moved) is a definite refusal: no re-read, no `gh pr merge`, a plain 'could not merge'."""
+    calls = []
+    pr = json.dumps([_valid_design_row(number=8)])
+    err = RuntimeError("gh: Head branch was modified (HTTP 409)")
+    err.hint = "gh: Head branch was modified (HTTP 409)"
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_ambiguous_design_run(calls, pr, "{}", err.hint),
+                               sleep=NOSLEEP)
+    assert result == "could not merge PR #8 (see stderr for detail)"
+    assert not any(c[1][:3] == ["gh", "pr", "view"] for c in calls)
+
+
+@pytest.mark.usefixtures("design_fallback")
+def test_merge_design_refuses_a_row_without_a_head_sha():
+    """No vetted head to pin -> no merge call at all."""
+    calls = []
+    pr = json.dumps([_valid_design_row(number=8, headRefOid="")])
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_design_pr_spy(calls, [pr, pr, pr]), sleep=NOSLEEP)
+    assert result.startswith("could not merge PR #8")
+    assert not _design_merge_calls(calls)
+
+
+@pytest.mark.usefixtures("design_fallback")
+def test_close_design_a_failed_comment_closes_nothing():
+    calls = []
+    pr = json.dumps([_valid_design_row(number=7)])
+
+    def _run(cwd, argv):
+        calls.append((cwd, list(argv)))
+        if argv[:3] == ["gh", "pr", "list"]:
+            return pr
+        if "--method" in argv and argv[argv.index("--method") + 1] == "POST":
+            raise RuntimeError("comment lost")
+        return json.dumps({"state": "OPEN"}) if argv[:3] == ["gh", "pr", "view"] else ""
+    result = work.close_design(".sdlc", ON, "9", run=_run, comment="goal-review: REJECTED")
+    assert result.startswith("could not close PR #7")
+    assert not _design_close_calls(calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9394,25 +9796,25 @@ def test_close_design_and_merge_design_cli_both_act_on_the_same_repo_pr_never_th
         _valid_design_row(number=42),
     ])
     calls = []
-    def _spy(cwd, argv):
-        calls.append((cwd, list(argv)))
-        return mixed
-    monkeypatch.setattr(work, "_run", _spy)
+    inner = _design_pr_spy(calls, [mixed, mixed])
+    monkeypatch.setattr(work, "_run", inner)
     rc = work.main(["work.py", "merge-design", d, "9"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "merged PR #42" in out
-    merge_calls = [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
-    assert merge_calls and merge_calls[0][1][3] == "42"
-    assert not any(c[1][3] == "43" for c in merge_calls)
+    merge_calls = _design_merge_calls(calls)
+    assert merge_calls and "/pulls/42/merge" in merge_calls[0][1][2]
+    assert not any("/pulls/43/" in c[1][2] for c in merge_calls)
     calls.clear()
+    inner = _design_pr_spy(calls, [mixed])
+    monkeypatch.setattr(work, "_run", inner)
     rc2 = work.main(["work.py", "close-design", d, "9", "--comment", "goal-review: REJECTED"])
     out2 = capsys.readouterr().out
     assert rc2 == 0
     assert "closed PR #42" in out2
-    close_calls = [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
-    assert close_calls and close_calls[0][1][3] == "42"
-    assert not any(c[1][3] == "43" for c in close_calls)
+    close_calls = _design_close_calls(calls)
+    assert close_calls and "/pulls/42" in close_calls[0][1][2]
+    assert not any("/pulls/43" in c[1][2] for c in close_calls + _design_comment_calls(calls))
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9580,14 +9982,14 @@ def test_close_design_and_merge_design_cli_both_refuse_a_row_with_a_boolean_pr_n
     assert rc == 0
     assert "True" not in out
     assert "could not check for a design PR" in out
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
+    assert not _design_merge_calls(calls)
     calls.clear()
     rc2 = work.main(["work.py", "close-design", d, "9", "--comment", "goal-review: REJECTED"])
     out2 = capsys.readouterr().out
     assert rc2 == 0
     assert "True" not in out2
     assert "could not check for a design PR" in out2
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
+    assert not _design_close_calls(calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9621,13 +10023,13 @@ def test_close_design_and_merge_design_cli_both_refuse_a_fork_pr(tmp_path, capsy
     assert rc == 0
     assert "merged PR #42" not in out
     assert "could not check for a design PR" in out and "fork" in out
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
+    assert not _design_merge_calls(calls)
     rc2 = work.main(["work.py", "close-design", d, "9", "--comment", "goal-review: REJECTED"])
     out2 = capsys.readouterr().out
     assert rc2 == 0
     assert "closed PR #42" not in out2
     assert "could not check for a design PR" in out2 and "fork" in out2
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
+    assert not _design_close_calls(calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9647,13 +10049,13 @@ def test_close_design_and_merge_design_cli_both_refuse_a_code_shaped_pr(tmp_path
     assert rc == 0
     assert "merged PR #42" not in out
     assert "could not check for a design PR" in out
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
+    assert not _design_merge_calls(calls)
     rc2 = work.main(["work.py", "close-design", d, "9", "--comment", "goal-review: REJECTED"])
     out2 = capsys.readouterr().out
     assert rc2 == 0
     assert "closed PR #42" not in out2
     assert "could not check for a design PR" in out2
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
+    assert not _design_close_calls(calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9679,7 +10081,7 @@ def test_close_design_and_merge_design_cli_never_echo_a_malicious_extra_file_pat
     assert "merged PR #42" not in out
     assert "could not check for a design PR" in out
     assert "#123" not in out
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
+    assert not _design_merge_calls(calls)
     calls.clear()
     rc2 = work.main(["work.py", "close-design", d, "9", "--comment", "goal-review: REJECTED"])
     out2 = capsys.readouterr().out
@@ -9687,7 +10089,7 @@ def test_close_design_and_merge_design_cli_never_echo_a_malicious_extra_file_pat
     assert "closed PR #42" not in out2
     assert "could not check for a design PR" in out2
     assert "#123" not in out2
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
+    assert not _design_close_calls(calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9709,7 +10111,7 @@ def test_close_design_and_merge_design_cli_never_echo_a_malicious_headRefName(
     assert "merged PR #42" not in out
     assert "could not check for a design PR" in out
     assert "#999" not in out
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "merge"]]
+    assert not _design_merge_calls(calls)
     calls.clear()
     rc2 = work.main(["work.py", "close-design", d, "9", "--comment", "goal-review: REJECTED"])
     out2 = capsys.readouterr().out
@@ -9717,7 +10119,7 @@ def test_close_design_and_merge_design_cli_never_echo_a_malicious_headRefName(
     assert "closed PR #42" not in out2
     assert "could not check for a design PR" in out2
     assert "#999" not in out2
-    assert not [c for c in calls if c[1][:3] == ["gh", "pr", "close"]]
+    assert not _design_close_calls(calls)
 
 
 @pytest.mark.usefixtures("design_fallback")
@@ -9730,75 +10132,6 @@ def test_find_design_pr_refuses_a_padded_reply_with_a_duplicate_path():
     pr, err = work._find_design_pr(".sdlc", ON, "9", lambda cwd, argv: json.dumps([row]))
     assert pr is None
     assert err and "lists a path more than once" in err
-
-
-@pytest.mark.usefixtures("design_fallback")
-def test_merge_design_reports_failure_not_success_when_the_recheck_finds_a_fork_row():
-    """A fork sharing the branch name existing on the RE-CHECK proves nothing about whether
-    OUR merge landed -- must not be read as the "(None, None) == gone" success shape. The
-    fork row is `_valid_design_row(isCrossRepository=True)` per the structural rule."""
-    calls = {"list": 0}
-    pr = json.dumps([_valid_design_row(number=8, mergeable="MERGEABLE",
-                                        mergeStateStatus="CLEAN")])
-    fork = json.dumps([_valid_design_row(number=99, isCrossRepository=True)])
-    def _run(cwd, argv):
-        if argv[:3] == ["gh", "pr", "list"]:
-            calls["list"] += 1
-            return pr if calls["list"] == 1 else fork
-        raise RuntimeError("connection dropped after the merge may or may not have landed")
-    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_run, sleep=NOSLEEP)
-    assert "could not merge" in result
-    assert "confirmed on re-check" not in result
-
-
-@pytest.mark.usefixtures("design_fallback")
-def test_close_design_reports_failure_not_success_when_the_recheck_finds_a_fork_row():
-    calls = {"list": 0}
-    pr = json.dumps([_valid_design_row(number=7)])
-    fork = json.dumps([_valid_design_row(number=99, isCrossRepository=True)])
-    def _run(cwd, argv):
-        if argv[:3] == ["gh", "pr", "list"]:
-            calls["list"] += 1
-            return pr if calls["list"] == 1 else fork
-        raise RuntimeError("connection dropped after the close may or may not have landed")
-    result = work.close_design(".sdlc", ON, "9", run=_run)
-    assert "could not close" in result
-    assert "confirmed on re-check" not in result
-
-
-@pytest.mark.usefixtures("design_fallback")
-def test_merge_design_reports_failure_not_success_when_the_recheck_finds_a_code_shaped_row():
-    calls = {"list": 0}
-    pr = json.dumps([_valid_design_row(number=8, mergeable="MERGEABLE",
-                                        mergeStateStatus="CLEAN")])
-    code_pr = json.dumps([_valid_design_row(
-        number=55, paths=[".sdlc/design/9.md", ".sdlc/design/9-in-brief.md",
-                           "skills/sigma-loop/scripts/work.py"])])
-    def _run(cwd, argv):
-        if argv[:3] == ["gh", "pr", "list"]:
-            calls["list"] += 1
-            return pr if calls["list"] == 1 else code_pr
-        raise RuntimeError("connection dropped after the merge may or may not have landed")
-    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=_run, sleep=NOSLEEP)
-    assert "could not merge" in result
-    assert "confirmed on re-check" not in result
-
-
-@pytest.mark.usefixtures("design_fallback")
-def test_close_design_reports_failure_not_success_when_the_recheck_finds_a_code_shaped_row():
-    calls = {"list": 0}
-    pr = json.dumps([_valid_design_row(number=7)])
-    code_pr = json.dumps([_valid_design_row(
-        number=55, paths=[".sdlc/design/9.md", ".sdlc/design/9-in-brief.md",
-                           "skills/sigma-loop/scripts/work.py"])])
-    def _run(cwd, argv):
-        if argv[:3] == ["gh", "pr", "list"]:
-            calls["list"] += 1
-            return pr if calls["list"] == 1 else code_pr
-        raise RuntimeError("connection dropped after the close may or may not have landed")
-    result = work.close_design(".sdlc", ON, "9", run=_run)
-    assert "could not close" in result
-    assert "confirmed on re-check" not in result
 
 
 # --- #895 4a-2 PR B: the design-PR list goes REST first (list + pulls/N + pulls/N/files) -----------------
@@ -9831,6 +10164,92 @@ def test_rest_design_finds_merges_and_names_the_head_owner_from_the_slug(design_
     assert not any(c.startswith("gh pr list") for c in run.calls)
 
 
+def test_rest_design_merge_is_one_pinned_put_to_the_slug_repo_and_close_is_comment_then_patch(design_rest):
+    run = _design_run([{"number": 42}])
+    assert work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=run, sleep=NOSLEEP) == "merged PR #42"
+    puts = [c for c in run.calls if "--method PUT" in c]
+    assert puts == ["gh api repos/acme/app/pulls/42/merge --method PUT -f merge_method=squash -f sha=" + prfake.HEAD]
+    run = _design_run([{"number": 42}])
+    assert work.close_design(".sdlc", ON, "9", run=run, comment="why") == "closed PR #42"
+    writes = [c for c in run.calls if "--method POST" in c or "--method PATCH" in c]
+    assert writes == ["gh api repos/acme/app/issues/42/comments --method POST -f body=why",
+                      "gh api repos/acme/app/pulls/42 --method PATCH -f state=closed"]
+    assert not any(c.startswith(("gh pr merge", "gh pr close", "gh pr comment")) for c in run.calls)
+
+
+def test_rest_design_a_primary_rate_limit_on_the_put_falls_back_to_gh_pr_merge_once(design_rest):
+    limited = RuntimeError("gh api: gh: API rate limit exceeded (HTTP 429)")
+    run = _design_run([{"number": 42}], ("pulls/42/merge --method PUT", limited))
+    assert work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=run, sleep=NOSLEEP) == "merged PR #42"
+    fb = [c for c in run.calls if c.startswith("gh pr merge")]
+    assert fb == ["gh pr merge 42 --squash --match-head-commit " + prfake.HEAD + " --repo acme/app"]
+
+
+@pytest.mark.parametrize("fail", [RuntimeError("gh api: gh: Server Error (HTTP 502)"),
+                                  RuntimeError("gh api: gh: connection reset by peer"),
+                                  RuntimeError("gh api: gh: You have exceeded a secondary rate limit (HTTP 403)")],
+                         ids=["5xx", "transport", "secondary-rate-limit"])
+def test_rest_design_an_ambiguous_put_failure_never_falls_back_and_is_reconciled_by_a_read(design_rest, fail):
+    run = _design_run([{"number": 42}], ("pulls/42/merge --method PUT", fail))
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=run, sleep=NOSLEEP)
+    assert result.startswith("could not merge PR #42")          # the design pull reads OPEN: not merged
+    assert not any(c.startswith("gh pr merge") for c in run.calls)
+    assert len([c for c in run.calls if "--method PUT" in c]) == 1
+
+
+def _reread(first, later):
+    """A `pulls/42` GET handler: the identity lookup (first read) sees an open design PR, every later read
+    (the reconcile after an ambiguous write) sees `later`."""
+    seen = {"n": 0}
+
+    def answer(line):
+        seen["n"] += 1
+        return first if seen["n"] == 1 else later
+    return answer
+
+
+@pytest.mark.parametrize("later,expect", [
+    (prfake.rest_pull(number=42, state="MERGED", headRefName="sdlc/9"), "merged PR #42 (confirmed on re-read"),
+    (prfake.rest_pull(number=42, state="CLOSED", headRefName="sdlc/9"), "closed without merging on re-read"),
+    (prfake.rest_pull(number=42, state="OPEN", headRefName="sdlc/9"), "still open on re-read"),
+    ("", "outcome unconfirmed"), ('{"state":', "outcome unconfirmed")],
+    ids=["merged", "closed-unmerged", "open", "blank", "truncated"])
+def test_rest_design_merge_reconcile_uses_the_rest_pull_read_in_a_cloud_session(design_rest, monkeypatch, later, expect):
+    """CLAUDE_CODE_REMOTE: no GraphQL, so the reconcile is the REST `pulls/42` read alone (merged_at/merged -> MERGED)."""
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    first = json.dumps(prfake.design_pull())
+    run = _design_run([{"number": 42}], ("pulls/42/merge --method PUT", RuntimeError("gh api: gh: Server Error (HTTP 502)")),
+                      (prfake.pull_get(42), _reread(first, later)))
+    result = work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=run, sleep=NOSLEEP)
+    assert expect in result
+    assert not any(c.startswith(("gh pr merge", "gh pr view")) for c in run.calls)
+    assert len([c for c in run.calls if "--method PUT" in c]) == 1
+
+
+@pytest.mark.parametrize("later,expect", [
+    (prfake.rest_pull(number=42, state="CLOSED", headRefName="sdlc/9"), "closed PR #42 (confirmed on re-read"),
+    (prfake.rest_pull(number=42, state="MERGED", headRefName="sdlc/9"), "merged by someone else on re-read"),
+    (prfake.rest_pull(number=42, state="OPEN", headRefName="sdlc/9"), "still open on re-read"),
+    ("", "outcome unconfirmed")], ids=["closed", "merged", "open", "blank"])
+def test_rest_design_close_reconcile_uses_the_rest_pull_read_in_a_cloud_session(design_rest, monkeypatch, later, expect):
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    first = json.dumps(prfake.design_pull())
+    run = _design_run([{"number": 42}], ("pulls/42 --method PATCH", RuntimeError("gh api: gh: connection reset by peer")),
+                      (prfake.pull_get(42), _reread(first, later)))
+    result = work.close_design(".sdlc", ON, "9", run=run)
+    assert expect in result
+    assert not any(c.startswith(("gh pr close", "gh pr view")) for c in run.calls)
+
+
+def test_rest_design_in_a_cloud_session_a_rate_limit_does_not_fall_back(design_rest, monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    limited = RuntimeError("gh api: gh: API rate limit exceeded (HTTP 429)")
+    run = _design_run([{"number": 42}], ("pulls/42/merge --method PUT", limited))
+    assert work.merge_design(".sdlc", DESIGN_ALWAYS, "9", run=run, sleep=NOSLEEP) == (
+        "could not merge PR #42 (see stderr for detail)")
+    assert not any(c.startswith("gh pr merge") for c in run.calls)
+
+
 def test_rest_design_without_a_slug_uses_ghs_owner_placeholder(design_rest):
     """MEASURED: `{owner}` expands INSIDE the query string from the cwd's remote. Only used when the slug is unknown."""
     run = _design_run([{"number": 42}], slug=False)
@@ -9846,7 +10265,8 @@ def test_rest_design_enriches_every_field_the_callers_read(design_rest):
     assert err is None
     assert pr == {"number": 42, "url": "https://x/42", "mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY",
                   "isCrossRepository": False, "headRefName": "sdlc/9",
-                  "files": [{"path": p} for p in prfake.DESIGN_PATHS], "changedFiles": 2}
+                  "files": [{"path": p} for p in prfake.DESIGN_PATHS], "changedFiles": 2,
+                  "headRefOid": prfake.HEAD}
     # 1 list + (pull + files) per row: the documented 1 + 2N cost
     assert len([c for c in run.calls if c.startswith("gh api")]) == 3
 
@@ -9934,7 +10354,7 @@ def test_rest_design_a_502_falls_back_to_gh_pr_list_exactly_once(design_rest):
     assert err is None and pr["number"] == 42
     fb = [c for c in run.calls if c.startswith("gh pr list")]
     assert fb == ["gh pr list --repo acme/app --head sdlc/9 --state open --limit 30 --json "
-                  "number,url,mergeable,mergeStateStatus,isCrossRepository,headRefName,files,changedFiles"]
+                  "number,url,mergeable,mergeStateStatus,isCrossRepository,headRefName,files,changedFiles,headRefOid"]
 
 
 @pytest.mark.parametrize("fail", [RuntimeError("gh api: gh: Not Found (HTTP 404)"),
@@ -10724,7 +11144,7 @@ def test_pr_api_run_keeps_proxy_text_and_passes_other_exceptions_through():
 
 
 def _rights_run(pull):
-    return _runner([(PR_GET, pull), ("viewerPermission", "ADMIN")])
+    return _runner([(PR_GET, pull), (PERMISSIONS_READ, permissions_body("ADMIN"))])
 
 
 def test_merge_rights_reads_the_fork_bit_over_rest_not_pr_view(tmp_path):
@@ -10733,7 +11153,7 @@ def test_merge_rights_reads_the_fork_bit_over_rest_not_pr_view(tmp_path):
     assert work.merge_rights(d, ON, g, run=run) == (True, "")
     assert run.calls[0] == "gh api repos/{owner}/{repo}/pulls/7 --method GET"
     assert not any("pr view" in c for c in run.calls)
-    assert any("viewerPermission" in c for c in run.calls)
+    assert any(PERMISSIONS_READ in c for c in run.calls)
 
 
 @pytest.mark.parametrize("cross", [True, None], ids=["fork", "deleted-fork"])
@@ -10834,8 +11254,8 @@ def _post_review_raw(d, goal, current, fallback=None):
             if isinstance(current, Exception):
                 raise current
             return current(head) if callable(current) else current
-        if argv[:3] == ["gh", "pr", "comment"]:
-            return "https://github.example/issues/7#issuecomment-99"
+        if _posted(" ".join(map(str, argv))):
+            return _comment_reply(99)
         return ""
     run.calls = []
     out = work.post_review(d, ON, goal, run=run, verdict="approve", reason="", evidence=str(evidence))
@@ -10923,7 +11343,7 @@ def _b1_run(fallback, *extra):
 @pytest.mark.parametrize("fallback", _B1_GARBAGE, ids=_B1_IDS)
 def test_b1_merge_rights_does_not_merge_on_a_garbage_fallback(fallback, tmp_path, _b1_fallback_on):
     d = _sdlc(tmp_path); g = _started(d)
-    run = _b1_run(fallback, ("viewerPermission", "ADMIN"))
+    run = _b1_run(fallback, (PERMISSIONS_READ, permissions_body("ADMIN")))
     ok, why = work.merge_rights(d, ON, g, run=run)
     assert any("gh pr view 7 --json isCrossRepository" in c for c in run.calls)
     assert ok is False and "could not determine merge rights" in why
@@ -10961,3 +11381,16 @@ def test_b1_open_pr_refusal_stays_fail_open_on_a_garbage_fallback(fallback, tmp_
     run = _b1_run(fallback)
     assert work._open_pr_refusal(d, work._record(d, goal), "7", run) is None
     assert any("gh pr view 7 --json state,autoMergeRequest" in c for c in run.calls)
+
+
+def test_protection_a_non_int_classic_review_count_does_not_discard_the_ruleset_result(tmp_path):
+    classic = [("branches/main/protection", json.dumps({"required_pull_request_reviews":
+                                                        {"required_approving_review_count": "2"}}))]
+    got, _ = _protection(tmp_path, classic + _ruleset(reviews=1))
+    assert got == (True, "`main` enforces 1 required review"), got
+
+
+def test_protection_an_empty_string_classic_check_name_is_discarded(tmp_path):
+    classic = [("branches/main/protection", json.dumps({"required_status_checks": {"contexts": ["", "ci"]}}))]
+    got, _ = _protection(tmp_path, classic + _ruleset())
+    assert got == (True, "`main` enforces 1 required check"), got

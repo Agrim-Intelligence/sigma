@@ -523,7 +523,12 @@ def _view(mergeable="MERGEABLE", status="CLEAN", checks=(("ci", "SUCCESS"),), he
 
 
 def _perm(perm="ADMIN"):
-    return [("viewerPermission", perm), ("nameWithOwner", "acme/app")]
+    # #895 4b-2: merge_rights reads REST `.permissions`; `nameWithOwner` stays for `_unresolved_threads`.
+    ladder = ("pull", "triage", "push", "maintain", "admin")
+    top = ladder.index({"READ": "pull", "TRIAGE": "triage", "WRITE": "push", "MAINTAIN": "maintain",
+                        "ADMIN": "admin"}[perm])
+    return [("--jq .permissions", json.dumps({k: ladder.index(k) <= top for k in ladder})),
+            ("nameWithOwner", "acme/app")]
 
 
 def _default_branch(name="main"):

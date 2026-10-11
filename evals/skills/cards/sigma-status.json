@@ -1,0 +1,22 @@
+{
+  "skill": "sigma-status",
+  "kind": "pinned",
+  "gates": [
+    "never run it as part of the ordinary loop cycle"
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-status/scripts/merge_queue.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-status/scripts/merge_queue_enable.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-status/scripts/status.py",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": []
+}

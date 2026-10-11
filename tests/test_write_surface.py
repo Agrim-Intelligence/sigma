@@ -172,12 +172,23 @@ def test_call_site_metadata_escalates_merge_risk_without_escalating_comments(tmp
     assert _module()._metadata("skills/sigma-loop/scripts/work.py", "merge", "gh-pr")[1] == "high"
 
 
-def test_retry_gh_is_an_execution_seam_and_design_metadata_is_specific(tmp_path):
+def test_retry_gh_is_an_execution_seam(tmp_path):
     source = tmp_path / "work.py"
     source.write_text('def merge_design(run, cwd):\n    _retry_gh(run, cwd, ["gh", "pr", "merge", "1"])\n')
     assert _module().scan_paths(tmp_path, [source])[0]["rule"] == "gh-pr"
-    assert _module()._metadata("skills/sigma-loop/scripts/work.py", "merge_design", "gh-pr") == (
-        "work.enabled; work.auto_merge != off", "high")
+
+
+def test_design_pr_rest_writes_are_scanned_and_their_metadata_is_specific(tmp_path):
+    """#895 4b-3: merge_design/close_design reach GitHub through gh_api.merge_pr_gh / close_pr_gh, which the
+    scanner must count as REST writes (else the migration would silently drop them from the inventory)."""
+    source = tmp_path / "work.py"
+    source.write_text('def merge_design(api):\n    gh_api.merge_pr_gh(api, 1, "merge", "a" * 40)\n'
+                      'def close_design(api):\n    gh_api.close_pr_gh(api, 1)\n')
+    rows = {r["function"]: r for r in _module().scan_paths(tmp_path, [source])}
+    assert rows["merge_design"]["rule"] == rows["close_design"]["rule"] == "gh-api-write"
+    gate, risk = _module()._metadata("skills/sigma-loop/scripts/work.py", "merge_design", "gh-api-write")
+    assert gate.startswith("work.enabled; work.auto_merge != off;") and risk == "high"
+    assert _module()._metadata("skills/sigma-loop/scripts/work.py", "close_design", "gh-api-write")[0].startswith("ungated")
 
 
 def test_git_runner_force_and_destructive_forms_are_scanned(tmp_path):
@@ -211,7 +222,8 @@ def test_live_git_runner_force_sites_are_in_the_inventory():
 def test_issue_decided_write_gates_and_delete_risks_are_exact():
     mod = _module()
     assert mod._metadata("skills/sigma-loop/scripts/feature_propagate.py", "_write_remote", "gh-api-write") == ("granted verdict", "high")
-    assert mod._metadata("skills/sigma-loop/scripts/work.py", "close_design", "gh-pr") == ("ungated", "high")
+    gate, risk = mod._metadata("skills/sigma-loop/scripts/work.py", "close_design", "gh-api-write")
+    assert gate.startswith("ungated") and risk == "high"       # #895 4b-3: REST now, still the ungated direction
     assert mod._metadata("skills/sigma-loop/scripts/work.py", "merge", "gh-pr") == ("work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR", "high")
     for function, rule in (("_delete_remote_branch", "gh-api-write"), ("_close_issue_the_base_cannot", "gh-api-write")):
         assert mod._metadata("skills/sigma-loop/scripts/work.py", function, rule)[1] == "high"
@@ -251,6 +263,21 @@ def test_931_gh_api_landing_write_helpers_are_seen_and_read_helpers_are_not(tmp_
                       '    gh_api.repo_settings(run, "o/r")\n')
     rows = mod.scan_paths(tmp_path, [source])
     assert [(r["function"], r["rule"], r["count"]) for r in rows] == [("land", "gh-api-write", 2)]
+
+
+def test_895_4b2_pr_comment_and_merge_helpers_are_seen_and_the_work_rows_are_pinned(tmp_path):
+    mod = _module()
+    for name in ("comment_pr", "merge_pr_gh"):
+        assert name in mod._GH_API_WRITES
+    source = tmp_path / "caller.py"
+    source.write_text('import gh_api\n\ndef land():\n    gh_api.comment_pr(run, 7, "b")\n'
+                      '    gh_api.merge_pr_gh(run, 7, "squash", "x")\n')
+    assert [(r["function"], r["rule"], r["count"]) for r in mod.scan_paths(tmp_path, [source])] == \
+        [("land", "gh-api-write", 2)]
+    inv = json.loads((ROOT / "docs" / "launch" / "write-surface.json").read_text())["entries"]
+    work = {(e["function"], e["rule"]) for e in inv if e["path"] == "skills/sigma-loop/scripts/work.py"}
+    assert ("post_review", "gh-api-write") in work and ("merge", "gh-api-write") in work
+    assert ("post_review", "gh-pr") not in work          # the `gh pr comment` literal is gone (the ratchet's fallback lives in gh_api)
 
 
 def test_931_gh_api_landing_helper_words_are_pinned():

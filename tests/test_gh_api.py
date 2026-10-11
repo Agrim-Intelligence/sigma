@@ -782,6 +782,91 @@ def test_merge_pr_argv_sha_guard_and_no_auto():
     assert not any("auto" in a for a in run.calls[0])
 
 
+# ---------------------------------------------------------------- close_pr_gh (#895 slice 4b-3)
+
+class CFake:
+    """`issues/N/comments` POSTs and `pulls/N` PATCHes are REST; `pr close ...` is the fallback."""
+
+    def __init__(self, patch_ok='{"state": "closed"}', patch_exc=None, comment_exc=None, fb_exc=None):
+        self.patch_ok, self.patch_exc, self.comment_exc, self.fb_exc, self.calls = patch_ok, patch_exc, comment_exc, fb_exc, []
+
+    def __call__(self, args):
+        self.calls.append(list(args))
+        if args[0] == "api" and "PATCH" in args:
+            if self.patch_exc is not None:
+                raise self.patch_exc
+            return self.patch_ok
+        if args[0] == "api":
+            if self.comment_exc is not None:
+                raise self.comment_exc
+            return '{"id": 5, "html_url": "https://x/y#issuecomment-5"}'
+        if self.fb_exc is not None:
+            raise self.fb_exc
+        return ""
+
+    def fb(self):
+        return [c for c in self.calls if c[:2] == ["pr", "close"]]
+
+
+def _close(run, env=None, **kw):
+    g = _mod("gh_api")
+    kw.setdefault("repo", "o/r")
+    try:
+        return g.close_pr_gh(run, kw.pop("number", 7), kw.pop("comment", None), env={} if env is None else env, **kw)
+    except Exception as e:                            # noqa: BLE001
+        return e
+
+
+def test_close_pr_gh_is_a_patch_with_state_closed_and_no_comment_call_without_a_comment():
+    run = CFake()
+    assert _close(run) == {"closed": True, "via": "rest"}
+    assert run.calls == [["api", "repos/o/r/pulls/7", "--method", "PATCH", "-f", "state=closed"]]
+
+
+def test_close_pr_gh_posts_the_comment_first_and_a_failed_comment_closes_nothing():
+    run = CFake()
+    assert _close(run, comment="why")["closed"] is True
+    assert run.calls[0][:4] == ["api", "repos/o/r/issues/7/comments", "--method", "POST"] and "PATCH" in run.calls[1]
+    run = CFake(comment_exc=RuntimeError("lost"))
+    out = _close(run, comment="why")
+    assert isinstance(out, Exception) and not [c for c in run.calls if "PATCH" in c]
+
+
+@pytest.mark.parametrize("bad", [0, -1, True, "7", None, 7.0])
+def test_close_pr_gh_validates_the_number_before_any_call(bad):
+    run = CFake()
+    out = _close(run, number=bad)
+    assert isinstance(out, Exception) and run.calls == []
+
+
+@pytest.mark.parametrize("body", ["", "null", "[]", "{}", '{"state": "open"}', '{"state": "CLOSED"}', '{"state":', "<html>"])
+def test_close_pr_gh_a_2xx_without_state_closed_is_never_success(body):
+    run = CFake(patch_ok=body)
+    out = _close(run)
+    assert isinstance(out, Exception), (body, out)
+    assert len(run.calls) == 1 and run.fb() == []
+
+
+def test_close_pr_gh_5xx_falls_back_once_because_closing_is_idempotent():
+    run = CFake(patch_exc=_mhe("gh: Server Error (HTTP 502)"))
+    assert _close(run) == {"closed": True, "via": "gh"}
+    assert run.fb() == [["pr", "close", "7", "--repo", "o/r"]]
+
+
+@pytest.mark.parametrize("hint", ["gh: Bad credentials (HTTP 401)", "gh: Not Found (HTTP 404)",
+                                  "gh: Validation Failed (HTTP 422)",
+                                  "gh: request failed: dial tcp: i/o timeout"])
+def test_close_pr_gh_definite_and_transport_failures_never_fall_back(hint):
+    run = CFake(patch_exc=_mhe(hint))
+    assert isinstance(_close(run), Exception) and run.fb() == []
+
+
+@pytest.mark.parametrize("env", [{"CLAUDE_CODE_REMOTE": "true"}, {"SIGMA_GH_GRAPHQL": "off"}])
+def test_close_pr_gh_no_fallback_without_graphql(env):
+    run = CFake(patch_exc=_mhe("gh: Server Error (HTTP 502)"))
+    assert isinstance(_close(run, env=env), Exception) and run.fb() == []
+
+
 # ---------------------------------------------------------------- merge_pr_gh (#895 slice 4b-1)
 
 SHA = "a" * 40
@@ -3101,7 +3186,7 @@ class ListRestFake:
         return [c for c in self.calls if c[0] == "pr"]
 
 
-FIELDS = "number,url,mergeable,mergeStateStatus,isCrossRepository,headRefName,files,changedFiles"
+FIELDS = "number,url,mergeable,mergeStateStatus,isCrossRepository,headRefName,files,changedFiles,headRefOid"
 
 
 def _prs(run, **kw):
@@ -3115,7 +3200,7 @@ def test_open_prs_for_head_gh_lists_then_reads_each_pull_and_its_files():
     assert _prs(run) == [{"number": 42, "url": "https://x/42", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
                           "isCrossRepository": False, "headRefName": "sdlc/9",
                           "files": [{"path": ".sdlc/design/9.md"}, {"path": ".sdlc/design/9-in-brief.md"}],
-                          "changedFiles": 2}]
+                          "changedFiles": 2, "headRefOid": prfake.HEAD}]
     assert run.calls == [
         ["api", "repos/o/r/pulls?head=o:sdlc%2F9&state=open&per_page=30", "--method", "GET"],
         ["api", "repos/o/r/pulls/42", "--method", "GET"],
@@ -3179,7 +3264,7 @@ def test_open_prs_for_head_gh_a_list_at_the_limit_raises_on_both_paths():
             _prs(run, limit=limit)
         assert "limit" in str(ei.value) and ei.value.kind == "other" and len(run.rest_calls()) == 1
         rows = [json.loads(prfake.rest_pull())] * limit
-        fb = [dict(zip(FIELDS.split(","), [1] * 8)) for _ in range(limit)]
+        fb = [dict(zip(FIELDS.split(","), [1] * 9)) for _ in range(limit)]
         run = ListRestFake(fail=_err(RATE), gql=json.dumps(fb))
         with pytest.raises(g.GhApiError):
             _prs(run, limit=limit)
@@ -3254,7 +3339,7 @@ def test_open_prs_for_head_gh_argument_refusals_before_any_call():
 def test_open_prs_for_head_gh_falls_back_once_with_the_same_row_shape(hint):
     row = {"number": 42, "url": "u", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN",
            "isCrossRepository": False, "headRefName": "sdlc/9", "files": [{"path": "a"}], "changedFiles": 1,
-           "extra": "dropped"}
+           "headRefOid": SHA, "extra": "dropped"}
     run = ListRestFake(fail=_err(hint), gql=json.dumps([row]))
     out = _prs(run)
     assert out == [{k: v for k, v in row.items() if k != "extra"}]
@@ -3316,3 +3401,147 @@ def test_pr_b_fallback_argv_is_built_only_in_gh_api_and_the_ops_are_labelled():
     assert '["pr", "list", *_repo_flag(repo), "--head", branch,' in text
     assert '"pr_list_read"' in text and '"pr_reviews_read"' in text
     assert "(r,)[:120]" not in text
+
+
+# ---------------------------------------------------------------- comment_pr (#895 slice 4b-2)
+
+class PrWFake(WFake):
+    """Like WFake, but the fallback is the `pr comment ...` argv."""
+
+    def __init__(self, rest_exc=None, rest_ok='{"id": 5, "html_url": "https://github.com/o/r/pull/7#issuecomment-5"}'):
+        super().__init__(rest_exc=rest_exc, rest_ok=rest_ok)
+
+    def __call__(self, args):
+        if args[0] == "pr":
+            self.calls.append(list(args))
+            return "https://github.com/o/r/pull/7#issuecomment-9\n"
+        return super().__call__(args)
+
+    def pr_fb(self):
+        return [c for c in self.calls if c[0] == "pr"]
+
+
+def test_comment_pr_posts_over_rest_and_returns_the_url():
+    g = _mod("gh_api")
+    run = PrWFake()
+    assert g.comment_pr(run, 7, "hello", repo="o/r", env={}) == "https://github.com/o/r/pull/7#issuecomment-5"
+    assert run.calls == [["api", "repos/o/r/issues/7/comments", "--method", "POST", "-f", "body=hello"]]
+
+
+def test_comment_pr_placeholder_repo_when_none_given():
+    g = _mod("gh_api")
+    run = PrWFake()
+    g.comment_pr(run, 7, "x", env={})
+    assert run.calls[0][1] == "repos/{owner}/{repo}/issues/7/comments"
+
+
+def test_comment_pr_url_is_derived_from_id_when_html_url_is_absent_and_empty_when_neither():
+    g = _mod("gh_api")
+    out = g.comment_pr(PrWFake(rest_ok='{"id": 12}'), 7, "x", repo="o/r", env={})
+    assert out.endswith("#issuecomment-12")
+    assert g.comment_pr(PrWFake(rest_ok="{}"), 7, "x", repo="o/r", env={}) == ""
+    assert g.comment_pr(PrWFake(rest_ok='{"id": true}'), 7, "x", repo="o/r", env={}) == ""
+    assert g.comment_pr(PrWFake(rest_ok='[1]'), 7, "x", repo="o/r", env={}) == ""
+
+
+def test_comment_pr_primary_rate_limit_falls_back_once_to_pr_comment():
+    g = _mod("gh_api")
+    run = PrWFake(rest_exc=_he("gh: API rate limit exceeded (HTTP 429)"))
+    out = g.comment_pr(run, 7, "hello", repo="o/r", env={})
+    assert run.pr_fb() == [["pr", "comment", "7", "--repo", "o/r", "--body", "hello"]]
+    assert len(run.rest()) == 1 and "issuecomment-9" in out
+
+
+@pytest.mark.parametrize("hint,cause", [
+    ("gh: Server Error (HTTP 502)", None),
+    ("gh: request failed", subprocess.TimeoutExpired(["gh"], 120)),
+    ("gh: You have exceeded a secondary rate limit (HTTP 403)", None),
+    ("gh: Validation Failed (HTTP 422)", None),
+    ("gh: Resource not accessible by integration (HTTP 403)", None),
+    (GQL_TEXT, None),
+])
+def test_comment_pr_never_falls_back_unless_primary_rate_limit(hint, cause):
+    g = _mod("gh_api")
+    run = PrWFake(rest_exc=_he(hint, cause))
+    with pytest.raises(Exception):
+        g.comment_pr(run, 7, "x", repo="o/r", env={})
+    assert run.pr_fb() == [] and len(run.calls) == 1
+
+
+def test_comment_pr_primary_rate_limit_in_a_cloud_session_makes_zero_fallback_calls():
+    g = _mod("gh_api")
+    for env in ({"CLAUDE_CODE_REMOTE": "true"}, {"SIGMA_GH_GRAPHQL": "off"}):
+        run = PrWFake(rest_exc=_he("gh: API rate limit exceeded (HTTP 429)"))
+        with pytest.raises(Exception):
+            g.comment_pr(run, 7, "x", repo="o/r", env=env)
+        assert run.pr_fb() == [] and len(run.calls) == 1
+
+
+# ---------------------------------------------------------------- run_gh / gh_argv (#895 slice 3b)
+
+class _Proc:
+    def __init__(self, rc=0, out="", err=""):
+        self.returncode, self.stdout, self.stderr = rc, out, err
+
+
+def test_run_gh_passes_rc_out_err_through(monkeypatch):
+    """RED BEFORE THE CHANGE (no `run_gh`). The one `["gh", *str args]` spawner: rc/out/err verbatim."""
+    g = _mod("gh_api")
+    seen = {}
+
+    def fake(argv, **kw):
+        seen["argv"], seen["kw"] = argv, kw
+        return _Proc(3, "o", "e")
+    monkeypatch.setattr(g.subprocess, "run", fake)
+    assert g.run_gh(["api", 7], timeout=9) == (3, "o", "e")
+    assert seen["argv"] == ["gh", "api", "7"] and seen["kw"]["timeout"] == 9
+
+
+def test_run_gh_timeout_is_124_with_a_message(monkeypatch):
+    """RED BEFORE THE CHANGE. A timeout is a synthetic (124, "", text), not an exception."""
+    g = _mod("gh_api")
+
+    def boom(argv, **kw):
+        raise subprocess.TimeoutExpired(argv, 5)
+    monkeypatch.setattr(g.subprocess, "run", boom)
+    assert g.run_gh(["api", "x"], timeout=5) == (124, "", "gh: the call timed out after 5s")
+
+
+def test_run_gh_lets_a_missing_binary_propagate(monkeypatch):
+    """RED BEFORE THE CHANGE. Every non-timeout exception propagates unchanged (as the old inline calls did)."""
+    g = _mod("gh_api")
+
+    def boom(argv, **kw):
+        raise FileNotFoundError("gh")
+    monkeypatch.setattr(g.subprocess, "run", boom)
+    with pytest.raises(FileNotFoundError):
+        g.run_gh(["api", "x"])
+
+
+def test_gh_argv_prefixes_gh_and_stringifies():
+    """RED BEFORE THE CHANGE."""
+    g = _mod("gh_api")
+    args = ["api", 3]
+    out = g.gh_argv(args)
+    assert out == ["gh", "api", "3"] and out is not args
+
+
+def test_close_pr_gh_a_200_with_merged_true_is_never_success():
+    """RED BEFORE THE CHANGE: a merged PR reads `state: closed`; the 200 body must not count as a close."""
+    run = CFake(patch_ok='{"state": "closed", "merged": true}')
+    out = _close(run)
+    assert isinstance(out, Exception) and run.fb() == []
+
+
+def test_close_pr_gh_a_200_with_merged_false_or_absent_still_closes():
+    """CHARACTERISATION (green today)."""
+    assert _close(CFake(patch_ok='{"state": "closed", "merged": false}'))["closed"] is True
+    assert _close(CFake())["closed"] is True
+
+
+@pytest.mark.parametrize("hint", ["HTTP 405: Method Not Allowed", "HTTP 422: Validation Failed"])
+def test_close_pr_gh_405_and_422_never_fall_back(hint):
+    """CHARACTERISATION (green today): neither status falls back to the CLI."""
+    run = CFake(patch_exc=RuntimeError(hint))
+    out = _close(run)
+    assert isinstance(out, Exception) and run.fb() == []

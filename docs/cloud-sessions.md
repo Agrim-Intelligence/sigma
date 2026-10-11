@@ -453,13 +453,9 @@ documented 22.5-minute worst case does not move. Liveness cost: an UNSTABLE PR w
 required (GitHub would merge it) also parks in a no-GraphQL session. With GraphQL available the arm path is
 byte-identical to before.
 
-A REAL CLOUD SESSION STILL CANNOT MERGE. `merge()` first calls `merge_rights`, whose permission read is `gh repo
-view --json viewerPermission` (GraphQL), and `protection()` reads `gh repo view --json nameWithOwner`. Under
-`CLAUDE_CODE_REMOTE` the first is refused by the proxy and `merge()` returns `PR #N opened -- could not determine
-merge rights (...)` (routes to `record review`); nothing merges. So the REST merge and the no-GraphQL park above
-are reachable today only where GraphQL works, `SIGMA_GH_GRAPHQL=off` being the way to exercise those branches.
-The tests that fake `viewerPermission` under `CLAUDE_CODE_REMOTE` are structural checks of the
-`graphql_available()` branch, not cloud checks; one test pins the real cloud outcome without that fake.
+Since slice 4b-2 the permission and protection reads that used to stop a cloud merge before this PUT are REST too
+(next section); what a cloud session still cannot do is stated there. Under `SIGMA_GH_GRAPHQL=off` the
+`graphql_available()` branches above are exercised without a cloud session.
 
 Cost (Scalability): 1 REST PUT per landing (was 1 GraphQL `gh pr merge`), + at most 1 CLI fallback, + at most 3
 REST reads on an unknown outcome: a hard ceiling of 5 GitHub calls for the landing step, independent of repo
@@ -467,8 +463,7 @@ size, per goal with no shared lock, so 10x/100x merges scale linearly against th
 token, documented, UNMEASURED here). The PUT and the reads have no per-call timeout of their own (`_run` sets
 none; existing ceiling).
 
-Deferred to slice 4b-2: the `merge_rights` permission read and `protection()`'s `nameWithOwner` read (first),
-`post_review`'s `gh pr comment`, `merge_design`'s `gh pr merge`, `close_design`'s `gh pr close`, and
+Still deferred after 4b-2 (all GraphQL; `merge_design` and `close_design` moved in 4b-3 below):
 `skills/sigma-rebase/scripts/verify_merge.py` (ready/create/merge). `reviewDecision` stays GraphQL by decision;
 R5 `pr list --head` stays. The `--auto` arm stays GraphQL (REST has none).
 
@@ -477,14 +472,123 @@ body shape, the 405/409 statuses and bodies, the 429 body, CLI `--match-head-com
 the merge-queue behaviour of the CLI fallback, and real merge latency all come from GitHub's docs or from fakes.
 Tests use injected runners and the fake gh only.
 
+## Cloud merge (#895 slice 4b-2)
+
+Three GraphQL reads stood between a cloud session and the REST PUT above. All three now go over REST
+(`Refs #895`; the ratchet moves work.py 6 -> 5, TOTAL 46 -> 45, from the `post_review` literal only):
+
+- `merge_rights`: `gh api repos/{owner}/{repo} --jq .permissions` (was `gh repo view --json viewerPermission`).
+  The highest true of `admin`/`maintain`/`push`/`triage`/`pull` maps to ADMIN/MAINTAIN/WRITE/TRIAGE/READ; only
+  the first three may merge. Fails CLOSED: a missing/null/empty/all-false `permissions`, a known key that is not
+  a bool, non-JSON or any exception returns `could not determine merge rights (...)` (routes to `record review`).
+  An unknown extra key is ignored.
+- `protection()`: classic `branches/<base>/protection` UNION `rules/branches/<base>?per_page=100` (rulesets);
+  the `nameWithOwner` GraphQL read is gone. Required checks are unioned by context name, reviews take the larger
+  count; each read is independent, so one failing or malformed contributes nothing (never a crash, never an
+  invented requirement). Both unreadable keeps `not protected` (parks under `auto_merge: protected`, WARNING under
+  `always`). A repo that enforces only through rulesets, such as this one (classic is a 404 here), used to read as
+  "not protected"; it now reads as enforcing.
+- `post_review`'s comment: `gh_api.comment_pr` = `POST issues/N/comments` (non-idempotent write). ONE
+  `gh pr comment` fallback only on a primary rate limit while GraphQL is available, so none in a cloud session.
+  The comment URL (or `#issuecomment-<id>`) is the receipt source; a reply naming neither parks with the existing
+  "ID could not be confirmed" line. Any other failure keeps `PARK: remote comment outcome ambiguous` and the marker
+  reconcile; no retry and no GraphQL after an ambiguous failure.
+
+What a cloud session still CANNOT enforce or do after this slice (exact, none of it new):
+
+- Unresolved review threads cannot be read (`_unresolved_threads` is GraphQL). With GraphQL unavailable the review
+  gate instead makes ONE REST read of the PR's line comments (`pulls/N/comments?per_page=1`): an empty list means
+  no threads, so the merge may proceed; any comment, or an unreadable reply, REFUSES the merge (fail closed; hand
+  resolve and merge, or re-run where GraphQL works). With GraphQL available nothing changes: `_unresolved_threads`
+  runs and still fails open on a read error.
+- `reviewDecision` is unreadable, so `require_review: approval` parks in a cloud session; `changes` mode works from
+  the REST `pulls/N/reviews` list and the `sigma:` comments (now postable).
+- The `--auto` arm is unavailable: a required check still pending after the 450s wait parks.
+- Deferred and still GraphQL: `verify_merge.py` (`merge_design` and `close_design` moved in 4b-3, below).
+
+What `protection()` cannot derive: bypass actors (it counts every listed rule even when this token may bypass it, so it can
+OVER-report "enforces", the same blind spot classic `enforce_admins: false` has; gate() and local verify still apply), `evaluate`-mode rulesets (documented as not listed; UNMEASURED), merge queue, required
+deployments / workflows / signatures / thread resolution, and more than 100 rules (`per_page=100`, no paging; an
+overflowing requirement is missed, which UNDERCOUNTS, the safe direction).
+
+MEASURED locally 2026-10-11 against Agrim-Intelligence/sigma: `GET repos/Agrim-Intelligence/sigma` returns
+`permissions` admin/maintain/push/triage/pull; `rules/branches/main` returns a `pull_request` rule
+(`required_approving_review_count` 1) and a `required_status_checks` rule (context `test`); classic protection is a
+404; both `sdlc%2F895` and `sdlc/895` are accepted by `rules/branches/`.
+
+UNMEASURED: that a cloud session's token receives `permissions` on `GET repos/{o}/{r}`; the rules read, the comment
+POST and the merge PUT through the cloud proxy. Tests use injected runners and the fake gh; one end-to-end test
+runs `merge()` with every GraphQL-shaped argv raising and the REST line-comment read serving `[]`; its twin serves one
+line comment and asserts the refusal and no PUT.
+
+Cost: net 0 calls per merge (+1 REST rules read, -1 `nameWithOwner`, -1 `viewerPermission`), all REST core, per
+goal, no shared lock. `post_review`: 1 REST POST (was 1 GraphQL) + at most 1 CLI fallback.
+
+
+## Design-PR merge and close (#895 slice 4b-3)
+
+`work.py merge-design` / `close-design` (goal-review CONFIRM and REJECT) no longer call `gh pr merge` / `gh pr close`
+(`Refs #895`; the ratchet moves work.py 5 -> 3, TOTAL 45 -> 43). The lookup (`_find_design_pr`) was already REST
+(4a-2 PR B) and its identity checks are unchanged.
+
+- Merge: `gh_api.merge_pr_gh` (the 4b-1 helper): REST `PUT pulls/N/merge` with the configured `merge_method` and the
+  HEAD SHA OF THE ROW THE IDENTITY CHECK VETTED. `open_prs_for_head_gh` rows now carry `headRefOid` (REST
+  `head.sha`; the `gh pr list` fallback requests it too), so the merge is pinned to the files that were checked,
+  not to whatever the head is a moment later. A row with no valid sha is not merged (`could not merge ...`).
+  ONE `gh pr merge N --<m> --match-head-commit SHA` fallback on a primary rate limit only, only while GraphQL is
+  available (so none in a cloud session). The old 2-attempt retry (`_retry_gh`) is gone: a merge is not idempotent.
+- Close: `gh_api.close_pr_gh`: the optional comment first (`comment_pr`, non-idempotent, a failure raises BEFORE
+  any close, so nothing is closed), then `PATCH pulls/N state=closed` (idempotent: a 5xx may fall back to ONE
+  `gh pr close N`, a transport failure may not). Success is ONLY a body whose `state` is `closed`.
+- Reconcile, not inference. After any failure that may have landed (merge: `outcome_unknown`; close: any failure)
+  the result is decided by ONE REST read of the PR itself (`view_pr_gh`, field `state`): only a positive `MERGED`
+  (merge) or `CLOSED` (close) is reported as done, with `(confirmed on re-read after an unconfirmed reply)`. OPEN
+  reads `could not merge|close PR #N (still open on re-read ...)`. A blank, truncated, `null`, `{}`, malformed or
+  unreadable re-read, or an unknown state, reads `could not merge|close PR #N (outcome unconfirmed: it may have
+  merged|closed -- check it by hand ...)`; it is never success. This replaces the old "the open-PR list came back
+  empty, so it landed" inference, which could not tell a merge from a close by someone else or from a degraded
+  empty list. A definite refusal (401/403/404/422, 405/409, a primary rate limit) is reported without a re-read.
+  A re-read that finds the PR CLOSED unmerged (merge) or MERGED (close) is named as that, not as success.
+  A failed close after the comment landed leaves the comment on an open PR; re-running `close-design` posts the
+  comment again (bounded, visible, accepted: the alternative is closing without the reason).
+  The returned strings never embed gh output (they land in a goal-review comment); detail goes to stderr.
+- Not changed: `merge_design` stays gated by `work.enabled` and `auto_merge != off`; `close_design` stays ungated.
+  Both still need goal-review's own CONFIRM/REJECT decision; nothing here merges or closes by itself.
+
+NOT in this slice: `skills/sigma-rebase/scripts/verify_merge.py` (`pr ready`, `pr create`, `pr merge`, 3 ratchet
+sites, human-attended). It has its own runner convention and receipts and must not import the loop skill's modules
+(the rebase skill documents that boundary), so it needs its own design. It stays GraphQL, so a cloud session
+cannot run the attended rebase-and-land tail.
+
+Cost: merge 1 PUT (+1 CLI fallback, + 1 re-read on an unknown outcome); close 1 comment POST + 1 PATCH (+1 CLI
+fallback, + 1 re-read); no shared lock, linear in the number of design PRs.
+
+UNMEASURED live: the PUT / PATCH / comment POST bodies and statuses (derived from GitHub's docs), the PATCH 2xx
+`state` value, the `headRefOid` field of `gh pr list --json` on the fallback, and everything through a real cloud
+session. Tests use injected runners and the fake gh only.
+
+## Runner seams (#895 slice 3b)
+
+Six `["gh", *args]` seam literals no longer spell the argv themselves: `ledger._run_gh`, `feature_owner._run_gh`,
+`cross_repo._run_gh`, `status._github_counts` (x2) and `board_setup.Board.gh` now go through `gh_api.run_gh`
+(returns `(rc, out, err)`; a timeout is `(124, "", ...)`; any other exception propagates) or `gh_api.gh_argv`
+(`["gh", *str args]`). These were already `gh api ...` calls (the board seam also runs `gh api graphql`, i.e. Projects v2,
+which stays slice 5), so this is a spelling change, not a behaviour migration. The ledger seam now loads
+`gh_api.py` on first use in each process (the hook path pays that load; latency UNMEASURED). One behaviour change: a timeout now exists where none did (ledger 15 s, because a
+PreToolUse hook reaches it, a judgement and UNMEASURED; feature_owner 120 s; cross_repo keeps its 30 s). `close_pr_gh`
+now also rejects a 200 whose body says `merged: true`. Cost: the same single `gh` spawn per call, no per-item
+growth. NOT moved: every `label create` (slice 3c), `sources.note()`, `define.py`, `status.py`'s no-sources
+fallback, `doctor.py`, the board sites (slice 5), `work.py` x3, `verify_merge.py` x3. Nothing here is tested live.
+
 ## What this does NOT do
 
 - `read_issue`, `list_issues_gh`, the seven issue write helpers and the six PR read helpers (`view_pr_gh`,
   `pr_for_branch_gh`, `pr_check_rollup_gh`, `open_pr_for_branch_gh`, `open_prs_for_head_gh`,
-  `pr_changes_requested`, above) are wired to callers; of the PR WRITES only the code-goal merge is
-  (`merge_pr_gh`, slice 4b-1), the raw `create_pr` and the project ops have no caller, and nothing in the product
+  `pr_changes_requested`, above) are wired to callers; of the PR WRITES only the code-goal merge (`merge_pr_gh`, slice 4b-1) and the review comment
+  (`comment_pr`, slice 4b-2) are, the raw `create_pr` and the project ops have no caller, and nothing in the product
   exercises the probe or the cache.
-- `/sigma-loop` is NOT supported in cloud sessions. REST `merge` has no auto-merge, and none is emulated.
+- `/sigma-loop` is NOT supported in cloud sessions. REST `merge` has no auto-merge, and none is emulated; see the
+  cloud-merge section above for the exact remaining gaps.
 - `create_issue` and `add_labels` in `gh_api.py` do not go through `GitHubSource._run`'s feature-label refusal, so they
   carry their own (layer 1, refuse unless the caller verified the label exists) and `GitHubSource` does the existence
   check (layer 2). A direct caller of the helper that passes `feature_labels_exist=True` without checking bypasses both.
@@ -493,7 +597,7 @@ Tests use injected runners and the fake gh only.
 
 `tests/test_no_direct_gh.py` stops direct `gh issue|pr|project|label` call sites from growing
 (baseline 101 sites in 21 files at slice 1, 94 after #895 slice 2a, 84 after slice 2b, 74 after slice 2c, 57 after slice 3a,
-50 after slice 4a-1, 48 after slice 4a-2 PR A, 47 after PR B, 46 after slice 4b-1; it only goes down). Run
+50 after slice 4a-1, 48 after slice 4a-2 PR A, 47 after PR B, 46 after slice 4b-1, 45 after slice 4b-2, 43 after 4b-3, 37 after 3b; it only goes down). Run
 `$HOME/.sigma-venv312/bin/python -m pytest tests/test_no_direct_gh.py`
 (generic form: `python -m pytest tests/test_no_direct_gh.py`).
 It covers list literals only. Shapes it CANNOT see: string-form or shell-string calls

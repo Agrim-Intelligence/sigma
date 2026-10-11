@@ -237,7 +237,7 @@ github mode, GREEN in 9.55s:
 `loop next` is 4.4s of the 9.5s: the backlog read's empty-read backoff, the same cost the bootstrap
 control measured.
 
-gh calls, by kind (one goal cycle): `label create` 34, `pr view` 9, `api repos/<repo>/issues` 8,
+gh calls, by kind (one goal cycle; MEASURED 2026-10-04, BEFORE #895 slice 4b-2, which replaced the `repo view` permission/`nameWithOwner` reads and the `pr comment` with REST `api` calls): `label create` 34, `pr view` 9, `api repos/<repo>/issues` 8,
 `api graphql` 7, `issue view` 4, `api repos/<repo>/labels` 3, `api .../pulls/N` 3, `issue list` 3,
 `repo view` 3, `api .../pulls` 2, `api user` 2, `pr comment` 2, and one each of `issue create`,
 `issue edit`, `issue comment`, `issue close`, `pr merge`, `api repos/{owner}/{repo}`,

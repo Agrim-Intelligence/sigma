@@ -105,6 +105,16 @@ ledger = _load("ledger")                        # the `to`-addressed transport t
 legacy = _load("legacy")                        # #239: the previous name's record schema reads too
 state = _load("state")                          # `unsafe_goal_reason`, the shared path-component guard
 work = _load("work")                            # `stem`: the one goal -> filename rule in this plugin
+_GH_API = []
+
+
+def _gh_api():
+    """gh_api.py, loaded lazily and once (#895 slice 3b): a partial install breaks the call, not the import."""
+    if not _GH_API:
+        _GH_API.append(_load("gh_api"))
+    return _GH_API[0]
+
+
 gh_session = _load("gh_session")                # #78: a Remote session's proxy block is not a denial
 
 
@@ -238,12 +248,7 @@ def _run_gh(args, timeout=GH_TIMEOUT_SECONDS):
     `_classify_failure` as `NETWORK` like every other transport failure instead of arriving as an
     exception the caller has to special-case -- the same shape `autowatch._run_drive` uses for its
     own timeout."""
-    try:
-        proc = subprocess.run(["gh", *[str(a) for a in args]], capture_output=True, text=True,
-                              timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return 124, "", "gh: the call timed out after %ss" % timeout
-    return proc.returncode, proc.stdout, proc.stderr
+    return _gh_api().run_gh(args, timeout=timeout)
 
 
 def tier_of(outcome):
