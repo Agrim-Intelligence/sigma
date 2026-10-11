@@ -17,12 +17,14 @@ those). A span with `gh <issue|pr|project|label> <verb>` at command position is 
 ALLOWED entry (path, substring, reason) covers it. Every command in a span is its own hit. An entry
 looks only at WINDOW characters either side of its hit, and must match EXACTLY ONE hit in its file
 (test_no_stale_allowlist_entry): 0 is stale, 2+ means a neighbouring command sits inside its window
-and would be hidden, so it fails. ```` ``` ```` and `~~~` fences are both scanned. KNOWN GAP (pinned by
-test_gap_indented_code_block_is_not_scanned): a 4-space indented code block with no backticks is
-prose to this scanner and is not seen. Grants such as
+and would be hidden, so it fails. ```` ``` ```` and `~~~` fences are both scanned, and so is a 4-space
+indented block that follows a blank line with no list item above it (heuristic: a 4-space paragraph
+under a list item is a continuation, read as prose; test_control_list_continuation_is_not_code). An
+entry also pins its `noun verb` (derived from its substring, or a third tuple field), so swapping the
+verb inside a covered neighbourhood fails. Grants such as
 `Bash(gh issue *)` have no verb and are not offenders. Not covered: `.tmpl`, shell scripts, prose that
-does not put the command in code, and review_context.py (code; its briefs still say `gh pr diff` /
-`gh issue view`, tracked in docs/cloud-sessions.md).
+does not put the command in code, and review_context.py (code; its briefs are REST-first since slice 7,
+pinned by tests/test_review_context.py).
 """
 from __future__ import annotations
 
@@ -41,16 +43,18 @@ NOUNS = {"issue", "pr", "project", "label"}
 GRANT = "Bash(gh api *)"
 WINDOW = 40
 
-ALLOWED: dict[str, list[tuple[str, str]]] = {
-    "skills/sigma-define/SKILL.md": [("fails the *whole create*", "explains why create --label fails")],
-    "skills/sigma-goal-design/SKILL.md": [("advertise a read-only posture", "grant rationale")],
+# (substring, reason[, "noun verb"]): the pin is derived from the substring when it holds a `gh <noun> <verb>`,
+# and must be given for the entries that match by neighbourhood alone.
+ALLOWED: dict[str, list[tuple[str, ...]]] = {
+    "skills/sigma-define/SKILL.md": [("fails the *whole create*", "explains why create --label fails", "issue create")],
+    "skills/sigma-goal-design/SKILL.md": [("advertise a read-only posture", "grant rationale", "issue view")],
     "skills/sigma-goal-review/SKILL.md": [
-        ("dir` for step 4b's scr", "grant listing"),
+        ("dir` for step 4b's scr", "grant listing", "issue view"),
         ("`gh issue comment` for the outcome comments", "grant listing"),
         ("`gh label list` for step 5e", "grant listing"),
         ("check `gh issue view <n> --json comments`", "agent read in a pipeline skill, not on the loop path; its grants are test-pinned; migrate with the pipeline skills"),
     ],
-    "skills/sigma-loop/SKILL.md": [("directly.** Use `handoff.py track`", "the never-gh-issue-create rule")],
+    "skills/sigma-loop/SKILL.md": [("directly.** Use `handoff.py track`", "the never-gh-issue-create rule", "issue create")],
     "skills/sigma-loop/references/filing.md": [
         ("instead of `gh issue create`", "the never-gh-issue-create rule"),
         ("Never call `gh issue create`", "the never-gh-issue-create rule"),
@@ -60,11 +64,11 @@ ALLOWED: dict[str, list[tuple[str, str]]] = {
         ("There is no `gh pr view`", "describes the REST path"),
         ("one `gh issue view` fallback", "describes the REST path and its fallback"),
     ],
-    "skills/sigma-loop/SLACK_COMMANDS.md": [("run `/sigma-rebase` locally or", "human-run `gh pr merge`")],
+    "skills/sigma-loop/SLACK_COMMANDS.md": [("run `/sigma-rebase` locally or", "human-run `gh pr merge`", "pr merge")],
     "skills/sigma-triage/SKILL.md": [
         ("handling. Read-only calls (`gh issue view`", "contrast with the banned mutation loops"),
         ("`gh issue list`, and similar) are unaffected", "contrast with the banned mutation loops"),
-        ("for n in 101 102 103", "bad example of the banned loop"),
+        ("for n in 101 102 103", "bad example of the banned loop", "issue edit"),
         ("gh issue edit 101", "good example line"),
         ("gh issue edit 102", "good example line"),
         ("gh issue edit 103", "good example line"),
@@ -106,17 +110,27 @@ def _blocks(path: Path):
             yield para[0][0], " ".join(t.strip() for _, t in para), False, [n for n, _ in para], [t.strip() for _, t in para]
             para.clear()
 
+    blank, code, in_list = True, False, False  # prev line blank / inside an indented block / under a list item
     for n, t in _lines(path):
         mark = t.lstrip()[:3]
+        item = bool(re.match(r"\s*(?:[-*+]|\d+[.)])\s", t))
+        indented = t[:4] == "    " or t[:1] == "\t"
         if mark in ("```", "~~~") and (not fence or mark == fence):
             yield from flush()
             fence = "" if fence else mark
         elif fence:
             yield n, t.strip(), True, [n], [t.strip()]
+        elif t.strip() and indented and not item and not in_list and (blank or code):
+            yield from flush()  # indented code block: no list item above it, so not a continuation paragraph
+            code = True
+            yield n, t.strip(), True, [n], [t.strip()]
         elif t.strip():
+            code = False
+            in_list = item or (in_list and indented)
             para.append((n, t))
         else:
             yield from flush()
+        blank = not t.strip()
     yield from flush()
 
 
@@ -149,12 +163,18 @@ def offenders(root: Path = ROOT):
     return [h for h in hits(root) if h[2] in NOUNS and h[3]]
 
 
-def _covers(entry, h):
-    return entry in h[5]
+def _pin(e):
+    """The `noun verb` an ALLOWED entry covers: explicit third field, else from its own substring."""
+    m = re.search(r"\bgh\s+([a-z-]+)\s+([a-z-]+)", e[0].replace("`", ""))
+    return e[2] if len(e) > 2 else f"{m.group(1)} {m.group(2)}"
+
+
+def _covers(entry, h, pin=None):
+    return entry in h[5] and (pin is None or pin == f"{h[2]} {h[3]}")
 
 
 def _covered(h):
-    return [s for s, _ in ALLOWED.get(h[0], []) if _covers(s, h)]
+    return [e[0] for e in ALLOWED.get(h[0], []) if _covers(e[0], h, _pin(e))]
 
 
 def _fail(items):
@@ -173,12 +193,12 @@ def test_no_bare_gh_in_skill_prose():
 
 def test_no_stale_allowlist_entry():
     flagged = offenders()
-    count = {(rel, s): sum(h[0] == rel and _covers(s, h) for h in flagged) for rel, es in ALLOWED.items() for s, _ in es}
+    count = {(rel, e[0]): sum(h[0] == rel and _covers(e[0], h, _pin(e)) for h in flagged) for rel, es in ALLOWED.items() for e in es}
     stale = [k for k, n in count.items() if n == 0]
     assert not stale, f"ALLOWED entries matching no flagged line (remove them): {stale}\nrun: {INVOCATION}"
     wide = [k for k, n in count.items() if n > 1]
     assert not wide, f"ALLOWED entries matching 2+ flagged hits (would hide a neighbour; tighten): {wide}\nrun: {INVOCATION}"
-    dup = [k for k, n in Counter((r, s) for r, es in ALLOWED.items() for s, _ in es).items() if n > 1]
+    dup = [k for k, n in Counter((r, e[0]) for r, es in ALLOWED.items() for e in es).items() if n > 1]
     assert not dup, f"duplicate ALLOWED substrings: {dup}"
 
 
@@ -237,9 +257,20 @@ def test_control_tilde_fence_is_scanned(tmp_path):
     assert [h[3] for h in offenders(root)] == ["view"]
 
 
-def test_gap_indented_code_block_is_not_scanned(tmp_path):
-    root = _tree(tmp_path, "text\n\n    gh pr view 2\n")
-    assert offenders(root) == []  # documented gap; delete this test when indented blocks are scanned
+def test_control_indented_code_block_is_scanned(tmp_path):
+    root = _tree(tmp_path, "text\n\n    gh pr view 2\n    gh issue edit 3\n")
+    assert [(h[1], h[3]) for h in offenders(root)] == [(7, "view"), (8, "edit")]
+
+
+def test_control_list_continuation_is_not_code(tmp_path):
+    root = _tree(tmp_path, "- item `x`\n\n    continues and mentions gh pr view 2 in prose\n\n1. step\n\n    gh pr view 3 wrapped\n")
+    assert offenders(root) == []  # a 4-space paragraph under a list item is prose; a real command there needs backticks
+
+
+def test_control_verb_pin_rejects_swapped_verb(tmp_path):
+    root = _tree(tmp_path, "Run `gh issue close 9` then see the notes.\n")
+    h = offenders(root)[0]
+    assert _covers("see the notes", h) and not _covers("see the notes", h, "issue edit")
 
 
 def test_control_second_command_in_one_span_or_line_is_flagged(tmp_path):

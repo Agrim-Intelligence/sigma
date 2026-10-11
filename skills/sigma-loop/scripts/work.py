@@ -127,8 +127,11 @@ ENFORCEMENT_GATES = (
                   "never reads as CLEAN; a still-pending required check is armed when GraphQL is "
                   "available; without GraphQL it is not armed and the merge parks after gate()'s own "
                   "bounded REST wait; the merge itself is a REST PUT carrying the vetted head sha, an "
-                  "unknown outcome is reconciled by a REST read and never retried; a real cloud session "
-                  "still stops earlier at the GraphQL `merge_rights` read, see cloud-sessions.md)",
+                  "unknown outcome is reconciled by a REST read and never retried; in a cloud session "
+                  "the merge still parks on a pending required check (no `--auto` arm), on any PR "
+                  "line comment, and under `require_review: approval` (GraphQL-only reads); "
+                  "`merge_rights` needs the token to receive `permissions` (UNMEASURED), see "
+                  "cloud-sessions.md)",
      "condition": "the clean-and-safe verdict and the post-PR review gate are computed and "
                   "reported even with `work.auto_merge: \"off\"` -- both run before `merge()` "
                   "returns on off -- only the merge itself is skipped",
