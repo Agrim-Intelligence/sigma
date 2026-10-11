@@ -136,6 +136,10 @@ def _git_config_file(repo):
     for q in (p, *p.parents):
         dot = q / ".git"
         if dot.is_dir():
+            # Mirror git's discovery: only a directory that LOOKS like a repository counts; a bogus
+            # empty `.git` is skipped (git keeps walking up and finds the parent's config).
+            if not ((dot / "HEAD").is_file() and (dot / "objects").is_dir()):
+                continue
             gitdir = dot
         elif dot.is_file():
             try:
@@ -168,7 +172,11 @@ def _any_pin(repo):
     if cfg is None:
         return False
     try:
-        return "invocation.adapter" in cfg.read_text(encoding="utf-8", errors="replace").lower()
+        text = cfg.read_text(encoding="utf-8", errors="replace").lower().replace("\\", "")
+        # git unescapes backslashes in quoted subsections (`"invocation\\.adapter"` is the same
+        # subsection), so every backslash is dropped first; then ANY line mentioning sigma followed
+        # by invocation..adapter counts (a superset of git's headers: stricter, never looser).
+        return re.search(r"sigma[^\n]*invocation[^\n]*adapter", text) is not None
     except FileNotFoundError:
         return False
     except OSError:

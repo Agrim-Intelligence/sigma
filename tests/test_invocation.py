@@ -691,3 +691,78 @@ def test_a_failed_authorize_runs_the_adapter_exactly_once_no_internal_retry(tmp_
     with pytest.raises(inv.Refused):
         r.review()
     assert r.mark.read_text().count("ran") == 1
+
+
+# ---- differential: the file reader must never say "no pin" where REAL git finds one --------------
+
+_HEADERS = [
+    '[sigma "invocation.adapter.claude"]',
+    '[SIGMA "invocation.adapter.claude"]',
+    '[Sigma "invocation.adapter.claude"]',
+    '[sigma "invocation\\.adapter.claude"]',
+    '[sigma "invocation.adapter\\.claude"]',
+    '[sigma "invocation.adap\\ter.claude"]',
+    '[sigma "inv\\ocation.adapter.claude"]',
+    '[sigma "invocation\\\\.adapter.claude"]',
+    '[sigma.invocation.adapter.claude]',
+    '[SIGMA.INVOCATION.ADAPTER.CLAUDE]',
+    '[sigma   "invocation.adapter.claude"]',
+    '[ sigma "invocation.adapter.claude" ]',
+    '\t[sigma "invocation.adapter.claude"]',
+    '[sigma "invocation.adapter.claude"] path = /x',
+    '[sigma "invocation.adapter.claude"]\r',
+    '[sigma "other"]\n[sigma "invocation.adapter.claude"]',
+    '[sigma "invocation.adapter.claude"]\n\tsha256 = a\n[sigma "invocation.adapter.claude"]',
+]
+
+
+def _git_finds_pin(repo):
+    return subprocess.run(["git", "-C", str(repo), "config", "--local", "--get-regexp",
+                           r"^sigma\.invocation\.adapter\."], capture_output=True).returncode == 0
+
+
+@pytest.mark.parametrize("header", _HEADERS, ids=range(len(_HEADERS)))
+def test_the_file_reader_never_says_no_pin_where_real_git_finds_one(tmp_path, header):
+    repo = tmp_path / "r"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    cfg = repo / ".git" / "config"
+    body = header if "path =" in header or "sha256" in header else header + "\n\tpath = /x"
+    cfg.write_bytes(cfg.read_bytes() + b"\n" + body.replace("\n", "\r\n" if "\r" in header else "\n").encode())
+    if _git_finds_pin(repo):
+        assert inv._any_pin(str(repo)) is True, repr(header)
+
+
+def test_the_differential_table_is_not_vacuous(tmp_path):
+    """At least the plain, escaped and old-style spellings really are pins to git."""
+    found = 0
+    for i, header in enumerate(_HEADERS[:12]):
+        repo = tmp_path / ("v%d" % i)
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        cfg = repo / ".git" / "config"
+        cfg.write_text(cfg.read_text() + header + "\n\tpath = /x\n")
+        found += _git_finds_pin(repo)
+    assert found >= 6, found
+
+
+def test_a_bogus_nested_dotgit_does_not_hide_the_parents_pin(tmp_path):
+    """git skips a `.git` that is not a repository and finds the parent's config; so must the reader."""
+    r = Rig(tmp_path, "claude")
+    sub = r.repo / "sub"
+    (sub / ".git").mkdir(parents=True)                  # empty: not a repository
+    (sub / ".sdlc").mkdir()
+    (sub / ".sdlc" / "config.json").write_text("{}")    # config says off
+    assert subprocess.run(["git", "-C", str(sub), "config", "--local", "--get-regexp",
+                           r"^sigma\.invocation\.adapter\."], capture_output=True).returncode == 0
+    with pytest.raises(inv.Refused, match="pin exists"):
+        inv.settings(str(sub / ".sdlc"))
+
+
+def test_a_lock_file_that_is_not_a_regular_file_is_refused(tmp_path):
+    r = Rig(tmp_path, "claude")
+    d = inv._dir(str(r.sdlc))
+    os.mkfifo(d / ".lock")
+    with pytest.raises(inv.Refused, match="not a regular file"):
+        with inv._locked(str(r.sdlc)):
+            pass
