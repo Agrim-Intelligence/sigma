@@ -514,3 +514,14 @@ def test_a_directory_outside_any_git_repository_has_no_pin_and_stays_off(tmp_pat
     sdlc = tmp_path / "plain" / ".sdlc"
     sdlc.mkdir(parents=True)
     assert inv.settings(str(sdlc)) is None
+
+
+def test_a_corrupt_dotgit_is_unknown_and_fails_closed_not_open(tmp_path):
+    """git cannot read the repository, so 'no pin' cannot be concluded: refuse, do not allow."""
+    r = Rig(tmp_path, "claude")
+    _unpin(r)
+    r.config({})
+    (r.repo / ".git" / "HEAD").write_text("garbage")
+    (r.repo / ".git" / "config").write_text("[broken")
+    with pytest.raises(inv.Refused, match="pin exists"):
+        inv.settings(str(r.sdlc))

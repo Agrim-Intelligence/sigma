@@ -133,13 +133,20 @@ def _any_pin(repo):
         inside = subprocess.run(["git", "-C", repo, "rev-parse", "--git-dir"], capture_output=True,
                                 text=True, timeout=10, env=env)
         if inside.returncode != 0:
-            return False
+            # Only "no .git anywhere above" proves there is no repository; a .git that git cannot
+            # read (corrupt, hostile) is UNKNOWN, which fails closed.
+            return _has_dotgit(repo)
         proc = subprocess.run(["git", "-C", repo, "config", "--local", "--get-regexp",
                                r"^sigma\.invocation\.adapter\."],
                               capture_output=True, text=True, timeout=10, env=env)
     except (OSError, subprocess.SubprocessError):
         return True                     # cannot tell: fail CLOSED (assume a pin exists)
     return proc.returncode != 1         # git exits 1 only for "no matching key"; any other code = unknown
+
+
+def _has_dotgit(repo):
+    p = pathlib.Path(repo)
+    return any((q / ".git").exists() or os.path.lexists(q / ".git") for q in (p, *p.parents))
 
 
 def _repo(sdlc_dir):
