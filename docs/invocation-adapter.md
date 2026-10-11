@@ -4,7 +4,8 @@ Some hosts refuse the loop's own approval step as self-approval (Claude Code's a
 first live run, #612), and nothing inside Sigma can prove a phase-end line reached a host. An
 environment marker (`CLAUDECODE`, `CODEX_THREAD_ID`, `review.host`) cannot settle either: the agent
 controls its own environment. So authority is delegated to an **adapter you install and pin outside
-the repository**. Off by default; with it off nothing here runs, and the attended fallback in the
+the repository**. Off by default; with it off the only cost is one `git config` lookup per approve post
+or phase end (no state, no output change), and the attended fallback in the
 README ("Before you start `/sigma-loop`") applies.
 
 ## What it is, and is not
@@ -48,7 +49,8 @@ you and not group/world writable, not a symlink. `diagnose` prints `installed-an
 - `work.py post-review --verdict approve` asks the adapter for a single-use receipt bound to the PR
   number, PR head, review-brief digest and evidence digest. `accepted` posts; `deferred`, a refusal,
   a missing or changed pin, a timeout or any malformed reply parks for attended review with no post.
-  `block` and `unblock` are not gated.
+  `block` and `unblock` are not gated (so an `unblock` can re-activate an earlier approval without a
+  receipt).
 - `phase_report.py end` sends the exact Block B bytes to the adapter and reports
   `host relay acknowledged ...` or `host relay unavailable: <reason>` on stderr. The local phase
   record is written either way.

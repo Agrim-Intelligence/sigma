@@ -491,3 +491,26 @@ def test_a_relay_with_no_constructed_block_says_unavailable(tmp_path, capsys):
     spec.loader.exec_module(pr)
     pr.relay_block(str(r.sdlc), "42", "research", None)
     assert "no constructed Block B" in capsys.readouterr().err and not r.ran()
+
+
+def test_an_unreadable_git_config_is_treated_as_a_pin_present(tmp_path, monkeypatch):
+    """`_any_pin` may only say 'no pin' for git's exit 1; any other failure refuses."""
+    r = Rig(tmp_path, "claude")
+    _unpin(r)
+    r.config({})
+    real = subprocess.run
+
+    def broken(argv, *a, **kw):
+        if "--get-regexp" in argv:
+            return subprocess.CompletedProcess(argv, 128, "", "fatal: bad config")
+        return real(argv, *a, **kw)
+    monkeypatch.setattr(inv.subprocess, "run", broken)
+    with pytest.raises(inv.Refused, match="pin exists"):
+        inv.settings(str(r.sdlc))
+
+
+def test_a_directory_outside_any_git_repository_has_no_pin_and_stays_off(tmp_path):
+    """Local-only mode: no repository, so no pin can exist; the default must stay a silent no-op."""
+    sdlc = tmp_path / "plain" / ".sdlc"
+    sdlc.mkdir(parents=True)
+    assert inv.settings(str(sdlc)) is None

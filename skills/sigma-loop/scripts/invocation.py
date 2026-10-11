@@ -129,12 +129,17 @@ def settings(sdlc_dir):
 def _any_pin(repo):
     env = {"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", "HOME": os.environ.get("HOME", "")}
     try:
+        # Pins live in git-local config, so outside a repository none can exist (local-only mode).
+        inside = subprocess.run(["git", "-C", repo, "rev-parse", "--git-dir"], capture_output=True,
+                                text=True, timeout=10, env=env)
+        if inside.returncode != 0:
+            return False
         proc = subprocess.run(["git", "-C", repo, "config", "--local", "--get-regexp",
                                r"^sigma\.invocation\.adapter\."],
                               capture_output=True, text=True, timeout=10, env=env)
     except (OSError, subprocess.SubprocessError):
-        return False
-    return proc.returncode == 0 and bool(proc.stdout.strip())
+        return True                     # cannot tell: fail CLOSED (assume a pin exists)
+    return proc.returncode != 1         # git exits 1 only for "no matching key"; any other code = unknown
 
 
 def _repo(sdlc_dir):
@@ -158,6 +163,8 @@ def load_adapter(repo, adapter_id):
     """-> the verified bytes of the operator-pinned adapter, or raise Refused BEFORE anything runs."""
     if adapter_id not in ADAPTERS:
         raise Refused("unknown adapter %r" % (adapter_id,))
+    if fcntl is None or not hasattr(os, "getuid"):
+        raise Refused("invocation requires a POSIX platform; not supported here")
     path = _git_local(repo, "sigma.invocation.adapter.%s.path" % adapter_id)
     pin = _git_local(repo, "sigma.invocation.adapter.%s.sha256" % adapter_id)
     if not path or not pin:
