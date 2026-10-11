@@ -55,9 +55,7 @@ counterpart to the autonomous `/sigma-loop`).
    Then drive the phases, pausing for the user at each gate:
    **Goal** (restate) → **Research** (blast radius) → **Plan** → **Plan-Review** (use the
    `sigma-plan-review` skill — never skip) → **Implement** (test-first) → **Review** (evidence before
-   "done") → **Retrospective** (step 3). Each phase runs via its **executor**: on Claude with the
-   companion installed, the `superpowers` / `code-review` skill; otherwise Sigma's **portable
-   executor** (`sigma-brainstorm` → Goal, `sigma-research` → Research, `sigma-plan` → Plan,
+   "done") → **Retrospective** (step 3). Each phase runs via Sigma's own **executor** (`sigma-brainstorm` → Goal, `sigma-research` → Research, `sigma-plan` → Plan,
    `sigma-implement` → Implement, `sigma-review` + `sigma-verify` → Review, `sigma-retro` → Retrospective).
 
    **Before Research or code, capture P1 acceptance for every goal:** run
@@ -69,7 +67,7 @@ counterpart to the autonomous `/sigma-loop`).
    Keep the resulting `.sdlc/acceptance/<goal-stem>.md` unchanged through implementation;
    copy it into the goal worktree and commit it with plan/research. If existing criteria
    are malformed, repair the source before capture; do not silently drop criteria.
-   This applies to both companion and portable executors. Refusal stops P1 until repaired.
+   Refusal stops P1 until repaired.
    **After Research, route the rest by the lane it measured** — `python3
    "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/discovery.py" lane "<goal-path>"` in local mode, or read it
    from Research's note on the issue timeline in github mode — see *Lane routing* below.
@@ -121,7 +119,7 @@ counterpart to the autonomous `/sigma-loop`).
    During **Implement**, announce each plan step as you start it — `python3
    "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/phase_report.py" step .sdlc "<goal>" implement --num <n>
    --total <m> --phase-model --brief "<step>"` prints a `STEP <n>/<m>` banner with this phase's predicted tier and
-   writes nothing — whether you follow `sigma-implement` or a companion executor (details:
+   writes nothing — as you follow `sigma-implement` (details:
    `sigma-implement`'s `## Announce each step`).
 3. **Retrospective (Learn)** — after Review, run the **`sigma-retro`** executor: reflect on the
    structural + product debt the fix left behind, grade intent-vs-shipped, and route durable lessons to

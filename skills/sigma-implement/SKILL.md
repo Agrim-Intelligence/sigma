@@ -23,26 +23,10 @@ For bulky tests or diagnostics, save full output to a scratch file, then inspect
 its exit status and focused matches or a bounded tail. Do not hide failures, and
 keep secrets out of the scratch file. This is guidance, not a measured savings claim.
 
-**Executor resolution (host-aware):**
-- **Claude Code + `superpowers` installed** → prefer **`superpowers:test-driven-development`** +
-  **`superpowers:executing-plans`** (their richer versions; where subagents exist,
-  `superpowers:subagent-driven-development`).
-- **Otherwise** (Cursor / any host / no companion) → use this. Same discipline, portable.
-
-**The `## Security defaults (fail-closed, untrusted input)` section below applies regardless of which executor ran
-the TDD mechanics above** — it is not part of either companion's own red/green/refactor discipline,
-and neither companion carries an equivalent today. Read it even if you jumped straight to the
-companion skill.
-
-**`## Mutation testing (prove the guard, don't assert it)` further down is the same kind of cross-cutting addition and applies regardless too** — read it even if you jumped straight to
-the companion skill. Unlike Security defaults, this is not a total gap on Claude Code:
-`superpowers:verification-before-completion` already states a narrower form of half of it, and
-`superpowers:test-driven-development`'s own `writing-good-tests.md` states a mental version of the
-other half. Neither names it as a standing, generalized, expected step the way this section does,
-and neither carries the source citations in `## Where these rules come from` below. Read it anyway.
-
-**`## Announce each step` applies regardless too** — it is Sigma's console banner, not TDD
-mechanics, so no companion skill carries it. Read it even if you jumped straight to the companion.
+This file is the whole Implement phase. Three sections further down are part of it, not optional
+extras: **`## Security defaults (fail-closed, untrusted input)`**, **`## Mutation testing (prove the
+guard, don't assert it)`** and **`## Announce each step`** (Sigma's console banner). Read them before
+you start, not after.
 
 Two things happen in this phase: **build test-first**, and **execute the plan step by step**.
 
@@ -160,13 +144,10 @@ guard. This repo has shipped exactly that mistake before: north-star Standing ru
 2026-08-08 entry records a mutation test that targeted a redundant secondary lookup, passed against
 the mutant, and looked like coverage until it was retargeted.
 
-`superpowers:verification-before-completion` already states a narrower version of this —
-"Revert fix → Run (MUST FAIL) → Restore → Run (pass)" — as one pattern among several, scoped to
-regression tests specifically. `superpowers:test-driven-development`'s own `writing-good-tests.md`
-has a "Mutation Check" too, but as a mental exercise ("mentally mutate the production code"), never
-a live revert. This section names the same action explicitly, generalizes it beyond regression
-tests to any non-trivial guard, makes the revert a real action against the running suite rather
-than a thought experiment, and makes it a standing, expected step rather than one option in a list.
+The pattern is "Revert fix → Run (MUST FAIL) → Restore → Run (pass)": a live revert against the
+running suite, never a mental exercise ("mentally mutate the production code").
+It applies to any non-trivial guard, not only regression tests, and it is a standing, expected
+step rather than one option in a list.
 
 ## Security defaults (fail-closed, untrusted input)
 This repo already has standing rules for this — they stay undiscovered until Review unless you read

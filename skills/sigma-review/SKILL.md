@@ -70,10 +70,8 @@ diff is the artifact under review.
 the *impact surface*. Before judging any change, read the code around it and grep every caller — you
 have full repo access. A small change with a wide radius is what a review exists to catch.
 
-**Executor resolution (host-aware):**
-- **Claude Code + the `code-review` plugin installed** → prefer **`/code-review`** +
-  **`superpowers:requesting-code-review`**.
-- **Otherwise** (Cursor / any host / no companion) → use this. Same discipline, portable.
+**Executor:** this skill is the review. On Claude Code with the optional `code-review` plugin
+installed, `/code-review` is a useful extra pass over the diff; it does not replace this one.
 
 Pick the mode from the request:
 - **Diff review** (default before a merge) — review the branch's changes vs base. Fast, targeted.

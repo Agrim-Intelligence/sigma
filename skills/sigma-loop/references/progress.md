@@ -83,9 +83,8 @@ host model and agent ID as above.
 "${CLAUDE_SKILL_DIR}/scripts/phase_report.py" step .sdlc "$goal" implement --num <n> --total <m>
 --phase-model --brief "<step>"`, run by the phase agent executing the plan. With
 phases inline (including when `model_selection` is off) that is this session: call it as each step
-starts, whether you follow `sigma-implement` or a companion executor. With phases dispatched
-(`auto`) it is the implement subagent, which may follow a companion that never reads
-`sigma-implement` and edits in the goal worktree, where a relative `.sdlc` has no marker (and in github
+starts, as you follow `sigma-implement`. With phases dispatched
+(`auto`) it is the implement subagent, which edits in the goal worktree, where a relative `.sdlc` has no marker (and in github
 mode no board mirror to title the goal from) — so put the command in its dispatch prompt with this
 goal's id and absolute
 `phase_report.py` and `.sdlc` paths filled in. When `resolve-step` gave a step its own tier

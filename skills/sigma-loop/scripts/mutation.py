@@ -34,7 +34,7 @@ why -- rather than a line in a config file nobody reads.
 EVERY KILLED MUTANT IS A WITNESS. Killing a mutant IS an existing test failing for the right reason,
 which is exactly the evidence a behaviour-preserving refactor can never produce through red-first
 TDD. That is the shared vocabulary #1934 and this module were designed against together; see
-docs/superpowers/specs/2026-09-01-test-trust-shared-vocabulary-1934-1935.md.
+the archived 2026-09-01 test-trust shared-vocabulary spec (#1934/#1935).
 """
 import json
 import os

@@ -114,9 +114,8 @@ model ID with `--host-model <id>` instead of the ordinary `--phase-model`, as we
 Never run a step ABOVE the goal ceiling — except the tier a `loop.py escalate` answer names
 (below), which becomes the new ceiling. Then read the goal and
 run it through the full SDLC (goal → research → plan → plan-review →
-implement → review) — each phase via its **executor** (the `superpowers`/`code-review` companion on
-Claude if installed, else Sigma's portable `sigma-brainstorm`/`sigma-research`/`sigma-plan`/
-`sigma-implement`/`sigma-review`/`sigma-verify`; each skill's resolution header picks). `$goal` is a **file path** in local mode (read the file) or a **GitHub issue
+implement → review) — each phase via Sigma's own **executor** (`sigma-brainstorm`/`sigma-research`/`sigma-plan`/
+`sigma-implement`/`sigma-review`/`sigma-verify`). `$goal` is a **file path** in local mode (read the file) or a **GitHub issue
 number** in github mode (`gh api repos/{owner}/{repo}/issues/"$goal"` to read it).
 
 **P1 GOAL records acceptance before Research or code.** Run
@@ -127,7 +126,7 @@ GitHub criteria as an issue comment before writing the record. Optionally supply
 `--verify-command '<command>'` (local frontmatter is inherited). Never put secrets in it.
 A refusal stops P1 until the source/draft is repaired. Keep the resulting
 `.sdlc/acceptance/<goal-stem>.md` unchanged; copy it into the goal worktree and commit it
-with plan/research. This step applies regardless of companion or portable executor.
+with plan/research. This step applies to every phase executor.
 
 **The maker must not be the checker (`config.review.independent`, default on).**
 Every review gate — plan-review, the pre-PR code review, the post-PR review at step 6 — is asked to

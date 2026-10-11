@@ -13,12 +13,6 @@ empty path. Claude keeps its provided value.
 
 Detailed selection triggers: [selection](references/selection.md).
 
-**Executor resolution (host-aware):**
-- **Claude Code + `superpowers` installed** → prefer **`superpowers:brainstorming`** (its richer
-  version, including an interactive visual companion).
-- **Otherwise** (Cursor / any host / no companion) → use this. Same discipline, portable (text-only —
-  no visual server).
-
 Turn the idea into an approved design **before any implementation.**
 
 ## Context-efficient exploration

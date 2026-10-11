@@ -88,35 +88,30 @@ loop's does, not merely the same mechanism wired in.
 
 ## The seven phases
 
-Each phase runs via an **executor**, resolved per host: on Claude with the companion installed, the
-`superpowers` / `code-review` skill; otherwise Sigma's **portable `sigma-*` executor** — each with a
-committed [parity review](executor-parity/) showing where it is at par, better or lighter. Phase 4 is always
-Sigma's own; no companion ships it.
+Each phase runs via one of Sigma's own `sigma-*` skills, on every host.
 
 1. **Goal** — restate the objective as one concrete, checkable goal. For feature/creative work, this
    is where you explore intent and requirements first.
-   → *executor:* `superpowers:brainstorming` · portable `sigma-brainstorm`.
+   → *executor:* `sigma-brainstorm`.
 2. **Research** — map the blast radius: affected files, existing patterns, constraints, prior art —
    then size the goal into a lane (`small`/`medium`/`large`) from what was actually measured, so small
    goals skip the ceremony they don't earn.
-   → *executor:* **`sigma-research`** (always Sigma's own — no companion equivalent).
+   → *executor:* **`sigma-research`** (Sigma's own).
 3. **Plan** — write the plan: steps, files, tests, and a definition-of-done. Size it against real
    throughput with **`/sigma-velocity`** (measured git pace), not "this feels like weeks."
-   → *executor:* `superpowers:writing-plans` · portable `sigma-plan`.
+   → *executor:* `sigma-plan`.
 4. **Plan-Review** — adversarially review the plan **before** any edit: verify each claim against the
    real code, stress-test what breaks after it ships, check scope/fit, and (vision-first) check it
-   against your strategy. The skills ask the agent never to skip it. In the loop it is also checked: `gates.phase_record` (on in a fresh `/sigma-init`) makes `loop.py record done` and `work.py merge` refuse a goal with no approved plan-review (recorded through `work.py record-plan-review`, which binds it to the exact plan bytes; the gate needs `action_log.enabled`), and the opt-in `gates.plan_review.enabled` (off by default; needs `work.enabled`) additionally refuses the push in `work.py pr`. Interactive work that never calls `record done` or `work.py merge` is asked, not gated; the record is agent-written, so it proves a verdict was recorded, not who reviewed. This is the step `superpowers` doesn't provide, so Sigma
-   ships it.
-   → *owned by* **`sigma-plan-review`** (always Sigma's — no companion equivalent).
+   against your strategy. The skills ask the agent never to skip it. In the loop it is also checked: `gates.phase_record` (on in a fresh `/sigma-init`) makes `loop.py record done` and `work.py merge` refuse a goal with no approved plan-review (recorded through `work.py record-plan-review`, which binds it to the exact plan bytes; the gate needs `action_log.enabled`), and the opt-in `gates.plan_review.enabled` (off by default; needs `work.enabled`) additionally refuses the push in `work.py pr`. Interactive work that never calls `record done` or `work.py merge` is asked, not gated; the record is agent-written, so it proves a verdict was recorded, not who reviewed. Sigma owns this step.
+   → *owned by* **`sigma-plan-review`** (Sigma's own).
 5. **Implement** — build test-first and execute the plan step by step.
-   → *executor:* `superpowers:test-driven-development` + `executing-plans` · portable `sigma-implement`.
+   → *executor:* `sigma-implement`.
 6. **Review** — code-review the diff for real findings, then verify every claim with evidence before
    declaring anything done.
-   → *executor:* `code-review` + `superpowers:requesting-code-review` + `verification-before-completion`
-   · portable `sigma-review` + `sigma-verify`.
+   → *executor:* `sigma-review` + `sigma-verify` (optional extra: `/code-review`).
 7. **Retrospective** — surface the structural + product debt the fix left behind, grade
    intent-vs-shipped, and route each durable lesson to the right store (advisory).
-   → *executor:* **`sigma-retro`** (always Sigma's own — no companion equivalent).
+   → *executor:* **`sigma-retro`** (Sigma's own).
 
 ## Match the model to the goal (optional)
 
