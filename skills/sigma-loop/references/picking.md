@@ -23,7 +23,7 @@ remember. It is your invoking shell's own parent process id, and it stays the SA
 every time you read it during this one loop run — this identifies the caller's process. Codex
 Desktop tasks can share it, so the registry also uses the validated `CODEX_THREAD_ID` supplied by
 Codex; a missing or invalid Codex task ID refuses the pick. The session registry
-(`loop.py session-active`/`session-end`, README's "Zero-touch routines") uses both to tell your own
+(`loop.py session-active`/`session-end`, `docs/routines.md`) uses both to tell your own
 prior picks apart from a sibling session's, and without it explicitly threaded through, a later
 `next`/`next-batch` call can silently re-dispatch a goal THIS SAME run already claimed (confirmed:
 omitting the flag lets that happen, because each separate command you run gets its own fresh,
@@ -128,8 +128,8 @@ tests for this exact shape. A goal picked for the first time never even reaches 
 no worktree yet to resume, only to cut.
 
 Each dispatched subagent is a full agent session, not a lightweight thread — that's the real cost of
-`max_concurrent`, not anything sigma itself holds onto (see the README's "Memory & sizing"
-section). Size the number of goal slots you actually run to what your machine can sustain that many
+`max_concurrent`, not anything sigma itself holds onto (see the "Memory & sizing"
+section of `docs/parallelism.md`). Size the number of goal slots you actually run to what your machine can sustain that many
 *active* sessions at once, not to how many issues happen to be open.
 
 Track which goals are currently live in your other slots — you already know this, you dispatched

@@ -82,6 +82,6 @@ Cursor adapter is not verified in a live session; Codex has partial live validat
 
 ## Not yet in this table
 
-Pick-time gates in `feature_owner.py`, `feature_propagate.py`, `promote.py` and `feature_labels.py` (`gate_at_pick` and the promote-time label checks) are not registered yet: they back the README's "Human approval gate, in one transition" and "Findings become work" rows, and a follow-up registers them. `work.py` also refuses to load a config with `ledger.receipt_sharing: true` (not supported yet); that is a config refusal, not a control on the work, and is deferred with them.
+Pick-time gates in `feature_owner.py`, `feature_propagate.py`, `promote.py` and `feature_labels.py` (`gate_at_pick` and the promote-time label checks) are not registered yet: they back the feature list's "Human approval gate, in one transition" and "Findings become work" rows, and a follow-up registers them. `work.py` also refuses to load a config with `ledger.receipt_sharing: true` (not supported yet); that is a config refusal, not a control on the work, and is deferred with them.
 
 Reported, not enforced: live status (`action_log.enabled`, off) and agent liveness (`agent_watch.enabled`, off) show state and refuse nothing, so they are monitors, not controls. There is no rollback control at all: `work.py` aborts a failed rebase, and nothing reverts a landed goal. Acceptance criteria are the verify rows' command source, above. Cursor / Codex parity is the Hosts column, not a row.

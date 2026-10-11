@@ -37,6 +37,8 @@ _CORE = (
     "skills/sigma-init/templates/config.json.tmpl",
     "docs/enforcement.md",
     "README.md",
+    "docs/features.md",
+    "docs/configuration.md",
 )
 
 
@@ -330,7 +332,8 @@ def test_not_yet_paragraph_names_the_t3_non_controls():
 
 # ---------------------------------------------------------------- Task 3: README
 
-README = ROOT / "README.md"
+README = ROOT / "docs" / "features.md"      # the README's feature table moved here
+CONFIG_DOC = ROOT / "docs" / "configuration.md"
 
 
 def _readme_row(text, label):
@@ -368,15 +371,15 @@ def test_readme_check_control():
     assert any("Strategy-alignment check" in p and "gate" in p for p in found), found
     # (c) a labelled row that lost its link.
     old = _readme_row(text, "Stop gate (opt-in)")
-    assert "docs/enforcement.md" in old
-    unlinked = text.replace(old, old.replace(" · [enforcement](docs/enforcement.md)", ""))
+    assert "(enforcement.md)" in old
+    unlinked = text.replace(old, old.replace(" · [enforcement](enforcement.md)", ""))
     assert unlinked != text
     found = gen.readme_problems(unlinked, all_rows)
     assert any("Stop gate (opt-in)" in p and "docs/enforcement.md" in p for p in found), found
 
 
 def test_readme_defaults_match_the_template():
-    text = README.read_text(encoding="utf-8")
+    text = CONFIG_DOC.read_text(encoding="utf-8")
     for key in ('`work: {"enabled": true}`', '`ledger: {"enabled": true}`'):
         rows_ = [l for l in text.splitlines() if l.startswith(f"| {key} |")]
         assert len(rows_) == 1, (key, rows_)

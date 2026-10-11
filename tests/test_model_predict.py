@@ -1480,7 +1480,7 @@ def test_codex_dispatch_docs_invoke_the_host_model_resolver():
     step_section = running[running.index("**Per-STEP downgrade:"):]
     assert "--effort <effort>" in step_section
     assert "uses the selected `<effort>`, never its tier default" in running
-    readme = (root.parent / "README.md").read_text(encoding="utf-8")
+    readme = (root.parent / "docs/platform-support.md").read_text(encoding="utf-8")
     assert "`predict.py host-model codex` resolves them, or the explicit `off` fallback" in readme
     progress = (root / "sigma-loop" / "references" / "progress.md").read_text(encoding="utf-8")
     assert "a Codex phase may still be\nbe dispatched" not in progress

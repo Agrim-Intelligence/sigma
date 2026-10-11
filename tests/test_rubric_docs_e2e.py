@@ -9,7 +9,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 DOCS = [
-    "AGENTS.md", "README.md", "docs/label-model.md", "docs/agent-rules-detail.md", "docs/board.md",
+    "AGENTS.md", "README.md", "docs/backlog.md", "docs/action-log-and-ledger.md", "docs/label-model.md", "docs/agent-rules-detail.md", "docs/board.md",
     "docs/branching-model.md", "docs/dossier-pipeline.md",
     "skills/sigma-promote/SKILL.md", "skills/sigma-promote/references/selection.md",
     "skills/sigma-unpark/SKILL.md", "skills/sigma-scope/SKILL.md", "skills/sigma-define/SKILL.md",
@@ -46,7 +46,7 @@ def test_docs_describe_no_confirmation_queue():
 
 
 def test_readme_names_queued_as_the_filing_default():
-    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    text = (ROOT / "docs/action-log-and-ledger.md").read_text(encoding="utf-8")
     assert "`--queue queued` is the default posture" in text
     assert "`--queue actionable` is the default posture" not in text
 

@@ -249,7 +249,7 @@ def test_rule_text_and_carve_out():
     for needle in ("### 13c.", "The one exception: backup refs", "_atomic_leased_push", "_delete_chunk", "--expect",
                    "backup.former_prefixes", "220 bytes", "exit 3", "name-too-long", "pick-time rebase pass"):
         assert needle in doc, "docs/branching-model.md lacks %r" % needle
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    readme = (ROOT / "docs" / "running-the-loop.md").read_text(encoding="utf-8")
     assert "lease-protected force-push of a unit branch" in readme and "docs/branching-model.md" in readme
     assert "prune of backup refs" in (ROOT / "docs" / "enforcement.md").read_text(encoding="utf-8")
     table = (ROOT / "skills" / "sigma-doctor" / "scripts" / "enforcement_table.py").read_text(encoding="utf-8")

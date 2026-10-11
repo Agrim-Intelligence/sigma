@@ -485,7 +485,7 @@ _TWO_PART_PHRASE = re.compile(r"(?i)(?:\bsince|\bpre-|\bbefore|\bas of|\buntil|\
 _OTHER_PROGRAM = re.compile(r"(?i)(?:python|darwin|macos|codex-cli|bun|node|gh|git)\s+v?$")
 #: (path, token): why that exact version string is legitimate there. The reason is required.
 VERSION_ALLOW = {
-    ("README.md", "1.4.x"): "the previous name's release line, named as such where an upgrade needs it",
+    ("docs/getting-started.md", "1.4.x"): "the previous name's release line, named as such where an upgrade needs it",
     ("docs/upgrading.md", "1.4.x"): "the previous name's release line, named as such (upgrade guide)",
     ("docs/upgrading.md", "1.4.25"): "the previous name's release whose behaviour on a converted "
                                      "repository the upgrade guide describes (#326)",
@@ -676,7 +676,10 @@ def test_control_a_stale_example_sample_is_caught(tmp_path):
 
 
 
-# ---------------------------------------------------------------- auto-unpark: the README = the code
+# ---------------------------------------------------------------- auto-unpark: the docs = the code
+
+#: The auto-unpark section moved with the rest of the backlog detail out of the README (which links it).
+BACKLOG_DOC = ROOT / "docs" / "backlog.md"
 
 def _auto_unpark_section(text):
     a = text.index("Config: `discovery.blocker_promotion.mode`")
@@ -713,7 +716,7 @@ def _auto_unpark_truth():
 
 def test_the_readme_states_the_auto_unpark_default_the_template_ships():
     template_mode, code_default = _auto_unpark_truth()
-    assert auto_unpark_drift(README.read_text(encoding="utf-8"), template_mode, code_default) == []
+    assert auto_unpark_drift(BACKLOG_DOC.read_text(encoding="utf-8"), template_mode, code_default) == []
 
 
 @pytest.mark.parametrize("old,new", [
@@ -723,7 +726,7 @@ def test_the_readme_states_the_auto_unpark_default_the_template_ships():
     ("**It never resumes an `sdlc:parked` issue**", "**It resumes an `sdlc:parked` issue too**"),
 ])
 def test_control_a_drifted_auto_unpark_section_is_caught(old, new):
-    text = README.read_text(encoding="utf-8")
+    text = BACKLOG_DOC.read_text(encoding="utf-8")
     assert old in text, old
     template_mode, code_default = _auto_unpark_truth()
     assert auto_unpark_drift(text.replace(old, new, 1), template_mode, code_default) != []

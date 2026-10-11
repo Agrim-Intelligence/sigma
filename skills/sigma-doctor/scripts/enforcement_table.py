@@ -186,7 +186,7 @@ EXTERNAL_CONTROLS = (
 NOT_YET = (
     "Pick-time gates in `feature_owner.py`, `feature_propagate.py`, `promote.py` and "
     "`feature_labels.py` (`gate_at_pick` and the promote-time label checks) are not registered "
-    "yet: they back the README's \"Human approval gate, in one transition\" and \"Findings become "
+    "yet: they back the feature list's \"Human approval gate, in one transition\" and \"Findings become "
     "work\" rows, and a follow-up registers them. `work.py` also refuses to load a config with "
     "`ledger.receipt_sharing: true` (not supported yet); that is a config refusal, not a control "
     "on the work, and is deferred with them.",
@@ -421,9 +421,9 @@ def problems(root):
 
 
 def readme_problems(readme_text, all_rows):
-    """Problems with the README's feature table against `all_rows` (a pure function over text; not
-    part of `main`). Every `readme` label names exactly one `| **<label>** |` row, that row links
-    to `docs/enforcement.md`, and a label whose rows are all `advice` does not call itself a gate."""
+    """Problems with the feature table (`docs/features.md`, which the README links) against
+    `all_rows` (a pure function over text; not part of `main`). Every `readme` label names exactly
+    one `| **<label>** |` row, that row links to the enforcement table, and a label whose rows are all `advice` does not call itself a gate."""
     found = []
     lines = readme_text.splitlines()
     by_label = {}
@@ -437,7 +437,7 @@ def readme_problems(readme_text, all_rows):
                          f"expected exactly one (missing or ambiguous)")
             continue
         line = matches[0]
-        if "docs/enforcement.md" not in line:
+        if "(enforcement.md)" not in line and "(docs/enforcement.md)" not in line:
             found.append(f"README: the {label!r} row does not link to docs/enforcement.md")
         if all(r["kind"] == "advice" for r in by_label[label]):
             hit = GATE_WORDS.search(line)

@@ -66,6 +66,8 @@ def _tool():
 
 oc = _tool()
 README_TEXT = (ROOT / "README.md").read_text(encoding="utf-8")
+#: What the `readme-usage` mode reads: the README plus the guides it links (oc.README_DOCS).
+USAGE_TEXT = oc.usage_corpus(README_TEXT, ROOT)
 INIT_FLOW = pathlib.Path("skills") / "sigma-init" / "scripts" / "init_flow.py"
 
 
@@ -244,8 +246,8 @@ def test_every_readme_script_gesture_fits_its_scripts_own_usage(cli_run):
     ("python3 <installed-sigma>/evals/run.py", "python3 evals/run.py", "not copyable"),
 ])
 def test_control_a_readme_gesture_its_script_would_refuse_is_red(old, new, why, tmp_path):
-    assert old in README_TEXT, old
-    out = oc.check_readme_usage(README_TEXT.replace(old, new, 1), ROOT, tmp_path)
+    assert old in USAGE_TEXT, old
+    out = oc.check_readme_usage(USAGE_TEXT.replace(old, new, 1), ROOT, tmp_path)
     assert out["ok"] is False and out["failed_step"] == "README usage", out
     assert any(why in p for d in out["detail"] for p in d["problems"]), out["detail"]
 
@@ -263,8 +265,8 @@ def test_a_nested_optional_group_in_a_usage_line_is_one_optional_flag(args, ok):
 def test_control_the_usage_mode_goes_red_through_the_cli(tmp_path):
     """Through the documented gesture: the pre-fix README's auto_unpark line is `RED at README
     usage`, and the run exits 1 even though the local mode itself is green."""
-    drifted = tmp_path / "README.md"
-    drifted.write_text(README_TEXT.replace(
+    drifted = tmp_path / "README.md"      # the line lives in a linked guide; the README carries it here
+    drifted.write_text(USAGE_TEXT.replace(
         'python3 <installed-sigma>/skills/sigma-loop/scripts/loop.py note .sdlc <goal> "Deliberate',
         "python3 <installed-sigma>/skills/sigma-loop/scripts/auto_unpark.py   # see KEEP\nx \"", 1),
         encoding="utf-8")
