@@ -9,6 +9,9 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 
 | Path | Function | Rule | Count | Gate | Risk |
 |---|---|---|---:|---|---|
+| .sdlc/research/1142-measure.py | history | fs-rmtree | 1 | research measurement script, run by hand; removes only the temporary directory it created with `tempfile.mkdtemp()` | high |
+| .sdlc/research/1142-measure.py | reroot | fs-rmtree | 1 | research measurement script, run by hand; removes only the temporary directory it created with `tempfile.mkdtemp()` | high |
+| .sdlc/research/1142-measure.py | reroot | fs-write | 2 | research measurement script, run by hand; writes only inside the temporary directory it created | medium |
 | .sdlc/research/292-benchmark.py | main | git-ref-write | 1 | research benchmark script, run by hand against a temporary scratch repository it creates and removes; the update-ref only points a remote-tracking name inside that scratch repository | high |
 | evals/bench/arms/common.py | isolated_env | fs-write | 2 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root | medium |
 | evals/bench/arms/common.py | remove_tree | fs-rmtree | 2 | operator-run harness only: refuses CI and background runs; touches only directories it created under an empty scratch root; removes only a run, attempt or workdir child directory it was handed | high |
@@ -243,12 +246,18 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/supervise_daemon.py | _capture_codex | fs-remove | 2 | Codex host only; removes only the fixed .sdlc/state/supervisor.agent-last transient message before launch and after inspection under the per-checkout OS lock | high |
 | skills/sigma-loop/scripts/supervise_daemon.py | _codex_main | fs-write | 2 | Codex host only; state directory creation follows explicit host selection, and supervisor log/tail writes run under the per-checkout OS lock after enabled-plugin preflight | medium |
 | skills/sigma-loop/scripts/supervise_daemon.py | main | fs-write | 4 | ungated | medium |
+| skills/sigma-loop/scripts/sync.py | _aside | fs-write | 1 | operator-run `sync.py bootstrap` only (#1142), and only after `_shares_history` proves the ops branch shares no commit with the remote's; creates `.sdlc/state/orphaned/<stamp>/<channel>/` to hold files the re-root will not publish, never overwriting an earlier copy | medium |
 | skills/sigma-loop/scripts/sync.py | _ensure_gitattributes | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/sync.py | _ensure_lines | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/sync.py | _knowledge_lock | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/sync.py | _prune | fs-remove | 3 | ungated | high |
 | skills/sigma-loop/scripts/sync.py | _publish_knowledge | git-destructive | 1 | ungated | high |
 | skills/sigma-loop/scripts/sync.py | _push_with_retry | git-push | 1 | ungated | high |
+| skills/sigma-loop/scripts/sync.py | _record_push | git-ref-write | 1 | after a push of HEAD to `<remote>/<branch>` succeeded; sets the local remote-tracking ref to exactly that commit, which a narrow-refspec push does not move (#1142) | high |
+| skills/sigma-loop/scripts/sync.py | _reroot | fs-remove | 2 | operator-run `sync.py bootstrap` only (#1142), and only after `_shares_history` proves the ops branch shares no commit with the remote's; removes only its own `.sdlc/state/orphaned/*/ledger/PENDING` markers: a superseded one, and its own once the settle step completes | high |
+| skills/sigma-loop/scripts/sync.py | _reroot | fs-write | 1 | operator-run `sync.py bootstrap` only (#1142), and only after `_shares_history` proves the ops branch shares no commit with the remote's; writes the `.sdlc/state/orphaned/<stamp>/ledger/PENDING` marker (the old tip's hash) that lets the next bootstrap finish an interrupted settle step | medium |
+| skills/sigma-loop/scripts/sync.py | _reroot | git-ref-write | 1 | operator-run `sync.py bootstrap` only (#1142), and only after `_shares_history` proves the ops branch shares no commit with the remote's; writes `refs/sigma/orphaned/<channel>/<stamp>`, a local backup of the old tip that is never pushed | high |
+| skills/sigma-loop/scripts/sync.py | _resume_reroot | fs-remove | 1 | operator-run `sync.py bootstrap` only (#1142); removes a `.sdlc/state/orphaned/<stamp>/ledger/PENDING` marker after finishing the settle step it records | high |
 | skills/sigma-loop/scripts/sync.py | _union_note | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/sync.py | _write_knowledge_gitignore | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/sync.py | _write_team | fs-write | 1 | ungated | medium |
