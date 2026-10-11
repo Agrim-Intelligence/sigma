@@ -252,3 +252,75 @@ def test_documented_double_context_gesture_goes_red_on_real_tree(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     assert "BASELINE ok phase-context-budget" in r.stdout  # green on the unmutated copy first
     assert "RED double-context/words phase-context-budget" in r.stdout and _left(tmp) == []
+
+
+# --- #1059: --record -------------------------------------------------------------------------------
+
+def _head(repo):
+    return subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True,
+                          check=True).stdout.strip()
+
+
+def _entries(path):
+    return {(e["row"], e["gate"]): e for e in json.loads(path.read_text())["rows"]}
+
+
+def test_record_writes_only_observed_red(tmp_path):
+    repo = _repo(tmp_path, {"r1": ["g"], "r2": ["green"], "r3": ["g", "later"], "r-missing": ["g", "later"]},
+                 {"g": (RED_IF_BROKEN, "live"), "green": (ALWAYS_GREEN, "live"), "later": (ALWAYS_GREEN, "pending")})
+    matrix = tmp_path / "matrix.json"
+    r, tmp = _run(tmp_path, repo, "--record", "--matrix", str(matrix), "--run-id", "run-7")
+    assert r.returncode == 10, r.stdout + r.stderr  # r-missing's mutator failure (10) outranks r2 stays-green (1); --record leaves the exit code unchanged
+    got = _entries(matrix)
+    red = got[("r1/c", "g")]
+    assert red["status"] == "red" and red["run_id"] == "run-7" and red["commit"] == _head(repo)
+    assert len(red["date"]) == 10 and len(red["pin"]) == 16
+    assert got[("r3/c", "later")] == {"row": "r3/c", "gate": "later", "status": "pending"}
+    assert got[("r3/c", "g")]["status"] == "red"
+    assert ("r2/c", "green") not in got, "a gate seen green must never be recorded"
+    # a mutator failure records no live-gate evidence but keeps the pending entry, so check never sees a hole
+    assert ("r-missing/c", "g") not in got and got[("r-missing/c", "later")]["status"] == "pending"
+    assert "RECORDED 2 red of" in r.stdout
+    assert _left(tmp) == []
+
+
+def test_record_drops_evidence_of_a_gate_that_stays_green(tmp_path):
+    repo = _repo(tmp_path, {"r1": ["g"], "r2": ["green"]},
+                 {"g": (RED_IF_BROKEN, "live"), "green": (ALWAYS_GREEN, "live")})
+    matrix = tmp_path / "matrix.json"
+    stale = {"status": "red", "run_id": "old", "date": "2020-01-01", "commit": "a" * 40, "pin": "b" * 16}
+    matrix.write_text(json.dumps({"rows": [
+        {"row": "r2/c", "gate": "green", **stale}, {"row": "gone/c", "gate": "g", **stale},
+        {"row": "r1/c", "gate": "g", **stale}]}))
+    r, _ = _run(tmp_path, repo, "--record", "--matrix", str(matrix), "--regression", "r2")
+    assert r.returncode == 1
+    got = _entries(matrix)
+    assert ("r2/c", "green") not in got, "stale red evidence for a gate now green must be removed"
+    assert ("gone/c", "g") not in got, "pairs absent from the tested catalogue are pruned"
+    assert got[("r1/c", "g")]["run_id"] == "old", "an unselected pair keeps its entry"
+
+
+def test_record_never_writes_without_flag_or_on_baseline_red(tmp_path):
+    repo = _repo(tmp_path, {"r1": ["g"]}, {"g": (RED_IF_BROKEN, "live")})
+    matrix = tmp_path / "matrix.json"
+    r, _ = _run(tmp_path, repo, "--matrix", str(matrix))
+    assert r.returncode == 0 and not matrix.exists()
+    bad = _repo(tmp_path / "bad", {"r1": ["g"]}, {"g": (ALWAYS_RED, "live")})
+    r, tmp = _run(tmp_path / "bad", bad, "--record", "--matrix", str(matrix))
+    assert r.returncode == 3 and not matrix.exists()
+    r, _ = _run(tmp_path, repo, "--record", "--matrix", str(matrix), "--regression", "nope")
+    assert r.returncode == 2 and not matrix.exists()
+    assert not list(tmp_path.glob("matrix.json.tmp.*"))
+
+
+def test_record_git_env_is_not_inherited(tmp_path, monkeypatch):
+    repo = _repo(tmp_path, {"r1": ["g"]}, {"g": (RED_IF_BROKEN, "live")})
+    head = _head(repo)  # before GIT_DIR is poisoned: the test's own git call must see the fixture
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    subprocess.run(["git", "init", "-q", str(other)], check=True)
+    monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+    matrix = tmp_path / "matrix.json"
+    r, _ = _run(tmp_path, repo, "--record", "--matrix", str(matrix))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _entries(matrix)[("r1/c", "g")]["commit"] == head, "GIT_DIR must not redirect rev-parse"

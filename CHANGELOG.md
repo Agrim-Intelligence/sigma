@@ -16,6 +16,13 @@ All notable changes to Sigma are recorded here, newest first.
   timeout on this path; a gh-reported timeout in stderr is classified transport and retried over REST; a silent hang
   blocks. UNMEASURED. The duplicate-on-retry ruling is retained, REST-only, and deliberately
   contradicts `comment_issue`'s own "may have landed" stance. NOT run in a real Claude Code cloud session (UNMEASURED).
+- **Regression evidence matrix, `matrix.py check` and `control.py run --record` (#1059, slice 4 of #808).** New
+  `matrix.py check` reads `matrix.json` against `catalogue.json`/`gates.json` and fails on a catalogue
+  (row, gate) pair with no entry, a red entry without run id/date/commit/pin, a commit that is not a 40-hex object or
+  lacks the row/gate, a stale pin, and pending/live mismatches; shallow clones and `--skip-objects` print UNVERIFIED,
+  not a pass. `control.py run --record` writes only gates it saw red (atomically, via `record.write_atomic`) and removes
+  stale evidence for anything else. The regression README documents the gestures and what a record does not prove.
+
 - **Regression control, `control.py run` (#1058, slice 3 of #808).** New `evals/regression/control.py`: extracts
   `git archive HEAD` into a temp directory (the working tree is never touched; uncommitted changes are not tested),
   runs each needed live gate once unmutated (already red: exit 3), applies each catalogue row's mutation to a fresh

@@ -18,7 +18,17 @@ or bad arguments (including an unknown --regression, or the mutator's own 2); 3 
 on the unmutated copy (`BASELINE-RED <gate>`, nothing mutated); 4 a gate is `pending` and --strict;
 6 gate-vacuous / gate-broken / gate-timeout; 10, 11, 12 the mutator's anchor-missing,
 anchor-ambiguous, mutation-noop, passed through. All rows always run; the exit is the first of
-2, 10, 11, 12, 1, 6, 4 that occurred. `--record` (the evidence matrix) is #1059, not here.
+2, 10, 11, 12, 1, 6, 4 that occurred.
+
+`--record [--matrix PATH] [--run-id ID]` (#1059) then merges what this run saw into the evidence
+matrix (see matrix.py and README.md): a gate seen red is recorded with run id, UTC date and the full
+HEAD sha of --repo; a gate seen anything else (green, vacuous, broken, timed out, mutator failed) has
+its old entry REMOVED, so stale evidence cannot survive; a pending gate is recorded as pending; pairs
+absent from the tested catalogue are pruned; unselected pairs are kept. Nothing is written without
+--record, or when the baseline was red or the run was refused. The matrix defaults to this script's own
+tree, never --repo, so recording against a throwaway checkout (`--repo <origin/main worktree>`, the
+way to get a commit that survives a squash merge) cannot write into it. Concurrent --record runs are
+last-writer-wins: run them one at a time. The write is temp file + os.replace (record.write_atomic).
 
 Cost: serial. Wall time = each distinct live gate once on the baseline + each row's gates (about 80 s
 for the live set on one laptop, python 3.13; CI not measured), plus one tree copy per row. Rows are
@@ -36,6 +46,9 @@ import sys
 import tarfile
 import tempfile
 import time
+import datetime
+import importlib.util
+import secrets
 
 PREFIX = "sigma-regression-"
 MARKER_NAME = ".sigma-regression-control"
@@ -47,6 +60,42 @@ SEVERITY = (2, 10, 11, 12, 1, 6, 4)
 def _env():
     keep = {k: v for k, v in os.environ.items() if not (k.startswith(("GIT_", "SIGMA_")) or k == "PYTHONPATH")}
     return {**keep, "PYTHONDONTWRITEBYTECODE": "1", "PYTEST_ADDOPTS": "-p no:cacheprovider"}
+
+
+def _sibling(name):
+    """Load a sibling module of evals/regression by path (this script may itself be loaded by path)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    spec = importlib.util.spec_from_file_location("control_sibling_" + name, os.path.join(here, name + ".py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _write_matrix(path, repo, rows, gates, seen, run_id):
+    """Merge `seen` {(row, gate): 'red'|'pending'|other} into the matrix at `path` and write it atomically."""
+    matrix, record = _sibling("matrix"), _sibling("record")
+    sha = subprocess.run(["git", "-C", repo, "rev-parse", "HEAD"], capture_output=True, text=True, env=_env()).stdout.strip()
+    if not matrix.HEX40.fullmatch(sha):
+        raise OSError(f"cannot read the HEAD commit of {repo}")
+    try:
+        old = json.load(open(path, encoding="utf-8"))["rows"]
+    except FileNotFoundError:
+        old = []
+    except (ValueError, KeyError, OSError) as exc:
+        raise OSError(f"cannot merge into unreadable matrix {path}: {exc}")
+    valid = {(r["id"], g): (r, gates[g]) for r in rows for g in r["must_be_red_by"]}
+    keep = {(e.get("row"), e.get("gate")): e for e in old if (e.get("row"), e.get("gate")) in valid}
+    stamp = datetime.datetime.now(datetime.timezone.utc)
+    for key, verdict in seen.items():
+        row, gate = valid[key]
+        keep.pop(key, None)
+        if verdict == "red":
+            keep[key] = {"row": key[0], "gate": key[1], "status": "red", "run_id": run_id,
+                         "date": stamp.strftime("%Y-%m-%d"), "commit": sha, "pin": matrix.pin(row, gate)}
+        elif verdict == "pending":
+            keep[key] = {"row": key[0], "gate": key[1], "status": "pending"}
+    record.write_atomic(path, {"rows": [keep[k] for k in sorted(keep)]})
+    return len(keep)
 
 
 def _rmtree(path):
@@ -79,7 +128,7 @@ def sweep_stale(tmp=None):
 
 def _extract(repo, dest):
     proc = subprocess.Popen(["git", "-C", repo, "archive", "--format=tar", "HEAD"], stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE)
+                            stderr=subprocess.PIPE, env=_env())
     with tarfile.open(fileobj=proc.stdout, mode="r|") as tar:
         tar.extractall(dest, **({"filter": "data"} if hasattr(tarfile, "data_filter") else {}))
     if proc.wait() != 0:
@@ -147,7 +196,7 @@ def _control(args, work):
         sys.stderr.write(f"control.py: REFUSED: no catalogue row or regression named {args.regression!r}\n")
         return 2
     sha = subprocess.run(["git", "-C", args.repo, "rev-parse", "--short", "HEAD"], capture_output=True,
-                         text=True).stdout.strip()
+                         text=True, env=_env()).stdout.strip()
     print(f"control.py: committed tree {sha} (uncommitted changes are not tested); {len(chosen)} rows selected")
     live = sorted({g for r in chosen for g in r["must_be_red_by"] if gates[g]["status"] == "live"})
     bad = False
@@ -161,7 +210,7 @@ def _control(args, work):
             print(f"BASELINE-RED {g}: {kind or 'exit %d' % rc} on the unmutated copy; a gate already red proves nothing")
     if bad:
         return 3
-    seen = set()
+    seen, results = set(), {}
     for n, row in enumerate(chosen):
         os.utime(os.path.join(work, MARKER_NAME))
         copy = os.path.join(work, f"row-{n}")
@@ -172,19 +221,27 @@ def _control(args, work):
         if m.returncode:
             seen.add(m.returncode)
             print(f"MUTATOR-FAIL {row['id']}: exit {m.returncode} {m.stderr.strip()}")
+            for g in row["must_be_red_by"]:
+                results[(row["id"], g)] = "pending" if gates[g]["status"] == "pending" else "mutator-failed"
             continue
         for g in row["must_be_red_by"]:
             if gates[g]["status"] == "pending":
                 seen.add(4 if args.strict else 0)
                 print(f"PENDING {row['id']} {g}: {gates[g]['pending_reason']}")
+                results[(row["id"], g)] = "pending"
                 continue
             rc, kind = _run_gate(gates[g]["argv"], copy, args.gate_timeout)
             v = _verdict(gates[g]["argv"], rc, kind)
+            results[(row["id"], g)] = v
             if v == "red":
                 print(f"RED {row['id']} {g} (exit {rc})")
             else:
                 seen.add(1 if v == "stays-green" else 6)
                 print(f"FAIL {v} {row['id']} {g}: exit {rc}" + (" under mutation" if v == "stays-green" else ""))
+    if args.record:
+        n = _write_matrix(args.matrix, args.repo, rows, gates, results, args.run_id)
+        print(f"RECORDED {sum(v == 'red' for v in results.values())} red of {len(results)} seen; "
+              f"{n} matrix entries in {args.matrix} (run {args.run_id})")
     return next((c for c in SEVERITY if c in seen), 0)
 
 
@@ -194,9 +251,14 @@ def main(argv=None):
     ap.add_argument("--regression")
     ap.add_argument("--changed-files")
     ap.add_argument("--strict", action="store_true")
+    ap.add_argument("--record", action="store_true", help="merge this run's verdicts into the evidence matrix")
+    ap.add_argument("--matrix", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "matrix.json"))
+    ap.add_argument("--run-id")
     ap.add_argument("--gate-timeout", type=float, default=600)
     ap.add_argument("--repo", default=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     args = ap.parse_args(argv)
+    args.run_id = args.run_id or (datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ-")
+                                  + secrets.token_hex(3))
     if os.name != "posix":
         sys.stderr.write("control.py: REFUSED: process-group kill needs POSIX; not supported here\n")
         return 2

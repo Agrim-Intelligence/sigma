@@ -1,0 +1,104 @@
+{
+  "rows": [
+    {
+      "commit": "df5a6e13d2ea4d7f9bf5ef3317ee1466554fc3ca",
+      "date": "2026-10-11",
+      "gate": "work-commit-scan",
+      "pin": "8eb62816cbc1a463",
+      "row": "disable-secret-scan/commit-noop",
+      "run_id": "20261011T100154Z-cce274",
+      "status": "red"
+    },
+    {
+      "commit": "df5a6e13d2ea4d7f9bf5ef3317ee1466554fc3ca",
+      "date": "2026-10-11",
+      "gate": "non-key-evaders",
+      "pin": "5d4b4bf06b5783ed",
+      "row": "disable-secret-scan/drop-pattern",
+      "run_id": "20261011T100154Z-cce274",
+      "status": "red"
+    },
+    {
+      "commit": "df5a6e13d2ea4d7f9bf5ef3317ee1466554fc3ca",
+      "date": "2026-10-11",
+      "gate": "safety-check",
+      "pin": "b532faf612ff2f52",
+      "row": "disable-secret-scan/drop-pattern",
+      "run_id": "20261011T100154Z-cce274",
+      "status": "red"
+    },
+    {
+      "commit": "df5a6e13d2ea4d7f9bf5ef3317ee1466554fc3ca",
+      "date": "2026-10-11",
+      "gate": "safety-check",
+      "pin": "f1034021c02f823b",
+      "row": "disable-secret-scan/drop-redactor-only",
+      "run_id": "20261011T100154Z-cce274",
+      "status": "red"
+    },
+    {
+      "commit": "df5a6e13d2ea4d7f9bf5ef3317ee1466554fc3ca",
+      "date": "2026-10-11",
+      "gate": "scrub-tests",
+      "pin": "1522bb0a8bf9a041",
+      "row": "disable-secret-scan/drop-redactor-only",
+      "run_id": "20261011T100154Z-cce274",
+      "status": "red"
+    },
+    {
+      "commit": "df5a6e13d2ea4d7f9bf5ef3317ee1466554fc3ca",
+      "date": "2026-10-11",
+      "gate": "non-key-evaders",
+      "pin": "ff8e89c76b689b96",
+      "row": "disable-secret-scan/whole-table",
+      "run_id": "20261011T100154Z-cce274",
+      "status": "red"
+    },
+    {
+      "commit": "df5a6e13d2ea4d7f9bf5ef3317ee1466554fc3ca",
+      "date": "2026-10-11",
+      "gate": "scrub-tests",
+      "pin": "1449abc1e72db32f",
+      "row": "disable-secret-scan/whole-table",
+      "run_id": "20261011T100154Z-cce274",
+      "status": "red"
+    },
+    {
+      "commit": "df5a6e13d2ea4d7f9bf5ef3317ee1466554fc3ca",
+      "date": "2026-10-11",
+      "gate": "phase-context-budget",
+      "pin": "922b6d3f39e452ff",
+      "row": "double-context/words",
+      "run_id": "20261011T100154Z-cce274",
+      "status": "red"
+    },
+    {
+      "gate": "layer1-control",
+      "row": "drop-review-recording/code",
+      "status": "pending"
+    },
+    {
+      "commit": "df5a6e13d2ea4d7f9bf5ef3317ee1466554fc3ca",
+      "date": "2026-10-11",
+      "gate": "work-review-post",
+      "pin": "95789cbd1d49fdd2",
+      "row": "drop-review-recording/code",
+      "run_id": "20261011T100154Z-cce274",
+      "status": "red"
+    },
+    {
+      "gate": "layer1-control",
+      "row": "skip-plan-review/code",
+      "status": "pending"
+    },
+    {
+      "commit": "df5a6e13d2ea4d7f9bf5ef3317ee1466554fc3ca",
+      "date": "2026-10-11",
+      "gate": "work-plan-review-gate",
+      "pin": "0a01edaba4579203",
+      "row": "skip-plan-review/code",
+      "run_id": "20261011T100154Z-cce274",
+      "status": "red"
+    }
+  ]
+}
