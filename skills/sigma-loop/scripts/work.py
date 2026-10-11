@@ -1166,7 +1166,8 @@ _TRUSTED_ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR")
 
 def settings(config):
     s = dict(DEFAULTS)
-    s.update(config.get("work") or {})
+    block = config.get("work") if isinstance(config, dict) else None
+    s.update(block if isinstance(block, dict) else {})
     for key, label in (("remote", "work.remote"), ("base", "work.base"),
                        ("branch_prefix", "work.branch_prefix")):
         s[key] = state.safe_ref(label, s.get(key))      # #710: option injection into git
@@ -4077,6 +4078,57 @@ _HEAD_VERSION_RE = re.compile(r"^## \d+\.\d+\.\d+(?: [\u2014-] .*)?$")
 _LINK_FOOTER_RE = re.compile(r"^\[[^\]]+\]: ")
 
 
+def _subsequence_extras(whole, part):
+    """Lines of `whole` left over when `part` is matched greedily as an in-order subsequence, or None."""
+    extras, j = [], 0
+    for ln in whole:
+        if j < len(part) and ln == part[j]:
+            j += 1
+        else:
+            extras.append(ln)
+    return extras if j == len(part) else None
+
+
+def _union_release_moved(ours, base, theirs):
+    """#1103: lines for one conflict hunk whose diff3 base is non-empty only because the base side (ours)
+    moved the old Unreleased entries (`base`) under a new dated version heading, or None to park.
+
+    Proven shape, nothing else: `base` is an in-order subsequence of BOTH sides, so neither side edited an
+    existing line; ours carries a version heading with the moved lines beneath it; everything the unit
+    (theirs) added on top of `base` is a plain list entry. The result keeps ours' text exactly, files the
+    unit's entries not already on ours (matched by their stripped text) under Unreleased above the release
+    heading in their own order, and loses no entry."""
+    if not any(ln.strip() for ln in base):
+        return None
+    cut = next((n for n, ln in enumerate(ours) if ln.startswith("## ")), None)
+    if cut is None or not _HEAD_VERSION_RE.match(ours[cut]):
+        return None
+    pre, rel = ours[:cut], ours[cut:]
+    if any(ln.startswith("## ") and not _HEAD_VERSION_RE.match(ln) for ln in rel):
+        return None
+    if _subsequence_extras(rel, base) is None:
+        return None
+    if any(ln.startswith("## ") or _LINK_FOOTER_RE.match(ln) for ln in pre + theirs):
+        return None
+    added = _subsequence_extras(theirs, base)
+    if added is None:
+        return None
+    if any(ln.strip() and not ln.lstrip().startswith(("- ", "* ")) and not ln.startswith(" ") for ln in added):
+        return None
+    have = {ln.strip() for ln in ours if ln.strip()}
+    fresh = [ln for ln in added if not ln.strip() or ln.strip() not in have]
+    while fresh and not fresh[0].strip():
+        fresh.pop(0)
+    while fresh and not fresh[-1].strip():
+        fresh.pop()
+    if not any(ln.strip() for ln in fresh):
+        return list(ours)
+    head = list(pre)
+    while head and not head[-1].strip():
+        head.pop()
+    return head + fresh + [""] + rel
+
+
 def _union_headed(text):
     """Heading-aware sibling of `_union_diff3`: (resolved, True) or (None, False), the same contract.
 
@@ -4111,7 +4163,7 @@ def _union_headed(text):
         base = []
         while i < len(lines) and lines[i] != _D3_THEIRS:
             base.append(lines[i]); i += 1
-        if i >= len(lines) or base:
+        if i >= len(lines):
             return None, False
         i += 1
         theirs = []
@@ -4120,6 +4172,16 @@ def _union_headed(text):
         if i >= len(lines):
             return None, False
         i += 1
+        if base:                            # #1103: the one non-empty-base shape it can prove
+            moved = _union_release_moved(ours, base, theirs) if section == _HEAD_UNRELEASED else None
+            if moved is None:
+                return None, False
+            out.extend(moved)
+            for ln in reversed(out):
+                if ln.startswith("## "):
+                    section = ln
+                    break
+            continue
         side_heads = [ln for ln in ours + theirs if ln.startswith("## ")]
         if any(ln != _HEAD_UNRELEASED and not _HEAD_VERSION_RE.match(ln) for ln in side_heads):
             return None, False
@@ -4253,6 +4315,7 @@ def rebase(sdlc_dir, config, goal, run=None):
                 return refused
             run(path, ["git", "push", "--force-with-lease", remote, f"HEAD:{rec['branch']}"])
             _rerecord_cut_tip(sdlc_dir, config, goal, rec, run, path, remote, base)
+            _reanchor_after_rebase(sdlc_dir, config, goal)
             return "rebased (CHANGELOG union-merged)"
         try:
             run(path, ["git", "rebase", "--abort"])
@@ -4307,7 +4370,19 @@ def rebase(sdlc_dir, config, goal, run=None):
         return refused
     run(path, ["git", "push", "--force-with-lease", remote, f"HEAD:{rec['branch']}"])
     _rerecord_cut_tip(sdlc_dir, config, goal, rec, run, path, remote, base)
+    _reanchor_after_rebase(sdlc_dir, config, goal)
     return "rebased"
+
+
+def _reanchor_after_rebase(sdlc_dir, config, goal):
+    """#1017: under the upkeep opt-in, a successful goal rebase re-records the content fingerprint, as the BEHIND path does
+    (`_reconcile_behind`) and the pass's own replay does. Gate closed: nothing runs, so every legacy path is unchanged.
+    Never raises -- the rebase has already pushed, and a bookkeeping miss must not turn it into a failure."""
+    try:
+        if _feature_upkeep().enabled(config):
+            state.reanchor_content(sdlc_dir, goal)
+    except Exception:                       # noqa: BLE001 - bookkeeping after a landed push is never fatal
+        pass
 
 
 def _replay_would_lose(path, run, pre, base_ref, branch=""):

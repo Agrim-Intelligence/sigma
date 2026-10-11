@@ -17,7 +17,7 @@ from pathlib import Path
 RISK = {"gh-issue": "medium", "gh-pr": "medium", "gh-label": "medium",
         "gh-project": "medium", "gh-api-write": "medium", "graphql-mutation": "medium",
         "git-push": "high", "git-destructive": "high", "git-ref-write": "high", "fs-remove": "high",
-        "fs-rmtree": "high", "fs-write": "medium", "network-post": "high"}
+        "fs-rmtree": "high", "fs-write": "medium", "network-post": "high", "network-delete": "high"}
 _GH_ACTIONS = {"issue": {"close", "reopen", "edit", "comment", "create", "delete", "transfer", "lock"},
                "pr": {"create", "merge", "close", "comment", "review", "edit", "ready"},
                "label": {"create", "edit", "delete"},
@@ -274,17 +274,50 @@ def _strings(node, values):
     return found
 
 
-def _values(tree):
-    values = {}
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Assign, ast.AnnAssign)):
-            if node.value is None:
-                continue
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            for target in targets:
-                if isinstance(target, ast.Name):
-                    values[target.id] = _strings(node.value, values)
-    return values
+_FUNCS = (ast.FunctionDef, ast.AsyncFunctionDef)
+
+
+def _own_nodes(scope):
+    """Nodes of one scope in walk order, not descending into nested function definitions."""
+    queue = list(ast.iter_child_nodes(scope))
+    found = []
+    while queue:
+        node = queue.pop(0)
+        found.append(node)
+        if not isinstance(node, _FUNCS):
+            queue.extend(ast.iter_child_nodes(node))
+    return found
+
+
+def _scoped_calls(tree):
+    """Yield (call, values) with values resolved per function: own assignments over the enclosing scopes'."""
+    stack = [(tree, {})]
+    while stack:
+        scope, outer = stack.pop()
+        values = dict(outer)
+        nodes = _own_nodes(scope)
+        for node in nodes:
+            if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                for target in targets:
+                    if isinstance(target, ast.Name):
+                        values[target.id] = _strings(node.value, values)
+        for node in nodes:
+            if isinstance(node, _FUNCS):
+                stack.append((node, values))
+            elif isinstance(node, ast.Call):
+                yield node, values
+
+
+def _is_http_delete(node, name, tokens):
+    """A Python HTTP-client DELETE: `method="DELETE"` keyword, `requests|httpx.delete(`, `.request("DELETE", ...)` (#959)."""
+    for kw in node.keywords:
+        if kw.arg == "method" and any(s.lower() == "delete" for s in _strings(kw.value, {})):
+            return True
+    if name in {"requests.delete", "httpx.delete"}:
+        return True
+    return (name.endswith(".request") and bool(node.args) and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str) and node.args[0].value.lower() == "delete")
 
 
 def _rules_for_call(node, values):
@@ -329,6 +362,8 @@ def _rules_for_call(node, values):
                 rules.add("git-ref-write")      # a plain update-ref creates or moves a ref (#960)
     if _is_gh_api_write_call(node.func):
         rules.add("gh-api-write")
+    if _is_http_delete(node, name, tokens):
+        rules.add("network-delete")
     if name == "shutil.rmtree":
         rules.add("fs-rmtree")
     elif name.startswith("os.") and name.split(".")[-1] in {"unlink", "remove", "rmdir", "replace", "rename"}:
@@ -368,10 +403,7 @@ def scan_paths(root, paths):
                     groups[key] = groups.get(key, 0) + 1
         else:
             tree = ast.parse(text, filename=str(path))
-            values = _values(tree)
-            for node in ast.walk(tree):
-                if not isinstance(node, ast.Call):
-                    continue
+            for node, values in _scoped_calls(tree):
                 matching = [(start, name) for start, end, name in owners if start <= node.lineno <= end]
                 function = max(matching, default=(0, "<module>"))[1]
                 rules = _rules_for_call(node, values)

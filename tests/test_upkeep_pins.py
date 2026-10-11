@@ -13,6 +13,7 @@ from unittest import mock
 
 import attempt_trap
 import upkeep_drift_support as S
+from changelog_layout import entries_naming
 
 TEN_KEYS = {"triggers.drift_merges", "triggers.dormant_days", "auto.window_days", "auto.burst_window_hours", "auto.target_hours",
             "auto.floor", "auto.ceiling", "triggers.min_interval_minutes", "triggers.every_hours", "triggers.dormant_every_hours"}
@@ -142,7 +143,7 @@ def inert_failures(tmp):
               "skills/sigma-loop/scripts/feature_upkeep_sched.py"])        # #923: the scheduler
     support = importlib.import_module("upkeep_support")
     S.expect(bad, "the registered entry points (#922: the pass, its acks file, its ledger note)", support.REGISTERED_ENTRY_POINTS,
-             {"feature_upkeep_pass": {"upkeep_pass", "ack_union", "ledger_note"},
+             {"feature_upkeep_pass": {"upkeep_pass", "ack_union", "ledger_note", "run_unit_pass"},   # #1085
               "feature_upkeep_sched": {"scheduler_tick"},                  # #923
               "feature_upkeep_job": {"run_job", "run_engine"}})
     ws = tool("write_surface")
@@ -202,18 +203,22 @@ def test_gate_closed_inert(tmp_path):
     assert not bad, "; ".join(bad)
 
 
-def test_changelog_entry():
-    text = (S.ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    head = text.split("\n## ", 2)
-    assert text.startswith("# Changelog") and len(head) > 1 and head[1].startswith("Unreleased"), "no Unreleased section"
-    # every later release moves the entries under its own dated heading, so the entry may sit in any section: it is the
-    # bold-headed entry that names this goal's own module, found anywhere in the file
-    entries = [e for e in ("\n" + text).split("\n- **") if "#919" in e and "feature_upkeep_drift.py" in e]
-    assert len(entries) == 1, "the changelog needs exactly one entry for this goal"
+def changelog_entry_failures(text):
+    """The #919 entry must exist exactly once, wherever a release has moved it; -> list of failures."""
+    entries = entries_naming(text, "#919")
+    if len(entries) != 1:
+        return ["the changelog needs exactly one entry for this goal, found %d" % len(entries)]
     entry = " ".join(entries[0].split())
     bad = []
     for word in ("feature_upkeep_drift.py", "feature_upkeep_state.py", "UNKNOWN", "author date", "no behaviour change", "nothing calls"):
         S.expect(bad, "the entry says " + word, word in entry, True)
+    return bad
+
+
+def test_changelog_entry():
+    text = (S.ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert text.startswith("# Changelog") and "\n## Unreleased" in text, "no Unreleased section"
+    bad = changelog_entry_failures(text)
     assert not bad, "; ".join(bad)
 
 

@@ -592,10 +592,13 @@ def _runtime_acks(sdlc_dir, unit):
         return []
 
 
-def _acked(sdlc_dir, run, cwd, unit, integration_ref):
+def _acked(sdlc_dir, run, cwd, unit, integration_ref, config=None):
     """Every ack for `unit` -> `(patch_ids, shas)`: the local file UNION the copy on the remote
     integration branch. Never raises; anything unreadable contributes nothing, so a broken store
-    fails towards REFUSING, which costs a pass and never data."""
+    fails towards REFUSING, which costs a pass and never data.
+
+    #1017/#1086: both runtime files (`state/upkeep/acks.json` and the per-unit `state/rebase-acks/` one; written only under the upkeep opt-in) are read only while that gate is open when a `config`
+    is given, so a file left behind after the gate was closed again is ignored. `config=None` keeps the old reading."""
     entries = []
     try:
         path = ack_path(sdlc_dir, unit)
@@ -605,11 +608,12 @@ def _acked(sdlc_dir, run, cwd, unit, integration_ref):
         entries += _read_acks(path.read_text(encoding="utf-8"))
     except OSError:
         pass
-    entries += _runtime_acks(sdlc_dir, unit)
-    try:
-        entries += _read_acks(runtime_ack_path(sdlc_dir, unit).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        pass
+    if config is None or _gate().enabled(config):
+        entries += _runtime_acks(sdlc_dir, unit)
+        try:
+            entries += _read_acks(runtime_ack_path(sdlc_dir, unit).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
     try:
         rel = pathlib.Path(os.path.relpath(path.resolve(), pathlib.Path(cwd).resolve())).as_posix()
     except ValueError:                    # a different drive on Windows: no repo-relative path
@@ -623,11 +627,11 @@ def _acked(sdlc_dir, run, cwd, unit, integration_ref):
             {str(e.get("sha")) for e in entries if e.get("sha")})
 
 
-def _unacked(sdlc_dir, run, cwd, unit, integration_ref, found):
+def _unacked(sdlc_dir, run, cwd, unit, integration_ref, found, config=None):
     """`found` minus every commit a human has acked -> `(still_direct, acked)`."""
     if not found:
         return found, []
-    pids, shas = _acked(sdlc_dir, run, cwd, unit, integration_ref)
+    pids, shas = _acked(sdlc_dir, run, cwd, unit, integration_ref, config)
     if not pids and not shas:
         return found, []
     still, acked = [], []
@@ -664,7 +668,7 @@ def ack(sdlc_dir, config, unit, shas, all_=False, run=None, cwd=None, remote=Non
         run(cwd, ["git", "fetch", remote, base, branch])
         base_ref, feature_ref = "%s/%s" % (remote, base), "%s/%s" % (remote, branch)
         found, _ = _unacked(sdlc_dir, run, cwd, unit, base_ref,
-                            direct_commits(run, cwd, base_ref, feature_ref))
+                            direct_commits(run, cwd, base_ref, feature_ref), config)
     except Exception as exc:              # noqa: BLE001
         result["why"] = _flat(exc)
         return result
@@ -1462,14 +1466,15 @@ def _rebase_feature(run, cwd, path, branch, base_ref, sha, remote, report, stric
                              "path(s) it has" % (base_ref, len(dropped)))
             return WOULD_DROP
         if resolved is not None:
-            refused = _prove_level1(run, cwd, path, base_ref, sha, after, report, level1, resolved)
-            if refused:
-                return CONFLICT
             # NOTHING RESOLVED IS EVER PUSHED WITHOUT A BACKUP REF. The legacy push has none, so a missing descriptor
-            # is a refusal here, not a fall-back.
+            # is a refusal here, not a fall-back. It is checked BEFORE the proof (#1071): the proof can run the
+            # project's verify command, and a replay that can never be pushed is not worth that run.
             if backup is None:
                 return _park_resolved(report, _prove().refusal(_prove().NO_BACKUP,
                                                                "no backup descriptor, so a resolved replay is not pushed"))
+            refused = _prove_level1(run, cwd, path, base_ref, sha, after, report, level1, resolved)
+            if refused:
+                return CONFLICT
         outcome = _pushed(run, cwd, path, branch, sha, remote, report, backup=backup)
         if outcome == REBASED:
             report["after"] = after
@@ -2104,7 +2109,52 @@ def _park_body(unit, branch, base, info, left, tip):
            base, branch, branch, base, unit))
 
 
-def _file_park(sdlc_dir, config, report, branch, base):
+#: #1104: a parked finding noted again at most once per this many seconds (a counter and the time, no new issue).
+PARK_NOTICE_SECONDS = 24 * 3600
+_now = time.time                      # the clock the once-a-day rule reads; a test replaces it
+_PARK_TITLE = "Rebase parked: %s onto "
+
+
+def _open_issues(run, cwd, config, remote):
+    """-> `(repo, [open issue dicts])`, ONE bounded read (newest first, at most 100), or `(None, [])` when this checkout
+    names no repository (a local-path remote) or the read failed. Never raises: a lookup that cannot be made only means
+    the pass files as it did before."""
+    if run is None:
+        return None, []
+    try:
+        repo = sync.repo_slug(config, run, cwd, remote)
+        if not repo:
+            return None, []
+        src = _load("sources")
+        rows = _load("gh_api").list_issues(
+            lambda args: run(cwd, [_GH, *args]), repo, cap=100,
+            fetch=lambda r, rp, lb, cap, state="open": src.fetch_issues_rest(r, rp, lb, cap, state=state,
+                                                                          direction="desc"))
+        return repo, [r for r in rows if isinstance(r, dict) and isinstance(r.get("number"), int)]
+    except Exception as exc:          # noqa: BLE001 - a lookup must never break a pick
+        _note("sigma: rebase upkeep: open parked findings could not be looked up (%s).\n" % _flat(exc))
+        return None, []
+
+
+def _notice(sdlc_dir, report, slot, value, run, cwd, repo):
+    """Comment on the open issue this conflict already has: a counter and the time, at most once per day. The slot
+    keeps the count and the time of the last comment, and a comment that failed leaves both unchanged."""
+    number = park.issue_of(value)
+    seen, last = int(value.get("count", 1)), float(value.get("last") or 0)
+    if number is None or not repo or _now() - last < PARK_NOTICE_SECONDS:
+        return
+    try:
+        _load("gh_api").comment_issue(
+            lambda args: run(cwd, [_GH, *args]), number,
+            "Still parked on this conflict: seen again by upkeep (pass %d, %s). No new issue is filed for it."
+            % (seen + 1, time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime(_now()))), repo=repo)
+    except Exception as exc:          # noqa: BLE001
+        _note("sigma: rebase upkeep: could not note finding #%s again (%s).\n" % (number, _flat(exc)))
+        return
+    _remember(sdlc_dir, report["unit"], slot, dict(value, count=seen + 1, last=_now()))
+
+
+def _file_park(sdlc_dir, config, report, branch, base, run=None, cwd=None, remote=None):
     """File ONE finding for this conflict, through the no-goal path. Never raises.
 
     `goal=None` and `target_unit=<unit>` (always passed, so the metered classifier is never reached), `dedup=False`
@@ -2115,15 +2165,35 @@ def _file_park(sdlc_dir, config, report, branch, base):
     if not cid:
         return
     slot = park.slot_for(cid)
+    stored = _read_filed(sdlc_dir, report["unit"]).get(slot)
     if _told_before(sdlc_dir, report["unit"], slot, cid):
+        if isinstance(stored, dict) and stored.get("found") and run is not None:
+            _notice(sdlc_dir, report, slot, stored, run, cwd, sync.repo_slug(config, run, cwd, remote))
         _set_filing(report, ALREADY_FILED)
         return
+    repo, open_rows = _open_issues(run, cwd, config, remote)
+    tag = "(conflict %s)" % cid[:8]
+    same = [r for r in open_rows if tag in str(r.get("title") or "")
+            and str(r.get("title") or "").startswith("Rebase parked:")]
+    if same:
+        number = max(r["number"] for r in same)
+        report["issues"].append(str(number))
+        _set_filing(report, ALREADY_FILED)
+        value = dict(park.record(cid, number, True), found=True, count=0, last=0)
+        _notice(sdlc_dir, report, slot, value, run, cwd, repo)
+        if not _read_filed(sdlc_dir, report["unit"]).get(slot):
+            _remember(sdlc_dir, report["unit"], slot, dict(value, count=1))
+        return
+    older = [r for r in open_rows if str(r.get("title") or "").startswith(_PARK_TITLE % branch)]
+    supersedes = max(older, key=lambda r: r["number"]) if older else None
     title = "Rebase parked: %s onto %s (conflict %s)" % (branch, base, cid[:8])
     try:
         result = _handoff().create_tracked_issue(
             sdlc_dir, config, None, AREA, "%s could not be replayed onto %s (parked)" % (branch, base),
             same_area=True, immediately_actionable=False, blocks_goal=False, title=title,
-            body=_park_body(report["unit"], branch, base, info, report["leftovers"], report["tip"]),
+            body=_park_body(report["unit"], branch, base, info, report["leftovers"], report["tip"])
+            + ("\nThis supersedes the earlier finding #%d, which named a different conflict for this unit; that one is "
+               "left open for a person to close.\n" % supersedes["number"] if supersedes else ""),
             dedup=False, target_unit=report["unit"], idempotency_key=cid)
     except Exception as exc:              # noqa: BLE001 - a filing must never break a pick
         _set_filing(report, FILING_FAILED)
@@ -2164,6 +2234,20 @@ def _settle_parks(sdlc_dir, config, run, cwd, remote, report):
             return
         repo = sync.repo_slug(config, run, cwd, remote)
         gone = [slot for slot in slots if slot not in dict(park.closable(store, slots))]
+        for slot in [x for x in gone if isinstance(store.get(x), dict) and store[x].get("found")]:
+            # #1104: an issue found open (filed by another clone or before the store was lost) is only commented on.
+            number = park.issue_of(store[slot])
+            try:
+                if number is not None:
+                    _load("gh_api").comment_issue(
+                        lambda args: run(cwd, [_GH, *args]), number,
+                        "A later upkeep pass replayed this unit cleanly onto %s, so the parked conflict is resolved. "
+                        "This finding is left open for a person to close." % park.neutralise(report["base"] or "its base"),
+                        repo=repo)
+            except Exception as exc:  # noqa: BLE001 - keep the slot; the next pass retries
+                _note("sigma: rebase upkeep: could not note finding #%s as resolved (%s); retried on the next pass.\n"
+                      % (number, _flat(exc)))
+                gone.remove(slot)
         for slot, issue in park.closable(store, slots):
             try:
                 _load("gh_api").comment_issue(lambda args: run(cwd, [_GH, *args]), issue,
@@ -2418,6 +2502,9 @@ def _upkeep(sdlc_dir, config, goal, unit, run, cwd, remote, report):
             # what a repo mid-epic looks like (`work.base` pointed at the epic's own feature
             # branch). A branch cannot be brought forward onto itself.
             report["outcome"] = NO_BASE
+            if not base:
+                report["why"] = ("work.base is empty, so upkeep has no integration branch and did nothing; "
+                                 "set it in .sdlc/config.json (for example to your default branch)")
             return report
         live, why = sync.live_branches(run, cwd, remote)
         if live is None:
@@ -2452,19 +2539,30 @@ def _level1_options(config):
         return None
 
 
+def _acks_well_formed(text):
+    """True when `text` is a whole ack document; a write cut short reads False (`_read_acks` reads it as no acks)."""
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return False
+    return isinstance(data, dict) and isinstance(data.get("acked"), list)
+
+
 def _write_runtime_acks(sdlc_dir, run, cwd, unit, report):
     """After a resolved push only: for each (original, replayed) pair whose original was acked, ack the replayed sha and
     its patch-id in the RUNTIME file. The tracked store is not touched and the stamp is not read."""
     acked = {str(d.get("sha")) for d in (report.get("acked") or []) if isinstance(d, dict)}
     fresh = [{"sha": new, "patch_id": patch_id(run, cwd, new), "subject": "resolved replay of " + old[:12]}
              for old, new in report["resolved"]["pairs"] if old in acked]
-    if not fresh:
-        return
     path = runtime_ack_path(sdlc_dir, unit)
     try:
-        entries = _read_acks(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        entries = _read_acks(text)
+        damaged = not _acks_well_formed(text)
     except OSError:
-        entries = []
+        entries, damaged = [], False
+    if not fresh and not damaged:         # #1071: a file cut short is rewritten whole, even with nothing new to add
+        return
     have = {e.get("sha") for e in entries}
     entries += [e for e in fresh if e["sha"] not in have]
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -2524,7 +2622,7 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
         report["outcome"] = UNVERIFIABLE
         return report
     found, acked = _unacked(sdlc_dir, run, cwd, unit, base_ref,
-                            direct_commits(run, cwd, base_ref, feature_ref))
+                            direct_commits(run, cwd, base_ref, feature_ref), config)
     report["direct"] = found
     report["acked"] = acked
     if found:
@@ -2572,7 +2670,7 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
         return report
     if outcome == PARKED:
         _mark_parked(sdlc_dir, unit, report)
-        _file_park(sdlc_dir, config, report, branch, base)
+        _file_park(sdlc_dir, config, report, branch, base, run, cwd, remote)
         return report
     if outcome == WOULD_DROP:
         _mark_blocked(sdlc_dir, unit, report)
