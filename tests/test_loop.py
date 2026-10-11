@@ -4291,11 +4291,11 @@ def test_cli_start_run_resets_the_budget_cursor():
 
 
 def test_cli_start_run_never_touches_the_session_marker():
-    """Unlike `start`, `start-run` takes no `--session-pid` -- proving the two verbs stay decoupled
-    (a fresh mid-session budget window must never silently register/renew a session-liveness
+    """Unlike `start`, `start-run` never registers a session -- proving the two verbs stay
+    decoupled (a fresh mid-session budget window must never silently create a session-liveness
     marker `session-active` would then report) rather than `start-run` quietly duplicating `start`.
-    A stray `--session-pid` is simply not read, the same as any other verb ignoring an argv tail it
-    has no use for."""
+    Since #955 `--session-pid` IS read: it names the session whose run block to reset, and only
+    when that session's marker already exists, so with no marker it still creates none."""
     with tempfile.TemporaryDirectory() as d:
         base = _backlog(d, 1)
         lp = _loop()

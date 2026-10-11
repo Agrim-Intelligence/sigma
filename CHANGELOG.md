@@ -23,6 +23,8 @@ All notable changes to Sigma are recorded here, newest first.
   from GitHub's docs or fakes. Ratchet (printed `scan()`): work.py 5 -> 3, TOTAL 45 -> 43. Write-surface:
   `merge_design`/`close_design` become `gh-api-write` rows (`close_pr_gh` joins the scanner's set). Details:
   `docs/cloud-sessions.md`.
+## 1.0.8 — 2026-10-11 — per-session run budgets and REST-first merges
+
 - **A cloud session can reach the merge PUT (#895, slice 4b-2; refs #895).** The three GraphQL reads that stopped a
   `CLAUDE_CODE_REMOTE` merge are REST: `merge_rights` reads `GET repos/{owner}/{repo}` `.permissions` (fails closed
   on a missing, malformed or all-false object), `protection()` unions classic protection with
@@ -63,6 +65,38 @@ All notable changes to Sigma are recorded here, newest first.
   405/409 statuses and bodies, the 429 body, CLI `--match-head-commit` vs REST `sha` equivalence, merge-queue
   behaviour of the CLI fallback and real merge latency all come from GitHub docs or fakes. Measured: the new
   tests in `tests/test_gh_api.py` and `tests/test_work.py`; no timing claim made.
+
+- **A second session's `loop.py start` no longer re-anchors a live session's run (#955).** Every
+  start used to reset the one checkout-wide STATE.md run cursor, so session B's `start` voided
+  session A's passing verify (`record done` exit 4, "verify evidence predates this run"), restarted
+  A's `max_minutes` clock, zeroed A's `max_tokens`/`max_codex_raw_tokens` spend or handed it to B,
+  dropped A's in-flight phase from every budget, and let A emit a duplicate `run_stop`. Measured
+  before the fix (origin/main 66b1f1b): the 15 new tests in `test_run_cursor_955.py` failed by
+  assertion; on 5f25b99 the issue's own CLI gestures printed a goal path where A had spent 1100 of
+  `max_tokens 1000`, then `record done` exited 4. Now each start (`loop.begin_run`: CLI `start`,
+  `run_loop`, `assign._start_drain`) also stamps a `run` block in its own session marker with the
+  same instant; budget gates and the `run_stop` dedupe read the caller's own block, verify freshness
+  anchors to the goal's live holder(s), and phase/spend credits go to the holders (spend naming no
+  goal, or a goal no live session holds, to every live session). STATE.md is still written byte for
+  byte as before, so a single loop, a goal no live session holds, and a dead session's goals behave
+  as they did. `start-run` takes `--session-pid` (bare: the only live session, or none with a stderr
+  line when several are live). Budgets are per session, so **N concurrent sessions may together
+  spend N x each ceiling**, as N sequential runs could. Marker writers now keep every key they do not
+  pass (D-1), and a credit never refreshes a marker's mtime (the lease-TTL liveness backstop).
+  Measured 2026-10-10 on an Apple M1, synthetic markers, this code: a marker is 4.1 KB at 141
+  credited Claude attempts and 112 KB at the 4096-attempt cap (256 KB when a Codex map is full too;
+  today's markers are 42-111 bytes); one credit 0.9 ms at 141 attempts, 3.9 ms at the cap (11 ms with
+  both maps full); a live-session scan (once per `done_refusal` and per credit) 0.2 / 2.2 / 10.6 ms
+  for 1 / 10 / 100 sessions at 140 attempts and 1.0 / 7.4 / 70 ms at the cap; a `spend` naming no
+  goal 10 / 105 ms with 10 / 100 live sessions at 140 attempts and 48 / 706 ms at the cap. Past 4096
+  attempts a holder's credit refuses loudly. Not measured: a network filesystem, Linux.
+  Residuals: (R1) a dead holder whose pid is reused reads live until the lease TTL (12 h default) and
+  its run start keeps anchoring that goal, bounded by #498's run id and #1897's fingerprint; (R2) a
+  goal in no live `in_flight` (`/sigma-goal`'s arming path, a goal after `record review`) keeps the
+  checkout anchor, so a concurrent start still voids its evidence, as before; (R3) `/sigma-doctor`'s
+  budget row still windows events from the checkout's latest start; (R4) crashed sessions'
+  heartbeat files are still unpruned; (R5) a bare `start-run` with one live session resets that
+  session even when the caller is not it, as before.
 
 ## 1.0.7 — 2026-10-11 — doctor preflight checks and small fixes
 

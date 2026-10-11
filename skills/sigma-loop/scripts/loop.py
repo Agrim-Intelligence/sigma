@@ -2090,8 +2090,8 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
     # own `_handoff` comment explicitly invites tuning `after_goals` down) reaches goal 10 with
     # `_budget_reason` still None, so without this the sweeps would run on a call that goes on to
     # return `("HANDOFF", ...)` with no goal claimed. Count ceilings now read this
-    # session's durable admissions, while resource ceilings still read the budget cursor.
-    cursor_for_sweep_gate = state.load_cursor(sdlc_dir)
+    # session's durable admissions, while resource ceilings read this session's own run (#955).
+    cursor_for_sweep_gate = _session_cursor(sdlc_dir, session_pid)
     if not (_budget_resource_reason(cursor_for_sweep_gate, config.get("budget", {}))
             or _session_count_stop(sdlc_dir, session_pid, config, cursor_for_sweep_gate)):
         _feature_needs_label_sweep(sdlc_dir, source, config)
@@ -2134,7 +2134,7 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
             _feature_drained_note(source, skip)
             # #905: the real production chokepoint for the budget-exhaustion run_stop -- both the CLI `next`
             # verb and `run_loop` pass through here, so wiring it once covers both drivers.
-            _emit_run_stop_once(sdlc_dir, config, source, "backlog-empty")
+            _emit_run_stop_once(sdlc_dir, config, source, "backlog-empty", session_pid=session_pid)
             return ("DONE", "degraded read — backlog state unknown" if degraded else None)
         # #1499: FIRST, ahead of the lease read and the claim lock below, because the whole defect
         # was ordering -- a goal with an unsatisfied prerequisite used to be claimed and only then
@@ -2169,11 +2169,14 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
         # #1468 (review F4) / #2521 / #2515: nothing may mutate before a gate whose whole job is to
         # stop the run, so all three checks below sit here, before the unit-label step, with the
         # lock released explicitly on each path (the try/finally that normally does it starts below).
-        cursor = state.load_cursor(sdlc_dir)
+        cursor = _session_cursor(sdlc_dir, session_pid)
         # #2515 + #2521: a genuine max_minutes/max_tokens budget stop — real wall-clock or real
         # spend already exhausted — wins over HANDOFF, checked FIRST. Both counters are cleared by
-        # `state.start_run()`, which a HANDOFF-triggered relaunch calls in its own fresh session
-        # (SKILL.md's printed resume command is exactly `/sigma-loop`); reporting HANDOFF here would
+        # the session's own start (`begin_run`), which a HANDOFF-triggered relaunch calls in its own
+        # fresh session (SKILL.md's printed resume command is exactly `/sigma-loop`). Since #955
+        # they are THIS session's (`_session_cursor`): another session's start neither clears nor
+        # inherits them, so N concurrent sessions may together spend N x each ceiling, as N
+        # sequential runs could. Reporting HANDOFF here would
         # silently let an unattended, supervised drain keep spending past the operator's own
         # configured hard cap, forever, one hand-off at a time — the "REFUSES loudly" SAFETY
         # property (AGENTS.md) this repo is judged against. `_budget_resource_reason` checks
@@ -2186,7 +2189,8 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
         reason = _budget_resource_reason(cursor, config.get("budget", {}))
         if reason:
             _release_claim_lock(lock_fd)
-            _emit_run_stop_once(sdlc_dir, config, source, "budget", why=reason)   # #905
+            _emit_run_stop_once(sdlc_dir, config, source, "budget", why=reason,   # #905
+                                session_pid=session_pid)
             return ("BUDGET", reason)
         # #2521: HANDOFF wins a tie with max_iterations; both inspect this session's
         # settled plus active admissions. Another session's start cannot reset the count.
@@ -2194,7 +2198,8 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
         if count_stop:
             _release_claim_lock(lock_fd)
             kind, reason = count_stop
-            _emit_run_stop_once(sdlc_dir, config, source, kind.lower(), why=reason)
+            _emit_run_stop_once(sdlc_dir, config, source, kind.lower(), why=reason,
+                                session_pid=session_pid)
             return count_stop
         # #1468: the unit label THIS goal's body declares is attached HERE — inside the lock (so only
         # the winner writes) and before `mark_in_progress` below, which is the ordering the whole
@@ -2248,7 +2253,8 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
         if admission_stop:
             _release_claim_lock(lock_fd)
             kind, why = admission_stop
-            _emit_run_stop_once(sdlc_dir, config, source, kind.lower(), why=why)
+            _emit_run_stop_once(sdlc_dir, config, source, kind.lower(), why=why,
+                                session_pid=session_pid)
             return admission_stop
         try:
             decision = feature_labels.attach_at_pick(sdlc_dir, source, goal, config)
@@ -2408,8 +2414,13 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
     return picks
 
 
+# #955 (D-5): the registry's STORAGE half lives in state.py now, so `done_refusal` and the budget
+# credit writers can read it without importing this module. The `_session_*` names here stay, as
+# aliases or one-line delegates, so every caller in this file, `liveness_prune.py` and the tests
+# keep calling `loop._session_*` unchanged. The two that name a path or write one are `def`s, not
+# assignments, so tools/readiness' static writer scans still trace this file's writes through them.
 def _session_dir(sdlc_dir):
-    return pathlib.Path(sdlc_dir) / "state" / "sessions"
+    return state.session_dir(sdlc_dir)
 
 
 def _session_heartbeat_dir(sdlc_dir):
@@ -2417,10 +2428,7 @@ def _session_heartbeat_dir(sdlc_dir):
     return pathlib.Path(sdlc_dir) / "state" / "heartbeat"
 
 
-_CODEX_THREAD_ID = re.compile(
-    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
-    re.IGNORECASE,
-)
+_CODEX_THREAD_ID = state.SESSION_THREAD_ID
 
 
 def _session_codex_thread():
@@ -2526,147 +2534,26 @@ def session_heartbeat_liveness(sdlc_dir, session_pid, config=None, now=None):
     return ("idle" if age < _load("sync").stale_after_seconds(interval) else "dead", age)
 
 
-def _session_lock_path(sdlc_dir, entry_path):
-    """A stable, bounded 256-stripe on-disk lock namespace.
-
-    Stripe identity must not depend on a process's current CPU count: two concurrent
-    processes could then lock different files for the same admission marker. The byte
-    width is a file-format constant, not a host resource budget. Locks are created
-    lazily, remain after clean exit, and are capped at 256 per repository.
-    """
-    slot = hashlib.sha256(entry_path.name.encode()).digest()[0]
-    return _session_dir(sdlc_dir) / "locks" / f"{slot}.lock"
+_session_lock_path = state.session_lock_path
 
 
 def _session_locked(sdlc_dir, session_pid, fn, path=None, require_lock=False):
-    """Run `fn()` — a read-modify-write against ONE session's own registry entry — inside an
-    exclusive, blocking `flock` on a stable lock stripe for that entry, closing a lost-update race #1239 review
-    (finding 3) reproduced deterministically: two genuinely concurrent writers to the SAME
-    `<pid>.active` file (e.g. two `next-batch` slots each claiming a different goal under the same
-    session, or a parallel `next` refill racing a sibling slot's `record`/`release`) each read the
-    same pre-write `in_flight` list and the second write silently clobbers the first's addition —
-    10/10 reproductions with a real `multiprocessing.Process` pair lost one goal's registration.
-
-    Mirrors `_try_acquire_claim_lock`'s established `fcntl.flock` pattern in this same file for the
-    identical class of problem — except BLOCKING (`LOCK_EX`, no `LOCK_NB`): a session's own registry
-    write is a fast, in-process critical section (read one small JSON file, mutate a list, write it
-    back), not a multi-goal claim race where a busy competitor should be skipped rather than waited
-    on — losing a moment blocked behind a sibling's write is the right trade here, not a bug.
-
-    For a cross-session release or prune, `path` is the enumerated entry, so this call locks THAT
-    entry even when the caller's Codex thread differs from its owner. Without `path`, it locks the
-    caller's own PID/thread entry, preserving Claude's PID-only behavior.
-
-    Admission and registry updates pass `require_lock=True`: if locking is unavailable, refuse
-    rather than risk concurrent writers overrunning the goal limit. Legacy optional callers may
-    retain the prior best-effort fallback. The stripe set is bounded as sessions come and go."""
+    """`state.session_locked` (the stripe flock and its full rationale) on `path` when given — the
+    enumerated entry of a cross-session release or prune, so the call locks THAT entry even when
+    the caller's Codex thread differs from its owner — else on the caller's own PID/thread entry,
+    preserving Claude's PID-only behavior."""
     entry_path = path if path is not None else _session_marker_path(sdlc_dir, session_pid)
-    lock_path = _session_lock_path(sdlc_dir, entry_path)
-    if fcntl is None:
-        if require_lock:
-            raise RuntimeError("session file locking is unavailable on this host")
-        return fn()
-    try:
-        lock_path.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
-    except OSError:
-        if require_lock:
-            raise RuntimeError("cannot open session file lock for goal-count admission")
-        return fn()
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        return fn()
-    finally:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_UN)
-        except OSError:
-            pass
-        os.close(fd)
+    return state.session_locked(sdlc_dir, entry_path, fn, require_lock=require_lock)
 
 
-def _session_read(path, strict=False):
-    """Read one session registry entry. Strict admission reads refuse missing/corrupt counts;
-    best-effort inventory reads treat unreadable entries as empty."""
-    try:
-        data = json.loads(path.read_text())
-    except (OSError, ValueError) as exc:
-        if strict:
-            raise RuntimeError(f"session admission marker unreadable: {path}") from exc
-        return {"in_flight": [], "settled_admissions": None, "valid": False}
-    if not isinstance(data, dict) or not isinstance(data.get("in_flight", []), list):
-        if strict:
-            raise RuntimeError(f"session admission marker malformed: {path}")
-        return {"in_flight": [], "settled_admissions": None, "valid": False}
-    if strict and ("in_flight" not in data or
-                   any(not isinstance(g, (str, int)) or isinstance(g, bool)
-                       for g in data["in_flight"]) or
-                   len({str(g) for g in data["in_flight"]}) != len(data["in_flight"])):
-        raise RuntimeError(f"session admission goals malformed: {path}")
-    settled = data.get("settled_admissions")
-    if strict and (isinstance(settled, bool) or not isinstance(settled, int) or settled < 0):
-        raise RuntimeError(f"session admission count missing or invalid: {path}")
-    return {"in_flight": [str(g) for g in data.get("in_flight", []) if isinstance(g, (str, int))],
-            "settled_admissions": settled if isinstance(settled, int) and not isinstance(settled, bool) and settled >= 0 else None,
-            "valid": True}
+_session_read = state.session_read
+_session_entries = state.session_entries
+_session_pid_live = state.session_pid_live
 
 
 def _session_write(path, data):
-    """Publish a load-bearing session marker atomically, inside its caller's file lock."""
-    # Admission/claim/release writers predate heartbeat ownership and intentionally pass only
-    # their fields. Preserve an existing generation here so any of those routine updates cannot
-    # silently turn a later owner-checked `session_end` into a no-op.
-    if "generation" not in data:
-        try:
-            existing_generation = json.loads(path.read_text()).get("generation")
-            if isinstance(existing_generation, str) and existing_generation:
-                data = {**data, "generation": existing_generation}
-        except (OSError, ValueError, AttributeError):
-            pass
-    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + f".{os.getpid()}.")
-    try:
-        with os.fdopen(fd, "w") as stream:
-            json.dump(data, stream)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(tmp, path)
-    finally:
-        pathlib.Path(tmp).unlink(missing_ok=True)
-
-
-def _session_entries(sdlc_dir):
-    """Yield `(pid, path, in_flight)` for every session registry file on disk, live or stale alike
-    — callers filter liveness themselves (`_session_pid_live`) since "is it live" and "what does it
-    say" are independent questions here. Parse the numeric PID prefix from both legacy `<pid>` and
-    Codex `<pid>-<thread UUID>` filenames. Stray names are skipped rather than raising — this
-    directory is scanned on every `_next()` call, so it must degrade on unexpected entries."""
-    d = _session_dir(sdlc_dir)
-    if not d.is_dir():
-        return
-    for path in sorted(d.glob("*.active")):
-        try:
-            pid_text, separator, thread = path.stem.partition("-")
-            pid = int(pid_text)
-            if separator and not _CODEX_THREAD_ID.fullmatch(thread):
-                continue
-        except ValueError:
-            continue
-        yield pid, path, _session_read(path)["in_flight"]
-
-
-def _session_pid_live(pid, path, config):
-    """The same two-signal liveness check `session_active`/`agent_alive` already apply to their own
-    markers (F10.5/#374's own pattern, not reinvented here): `ledger.pid_alive()` first — a
-    definitively dead pid needs no TTL to disqualify — then the entry file's own mtime against
-    `ledger.lease_ttl_seconds(config)` as the pid-reuse backstop."""
-    if not ledger.pid_alive(pid):
-        return False
-    ttl = ledger.lease_ttl_seconds(config)
-    if ttl is None:
-        return True
-    try:
-        return (time.time() - path.stat().st_mtime) < ttl
-    except OSError:
-        return True                          # can't even stat it — fail toward "still active"
+    """`state.session_write`: atomic publish that keeps every key `data` does not carry (#955 D-1)."""
+    return state.session_write(path, data)
 
 
 def session_start(sdlc_dir, session_pid, generation=None):
@@ -2737,6 +2624,26 @@ def session_start(sdlc_dir, session_pid, generation=None):
 
     _session_locked(sdlc_dir, pid, _write, path=path, require_lock=True)
     return selected_generation
+
+
+def begin_run(sdlc_dir, session_pid, generation=None):
+    """THE one start helper (#955): register the session (`session_start`, unchanged), stamp a
+    fresh run block in ITS OWN marker, then reset the checkout-wide STATE.md cursor, all with ONE
+    `now`, so the session's anchor and the checkout's agree to the float. Every start path calls
+    it: the CLI `start`, `run_loop` and `assign._start_drain`.
+
+    Marker first, STATE.md second: a re-start moves its own goals' anchor before the checkout's,
+    and the two locks are taken one after the other, never nested (`_cursor_lock`'s rule). Another
+    session's start therefore resets only ITS OWN block and the checkout cursor; this session's
+    budgets and its goals' verify freshness keep reading this session's block. An invalid
+    `session_pid` registers nothing (`session_start` returns None) and stamps no block.
+    Returns `session_start`'s generation."""
+    now = time.time()
+    selected = session_start(sdlc_dir, session_pid, generation=generation)
+    if selected is not None:
+        state.reset_session_run(sdlc_dir, _session_marker_path(sdlc_dir, session_pid), now)
+    state.start_run(sdlc_dir, now=now)
+    return selected
 
 
 def session_end(sdlc_dir, session_pid=None, generation=None):
@@ -2862,6 +2769,30 @@ def _session_in_flight_goals(sdlc_dir, config):
     return goals
 
 
+def _session_cursor(sdlc_dir, session_pid):
+    """The budget cursor THIS session's gates read (#955): `state.load_cursor`, with
+    `run_started_at`, `run_tokens` and `run_codex_raw_tokens` taken from the caller's own marker's
+    run block when it has a valid one. So another session's `start` can neither restart this
+    session's wall clock nor zero (or hand it) this session's spend. No liveness check: it is the
+    caller's own session. No block (a legacy marker, a library caller that never ran `start`), no
+    marker, or an unresolvable identity: the checkout cursor, exactly as before. `run_iteration`
+    stays checkout-wide (only the no-marker legacy fallback of `_session_admission_snapshot` reads
+    it), and the overlay keeps `run_started_at` truthy exactly when the checkout's was, since a
+    block only exists after a start that also stamped STATE.md."""
+    cursor = state.load_cursor(sdlc_dir)
+    try:
+        path = _session_marker_path(sdlc_dir, session_pid)
+    except (TypeError, ValueError):
+        return cursor
+    if not path.is_file():
+        return cursor
+    run = _session_read(path)["run"]
+    if run is None:
+        return cursor
+    return {**cursor, "run_started_at": run["started_at"], "run_tokens": run["tokens"],
+            "run_codex_raw_tokens": run["codex_raw_tokens"]}
+
+
 def _session_admission_snapshot(sdlc_dir, session_pid, config, cursor):
     """Return this session's authoritative count record, or a loud stop tuple.
 
@@ -2924,7 +2855,7 @@ def _reserve_goal_slot(sdlc_dir, session_pid, goal, config):
         raise RuntimeError("goal-count admission requires a session file lock on this host")
 
     def _check_and_write():
-        cursor = state.load_cursor(sdlc_dir)
+        cursor = _session_cursor(sdlc_dir, pid)
         resource_reason = _budget_resource_reason(cursor, budget)
         if resource_reason:
             return ("BUDGET", resource_reason)
@@ -5495,7 +5426,7 @@ def _emit_run_stop(sdlc_dir, config, reason_class, why=None):
                        reason_class=reason_class, why=why)
 
 
-def _emit_run_stop_once(sdlc_dir, config, source, reason_class, why=None):
+def _emit_run_stop_once(sdlc_dir, config, source, reason_class, why=None, session_pid=None):
     """#905: the gated, deduped wrapper `_next()` calls at its own DONE/BUDGET terminal returns —
     the real production chokepoint (both the CLI `next` verb and `run_loop` pass through `_next()`,
     so wiring it here covers both drivers with one edit; `#547`'s `_emit_run_stop` above had no
@@ -5531,13 +5462,18 @@ def _emit_run_stop_once(sdlc_dir, config, source, reason_class, why=None):
        `next` polling within one unchanged drain (no intervening `start`/`start-run`) shares one
        `run_started_at` and so dedupes to one row — the original concern in #905's own issue body
        ("the polled 'next' verb... would emit a duplicate... on every idle poll"). A relaunch
-       (fresh `run_started_at`) claims its own new row."""
+       (fresh `run_started_at`) claims its own new row. #955 (D-3): with `session_pid` (every
+       `_next()` call site passes it), `run_started_at` is that session's OWN run start
+       (`_session_cursor`), so another session's `start` no longer mints a new key and makes this
+       session emit a duplicate row; a single session reads the same value as before."""
     run_id = state.run_identity()
     if run_id is None:
         return
     if reason_class == "backlog-empty" and getattr(source, "read_degraded", lambda: False)():
         return
-    run_started_at = state.load_cursor(sdlc_dir)["run_started_at"]
+    cursor = (state.load_cursor(sdlc_dir) if session_pid is None
+              else _session_cursor(sdlc_dir, session_pid))
+    run_started_at = cursor["run_started_at"]
     if not state.claim_run_stop(sdlc_dir, run_id, run_started_at):
         return
     _emit_run_stop(sdlc_dir, config, reason_class, why=why)
@@ -5547,8 +5483,8 @@ def run_loop(sdlc_dir, run_goal):
     session_pid = os.getpid()
     # A new in-process run can reuse a PID after a prior run has not yet cleaned up.  Give this
     # invocation its own ownership token, so its eventual cleanup cannot erase that successor.
-    session_generation = session_start(sdlc_dir, session_pid, generation=uuid.uuid4().hex)
-    state.start_run(sdlc_dir)                       # reset per-run budget (resume-safe)
+    # Stamp this session's own run, then reset the checkout cursor (#955; resume-safe).
+    session_generation = begin_run(sdlc_dir, session_pid, generation=uuid.uuid4().hex)
     config = state.load_config(sdlc_dir)
     _ensure_watcher(sdlc_dir, config)               # a loop trigger keeps the ledger flowing on its own
     _ensure_ledger_delivery(sdlc_dir, config)        # ...and notices when that flow has stalled (#2393)
@@ -5862,7 +5798,7 @@ def _validate_event(kind, flags, kind_allowlist=None):
     return None
 
 
-USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> | "
+USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> [--session-pid PID] | "
          "next <dir> [--skip a,b] [--feature NAME] [--session-pid PID] | "
          "next-batch <dir> [--skip a,b] [--feature NAME] [--session-pid PID] | "
          "session-active <dir> | prune-state <dir> [--dry-run] [--keep-days N] [--limit N] | session-end <dir> [--session-pid PID] | "
@@ -6139,14 +6075,16 @@ def _dispatch(argv):
         _arm_run_id(session_pid)        # #889: BEFORE the fallback below -- os.getppid() is not stable
         if session_pid is None or session_pid == "true":
             session_pid = os.getppid()
-        generation = session_start(argv[2], session_pid,
-                                   generation=start_flags.get("session-generation") or uuid.uuid4().hex)
+        # #955: `begin_run` stamps this session's own run block and resets the checkout cursor with
+        # one instant; another live session's block (its budgets, its goals' verify freshness) is
+        # left alone.
+        generation = begin_run(argv[2], session_pid,
+                               generation=start_flags.get("session-generation") or uuid.uuid4().hex)
         # A separate `session-end` invocation cannot infer an earlier owner's random token from
         # disk without reopening the successor-deletion race.  Return it for the documented shell
         # gesture and retain it for same-process library callers.
         os.environ["SIGMA_SESSION_GENERATION"] = generation
         print(generation)
-        state.start_run(argv[2])
         # #1239 review round 3, finding B: `start` is the OTHER real chokepoint the registry grows
         # through (alongside `_next()`/`next_batch()`, pruned in `_session_in_flight_goals`) — sweep
         # any sibling session that already reads as dead here too, using the config already loaded
@@ -6163,11 +6101,40 @@ def _dispatch(argv):
             print(f"loop.py start: worktree sweep skipped ({exc})", file=sys.stderr)
         return 0
     # #712: a standalone reset of JUST the run budget cursor -- unlike `start` above, no config-
-    # warning prints and no session-marker write, so a mid-session "begin a fresh run" (or an
+    # warning prints and no session registration, so a mid-session "begin a fresh run" (or an
     # overnight supervisor relaunch that wants one) never has to hand-edit config.json's budget
     # numbers, and never re-triggers `start`'s own once-per-session bootstrap side effects.
+    # #955 (D-4): budgets are per session now, so the reset has to name WHICH session's run it
+    # starts afresh. `--session-pid` resets that session's run block (only when its marker
+    # already exists: never registers one) and the checkout cursor. Bare, it resets the only live
+    # session that has a run, as the single-loop gesture always did; with two or more it resets
+    # none of them, and says so, rather than reach into another live session's budget.
     if len(argv) >= 3 and argv[1] == "start-run":
-        state.start_run(argv[2]); return 0
+        now = time.time()
+        run_pid = _flags(argv[3:]).get("session-pid")
+        if run_pid is not None and run_pid != "true":
+            try:
+                int(run_pid)
+            except ValueError:
+                print("loop.py start-run: --session-pid must be a process id", file=sys.stderr)
+                return 2
+            try:
+                marker = _session_marker_path(argv[2], run_pid)
+            except ValueError as exc:                  # an invalid Codex thread id
+                print(f"loop.py start-run: {exc}", file=sys.stderr)
+                return 2
+            state.reset_session_run(argv[2], marker, now)
+        else:
+            running = [path for _pid, path, record in state.live_session_records(argv[2])
+                       if record["run"] is not None]
+            if len(running) == 1:
+                state.reset_session_run(argv[2], running[0], now)
+            elif running:
+                print(f"loop.py start-run: {len(running)} live sessions keep their own run "
+                      "budgets; reset only the checkout cursor -- pass --session-pid \"$PPID\" "
+                      "to reset yours", file=sys.stderr)
+        state.start_run(argv[2], now=now)
+        return 0
     if len(argv) >= 3 and argv[1] == "session-end":          # F10.5-4/#377: routine cleanup on exit
         # #1199: `session_end` now needs to know WHICH session's registry entry to clear (a bare
         # call used to clear the one shared marker, no matter who wrote it). Mirrors `start`'s own
@@ -6592,7 +6559,11 @@ def _dispatch(argv):
         # the (invalid) event, print the same usable message `emit` would, and exit 2 — matching
         # the story's own done-when ("an invalid flag is refused with a usable message") without
         # ever making budget tracking conditional on the event succeeding.
-        state.add_tokens(argv[2], tokens)
+        # #955: the optional goal (the same pure-argv rule as below) picks WHICH live sessions'
+        # run budgets are charged: the goal's live holders, or every live session when it names
+        # no goal or one no live session holds.
+        spend_goal = argv[4] if len(argv) >= 5 and not argv[4].startswith("--") else None
+        state.add_tokens(argv[2], tokens, goal=spend_goal)
         # Optional trailing goal + flags (spec §A.5 item 12: "extends the existing spend verb").
         # amendment C: argv[4] is a GOAL only when it does not itself look like a flag — a bare
         # `spend <dir> <tokens> --tokens_in 10 --tokens_out 20` (flags, no goal) must never let
