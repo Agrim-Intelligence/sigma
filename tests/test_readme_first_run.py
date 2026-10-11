@@ -559,7 +559,7 @@ def test_every_version_allowance_carries_a_reason_and_is_still_needed():
         assert token in texts.get(rel, ""), f"stale allowance {rel} {token}: remove it"
 
 
-@pytest.mark.parametrize("plant,token", [("Since 1.0.9 a notebook counts", "1.0.9"),
+@pytest.mark.parametrize("plant,token", [("Since 1.0.1 a notebook counts", "1.0.1"),
                                          ("restores the pre-0.6 gate", "0.6"),
                                          ("Measured on 1.4.1: with", "1.4.1"),
                                          ("**Status:** shipped in 1.4.5.", "1.4.5"),
