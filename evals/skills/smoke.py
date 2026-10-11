@@ -24,7 +24,7 @@ Rules (each is a finding naming the skill and the item):
   * card paths must be relative and free of `..` (never touches the filesystem outside the repo root).
 Malformed JSON / bad kind / bad role are findings, not tracebacks. Paths in script/artifact entries are
 relative to the repo root (the parent of --root).
-Not wired into the real-tree pytest gate: the bare `python3 evals/skills/smoke.py` stays red until cards exist.
+Wired into the real-tree pytest gate by tests/test_skill_smoke.py (#1046): the bare `python3 evals/skills/smoke.py` is green.
 """
 import argparse
 import importlib.util

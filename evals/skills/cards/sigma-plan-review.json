@@ -1,0 +1,10 @@
+{
+  "skill": "sigma-plan-review",
+  "kind": "pinned",
+  "gates": [
+    "The last gate before code",
+    "**The reviewer must not be the author**"
+  ],
+  "scripts": [],
+  "artifacts": []
+}

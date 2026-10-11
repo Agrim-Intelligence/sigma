@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-unpark",
+  "kind": "pinned",
+  "gates": [
+    "Do not infer it from the earlier answers; ask it."
+  ],
+  "scripts": [],
+  "artifacts": []
+}

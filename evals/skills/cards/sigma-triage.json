@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-triage",
+  "kind": "pinned",
+  "gates": [
+    "command per issue, never a shell loop"
+  ],
+  "scripts": [],
+  "artifacts": []
+}

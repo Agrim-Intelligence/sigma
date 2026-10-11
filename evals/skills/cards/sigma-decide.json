@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-decide",
+  "kind": "pinned",
+  "gates": [
+    "supersede, never rewrite"
+  ],
+  "scripts": [],
+  "artifacts": []
+}

@@ -192,10 +192,12 @@ relative to the repo root and may not be absolute or contain `..`. Exit 1 on any
 python3 evals/skills/smoke.py --root <skills> --cards-dir <cards>
 ```
 
-The bare form with no flags reads the real `skills/` and the real `evals/skills/cards/`. Slice 2 (#1045) wrote
-a card for every skill that has a `scripts/*.py` or `scripts/*.sh` file (derived from disk, by
-`tests/test_skill_smoke.py`, never typed); the bare form stays red for the prose-only skills (`skill <name>: no card`)
-until slice 3, so it is deliberately NOT part of the `pytest tests/` gate yet. A card is `exercised` only when every
+The bare form, `python3 evals/skills/smoke.py`, reads the real `skills/` and the real `evals/skills/cards/`. Slice 2 (#1045)
+wrote a card for every skill that has a `scripts/*.py` or `scripts/*.sh` file; slice 3 (#1046) wrote a `pinned` card for each
+prose-only skill (one verbatim MUST/NEVER-style sentence from its own `SKILL.md`, inside the kept prefix; the
+`sigma-plan-review` and `sigma-goal` cards pin the plan-review-before-implementation ordering). The bare form is now green
+and `tests/test_skill_smoke.py` runs it on the real tree, so it is part of the `pytest tests/` gate: a new skill directory
+with no card, or a reworded pinned sentence, turns it red naming the skill (an empty `skills/sigma-probe/` exits 1). A card is `exercised` only when every
 gesture on it has a passing fixture, otherwise `pinned` (a verbatim gate) or `described`. A gesture's `--help`
 behaviour is not repeated in cards: it is held by `test_every_script_answers_help_without_side_effects` (`*.py`) and
 `test_shell_scripts_have_a_help_handler` (`*.sh`, grep only) in `tests/test_script_help.py`. A card's `agent`

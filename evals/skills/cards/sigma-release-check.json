@@ -1,0 +1,10 @@
+{
+  "skill": "sigma-release-check",
+  "kind": "pinned",
+  "gates": [
+    "Sigma never deploys or releases on its own",
+    "Any item is `fail` → do NOT ship"
+  ],
+  "scripts": [],
+  "artifacts": []
+}

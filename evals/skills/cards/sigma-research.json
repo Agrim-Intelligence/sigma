@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-research",
+  "kind": "pinned",
+  "gates": [
+    "**Read-only.** It never edits code, plans, or standing docs."
+  ],
+  "scripts": [],
+  "artifacts": []
+}

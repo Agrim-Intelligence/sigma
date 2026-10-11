@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-security-review",
+  "kind": "pinned",
+  "gates": [
+    "do not tick point 6 and move on"
+  ],
+  "scripts": [],
+  "artifacts": []
+}
