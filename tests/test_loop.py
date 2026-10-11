@@ -4169,7 +4169,7 @@ def test_session_claim_race_loses_a_goal_without_a_lock_guard():
         barrier = ctx.Barrier(2)
         p1 = ctx.Process(target=_claim, args=(sdlc, pid, "goalA", barrier))
         p2 = ctx.Process(target=_claim, args=(sdlc, pid, "goalB", barrier))
-        p1.start(); p2.start(); p1.join(timeout=10); p2.join(timeout=10)
+        p1.start(); p2.start(); p1.join(timeout=60); p2.join(timeout=60)   # 60 s: a loaded runner took >10 s (CI 4857377)
         assert not p1.is_alive() and not p2.is_alive()   # both writers actually finished
         lp = _loop()
         path = lp._session_marker_path(sdlc, pid)
@@ -4226,7 +4226,7 @@ def test_session_claim_and_release_race_do_not_lose_updates():
         barrier = ctx.Barrier(2)
         p1 = ctx.Process(target=_claim, args=(sdlc, pid, "goalY", barrier))
         p2 = ctx.Process(target=_release, args=(sdlc, "goalX", barrier))
-        p1.start(); p2.start(); p1.join(timeout=10); p2.join(timeout=10)
+        p1.start(); p2.start(); p1.join(timeout=60); p2.join(timeout=60)   # 60 s: a loaded runner took >10 s (CI 4857377)
         assert not p1.is_alive() and not p2.is_alive()
 
         in_flight = set(lp._session_read(lp._session_marker_path(sdlc, pid))["in_flight"])
