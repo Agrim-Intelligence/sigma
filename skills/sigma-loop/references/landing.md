@@ -204,13 +204,12 @@ attaches a fresh head, up to `BEHIND_REBASES` (3) times before the race arms or 
 head settle. The safe minimum is that full worst case, **~1,350,000ms (22.5 minutes)** — a common
 default like 600000ms (10 minutes) covers only the ordinary pending path and is NOT enough once a
 BEHIND-rebase is in play. `gate()` only READS GitHub's state while it polls; it mutates nothing.
-So if the host cuts the call short while it polls, nothing was recorded as merged or armed — just re-run
+So if the host cuts the call short while it polls, nothing was recorded as merged or armed — re-run
 `work.py merge .sdlc "$goal"` (idempotent). A cut DURING the merge call itself may have landed: run `loop.py record .sdlc "$goal" review`, never re-run merge. Or
-read `gh pr view <PR> --json mergeable,mergeStateStatus,statusCheckRollup` yourself first if you
-want to see exactly where GitHub's own read stood before deciding. No GraphQL: REST reads in docs/cloud-sessions.md.
+read `gh api repos/{owner}/{repo}/pulls/<PR> --jq '{mergeable,mergeable_state}'` first to see GitHub's read. No GraphQL: REST reads in docs/cloud-sessions.md.
 
 The gate is clean **and** safe: it needs THIS run's passing verify evidence *and* GitHub's
-`mergeable` + `mergeStateStatus CLEAN`, **plus — with `require_review` on — the review verdict you
+`mergeable` + `mergeable_state` `clean`, **plus — with `require_review` on — the review verdict you
 just posted** (it will not merge a PR that isn't `sigma:approve`d, or that has a `sigma:block` / an
 unresolved thread). **The review gate runs on every `auto_merge` policy, `off` included** (#232):
 under the shipped `off` + `require_review: "changes"` defaults a `sigma:block` parks the merge

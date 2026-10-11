@@ -71,8 +71,8 @@ both shapes. If the line is missing (`model_selection` isn't `"auto"`, or `journ
 off — the shipped default), **fall back to resolving it yourself**, the exact fallback
 `references/running.md` already documents for phase dispatch: in local mode `predict.py resolve
 "$goal" .sdlc`; in github mode, fetch the issue's real text first, title on the first line
-(`gh issue view "$goal" --json title,body --jq '.title + "\n\n" + (.body // "")'`, POSIX
-shell) and pass that text, never the bare `"$goal"`. Under the default selection
+(`gh api repos/{owner}/{repo}/issues/"$goal" --jq '.title + "\n\n" + (.body // "")'`)
+and pass that text, never the bare `"$goal"`. Under the default selection
 setting that fallback prints `off`; retain it as the explicit no-auto-selection state and give it to
 Codex's host resolver, which selects its versioned ordinary-work mapping. (A host with
 no subagent capability never reaches this step at all — goal-slot dispatch has always required

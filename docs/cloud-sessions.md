@@ -1,4 +1,4 @@
-# Claude Code cloud sessions and GitHub GraphQL: detection and reporting only
+# Claude Code cloud sessions and GitHub GraphQL: REST-first, end-to-end run unmeasured
 
 Status: slice 1 of #801 (detection and reporting) plus slices 2a, 2b and 2c of #895 (single-issue READS go
 REST first: sources.py, then ten more `issue view` sites; then ten `issue list` sites), slice 3a (issue
@@ -6,8 +6,9 @@ WRITES), slice 4a-1 (seven PR READS), slice 4a-2 PR A (the merge gate and doctor
 design-PR list and the review gate's CHANGES_REQUESTED half). It
 does not claim that `/sigma-loop` works in a Claude Code cloud session: that has not
 been measured (no cloud session was available), and it is the follow-up smoke run. REST migration is in
-progress, not complete: the remaining PR reads (the sibling list R5, `reviewDecision`, `_unresolved_threads`), PR
-writes (4b/4c) remain; the board is skipped, not migrated (slice 5, below).
+progress, not complete: the remaining PR reads (the sibling list R5, `reviewDecision`, `_unresolved_threads`, replaced
+by the REST refusal in a cloud session), PR writes (4b/4c) remain; the board is skipped, not migrated (slice 5, below).
+Slice 6 makes the loop-path skill prose REST-first (below). The end-to-end cloud run is UNMEASURED.
 
 ## What the proxy blocks
 
@@ -608,6 +609,52 @@ Cost: one environment lookup per guarded call, O(1), no growth. Recovery: unset 
 MEASURED: a recording-fake test (the board-gate test) and the unchanged boardfake suites. NOT tested in a
 real Claude Code cloud session.
 
+## Running the loop in a Claude Code cloud session (#895 slice 6)
+
+NOT run in a real Claude Code cloud session: everything here is from code, tests and docs (UNMEASURED until the
+smoke test below is run).
+
+Prerequisites: a Sigma release that ships this slice, `python3` in the cloud image, `gh` authenticated with `repo`
+scope, a GitHub remote in the checkout (the `{owner}` and `{repo}` placeholders in `gh api repos/{owner}/{repo}/...`
+resolve from it), and `discovery.source: github`. The placeholders resolve from the checkout's git remote; if a cloud
+checkout's remote is a proxy URL they do not resolve and every rewritten prose command fails. The lever is
+`GH_REPO=owner/repo` in the environment (UNMEASURED: first verify with `gh api repos/{owner}/{repo} --jq .full_name`
+that the placeholders resolve at all).
+
+Detection: `SIGMA_GH_GRAPHQL=off|on` first, then `CLAUDE_CODE_REMOTE` in {true, 1}; environment only, no probe,
+no network (`gh_api.graphql_available`).
+
+ON in a cloud session: REST issue and PR reads and writes, the REST `PUT pulls/N/merge` carrying the vetted head
+sha, and `merge_rights` over REST (slice 4b-2). The loop's skill prose now reads and labels issues with
+`gh api repos/{owner}/{repo}/...`, and `Bash(gh api *)` is granted next to the old grants.
+
+Grant breadth (decision): `Bash(gh api *)` allows any REST write and `gh api graphql`. It is as broad as the
+`gh issue` / `gh pr` grants it sits beside; narrowing patterns would block the `pulls/` and `labels` forms the loop
+prose needs (issue and PR reads, the triage label POST). Revisit with a per-endpoint allowlist if the owner wants one.
+
+OFF (GraphQL): the Projects board is SKIPPED with one stderr notice per process (slice 5); `--auto` is not armed,
+so a pending required check is waited for (450 s) and then parks; `require_review: approval` parks
+(`reviewDecision` is unreadable), `changes` works; a PR with line comments needs a human (any comment refuses the
+merge); thread resolution is unreadable; draft readiness and merge-queue landing are unavailable.
+
+OWNER SMOKE TEST (UNMEASURED until run):
+
+1. Label ONE small, low-risk issue `sdlc:goal`.
+2. Start a Claude Code cloud session on the repo (for example `claude --cloud` or a routine; the flags are NOT
+   verified here, check your Claude Code version), with `require_review` off or `changes`.
+3. Run `/sigma-loop`.
+4. Expected: it claims the issue, reads it with `gh api`, opens a PR, merges by REST with the sha, the labels
+   settle, ONE board-skipped notice, no GraphQL error.
+
+Record: the Sigma version, the session transcript, the notice text, whether `GET repos/{owner}/{repo}` returned
+`permissions`, whether the `{owner}/{repo}` placeholders resolved (or `GH_REPO` was needed), whether the rules read, the comment POST and the merge PUT passed the proxy, and every park reason
+verbatim.
+
+Open (named, not fixed here): `review_context.py` still tells reviewers to run `gh pr diff` (line 594) and
+`gh issue view` (lines 606, 651, 817, 830; by grep, numbers may drift); the `mechanism` string at `work.py:130` is stale (named open, left as is):
+it still says a cloud session stops at the GraphQL `merge_rights` read, which slice 4b-2 moved to REST; any GraphQL
+read left in the cloud merge section above.
+
 ## What this does NOT do
 
 - `read_issue`, `list_issues_gh`, the seven issue write helpers and the six PR read helpers (`view_pr_gh`,
@@ -615,7 +662,7 @@ real Claude Code cloud session.
   `pr_changes_requested`, above) are wired to callers; of the PR WRITES only the code-goal merge (`merge_pr_gh`, slice 4b-1) and the review comment
   (`comment_pr`, slice 4b-2) are, the raw `create_pr` and the project ops have no caller, and nothing in the product
   exercises the probe or the cache.
-- `/sigma-loop` is NOT supported in cloud sessions. REST `merge` has no auto-merge, and none is emulated; see the
+- `/sigma-loop` is not claimed supported in cloud sessions: unmeasured, see the smoke test above. REST `merge` has no auto-merge, and none is emulated; see the
   cloud-merge section above for the exact remaining gaps.
 - `create_issue` and `add_labels` in `gh_api.py` do not go through `GitHubSource._run`'s feature-label refusal, so they
   carry their own (layer 1, refuse unless the caller verified the label exists) and `GitHubSource` does the existence
@@ -628,9 +675,13 @@ real Claude Code cloud session.
 50 after slice 4a-1, 48 after slice 4a-2 PR A, 47 after PR B, 46 after slice 4b-1, 45 after slice 4b-2, 43 after 4b-3, 37 after 3b; it only goes down). Run
 `$HOME/.sigma-venv312/bin/python -m pytest tests/test_no_direct_gh.py`
 (generic form: `python -m pytest tests/test_no_direct_gh.py`).
-It covers list literals only. Shapes it CANNOT see: string-form or shell-string calls
+Its sibling for skill prose (loop-path commands in `skills/**/*.md`; `.tmpl`, shell scripts and the allowlisted
+lines stay uncovered) is `$HOME/.sigma-venv312/bin/python -m pytest tests/test_no_direct_gh_prose.py`
+(generic form: `python -m pytest tests/test_no_direct_gh_prose.py`); it also checks that every skill whose prose
+runs `gh api` grants `Bash(gh api *)`.
+The list-literal test covers list literals only. Shapes it CANNOT see: string-form or shell-string calls
 (`"issue view".split()`); argv built incrementally (`args += [...]`, `.append`, `.extend`); lists whose first
-element is a variable; positional-string wrapper calls (`_gh("issue", "view")`); skill prose (`.md`, `.tmpl`);
+element is a variable; positional-string wrapper calls (`_gh("issue", "view")`); `.tmpl` prose (`.md` prose is the sibling test's);
 and shell scripts (`skills/**/*.sh`, `hooks/*.sh`; 9 files, none mentions `gh` today, nothing keeps it so).
 So it guarantees "no new list-literal gh call", not "no new gh call". It also cannot see a REST write added
 through a `gh_api` helper, and `docs/launch/write-surface.json` (scanner blind spot, same reason) records only the
@@ -649,6 +700,6 @@ repository from the working directory, exits 0 on an enqueue and cannot return t
 
 ## Follow-ups
 
-Remaining migration (issue read and write ops, PR ops, Projects v2, skill prose, status line, the cloud
+Remaining migration (issue read and write ops, PR ops, Projects v2, status line, the cloud
 smoke run, and wiring the probe and `graphql_unavailable` into real callers) is filed as queued issues,
 not done here.

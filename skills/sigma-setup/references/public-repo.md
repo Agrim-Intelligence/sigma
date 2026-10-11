@@ -134,6 +134,8 @@ worktree until the merge is observed — the doc's own per-goal growth to watch.
 
 The board is optional; the loop runs on issues and labels either way.
 
+The Projects board needs GraphQL, so the `gh project` commands here do not work from a Claude Code cloud session; run them from your own machine.
+
 - **The owner has no Projects boards.** The first claim's status write creates `<name> — SDLC`,
   rewrites its Status field to the kit's seven lanes, and adds a P0–P4 Priority field. The
   maintainer's `gh` token needs the `project` scope — `gh auth refresh -s project`.

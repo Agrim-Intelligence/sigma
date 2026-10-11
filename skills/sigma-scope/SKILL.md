@@ -1,7 +1,7 @@
 ---
 name: sigma-scope
 description: Turn an idea into prioritized, deduplicated, dependency-linked GitHub issues. Use before issue creation or /sigma-scope.
-allowed-tools: Bash(python3 *), Bash(gh issue *), Read, Grep
+allowed-tools: Bash(python3 *), Bash(gh issue *), Bash(gh api *), Read, Grep
 ---
 
 ## Codex path resolution
@@ -50,8 +50,8 @@ The skill is seven steps:
    5, never silently treated as blocking or silently dropped.
    - A candidate's own pack carries `ref`/`score`/`strength`/`evidence`, deliberately no title —
      `dedup.py` never makes a live `gh` call itself. Before presenting a candidate at step 5, fetch
-     its real title with `gh issue view <ref> --json title -q .title` (covered by this skill's own
-     `Bash(gh issue *)` grant) so the question names the issue, not just a bare number — *"this looks
+     its real title with `gh api repos/{owner}/{repo}/issues/<ref> --jq .title` (covered by this skill's own
+     `Bash(gh api *)` grant) so the question names the issue, not just a bare number — *"this looks
      related to #N: '\<real title\>' — same thing, related-but-distinct, or unrelated?"* is a
      question a user can actually answer at a glance; a bare `#N` isn't.
 

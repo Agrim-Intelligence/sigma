@@ -1,7 +1,7 @@
 ---
 name: sigma-retro
 description: After shipping, assess residual product and structural debt and propose durable lessons for approval. Use in Retrospective or /sigma-retro.
-allowed-tools: Bash(python3 *), Bash(git *), Bash(gh issue *)
+allowed-tools: Bash(python3 *), Bash(git *), Bash(gh issue *), Bash(gh api *)
 ---
 
 ## Codex path resolution
@@ -33,13 +33,13 @@ debt remains?"). Pure markdown discipline + `git` / `python3`, so it degrades gr
 Read what this specific repo offers; skip whatever's absent (never break the run):
 Locate evidence with `rg --files` and `rg -n` before opening it. Read only the
 relevant lines for the retrospective; direct bulky command output to a scratch file
-and inspect a bounded excerpt rather than carrying it in the conversation.
+and inspect a bounded excerpt.
 
 - **The original intent** — read `.sdlc/acceptance/<goal-stem>.md` verbatim; the supplied
   PR-review/retro context pack also includes it. This P1 record is
   authoritative even if the issue changed. If missing/invalid, report that original acceptance
-  is unavailable and do not claim achieved. The goal's current text supplies context: the `.sdlc/goals/NNNN-*.md` file (local mode) or the
-  issue body (`gh issue view "$goal"`, github mode).
+  is unavailable and do not claim achieved. Goal text: `.sdlc/goals/NNNN-*.md` (local) or the
+  issue body (`gh api repos/{owner}/{repo}/issues/"$goal"`, github).
 - **What shipped** — the diff for this goal's work (`git diff` / `git log` over its branch or commits).
 - **The journey** — `.sdlc/journey/<goal>.md` (local) or the issue timeline (github): the phase notes
   and 🔒 Critical Insights recorded as the goal ran.
