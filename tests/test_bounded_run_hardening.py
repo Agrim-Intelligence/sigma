@@ -121,21 +121,29 @@ def test_dropping_one_location_name_is_seen(tmp_path):
 
 
 FLOOD = """
-import importlib.util, resource, sys, tempfile
+import importlib.util, os, resource, sys, tempfile
 spec = importlib.util.spec_from_file_location("bounded_run", sys.argv[1])
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 result = module.run_group("yes abcdefgh | head -c 200000000", tempfile.gettempdir(), 120, shell=True, merge=False,
                           max_out_bytes=module.MAX_OUT_BYTES)
 text = result.out.strip()
+# ru_maxrss of an exec'd child on Linux inherits the parent's high-water RSS (a long pytest worker holds ~1 GiB), so
+# read VmHWM, which is per address space and starts fresh at exec (#1153); SIGMA_TEST_RUSAGE=1 forces the old reading.
 peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-print(peak // 1024 if sys.platform == "darwin" else peak, result.truncated)
+if sys.platform == "darwin":
+    peak //= 1024
+elif not os.environ.get("SIGMA_TEST_RUSAGE"):
+    for line in open("/proc/self/status"):
+        if line.startswith("VmHWM:"):
+            peak = int(line.split()[1])
+print(peak, result.truncated)
 """
 
 
-def _flood_peak_kib(module_file):
+def _flood_peak_kib(module_file, env=None):
     done = subprocess.run([sys.executable, "-c", FLOOD, str(module_file)], capture_output=True, text=True,
-                          timeout=120, stdin=subprocess.DEVNULL)
+                          timeout=120, stdin=subprocess.DEVNULL, env=env)
     assert done.returncode == 0, done.stderr[-300:]
     kib, truncated = done.stdout.split()
     assert truncated == "True"
@@ -180,3 +188,14 @@ def test_lifeline_is_ended_when_the_group_gone_confirmation_raises(tmp_path, mon
     result = br.run_group([sys.executable, "-c", "pass"], tmp_path, 30, term_grace=1)
     assert result.outcome == br.OK
     assert ended == [False, True], "the lifeline was not ended as unconfirmed and reaped"
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="ru_maxrss inheritance across exec is Linux behaviour")
+def test_the_flood_reading_ignores_the_parents_resident_memory(tmp_path):
+    """#1153 control: a parent holding 200 MiB of touched pages makes the old `ru_maxrss` reading exceed the bound
+    for the fixed module, while the VmHWM reading the test now uses stays under it."""
+    held = bytearray(b"x") * (200 * 1024 * 1024)
+    env = dict(os.environ, SIGMA_TEST_RUSAGE="1")
+    assert _flood_peak_kib(support.SCRIPTS / "bounded_run.py", env) > 128 * 1024, "control: the old reading must be fooled"
+    assert _flood_peak_kib(support.SCRIPTS / "bounded_run.py") < 128 * 1024
+    assert len(held)
