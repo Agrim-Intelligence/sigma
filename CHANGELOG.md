@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Resolver CLI probe finding record (#948; refs #941).** `docs/launch/evidence/resolver-cli-probe.md` records the real headless probe of the installed command line for the upkeep resolver: the design-flag table, settings, hooks, credential and billing behaviour, standard input, the budget-flag overshoot and exit code, killed-run metering, and the export-or-worktree choice, with what is still open. Docs only: no product code, flag table or model catalog changed.
+
 - **`work.py start` no longer refuses on the registry files its own sync wrote (#954).** Once the
   registry is committed (branching-model §14), every pick rewrites `.sdlc/features/units/<unit>.json`
   and `<unit>.md` in the root checkout, and the next start refused on that dirt and suggested
@@ -24,8 +26,11 @@ All notable changes to Sigma are recorded here, newest first.
   refusal. Verified with real-git tests (the issue's repro, the documented relative `.sdlc` CLI
   gesture, two deterministic concurrency seams and a multi-process smoke run), each seen red against
   the old code or a weakened build. Not measured: Windows, and a live multi-slot loop on an adopter.
+
 - **PR `test` job runs the plain onboarding control against a wall-time budget and the planted regressions (#879, slice 5 of #809).** `evals/regression/budget.py` runs `python3 tools/onboarding_control.py` and fails when it exceeds `ceiling_seconds` in `evals/regression/budget.json` (set from measured CI job logs, see the PR); `pytest tests/test_onboarding_control.py -k planted` applies `drop-review-recording` and `skip-plan-review` to a scratch copy and demands the plain gesture exit 1 naming the review chain and the plan-review probe. Adds minutes to the required `test` job (measured on the PR).
+
 - **PR `onboarding-control` job runs the plain onboarding control against a wall-time budget and the planted regressions (#879, slice 5 of #809).** `evals/regression/budget.py` runs `python3 tools/onboarding_control.py` and fails when it exceeds `ceiling_seconds` in `evals/regression/budget.json` (set from measured CI job logs, see the PR); `pytest tests/test_onboarding_control.py -k planted` applies `drop-review-recording` and `skip-plan-review` to a scratch copy and demands the plain gesture exit 1 naming the review chain and the plan-review probe. Runs as its own `onboarding-control` job so the required `test` job does not grow.
+
 - **PR `test` job timeout 30 -> 45 minutes (CI).** The macOS `test` job ran 24-28 minutes on recent main pushes and was cancelled at the 30-minute cap on #1052's and #1129's PR runs (annotation: "exceeded the maximum execution time of 30m0s"), so the cap no longer left headroom. The measured run times are from the Actions API; the new 45 is a margin, not a measurement. The `full` job's 90-minute cap is unchanged.
 
 ## 1.0.9 — 2026-10-11 — REST-first GitHub, the board skip in cloud sessions, and eval additions

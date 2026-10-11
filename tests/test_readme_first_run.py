@@ -505,6 +505,8 @@ VERSION_ALLOW = {
     ("docs/launch/shared-sdlc-paths.md", "1.4.28"): "the predecessor release whose installed copy #347 scanned",
     ("docs/launch/shared-sdlc-paths.md", "1.4.24"): "the predecessor release in which its setup wizard was seen "
                                                     "writing into this repository (finding 21 of #347)",
+    ("docs/launch/evidence/resolver-cli-probe.md", "2.1.296"): "the version of the headless command-line tool the "
+                                                               "probe ran against; it is not a Sigma release",
 }
 
 
