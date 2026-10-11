@@ -510,8 +510,8 @@ def test_ci_runs_the_gesture_right_after_the_quality_gate_with_the_same_gate():
     lines = text[text.index("\n  full:\n"):].splitlines()
     names = [i for i, line in enumerate(lines) if line.strip().startswith("- name:")]
     gate = next(i for i in names if "quality gate" in lines[i])
-    after = names[names.index(gate) + 1]
-    assert "golden tasks verify" in lines[after]
+    # The safety check (#1050) sits between the gate and the gesture, so find the gesture among the steps after the gate.
+    after = next(i for i in names[names.index(gate) + 1:] if "golden tasks verify" in lines[i])
     block = lines[after:names[names.index(after) + 1]]
     assert any(b.strip() == "run: python3 evals/golden/verify.py" for b in block)
 

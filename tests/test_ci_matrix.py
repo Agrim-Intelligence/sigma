@@ -67,12 +67,14 @@ def job_text(text):
 def check_safety_step_after_quality_gate(text):
     job = job_text(text)
     assert SAFETY in job, "safety check step missing from the test job"
-    assert SAFETY not in text.split("\n  full:", 1)[1], "safety step must not be in the full job"
-    steps = job.split("\n      - ")
-    names = [st for st in steps if st.startswith("name: ")]
-    q = next(i for i, st in enumerate(names) if "quality gate" in st)
-    assert SAFETY in names[q + 1], "safety step must follow the quality gate directly"
-    assert "name: safety check (secret shapes, sinks, hostile fixtures)" in names[q + 1]
+    full = text.split("\n  full:", 1)[1].split("\n  regression-control:", 1)[0]
+    assert SAFETY in full, "safety check step missing from the full job"
+    for body in (job, full):
+        steps = body.split("\n      - ")
+        names = [st for st in steps if st.startswith("name: ")]
+        q = next(i for i, st in enumerate(names) if "quality gate" in st)
+        assert SAFETY in names[q + 1], "safety step must follow the quality gate"
+        assert "name: safety check (secret shapes, sinks, hostile fixtures)" in names[q + 1]
 
 
 def test_safety_step_is_in_the_pr_test_job_right_after_the_quality_gate():
