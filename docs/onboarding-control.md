@@ -263,16 +263,16 @@ checkout); the PR #306 repro through the CLI is ~20s of that.
 One live-model run per mode, headless `claude -p` on Claude Code 2.1.284 (Max login, no API key),
 plugin from origin/main 03fa8189 via `--plugin-dir` (not the marketplace install), throwaway repositories
 (a local scratch repo; `Agrim-Intelligence/sigma-drill-3`, private). Verbatim outputs, token counts and
-the 20 `phase_report.py end` lines are in `docs/launch/evidence/live-onboarding-2026-10-12.md`.
+the 28 `phase_report.py end` lines (12 local, 8 github, 8 vanilla re-run) are in `docs/launch/evidence/live-onboarding-2026-10-12.md`.
 
 | Run | Wall | Host-reported cost (list price estimate) | Outcome |
 |---|---|---|---|
 | #300 `/sigma-init --demo` (local-goals) | 22 s | $0.127 | one `[ask] verify`, answered; no refusal |
 | #300 `/sigma-loop`, `acceptEdits` | 17 s | $0.128 | did nothing: `$PPID` expansion denied (#721) |
 | #300 `/sigma-loop`, `auto` | 286 s | $2.018 (phase lines sum $0.82) | 1 done, 1 failed: the filed goal `done`, the demo goal `failed` (#1196) |
-| #301 `/sigma-init --demo` (github) | 32 s | $0.130 | same `[ask] verify`; 13 labels created |
-| #301 `/sigma-loop`, `auto` | 440 s | $1.480 (phase lines sum $0.31) | PR #2 opened, `sigma:approve` posted, left for a human; three refusals recovered by the model (#1197) |
-| #301 human merge + `reconcile-merges` | 12 s | none | `1 done (PR #2 merged)`; issue closed, PR merged, `hello.txt` on main, verify evidence `pass` |
+| #301 `/sigma-init --demo` (github) | 32 s | $0.130 | same `[ask] verify`; 13 `sdlc:`/`priority:` labels (model summary; 22 captured later incl. 9 GitHub defaults) |
+| #301 `/sigma-loop`, `auto` | 440 s | $1.480 (phase lines sum $0.31) | PR #2 opened, `sigma:approve` posted, left for a human; four refusal messages in three groups, recovered by the model (#1197) |
+| #301 human merge + `reconcile-merges` | 12 s (merge.start to merge.end; reconcile itself 6.9 s, interactive terminal, not logged) | none | `1 done (PR #2 merged)`; issue closed, PR merged, `hello.txt` on main, verify evidence `pass` |
 
 Clean-repo re-run of #300 (origin/main cc92a834, Makefile `test: true`, nothing else): `/sigma-init --demo` 19 s ($0.127;
 three `[ask]` questions: work, mode, verify), `/sigma-loop` under `auto` 160 s ($1.244 host-reported list-price estimate, phase lines sum

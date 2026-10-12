@@ -56,7 +56,7 @@ cannot be statically analyzed" and "Contains simple_expansion".` 3 permission de
 
 ### `/sigma-loop`, attempt 2: `--permission-mode auto` (286 s wall, 4 turns reported)
 
-Final message, verbatim: `LOOP STOP: backlog-empty` / `1 done, 0 parked, 1 failed.`
+Final message, verbatim: `LOOP STOP: backlog-empty` / `1 done, 0 parked, 1 failed.` (In every quoted block in this file, `<scratch repo>`, `<repo>`, `<plugin>`, `<worktree>` and `<sha>` are redactions of local paths and hashes, not text the tool printed.)
 
 - `0002 Add hello.txt`: **done** (`hello.txt` = `hello`, verify pass, review approved).
 - `0000 Demo`: **failed**. `loop.py verify` printed `FAILED exit=2 evidence=.sdlc/state/verify/0000-demo.json`;
@@ -106,7 +106,7 @@ repo, user, workflow, write:packages (no `delete_repo`; the owner deletes the re
 ### `/sigma-init --demo` (32 s, 3 turns, $0.130, 0 denials)
 
 Same single `[ask] verify` question as above, answered `--verify 1:22cc66aa7d26`. Github mode
-(`--mode github`), board no, ledger no. 13 labels created on the first run, all present on the second.
+(`--mode github`), board no, ledger no. The model's own summary says 13 labels were created on the first run and all present on the second (that is its prose, not a captured command). Captured afterwards: `gh label list -R Agrim-Intelligence/sigma-drill-3` returns 22 labels, of which 13 start with `sdlc:` or `priority:`; the other 9 are GitHub's defaults.
 Verbatim:
 
 ```
@@ -126,7 +126,7 @@ recorded `review`, `auto_merge` off so the PR was left open. `mergeStateStatus` 
 empty (approval is a comment, not a GitHub review). PR title: `chore: add research and acceptance record`
 (the last commit's headline, not the goal; existing issue #1014).
 
-Refusals met on the way to the PR, verbatim:
+Four refusal messages on the way to the PR, verbatim. They group as three problems: (1) no Done when section, (2) the research dossier not on the branch, (3) the test-first gate, whose two messages (`acceptance record changed since verify`, then `cannot validate planned test proof`) are one item:
 
 ```
 acceptance.py: REFUSED: no Done when section; draft 3–7 criteria in a file and pass --draft
@@ -157,9 +157,9 @@ cache creation 67,197 ($1.054); claude-haiku-4-5-20251001 input 588, output 20,7
 **#1 Add hello.txt** P7 RETRO → last phase — 19s · $0.03 · tokens 42 in, 1,193 out · claude-haiku-4-5-20251001 · goal so far: active 3m49s · effort 3m49s.
 ```
 
-### Human merge and reconcile (12 s from merge to reconciled)
+### Human merge and reconcile (12 s is the merge.start to merge.end span: merge plus reconcile plus my checks)
 
-Run by me in the throwaway repository, as the contract allows:
+Run by me in the throwaway repository, as the contract allows. The block below was typed in an interactive terminal and is NOT captured in any raw log; the captured record is the loop's own action-log row for the goal: `PR #2 merged (observed by the merge-reconcile pass)`, `result: done`, `ts 2026-10-12T01:34:03.576Z`.
 
 ```
 gh pr merge 2 --squash -R Agrim-Intelligence/sigma-drill-3          # exit 0
@@ -169,12 +169,12 @@ work.py: pruned 1 review generation(s) of 1 terminal goal(s)
 1 done (PR #2 merged)
 ```
 
-`reconcile-merges` took 6.9 s wall. Checks: issue #1 `CLOSED` with no labels left; PR #2 `MERGED`;
+`reconcile-merges` took 6.9 s wall (interactive terminal, not captured to a log; the merge-to-reconcile-record gap is about 6 s). Checks: issue #1 `CLOSED` with no labels left; PR #2 `MERGED`;
 `hello.txt` on `main` via the contents API reads `Hello, world!`; `.sdlc/state/verify/1.json` reads
 `verify_state: pass`, `exit: 0`, command `make test`. The squash commit on main carries the PR title
 `chore: add research and acceptance record (#2)`.
 
-`git pull` in the working clone then ABORTED: `error: The following untracked working tree files would
+`git pull` in the working clone then ABORTED (interactive terminal, not captured to a log; the file names are the PR's own committed files `.sdlc/acceptance/1.md`, `.sdlc/plans/1.md`, `.sdlc/research/1.md`): `error: The following untracked working tree files would
 be overwritten by merge: .sdlc/acceptance/1.md .sdlc/plans/1.md .sdlc/research/1.md`. The loop
 recreates the files locally and the PR also commits them. Existing issue #1161.
 
@@ -183,13 +183,13 @@ recreates the files locally and the PR also commits them. Existing issue #1161.
 | Control (fake gh / scripted work) | Live | Where filed |
 |---|---|---|
 | Demo goal reaches `done` | demo goal `failed`: both verify commands ran | #1196 |
-| Acceptance recorded before the work; `work.py pr` passes | acceptance drafted after the work, three refusals, `--no-tests` | #1197 |
-| `phase_report.py end` prints `cost: unavailable ...` (nested session) | cost measured on every phase (20 lines) | recorded here, not a defect |
+| Acceptance recorded before the work; `work.py pr` passes | acceptance drafted after the work, four refusal messages in three groups, `--no-tests` | #1197 |
+| `phase_report.py end` prints `cost: unavailable ...` (nested session) | cost measured on every phase (28 lines: 12 local + 8 github + 8 vanilla re-run) | recorded here, not a defect |
 | `loop next` runs the demo goal first in github mode | github-mode `--demo` queues nothing the loop picks; init says to file an issue | recorded here (init says so itself) |
 | No `$PPID` problem (script control) | `acceptEdits` denies `--session-pid "$PPID"`; the loop did nothing | #721 (commented) |
 | PR title is the goal | PR title is the last commit headline | #1014 (commented) |
 | Working clone stays fast-forwardable | `git pull` aborts on untracked `.sdlc` records | #1161 (commented) |
-| 86 gh calls, 34 label creates, 14 of them init's | not counted live (unmeasured); init created 13 labels on first run | |
+| 86 gh calls, 34 label creates, 14 of them init's | not counted live (unmeasured); init created 13 sdlc:/priority: labels on first run (model summary; 22 labels captured later, 9 are GitHub defaults) | |
 | Board offer, `@me` resolution | `@me` resolved (assignee set at filing, the goal was picked). Board declined; the Projects board path was NOT exercised | |
 
 ## #300 re-run on a vanilla repo (second dated subsection, 2026-10-12)
