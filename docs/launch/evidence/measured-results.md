@@ -32,9 +32,9 @@ Commits the numbers were recorded on (they differ, and most are older than curre
 Source: [live-onboarding-2026-10-12.md](live-onboarding-2026-10-12.md), 2026-10-12. One run each, one machine
 (macOS), Claude Code 2.1.284, model `claude-sonnet-5-5` (one run also used `claude-haiku-4-5-20251001`), a
 subscription login with no API key. The dollar figures are the host's own `total_cost_usd` at list price on a
-subscription login: an estimate, not billing. The first two runs loaded the plugin from files exported from
-main; the third used the marketplace copy already installed in the owner's profile, which was an older release
-than main at the time.
+subscription login: an estimate, not billing. The first three runs loaded the plugin from files exported from
+main with `--plugin-dir` (the third from a later main commit, `cc92a834`); only the fourth used the marketplace
+copy already installed in the owner's profile, which was an older release than main at the time.
 
 | Run | Goals | Result | Whole loop session, host list-price estimate | Sum of the `phase_report.py end` lines | Agent wall time |
 |---|---|---|---|---|---|
@@ -171,7 +171,8 @@ frozen clone with the origin removed, on one macOS machine with Python 3.12. 33 
   12,263 passed, 22 skipped, 9 xfailed (wall time 676.6 s). Both runs are recorded.
 - The other failures: a check of the private source repository's live settings (main unprotected there), and
   two exposure scans over history and the tracked tree (235 and 62 findings, triaged by the file as fixtures,
-  detectors and placeholders; no secret and no real private reference at HEAD).
+  detectors and placeholders; no secret and no real private reference at HEAD). The file also records one real
+  developer host path in git history (not at HEAD), routed to #400, now closed.
 - Three gates exit 0 but the file says they checked almost nothing in a frozen clone, and a pass there is not
   evidence. Ten checks were not run, each with its reason (including the planted-defect recall and the
   model-level injection drill).
@@ -232,7 +233,9 @@ Failing tests, from the failed jobs' logs:
 `f92a7528a26b`. The file's first line says it is local evidence only, not GitHub CI.
 
 - The public-tree export built twice with an identical tree and export commit (about 34 s each); 1,229 files;
-  the leak, reference and exposure scans found 0 hits on the export. A planted fake private reference was
+  the leak and reference scans and the builder's own exposure pass found 0 hits on the export. The standalone
+  `exposure_scan.py tracked` run inside the export exited 1 with 4 `stale-allowlist` rows (allowlist rows for the
+  excluded `.sdlc`, not hits; #1203, since addressed by #1215 and not re-run for this page). A planted fake private reference was
   rejected (exit 1) and appeared in none of the outputs.
 - The CI-equivalent commands on the exported tree were red: on macOS 3.12, 8 failed, 16,523 passed; the Linux
   containers gave 8 to 10 failures per leg across Python 3.10 to 3.13 and an Ubuntu image. The file traces 8
