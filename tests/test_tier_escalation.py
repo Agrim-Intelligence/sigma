@@ -448,3 +448,217 @@ def test_off_does_not_promise_the_session_model(tmp_path):
     assert out.startswith("OFF") and "session model" not in out, out
     bullet = RUNNING[RUNNING.index("- `OFF` (exit 3)"):][:400]
     assert "ordinary-work" in bullet and "run at the session model" not in bullet, bullet
+
+
+# ----------------------------------------------------------------------------- #390: lane re-resolve
+
+te = _mod("tier_escalation_lane", S / "tier_escalation.py")
+discovery = _mod("discovery_for_lane", S / "discovery.py")
+
+
+def _cfg(**extra):
+    return {"model_selection": "auto", **extra}
+
+
+def test_lane_tier_small_caps_a_higher_text_tier_at_sonnet():
+    """The issue's own primary red-first control: a goal whose text routes opus but whose research
+    measures small must run at sonnet, not opus."""
+    assert te.lane_tier(_cfg(), "small", "opus") == "sonnet"
+    assert te.lane_tier(_cfg(), "small", "fable") == "sonnet"
+
+
+def test_lane_tier_small_never_pushes_a_lower_tier_up():
+    """A cap, not a floor: a title-only haiku match stays haiku under a small lane."""
+    assert te.lane_tier(_cfg(), "small", "haiku") == "haiku"
+    assert te.lane_tier(_cfg(), "small", "sonnet") == "sonnet"
+
+
+@pytest.mark.parametrize("current", ["haiku", "sonnet", "opus", "fable"])
+def test_lane_tier_medium_is_sonnet_regardless_of_text_tier(current):
+    assert te.lane_tier(_cfg(), "medium", current) == "sonnet"
+
+
+@pytest.mark.parametrize("current", ["haiku", "sonnet", "opus", "fable"])
+def test_lane_tier_large_is_opus_regardless_of_text_tier(current):
+    """The issue's other red-first control: 'a large goal gets opus regardless of wording'."""
+    assert te.lane_tier(_cfg(), "large", current) == "opus"
+
+
+def test_lane_tier_respects_the_price_ceiling():
+    cfg = _cfg(model_selection_max_tier="sonnet")
+    assert te.lane_tier(cfg, "large", "haiku") == "sonnet"
+    assert te.lane_tier(cfg, "small", "opus") == "sonnet"
+
+
+def test_lane_tier_escalation_floor_still_wins_over_a_lane_cap():
+    """The third red-first control: an escalation floor recorded before this call must still win
+    over whatever the lane would otherwise cap the goal at."""
+    assert te.lane_tier(_cfg(), "small", "haiku", floor="opus") == "opus"
+    assert te.lane_tier(_cfg(), "medium", "haiku", floor="opus") == "opus"
+
+
+def test_lane_tier_a_recorded_escalation_in_entries_also_wins():
+    entries = [{"kind": "model_choice", "model": "opus",
+                "signal": "escalated: plan-review send-back at sonnet"}]
+    assert te.lane_tier(_cfg(), "small", "haiku", entries=entries) == "opus"
+
+
+def test_lane_tier_does_not_reinject_the_uncapped_text_tier():
+    """The bug plan-review round 1 caught: combining with `from_tier(config, current, ...)`
+    re-admits `current` itself (no escalation needed), silently defeating the lane cap. With NO
+    recorded escalation and NO floor, the text tier alone must never survive a lane cap."""
+    assert te.lane_tier(_cfg(), "small", "opus", entries=(), floor=None) == "sonnet"
+    assert te.lane_tier(_cfg(), "medium", "fable", entries=(), floor=None) == "sonnet"
+
+
+@pytest.mark.parametrize("lane,current", [("bogus", "sonnet"), ("small", "bogus")])
+def test_lane_tier_unknown_lane_or_tier_raises(lane, current):
+    with pytest.raises(ValueError):
+        te.lane_tier(_cfg(), lane, current)
+
+
+def _lane_tier_cli(sdlc_dir, goal, lane, current):
+    r = subprocess.run([sys.executable, str(LOOP_PY), "lane-tier", sdlc_dir, goal, lane, current],
+                       capture_output=True, text=True, timeout=60)
+    return r.returncode, r.stdout.strip(), r.stderr
+
+
+def test_lane_tier_cli_prints_lane_and_the_resolved_tier(tmp_path):
+    d = _auto(tmp_path)
+    code, out, err = _lane_tier_cli(d, "7", "small", "opus")
+    assert code == 0 and out == "LANE sonnet", (out, err)
+
+
+def test_lane_tier_cli_records_a_model_choice_event_with_the_lane_signal(tmp_path):
+    d = _auto(tmp_path)
+    code, out, err = _lane_tier_cli(d, "7", "large", "haiku")
+    assert code == 0 and out == "LANE opus", (out, err)
+    [ev] = _events(d)
+    assert ev["goal"] == "7" and ev["model"] == "opus" and ev["signal"] == "lane:large"
+    [tr] = _trace(d, "7")
+    assert tr["model"] == "opus" and tr["signal"] == "lane:large"
+
+
+def test_lane_tier_cli_off_when_model_selection_is_not_auto(tmp_path):
+    d = _sdlc(tmp_path, model_selection="off")
+    code, out, err = _lane_tier_cli(d, "7", "large", "haiku")
+    assert code == 3 and out.startswith("OFF"), (out, err)
+    assert _events(d) == [] and _trace(d, "7") == []
+
+
+def test_lane_tier_cli_escalation_floor_still_wins_end_to_end(tmp_path):
+    d = _auto(tmp_path)
+    code, out, _ = _escalate(d, "7", "haiku")            # ESCALATE sonnet, floor now sonnet
+    assert code == 0 and out.startswith("ESCALATE sonnet"), out
+    code, out, err = _lane_tier_cli(d, "7", "small", "haiku")
+    assert code == 0 and out == "LANE sonnet", (out, err)   # not "haiku" -- the floor wins
+    code, out, _ = _escalate(d, "7", "sonnet")            # ESCALATE opus, floor now opus
+    assert code == 0 and out.startswith("ESCALATE opus"), out
+    code, out, err = _lane_tier_cli(d, "7", "small", "haiku")
+    assert code == 0 and out == "LANE opus", (out, err)
+
+
+def test_lane_tier_cli_bad_lane_is_refused(tmp_path):
+    d = _auto(tmp_path)
+    code, out, err = _lane_tier_cli(d, "7", "bogus", "sonnet")
+    assert code == 2 and _events(d) == [] and _trace(d, "7") == [], (out, err)
+
+
+_LANE_GESTURE = re.compile(
+    r'python3 "\$\{CLAUDE_SKILL_DIR\}/scripts/loop\.py" lane-tier \.sdlc "\$goal"\s+'
+    r'<lane>\s+<current-tier>')
+
+
+def test_lane_tier_cli_wrong_arg_count_prints_its_own_usage(tmp_path):
+    """Code-review nitpick: a bad arg count must not silently fall through to loop.py's generic,
+    unrelated usage line -- `lane-tier` needs its own, like `escalate` already has."""
+    d = _auto(tmp_path)
+    r = subprocess.run([sys.executable, str(LOOP_PY), "lane-tier", d, "7", "small"],
+                       capture_output=True, text=True, timeout=60)
+    assert r.returncode == 2 and "lane-tier" in r.stderr and "usage" in r.stderr, r
+
+
+def test_the_documented_lane_tier_gesture_runs(tmp_path):
+    """AGENTS.md: run the control on the gesture the docs give, not a stronger one."""
+    assert _LANE_GESTURE.search(RUNNING), "running.md no longer prints the lane-tier gesture"
+    d = _auto(tmp_path)
+    code, out, err = _lane_tier_cli(d, "7", "large", "haiku")
+    assert code == 0 and out == "LANE opus", (out, err)
+
+
+# ---- Sigma-only additions ------------------------------------------------------------------------
+
+def test_the_lane_vocabulary_matches_the_researcher_it_mirrors():
+    """`tier_escalation` does not import `discovery.py` (skills do not import each other's Python),
+    so it keeps its own `LANES`. This pins the copy: a lane added to the researcher goes red here
+    instead of reaching `lane-tier` as an `unknown lane` refusal."""
+    assert te.LANES == discovery.LANES
+
+
+def test_lane_tier_large_raises_a_lower_text_tier_to_opus_under_the_default_ceiling():
+    """The one case where a lane RAISES (small/medium only ever narrow): large + haiku -> opus,
+    with the DEFAULT ceiling (no `model_selection_max_tier` key) and no escalation memory."""
+    assert te.lane_tier({"model_selection": "auto"}, "large", "haiku", [], None) == "opus"
+    assert te.lane_tier({"model_selection": "auto"}, "large", "sonnet", [], None) == "opus"
+
+
+def _lane_tier_env(host):
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID",
+                        "CODEX_SESSION_ID")}
+    env["CODEX_THREAD_ID" if host == "codex" else "CLAUDECODE"] = "task" if host == "codex" else "1"
+    return env
+
+
+def _lane_tier_cli_host(sdlc_dir, host, *args):
+    r = subprocess.run([sys.executable, str(LOOP_PY), "lane-tier", sdlc_dir, *args],
+                       env=_lane_tier_env(host), capture_output=True, text=True, timeout=60)
+    return r.returncode, r.stdout.strip(), r.stderr
+
+
+def test_lane_tier_cli_codex_mapping_refusal_records_nothing(tmp_path):
+    """Sigma validates the Codex mapping BEFORE it records a model_choice (as `escalate` does): a
+    lane-resolved tier Codex refuses is exit 2 with no ledger row, no action-log row."""
+    d = _auto(tmp_path, **{"model_host_overrides": {"codex": {"opus": {"model": "not-a-codex-model",
+                                                                      "effort": "high"}}}})
+    code, out, err = _lane_tier_cli_host(d, "codex", "7", "large", "haiku")
+    assert code == 2 and out == "" and "Codex host mapping refused" in err, (code, out, err)
+    assert _events(d) == [] and _trace(d, "7") == []
+
+
+def test_lane_tier_cli_follows_the_host_model_selection_override(tmp_path):
+    """`model_selection` is read through `_host_model_config`: off for Claude, auto for Codex."""
+    d = _sdlc(tmp_path, model_selection="off",
+              model_selection_host_overrides={"codex": "auto"}, **RECORDING)
+    code, out, err = _lane_tier_cli_host(d, "codex", "7", "large", "haiku")
+    assert code == 0 and out == "LANE opus", (code, out, err)
+    code, out, err = _lane_tier_cli_host(d, "claude", "7", "large", "haiku")
+    assert code == 3 and out.startswith("OFF"), (code, out, err)
+
+
+def test_lane_tier_cli_action_log_row_carries_the_plan_phase(tmp_path):
+    """The lane tier applies P3 onward (Research keeps the pre-P2 tier), so the row is stamped with
+    the phase it applies TO -- the same field `escalate` stamps via `tier_escalation.record`."""
+    d = _auto(tmp_path)
+    code, out, err = _lane_tier_cli(d, "7", "large", "haiku")
+    assert code == 0, (out, err)
+    [tr] = _trace(d, "7")
+    assert tr["phase"] == "plan" and tr["signal"] == "lane:large"
+
+
+_LANE_PARAGRAPH_START = "Match the ceremony to the goal"
+_LANE_PARAGRAPH_END = "Park instead of forcing through"
+
+
+def _lane_slice():
+    return RUNNING[RUNNING.index(_LANE_PARAGRAPH_START):RUNNING.index(_LANE_PARAGRAPH_END)]
+
+
+def test_the_documented_lane_tier_call_sits_in_the_lane_section_before_the_p3_dispatch():
+    """The gesture alone is not the contract: the lane-tier paragraph must sit between the lane
+    paragraph and the park rules, and say it runs BEFORE the P3 dispatch -- a call after P3 has
+    already been dispatched at the pre-P2 tier re-resolves nothing."""
+    sl = _lane_slice()
+    assert _LANE_GESTURE.search(sl), "the lane-tier gesture left the lane section"
+    assert re.search(r"\bbefore\b\W+(?:\w+\W+){0,6}P3\b", sl), \
+        "the lane section no longer says lane-tier runs before the P3 dispatch"

@@ -48,6 +48,24 @@ string is all title and routes exactly as before. A goal FILE path is read by `_
 puts the file's own title on that first line. `resolve_step` keeps whole-text haiku scanning: a
 mechanical step's downgrade is what that verb is for.
 
+A BODY-ONLY OPUS/FABLE SIGNAL NEEDS TWO OR MORE HITS, OR A TITLE HIT (#390). Upward resolution has
+the opposite failure mode one tier UP: the predecessor's census of its own two boards (its
+measurement, not Sigma's -- Sigma's boards were not measured) found 61 of 167 open goals routed to
+opus, 58 of those 61 from a BODY word, and a hand-read of 21 found 16 false positives -- a doc-path
+citation, a test path, a `feature/...` branch literal, "authorization" meaning spend approval, a JSON
+key named `complexity`, `migrat` in a retrospective mention of a migration that already shipped. Each
+of those shares one root cause: the signal sits inside something that is not a description of the
+work, and appears exactly ONCE. A real migration or concurrency issue, by contrast, carries its
+signal as the subject of the issue -- repeated, not incidental. So a body-only opus/fable match now
+needs TWO OR MORE hits (distinct match OCCURRENCES, via `finditer`, not distinct literal text --
+"migrat" repeated as migrate/migration/migrating is three hits of the identical stem, and REQUIRING
+different literal text would misroute exactly the true-positive case this exists to protect); a TITLE
+hit still wins outright on ONE occurrence, mirroring #2827's own title-always-wins shape. A match
+lying entirely inside a backtick code span or a path-shaped token (non-whitespace, a slash,
+non-whitespace -- see `_excluded_spans`/`_within_excluded_span`) never counts at all, in title or
+body, because a citation is not a description of the work either. `why` now also reports the hit
+count.
+
 PER-REPO SIGNAL EXCLUDES (issue #1601). A signal can be a creative term on most repos and an
 ordinary DOMAIN NOUN on a few: a storytelling pipeline has a "narrative stage" and a "prose
 renderer", and `vision` collides with Sigma's OWN vision-first vocabulary (`/sigma-vision`, the
@@ -538,15 +556,75 @@ def predict_with_reason(goal_text, excludes=(), max_tier=_MAX_TIER_DEFAULT):
 #: The one tier whose stems count only inside the title (#2827) -- see the module docstring.
 _TITLE_ONLY_TIERS = ("haiku",)
 
+#: The tiers whose stems, found ONLY in the body, need 2+ hits rather than 1 (#390) -- see the
+#: module docstring. A title hit still wins on one occurrence, for these exactly as for any other
+#: tier; this constant only ever narrows the BODY-alone path.
+_BODY_MULTI_TIERS = ("opus", "fable")
+#: The minimum body-only occurrence count #390 requires. A named constant rather than a bare `2`
+#: so the one number the module docstring, this comment and the loop below must agree on lives in
+#: exactly one place.
+_BODY_MULTI_MIN_HITS = 2
+
+#: A code span: a triple-backtick fenced block (DOTALL, non-greedy, so it closes at the NEXT triple
+#: backtick rather than swallowing the rest of the text) or a single-backtick inline span that does
+#: not cross a newline (an unterminated inline backtick is therefore never treated as open-ended --
+#: it simply matches nothing, exactly as an unterminated fence would confuse a reader too).
+_CODE_SPAN = re.compile(r"```.*?```|`[^`\n]*`", re.DOTALL)
+#: A path-shaped token (#390's own issue text, verbatim) -- non-whitespace, a slash, non-
+#: whitespace. This is deliberately wider than a filesystem path: `feature/auth-billing-security`
+#: (a branch literal) and `and/or` both match it too, which is the accepted, documented trade the
+#: issue itself makes (`\S+/\S+`, not a narrower filename-shaped pattern) -- a citation is not a
+#: description of the work either way. Matched as "a whitespace-delimited token with a slash that
+#: has a character on each side" (`"/" in token[1:-1]`), the same token set `\S+/\S+` selects but
+#: in one linear pass: the regex form is quadratic on a long slash-free blob (measured 57 s at
+#: 200 KB when its guard test was run red against the regex form), and pick time reads whole issue bodies.
+_TOKEN = re.compile(r"\S+")
+
+
+def _excluded_spans(t):
+    """Every `(start, end)` span in `t` that a signal match must NOT lie wholly inside (#390): a
+    code span or a path-shaped token. Computed once per `predict_with_location` call over the WHOLE
+    text (title and body both), so a citation in the title is excluded exactly as one in the body
+    is -- there is no reason a doc-path or a branch literal describes the work any more just
+    because it happens to sit on the first line."""
+    spans = [(m.start(), m.end()) for m in _CODE_SPAN.finditer(t)]
+    spans += [(m.start(), m.end()) for m in _TOKEN.finditer(t) if "/" in m.group(0)[1:-1]]
+    return spans
+
+
+def _within_excluded_span(start, end, spans):
+    """Does the signal match `[start, end)` lie ENTIRELY inside one of `spans`? Containment, not
+    overlap (#390) -- `s <= start and end <= e` -- so a genuine prose mention that merely sits
+    NEXT TO a path or code span (not inside one) still counts. A match straddling a span's boundary
+    (starts inside, ends outside, or vice versa) is not contained by definition and so counts too;
+    that is deliberate, not a gap -- a signal is either wholly a citation or it is not one at all."""
+    return any(s <= start and end <= e for s, e in spans)
+
 
 def predict_with_location(goal_text, excludes=(), max_tier=_MAX_TIER_DEFAULT, *,
                           haiku_anywhere=False):
-    """`(tier, signal, where)` -- `predict_with_reason`'s pair plus WHERE the signal was found:
-    `"title"` (the text's first line) or `"body"` (everything after it), `None` with no signal.
+    """`(tier, signal, where, hits)` -- `predict_with_reason`'s pair plus WHERE the signal was
+    found (`"title"`/`"body"`, `None` with no signal) and HOW MANY qualifying occurrences backed
+    the decision (#390; always `0` alongside `None`, always `>= 1` alongside a signal).
 
     A `_TITLE_ONLY_TIERS` match counts only when it lies wholly inside the title (#2827); one found
     only in the body is skipped exactly as an excluded signal is, so the scan falls through to the
     default. `haiku_anywhere=True` restores whole-text scanning, for `resolve_step` alone.
+
+    A `_BODY_MULTI_TIERS` match found in the TITLE still wins on one occurrence, exactly like any
+    other tier (#390 only narrows the BODY-alone path -- see the module docstring for why a title
+    hit is trusted where a lone body hit is not). Found only in the BODY, it needs
+    `_BODY_MULTI_MIN_HITS` or more qualifying occurrences before the tier wins; short of that the
+    scan falls through to the next tier, exactly as an excluded signal does. "Occurrences" are
+    `finditer`'s own non-overlapping matches -- NOT distinct literal text: a real migration issue
+    that only ever writes the stem "migrat" (migrate/migration/migrating all match identically)
+    still needs to satisfy the threshold on repetition alone, so requiring different literal text
+    per hit would misroute exactly the true-positive case this exists to protect.
+
+    Both `_TITLE_ONLY_TIERS` and `_BODY_MULTI_TIERS` share one more gate, applied first: a match
+    lying ENTIRELY inside a code span or a path-shaped token (`_excluded_spans`/
+    `_within_excluded_span`, #390) is skipped like an excluded signal, in title or body alike --
+    a citation is not a description of the work.
 
     The title is the text up to the first `\n`, taken LITERALLY: a leading blank line is an empty
     title, never stripped, because stripping would promote the body's first line to title (the very
@@ -557,15 +635,29 @@ def predict_with_location(goal_text, excludes=(), max_tier=_MAX_TIER_DEFAULT, *,
     title_end = len(t) if nl < 0 else nl
     cap = _price_rank(max_tier)
     floor = _TIER_PRICE_ORDER[min(_price_rank(_DEFAULT), cap)]
+    excluded_spans = _excluded_spans(t)
     for tier, pat in _PATTERNS:
         title_only = tier in _TITLE_ONLY_TIERS and not haiku_anywhere
+        body_multi = tier in _BODY_MULTI_TIERS
+        body_hits = []
         for m in re.finditer(pat, t):
             if title_only and m.end() > title_end:
                 break               # finditer is left-to-right: every later match is body too
-            if not _is_excluded(m.group(0), excludes):
-                where = "title" if m.start() < title_end else "body"
-                return (floor if _price_rank(tier) > cap else tier), m.group(0), where
-    return floor, None, None
+            lit = m.group(0)
+            if _is_excluded(lit, excludes):
+                continue
+            if _within_excluded_span(m.start(), m.end(), excluded_spans):
+                continue
+            in_title = m.start() < title_end
+            if body_multi and not in_title:
+                body_hits.append(m)
+                continue
+            where = "title" if in_title else "body"
+            return (floor if _price_rank(tier) > cap else tier), lit, where, 1
+        if body_multi and len(body_hits) >= _BODY_MULTI_MIN_HITS:
+            lit = body_hits[0].group(0)
+            return (floor if _price_rank(tier) > cap else tier), lit, "body", len(body_hits)
+    return floor, None, None, 0
 
 
 def predict(goal_text, excludes=(), max_tier=_MAX_TIER_DEFAULT):
@@ -685,8 +777,8 @@ def resolve_step(step_text, sdlc_dir=".sdlc", goal=None):
     cfg = _cfg(sdlc_dir)
     if _model_selection(cfg) != "auto":
         return None
-    tier, signal, _ = predict_with_location(step_text, signal_excludes(cfg), max_tier(cfg),
-                                            haiku_anywhere=True)   # #2827: step semantics kept
+    tier, signal, _, _ = predict_with_location(step_text, signal_excludes(cfg), max_tier(cfg),
+                                               haiku_anywhere=True)   # #2827: step semantics kept
     effort = predict_effort(step_text)
     resolve_host_model("codex", tier, _host_model_cfg(sdlc_dir), effort=effort)
     if goal is not None:
@@ -844,10 +936,12 @@ def main(argv):
     if len(argv) >= 3 and argv[1] == "why":
         _c = _cfg(argv[3] if len(argv) > 3 else ".sdlc")
         # #2827: `in=<title|body>` sits BEFORE `signal=` so the signal stays the free-text tail a
-        # repo copies (signals contain spaces: `dead code`, `race condition`).
-        tier, signal, where = predict_with_location(_read_goal(argv[2]), signal_excludes(_c),
-                                                    max_tier(_c))
-        print(f"model={tier} in={where} signal={signal}" if signal else f"model={tier} signal=")
+        # repo copies (signals contain spaces: `dead code`, `race condition`). #390: `hits=<n>`
+        # sits between them, same reason -- never inside the free-text tail.
+        tier, signal, where, hits = predict_with_location(_read_goal(argv[2]), signal_excludes(_c),
+                                                          max_tier(_c))
+        print(f"model={tier} in={where} hits={hits} signal={signal}" if signal
+              else f"model={tier} signal=")
         return 0
     if len(argv) < 2 or argv[1] in ("resolve", "resolve-step", "why"):
         print(USAGE, file=sys.stderr)

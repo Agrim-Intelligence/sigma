@@ -2352,9 +2352,12 @@ def test_next_pick_with_an_empty_title_never_promotes_the_body_first_line(capsys
 
 
 def test_why_line_parser_keeps_a_spaced_signal_and_drops_the_location():
+    """#390: `predict.py why` prints `hits=<n>` between `in=<where>` and `signal=`, always together
+    with `in=` (both or neither) -- this fixture is the exact shape a 2+-hit body match prints."""
     lp = _loop()
-    m = lp._WHY_LINE.match("model=opus in=body signal=race condition")
+    m = lp._WHY_LINE.match("model=opus in=body hits=2 signal=race condition")
     assert m and m.group("model") == "opus" and m.group("signal") == "race condition"
+    assert m.group("where") == "body" and m.group("hits") == "2"
     m = lp._WHY_LINE.match("model=sonnet signal=")
     assert m and m.group("model") == "sonnet" and m.group("signal") == ""
 
