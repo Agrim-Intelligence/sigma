@@ -95,9 +95,12 @@ def test_doc_records_the_api_docs_checked_with_a_date():
                    for line in section.splitlines()), needle
 
 
-def test_team_slug_matches_codeowners():
-    owners = re.findall(r"@[\w.-]+/([\w.-]+)", _read(CODEOWNERS))
-    assert _verifier().DEFAULT_TEAM in owners
+def test_codeowners_names_people_not_the_organisation_team():
+    """The public repository is a new repo in no team's scope: CODEOWNERS names the two owners (owner
+    decision 2026-10-12), so no `@org/team` handle can be left dangling in the export."""
+    lines = [l.split() for l in _read(CODEOWNERS).splitlines() if l.strip() and not l.startswith("#")]
+    assert lines and lines[0][0] == "*" and set(lines[0][1:]) == {"@swapnil-agrim", "@mstomar-ag"}
+    assert not re.search(r"@[\w.-]+/[\w.-]+", _read(CODEOWNERS))
 
 
 def test_doc_states_item_four_is_outstanding():
