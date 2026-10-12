@@ -65,7 +65,7 @@ def _load(path, name):
     return mod
 
 
-SRC_URL = "https://github.com/fake-src-org/fake-src-repo.git"  # the fixture's private source remote
+SRC_URL = "https://github.com/acme/fake-src-repo.git"  # the fixture's private source remote
 
 
 def _tool():
@@ -1089,7 +1089,7 @@ def test_issue_template_slug_reads_the_ssh_form(tmp_path):
 # ------------------------------------------------------------------------------ the source's own slug (#1204)
 
 def _fake_slug():
-    return "fake-src-org" + "/" + "fake-src-repo"  # assembled at run time: no literal slug in the file
+    return "acme" + "/" + "fake-src-repo"  # assembled at run time: no literal slug in the file
 
 
 @pytest.mark.parametrize("rel,text", [
@@ -1113,16 +1113,120 @@ def test_source_slug_in_any_exported_file_type_rejects(tmp_path, capsys, rel, te
     assert _fake_slug().split("/")[1] not in out + err + _md(fields)
 
 
-def test_source_slug_in_a_path_rejects_and_a_longer_name_does_not(tmp_path, capsys):
+def _findings(tmp_path, capsys, extra, argv_extra=(), repo_kw=None):
     mod = _tool()
-    repo, sha = _fixture(tmp_path, extra={
-        "docs/" + _fake_slug().replace("/", "_") + ".md": "no slug in the text\n",
-        "docs/" + _fake_slug() + "/x.md": "a slug as a path\n",
-        "CODEOWNERS": "* @%s-maintainers\nsee %sloop and %s-x and %s_y\n" % ((_fake_slug(),) * 4)})
-    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha))
+    repo, sha = _fixture(tmp_path, extra=extra, **(repo_kw or {}))
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha, extra=list(argv_extra)))
+    return rc, out, err, repo
+
+
+def test_source_slug_in_a_path_rejects_and_an_alphanumeric_neighbour_does_not(tmp_path, capsys):
+    S = _fake_slug()
+    rc, out, err, _ = _findings(tmp_path, capsys, {
+        "docs/a-" + S + "/x.md": "a slug as a path\n",          # '-' neighbour: a hit
+        "docs/" + S.replace("/", "_") + ".md": "no slug here\n",   # the name is not in this path as one token
+        "docs/x" + S + "2/y.md": "alnum on both sides: another name\n"})
     assert rc == 1, err
     found = _report(_fields(out))["scans"]["builder"]["findings"]
-    assert [(f["rule"], f["path"], f["line"]) for f in found] == [("source-slug", "docs/[redacted: pattern 0]/x.md", 0)]  # the path is redacted in the report
+    # the bare repo name is scanned too (long and distinctive), so the underscore form is a hit as well
+    assert sorted((f["rule"], f["path"], f["line"]) for f in found) == [
+        ("source-slug", "docs/a-[redacted: pattern 0]/x.md", 0), ("source-slug", "docs/acme_[redacted: pattern 0].md", 0)]
+
+
+def test_boundary_hits_and_non_hits_are_pinned_both_ways(tmp_path, capsys):
+    """'-', '_', '.', '/', '#' and a quote beside the name flag; only an ALPHANUMERIC neighbour (a longer
+    name such as the public repository's) does not."""
+    S = _fake_slug()
+    hits = ["_%s_" % S, "_%s" % S, "%s_" % S, "%s-" % S, "-%s" % S, "x.%s" % S, "%s." % S, "%s/y" % S,
+            "%s#7" % S, "'%s'" % S, "%s-public" % S, "@%s-maintainers" % S, "https://github.com/%s.git" % S]
+    misses = ["%sloop" % S, "%s2" % S, "%sX" % S]   # a longer name; "x"+owner would still hit via the bare name
+    text = "\n".join(hits + misses) + "\n"
+    rc, out, err, _ = _findings(tmp_path, capsys, {"docs/b.md": text})
+    assert rc == 1, err
+    found = _report(_fields(out))["scans"]["builder"]["findings"]
+    assert [f["line"] for f in found] == list(range(1, len(hits) + 1))
+
+
+EVASIONS = {
+    "escaped": "{o}\\/{n}", "pct": "{o}%2F{n}", "pct-lower": "{o}%2f{n}", "dec-entity": "{o}&#47;{n}",
+    "hex-entity": "{o}&#x2F;{n}", "named-entity": "{o}&sol;{n}", "py-escape": "{o}\\x2f{n}", "u-escape": "{o}\\u002f{n}",
+    "fullwidth": "{o}\uff0f{n}", "zero-width": "{o}/\u200b{n}", "soft-hyphen": "{o}/\u00ad{n}",
+    "bidi": "{o}\u202e/{n}", "mixed-case": "{O}/{N}",
+    "wrap-after-slash": "{o}/\n{n}", "wrap-before-slash": "{o}\n/{n}", "wrap-quoted": "> {o}/\n> {n}",
+    "json-escaped-break": '{{"u": "{o}/\\n{n}"}}', "json-escaped-break-before": '"{o}\\r\\n/{n}"',
+    "wrap-indented": "see {o}/\n    {n}", "wrap-comment": "# {o}/\n# {n}",
+}
+
+
+@pytest.mark.parametrize("kind", sorted(EVASIONS))
+def test_an_obscured_or_wrapped_name_is_still_found(tmp_path, capsys, kind):
+    """Red on the scan before this change, which matched the literal text of one line only."""
+    o, n = _fake_slug().split("/")
+    text = "before\n" + EVASIONS[kind].format(o=o, n=n, O=o.upper(), N=n.title()) + "\nafter\n"
+    rc, out, err, _ = _findings(tmp_path, capsys, {"docs/e.md": text})
+    assert rc == 1, (kind, err)
+    found = _report(_fields(out))["scans"]["builder"]["findings"]
+    assert [(f["rule"], f["path"]) for f in found] == [("source-slug", "docs/e.md")], kind
+    assert n not in out + err
+
+
+def test_unrelated_text_with_the_same_shapes_is_clean(tmp_path, capsys):
+    text = "other/thing and a&#47;b and x%2Fy and p\\/q\nline one/\nline two\n\u200bzero width alone\n"
+    rc, out, err, _ = _findings(tmp_path, capsys, {"docs/e.md": text})
+    assert rc == 0, err
+
+
+def test_the_bare_repo_name_is_scanned_when_long_and_distinctive_only(tmp_path, capsys):
+    rc, out, err, _ = _findings(tmp_path, capsys, {"docs/a.md": "other-org/fake-src-repo and fake-src-repo alone\n"})
+    assert rc == 1, err
+    assert [f["line"] for f in _report(_fields(out))["scans"]["builder"]["findings"]] == [1]
+    # a short or plain name (the product's own name is one) is NOT scanned bare: documented, not covered
+    mod = _tool()
+    repo, sha = _fixture(tmp_path, extra={"docs/a.md": "the demo app and demo-app\n"}, name="short")
+    _git(repo, "config", "remote.origin.url", "https://github.com/acme/demo.git")
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "o2")))
+    assert rc == 0, err
+
+
+def test_a_fork_remote_without_repo_is_refused_and_with_repo_the_real_name_is_scanned(tmp_path, capsys):
+    """Red on the old builder: the fork's name was derived, the real name planted passed (rc 0)."""
+    mod = _tool()
+    defn = {"docs/launch/definition.json": json.dumps({"public_repo": "acme/public-thing"})}
+    repo, sha = _fixture(tmp_path, extra=dict(defn, **{"docs/a.md": "see %s here\n" % _fake_slug()}))
+    _git(repo, "config", "remote.origin.url", "https://github.com/forker/fake-src-repo.git")
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha))
+    assert rc == 2 and out == "" and "REFUSED [source-slug-owner-mismatch]" in err, err
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "o2"),
+                                             extra=["--repo", _fake_slug()]))
+    assert rc == 1, err
+    assert _report(_fields(out))["scans"]["source_slug"]["slugs"] == 2     # --repo AND the fork remote
+    # a second remote is scanned too, and the owner check holds for it
+    _git(repo, "remote", "add", "upstream", "https://github.com/%s.git" % _fake_slug())
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "o3")))
+    assert rc == 2 and "REFUSED [source-slug-owner-mismatch]" in err
+
+
+def test_a_reviewed_line_may_carry_a_sibling_name_and_nothing_else_may(tmp_path, capsys):
+    mod = _tool()
+    line = "* @%s-maintainers" % _fake_slug()
+    entry = {"path": "CODEOWNERS", "rule": "source-slug", "reason": "the organisation's team handle, valid in the public repository",
+             "lines": [_lh(line)]}
+    files = {"CODEOWNERS": line + "\n",
+             "docs/launch/public-tree-dispositions.json": _disposition_file([entry])}
+    repo, sha = _fixture(tmp_path, extra=files)
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha))
+    assert rc == 0, err
+    # the same entry no longer covers an edited line, and a second hit in the file is not covered
+    files["CODEOWNERS"] = line + "\nand %s again\n" % _fake_slug()
+    repo2, sha2 = _fixture(tmp_path, extra=files, name="src2")
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo2, sha2, out=_out(tmp_path, "o2")))
+    assert rc == 1, err
+    # a path hit has no line hash: an entry cannot cover it
+    files2 = {"docs/%s-x/y.md" % _fake_slug(): "x\n", "docs/launch/public-tree-dispositions.json": _disposition_file(
+        [dict(entry, path="docs/%s-x/y.md" % _fake_slug())])}
+    repo3, sha3 = _fixture(tmp_path, extra=files2, name="src3")
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo3, sha3, out=_out(tmp_path, "o3")))
+    assert rc == 1, err
 
 
 def test_clean_tree_with_a_derived_slug_is_verified_and_counts_the_scan(tmp_path, capsys):
@@ -1145,17 +1249,6 @@ def test_repo_flag_adds_a_slug_and_no_derivable_slug_is_refused(tmp_path, capsys
     assert _report(_fields(out))["scans"]["source_slug"]["findings"] == 1
 
 
-def test_a_source_slug_finding_cannot_be_dispositioned(tmp_path, capsys):
-    mod = _tool()
-    entry = {"path": "docs/a.md", "rule": "source-slug", "reason": "x", "lines": ["0" * 64]}
-    repo, sha = _fixture(tmp_path, extra={
-        "docs/a.md": "see %s\n" % _fake_slug(),
-        "docs/launch/public-tree-dispositions.json": json.dumps(
-            {"schema": "sigma.public-tree-dispositions/v1", "entries": [entry]})})
-    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha))
-    assert rc == 2 and "REFUSED [dispositions-malformed]" in err
-
-
 # ------------------------------------------------------------------------------ information disclosure (builder output)
 
 def _all_text(tmp_path, fields, so, se):
@@ -1169,7 +1262,7 @@ def test_a_slug_in_a_path_is_redacted_from_every_output_and_the_report(tmp_path,
     rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, extra=["--repo", _fake_slug()]))
     assert rc == 1, se
     text = _all_text(tmp_path, _fields(so), so, se)
-    assert "fake-src-repo" not in text and "fake-src-org" not in text
+    assert "fake-src-repo" not in text and "acme" not in text
     assert "[redacted: pattern 0]" in text
 
 
@@ -1191,7 +1284,7 @@ def test_the_export_git_directory_and_outputs_name_no_operator_path_host_or_sour
     rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, extra=["--repo", _fake_slug()]))
     assert rc == 0, se
     export = _out(tmp_path)
-    needles = [str(tmp_path), os.environ["HOME"], _fake_slug().lower(), "fake-src-org"]
+    needles = [str(tmp_path), os.environ["HOME"], _fake_slug().lower(), "acme"]
     for path in (export / ".git").rglob("*"):
         if path.is_file() and "objects" not in path.parts:
             data = path.read_text(encoding="utf-8", errors="replace").lower()

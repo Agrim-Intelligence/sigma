@@ -82,7 +82,7 @@ The refusal codes: `windows`, `no-patterns-source`, `patterns-inside-work-tree`,
 `not-a-repo`, `bad-commit`, `bad-version` (the plugin version is not a plain `N.N.N[-alpha|beta|rc[.N]]` number, or the export commit message matches a content rule: the version enters the commit message, which no file scan reads), `object-format`, `bad-exclude`, `exclude-matches-nothing`, `symlink`,
 `gitlink`, `bad-mode`, `bad-path`, `secret-file-name`, `case-collision` (two paths equal after
 case folding and Unicode NFC normalisation), `head-not-commit`,
-`dirty`, `tool-mismatch`, `tool-missing`, `no-remote-ref`, `not-landed`, `repo-required`, `bad-slug`, `source-slug-unknown`, `report-dir-inside-out`,
+`dirty`, `tool-mismatch`, `tool-missing`, `no-remote-ref`, `not-landed`, `repo-required`, `bad-slug`, `source-slug-unknown`, `source-slug-owner-mismatch`, `report-dir-inside-out`,
 `gh-failed`, `review-repo-public`, `not-pr-merged`, `not-owner-merged`, `dispositions-malformed`,
 `tree-mismatch`, `oversize`, `binary`, `non-utf8`, `report-exists`, `unpublish-failed`,
 `work-tree-unknown`, `git-failed`, `bad-ref`, `bad-timeout`, `leak-scan-absent` (the commit holds
@@ -151,13 +151,31 @@ VERIFIED, so read that field. The report prints, in `not_covered`, what the scan
 - destination GitHub state beyond what `python3 tools/verify_public_repo.py` counts;
 
 The four scans are: `builder` (the header rule `private-key-header`, the placeholder rule
-`owner-placeholder`, the rule `source-slug`: the source repository's own `OWNER/NAME`, derived from
-`--repo` and from the GitHub URL of the `--remote` remote (never typed into a file), found in any case
-in any exported file's text or path, as a whole name, so a longer name such as a team handle or the
-public repository's own is not a hit; it is NOT in `CONTENT_RULES`, so no disposition can wave it
-through: fix the source text, using `OWNER/NAME` in examples, #1204. A build whose source name cannot be
-derived is refused `source-slug-unknown`. The patterns file never held that name, which is why the
-other scans missed it. Measured: 13 files named it before the fix, 0 after), the doctor marketplace slug against `docs/launch/definition.json`, and every
+`owner-placeholder`, the rule `source-slug`: the source repository's own `OWNER/NAME`, found in any exported file's text or
+path. Names come from `--repo` and from EVERY remote's GitHub URL (a fork beside the real remote is
+scanned too), never typed into a file. Without `--repo`, a remote whose owner is not the owner of
+`public_repo` in `docs/launch/definition.json` is a fork or foreign clone and is refused
+`source-slug-owner-mismatch`: pass `--repo OWNER/NAME` naming the source (a fork inside the same owner
+cannot be told apart, so name the source with `--repo` there). The bare repository NAME is scanned too
+when it is long and distinctive (8 or more characters with a `-`, `_`, `.` or digit); a short or plain
+name, the product's own among them, is not, because it would flag the public text. Matching rule: a
+name is a hit unless an ALPHANUMERIC touches it on either side (a longer, different name such as the
+public repository's own is no hit); `-`, `_`, `.`, `/`, `#` or a quote beside it still is, so a sibling
+whose name starts with the source's (a team handle, a drill repository) is a finding. Text is matched
+after NFKC, with zero-width, soft-hyphen and bidi characters dropped, `\/`, `%2F`, `&#47;`, `&#x2F;`,
+`&sol;`, `\x2f` and `\u002f` read as `/`, and a name split over a line break (a markdown quote or comment
+leader may follow it) joined. A sibling or a team handle that is legitimate is dispositioned by exact line
+in `docs/launch/public-tree-dispositions.json` (rule `source-slug`: reviewed lines only, counted; a path hit carries no
+line and cannot be covered). Not covered, by design: base64, hex or URL-double-encoded text, look-alike
+letters from other scripts (NFKC folds compatibility forms only), the name spelled with inserted
+ordinary characters, a name split over more than one line break, the bare short repository name, and
+text in a tree built with `--sdlc include` (the `.sdlc` records name the source and the build is then
+REJECTED until each is dispositioned or removed). A build whose name cannot be derived is refused
+`source-slug-unknown`. The patterns file never held that name, which is why the other scans missed it.
+Measured: 13 files named it before the fix, 0 after; with the wider rule 4 shipped files name a sibling
+and are dispositioned by line (the maintainers team handle in `.github/CODEOWNERS`; throwaway drill repositories in
+`docs/launch/evidence/blast-radius-2026-10-04.json`, `live-onboarding-2026-10-12.md`, `docs/onboarding-control.md`); 19 more tracked
+files in `.sdlc/` carry it and are excluded by default), the doctor marketplace slug against `docs/launch/definition.json`, and every
 `github.com/<owner>/<repo>` in `.github/ISSUE_TEMPLATE/config.yml` against the same `public_repo`: a
 check, not a rewrite, rule `issue-template-slug-mismatch`/`-unverifiable`; a bare `owner/repo` with no
 `github.com` and the sibling templates are not read),

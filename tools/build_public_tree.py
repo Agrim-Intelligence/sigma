@@ -69,7 +69,7 @@ REPORT_SUFFIX_TRIES = 100
 DEFAULT_REPORT_DIR = "~/.sigma-ops/public-tree"
 ENV_PATTERNS = "SIGMA_LEAK_PATTERNS"
 LEVELS = ("clean", "landed", "pr-merged", "owner-merged")
-CONTENT_RULES = ("private-key-header", "owner-placeholder")
+CONTENT_RULES = ("private-key-header", "owner-placeholder", "source-slug")
 STDERR_CUT = 200
 #: The running copies whose bytes are compared with the commit's (step 7).
 TOOL_PATHS = ("tools/build_public_tree.py", "tools/leak_refs.py", "tools/readiness/exposure_scan.py",
@@ -343,26 +343,67 @@ def _references_rx(excluded):
     return re.compile("|".join(re.escape(p) for p in alternatives))
 
 
-def source_slug_rx(slugs):
-    """-> a compiled regex for the source repository's own OWNER/NAME (any case, a whole name: not a
-    longer one such as a team or a sibling repository), or None for no slug. The patterns file is the
-    owner's list of names; the source's own name is derived from its remote, so a mention of it cannot
-    be missed for being absent from that list (#1204)."""
-    if not slugs:
-        return None
-    alt = "|".join(re.escape(x) for x in sorted(set(slugs), key=lambda x: (-len(x), x)))
-    return re.compile(r"(?<![A-Za-z0-9_.-])(?:%s)(?![A-Za-z0-9_-])" % alt, re.I)
+_ESCAPED_SLASH = re.compile(r"\\+/|%2f|&#0*47;|&#x0*2f;|&sol;|\\x2f|\\u002f|\\057", re.I)
+_BREAK_AROUND_SLASH = re.compile(r"/[ \t]*\n[ \t]*(?:#|//|\*|>)?[ \t]*|[ \t]*\n[ \t]*(?:#|//|\*|>)?[ \t]*/")
 
 
-def materialise(src_root, entries, dest, excluded=(), slug_rx=None):
+_LITERAL_BREAK = re.compile(r"/(?:\\r)?\\n[ \t]*|(?:\\r)?\\n[ \t]*/")  # a line break written as the two characters \n
+
+
+def _normalise(text):
+    """What the slug rule matches against: NFKC (full-width and compatibility forms fold), format
+    characters (zero-width, soft hyphen, bidi) dropped, and a slash written as an escape or entity
+    turned back into `/`."""
+    text = unicodedata.normalize("NFKC", text)
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+    return _LITERAL_BREAK.sub("/", _ESCAPED_SLASH.sub("/", text))
+
+
+class SlugScan(object):
+    """The source repository's own names: every OWNER/NAME it is known by, and its bare NAME when that
+    is long and distinctive (>= 8 characters with a `-`, `_`, `.` or digit: a short or plain word such
+    as the product's own name would flag the public text). A name is a hit unless an ALPHANUMERIC
+    touches it on either side (a different, longer name such as the public repository's); `-`, `_`,
+    `.`, `/` or any other neighbour is a hit, so `x-NAME`, `NAME_y` and `a.OWNER/NAME` count. Text is
+    matched after `_normalise`, and a name split over a line break is joined (#1204)."""
+
+    def __init__(self, slugs):
+        names = set(x.lower() for x in slugs)
+        bare = set(x.split("/", 1)[1] for x in names if "/" in x)
+        names |= set(x for x in bare if len(x) >= 8 and re.search(r"[-_.0-9]", x))
+        alt = "|".join(re.escape(x) for x in sorted(names, key=lambda x: (-len(x), x)))
+        core = r"(?<![A-Za-z0-9])(?:%s)(?![A-Za-z0-9])" % alt
+        self.rx = re.compile(core, re.I)           # raw text: the output belt redacts with it
+        self.sub = self.rx.sub
+
+    def in_path(self, path):
+        return self.rx.search(_normalise(path)) is not None
+
+    def line_numbers(self, text):
+        """-> the 1-based lines of `text` naming the source (a name split over two lines is put on
+        the second)."""
+        lines = text.split("\n")
+        single = [self.rx.search(_normalise(line)) is not None for line in lines]
+        found = [n for n, hit in enumerate(single, 1) if hit]
+        for n in range(1, len(lines)):
+            if single[n - 1] or single[n]:
+                continue
+            joined = _BREAK_AROUND_SLASH.sub("/", _normalise(lines[n - 1].rstrip("\r") + "\n" + lines[n]))
+            if self.rx.search(joined) is not None:
+                found.append(n + 1)
+        return sorted(found)
+
+
+def materialise(src_root, entries, dest, excluded=(), slug_scan=None):
     """Write `entries` [(path, mode, blob_hex)] of the source repository at `src_root` under `dest`
     through ONE `git cat-file --batch`, request-response, memory bounded by one blob. Refuses
     `[oversize]` (before reading), `[binary]` and `[non-utf8]`. Files are created 0600 with O_EXCL
     and then chmod-ed 0644/0755 (never the umask's choice). -> {files, bytes, modes, findings,
     references_remaining}: findings are the content rules' hits, one per matching line;
     references_remaining maps each excluded path to the number of exported lines naming it.
-    `slug_rx` (source_slug_rx) adds the `source-slug` rule over every line and every path; it has no
-    disposition (CONTENT_RULES omits it), so a mention is fixed in the source, never waved through."""
+    `slug_scan` (SlugScan) adds the `source-slug` rule over every line and every path. A path hit
+    carries no blob and no line hash, so no disposition can cover it; a line hit can be covered only by
+    a reviewed line of its own file."""
     dest = str(dest)
     os.makedirs(dest, mode=0o700, exist_ok=True)
     refs_rx = _references_rx([str(p) for p in excluded])
@@ -381,8 +422,8 @@ def materialise(src_root, entries, dest, excluded=(), slug_rx=None):
             if size > MAX_BLOB_BYTES:
                 raise Refused("oversize", "a planned blob is %d bytes, over the %d-byte cap" % (size, MAX_BLOB_BYTES))
             data = _read_exact(proc.stdout, size + 1)[:size]
-            if slug_rx is not None and slug_rx.search(path):
-                findings.append({"rule": "source-slug", "path": path, "line": 0, "blob": oid, "line_sha256": None})
+            if slug_scan is not None and slug_scan.in_path(path):
+                findings.append({"rule": "source-slug", "path": path, "line": 0, "blob": None, "line_sha256": None})
             if b"\0" in data:
                 raise Refused("binary", "a planned blob holds a NUL byte")
             try:
@@ -390,14 +431,18 @@ def materialise(src_root, entries, dest, excluded=(), slug_rx=None):
             except UnicodeDecodeError:
                 raise Refused("non-utf8", "a planned blob is not UTF-8")
             for number, line in enumerate(text.split("\n"), 1):
-                for rule, rx in (("private-key-header", KEY_HEADER), ("owner-placeholder", OWNER_PLACEHOLDER),
-                                 ("source-slug", slug_rx)):
-                    if rx is not None and rx.search(line):
+                for rule, rx in (("private-key-header", KEY_HEADER), ("owner-placeholder", OWNER_PLACEHOLDER)):
+                    if rx.search(line):
                         findings.append({"rule": rule, "path": path, "line": number, "blob": oid,
                                          "line_sha256": hashlib.sha256(line.encode("utf-8")).hexdigest()})
                 if refs_rx is not None:
                     for named in set(m.group(0) for m in refs_rx.finditer(line)):
                         references[named] += 1
+            if slug_scan is not None:
+                lines = text.split("\n")
+                for number in slug_scan.line_numbers(text):
+                    findings.append({"rule": "source-slug", "path": path, "line": number, "blob": oid,
+                                     "line_sha256": hashlib.sha256(lines[number - 1].encode("utf-8")).hexdigest()})
             target = os.path.join(dest, *path.split("/"))
             os.makedirs(os.path.dirname(target), exist_ok=True)
             fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -831,16 +876,29 @@ def _disposition_covers(entries, findings):
     return uncovered, used
 
 
-def _source_slugs(args, src):
-    """-> the source repository's OWNER/NAME names (lower case): --repo, and the GitHub slug of the
-    remote named by --remote."""
+def _source_slugs(args, src, definition_raw):
+    """-> the source repository's OWNER/NAME names (lower case): --repo, and the GitHub slug of EVERY
+    remote (url and pushurl), so a fork next to the real remote is scanned too. Without --repo, a
+    remote whose owner is not the owner of `public_repo` in docs/launch/definition.json (the
+    organisation that publishes this repository) is a fork or a foreign clone: refused
+    `source-slug-owner-mismatch`, because its name is then not the source's."""
     found = set([args.repo.lower()]) if args.repo else set()
-    _rc, url = _git(src, "config", "--get", "remote.%s.url" % args.remote, allow=True)
-    match = _GITHUB_REPO_RX.search(url or "")
-    if match:
-        name = re.sub(r"\.git$", "", match.group(2), flags=re.I)
-        found.add(("%s/%s" % (match.group(1), name)).lower())
-    return sorted(found)
+    derived = set()
+    _rc, out = _git(src, "config", "--get-regexp", r"^remote\..*\.(url|pushurl)$", allow=True)
+    for line in (out or "").splitlines():
+        match = _GITHUB_REPO_RX.search(line.partition(" ")[2])
+        if match:
+            derived.add(("%s/%s" % (match.group(1), re.sub(r"\.git$", "", match.group(2), flags=re.I))).lower())
+    try:
+        public = json.loads(definition_raw.decode("utf-8")).get("public_repo") if definition_raw else None
+    except (UnicodeDecodeError, ValueError, AttributeError):
+        public = None
+    if not args.repo and isinstance(public, str) and "/" in public:
+        foreign = sorted(x for x in derived if x.split("/")[0] != public.split("/")[0].lower())
+        if foreign:
+            raise Refused("source-slug-owner-mismatch", "a remote of the source belongs to another owner than "
+                          "public_repo's: it may be a fork. Pass --repo OWNER/NAME naming the source itself")
+    return sorted(found | derived)
 
 
 def _doctor_slug(partial, definition_raw, blobs):
@@ -1301,12 +1359,12 @@ def _main(argv, run, state):
     allow_live = [e for e in allow_entries if not _under(e["path"], names)]
 
     # 9b. the source's own name, derived (never typed into a file): the export must not carry it
-    slugs = _source_slugs(args, src)
+    slugs = _source_slugs(args, src, definition_raw)
     if not slugs:
         raise Refused("source-slug-unknown", "the source's own OWNER/NAME cannot be derived: pass --repo, or "
                       "give the source a GitHub remote named by --remote, so the export can be scanned for it")
-    slug_rx = source_slug_rx(slugs)
-    state.patterns = state.patterns + [(0, slug_rx)]  # pattern 0: the output belt redacts it too (path findings)
+    slug_scan = SlugScan(slugs)
+    state.patterns = state.patterns + [(0, slug_scan)]  # pattern 0: the output belt redacts it too (path findings)
 
     # 10. the planned tree, twice
     tmp = tempfile.mkdtemp(prefix="build_public_tree-")
@@ -1334,7 +1392,7 @@ def _main(argv, run, state):
     os.mkdir(str(partial), 0o700)
     state.partial = partial
     excluded_paths = [path for path, _row in excluded_rows]
-    mat = materialise(src, plan, partial, excluded_paths, slug_rx)
+    mat = materialise(src, plan, partial, excluded_paths, slug_scan)
     actual_disk = disk_tree(partial)
     if actual_disk != planned_py:
         raise Refused("tree-mismatch", "the files on disk are not the planned tree")

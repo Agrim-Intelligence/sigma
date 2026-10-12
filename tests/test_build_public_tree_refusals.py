@@ -111,7 +111,7 @@ def _fixture(tmp_path, extra=None, name="src"):
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "fixture", env_extra=_DATES)
     _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
-    _git(repo, "config", "remote.origin.url", "https://github.com/fake-src-org/fake-src-repo.git")
+    _git(repo, "config", "remote.origin.url", "https://github.com/acme/fake-src-repo.git")
     return repo, _git(repo, "rev-parse", "HEAD")
 
 
@@ -131,7 +131,7 @@ def _plumb(repo, entries):
         _git(repo, "update-index", "--add", "--cacheinfo", "%s,%s,%s" % (mode, oid, path))
     _git(repo, "commit", "-q", "-m", "plumbing", env_extra=_DATES)
     _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
-    _git(repo, "config", "remote.origin.url", "https://github.com/fake-src-org/fake-src-repo.git")
+    _git(repo, "config", "remote.origin.url", "https://github.com/acme/fake-src-repo.git")
     return _git(repo, "rev-parse", "HEAD")
 
 
