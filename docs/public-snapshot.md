@@ -187,6 +187,13 @@ Every build is REJECTED until the owner fills the two owner-name placeholders in
 `CODE_OF_CONDUCT.md`: the placeholder is a finding, not a pre-materialisation refusal, so one run
 still reports every other scan.
 
+## What was and was not measured
+
+Every export built so far for rehearsal and for these controls used `--review-level clean` (the checkout
+is clean and at the commit); none used `pr-merged` or `owner-merged`, which need `--repo` and REST calls
+and were not run. A real go-public build uses the documented gesture above, with its `--review-level`
+default and `--repo`.
+
 ## What the builder's own output may disclose
 
 Measured against a real export and pinned in `tests/test_build_public_tree.py`: the report (JSON and
