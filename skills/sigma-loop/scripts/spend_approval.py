@@ -187,8 +187,19 @@ def _counter_write(sdlc_dir, data):
     p = _counter_path(sdlc_dir)
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(p.name + ".%d.tmp" % os.getpid())
-    tmp.write_text(json.dumps(data, sort_keys=True), encoding="utf-8")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(data, sort_keys=True))
+        fh.flush()
+        os.fsync(fh.fileno())               # a power loss must not leave a truncated used-set behind the rename
     os.replace(tmp, p)
+    try:                                    # make the rename itself durable where the platform allows it
+        dfd = os.open(str(p.parent), os.O_RDONLY)
+        try:
+            os.fsync(dfd)
+        finally:
+            os.close(dfd)
+    except OSError:
+        pass
 
 
 def _tomb(key):

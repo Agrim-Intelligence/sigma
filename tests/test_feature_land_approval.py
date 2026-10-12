@@ -288,6 +288,58 @@ def test_old_approvals_and_markers_are_pruned_on_approve_and_recent_ones_are_not
     assert mod.consume(OPEN, tmp_path, "voice", SLUG, HEAD, now=past)["ok"] is False  # the fresh one is single use
 
 
+def _pruner():
+    import importlib.util
+    path = SCRIPTS / "feature_land_approval_prune.py"
+    spec = importlib.util.spec_from_file_location("fla_prune", path)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def test_the_grace_is_pinned_to_thirty_days_and_thirty_times_the_longest_ttl():
+    mod = load()
+    assert mod.PRUNE_GRACE_SECONDS == 30 * 86400
+    assert mod.PRUNE_GRACE_SECONDS == 30 * mod.MAX_TTL_SECONDS
+
+
+def test_an_orphan_marker_is_kept_until_the_grace_plus_the_longest_ttl(tmp_path):
+    import os
+    pr = _pruner()
+    grace, ttl = 1000, 100
+    marker = tmp_path / ("a" * 40 + ".used")
+    marker.write_text("")
+    os.utime(marker, (5000, 5000))
+    assert pr.prune(tmp_path, 5000 + grace + ttl, grace, ttl) == 0 and marker.exists()      # exactly at the bound
+    assert pr.prune(tmp_path, 5000 + ttl + 1, grace, ttl) == 0 and marker.exists()          # grace is part of the bound
+    assert pr.prune(tmp_path, 5000 + grace + ttl + 1, grace, ttl) == 1 and not marker.exists()
+
+
+def test_a_malformed_record_ages_from_its_mtime_plus_the_longest_ttl(tmp_path):
+    import os
+    pr = _pruner()
+    grace, ttl = 1000, 100
+    record = tmp_path / ("b" * 40 + ".json")
+    record.write_text("not json")
+    os.utime(record, (5000, 5000))
+    assert pr.prune(tmp_path, 5000 + ttl + grace, grace, ttl) == 0 and record.exists()
+    assert pr.prune(tmp_path, 5000 + ttl + grace + 1, grace, ttl) == 1 and not record.exists()
+
+
+def test_a_deeply_nested_planted_record_cannot_crash_approve_or_consume(tmp_path):
+    """A planted <40 hex>.json of 200,000 brackets makes json.loads raise RecursionError, which is neither OSError
+    nor ValueError: it must neither escape `approve` (after its own record is written) nor `consume`."""
+    mod = load()
+    d = tmp_path / "state" / "unit-approvals"
+    assert approve(mod, tmp_path, head=HEAD, now=1000)["ok"]
+    (d / ("e" * 40 + ".json")).write_text("[" * 200000)
+    assert approve(mod, tmp_path, head=OTHER, now=2000)["ok"]                       # the prune reads the planted file
+    record, _ = mod.approval_path(tmp_path, SLUG, HEAD, "voice")
+    record.write_text("[" * 200000)                                                  # and the validator reads this one
+    out = mod.consume(OPEN, tmp_path, "voice", SLUG, HEAD, now=2000)
+    assert out["ok"] is False
+
+
 def test_prune_never_follows_a_symlink_or_touches_a_foreign_name(tmp_path):
     mod = load()
     d = tmp_path / "state" / "unit-approvals"

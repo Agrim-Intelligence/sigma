@@ -6,7 +6,7 @@
   },
   "repository_measurement": {
     "path": ".sdlc",
-    "revision": "d011d86a6bfc2bd15fcf9a726babe4f7dfb5eb9c",
+    "revision": "527d304c9f160b458982637862284059f00154ef",
     "size_bytes": 4130541
   },
   "rows": [
@@ -728,7 +728,7 @@
     {
       "pattern": ".sdlc/events",
       "source": "code",
-      "writer": "skills/sigma-loop/scripts/spend_approval.py:350"
+      "writer": "skills/sigma-loop/scripts/spend_approval.py:361"
     },
     {
       "pattern": ".sdlc/events",
@@ -843,7 +843,7 @@
     {
       "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
       "source": "code",
-      "writer": "skills/sigma-loop/scripts/spend_approval.py:350"
+      "writer": "skills/sigma-loop/scripts/spend_approval.py:361"
     },
     {
       "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
@@ -1378,7 +1378,7 @@
     {
       "pattern": ".sdlc/ledger/<stream>",
       "source": "code",
-      "writer": "skills/sigma-loop/scripts/spend_approval.py:350"
+      "writer": "skills/sigma-loop/scripts/spend_approval.py:361"
     },
     {
       "pattern": ".sdlc/ledger/<stream>",
@@ -1473,7 +1473,7 @@
     {
       "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
       "source": "code",
-      "writer": "skills/sigma-loop/scripts/spend_approval.py:350"
+      "writer": "skills/sigma-loop/scripts/spend_approval.py:361"
     },
     {
       "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
@@ -1953,7 +1953,12 @@
     {
       "pattern": ".sdlc/state",
       "source": "code",
-      "writer": "skills/sigma-loop/scripts/spend_approval.py:336"
+      "writer": "skills/sigma-loop/scripts/spend_approval.py:196"
+    },
+    {
+      "pattern": ".sdlc/state",
+      "source": "code",
+      "writer": "skills/sigma-loop/scripts/spend_approval.py:347"
     },
     {
       "pattern": ".sdlc/state",
@@ -3523,12 +3528,12 @@
     {
       "pattern": ".sdlc/state/spend-approval-used.json",
       "source": "code",
-      "writer": "skills/sigma-loop/scripts/spend_approval.py:191"
+      "writer": "skills/sigma-loop/scripts/spend_approval.py:194"
     },
     {
       "pattern": ".sdlc/state/spend-approval-used.json",
       "source": "code",
-      "writer": "skills/sigma-loop/scripts/spend_approval.py:336"
+      "writer": "skills/sigma-loop/scripts/spend_approval.py:347"
     },
     {
       "pattern": ".sdlc/state/supervisor.log",
@@ -4202,7 +4207,7 @@
     },
     {
       "decision": "capped",
-      "growth_event": "writer invoked (skills/sigma-loop/scripts/comment_watch.py:141, skills/sigma-loop/scripts/drift_watch.py:404, skills/sigma-loop/scripts/handoff.py:486, skills/sigma-loop/scripts/ledger.py:1578, skills/sigma-loop/scripts/loop.py:1760, skills/sigma-loop/scripts/loop.py:5214, skills/sigma-loop/scripts/loop.py:5244, skills/sigma-loop/scripts/loop.py:5261, skills/sigma-loop/scripts/loop.py:5365, skills/sigma-loop/scripts/phase_report.py:2047, skills/sigma-loop/scripts/phase_report.py:2053, skills/sigma-loop/scripts/phase_report.py:2069, skills/sigma-loop/scripts/spend_approval.py:350, skills/sigma-loop/scripts/work.py:6965, skills/sigma-loop/scripts/work.py:985, skills/sigma-scope/scripts/assign.py:574)",
+      "growth_event": "writer invoked (skills/sigma-loop/scripts/comment_watch.py:141, skills/sigma-loop/scripts/drift_watch.py:404, skills/sigma-loop/scripts/handoff.py:486, skills/sigma-loop/scripts/ledger.py:1578, skills/sigma-loop/scripts/loop.py:1760, skills/sigma-loop/scripts/loop.py:5214, skills/sigma-loop/scripts/loop.py:5244, skills/sigma-loop/scripts/loop.py:5261, skills/sigma-loop/scripts/loop.py:5365, skills/sigma-loop/scripts/phase_report.py:2047, skills/sigma-loop/scripts/phase_report.py:2053, skills/sigma-loop/scripts/phase_report.py:2069, skills/sigma-loop/scripts/spend_approval.py:361, skills/sigma-loop/scripts/work.py:6965, skills/sigma-loop/scripts/work.py:985, skills/sigma-scope/scripts/assign.py:574)",
       "pattern": ".sdlc/events",
       "pruner_or_cap": "ledger.prune_journal: deletes journal files idle 30 days, from the first ledger.append of each process, at most once per 24h; age-based, not size-based; never the writing process's own file",
       "size_100x_bytes": 0,
@@ -4229,7 +4234,7 @@
     },
     {
       "decision": "capped",
-      "growth_event": "writer invoked (skills/sigma-loop/scripts/comment_watch.py:141, skills/sigma-loop/scripts/drift_watch.py:404, skills/sigma-loop/scripts/handoff.py:486, skills/sigma-loop/scripts/ledger.py:1568, skills/sigma-loop/scripts/ledger.py:1578, skills/sigma-loop/scripts/loop.py:1760, skills/sigma-loop/scripts/loop.py:5214, skills/sigma-loop/scripts/loop.py:5244, skills/sigma-loop/scripts/loop.py:5261, skills/sigma-loop/scripts/loop.py:5365, skills/sigma-loop/scripts/phase_report.py:2047, skills/sigma-loop/scripts/phase_report.py:2053, skills/sigma-loop/scripts/phase_report.py:2069, skills/sigma-loop/scripts/spend_approval.py:350, skills/sigma-loop/scripts/sync.py:1298, skills/sigma-loop/scripts/work.py:6965, skills/sigma-loop/scripts/work.py:985, skills/sigma-scope/scripts/assign.py:574)",
+      "growth_event": "writer invoked (skills/sigma-loop/scripts/comment_watch.py:141, skills/sigma-loop/scripts/drift_watch.py:404, skills/sigma-loop/scripts/handoff.py:486, skills/sigma-loop/scripts/ledger.py:1568, skills/sigma-loop/scripts/ledger.py:1578, skills/sigma-loop/scripts/loop.py:1760, skills/sigma-loop/scripts/loop.py:5214, skills/sigma-loop/scripts/loop.py:5244, skills/sigma-loop/scripts/loop.py:5261, skills/sigma-loop/scripts/loop.py:5365, skills/sigma-loop/scripts/phase_report.py:2047, skills/sigma-loop/scripts/phase_report.py:2053, skills/sigma-loop/scripts/phase_report.py:2069, skills/sigma-loop/scripts/spend_approval.py:361, skills/sigma-loop/scripts/sync.py:1298, skills/sigma-loop/scripts/work.py:6965, skills/sigma-loop/scripts/work.py:985, skills/sigma-scope/scripts/assign.py:574)",
       "pattern": ".sdlc/events/<value>-<value>.<value>.jsonl",
       "pruner_or_cap": "ledger.prune_journal: deletes journal files idle 30 days, from the first ledger.append of each process, at most once per 24h; age-based, not size-based; never the writing process's own file",
       "size_100x_bytes": 0,
@@ -4303,7 +4308,7 @@
       "decision": "capped (newest 50 finished intakes; stale unfiled plans after 90 days)",
       "growth_event": "writer invoked (skills/sigma-prd-intake/SKILL.md:71)",
       "pattern": ".sdlc/intake/<plan-hash>.filed.json",
-      "pruner_or_cap": "skills/sigma-prd-intake/scripts/intake.py `prune` (KEEP_DONE = 50, UNFILED_DAYS = 90), run at the end of every `plan`: a finished intake (umbrella filed) beyond the newest 50 is removed with its resume record, and a plan with no resume record older than 90 days is removed; a plan with a resume record but no umbrella (mid-filing) is never touched. Ceiling: 50 finished pairs plus unfiled plans from the last 90 days plus mid-filing ones; plan size not measured",
+      "pruner_or_cap": "skills/sigma-prd-intake/scripts/intake.py `prune` (KEEP_DONE = 50, UNFILED_DAYS = 90), run at the end of every `plan`: a finished intake (umbrella filed) beyond the newest 50 is removed with its resume record, and a plan with no resume record older than 90 days is removed; a plan with a resume record but no umbrella (mid-filing) is never touched. Ceiling: 50 finished pairs plus unfiled plans from the last 90 days plus mid-filing ones; plan size not measured. Residuals: once a finished pair is pruned (beyond the newest 50), re-running plan and file on the identical PRD refiles every Dossier and the umbrella, because dossier.file has no dedupe of its own; and a resume record orphaned by a re-plan with changed answers (its plan has a different hash) is neither matched nor pruned, so 'capped' is slightly loose: the cap counts plans, not orphan records",
       "size_100x_bytes": 0,
       "size_10x_bytes": 0,
       "size_now_bytes": 0
@@ -4312,7 +4317,7 @@
       "decision": "capped (newest 50 finished intakes; stale unfiled plans after 90 days)",
       "growth_event": "writer invoked (skills/sigma-prd-intake/SKILL.md:41, skills/sigma-prd-intake/SKILL.md:49, skills/sigma-prd-intake/SKILL.md:50)",
       "pattern": ".sdlc/intake/<sha12>.json",
-      "pruner_or_cap": "skills/sigma-prd-intake/scripts/intake.py `prune` (KEEP_DONE = 50, UNFILED_DAYS = 90), run at the end of every `plan`: a finished intake (umbrella filed) beyond the newest 50 is removed with its resume record, and a plan with no resume record older than 90 days is removed; a plan with a resume record but no umbrella (mid-filing) is never touched. Ceiling: 50 finished pairs plus unfiled plans from the last 90 days plus mid-filing ones; plan size not measured",
+      "pruner_or_cap": "skills/sigma-prd-intake/scripts/intake.py `prune` (KEEP_DONE = 50, UNFILED_DAYS = 90), run at the end of every `plan`: a finished intake (umbrella filed) beyond the newest 50 is removed with its resume record, and a plan with no resume record older than 90 days is removed; a plan with a resume record but no umbrella (mid-filing) is never touched. Ceiling: 50 finished pairs plus unfiled plans from the last 90 days plus mid-filing ones; plan size not measured. Residuals: once a finished pair is pruned (beyond the newest 50), re-running plan and file on the identical PRD refiles every Dossier and the umbrella, because dossier.file has no dedupe of its own; and a resume record orphaned by a re-plan with changed answers (its plan has a different hash) is neither matched nor pruned, so 'capped' is slightly loose: the cap counts plans, not orphan records",
       "size_100x_bytes": 0,
       "size_10x_bytes": 0,
       "size_now_bytes": 0
@@ -4553,7 +4558,7 @@
     },
     {
       "decision": "intentionally unbounded (entries stream); the events half of <stream> is capped by ledger.prune_journal",
-      "growth_event": "writer invoked (skills/sigma-loop/scripts/comment_watch.py:141, skills/sigma-loop/scripts/drift_watch.py:404, skills/sigma-loop/scripts/handoff.py:486, skills/sigma-loop/scripts/ledger.py:1578, skills/sigma-loop/scripts/loop.py:1760, skills/sigma-loop/scripts/loop.py:5214, skills/sigma-loop/scripts/loop.py:5244, skills/sigma-loop/scripts/loop.py:5261, skills/sigma-loop/scripts/loop.py:5365, skills/sigma-loop/scripts/phase_report.py:2047, skills/sigma-loop/scripts/phase_report.py:2053, skills/sigma-loop/scripts/phase_report.py:2069, skills/sigma-loop/scripts/spend_approval.py:350, skills/sigma-loop/scripts/work.py:6965, skills/sigma-loop/scripts/work.py:985, skills/sigma-scope/scripts/assign.py:574)",
+      "growth_event": "writer invoked (skills/sigma-loop/scripts/comment_watch.py:141, skills/sigma-loop/scripts/drift_watch.py:404, skills/sigma-loop/scripts/handoff.py:486, skills/sigma-loop/scripts/ledger.py:1578, skills/sigma-loop/scripts/loop.py:1760, skills/sigma-loop/scripts/loop.py:5214, skills/sigma-loop/scripts/loop.py:5244, skills/sigma-loop/scripts/loop.py:5261, skills/sigma-loop/scripts/loop.py:5365, skills/sigma-loop/scripts/phase_report.py:2047, skills/sigma-loop/scripts/phase_report.py:2053, skills/sigma-loop/scripts/phase_report.py:2069, skills/sigma-loop/scripts/spend_approval.py:361, skills/sigma-loop/scripts/work.py:6965, skills/sigma-loop/scripts/work.py:985, skills/sigma-scope/scripts/assign.py:574)",
       "pattern": ".sdlc/ledger/<stream>",
       "pruner_or_cap": "none by decision: git-tracked on the ops branch, a sweep would stage deletions in a teammate's pull; ceiling and reclaim owner in the evidence doc",
       "size_100x_bytes": 0,
@@ -4571,7 +4576,7 @@
     },
     {
       "decision": "intentionally unbounded (entries stream); the events half of <stream> is capped by ledger.prune_journal",
-      "growth_event": "writer invoked (skills/sigma-loop/scripts/comment_watch.py:141, skills/sigma-loop/scripts/drift_watch.py:404, skills/sigma-loop/scripts/handoff.py:486, skills/sigma-loop/scripts/ledger.py:1568, skills/sigma-loop/scripts/ledger.py:1578, skills/sigma-loop/scripts/loop.py:1760, skills/sigma-loop/scripts/loop.py:5214, skills/sigma-loop/scripts/loop.py:5244, skills/sigma-loop/scripts/loop.py:5261, skills/sigma-loop/scripts/loop.py:5365, skills/sigma-loop/scripts/phase_report.py:2047, skills/sigma-loop/scripts/phase_report.py:2053, skills/sigma-loop/scripts/phase_report.py:2069, skills/sigma-loop/scripts/spend_approval.py:350, skills/sigma-loop/scripts/sync.py:1298, skills/sigma-loop/scripts/work.py:6965, skills/sigma-loop/scripts/work.py:985, skills/sigma-scope/scripts/assign.py:574)",
+      "growth_event": "writer invoked (skills/sigma-loop/scripts/comment_watch.py:141, skills/sigma-loop/scripts/drift_watch.py:404, skills/sigma-loop/scripts/handoff.py:486, skills/sigma-loop/scripts/ledger.py:1568, skills/sigma-loop/scripts/ledger.py:1578, skills/sigma-loop/scripts/loop.py:1760, skills/sigma-loop/scripts/loop.py:5214, skills/sigma-loop/scripts/loop.py:5244, skills/sigma-loop/scripts/loop.py:5261, skills/sigma-loop/scripts/loop.py:5365, skills/sigma-loop/scripts/phase_report.py:2047, skills/sigma-loop/scripts/phase_report.py:2053, skills/sigma-loop/scripts/phase_report.py:2069, skills/sigma-loop/scripts/spend_approval.py:361, skills/sigma-loop/scripts/sync.py:1298, skills/sigma-loop/scripts/work.py:6965, skills/sigma-loop/scripts/work.py:985, skills/sigma-scope/scripts/assign.py:574)",
       "pattern": ".sdlc/ledger/<stream>/<value>-<value>.<value>.jsonl",
       "pruner_or_cap": "none by decision: git-tracked on the ops branch, a sweep would stage deletions in a teammate's pull; ceiling and reclaim owner in the evidence doc",
       "size_100x_bytes": 0,
@@ -4760,7 +4765,7 @@
     },
     {
       "decision": "directory rollup",
-      "growth_event": "writer invoked (skills/sigma-init/scripts/setup_wizard.py:340, skills/sigma-kg/scripts/kg.py:459, skills/sigma-kg/scripts/kg.py:698, skills/sigma-kg/scripts/kg.py:721, skills/sigma-loop/scripts/agent_watch.py:179, skills/sigma-loop/scripts/autowatch.py:1131, skills/sigma-loop/scripts/backlog_check.py:970, skills/sigma-loop/scripts/channel_notify.py:211, skills/sigma-loop/scripts/comment_watch.py:159, skills/sigma-loop/scripts/decision_import.py:438, skills/sigma-loop/scripts/drift_shadow.py:149, skills/sigma-loop/scripts/drift_watch.py:356, skills/sigma-loop/scripts/drift_watch.py:382, skills/sigma-loop/scripts/feature_judge.py:791, skills/sigma-loop/scripts/feature_judge.py:832, skills/sigma-loop/scripts/feature_judge.py:842, skills/sigma-loop/scripts/feature_judge.py:850, skills/sigma-loop/scripts/loop.py:1189, skills/sigma-loop/scripts/loop.py:2086, skills/sigma-loop/scripts/loop.py:2105, skills/sigma-loop/scripts/loop.py:2389, skills/sigma-loop/scripts/loop.py:2650, skills/sigma-loop/scripts/loop.py:4054, skills/sigma-loop/scripts/loop.py:5510, skills/sigma-loop/scripts/phase_report.py:2016, skills/sigma-loop/scripts/phase_report.py:2034, skills/sigma-loop/scripts/phase_report.py:2043, skills/sigma-loop/scripts/slack_commands_listen.py:1290, skills/sigma-loop/scripts/slack_commands_listen.py:1735, skills/sigma-loop/scripts/slack_commands_listen.py:1745, skills/sigma-loop/scripts/slack_commands_listen.py:1760, skills/sigma-loop/scripts/slack_commands_listen.py:1824, skills/sigma-loop/scripts/slack_commands_listen.py:1828, skills/sigma-loop/scripts/slack_commands_listen.py:1835, skills/sigma-loop/scripts/slack_commands_listen.py:1837, skills/sigma-loop/scripts/slack_commands_listen.py:1842, skills/sigma-loop/scripts/slack_commands_listen.py:1843, skills/sigma-loop/scripts/slack_commands_listen.py:1846, skills/sigma-loop/scripts/slack_commands_listen.py:619, skills/sigma-loop/scripts/slack_commands_listen.py:766, skills/sigma-loop/scripts/slack_commands_listen.py:767, skills/sigma-loop/scripts/spend_approval.py:336, skills/sigma-loop/scripts/state.py:1005, skills/sigma-loop/scripts/state.py:1098, skills/sigma-loop/scripts/state.py:1105, skills/sigma-loop/scripts/state.py:402, skills/sigma-loop/scripts/state.py:860, skills/sigma-loop/scripts/state.py:882, skills/sigma-loop/scripts/state.py:960, skills/sigma-loop/scripts/supervise_daemon.py:389, skills/sigma-loop/scripts/supervise_daemon.py:557, skills/sigma-loop/scripts/sync.py:1008, skills/sigma-loop/scripts/sync.py:1261, skills/sigma-loop/scripts/sync.py:1291, skills/sigma-loop/scripts/sync.py:1301, skills/sigma-loop/scripts/sync.py:624, skills/sigma-loop/scripts/sync.py:858, skills/sigma-loop/scripts/worktree_prune.py:595, skills/sigma-loop/scripts/worktree_prune.py:617)",
+      "growth_event": "writer invoked (skills/sigma-init/scripts/setup_wizard.py:340, skills/sigma-kg/scripts/kg.py:459, skills/sigma-kg/scripts/kg.py:698, skills/sigma-kg/scripts/kg.py:721, skills/sigma-loop/scripts/agent_watch.py:179, skills/sigma-loop/scripts/autowatch.py:1131, skills/sigma-loop/scripts/backlog_check.py:970, skills/sigma-loop/scripts/channel_notify.py:211, skills/sigma-loop/scripts/comment_watch.py:159, skills/sigma-loop/scripts/decision_import.py:438, skills/sigma-loop/scripts/drift_shadow.py:149, skills/sigma-loop/scripts/drift_watch.py:356, skills/sigma-loop/scripts/drift_watch.py:382, skills/sigma-loop/scripts/feature_judge.py:791, skills/sigma-loop/scripts/feature_judge.py:832, skills/sigma-loop/scripts/feature_judge.py:842, skills/sigma-loop/scripts/feature_judge.py:850, skills/sigma-loop/scripts/loop.py:1189, skills/sigma-loop/scripts/loop.py:2086, skills/sigma-loop/scripts/loop.py:2105, skills/sigma-loop/scripts/loop.py:2389, skills/sigma-loop/scripts/loop.py:2650, skills/sigma-loop/scripts/loop.py:4054, skills/sigma-loop/scripts/loop.py:5510, skills/sigma-loop/scripts/phase_report.py:2016, skills/sigma-loop/scripts/phase_report.py:2034, skills/sigma-loop/scripts/phase_report.py:2043, skills/sigma-loop/scripts/slack_commands_listen.py:1290, skills/sigma-loop/scripts/slack_commands_listen.py:1735, skills/sigma-loop/scripts/slack_commands_listen.py:1745, skills/sigma-loop/scripts/slack_commands_listen.py:1760, skills/sigma-loop/scripts/slack_commands_listen.py:1824, skills/sigma-loop/scripts/slack_commands_listen.py:1828, skills/sigma-loop/scripts/slack_commands_listen.py:1835, skills/sigma-loop/scripts/slack_commands_listen.py:1837, skills/sigma-loop/scripts/slack_commands_listen.py:1842, skills/sigma-loop/scripts/slack_commands_listen.py:1843, skills/sigma-loop/scripts/slack_commands_listen.py:1846, skills/sigma-loop/scripts/slack_commands_listen.py:619, skills/sigma-loop/scripts/slack_commands_listen.py:766, skills/sigma-loop/scripts/slack_commands_listen.py:767, skills/sigma-loop/scripts/spend_approval.py:196, skills/sigma-loop/scripts/spend_approval.py:347, skills/sigma-loop/scripts/state.py:1005, skills/sigma-loop/scripts/state.py:1098, skills/sigma-loop/scripts/state.py:1105, skills/sigma-loop/scripts/state.py:402, skills/sigma-loop/scripts/state.py:860, skills/sigma-loop/scripts/state.py:882, skills/sigma-loop/scripts/state.py:960, skills/sigma-loop/scripts/supervise_daemon.py:389, skills/sigma-loop/scripts/supervise_daemon.py:557, skills/sigma-loop/scripts/sync.py:1008, skills/sigma-loop/scripts/sync.py:1261, skills/sigma-loop/scripts/sync.py:1291, skills/sigma-loop/scripts/sync.py:1301, skills/sigma-loop/scripts/sync.py:624, skills/sigma-loop/scripts/sync.py:858, skills/sigma-loop/scripts/worktree_prune.py:595, skills/sigma-loop/scripts/worktree_prune.py:617)",
       "pattern": ".sdlc/state",
       "pruner_or_cap": "directory rollup, no writer of its own: the sum of its children, each classified by its own row or sibling slice (on the measured checkout state/ is 22,956 KiB, of which time/ 13,424 and verify/ 4,048 by du -sk of its direct children); nothing is pruned at this level",
       "size_100x_bytes": 25000,
@@ -5507,9 +5512,9 @@
     },
     {
       "decision": "capped (2,000 full entries; older ones folded into hash tombstones that still refuse reuse)",
-      "growth_event": "writer invoked (skills/sigma-loop/scripts/spend_approval.py:191, skills/sigma-loop/scripts/spend_approval.py:336)",
+      "growth_event": "writer invoked (skills/sigma-loop/scripts/spend_approval.py:194, skills/sigma-loop/scripts/spend_approval.py:347)",
       "pattern": ".sdlc/state/spend-approval-used.json",
-      "pruner_or_cap": "skills/sigma-loop/scripts/spend_approval.py MAX_USED = 2000 and MAX_TOMBSTONES = 50000, applied by `_counter_add`: the oldest full entries beyond 2,000 become 16-hex sha256 tombstones under \"__tombstones__\" and `_counter_used` checks them, so an evicted key still refuses (no re-arm). Ceiling about 0.2 MB of full entries (80 B by inspection) plus about 1.1 MB of tombstones (21 B each). Only a tombstone past 50,000 is forgotten, after which the issue-side used-marker comment is the sole record",
+      "pruner_or_cap": "skills/sigma-loop/scripts/spend_approval.py MAX_USED = 2000 and MAX_TOMBSTONES = 50000, applied by `_counter_add`: the oldest full entries beyond 2,000 become 16-hex sha256 tombstones under \"__tombstones__\" and `_counter_used` checks them, so an evicted key still refuses (no re-arm). Ceiling about 0.2 MB of full entries (80 B by inspection) plus about 1.1 MB of tombstones (21 B each). Only a tombstone past 50,000 is forgotten, after which the issue-side used-marker comment is the sole record. The temp file is fsynced before the rename and the directory after it, so a power loss does not leave a truncated used-set. The read-modify-write of this file is NOT locked: two concurrent grants can lose the loser's new entry; the issue-side used-marker comment and the post-write re-read of the comments (spend_approval.py, the `_used_count(...) != 1` check) remain the second record and deny the race",
       "size_100x_bytes": 0,
       "size_10x_bytes": 0,
       "size_now_bytes": 0

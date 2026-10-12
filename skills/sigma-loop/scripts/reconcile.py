@@ -809,18 +809,25 @@ _TMP_MAX_AGE_SECONDS = 86400
 
 
 def prune_proposals(base, keep_name=None, now=None):
-    import os, time
+    import os, stat, time
     now = time.time() if now is None else now
     base = pathlib.Path(base)
+
+    def remove_if_old(p, max_age):      # a regular file only (lstat: a link is never followed or removed); per-entry errors skip
+        try:
+            st = os.lstat(p)
+            if stat.S_ISREG(st.st_mode) and now - st.st_mtime > max_age:
+                p.unlink()
+        except OSError:
+            pass
+
     try:
         names = sorted(p.name for p in base.glob("*-reconcile.json"))
         for name in names[:-PROPOSAL_KEEP] if len(names) > PROPOSAL_KEEP else []:
-            p = base / name
-            if name != keep_name and now - p.stat().st_mtime > PROPOSAL_MAX_AGE_DAYS * 86400:
-                p.unlink()
-        for p in base.glob("tmp*"):
-            if p.is_file() and not p.is_symlink() and now - p.stat().st_mtime > _TMP_MAX_AGE_SECONDS:
-                p.unlink()
+            if name != keep_name:
+                remove_if_old(base / name, PROPOSAL_MAX_AGE_DAYS * 86400)
+        for p in list(base.glob("tmp*")):
+            remove_if_old(p, _TMP_MAX_AGE_SECONDS)
     except OSError:
         pass
 

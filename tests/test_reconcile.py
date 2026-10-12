@@ -1192,6 +1192,36 @@ def test_recent_proposals_are_never_pruned_even_beyond_the_count(tmp_path):
     assert all(p.exists() for p in recent)
 
 
+def test_the_proposal_just_written_is_exempt_even_if_it_would_otherwise_age_out(tmp_path):
+    rc = _mod("reconcile")
+    d, old = _seed_proposals(tmp_path, 22, age_days=40)
+    rc.prune_proposals(d, keep_name=old[0].name)           # old[0] is the oldest of 22 and beyond the newest 20
+    assert old[0].exists() and not old[1].exists() and old[2].exists()
+
+
+def test_prune_never_removes_or_follows_a_link_or_a_directory(tmp_path):
+    import os, time
+    rc = _mod("reconcile")
+    d, old = _seed_proposals(tmp_path, 21, age_days=40)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("keep")
+    link_tmp, dir_tmp, stale = d / "tmpLINK", d / "tmpDIR", d / "tmpSTALE"
+    link_tmp.symlink_to(outside)
+    dir_tmp.mkdir()
+    stale.write_text("x")
+    t = time.time() - 3 * 86400
+    for p in (stale, dir_tmp):
+        os.utime(p, (t, t))
+    os.utime(link_tmp, (t, t), follow_symlinks=False)
+    link_prop = d / "0000-00-00T000000-reconcile.json"      # sorts first, so it is beyond the newest 20
+    link_prop.symlink_to(outside)
+    os.utime(link_prop, (t - 40 * 86400, t - 40 * 86400), follow_symlinks=False)
+    rc.prune_proposals(d)
+    assert outside.read_text() == "keep"
+    assert link_tmp.is_symlink() and link_prop.is_symlink() and dir_tmp.is_dir()
+    assert not stale.exists()                                # the loop went on past the unremovable entries
+
+
 def test_stale_temp_files_of_a_crashed_write_are_pruned_but_fresh_and_foreign_ones_are_not(tmp_path):
     import os, time
     rc = _mod("reconcile")

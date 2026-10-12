@@ -45,7 +45,7 @@ def prune(base, now, grace, max_ttl):
             if record is not None:
                 try:
                     expires = json.loads(record.read_text(encoding="utf-8")).get("expires_at")
-                except (OSError, ValueError, AttributeError):
+                except (OSError, ValueError, AttributeError, RecursionError):   # a planted deeply nested file
                     expires = None
                 if not (isinstance(expires, int) and not isinstance(expires, bool)):
                     expires = int(os.lstat(record).st_mtime) + max_ttl      # malformed: age it from its mtime

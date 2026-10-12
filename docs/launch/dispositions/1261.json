@@ -45,22 +45,22 @@
     "pattern": ".sdlc/state/spend-approval-used.json",
     "issue": "#1263",
     "decision": "capped (2,000 full entries; older ones folded into hash tombstones that still refuse reuse)",
-    "pruner_or_cap": "skills/sigma-loop/scripts/spend_approval.py MAX_USED = 2000 and MAX_TOMBSTONES = 50000, applied by `_counter_add`: the oldest full entries beyond 2,000 become 16-hex sha256 tombstones under \"__tombstones__\" and `_counter_used` checks them, so an evicted key still refuses (no re-arm). Ceiling about 0.2 MB of full entries (80 B by inspection) plus about 1.1 MB of tombstones (21 B each). Only a tombstone past 50,000 is forgotten, after which the issue-side used-marker comment is the sole record",
-    "evidence": "tests/test_spend_approval_class.py test_counter_is_capped_and_an_evicted_entry_still_refuses_reuse and test_counter_tombstones_are_themselves_capped (each cap clause seen red); issue #1263"
+    "pruner_or_cap": "skills/sigma-loop/scripts/spend_approval.py MAX_USED = 2000 and MAX_TOMBSTONES = 50000, applied by `_counter_add`: the oldest full entries beyond 2,000 become 16-hex sha256 tombstones under \"__tombstones__\" and `_counter_used` checks them, so an evicted key still refuses (no re-arm). Ceiling about 0.2 MB of full entries (80 B by inspection) plus about 1.1 MB of tombstones (21 B each). Only a tombstone past 50,000 is forgotten, after which the issue-side used-marker comment is the sole record. The temp file is fsynced before the rename and the directory after it, so a power loss does not leave a truncated used-set. The read-modify-write of this file is NOT locked: two concurrent grants can lose the loser's new entry; the issue-side used-marker comment and the post-write re-read of the comments (spend_approval.py, the `_used_count(...) != 1` check) remain the second record and deny the race",
+    "evidence": "tests/test_spend_approval_class.py: test_counter_is_capped_and_an_evicted_entry_still_refuses_reuse, test_counter_tombstones_are_themselves_capped, test_the_fold_takes_the_oldest_entries_not_the_newest, test_tombstone_cap_keeps_the_newest_tombstones_and_drops_the_oldest, test_counter_write_is_fsynced_before_the_replace. Seen red when broken: the fold sort reversed, tombs[-MAX:] changed to tombs[:MAX], the tombstone check, the MAX_USED check, the delete after folding, and the fsync. Not tested and not claimed: the directory fsync, the lack of a lock; issue #1263"
   },
   {
     "pattern": ".sdlc/intake/<sha12>.json",
     "issue": "#1262",
     "decision": "capped (newest 50 finished intakes; stale unfiled plans after 90 days)",
-    "pruner_or_cap": "skills/sigma-prd-intake/scripts/intake.py `prune` (KEEP_DONE = 50, UNFILED_DAYS = 90), run at the end of every `plan`: a finished intake (umbrella filed) beyond the newest 50 is removed with its resume record, and a plan with no resume record older than 90 days is removed; a plan with a resume record but no umbrella (mid-filing) is never touched. Ceiling: 50 finished pairs plus unfiled plans from the last 90 days plus mid-filing ones; plan size not measured",
-    "evidence": "tests/test_prd_intake.py test_intake_prune_keeps_newest_complete_pairs_and_everything_resumable and test_plan_runs_the_prune (each clause seen red); issue #1262"
+    "pruner_or_cap": "skills/sigma-prd-intake/scripts/intake.py `prune` (KEEP_DONE = 50, UNFILED_DAYS = 90), run at the end of every `plan`: a finished intake (umbrella filed) beyond the newest 50 is removed with its resume record, and a plan with no resume record older than 90 days is removed; a plan with a resume record but no umbrella (mid-filing) is never touched. Ceiling: 50 finished pairs plus unfiled plans from the last 90 days plus mid-filing ones; plan size not measured. Residuals: once a finished pair is pruned (beyond the newest 50), re-running plan and file on the identical PRD refiles every Dossier and the umbrella, because dossier.file has no dedupe of its own; and a resume record orphaned by a re-plan with changed answers (its plan has a different hash) is neither matched nor pruned, so 'capped' is slightly loose: the cap counts plans, not orphan records",
+    "evidence": "tests/test_prd_intake.py: test_intake_prune_keeps_newest_complete_pairs_and_everything_resumable, test_plan_runs_the_prune. Seen red when broken: the KEEP_DONE slice, the unfiled-age clause, the finished-intake (umbrella) condition, and the call from plan; issue #1262"
   },
   {
     "pattern": ".sdlc/intake/<plan-hash>.filed.json",
     "issue": "#1262",
     "decision": "capped (newest 50 finished intakes; stale unfiled plans after 90 days)",
-    "pruner_or_cap": "skills/sigma-prd-intake/scripts/intake.py `prune` (KEEP_DONE = 50, UNFILED_DAYS = 90), run at the end of every `plan`: a finished intake (umbrella filed) beyond the newest 50 is removed with its resume record, and a plan with no resume record older than 90 days is removed; a plan with a resume record but no umbrella (mid-filing) is never touched. Ceiling: 50 finished pairs plus unfiled plans from the last 90 days plus mid-filing ones; plan size not measured",
-    "evidence": "tests/test_prd_intake.py test_intake_prune_keeps_newest_complete_pairs_and_everything_resumable and test_plan_runs_the_prune (each clause seen red); issue #1262"
+    "pruner_or_cap": "skills/sigma-prd-intake/scripts/intake.py `prune` (KEEP_DONE = 50, UNFILED_DAYS = 90), run at the end of every `plan`: a finished intake (umbrella filed) beyond the newest 50 is removed with its resume record, and a plan with no resume record older than 90 days is removed; a plan with a resume record but no umbrella (mid-filing) is never touched. Ceiling: 50 finished pairs plus unfiled plans from the last 90 days plus mid-filing ones; plan size not measured. Residuals: once a finished pair is pruned (beyond the newest 50), re-running plan and file on the identical PRD refiles every Dossier and the umbrella, because dossier.file has no dedupe of its own; and a resume record orphaned by a re-plan with changed answers (its plan has a different hash) is neither matched nor pruned, so 'capped' is slightly loose: the cap counts plans, not orphan records",
+    "evidence": "tests/test_prd_intake.py: test_intake_prune_keeps_newest_complete_pairs_and_everything_resumable, test_plan_runs_the_prune. Seen red when broken: the KEEP_DONE slice, the unfiled-age clause, the finished-intake (umbrella) condition, and the call from plan; issue #1262"
   },
   {
     "pattern": ".sdlc/<part>",
@@ -82,7 +82,7 @@
     "unscanned": true,
     "decision": "pruned (30 days after the approval's own expiry)",
     "pruner_or_cap": "skills/sigma-loop/scripts/feature_land_approval_prune.py `prune`, called by `approve` (feature_land_approval.py, PRUNE_GRACE_SECONDS = 30 days, 30x the longest TTL): removes a record and its .used marker only when the record expired more than the grace ago; a young marker still refuses a second consume; only regular files named <40 hex>.json/.used are touched. Ceiling: approvals made in the last 30 days plus one day of TTL. Residual: a fresh `approve` of the same unit, repository and head more than 30 days after the old one expired is usable again",
-    "evidence": "tests/test_feature_land_approval.py test_old_approvals_and_markers_are_pruned_on_approve_and_recent_ones_are_not and test_prune_never_follows_a_symlink_or_touches_a_foreign_name (each clause seen red); writer skills/sigma-loop/scripts/feature_land_approval.py approve (the scan cannot see it: the path is built from STATE_PARTS)"
+    "evidence": "tests/test_feature_land_approval.py: test_old_approvals_and_markers_are_pruned_on_approve_and_recent_ones_are_not, test_prune_never_follows_a_symlink_or_touches_a_foreign_name, test_the_grace_is_pinned_to_thirty_days_and_thirty_times_the_longest_ttl, test_an_orphan_marker_is_kept_until_the_grace_plus_the_longest_ttl, test_a_malformed_record_ages_from_its_mtime_plus_the_longest_ttl, test_a_deeply_nested_planted_record_cannot_crash_approve_or_consume. Seen red when broken: the grace comparison, the marker deletion, the regular-file check, the call from approve, the grace constant, the orphan-marker clause (two ways), the malformed-record fallback, and the RecursionError catch in both the pruner and the validator; the scan cannot see this writer"
   },
   {
     "pattern": ".sdlc/state/unit-approvals/<digest>.used",
@@ -90,7 +90,7 @@
     "unscanned": true,
     "decision": "pruned (with its record, 30 days after the approval's expiry)",
     "pruner_or_cap": "removed together with its record by feature_land_approval_prune.py `prune`; see the .json row; a marker whose record is already gone is removed after the grace plus the longest TTL",
-    "evidence": "tests/test_feature_land_approval.py test_old_approvals_and_markers_are_pruned_on_approve_and_recent_ones_are_not; writer skills/sigma-loop/scripts/feature_land_approval.py consume"
+    "evidence": "see the .json row; tests/test_feature_land_approval.py; writer skills/sigma-loop/scripts/feature_land_approval.py consume"
   },
   {
     "pattern": ".sdlc/plans/reconcile/<timestamp>-reconcile.json",
@@ -98,6 +98,6 @@
     "unscanned": true,
     "decision": "capped (newest 20, and nothing younger than 30 days)",
     "pruner_or_cap": "skills/sigma-loop/scripts/reconcile.py `prune_proposals` (PROPOSAL_KEEP = 20, PROPOSAL_MAX_AGE_DAYS = 30), run by `write_proposal`: a proposal is removed only when it is both beyond the newest 20 and older than 30 days, so one a human is still reviewing is kept; tmp* files of a crashed write older than a day are removed. Ceiling: 20 plus the last 30 days of runs",
-    "evidence": "tests/test_reconcile.py test_proposals_beyond_the_newest_20_and_older_than_30_days_are_pruned, test_recent_proposals_are_never_pruned_even_beyond_the_count, test_stale_temp_files_of_a_crashed_write_are_pruned_but_fresh_and_foreign_ones_are_not (each clause seen red); writer skills/sigma-loop/scripts/reconcile.py write_proposal (path built from a constant)"
+    "evidence": "tests/test_reconcile.py: test_proposals_beyond_the_newest_20_and_older_than_30_days_are_pruned, test_recent_proposals_are_never_pruned_even_beyond_the_count, test_the_proposal_just_written_is_exempt_even_if_it_would_otherwise_age_out, test_prune_never_removes_or_follows_a_link_or_a_directory, test_stale_temp_files_of_a_crashed_write_are_pruned_but_fresh_and_foreign_ones_are_not. Seen red when broken: the age clause, the newest-20 slice, the tmp age, the call from write_proposal, the keep_name exemption, and the regular-file (lstat) check; the scan cannot see this writer (the path is a constant)"
   }
 ]

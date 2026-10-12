@@ -1932,7 +1932,7 @@
       "path": "skills/sigma-loop/scripts/spend_approval.py",
       "function": "_counter_write",
       "rule": "fs-write",
-      "count": 2,
+      "count": 1,
       "gate": "opt-in (spend_approval.enabled); writes only the one per-machine use counter file under the local state directory (atomic temp then replace); never deletes another writer's file; a failed write denies the grant",
       "risk": "medium"
     },
@@ -3618,10 +3618,10 @@
     },
     {
       "path": "skills/sigma-loop/scripts/reconcile.py",
-      "function": "prune_proposals",
+      "function": "remove_if_old",
       "rule": "fs-remove",
-      "count": 2,
-      "gate": "removes only *-reconcile.json proposals beyond the newest 20 and older than 30 days, and tmp* files older than a day, in plans/reconcile; called by write_proposal after its own write",
+      "count": 1,
+      "gate": "removes only a regular file (lstat, never a link or directory) in plans/reconcile: a *-reconcile.json beyond the newest 20 and older than 30 days, or a tmp* file older than a day; called by write_proposal after its own write",
       "risk": "medium"
     },
     {

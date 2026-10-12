@@ -104,6 +104,40 @@ def test_counter_tombstones_are_themselves_capped(monkeypatch):
     assert len(state["__tombstones__"]) == 3
 
 
+def _entry(day):
+    return {"at": "2026-01-%02dT00:00:00Z" % day, "class": "spend"}
+
+
+def test_the_fold_takes_the_oldest_entries_not_the_newest(monkeypatch):
+    monkeypatch.setattr(sa, "MAX_USED", 3, raising=False)
+    counter = {"g%d:l" % d: _entry(d) for d in (5, 1, 9, 3)}          # inserted out of order on purpose
+    out = sa._counter_add(counter, "g20:l", _entry(20))               # 5 entries, cap 3: fold the two oldest
+    assert sorted(k for k in out if k != "__tombstones__") == ["g20:l", "g5:l", "g9:l"]
+    assert set(out["__tombstones__"]) == {sa._tomb("g1:l"), sa._tomb("g3:l")}
+    assert sa._counter_used(out, "g1:l") and sa._counter_used(out, "g3:l")
+
+
+def test_tombstone_cap_keeps_the_newest_tombstones_and_drops_the_oldest(monkeypatch):
+    monkeypatch.setattr(sa, "MAX_USED", 1, raising=False)
+    monkeypatch.setattr(sa, "MAX_TOMBSTONES", 3, raising=False)
+    counter = {"g9:l": _entry(9), "__tombstones__": ["old1", "old2", "old3"]}
+    out = sa._counter_add(counter, "g10:l", _entry(10))               # folds g9: 4 tombstones, cap 3
+    assert out["__tombstones__"] == ["old2", "old3", sa._tomb("g9:l")]
+    assert sa._counter_used(out, "g9:l")                              # the newest tombstone survives the cap
+
+
+def test_counter_write_is_fsynced_before_the_replace(tmp_path, monkeypatch):
+    """B6 (#1263 review): a power loss between write and replace must not leave a truncated used-set."""
+    import os
+    order = []
+    real_fsync, real_replace = os.fsync, os.replace
+    monkeypatch.setattr(os, "fsync", lambda fd: (order.append("fsync"), real_fsync(fd))[1])
+    monkeypatch.setattr(os, "replace", lambda a, b: (order.append("replace"), real_replace(a, b))[1])
+    sa._counter_write(".sdlc", {"7:x": _entry(1)})
+    assert order[:2] == ["fsync", "replace"], order
+    assert json.loads(pathlib.Path(".sdlc/state/spend-approval-used.json").read_text()) == {"7:x": _entry(1)}
+
+
 def test_a_counter_file_from_before_the_cap_still_refuses(tmp_path):
     state_dir = pathlib.Path(".sdlc/state")
     state_dir.mkdir(parents=True)

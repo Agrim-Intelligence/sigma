@@ -131,7 +131,7 @@ def _validate(unit, slug, head, sdlc_dir, now):
         return "approval path has a symlink component; refusing", None
     try:
         data = json.loads(record.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         return "no readable approval for this unit at this head; run the approve verb", None
     if not isinstance(data, dict):
         return "approval record is malformed", None
