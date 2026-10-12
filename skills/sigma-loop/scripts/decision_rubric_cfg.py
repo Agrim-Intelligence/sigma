@@ -60,3 +60,46 @@ def public_repo_warning(config, remote_is_public):
         return ("records.repo_visibility is private but the repository looks public; "
                 "set decision_rubric.records.repo_visibility to public")
     return None
+
+
+#: `decision_rubric.import` bounds the read-only past-decision scan (`decision_import.py`). It is NOT
+#: a part and no gate reads it: a scan only reports. `comments` (default false) lets the scan read
+#: issue comments over the network; `max_issues` bounds how many issues that touches.
+#: `max_file_bytes` is a streaming-safe ceiling (PROVISIONAL, 500 MB); the real bound is
+#: `time_budget_s` (PROVISIONAL, 60), a total per scan, and a file it cuts short is reported partial.
+IMPORT_DEFAULTS = {"max_file_bytes": 500000000, "max_candidates": 500, "max_issues": 50,
+                   "time_budget_s": 60, "comments": False, "profile_dirs": [], "project_dirs": [],
+                   "classifier": "table", "model": "haiku",
+                   "max_budget_usd_per_call": 0.05, "max_budget_usd_per_run": 1.0}  # budgets PROVISIONAL
+
+
+def import_limits(config):
+    """The import bounds, total: a missing or wrong-typed key falls back to its default."""
+    out = dict(IMPORT_DEFAULTS, profile_dirs=[], project_dirs=[])
+    try:
+        sub = config["decision_rubric"]["import"]
+        if not isinstance(sub, dict):
+            return out
+        for key in ("max_file_bytes", "max_candidates", "max_issues", "time_budget_s"):
+            v = sub.get(key)
+            if isinstance(v, int) and not isinstance(v, bool) and v > 0:
+                out[key] = v
+        if sub.get("comments") is True:
+            out["comments"] = True
+        if sub.get("classifier") == "model":
+            out["classifier"] = "model"
+        if isinstance(sub.get("model"), str) and sub["model"].strip():
+            out["model"] = sub["model"].strip()
+        for key in ("max_budget_usd_per_call", "max_budget_usd_per_run"):
+            v = sub.get(key)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and 0 < v < float("inf"):
+                out[key] = float(v)
+        dirs = sub.get("profile_dirs")
+        if isinstance(dirs, list):
+            out["profile_dirs"] = [d for d in dirs if isinstance(d, str) and d]
+        dirs = sub.get("project_dirs")
+        if isinstance(dirs, list):
+            out["project_dirs"] = [d for d in dirs if isinstance(d, str) and d]
+    except Exception:
+        pass
+    return out

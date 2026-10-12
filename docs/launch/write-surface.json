@@ -609,6 +609,22 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/decision_import.py",
+      "function": "_cache_save",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "off by default: runs only when decision_rubric.import.classifier is model and the records part is open, during apply; writes only its own classification cache (fingerprint to kind and area, no text) under the sigma state directory, atomically (tmp file then replace); never deletes user data",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/decision_import.py",
+      "function": "_cache_save",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "off by default: runs only when decision_rubric.import.classifier is model and the records part is open, during apply; writes only its own classification cache (fingerprint to kind and area, no text) under the sigma state directory, atomically (tmp file then replace); never deletes user data",
+      "risk": "low"
+    },
+    {
       "path": "skills/sigma-loop/scripts/decision_store.py",
       "function": "_lock",
       "rule": "fs-write",
@@ -694,6 +710,22 @@
       "rule": "fs-write",
       "count": 1,
       "gate": "off by default: runs only when decision_rubric.drift.enabled is true; writes only its own spend ledger and lock under the sigma state directory, atomically (tmp file then replace), pruned to a rolling window; never deletes user data",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/drift_shadow.py",
+      "function": "_save",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "off by default: runs only when decision_rubric.drift.enabled is true and a park declared a non-hard-stop kind; writes only its own verdict file under the sigma state directory, atomically (tmp file then replace), keeping the newest 200; never deletes user data",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/drift_shadow.py",
+      "function": "_save",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "off by default: runs only when decision_rubric.drift.enabled is true and a park declared a non-hard-stop kind; writes only its own verdict file under the sigma state directory, atomically (tmp file then replace), keeping the newest 200; never deletes user data",
       "risk": "low"
     },
     {

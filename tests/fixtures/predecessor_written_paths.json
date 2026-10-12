@@ -467,7 +467,7 @@
   {
    "compatible": true,
    "pattern": ".sdlc/state",
-   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1152 (refs #1142): sync.py::_reroot_guarded takes the existing knowledge flock (the already vetted _knowledge_lock file) and sync.py::bootstrap makes directories and aside copies only under .sdlc/state/orphaned/<stamp>/, a subtree the predecessor does not write; neither writes a file the predecessor writes in .sdlc/state.",
+   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1152 (refs #1142): sync.py::_reroot_guarded takes the existing knowledge flock (the already vetted _knowledge_lock file) and sync.py::bootstrap makes directories and aside copies only under .sdlc/state/orphaned/<stamp>/, a subtree the predecessor does not write; neither writes a file the predecessor writes in .sdlc/state. Vetted #1229: drift_shadow.py::_save and ::shadow_for_park write only .sdlc/state/drift-shadow.json, a file the predecessor never writes (shadow-mode drift verdicts of this product). Vetted #1243: decision_import.py::classify_model and ::_cache_save write only .sdlc/state/decision-import-classes.json (the import classification cache), a file the predecessor never writes.",
    "verdict": "directory",
    "vetted_writers": [
     "skills/sigma-init/scripts/init_flow.py::main",
@@ -487,6 +487,10 @@
     "skills/sigma-loop/scripts/channel_notify.py::tick",
     "skills/sigma-loop/scripts/coexist.py::write_owner",
     "skills/sigma-loop/scripts/comment_watch.py::tick",
+    "skills/sigma-loop/scripts/decision_import.py::_cache_save",
+    "skills/sigma-loop/scripts/decision_import.py::classify_model",
+    "skills/sigma-loop/scripts/drift_shadow.py::_save",
+    "skills/sigma-loop/scripts/drift_shadow.py::shadow_for_park",
     "skills/sigma-loop/scripts/drift_watch.py::_stamp",
     "skills/sigma-loop/scripts/drift_watch.py::sweep",
     "skills/sigma-loop/scripts/feature_judge.py::_acquire_spend_lock",
