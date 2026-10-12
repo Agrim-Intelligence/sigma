@@ -410,7 +410,7 @@ def test_export_is_one_commit_with_fixed_identity_date_and_message(tmp_path, cap
     finally:
         os.umask(old)
     assert rc == 0, se
-    assert se == ""
+    assert "REFUSED" not in se and se.count("\n") == 1 and "WARNING" in se  # only the derived-name warning
     lines = so.splitlines()
     assert [ln.partition(": ")[0] for ln in lines] == ["verdict", "commit", "tree", "export-commit", "out",
                                                          "report", "scans"]
@@ -1294,3 +1294,62 @@ def test_the_export_git_directory_and_outputs_name_no_operator_path_host_or_sour
     assert os.environ["HOME"] not in "\n".join([so, se])
     assert not (export / ".git" / "logs").exists() and not (export / ".git" / "hooks").exists()
     assert not any(p.is_symlink() for p in export.rglob("*") if ".git" not in p.parts)
+
+
+# ------------------------------------------------------------------------------ wrapped names, the derived-name warning
+
+SHORT_WRAPS = {
+    "after-slash": "acme/\ndemoapp", "before-slash": "acme\n/demoapp", "quoted": "> acme/\n> demoapp",
+    "comment": "# acme/\n# demoapp", "indented": "see acme/\n    demoapp", "json-escaped": '"acme/\\ndemoapp"',
+    "mid-name": "acme/demo\napp", "mid-owner": "ac\nme/demoapp", "mid-name-quoted": "> acme/demo\n> app",
+}
+
+
+@pytest.mark.parametrize("kind", sorted(SHORT_WRAPS))
+def test_a_wrapped_name_is_joined_even_when_the_bare_name_alone_is_not_scanned(tmp_path, capsys, kind):
+    """The repo name here is short and plain, so it is NOT scanned bare: only the join can find these.
+    Red when the join (next to the slash, or inside the name) is removed."""
+    mod = _tool()
+    repo, sha = _fixture(tmp_path, extra={"docs/e.md": "before\n%s\nafter\n" % SHORT_WRAPS[kind]})
+    _git(repo, "config", "remote.origin.url", "https://github.com/acme/demoapp.git")
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha))
+    assert rc == 1, (kind, err)
+    found = _report(_fields(out))["scans"]["builder"]["findings"]
+    assert [(f["rule"], f["path"]) for f in found] == [("source-slug", "docs/e.md")], kind
+
+
+def test_a_wrapped_bare_name_and_a_clean_two_line_text(tmp_path, capsys):
+    mod = _tool()
+    for kind, text in (("bare-mid-token", "see fake-\nsrc-repo here"), ("owner-mid", "ac\nme/fake-src-repo")):
+        repo, sha = _fixture(tmp_path, extra={"docs/e.md": text + "\n"}, name="s-" + kind)
+        rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, kind)))
+        assert rc == 1, (kind, err)
+    repo, sha = _fixture(tmp_path, extra={"docs/e.md": "some text\nacme is a word\nand demo\napps are fine\n"}, name="clean")
+    _git(repo, "config", "remote.origin.url", "https://github.com/acme/demoapp.git")
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "o-clean")))
+    assert rc == 0, err
+
+
+def test_a_name_derived_from_a_remote_alone_prints_a_warning_and_repo_silences_it(tmp_path, capsys):
+    mod = _tool()
+    repo, sha = _fixture(tmp_path)
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha))
+    assert rc == 0 and "WARNING the source name was derived from the remote(s) only" in err and "--repo" in err
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "o2"),
+                                             extra=["--repo", _fake_slug()]))
+    assert rc == 0 and "WARNING" not in err
+
+
+def test_every_documented_build_gesture_passes_repo():
+    """A real export always names the source: the copyable gesture in each doc carries --repo."""
+    root = pathlib.Path(__file__).resolve().parents[1]
+    seen = 0
+    for rel in ("docs/public-snapshot.md", "docs/publish-runbook.md"):
+        fenced = False
+        for line in (root / rel).read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("```"):
+                fenced = not fenced
+            if fenced and line.strip().startswith("python3 tools/build_public_tree.py") and "--out" in line:
+                seen += 1
+                assert "--repo " in line, (rel, line)
+    assert seen >= 2, seen

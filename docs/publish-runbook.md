@@ -194,6 +194,14 @@ line number, never the text. Nothing was sent. With the variable unset nothing c
   the export), `verify_merge --fill` (its text is the commit messages, which are checked), `gh api --input -`,
   labels, milestones, and anything posted outside the loop's code. The export itself is already gated:
   `tools/build_public_tree.py` runs `leak_refs.py tree` and REJECTS the export on a hit.
+- **Building the export.** A real export always passes `--repo`, because a name derived from a remote
+  alone cannot tell a fork under the same owner from the source (the builder warns on stderr when it is
+  left out). Copyable, from a clean detached checkout of the commit to export (the full procedure is
+  `docs/public-snapshot.md`):
+
+  ```sh
+  python3 tools/build_public_tree.py "$COMMIT" --out "$OUT" --patterns "$PATTERNS" --repo "$REVIEW_REPO" --allow-public-source
+  ```
 - **Cost.** One pattern load per process (one `git rev-parse`), then O(text length x patterns) per write.
   The standard library has no regex timeout, so a pathological pattern slows every write.
 - **Controls.** `tests/test_post_guard.py` runs the exported-variable gesture with a fake `gh` on PATH
