@@ -4662,7 +4662,7 @@ RULES_READ = "rules/branches/main"
 
 def _ruleset(checks=(), reviews=None, extra=()):
     """The REST `rules/branches/<base>` list for a repo that enforces through RULESETS (MEASURED shape on
-    Agrim-Intelligence/sigma 2026-10-11: `pull_request` + `required_status_checks`, classic protection 404)."""
+    a ruleset-enforced repository 2026-10-11: `pull_request` + `required_status_checks`, classic protection 404)."""
     rules = list(extra)
     if checks:
         rules.append({"type": "required_status_checks", "ruleset_id": 1,

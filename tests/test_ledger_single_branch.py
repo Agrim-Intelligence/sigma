@@ -601,9 +601,8 @@ def test_a_reroot_interrupted_after_its_reset_is_finished_by_the_next_bootstrap(
     assert "finished the re-root" in offline and "publish deferred" in offline, offline
     assert not stranger.exists() and stranger.name in offline, offline
     _git(team.b, "remote", "set-url", "origin", url)
-    # The offline publish committed and could not push; the ledger's publish re-pushes such a commit
-    # only alongside a new entry -- a pre-existing gap, tracked separately -- so write one.
-    ledger.append(team.base_b, BO, "note", "g.md", why="after reconnecting")
+    # The offline publish committed and could not push. The next publish pushes that stranded commit
+    # with no new entry (#1210; before it, this test had to write one to get the commit carried).
     out = sync.bootstrap(team.base_b, BO)
     assert "finished the re-root" not in out and out.endswith("published"), out
     assert "under an older actor name" in _origin_whys(team.origin)

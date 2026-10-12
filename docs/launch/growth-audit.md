@@ -38,7 +38,7 @@ policy.
 The audit records every unique path pattern without a source-proven retention
 mapping in the committed JSON's `b6_disposition.unresolved_patterns` array.
 Its 177 rows are measured at the SHA above and are all carried by
-[B6 issue #419](https://github.com/Agrim-Intelligence/sigma/issues/419), not
+B6 issue #419 (in the source repository), not
 silently exempted or given a fabricated pruner. Before filing, the local
 dedup control found no candidate and a direct GitHub title/body search found
 no open B6 retention/cap issue (the only related hit was closed #150, which is

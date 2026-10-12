@@ -1,5 +1,19 @@
 [
   {
+    "path": ".github/CODEOWNERS",
+    "rule": "email-address",
+    "reason": "the owners' role address, published on purpose by the owner's decision of 2026-10-12 (a CODEOWNERS owner entry); not a personal address",
+    "lines": [
+      "4c98d3d5d529a2d82f61073401cd1c87d6aab1020961e5cb5639c5d78255617d",
+      "640549985b2dcc25fadccd322b70a63407a9ea1e855288ea43a946670d44956f",
+      "a97b1334e8254d798946ac3805e8a320cff7c41d7010c30124f5e21d31d36315",
+      "ad20553d53ed571aefb0ffbcbd5162d105daedf22ceb27d3e4b119f2e7180b1a",
+      "dc1889e57511c5f397331b6797e46d426a2a050e0a4aefd52adeded60e76b3cc",
+      "dec87cd16329d467dbcf231d9d3a7f92f0ddc051a48e30fdb54dc108a20a5b1c",
+      "eaf4e7541698798c3e7bd7532c89a213908561dba947487f8118f3d97e7e20f2"
+    ]
+  },
+  {
     "path": ".sdlc/plans/258.md",
     "rule": "auth",
     "reason": "plan or research prose using the common word digest, not a credential",
@@ -45,6 +59,14 @@
     "reason": "the owner-approved shipped maintainer contact address (company domain) in the SECURITY.md contact line; intended, not a leak",
     "lines": [
       "5f7051fa985e8989ac01615bdb71e848a4dab1aecf9508ddcdab8538cf1b0fc8"
+    ]
+  },
+  {
+    "path": "docs/launch/definition.md",
+    "rule": "email-address",
+    "reason": "prose naming the owners' role address that CODEOWNERS lists, published on purpose by the owner's decision of 2026-10-12",
+    "lines": [
+      "14743526acc2eb046a9892f763a9bfbb0da47fdbe4c1178bf895fb5ae8e22cf8"
     ]
   },
   {
@@ -459,6 +481,14 @@
     "lines": [
       "e4b4b4454feb33c4311511f55f650e8be58951966668253ef77ca70a81a98052",
       "e4b4b4454feb33c4311511f55f650e8be58951966668253ef77ca70a81a98052"
+    ]
+  },
+  {
+    "path": "tests/test_repo_settings_doc.py",
+    "rule": "email-address",
+    "reason": "the test that pins the owners' role address listed in CODEOWNERS, published on purpose by the owner's decision of 2026-10-12",
+    "lines": [
+      "f013e8da26381d93a84c58ef6e702bd9f5a1fb989dc5822b2dda1965b58562b1"
     ]
   },
   {

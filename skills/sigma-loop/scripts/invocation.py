@@ -284,7 +284,8 @@ def _bounded_io(proc, request, timeout):
 def run_adapter(sdlc_dir, data, verb, request, timeout):
     """Run the verified bytes (a private 0700 copy), one JSON request on stdin, one line back."""
     scratch = _dir(sdlc_dir)
-    tmp = tempfile.mkdtemp(prefix="run-", dir=str(scratch))
+    # absolute: Python <= 3.11 resolves a relative exe against the child's cwd (=tmp), so `.sdlc` broke 3.10/3.11
+    tmp = os.path.abspath(tempfile.mkdtemp(prefix="run-", dir=str(scratch)))
     try:
         os.chmod(tmp, 0o700)
         exe = os.path.join(tmp, "adapter")

@@ -136,7 +136,7 @@ def test_the_repo_shape_is_cross_repos_own_pattern():
 
 
 def test_a_newline_never_smuggles_a_second_argument_into_a_gh_call(tmp_path):
-    cfg = _config(upstream_repo="Agrim-Intelligence/sigma\nrm -rf /")
+    cfg = _config(upstream_repo="example-org/sigma-upstream\nrm -rf /")
     assert upstream.upstream_repo(cfg) is None
 
 
@@ -293,7 +293,7 @@ def test_a_url_is_not_a_path(tmp_path):
     """A github.com URL naming a kit file is real kit evidence and is still answered `project`.
     Stated as the deliberate direction rather than left as a surprise: a URL is not a location on
     this disk, and inventing a resolution for one is how a project finding gets withheld."""
-    url = f"https://github.com/Agrim-Intelligence/sigma/blob/main/{KIT_PATH}"
+    url = f"https://github.com/example-org/sigma-upstream/blob/main/{KIT_PATH}"
     assert upstream.classify(_project(tmp_path), url)["origin"] == upstream.PROJECT
 
 
@@ -433,7 +433,7 @@ def test_a_deep_absolute_sdlc_dir_does_not_eat_the_ledger_line(tmp_path):
     assert upstream._short(given, report["spilled"]) == ".sdlc/state/withheld/12.md"
     why = _addressed(sdlc)[0]["why"]
     assert len(why) <= ledger.FREE_TEXT_CAP
-    assert "filed upstream as Agrim-Intelligence/sigma#77" in why
+    assert "filed upstream as example-org/sigma-upstream#77" in why
     assert "state/withheld/12.md" in why and "/private/var/" not in why
 
 
@@ -444,7 +444,7 @@ def test_an_untitled_finding_gets_a_title_from_its_own_first_line(tmp_path):
     gh = _granted()
     upstream.route(_project(tmp_path, cfg), cfg, "12", None,
                    f"{KIT_PATH} drops sdlc:goal on a closed issue", None, run=gh.triple)
-    posted = gh.matching("api", "-X", "POST", "repos/Agrim-Intelligence/sigma/issues")[0]
+    posted = gh.matching("api", "-X", "POST", "repos/example-org/sigma-upstream/issues")[0]
     title = posted[posted.index("-f") + 1]
     assert title == f"title={KIT_PATH} drops sdlc:goal on a closed issue"
 
@@ -499,14 +499,14 @@ def test_a_typo_in_the_escape_hatch_keeps_the_safe_default(tmp_path):
 # ------------------------------------------------------------------ upstream
 
 def _upstream_cfg(**over):
-    return _config(upstream_repo="Agrim-Intelligence/sigma", **over)
+    return _config(upstream_repo="example-org/sigma-upstream", **over)
 
 
 def _granted(number=77):
     return Gh(replies={"api user": "amy",
-                       "api repos/Agrim-Intelligence/sigma": json.dumps(
+                       "api repos/example-org/sigma-upstream": json.dumps(
                            {"permissions": {"push": True}}),
-                       "repos/Agrim-Intelligence/sigma/issues": json.dumps(
+                       "repos/example-org/sigma-upstream/issues": json.dumps(
                            {"number": number,
                             "html_url": "https://github.com/alice/kit/issues/%s"
                                         % number})})
@@ -518,11 +518,11 @@ def test_a_granted_upstream_repo_receives_the_finding(tmp_path):
     gh = _granted()
     report = upstream.route(sdlc, cfg, "12", "Label handling",
                             f"{KIT_PATH} drops the label", "the detail", run=gh.triple)
-    posted = gh.matching("api", "-X", "POST", "repos/Agrim-Intelligence/sigma/issues")
+    posted = gh.matching("api", "-X", "POST", "repos/example-org/sigma-upstream/issues")
     assert len(posted) == 1 and report["issue"] == "77"
     assert report["withheld"] is True and report["verdict"] == upstream.GRANTED
     why = _addressed(sdlc)[0]["why"]
-    assert "filed upstream as Agrim-Intelligence/sigma#77" in why
+    assert "filed upstream as example-org/sigma-upstream#77" in why
     assert len(why) <= ledger.FREE_TEXT_CAP
 
 
@@ -552,7 +552,7 @@ def test_the_upstream_wrapper_adds_no_identifying_metadata_of_its_own(tmp_path):
     upstream.route(_project(tmp_path, cfg), cfg, "4242", "Label handling",
                    f"{KIT_PATH} drops the label", "detail", run=gh.triple)
     posted = " ".join(gh.matching("api", "-X", "POST",
-                                  "repos/Agrim-Intelligence/sigma/issues")[0])
+                                  "repos/example-org/sigma-upstream/issues")[0])
     assert "acme/widget" not in posted and "4242" not in posted
     assert KIT_PATH in posted
 
@@ -567,7 +567,7 @@ def test_the_adopters_mechanical_identifiers_never_cross_the_boundary(tmp_path):
     upstream.route(_project(tmp_path, cfg), cfg, "ACME-421", None, LEAKY_FINDING, None,
                    run=gh.triple)
     posted = " ".join(gh.matching("api", "-X", "POST",
-                                  "repos/Agrim-Intelligence/sigma/issues")[0])
+                                  "repos/example-org/sigma-upstream/issues")[0])
     for identifier in ("acme-corp/widgets", "acme-corp", "ACME-421", "@bob-acme",
                        "bob.smith@acme-corp.example",
                        "/Users/bob/secretproj/lib/pay.py",
@@ -587,7 +587,7 @@ def test_an_email_address_is_masked_whole_rather_than_cut_in_half(tmp_path):
     upstream.route(_project(tmp_path, cfg), cfg, "ACME-421", None,
                    f"{KIT_PATH} — ask bob.smith@acme-corp.example", None, run=gh.triple)
     posted = " ".join(gh.matching("api", "-X", "POST",
-                                  "repos/Agrim-Intelligence/sigma/issues")[0])
+                                  "repos/example-org/sigma-upstream/issues")[0])
     assert "bob.smith@acme-corp.example" not in posted and "acme-corp" not in posted
     assert "[email removed]" in posted
     # NOT half-masked: no fragment of the address may survive under a replacement that reads as
@@ -622,7 +622,7 @@ def test_the_issue_says_plainly_that_the_prose_is_not_deidentified(tmp_path):
     upstream.route(_project(tmp_path, cfg), cfg, "ACME-421", None, LEAKY_FINDING, None,
                    run=gh.triple)
     posted = " ".join(gh.matching("api", "-X", "POST",
-                                  "repos/Agrim-Intelligence/sigma/issues")[0])
+                                  "repos/example-org/sigma-upstream/issues")[0])
     assert upstream.FORWARDING_NOTICE in posted
 
 
@@ -651,7 +651,7 @@ def test_a_short_goal_id_is_left_alone(tmp_path):
     upstream.route(_project(tmp_path, cfg), cfg, "12", None,
                    f"{KIT_PATH} drops 12 of the 30 labels", None, run=gh.triple)
     posted = " ".join(gh.matching("api", "-X", "POST",
-                                  "repos/Agrim-Intelligence/sigma/issues")[0])
+                                  "repos/example-org/sigma-upstream/issues")[0])
     assert "12 of the 30 labels" in posted
 
 
@@ -671,7 +671,7 @@ def test_an_unknown_verdict_never_writes_upstream(tmp_path):
 
 def test_a_denied_verdict_never_writes_upstream(tmp_path):
     cfg = _upstream_cfg()
-    gh = Gh(replies={"api user": "amy"}, fail=("api repos/Agrim-Intelligence/sigma",))
+    gh = Gh(replies={"api user": "amy"}, fail=("api repos/example-org/sigma-upstream",))
     report = upstream.route(_project(tmp_path, cfg), cfg, "12", "t", f"{KIT_PATH} is wrong", None,
                             run=gh.triple)
     assert gh.matching("api", "-X", "POST") == [] and report["issue"] is None
@@ -700,7 +700,7 @@ def test_a_refused_upstream_write_is_ledgered_and_never_dropped(tmp_path):
 def test_an_upstream_answer_with_no_issue_number_is_not_a_filing(tmp_path):
     cfg = _upstream_cfg()
     gh = _granted()
-    gh.replies["repos/Agrim-Intelligence/sigma/issues"] = "{}"
+    gh.replies["repos/example-org/sigma-upstream/issues"] = "{}"
     report = upstream.route(_project(tmp_path, cfg), cfg, "12", "t", f"{KIT_PATH} is wrong", None,
                             run=gh.triple)
     assert report["issue"] is None and report["warnings"]
@@ -846,7 +846,7 @@ def test_the_ledger_line_leads_with_where_the_finding_went(tmp_path):
     upstream.route(sdlc, cfg, "12", "Label handling", evidence, None, run=_granted().triple)
     why = _addressed(sdlc)[0]["why"]
     assert len(why) <= ledger.FREE_TEXT_CAP
-    assert "filed upstream as Agrim-Intelligence/sigma#77" in why
+    assert "filed upstream as example-org/sigma-upstream#77" in why
 
 
 def test_overflowing_evidence_is_counted_not_silently_dropped(tmp_path):
@@ -876,7 +876,7 @@ def test_the_upstream_route_is_reachable_end_to_end_from_a_filing(tmp_path):
         same_area=True, immediately_actionable=False, blocks_goal=False,
         source=_github_source(sdlc, board), upstream_run=kit.triple)
     assert board.matching("issue", "create") == []
-    assert len(kit.matching("api", "-X", "POST", "repos/Agrim-Intelligence/sigma/issues")) == 1
+    assert len(kit.matching("api", "-X", "POST", "repos/example-org/sigma-upstream/issues")) == 1
     assert report["routing"]["issue"] == "77" and report["issue"] is None
 
 
@@ -903,7 +903,7 @@ def test_a_runner_that_dies_filed_nothing_and_says_so(tmp_path):
 def test_an_unparseable_upstream_answer_is_not_a_filing(tmp_path):
     cfg = _upstream_cfg()
     gh = _granted()
-    gh.replies["repos/Agrim-Intelligence/sigma/issues"] = "<html>502</html>"
+    gh.replies["repos/example-org/sigma-upstream/issues"] = "<html>502</html>"
     report = upstream.route(_project(tmp_path, cfg), cfg, "12", "t", f"{KIT_PATH} is wrong", None,
                             run=gh.triple)
     assert report["issue"] is None and report["warnings"]
@@ -970,7 +970,7 @@ def test_a_secret_in_the_finding_is_never_published_upstream(tmp_path):
                    f"{KIT_PATH} is wrong", "run it with token=hunter2secretvalue and ghp_"
                    + "a" * 30, run=gh.triple)
     posted = " ".join(gh.matching("api", "-X", "POST",
-                                  "repos/Agrim-Intelligence/sigma/issues")[0])
+                                  "repos/example-org/sigma-upstream/issues")[0])
     assert "hunter2secretvalue" not in posted and "ghp_" + "a" * 30 not in posted
     assert "[REDACTED" in posted
 
@@ -1056,7 +1056,7 @@ def test_the_same_finding_twice_writes_once(tmp_path):
     assert gh.matching("api", "-X", "POST") == []           # and never a second upstream issue
     assert len(_addressed(sdlc)) == 1                       # one ledger note, not two
     assert upstream.withheld_path(sdlc, "12").read_text().count("\n## ") == 1
-    assert second["duplicate_of"] == "Agrim-Intelligence/sigma#77"
+    assert second["duplicate_of"] == "example-org/sigma-upstream#77"
     assert any("already withheld" in w for w in second["warnings"])
 
 
@@ -1193,7 +1193,7 @@ def test_injecting_run_alone_can_never_reach_the_network(tmp_path, monkeypatch):
 
     assert reached == [], f"the upstream write reached the real gh: {reached}"
     assert len(fake.matching("api", "-X", "POST",
-                             "repos/Agrim-Intelligence/sigma/issues")) == 1
+                             "repos/example-org/sigma-upstream/issues")) == 1
     assert report["routing"]["issue"] == "77"
 
 
@@ -1206,7 +1206,7 @@ def test_hand_off_inherits_the_same_isolation(tmp_path, monkeypatch):
     handoff.hand_off(sdlc, cfg, "12", "engine", f"{KIT_PATH} drops the label",
                      source=_github_source(sdlc, Gh()), run=fake)
     assert reached == []
-    assert fake.matching("api", "-X", "POST", "repos/Agrim-Intelligence/sigma/issues")
+    assert fake.matching("api", "-X", "POST", "repos/example-org/sigma-upstream/issues")
 
 
 def test_an_explicit_upstream_run_still_wins_over_the_adapted_one(tmp_path, monkeypatch):

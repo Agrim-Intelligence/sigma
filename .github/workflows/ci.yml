@@ -30,7 +30,7 @@ jobs:
   test:
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
     runs-on: macos-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       SLOW: >-
         --ignore=tests/test_readiness_drills.py

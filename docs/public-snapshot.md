@@ -82,7 +82,7 @@ The refusal codes: `windows`, `no-patterns-source`, `patterns-inside-work-tree`,
 `not-a-repo`, `bad-commit`, `bad-version` (the plugin version is not a plain `N.N.N[-alpha|beta|rc[.N]]` number, or the export commit message matches a content rule: the version enters the commit message, which no file scan reads), `object-format`, `bad-exclude`, `exclude-matches-nothing`, `symlink`,
 `gitlink`, `bad-mode`, `bad-path`, `secret-file-name`, `case-collision` (two paths equal after
 case folding and Unicode NFC normalisation), `head-not-commit`,
-`dirty`, `tool-mismatch`, `tool-missing`, `no-remote-ref`, `not-landed`, `repo-required`, `bad-slug`,
+`dirty`, `tool-mismatch`, `tool-missing`, `no-remote-ref`, `not-landed`, `repo-required`, `bad-slug`, `source-slug-unknown`, `source-slug-owner-mismatch`, `report-dir-inside-out`, `transform-failed`,
 `gh-failed`, `review-repo-public`, `not-pr-merged`, `not-owner-merged`, `dispositions-malformed`,
 `tree-mismatch`, `oversize`, `binary`, `non-utf8`, `report-exists`, `unpublish-failed`,
 `work-tree-unknown`, `git-failed`, `bad-ref`, `bad-timeout`, `leak-scan-absent` (the commit holds
@@ -145,13 +145,42 @@ VERIFIED, so read that field. The report prints, in `not_covered`, what the scan
 - `tools/readiness/exposure_scan.py` de-duplicates its rules by name, so a second rule of one name
   never runs there;
 - file NAMES are checked against the private patterns only;
+- the OWNER'S pattern-file scan (`leak_refs.py` with `--patterns`, and the `exposure` scan's private-pattern
+  rule) matches each line as written: it does NOT join a name wrapped over a line break. Only the derived
+  source-name scan (`source-slug`) joins two adjacent lines. A private pattern split across a wrap passed
+  the pattern-file scan in two forms in the end-to-end verification;
 - the origin-owner rule of `tools/leak_scan.py` is skipped, because the export has no origin;
 - names absent from the patterns file, and e-mail addresses, which `tools/leak_scan.py` does not
   check;
 - destination GitHub state beyond what `python3 tools/verify_public_repo.py` counts;
 
 The four scans are: `builder` (the header rule `private-key-header`, the placeholder rule
-`owner-placeholder`, the doctor marketplace slug against `docs/launch/definition.json`, and every
+`owner-placeholder`, the rule `source-slug`: the source repository's own `OWNER/NAME`, found in any exported file's text or
+path. Names come from `--repo` and from EVERY remote's GitHub URL (a fork beside the real remote is
+scanned too), never typed into a file. Without `--repo`, a remote whose owner is not the owner of
+`public_repo` in `docs/launch/definition.json` is a fork or foreign clone and is refused
+`source-slug-owner-mismatch`: pass `--repo OWNER/NAME` naming the source (a fork inside the same owner
+cannot be told apart, so name the source with `--repo` there: a REAL export always passes `--repo`, as the gesture above does, and the builder prints a WARNING on stderr when it is left out). The bare repository NAME is scanned too
+when it is long and distinctive (8 or more characters with a `-`, `_`, `.` or digit); a short or plain
+name, the product's own among them, is not, because it would flag the public text. Matching rule: a
+name is a hit unless an ALPHANUMERIC touches it on either side (a longer, different name such as the
+public repository's own is no hit); `-`, `_`, `.`, `/`, `#` or a quote beside it still is, so a sibling
+whose name starts with the source's (a team handle, a drill repository) is a finding. Text is matched
+after NFKC, with zero-width, soft-hyphen and bidi characters dropped, `\/`, `%2F`, `&#47;`, `&#x2F;`,
+`&sol;`, `\x2f` and `\u002f` read as `/`, and a line break between two ADJACENT lines (a markdown quote or
+comment leader may follow it) is dropped before matching, whether it falls next to the slash or inside the
+name (`fake-` / `src-repo`). A sibling or a team handle that is legitimate is dispositioned by exact line
+in `docs/launch/public-tree-dispositions.json` (rule `source-slug`: reviewed lines only, counted; a path hit carries no
+line and cannot be covered). Not covered, by design: base64, hex or URL-double-encoded text, look-alike
+letters from other scripts (NFKC folds compatibility forms only), the name spelled with inserted
+ordinary characters, a name spread over three or more lines, the bare short repository name, and
+text in a tree built with `--sdlc include` (the `.sdlc` records name the source and the build is then
+REJECTED until each is dispositioned or removed). A build whose name cannot be derived is refused
+`source-slug-unknown`. The patterns file never held that name, which is why the other scans missed it.
+Measured: 13 files named it before the fix, 0 after; with the wider rule 3 shipped files name a sibling
+and are dispositioned by line (throwaway drill repositories in
+`docs/launch/evidence/blast-radius-2026-10-04.json`, `live-onboarding-2026-10-12.md`, `docs/onboarding-control.md`); 19 more tracked
+files in `.sdlc/` carry it and are excluded by default), the doctor marketplace slug against `docs/launch/definition.json`, and every
 `github.com/<owner>/<repo>` in `.github/ISSUE_TEMPLATE/config.yml` against the same `public_repo`: a
 check, not a rewrite, rule `issue-template-slug-mismatch`/`-unverifiable`; a bare `owner/repo` with no
 `github.com` and the sibling templates are not read),
@@ -161,6 +190,65 @@ scanner over the export) and `leak_scan` (the export's own commit-time scan).
 Every build is REJECTED until the owner fills the two owner-name placeholders in `SECURITY.md` and
 `CODE_OF_CONDUCT.md`: the placeholder is a finding, not a pre-materialisation refusal, so one run
 still reports every other scan.
+
+## What the skip pin does not cover
+
+`tests/test_no_skip_hooks.py` is a static check, not a lock. It pins: conftest hooks that can skip or
+ignore by rule (`pytest_collection_modifyitems`, `pytest_ignore_collect`, `pytest_configure` beyond marker
+registration, the run and report hooks, `add_marker`, `collect_ignore`/`collect_ignore_glob`), and, for the
+eight guard tests, any skip/xfail marker, `pytest.skip`/`importorskip`/`xfail` call (one reviewed
+`not a git checkout` skip excepted) or `return` before the first assert; the only exemption is the exact
+skip the export-time transform of #1203 writes into five named tests. The exemption holds only in a tree that is an export: no `.sdlc/` directory AND shipped inventories already pruned of `.sdlc/` rows (`export_mode()`); with `.sdlc/` present, or deleted without the pruning, the decorator is itself a finding. Not covered: a hand-built tree that deletes `.sdlc/`, prunes both inventories and adds the decorators (a visible rewrite, reviewed as such). NOT covered: a blanket skip (a hook
+or an autouse fixture that skips every test, or a skip in an imported helper), `--deselect`, `-k` or `addopts`
+in `pytest.ini`/`pyproject.toml`/`tox.ini`, a plugin, and the CI command line. Mitigation: review of any
+conftest or pytest-config change, and the measured exported-suite counts (passed, skipped and the five
+`EXPORT-SKIP` lines of `pytest -rs`) in the #1203 PR.
+
+## What was and was not measured
+
+Every export built so far for rehearsal and for these controls used `--review-level clean` (the checkout
+is clean and at the commit); none used `pr-merged` or `owner-merged`, which need `--repo` and REST calls
+and were not run. A real go-public build uses the documented gesture above, with its `--review-level`
+default and `--repo`.
+
+## What the builder's own output may disclose
+
+Measured against a real export and pinned in `tests/test_build_public_tree.py`: the report (JSON and
+`.md`), stdout, stderr and the `.rejected` directory carry locations (path, line, rule, hash), never
+matched text; every string passes the pattern belt, which now also redacts the source repository's own
+name (`[redacted: pattern 0]`, e.g. in a finding's path). Reports are written only outside the work
+tree and, since #1204, refused `report-dir-inside-out` when inside `OUT` or `OUT.rejected`. The export's
+`.git` holds one orphan commit by the fixed identity, no remote, hook, reflog or operator path; its
+`config` records two host facts of the machine that ran `git init` (`ignorecase`, `precomposeunicode`).
+Not covered: the local report does echo what the operator passed (`--repo`, the review logins `gh`
+returned) and the `out:`/`report:` paths, tilde-shortened under the operator's home; it is 0600 and
+never inside a repository.
+
+## The export's own suite and gates (#1203)
+
+The export is a repository with its own CI, so its tests and gates must pass on the tree it ships,
+which has no `.sdlc/` by default. This is done by the BUILDER, at export time, not by a switch in the
+source (`export_transforms` in `tools/build_public_tree.py`); the report lists every change under
+`export.transforms`:
+
+- rows whose `path` is under a left-out prefix leave `docs/launch/write-surface.json` and
+  `docs/launch/exposure-allowlist.json` (the shipped copies only), so `write_surface.py check` and
+  `exposure_scan.py tracked` pass in the export;
+- when `.sdlc` is left out, five tests get an explicit `@pytest.mark.skip(reason="EXPORT-SKIP ...")` in
+  the exported file only: the four `test_documented_gesture_resolves_the_rows` tests (they measure the
+  private `.sdlc` store) and `test_no_shipped_file_cites_an_untracked_sdlc_design_or_plan` (16 shipped
+  cites of `.sdlc` records the export does not ship dangle for a public reader: `.gitignore`,
+  `CHANGELOG.md`, `docs/board-fields.md`, `docs/branching-model.md`, `skills/sigma-init/references/board.md`,
+  `sources.py`, `sync.py`, `tools/goal433_attack.py`, `tools/rename_check.py`; not fixed here);
+- a target that is not defined exactly once is refused `transform-failed`; with `--sdlc include` nothing
+  is rewritten.
+
+Trust model: the source holds no marker, flag or fixture that can make a guard skip or ignore a row, so
+nothing a contributor adds to the private tree can disarm one (`tests/test_export_transforms.py` runs a
+hand-written marker tracked, untracked, with extra fields and as a symlink next to a deleted `.sdlc`:
+both gates still fail). The skip set is pinned by that test (`EXPORT_SKIPS`), in the builder and in
+the exported tests: a new skip must change the pin in review. The exported repository's owners can edit
+their own tests; the guarantee is about what the builder produced at export time, recorded in the report.
 
 ## Dispositions and drift
 
@@ -178,14 +266,14 @@ Two files record reviewed exceptions, both read from the COMMIT (never from the 
 - `docs/launch/public-tree-dispositions.json`: the builder's own, schema
   `sigma.public-tree-dispositions/v1`, entries `{path, rule, reason}` plus exactly one of `blob` (the exact 40-hex git
   blob) or `lines` (sha256 of each reviewed matched line, counted, as in the exposure allowlist) for
-  the two content rules; the builder refuses a bare path-and-rule entry (`dispositions-malformed`),
+  the three content rules (`private-key-header`, `owner-placeholder`, `source-slug`; a `source-slug` path hit has no line and cannot be covered); the builder refuses a bare path-and-rule entry (`dispositions-malformed`),
   so no disposition suppresses a whole file. A `lines` entry goes stale (REJECTED) when a reviewed
   line changes or disappears, and a new match is a finding. Where the builder differs from
   `exposure_scan.py` (each difference fails closed, as a finding or a stale entry): it hashes the RAW
   line (a CRLF line hashes with its `\r`, and a hash that `--propose` computed for a line with
   edge whitespace will not match); it counts one finding per matching line per rule, not per regex
   match; a trailing newline in a hash passes validation but such an entry can only go stale; the
-  `blob` form takes 40 hex only; the rules are limited to the two content rules, and an entry under
+  `blob` form takes 40 hex only; the rules are limited to the three content rules, and an entry under
   an excluded prefix is dropped as moot; a non-UTF-8 file is refused (`non-utf8`) rather than
   decoded with replacement. Every report finding carries its
   `line_sha256` so an entry can be written from the report. It holds the fixtures and regex sources

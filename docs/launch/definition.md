@@ -45,7 +45,7 @@ places below, and a clone of it that is not repointed addresses THIS repository.
   `discovery.github.repo` into every adopter's `.sdlc/config.json`
   (`skills/sigma-setup/scripts/setup.py:190`, `:255`; `/sigma-init` fills the same key,
   `skills/sigma-init/scripts/init_flow.py:309`), and this repository's own `.sdlc/config.json`
-  holds `Agrim-Intelligence/sigma` there. The loop addresses GitHub by that slug directly, not by
+  holds `OWNER/NAME` there. The loop addresses GitHub by that slug directly, not by
   the git remote: it reads goals from it (`skills/sigma-loop/scripts/sources.py:88`) and passes it
   as `--repo` (`sources.py:1253`) to every label edit, comment, close, body edit and issue create
   (for example `:2819`, `:2838`, `:3608`). A loop in a
@@ -62,7 +62,7 @@ places below, and a clone of it that is not repointed addresses THIS repository.
 - the loop's `gh` calls that have no configured slug and address `{owner}/{repo}`, which `gh`
   fills from the checkout's git remote;
 - `docs/publish-runbook.md`'s `tools/leak_refs.py scan` and `rewrite` commands, which pass
-  `--repo Agrim-Intelligence/sigma`;
+  `--repo OWNER/NAME`;
 - `docs/board.md`'s milestone-assignment commands (`REPO=` at `docs/board.md:162`, `$Repo` at
   `:183`, and the copy probe's config at `:201`), now `Agrim-Intelligence/sigmaloop`; they PATCH the milestone on
   issues in the named repository, so run them against the repository whose issues you mean;
@@ -71,7 +71,7 @@ places below, and a clone of it that is not repointed addresses THIS repository.
 - `_MARKETPLACE_REPO` in `skills/sigma-doctor/scripts/doctor.py` (now the new public slug, #524). `/sigma-doctor`'s version
   check reads the repository the plugin was installed from first, and uses `_MARKETPLACE_REPO`
   only as a fallback when that record cannot be read.
-- existing plugin installs: each recorded `Agrim-Intelligence/sigma` as its marketplace source under the
+- existing plugin installs: each recorded `OWNER/NAME` as its marketplace source under the
   previous plugin id. Since the plugin was renamed (#524) they no longer receive updates under that id:
   the old install runs its OLD doctor, which shows nothing after the rename, so the owner must announce
   it; the NEW doctor's row and `docs/upgrading.md` ("From the pre-launch name") give the reinstall steps.
@@ -80,7 +80,7 @@ This list is from a grep of the whole tree for the slug and for every configurat
 holds one (`skills/sigma-init/templates/config.json.tmpl`, hooks, `.claude-plugin/`, the ledger,
 `sync.py`, the board settings). Tests that use the slug as a fixture are not listed; they do not
 address GitHub. `.claude-plugin/marketplace.json` names no repository (its source is `./`), and
-`.github/CODEOWNERS` names an organisation team, which the new repository does not change.
+`.github/CODEOWNERS` names two people (`@swapnil-agrim`, `@mstomar-ag`) and the address `teamsigma@agrim.ai`; each needs write access to the new repository for it to take effect.
 
 `docs/publish-runbook.md` and `docs/release.md` now describe this model (a fresh snapshot in a new repository;
 this repository is not renamed, and the loop is not repointed unless a clone of the new repository still names this

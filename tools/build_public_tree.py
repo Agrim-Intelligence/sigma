@@ -69,12 +69,25 @@ REPORT_SUFFIX_TRIES = 100
 DEFAULT_REPORT_DIR = "~/.sigma-ops/public-tree"
 ENV_PATTERNS = "SIGMA_LEAK_PATTERNS"
 LEVELS = ("clean", "landed", "pr-merged", "owner-merged")
-CONTENT_RULES = ("private-key-header", "owner-placeholder")
+CONTENT_RULES = ("private-key-header", "owner-placeholder", "source-slug")
 STDERR_CUT = 200
 #: The running copies whose bytes are compared with the commit's (step 7).
 TOOL_PATHS = ("tools/build_public_tree.py", "tools/leak_refs.py", "tools/readiness/exposure_scan.py",
               "skills/sigma-loop/scripts/scrub.py")
 LEAK_SCAN_PATH = "tools/leak_scan.py"
+# Export-time transforms (#1203): the export is built to be self-consistent, so the SOURCE holds no
+# switch. Rows for a left-out path leave these inventories; the listed tests are given an explicit
+# skip in the exported copy only, when `.sdlc` is left out. The list is pinned by a test.
+PRUNED_INVENTORIES = (("docs/launch/write-surface.json", "entries"), ("docs/launch/exposure-allowlist.json", None))
+EXPORT_SKIP_TOKEN = "EXPORT-SKIP"
+EXPORT_SKIP_REASON = EXPORT_SKIP_TOKEN + " public export without .sdlc/: this test reads the private .sdlc store or cites its records"
+EXPORT_SKIPS = (
+    ("tests/test_b6_466.py", "test_documented_gesture_resolves_the_rows"),
+    ("tests/test_goal_state_disposition.py", "test_documented_gesture_resolves_the_rows"),
+    ("tests/test_liveness_disposition.py", "test_documented_gesture_resolves_the_rows"),
+    ("tests/test_worktree_disposition.py", "test_documented_gesture_resolves_the_rows"),
+    ("tests/test_no_private_sdlc_citations.py", "test_no_shipped_file_cites_an_untracked_sdlc_design_or_plan"),
+)
 LEAK_SCAN_LABEL = "commit-time scan; key-body rule known incomplete, #433"
 NOT_COVERED = (
     "header-less private key bodies (#433)",
@@ -343,13 +356,70 @@ def _references_rx(excluded):
     return re.compile("|".join(re.escape(p) for p in alternatives))
 
 
-def materialise(src_root, entries, dest, excluded=()):
+_ESCAPED_SLASH = re.compile(r"\\+/|%2f|&#0*47;|&#x0*2f;|&sol;|\\x2f|\\u002f|\\057", re.I)
+
+
+_BREAK_ANYWHERE = re.compile(r"[ \t]*\n[ \t]*(?:#|//|\*|>)?[ \t]*")
+_LITERAL_BREAK = re.compile(r"/(?:\\r)?\\n[ \t]*|(?:\\r)?\\n[ \t]*/")  # a line break written as the two characters \n
+
+
+def _normalise(text):
+    """What the slug rule matches against: NFKC (full-width and compatibility forms fold), format
+    characters (zero-width, soft hyphen, bidi) dropped, and a slash written as an escape or entity
+    turned back into `/`."""
+    text = unicodedata.normalize("NFKC", text)
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+    return _LITERAL_BREAK.sub("/", _ESCAPED_SLASH.sub("/", text))
+
+
+class SlugScan(object):
+    """The source repository's own names: every OWNER/NAME it is known by, and its bare NAME when that
+    is long and distinctive (>= 8 characters with a `-`, `_`, `.` or digit: a short or plain word such
+    as the product's own name would flag the public text). A name is a hit unless an ALPHANUMERIC
+    touches it on either side (a different, longer name such as the public repository's); `-`, `_`,
+    `.`, `/` or any other neighbour is a hit, so `x-NAME`, `NAME_y` and `a.OWNER/NAME` count. Text is
+    matched after `_normalise`; a break next to the slash, or inside the name, between two adjacent lines is joined (#1204)."""
+
+    def __init__(self, slugs):
+        names = set(x.lower() for x in slugs)
+        bare = set(x.split("/", 1)[1] for x in names if "/" in x)
+        names |= set(x for x in bare if len(x) >= 8 and re.search(r"[-_.0-9]", x))
+        alt = "|".join(re.escape(x) for x in sorted(names, key=lambda x: (-len(x), x)))
+        core = r"(?<![A-Za-z0-9])(?:%s)(?![A-Za-z0-9])" % alt
+        self.rx = re.compile(core, re.I)           # raw text: the output belt redacts with it
+        self.sub = self.rx.sub
+
+    def in_path(self, path):
+        return self.rx.search(_normalise(path)) is not None
+
+    def line_numbers(self, text):
+        """-> the 1-based lines of `text` naming the source (a name split over two lines is put on
+        the second)."""
+        lines = text.split("\n")
+        single = [self.rx.search(_normalise(line)) is not None for line in lines]
+        found = [n for n, hit in enumerate(single, 1) if hit]
+        for n in range(1, len(lines)):
+            if single[n - 1] or single[n]:
+                continue
+            window = _normalise(lines[n - 1].rstrip("\r") + "\n" + lines[n])
+            # the break (with its quote or comment leader) is dropped wherever it falls: next to the
+            # slash or inside a token. Two lines only: a name over three is not covered.
+            if self.rx.search(_BREAK_ANYWHERE.sub("", window)) is not None:
+                found.append(n + 1)
+        return sorted(found)
+
+
+def materialise(src_root, entries, dest, excluded=(), slug_scan=None, synthetic=None):
     """Write `entries` [(path, mode, blob_hex)] of the source repository at `src_root` under `dest`
     through ONE `git cat-file --batch`, request-response, memory bounded by one blob. Refuses
     `[oversize]` (before reading), `[binary]` and `[non-utf8]`. Files are created 0600 with O_EXCL
     and then chmod-ed 0644/0755 (never the umask's choice). -> {files, bytes, modes, findings,
     references_remaining}: findings are the content rules' hits, one per matching line;
-    references_remaining maps each excluded path to the number of exported lines naming it."""
+    references_remaining maps each excluded path to the number of exported lines naming it.
+    `synthetic` {path: bytes} are the transformed files (see `export_transforms`): never read from
+    git, scanned like any other file. `slug_scan` (SlugScan) adds the `source-slug` rule over every line and every path. A path hit
+    carries no blob and no line hash, so no disposition can cover it; a line hit can be covered only by
+    a reviewed line of its own file."""
     dest = str(dest)
     os.makedirs(dest, mode=0o700, exist_ok=True)
     refs_rx = _references_rx([str(p) for p in excluded])
@@ -359,15 +429,21 @@ def materialise(src_root, entries, dest, excluded=()):
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=_git_env())
     try:
         for path, mode, oid in sorted(entries, key=lambda e: e[0].encode("utf-8", "surrogateescape")):
-            proc.stdin.write(oid.encode("ascii") + b"\n")
-            proc.stdin.flush()
-            header = proc.stdout.readline().decode("ascii", "replace").split()
-            if len(header) != 3 or header[0] != oid or header[1] != "blob":
-                raise Refused("git-failed", "git cat-file could not read a planned blob")
-            size = int(header[2])
-            if size > MAX_BLOB_BYTES:
-                raise Refused("oversize", "a planned blob is %d bytes, over the %d-byte cap" % (size, MAX_BLOB_BYTES))
-            data = _read_exact(proc.stdout, size + 1)[:size]
+            if synthetic and path in synthetic:
+                data = synthetic[path]
+                size = len(data)
+            else:
+                proc.stdin.write(oid.encode("ascii") + b"\n")
+                proc.stdin.flush()
+                header = proc.stdout.readline().decode("ascii", "replace").split()
+                if len(header) != 3 or header[0] != oid or header[1] != "blob":
+                    raise Refused("git-failed", "git cat-file could not read a planned blob")
+                size = int(header[2])
+                if size > MAX_BLOB_BYTES:
+                    raise Refused("oversize", "a planned blob is %d bytes, over the %d-byte cap" % (size, MAX_BLOB_BYTES))
+                data = _read_exact(proc.stdout, size + 1)[:size]
+            if slug_scan is not None and slug_scan.in_path(path):
+                findings.append({"rule": "source-slug", "path": path, "line": 0, "blob": None, "line_sha256": None})
             if b"\0" in data:
                 raise Refused("binary", "a planned blob holds a NUL byte")
             try:
@@ -382,6 +458,11 @@ def materialise(src_root, entries, dest, excluded=()):
                 if refs_rx is not None:
                     for named in set(m.group(0) for m in refs_rx.finditer(line)):
                         references[named] += 1
+            if slug_scan is not None:
+                lines = text.split("\n")
+                for number in slug_scan.line_numbers(text):
+                    findings.append({"rule": "source-slug", "path": path, "line": number, "blob": oid,
+                                     "line_sha256": hashlib.sha256(lines[number - 1].encode("utf-8")).hexdigest()})
             target = os.path.join(dest, *path.split("/"))
             os.makedirs(os.path.dirname(target), exist_ok=True)
             fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -815,6 +896,68 @@ def _disposition_covers(entries, findings):
     return uncovered, used
 
 
+def _source_slugs(args, src, definition_raw):
+    """-> the source repository's OWNER/NAME names (lower case): --repo, and the GitHub slug of EVERY
+    remote (url and pushurl), so a fork next to the real remote is scanned too. Without --repo, a
+    remote whose owner is not the owner of `public_repo` in docs/launch/definition.json (the
+    organisation that publishes this repository) is a fork or a foreign clone: refused
+    `source-slug-owner-mismatch`, because its name is then not the source's."""
+    found = set([args.repo.lower()]) if args.repo else set()
+    derived = set()
+    _rc, out = _git(src, "config", "--get-regexp", r"^remote\..*\.(url|pushurl)$", allow=True)
+    for line in (out or "").splitlines():
+        match = _GITHUB_REPO_RX.search(line.partition(" ")[2])
+        if match:
+            derived.add(("%s/%s" % (match.group(1), re.sub(r"\.git$", "", match.group(2), flags=re.I))).lower())
+    try:
+        public = json.loads(definition_raw.decode("utf-8")).get("public_repo") if definition_raw else None
+    except (UnicodeDecodeError, ValueError, AttributeError):
+        public = None
+    if not args.repo and isinstance(public, str) and "/" in public:
+        foreign = sorted(x for x in derived if x.split("/")[0] != public.split("/")[0].lower())
+        if foreign:
+            raise Refused("source-slug-owner-mismatch", "a remote of the source belongs to another owner than "
+                          "public_repo's: it may be a fork. Pass --repo OWNER/NAME naming the source itself")
+    return sorted(found | derived)
+
+
+def export_transforms(plan, names, read_blob):
+    """Step 5b. -> (plan', {path: bytes}, [report rows]). The export is the source minus the excluded
+    prefixes, EXCEPT these files, rewritten here so the exported tree passes its own gates: rows of
+    PRUNED_INVENTORIES for a left-out path are dropped, and when `.sdlc` is left out the tests of
+    EXPORT_SKIPS get an explicit skip decorator. Nothing in the source can switch this on: the builder
+    decides, and the report lists every change. A target that cannot be rewritten exactly is refused."""
+    by_path = dict((path, (mode, oid)) for path, mode, oid in plan)
+    changed, rows = {}, []
+    for path, key in PRUNED_INVENTORIES:
+        if path not in by_path or not names:
+            continue
+        data = json.loads(read_blob(by_path[path][1]).decode("utf-8"))
+        items = data[key] if key else data
+        kept = [x for x in items if not _under(str(x.get("path", "")), names)]
+        if len(kept) == len(items):
+            continue
+        if key:
+            data[key] = kept
+        else:
+            data = kept
+        changed[path] = (json.dumps(data, indent=2) + "\n").encode("utf-8")
+        rows.append({"path": path, "change": "rows-dropped", "count": len(items) - len(kept)})
+    if ".sdlc" in names:
+        for path, test in EXPORT_SKIPS:
+            if path not in by_path:
+                continue
+            text = changed.get(path, read_blob(by_path[path][1])).decode("utf-8")
+            rx = re.compile(r"^def %s\(" % re.escape(test), re.M)
+            if len(rx.findall(text)) != 1:
+                raise Refused("transform-failed", "%s: %s is not defined exactly once" % (path, test))
+            text = rx.sub(lambda m: '@__import__("pytest").mark.skip(reason=%s)\n%s' % (json.dumps(EXPORT_SKIP_REASON), m.group(0)), text)
+            changed[path] = text.encode("utf-8")
+            rows.append({"path": path, "change": "skip", "test": test})
+    plan = [(path, mode, blob_id(changed[path]) if path in changed else oid) for path, mode, oid in plan]
+    return plan, changed, rows
+
+
 def _doctor_slug(partial, definition_raw, blobs):
     doctor = os.path.join(str(partial), *DOCTOR_PATH.split("/"))
     if not os.path.isfile(doctor):
@@ -1167,6 +1310,7 @@ def _main(argv, run, state):
     except (OSError, UnicodeDecodeError):
         raise Refused("patterns-unreadable", "cannot read the patterns file")
     state.patterns = parse_patterns(text)
+    pattern_count = len(state.patterns)
     patterns_path = patterns_path.resolve()
 
     # 3. where things land
@@ -1177,6 +1321,10 @@ def _main(argv, run, state):
     _refuse_inside_work_tree(out, "out-inside-work-tree", run)
     report_dir = pathlib.Path(os.path.abspath(os.path.expanduser(args.report_dir or DEFAULT_REPORT_DIR)))
     _refuse_inside_work_tree(report_dir, "report-dir-inside-work-tree", run)
+    for tree in (out, rejected):
+        if report_dir == tree or tree in report_dir.parents:
+            raise Refused("report-dir-inside-out", "the report directory is inside OUT or OUT.rejected, so a report "
+                          "would ship in the export")
     _make_private_dir(out.parent)
     _make_private_dir(report_dir)
     mark = lap("arguments", started)
@@ -1215,6 +1363,7 @@ def _main(argv, run, state):
     remaining = [row for path, row in decoded if not _under(path, names)]
     paths = _check_structure(remaining)
     plan = [(path, row[1], row[3]) for path, row in zip(paths, remaining)]
+    plan, transformed, transforms = export_transforms(plan, names, lambda oid: _commit_blob(src, oid))
     if LEAK_SCAN_PATH in full and LEAK_SCAN_PATH not in paths:
         raise Refused("leak-scan-absent", "an exclusion drops %s, the export's own commit-time scan; the "
                       "fourth scan would not run" % LEAK_SCAN_PATH)
@@ -1267,6 +1416,14 @@ def _main(argv, run, state):
     pt_live = [e for e in pt_entries if not _under(e["path"], names)]
     allow_live = [e for e in allow_entries if not _under(e["path"], names)]
 
+    # 9b. the source's own name, derived (never typed into a file): the export must not carry it
+    slugs = _source_slugs(args, src, definition_raw)
+    if not slugs:
+        raise Refused("source-slug-unknown", "the source's own OWNER/NAME cannot be derived: pass --repo, or "
+                      "give the source a GitHub remote named by --remote, so the export can be scanned for it")
+    slug_scan = SlugScan(slugs)
+    state.patterns = state.patterns + [(0, slug_scan)]  # pattern 0: the output belt redacts it too (path findings)
+
     # 10. the planned tree, twice
     tmp = tempfile.mkdtemp(prefix="build_public_tree-")
     state.temps.append(tmp)
@@ -1276,6 +1433,9 @@ def _main(argv, run, state):
     env = _git_env()
     env.update({"GIT_INDEX_FILE": os.path.join(tmp, "index"), "GIT_OBJECT_DIRECTORY": objects,
                 "GIT_ALTERNATE_OBJECT_DIRECTORIES": os.path.join(common.strip(), "objects")})
+    for path, data in sorted(transformed.items()):  # the private object directory only
+        if _gitb(src, ["hash-object", "-w", "--stdin"], input_bytes=data, env=env).decode("ascii").strip() != blob_id(data):
+            raise Refused("tree-mismatch", "a transformed file hashes to another blob than planned")
     info = b"".join(("%s %s\t" % (mode, oid)).encode("ascii") + path.encode("utf-8") + b"\0"
                     for path, mode, oid in plan)
     if info:
@@ -1293,7 +1453,7 @@ def _main(argv, run, state):
     os.mkdir(str(partial), 0o700)
     state.partial = partial
     excluded_paths = [path for path, _row in excluded_rows]
-    mat = materialise(src, plan, partial, excluded_paths)
+    mat = materialise(src, plan, partial, excluded_paths, slug_scan, transformed)
     actual_disk = disk_tree(partial)
     if actual_disk != planned_py:
         raise Refused("tree-mismatch", "the files on disk are not the planned tree")
@@ -1369,16 +1529,17 @@ def _main(argv, run, state):
         "review": review,
         "sdlc": {"mode": sdlc_mode, "source": "flag" if args.sdlc else "default"},
         "exclusions": exclusions,
-        "patterns": {"source": "flag" if args.patterns else "env", "count": len(state.patterns)},
+        "patterns": {"source": "flag" if args.patterns else "env", "count": pattern_count},
         "export": {"out": _tilde(dest), "files": mat["files"], "bytes": mat["bytes"], "modes": mat["modes"],
                    "planned_tree_git": planned_git, "planned_tree_python": planned_py,
-                   "actual_tree_disk": actual_disk, "export_tree": planned_py, "commit": export_commit,
+                   "actual_tree_disk": actual_disk, "export_tree": planned_py, "transforms": transforms, "commit": export_commit,
                    "message": message, "author": "%s <%s>" % (AUTHOR_NAME, AUTHOR_EMAIL), "date": "%s +0000" % ct},
         "dispositions": {
             "exposure_allowlist": {"entries": len(allow_entries), "moot": len(allow_entries) - len(allow_live)},
             "public_tree": {"present": pt_raw is not None, "entries": len(pt_entries),
                             "moot": len(pt_entries) - len(pt_live)}},
         "scans": {"builder": {"exit": 1 if builder_findings else 0, "findings": builder_findings},
+                  "source_slug": {"slugs": len(slugs), "findings": len([f for f in builder_findings if f["rule"] == "source-slug"])},
                   "doctor_slug": doctor_slug, "issue_template_slug": issue_slug, "leak_refs": leak_refs, "exposure": exposure, "leak_scan": leak_scan},
         "notes": notes,
         "not_covered": list(NOT_COVERED),
@@ -1400,6 +1561,10 @@ def _main(argv, run, state):
     scans_line = "builder=%d leak_refs=%s/%s exposure=%s/%d+%d leak_scan=%s" % (
         len(builder_findings), leak_refs["exit"], leak_refs["hits"], exposure["exit"], len(exposure["findings"]),
         len(exposure["stale"]), "absent" if leak_scan["status"] == "absent" else leak_scan["exit"])
+    if not args.repo:  # last, so it never hides or precedes a refusal
+        print("build_public_tree: WARNING the source name was derived from the remote(s) only; a real export "
+              "must pass --repo OWNER/NAME naming the source itself (a fork under the same owner cannot be "
+              "told apart)", file=sys.stderr)
     for line in ("verdict: %s" % verdict, "commit: %s" % commit, "tree: %s" % planned_py,
                  "export-commit: %s" % export_commit, "out: %s" % _tilde(dest), "report: %s" % _tilde(json_path),
                  "scans: %s" % scans_line):

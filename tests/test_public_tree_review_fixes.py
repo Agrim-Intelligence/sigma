@@ -95,6 +95,7 @@ def _fixture(tmp_path, extra=None, name="src"):
         path.write_text(text, encoding="utf-8")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "fixture", env_extra={"GIT_COMMITTER_DATE": SOURCE_DATE + " +0000"})
+    _git(repo, "config", "remote.origin.url", "https://github.com/acme/fake-src-repo.git")
     return repo, _git(repo, "rev-parse", "HEAD")
 
 

@@ -40,7 +40,7 @@ can live is the repository's own settings.
 | Secret scanning and push protection | GitHub blocks a push that contains a recognised secret. Nothing in the loop changes. |
 | Private vulnerability reporting | The channel `SECURITY.md` names for reports. Nothing in the loop changes. |
 | Default workflow token `read`, cannot approve pull requests | Workflows start with a read-only token and cannot approve a pull request. `ci.yml` declares no permissions of its own and needs only read access. |
-| Maintainers team with `maintain` (an `admin` grant also passes the check) | The team `.github/CODEOWNERS` names has the rights to triage and merge, without admin. The team is created in GitHub; membership is never written to a file. |
+| Maintainers team with `maintain` (an `admin` grant also passes the check) | A team with the rights to triage and merge without admin. `.github/CODEOWNERS` names two people and one address, not the team; the team is created in GitHub and membership is never written to a file. |
 
 `strict` ("require branches to be up to date") is left off: with a 19-minute CI it would make every merge race
 the next one. `work.py merge` already rebases a pull request that GitHub reports `BEHIND`.
@@ -54,8 +54,8 @@ the next one. `work.py merge` already rebases a pull request that GitHub reports
   `definition.json` give; `OWNER` is `Agrim-Intelligence`). Replace it in every command; the placeholder is kept so the
   commands stay checked against the verifier's own output. The default branch is `main`; if it is not, replace `main` too. The verifier reads only branch names of letters, digits, `_`, `.` and `-`; a default branch with a `/` in its name is refused with exit `2`.
 - The team commands need `OWNER` to be an **organisation**. A repository owned by a person has no teams, and the
-  verifier's team check can never pass for it. If the organisation is not the one `.github/CODEOWNERS` names,
-  create the team under the new organisation and pass `--team <slug>` to the verifier.
+  verifier's team check can never pass for it. Create the maintainers team under the new repository's own
+  organisation (pass `--team <slug>` to the verifier if it is not named `sigma-maintainers`).
 - Secret scanning and push protection are offered on public repositories. On a private rehearsal repository
   they may need a paid GitHub security product, in which case the PATCH is refused; this page has not
   measured which plans allow it.
