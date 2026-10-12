@@ -153,7 +153,7 @@ category, most-severe first:
 **Bug** (will misbehave) · **Concern** (design risk) · **Coverage** (untested behavior) · **Missing**
 (a required piece absent) · **Good** (worth keeping) · **Minor / Nit** (style). Each: what, where
 (`file:line`), why it matters, and the fix. Don't pad with praise; if you didn't try to break it, you
-didn't review it. Rules are lessons, not laws — you may waive a Nit or Concern with a stated reason; a Bug, Missing or project-rule finding only the user can waive.
+didn't review it. Rules are lessons, not laws — a finding can be waived with a stated reason.
 
 ### Before you report it
 **A finding is a claim in prose, and a claim in prose is not evidence** — the north-star's own
