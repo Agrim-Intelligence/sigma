@@ -24,7 +24,7 @@ agent-doable part of #471. Date: 2026-10-12. Measured commit:
 | CI-equivalent commands on the EXPORTED tree, macOS 3.12 | local | red: 8 test failures plus one failing gate (Defects) |
 | Linux legs, Docker: python:3.10, 3.11, 3.12, 3.13, ubuntu:24.04 (apt python 3.12) | local Docker, uid 1000, `pytest tests -q -n 4` | red, see table |
 | `onboarding_control.py --install claude --from-install` | local, isolated profile, claude CLI 2.1.284 | GREEN, ok true |
-| Rename rehearsal (`handover_check.py sequence`) | NOT RUN | obsolete, see below |
+| Rename rehearsal (the obsolete handover check script) | NOT RUN | obsolete, see below |
 | GitHub CI legs (5 jobs) | NOT RUN | spend decision pending |
 | Doctor from the installed copy (public-snapshot.md Rehearsal step 7) | NOT RUN | needs an initialised scratch repo; not part of this task |
 | `regression-control` job | NOT RUN | not required by the task |
@@ -36,8 +36,8 @@ issue estimates about 129 runner-minutes per run; that figure is quoted from #47
 
 ## Obsolete: the rename rehearsal
 
-#473 and an older #397 note prescribe `python3 tools/handover_check.py sequence`. That tool no longer
-exists on main (`tools/handover_check.py` is absent) and `docs/public-snapshot.md` now says "There is
+#473 and an older #397 note prescribe the rename sequence of the obsolete handover check script. That tool no longer
+exists on main (it is absent from `tools/`) and `docs/public-snapshot.md` now says "There is
 nothing to repoint": the owner decided the public repository is a NEW repository named
 `Agrim-Intelligence/sigmaloop` and the source repository is not renamed, so no clone is ever
 repointed. A rename rehearsal has nothing to rehearse. #473's body should drop that sentence.
