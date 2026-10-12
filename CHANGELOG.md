@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **#300 live run with the marketplace-installed plugin: demo goal and a filed goal both `done` in one `/sigma-loop` session.** Third dated subsection of `docs/launch/evidence/live-onboarding-2026-10-12.md` and `docs/onboarding-control.md`. The owner's normal profile and auth, no `--plugin-dir`; the session's init event reported plugin `sigmaloop` 1.0.9 (the installed copy, not main at 1.0.10). Measured: init 25 s ($0.148), loop 240 s ($1.873 host-reported list-price estimate), 14 captured `phase_report.py end` lines (sum $0.76), two `record done` refusals recovered by the model (#1206, #1199). The second goal was hand-written. Not measured: the marketplace install from empty in a live session, 1.0.10, Linux, Codex, Cursor, outside people. Evidence only, no product change.
+
 - **The commit gate stops refusing non-literal `credential-assignment` values (#961).** `work.py commit`
   refused any 4+ character run after a credential-named key, so a call, an env read, a type annotation
   and a boolean parked green goals at their last step. A gate-only filter (`scrub.commit_secret_findings`)
