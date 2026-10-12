@@ -71,16 +71,30 @@ residue and exits 1 until nothing remains.
    ```
    Leave any other value alone; it is yours (husky and similar tools set one).
 9. Optionally delete the remote `sdlc/*`, `feature/*` and `sdlc-ledger` branches, the `sdlc:*` labels, and
-   the linked board. These GitHub actions are irreversible; the final check lists the remote branches as
-   `remote-branch` rows until you do. Replace `origin` with your remote's name if it differs. Branches:
+   the linked board. **This deletes branches on the REMOTE, and it is irreversible.** The patterns match
+   every branch of those names, including your own `feature/*` branches, and a default branch that is
+   itself a branch named `sdlc/*`, `feature/*` or `sdlc-ledger`. Do not run it if other people or other machines
+   still use these branches. The final check lists them as `remote-branch` rows until they are gone. Both
+   blocks start with the same `remote=` line (replace `origin` with your remote's name, in both): it
+   sets the remote in the ref patterns, in the prefix that is stripped and in the push. First list them:
    ```sh
-   git for-each-ref --format='%(refname:short)' refs/remotes/origin/sdlc/ refs/remotes/origin/feature/ refs/remotes/origin/sdlc-ledger |
-     while read -r b; do git push origin --delete "${b#origin/}"; done
+   remote=origin
+   branches="refs/remotes/$remote/sdlc/ refs/remotes/$remote/feature/ refs/remotes/$remote/sdlc-ledger"
+   git for-each-ref --format='%(refname:short)' $branches
    ```
+   Read this list; delete only what you mean to lose. If every branch on it is Sigma's, delete them all:
+   ```sh
+   remote=origin
+   branches="refs/remotes/$remote/sdlc/ refs/remotes/$remote/feature/ refs/remotes/$remote/sdlc-ledger"
+   git for-each-ref --format='%(refname:short)' $branches |
+     while read -r b; do git push "$remote" --delete "${b#"$remote"/}"; done
+   ```
+   If one is yours, delete the others one at a time instead: `git push <remote> --delete <name>`.
 10. Drop the local remote-tracking copies of those branches, whether you deleted them in step 9 or
    someone else did:
    ```sh
-   git fetch --prune origin
+   remote=origin
+   git fetch --prune "$remote"
    ```
 
 Finally run:

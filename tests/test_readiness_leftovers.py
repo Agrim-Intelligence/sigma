@@ -297,17 +297,28 @@ def test_documented_stop_wait_sees_nested_pids_and_waits_for_them(tmp_path):
     nested = repo / ".sdlc" / "state" / "sub"
     nested.mkdir(parents=True)
     # A process that outlives the first check and is then reaped by init (no zombie for kill -0 to see).
-    pid = run(["sh", "-c", "sleep 2 >/dev/null 2>&1 & echo $!"]).stdout.strip()
+    # 7 s outlives the block's 5 s wait, so a loop that really repeats prints twice and a one-shot prints once.
+    pid = run(["sh", "-c", "sleep 7 >/dev/null 2>&1 & echo $!"]).stdout.strip()
     (nested / "w.pid").write_text(pid)
     block = _block_with(".stop")
     assert "sleep 2\n" not in block      # the old one-shot wait is gone
     done = run(["sh", "-c", block], timeout=60)
     assert done.returncode == 0, done.stderr
-    assert "still running: .sdlc/state/sub/w.pid" in done.stdout, done.stdout
+    assert done.stdout.count("still running: .sdlc/state/sub/w.pid") == 2, done.stdout
     for name in ("watch", "slack-commands", "supervisor"):
         assert (repo / ".sdlc" / "state" / f"{name}.stop").is_file()
     env = {"CLAUDE_CONFIG_DIR": str(tmp_path / "p"), "CODEX_HOME": str(tmp_path / "c")}
     assert not [r for r in _mod().find_leftovers(repo, environ=env) if r["kind"] == "running-pid"]
+
+
+def _remote_blocks():
+    """The guide's step 9 list block, step 9 delete block and step 10 prune block, verbatim."""
+    blocks = [b for b in _doc_blocks() if "refs/remotes/" in b or "fetch --prune" in b]
+    listing = [b for b in blocks if "refs/remotes/" in b and "--delete" not in b]
+    push = [b for b in blocks if "--delete" in b]
+    prune = [b for b in blocks if "fetch --prune" in b]
+    assert (len(listing), len(push), len(prune)) == (1, 1, 1), blocks
+    return listing[0], push[0], prune[0]
 
 
 def test_documented_remote_branch_steps_clear_remote_tracking_rows(tmp_path):
@@ -328,9 +339,14 @@ def test_documented_remote_branch_steps_clear_remote_tracking_rows(tmp_path):
     env = {"CLAUDE_CONFIG_DIR": str(tmp_path / "p"), "CODEX_HOME": str(tmp_path / "c")}
     kinds = lambda: {r["kind"] for r in mod.find_leftovers(repo, environ=env)}
     assert kinds() == {"remote-branch"}
-    push, prune = _block_with("push origin --delete"), _block_with("fetch --prune")
+    listing, push, prune = _remote_blocks()
     assert run(["sh", "-c", prune]).returncode == 0        # prune alone: the remote still has them
     assert kinds() == {"remote-branch"}
+    shown = run(["sh", "-c", listing])      # the list block runs first, prints, and deletes nothing
+    assert shown.returncode == 0
+    assert set(shown.stdout.split()) == {"origin/sdlc/goal-1", "origin/feature/demo", "origin/" + mod.LEDGER_BRANCH}
+    assert "keep-me" in run(["git", "ls-remote", "--heads", "origin"]).stdout and kinds() == {"remote-branch"}
+    assert "sdlc/goal-1" in run(["git", "ls-remote", "--heads", "origin"]).stdout
     assert run(["sh", "-c", push]).returncode == 0
     assert kinds() == set()
     remote = run(["git", "ls-remote", "--heads", "origin"]).stdout
@@ -350,3 +366,47 @@ def test_guide_mentions_the_flags_the_checker_accepts():
     help_text = subprocess.run([sys.executable, str(SCRIPT), "--help"], text=True, capture_output=True).stdout
     for flag in ("--json", "--github"):
         assert flag in help_text and flag in text
+
+
+
+def test_documented_remote_listing_shows_a_users_own_feature_branch_before_deletion(tmp_path):
+    """The guide's warning is real: `feature/*` matches a branch that is the user's own. The list block,
+    run verbatim and before any deletion, prints it, so the reader can see it; the delete block run
+    verbatim would remove it (which is why the guide says to read the list first and then delete one at
+    a time). A name outside the three patterns is not printed."""
+    repo, run = _scratch(tmp_path)
+    bare = tmp_path / "remote.git"
+    assert run(["git", "init", "-q", "--bare", str(bare)]).returncode == 0
+    assert run(["git", "remote", "add", "origin", str(bare)]).returncode == 0
+    for branch in ("sdlc/goal-1", "feature/my-own-work", "release"):
+        assert run(["git", "branch", branch]).returncode == 0
+    assert run(["git", "push", "-q", "origin", "sdlc/goal-1", "feature/my-own-work", "release"]).returncode == 0
+    assert run(["git", "fetch", "-q", "origin"]).returncode == 0
+    listing, push, _ = _remote_blocks()
+    heads = lambda: run(["git", "ls-remote", "--heads", "origin"]).stdout
+    shown = run(["sh", "-c", listing])
+    assert "origin/feature/my-own-work" in shown.stdout.split() and "origin/release" not in shown.stdout.split()
+    assert "feature/my-own-work" in heads()                 # listing deleted nothing: the reader still has the choice
+    # The per-branch alternative the guide gives removes only the Sigma branch.
+    assert run(["git", "push", "origin", "--delete", "sdlc/goal-1"]).returncode == 0
+    assert "feature/my-own-work" in heads() and "sdlc/goal-1" not in heads()
+    # And the bulk block, as written, does take the user's branch: the warning is not decorative.
+    assert run(["sh", "-c", push]).returncode == 0
+    assert "feature/my-own-work" not in heads() and "release" in heads()
+
+
+def test_documented_remote_blocks_follow_the_one_remote_variable(tmp_path):
+    """The guide says to change `remote=origin` and nothing else. With the remote named `up`, only that
+    line edited in each block, the list, the strip and the push all follow it."""
+    repo, run = _scratch(tmp_path)
+    bare = tmp_path / "remote.git"
+    assert run(["git", "init", "-q", "--bare", str(bare)]).returncode == 0
+    assert run(["git", "remote", "add", "up", str(bare)]).returncode == 0
+    assert run(["git", "branch", "sdlc/goal-1"]).returncode == 0
+    assert run(["git", "push", "-q", "up", "sdlc/goal-1"]).returncode == 0
+    assert run(["git", "fetch", "-q", "up"]).returncode == 0
+    listing, push, prune = (b.replace("remote=origin", "remote=up") for b in _remote_blocks())
+    assert run(["sh", "-c", listing]).stdout.split() == ["up/sdlc/goal-1"]
+    assert run(["sh", "-c", push]).returncode == 0
+    assert "sdlc/goal-1" not in run(["git", "ls-remote", "--heads", "up"]).stdout
+    assert run(["sh", "-c", prune]).returncode == 0
