@@ -59,6 +59,8 @@ EXPOSURE_ALLOWLIST_PATH = "docs/launch/exposure-allowlist.json"
 DEFINITION_PATH = "docs/launch/definition.json"
 PLUGIN_JSON_PATH = ".claude-plugin/plugin.json"
 DOCTOR_PATH = "skills/sigma-doctor/scripts/doctor.py"
+ISSUE_TEMPLATE_PATH = ".github/ISSUE_TEMPLATE/config.yml"
+_GITHUB_REPO_RX = re.compile(r"(?<![\w.-])(?:www\.)?github\.com[/:]([\w.-]+)/([\w.-]+)", re.I)
 SDLC_DEFAULT = "exclude"
 AUTHOR_NAME = "sigma-public-snapshot"
 AUTHOR_EMAIL = "noreply@users.noreply.github.com"
@@ -542,6 +544,7 @@ def render_md(report):
         lines.append("  - %s %s line %s" % (item.get("rule"), item.get("path"), item.get("line")))
     slug = scans.get("doctor_slug", {})
     lines.append("- doctor slug: %s" % slug.get("status"))
+    lines.append("- issue template slug: %s" % scans.get("issue_template_slug", {}).get("status"))
     refs = scans.get("leak_refs", {})
     lines.append("- leak_refs: exit %s, %s hit(s) over %s file(s) and %s commit(s)" % (
         refs.get("exit"), refs.get("hits"), refs.get("files"), refs.get("commits")))
@@ -841,6 +844,49 @@ def _doctor_slug(partial, definition_raw, blobs):
     if slug != definition:
         return {"status": "mismatch", "doctor": slug, "definition": definition}, [dict(finding, rule="doctor-slug-mismatch")]
     return {"status": "equal", "doctor": slug, "definition": definition}, []
+
+
+def _issue_template_slug(partial, definition_raw, blobs):
+    """Every github.com/<owner>/<repo> in the exported issue-chooser config must be `public_repo`.
+
+    A CHECK, not a rewrite: the tree already carries the public slug, and this repository's own
+    chooser must keep working. Unverifiable (rejects) when the file names no repository or the
+    definition is unreadable (a symlink never gets here: the plan refuses it). Not covered: a bare
+    `owner/repo` with no github.com, other hosts (`api.github.com`, `raw.githubusercontent.com`), and
+    the sibling templates in the same directory. `orgs/x`, `sponsors/x` etc. parse as a repo and so
+    always reject: edit the check to allow one."""
+    config = os.path.join(str(partial), *ISSUE_TEMPLATE_PATH.split("/"))
+    if not os.path.lexists(config):
+        return {"status": "not-applicable", "found": [], "definition": None}, []
+    definition = None
+    if definition_raw is not None:
+        try:
+            value = json.loads(definition_raw.decode("utf-8"))
+            definition = value.get("public_repo") if isinstance(value, dict) else None
+        except (UnicodeDecodeError, ValueError):
+            definition = None
+    if not isinstance(definition, str):
+        definition = None
+    found = []
+    try:
+        with open(config, "r", encoding="utf-8") as handle:
+            for number, line in enumerate(handle, 1):
+                for owner, repo in _GITHUB_REPO_RX.findall(line):
+                    repo = repo.rstrip(".")
+                    repo = repo[:-4] if repo.lower().endswith(".git") else repo
+                    found.append((number, owner + "/" + repo))
+    except (OSError, UnicodeDecodeError):
+        found = []
+    finding = {"path": ISSUE_TEMPLATE_PATH, "line": 0, "blob": blobs.get(ISSUE_TEMPLATE_PATH)}
+    names = sorted(set(name for _n, name in found))
+    if definition is None or not found:
+        return ({"status": "unverifiable", "found": names, "definition": definition},
+                [dict(finding, rule="issue-template-slug-unverifiable")])
+    bad = [(number, name) for number, name in found if name.lower() != definition.lower()]
+    if bad:
+        return ({"status": "mismatch", "found": names, "definition": definition},
+                [dict(finding, line=number, rule="issue-template-slug-mismatch") for number, _name in bad])
+    return {"status": "equal", "found": names, "definition": definition}, []
 
 
 # ------------------------------------------------------------------------------ the export repository
@@ -1273,6 +1319,8 @@ def _main(argv, run, state):
                                      "blob": entry.get("blob")})
     doctor_slug, slug_findings = _doctor_slug(partial, definition_raw, blobs)
     builder_findings += slug_findings
+    issue_slug, issue_findings = _issue_template_slug(partial, definition_raw, blobs)
+    builder_findings += issue_findings
     scan_dir = tempfile.mkdtemp(prefix="build_public_tree-scan-")
     state.temps.append(scan_dir)
     try:
@@ -1331,7 +1379,7 @@ def _main(argv, run, state):
             "public_tree": {"present": pt_raw is not None, "entries": len(pt_entries),
                             "moot": len(pt_entries) - len(pt_live)}},
         "scans": {"builder": {"exit": 1 if builder_findings else 0, "findings": builder_findings},
-                  "doctor_slug": doctor_slug, "leak_refs": leak_refs, "exposure": exposure, "leak_scan": leak_scan},
+                  "doctor_slug": doctor_slug, "issue_template_slug": issue_slug, "leak_refs": leak_refs, "exposure": exposure, "leak_scan": leak_scan},
         "notes": notes,
         "not_covered": list(NOT_COVERED),
         "timings": timings,
