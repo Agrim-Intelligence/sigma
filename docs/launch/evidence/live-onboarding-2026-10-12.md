@@ -252,6 +252,94 @@ $0.53; none `cost: unavailable`; the other ~$0.71 is the orchestrating session):
 Agent wall time for the clean first run: 19 s init + 160 s loop = 179 s, excluding my pauses between calls
 (unmeasured as one continuous interval). One run, one machine; no outside person.
 
+## #300 with the marketplace-installed plugin, both goals in one loop session (third dated subsection, 2026-10-12)
+
+This run answers the stricter acceptance: the demo goal AND one filed goal `done` in one session, with the
+plugin loaded from the marketplace install and NOT from `--plugin-dir`.
+
+**What was and was not tested.** The session used the owner's normal profile and normal auth (`apiKeySource:
+none` in the init event, a subscription login), with no `--plugin-dir`, no `--settings`, and no
+`claude plugin` command run against the profile. `claude plugin list` (read only, typed interactively, not
+captured to a log) shows `sigmaloop@sigmaloop`, Version 1.0.9, Scope user, enabled. The session's own init
+event, which IS captured in `loop.jsonl`, lists the plugin as `sigmaloop` version `1.0.9` loaded from the
+profile's plugin cache, and 101 skills including `sigmaloop:sigma-loop`. **That is the installed marketplace
+copy at 1.0.9, not current main, which is 1.0.10 (origin/main 4cc6a788). This run tests what a user who
+installed earlier has, not main.** I did not observe how or when that copy was installed.
+
+The same profile also had code-review, frontend-design, security-guidance, superpowers and ponytail enabled
+(they appear in the init event), and several disabled copies of the predecessor plugin plus one plugin
+failing to load (`claude plugin list`, not captured). I did not disable any of them. I saw no coexistence
+notice or hook output from them in the captured tool results (a search for "notice" found nothing), but I did
+not inspect hook output exhaustively. Claude Code 2.1.284, claude-sonnet-5-5.
+
+A prior attempt to install into an isolated `CLAUDE_CONFIG_DIR` worked (marketplace add of the public
+repository, `sigmaloop@sigmaloop` Version 1.0.10, enabled) but that profile could not log in headlessly
+(`Not logged in`), so no session ran there; the orchestrator ruled to use the normal profile instead.
+
+Fresh local scratch repo, no remote, `Makefile` `test:` recipe `true`.
+
+### `/sigma-init --demo` (25 s, 3 turns, $0.148 host list-price estimate, 0 denials)
+
+Same three questions as the vanilla run, answered `--local-only`, `--mode local-goals`, `--verify 1:22cc66aa7d26`:
+
+```
+[FAIL] git remote 'origin': no remote named 'origin' (this repository has no remote at all)
+[ask] work: fix the remote above, or re-run with --local-only -> --local-only
+[ask] mode: local-goals (goal files) or github (issues)? default: local-goals (origin is not a GitHub repository). -> --mode github|local-goals
+[ask] verify: re-run with --verify N:ID (a candidate above), --verify-command-file FILE (your own), or --no-verify -> --verify N:ID ; --verify-command-file FILE ; --no-verify
+```
+
+The demo goal is `.sdlc/goals/0000-demo.md`. I then wrote a second goal by hand,
+`.sdlc/goals/0002-onboarding-hello.md` (`Add hello.txt`, "Create hello.txt with one line."), before the loop. The
+queueing of both goals therefore happened across two commands, but ONE `/sigma-loop` run (one `claude -p`) took
+both to done.
+
+### `/sigma-loop`, `--permission-mode auto` (240 s wall, 0 denials)
+
+Result, verbatim: `LOOP STOP: backlog-empty` / `2 done, 0 parked, 0 failed.` **Both goals reached `done` in the same
+loop session**: `0000-demo` (`sigma-demo.md` written, `loop.py verify` `VERIFIED exit=0`) and `0002-onboarding-hello`
+(`hello.txt` = `hello`, `VERIFIED exit=0`). `work.enabled` is off, so nothing was committed. Two details from the
+model's own report: it ended the loop session by mistake while 0002 was claimed and restarted it (not seen by me
+in a captured gesture), and it filed `.sdlc/research/0000-demo.md` itself from the research subagent's report.
+
+Refusals, verbatim (the first `record done` on the demo goal; the same ordering slip as #1199, now with a second cause):
+
+```
+REFUSED: the SDLC phase record is incomplete (README: every goal runs its seven phases):
+  - research: no non-empty .sdlc/research/<goal>.md artifact -> the research subagent must file .sdlc/research/<goal-stem>.md in the MAIN checkout (a copy only in the goal worktree does not count)
+  - review: no verdict recorded -> python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" record-review <sdlc> <goal> --verdict APPROVE|SEND-BACK|BLOCK --agent-id <reviewer agentId>
+  lever: for a trivial goal, `loop.py waive-phases <sdlc> <goal> research,retro --reason "<why>"` (recorded, visible; only research and retro can be waived); the whole gate is `gates.phase_record.enabled: false` in .sdlc/config.json
+REFUSED: the SDLC phase record is incomplete (README: every goal runs its seven phases):
+  - review: the review verdict was recorded AFTER retro -> re-run the phases in order: a change after its review needs a fresh review
+  lever: (same line as above)
+```
+
+Host-reported figures (list-price estimate on a subscription login, not billing): `modelUsage` claude-sonnet-5-5
+input 186, output 20,119, cache read 4,154,280, cache creation 293,683 tokens; `total_cost_usd` $1.873. 14
+subagent calls. `phase_report.py end` lines, verbatim (14 lines: demo 8 because review and retro ran twice,
+hello 6; sum $0.76; none `cost: unavailable`; the other ~$1.11 is the orchestrating session):
+
+```
+**0000-demo Demo - write a Sigma hello note** P2 RESEARCH → P3 PLAN — 13s · $0.05 · tokens 6 in, 48 out · claude-sonnet-5-5 · goal so far: active 13s · effort 13s.
+**0000-demo Demo - write a Sigma hello note** P3 PLAN → P4 PLAN-REVIEW — 14s · $0.10 · tokens 6 in, 235 out · claude-sonnet-5-5 · goal so far: active 27s · effort 27s.
+**0000-demo Demo - write a Sigma hello note** P4 PLAN-REVIEW → P5 IMPLEMENT — 13s · $0.05 · tokens 6 in, 259 out · claude-sonnet-5-5 · goal so far: active 40s · effort 40s.
+**0000-demo Demo - write a Sigma hello note** P5 IMPLEMENT → P6 REVIEW — 19s · $0.06 · tokens 6 in, 254 out · claude-sonnet-5-5 · goal so far: active 59s · effort 59s.
+**0000-demo Demo - write a Sigma hello note** P6 REVIEW → P7 RETRO — 11s · $0.04 · tokens 6 in, 138 out · claude-sonnet-5-5 · goal so far: active 1m09s · effort 1m09s.
+**0000-demo Demo - write a Sigma hello note** P7 RETRO → last phase — 13s · $0.05 · tokens 6 in, 354 out · claude-sonnet-5-5 · goal so far: active 1m22s · effort 1m22s.
+**0000-demo Demo - write a Sigma hello note** P6 REVIEW → P7 RETRO — 12s · $0.05 · tokens 8 in, 74 out · claude-sonnet-5-5 · goal so far: active 1m34s · effort 1m34s.
+**0000-demo Demo - write a Sigma hello note** P7 RETRO → last phase — 10s · $0.04 · tokens 6 in, 70 out · claude-sonnet-5-5 · goal so far: active 1m43s · effort 1m43s.
+**0002-onboarding-hello Add hello.txt** P2 RESEARCH → P3 PLAN — 16s · $0.06 · tokens 6 in, 168 out · claude-sonnet-5-5 · goal so far: active 16s · effort 16s.
+**0002-onboarding-hello Add hello.txt** P3 PLAN → P4 PLAN-REVIEW — 11s · $0.07 · tokens 8 in, 595 out · claude-sonnet-5-5 · goal so far: active 27s · effort 27s.
+**0002-onboarding-hello Add hello.txt** P4 PLAN-REVIEW → P5 IMPLEMENT — 13s · $0.05 · tokens 8 in, 62 out · claude-sonnet-5-5 · goal so far: active 40s · effort 40s.
+**0002-onboarding-hello Add hello.txt** P5 IMPLEMENT → P6 REVIEW — 9s · $0.05 · tokens 6 in, 109 out · claude-sonnet-5-5 · goal so far: active 49s · effort 49s.
+**0002-onboarding-hello Add hello.txt** P6 REVIEW → P7 RETRO — 13s · $0.05 · tokens 8 in, 230 out · claude-sonnet-5-5 · goal so far: active 1m01s · effort 1m01s.
+**0002-onboarding-hello Add hello.txt** P7 RETRO → last phase — 10s · $0.04 · tokens 6 in, 313 out · claude-sonnet-5-5 · goal so far: active 1m11s · effort 1m11s.
+```
+
+Agent wall time: 25 s init + 240 s loop = 265 s, excluding my pauses (unmeasured as one continuous interval).
+One run, one machine, no outside person. Not covered: a marketplace install observed from empty in a live
+session, the current 1.0.10, Linux, Codex, Cursor.
+
 ## Not measured or not run
 
 Linux; Codex; Cursor; the README marketplace install in a live session (`--plugin-dir` instead); a run

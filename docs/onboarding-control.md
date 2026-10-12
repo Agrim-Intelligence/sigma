@@ -278,6 +278,12 @@ Clean-repo re-run of #300 (origin/main cc92a834, Makefile `test: true`, nothing 
 three `[ask]` questions: work, mode, verify), `/sigma-loop` under `auto` 160 s ($1.244 host-reported list-price estimate, phase lines sum
 $0.53): **the demo goal reached `done`**, after two `record done` refusals for a review verdict recorded after retro (#1199).
 
+Marketplace-installed run of #300 (the owner's normal profile, no `--plugin-dir`; the session reported plugin `sigmaloop`
+version 1.0.9 from the profile cache, NOT current main 1.0.10): `/sigma-init --demo` 25 s ($0.148), then ONE `/sigma-loop` under
+`auto`, 240 s ($1.873 host-reported list-price estimate, phase lines sum $0.76): **both the demo goal and a hand-filed goal reached
+`done` in that one loop session**, after two `record done` refusals on the demo goal (a missing research artifact, then a review
+verdict recorded after retro, #1199). This meets #300's acceptance as written except that the install itself was not observed.
+
 Deviations from the script control above: the demo goal failed live because the repository's
 `make test` ran alongside the demo's own command (#1196); acceptance was recorded after the work and
 the PR needed `--no-tests` (#1197); `phase_report.py end` MEASURED cost on every phase live, where
