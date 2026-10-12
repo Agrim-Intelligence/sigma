@@ -262,6 +262,45 @@ def test_module_is_offline_and_deletes_nothing():
     assert "SIGMA_" not in text.replace("SIGMA_RUN_ID", "").replace("SIGMA_AUTOWATCH_HOP", "").replace("SIGMA_SESSION_GENERATION", "")
 
 
+def test_old_approvals_and_markers_are_pruned_on_approve_and_recent_ones_are_not(tmp_path):
+    """B6 (#1264): one record and one marker per approval used to pile up forever. `approve` now removes a pair only
+    when its record expired more than PRUNE_GRACE_SECONDS ago (30 days, 30x the longest TTL); a used marker younger
+    than that still denies a second consume."""
+    mod = load()
+    d = tmp_path / "state" / "unit-approvals"
+    old = ["%040x" % i for i in (1, 2, 3)]
+    for h in old:
+        assert approve(mod, tmp_path, head=h, now=1000, ttl_seconds=60)["ok"]
+        assert mod.consume(OPEN, tmp_path, "voice", SLUG, h, now=1010)["ok"]       # records expire at 1060
+    foreign = d / "notes.txt"
+    foreign.write_text("keep")
+    inside = 1060 + mod.PRUNE_GRACE_SECONDS            # exactly the grace: not yet past it
+    assert approve(mod, tmp_path, head=OTHER, now=inside, ttl_seconds=60)["ok"]
+    assert len(list(d.glob("*.used"))) == 3 and len(list(d.glob("*.json"))) == 4     # nothing pruned inside the grace
+    denied = mod.consume(OPEN, tmp_path, "voice", SLUG, old[0], now=inside)
+    assert denied["ok"] is False                                                     # a young marker still refuses
+    past = inside + 1
+    assert approve(mod, tmp_path, head=HEAD, now=past, ttl_seconds=60)["ok"]
+    assert len(list(d.glob("*.used"))) == 0                                          # the three consumed pairs are gone
+    assert len(list(d.glob("*.json"))) == 2                                          # OTHER (still live) and HEAD
+    assert foreign.read_text() == "keep"                                             # a non-approval file is never touched
+    assert mod.consume(OPEN, tmp_path, "voice", SLUG, HEAD, now=past)["ok"]
+    assert mod.consume(OPEN, tmp_path, "voice", SLUG, HEAD, now=past)["ok"] is False  # the fresh one is single use
+
+
+def test_prune_never_follows_a_symlink_or_touches_a_foreign_name(tmp_path):
+    mod = load()
+    d = tmp_path / "state" / "unit-approvals"
+    approve(mod, tmp_path, head=HEAD, now=1000, ttl_seconds=60)
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}")
+    (d / ("c" * 40 + ".json")).symlink_to(outside)
+    (d / ("d" * 40 + ".used")).symlink_to(outside)
+    far = 4 * 10 ** 9            # past the real mtimes of the planted links, so a followed link WOULD be aged out
+    assert approve(mod, tmp_path, head=OTHER, now=far, ttl_seconds=60)["ok"]
+    assert outside.read_text() == "{}"
+    assert (d / ("c" * 40 + ".json")).is_symlink() and (d / ("d" * 40 + ".used")).is_symlink()
+
 def test_record_copied_to_another_heads_name_denies(tmp_path):
     """The file name is only an address; the fields inside are what bind the approval."""
     mod = load()
