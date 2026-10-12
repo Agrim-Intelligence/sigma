@@ -37,14 +37,16 @@ This one reads for BEHAVIOURAL claims: "X does Y", "X refuses Z", "the loop does
 | STALE | 40 |
 | UNVERIFIABLE (each with a reason, listed below) | about 61 |
 | FALSE and STALE sites corrected in this pull request (docs only) | 70 of 73 |
-| FALSE and STALE sites not corrected here | 3 (two in `docs/uninstall.md`, one needing GitHub, see below) |
+| FALSE sites in `docs/uninstall.md`, corrected on main by #1260 while this sweep ran | 2 |
+| FALSE and STALE sites left open | 1 (needs GitHub, see below) |
 | Filed as `launch:next` issues | 3 (#1277, #1278, #1279) |
 | Code-side findings | 1 defect (the stop file is noticed only at the next tick), 1 design looseness (`render.py` accepts `last` after any phase) |
 
 ## Coverage gaps (named)
 
-- `docs/uninstall.md`: read and checked in full, but its two FALSE findings were NOT fixed here because another pull
-  request was rewriting the page. They are in #1278.
+- `docs/uninstall.md`: read and checked in full at the earlier commit. It was not edited here; the pull request that
+  rewrote it (#1260) landed first and corrects both findings (the stop-file wait and the missing branch and cache steps).
+  The page was not re-read after that change.
 - `docs/features.md` rows 12, 17, 33, 38 and 39 (long table cells) were only partly checked; the `/sigma-scope` and
   `/sigma-triage` skill prose it summarises, and `sigma-wizard` behaviour, were not checked line by line.
 - `docs/branching-model.md`: the loss-guard narrative (which revert shapes are caught) was spot-checked through its
@@ -100,9 +102,8 @@ This one reads for BEHAVIOURAL claims: "X does Y", "X refuses Z", "the loop does
 
 ## Not corrected here
 
-- `docs/uninstall.md` (2 FALSE): step 1's `sleep 2` is shorter than the watcher's tick, and the final `leftovers.py`
-  check also reports local `sdlc/*`, `feature/*` and `sdlc-ledger` branches, remote-tracking refs and host config
-  directories that no step removes. Filed as #1278 together with the code-side cause.
+- `docs/uninstall.md` (2 FALSE at the earlier commit): corrected on main by #1260. The code-side cause (the stop file
+  is noticed only at the next tick) is #1278.
 - `docs/how-branching-works.md` lines 48 to 50 (STALE, held): lists #1571 as an open adoption-readiness item, while
   `work.py` `_declaration_moves_the_base` carries the fix. Whether the issue is closed needs GitHub.
 - Skill prose outside `docs/` that the readers found stale (a regex in a goal-design reference, "rebases once" in the
@@ -148,5 +149,5 @@ equals the recorded hash, and every row sum and ratio in the token-budget table 
 
 "0 unresolvable claims" is NOT claimed. About 61 claims are unverifiable from the repository for the stated reasons,
 and the coverage gaps above were unread or only partly checked. What this sweep supports: for the 46 pages, the
-behavioural claims that could be checked against code were checked, 73 were wrong or stale, 70 of those are corrected,
-and 3 remain open with a filed issue or a stated reason.
+behavioural claims that could be checked against code were checked, 73 were wrong or stale, 70 of those are corrected here,
+72 are corrected (2 of them by #1260), and 1 remains open with a stated reason.

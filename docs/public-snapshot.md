@@ -187,7 +187,7 @@ check, not a rewrite, rule `issue-template-slug-mismatch`/`-unverifiable`; a bar
 `leak_refs` (the private patterns over every exported path and file), `exposure` (the exposure
 scanner over the export) and `leak_scan` (the export's own commit-time scan).
 
-A build is REJECTED while an owner-name placeholder (`<OWNER:`) remains in `SECURITY.md` or
+A build is REJECTED while an owner-name placeholder (the builder's `owner-placeholder` rule) remains in `SECURITY.md` or
 `CODE_OF_CONDUCT.md` (none remains today, so this no longer rejects a current build): the placeholder is a finding, not a pre-materialisation refusal, so one run
 still reports every other scan.
 
