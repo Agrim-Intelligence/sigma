@@ -246,7 +246,7 @@ def test_control_phantom_blocker_scan_can_fail():
     _check(blocker_hits("this needs the model field from #3"), "the blocker scan no longer flags a plain needs sentence")
 
 
-def test_legal_fact_sheet_and_notice_are_cited_and_still_awaiting_counsel():
+def test_legal_fact_sheet_and_notice_are_cited_and_owner_decisions_are_marked():
     """The #343 artifacts landed, so the D13 evidence row must cite them; and they must still read as UNDECIDED.
 
     The old guard said the files must be absent. They are the agent's fact sheet and a DRAFT notice, written while counsel
