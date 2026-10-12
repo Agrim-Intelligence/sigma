@@ -1,0 +1,173 @@
+{
+  "findings_by_class": {
+    "REAL": 9,
+    "detector_prose": 142,
+    "fixture": 314,
+    "owner_published_contact": 8,
+    "placeholder": 16,
+    "redaction_marker": 6
+  },
+  "findings_by_path_kind_and_class": {
+    ".sdlc": {
+      "REAL": 9,
+      "detector_prose": 12,
+      "placeholder": 2
+    },
+    "docs_community": {
+      "detector_prose": 5,
+      "owner_published_contact": 6
+    },
+    "skills": {
+      "detector_prose": 94,
+      "placeholder": 7
+    },
+    "tests": {
+      "detector_prose": 18,
+      "fixture": 314,
+      "owner_published_contact": 2,
+      "redaction_marker": 6
+    },
+    "tools": {
+      "detector_prose": 13,
+      "placeholder": 7
+    }
+  },
+  "findings_by_reachability_and_class": {
+    "origin_main": {
+      "REAL": 1,
+      "detector_prose": 116,
+      "fixture": 278,
+      "owner_published_contact": 5,
+      "placeholder": 16,
+      "redaction_marker": 6
+    },
+    "other_refs_only": {
+      "REAL": 8,
+      "detector_prose": 26,
+      "fixture": 36,
+      "owner_published_contact": 3
+    }
+  },
+  "findings_by_rule_and_class": {
+    "absolute-home-path": {
+      "REAL": 9,
+      "fixture": 34,
+      "placeholder": 12
+    },
+    "auth": {
+      "detector_prose": 87,
+      "fixture": 4
+    },
+    "aws-key": {
+      "detector_prose": 8,
+      "fixture": 28
+    },
+    "credential-assignment": {
+      "detector_prose": 9,
+      "fixture": 30
+    },
+    "email-address": {
+      "detector_prose": 38,
+      "fixture": 184,
+      "owner_published_contact": 8,
+      "placeholder": 4
+    },
+    "gh-token": {
+      "fixture": 15
+    },
+    "jwt": {
+      "fixture": 3
+    },
+    "private-key": {
+      "fixture": 11,
+      "redaction_marker": 6
+    },
+    "sk-key": {
+      "fixture": 1
+    },
+    "slack-token": {
+      "fixture": 1
+    },
+    "url-password": {
+      "fixture": 3
+    }
+  },
+  "findings_total": 495,
+  "matches_by_class": {
+    "REAL": 29,
+    "detector_prose": 264,
+    "fixture": 858,
+    "owner_published_contact": 20,
+    "placeholder": 19,
+    "redaction_marker": 12
+  },
+  "matches_total": 1202,
+  "measured_commit": "793a1ed612f616bfa23be3220a71f0ba78372dca",
+  "origin_main_commits": 257,
+  "private_pattern_findings": 0,
+  "reachable_commits_scanned": 625,
+  "real_findings": [
+    {
+      "commit": "8969d65602ea",
+      "matches": 1,
+      "path": ".sdlc/design/542.md",
+      "rule": "absolute-home-path"
+    },
+    {
+      "commit": "8969d65602ea",
+      "matches": 2,
+      "path": ".sdlc/plans/346.md",
+      "rule": "absolute-home-path"
+    },
+    {
+      "commit": "8969d65602ea",
+      "matches": 1,
+      "path": ".sdlc/research/822.md",
+      "rule": "absolute-home-path"
+    },
+    {
+      "commit": "8969d65602ea",
+      "matches": 11,
+      "path": ".sdlc/research/895-4b2-controls.md",
+      "rule": "absolute-home-path"
+    },
+    {
+      "commit": "8e1e6a067428",
+      "matches": 2,
+      "path": ".sdlc/plans/964.md",
+      "rule": "absolute-home-path"
+    },
+    {
+      "commit": "3a71d4f372ad",
+      "matches": 1,
+      "path": ".sdlc/research/881-controls.md",
+      "rule": "absolute-home-path"
+    },
+    {
+      "commit": "ee140e1b676d",
+      "matches": 5,
+      "path": ".sdlc/design/729.md",
+      "rule": "absolute-home-path"
+    },
+    {
+      "commit": "b0d449ab56c6",
+      "matches": 4,
+      "path": ".sdlc/design/729.md",
+      "rule": "absolute-home-path"
+    },
+    {
+      "blob": "95410bc9a4ec",
+      "commit": "44ee86ec9f67",
+      "main_commit_with_same_blob": "a6bf9d8dc6d6",
+      "matches": 2,
+      "path": ".sdlc/plans/258.md",
+      "rule": "absolute-home-path"
+    }
+  ],
+  "scan": "exposure_scan.py history . with the private patterns file supplied from outside the repository",
+  "schema": "sigma.launch-exposure-history-disposition/v1",
+  "skipped": {
+    "binary": 0,
+    "oversized": 0
+  }
+}
