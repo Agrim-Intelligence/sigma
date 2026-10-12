@@ -152,3 +152,64 @@ a LOCAL install from the export, not a GitHub marketplace add.
 
 Build twice as in section 1, then `ci_job.sh`-equivalent commands of section 2 in a copy of the output. The
 suite took 5273 s (88 minutes) here, so budget two hours.
+
+## 6. Re-run after the fix (2026-10-12)
+
+The failure in section 2 was fixed in pull request 1236 (the skip pin now accepts exactly what the export
+transform writes, only in an export tree). This section is a fresh run on main after it merged; sections
+1 to 5 above are unchanged and remain the record of the failure on `de188d1f`. Local macOS runs, not
+GitHub CI. Logs: `~/.sigma-ops/export-verify-2026-10-12/rerun/`.
+
+Commit: `ba7a420af3133bffa4e312e982c7f99d9aa58e06` (origin/main when #1236 merged).
+
+| | Build 1 | Build 2 |
+|-|---------|---------|
+| verdict | VERIFIED | VERIFIED |
+| tree | `948262d732bc2e6cb37059073eaa6c360f78df19` | same |
+| export commit | `fc98b033ea4ce3a1d50165262f44a34230ac331d` | same |
+| files | 1236 | 1236 |
+| scans line | `builder=0 leak_refs=0/0 exposure=0/0+0 leak_scan=0` | same |
+
+Sources: `build1.stdout`, `build2.stdout`, `filecount1.txt`, `filecount2.txt`.
+
+**The `test` job steps, as the current `ci.yml` has them** (read from origin/main at this commit), run in a
+copy of the export on macOS in a fresh Python 3.12 venv (`ci_job.sh`, exit codes in `ci_exits.txt`, all 0):
+
+- `pip install --upgrade pip pytest pytest-xdist` (`pip.log`).
+- `python3 evals/skills/smoke.py`: 43 skills checked, 0 findings (`smoke.log`).
+- `python -m pytest tests/ $SLOW -rs -q -n auto --durations=30` with the six `--ignore` files of the job's
+  `SLOW` variable: **16682 passed, 32 skipped, 9 xfailed, 0 failed**, in 499.82 s (`pytest.log`, last line).
+- `python3 tools/rename_check.py`, `python3 tools/readiness/write_surface.py check . docs/launch/write-surface.json`,
+  `python3 evals/run.py` (1.000 over 8 fixtures, no drift), the safety check `evals/safety/check.py` (23 live specs,
+  14 shape rules), `python3 hooks/decision_gate.py validate .` and `check .` (both exit 0, vacuous: the gate is
+  off in the export), then `pip install pyyaml` and `pytest tests/test_skill_frontmatter_yaml.py -q`: all exit 0.
+
+**The previous failure is gone.** `tests/test_no_skip_hooks.py` run alone from the export: `5 passed`
+(`pin.log`; it had 1 failed, 2 passed in section 2). It also passed inside the suite above.
+
+**Skips.** The five `EXPORT-SKIP` skips are present and are the same five files as before
+(`test_b6_466`, `test_goal_state_disposition`, `test_liveness_disposition`, `test_no_private_sdlc_citations`,
+`test_worktree_disposition`; `pytest.log`). The other 27 skips are the ordinary kinds, no new kind:
+the 25 of section 2 plus 2 that import `yaml` (`test_skill_frontmatter_yaml`, `test_community_files`).
+Those two are new in the count only because the order in `ci.yml` installs PyYAML after the pytest step,
+while section 2's venv already held it. Nothing else new is skipped.
+
+**Deviations, only those `ci.yml` supports:**
+1. The job checks out the repository; here the steps ran in a copy of the exported tree.
+2. The job sets the git identity with `git config --global`; here `GIT_CONFIG_GLOBAL` points at a throwaway
+   file with the same name and address.
+3. The runner is a GitHub-hosted `macos-latest` image; here the operator's own Mac, so the `-n auto` worker
+   count and the duration differ.
+
+**Extra runs, beyond `ci.yml`:** the pin test alone (above), and the two `SLOW`-ignored files that exercise
+the exported tree, `tests/test_onboarding_control.py` and `tests/test_shared_sdlc_paths.py`: 102 passed in
+604.73 s (`slow2.log`). The other four `SLOW` files were not run in this re-run.
+
+**Exported-tree checks again** (`rerun/out1`): `leak_refs.py tree` 0 hits over 1236 files and 1 commit
+(`leak_refs_tree.out`); the exposure scan 0 findings, no stale allowlist rows (`exposure.json`); a
+whitespace- and quote-tolerant search of all paths and files 0 matches (`wrapped-scan.txt`); no file holds the
+operator's home user name; the README names only `Agrim-Intelligence/sigmaloop` (6 mentions); both manifests
+read `1.0.11`, with author and owner and the `LICENSE` and `NOTICE` copyright all `Agrim Intelligence Private Limited`.
+
+**Not re-run:** the planted-fake controls (section 3, still open: the two line-wrapped forms are not caught),
+the standalone onboarding control, the GitHub CI legs, Linux, a real push.

@@ -16,7 +16,9 @@ All notable changes to Sigma are recorded here, newest first.
   `docs/launch/evidence/export-verify-de188d1fb5dd.md`: two identical VERIFIED builds (1235 files), the
   plain whole-suite pytest run on the exported tree on macOS (1 failed, 16870 passed, 30 skipped), and the
   planted-fake controls. It finds one failing guard test in the export and a line-wrap gap in the private
-  pattern scan, neither fixed here. Local runs only, not GitHub CI.
+  pattern scan; the failing guard test was fixed in #1236 and a second section records the re-run on
+  `ba7a420a` (16682 passed, 0 failed, with the `test` job's own steps). The pattern-scan gap is not fixed here.
+  Local runs only, not GitHub CI.
 
 - **The ledger retries a failed push on the next tick, not on the next entry (#1210).**
   - **What was wrong.** When a push failed, `sync.py publish` kept the commit locally. Every later tick then
