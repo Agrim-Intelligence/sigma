@@ -156,19 +156,20 @@ path. Names come from `--repo` and from EVERY remote's GitHub URL (a fork beside
 scanned too), never typed into a file. Without `--repo`, a remote whose owner is not the owner of
 `public_repo` in `docs/launch/definition.json` is a fork or foreign clone and is refused
 `source-slug-owner-mismatch`: pass `--repo OWNER/NAME` naming the source (a fork inside the same owner
-cannot be told apart, so name the source with `--repo` there). The bare repository NAME is scanned too
+cannot be told apart, so name the source with `--repo` there: a REAL export always passes `--repo`, as the gesture above does, and the builder prints a WARNING on stderr when it is left out). The bare repository NAME is scanned too
 when it is long and distinctive (8 or more characters with a `-`, `_`, `.` or digit); a short or plain
 name, the product's own among them, is not, because it would flag the public text. Matching rule: a
 name is a hit unless an ALPHANUMERIC touches it on either side (a longer, different name such as the
 public repository's own is no hit); `-`, `_`, `.`, `/`, `#` or a quote beside it still is, so a sibling
 whose name starts with the source's (a team handle, a drill repository) is a finding. Text is matched
 after NFKC, with zero-width, soft-hyphen and bidi characters dropped, `\/`, `%2F`, `&#47;`, `&#x2F;`,
-`&sol;`, `\x2f` and `\u002f` read as `/`, and a name split over a line break (a markdown quote or comment
-leader may follow it) joined. A sibling or a team handle that is legitimate is dispositioned by exact line
+`&sol;`, `\x2f` and `\u002f` read as `/`, and a line break between two ADJACENT lines (a markdown quote or
+comment leader may follow it) is dropped before matching, whether it falls next to the slash or inside the
+name (`fake-` / `src-repo`). A sibling or a team handle that is legitimate is dispositioned by exact line
 in `docs/launch/public-tree-dispositions.json` (rule `source-slug`: reviewed lines only, counted; a path hit carries no
 line and cannot be covered). Not covered, by design: base64, hex or URL-double-encoded text, look-alike
 letters from other scripts (NFKC folds compatibility forms only), the name spelled with inserted
-ordinary characters, a name split over more than one line break, the bare short repository name, and
+ordinary characters, a name spread over three or more lines, the bare short repository name, and
 text in a tree built with `--sdlc include` (the `.sdlc` records name the source and the build is then
 REJECTED until each is dispositioned or removed). A build whose name cannot be derived is refused
 `source-slug-unknown`. The patterns file never held that name, which is why the other scans missed it.
@@ -215,14 +216,14 @@ Two files record reviewed exceptions, both read from the COMMIT (never from the 
 - `docs/launch/public-tree-dispositions.json`: the builder's own, schema
   `sigma.public-tree-dispositions/v1`, entries `{path, rule, reason}` plus exactly one of `blob` (the exact 40-hex git
   blob) or `lines` (sha256 of each reviewed matched line, counted, as in the exposure allowlist) for
-  the two content rules; the builder refuses a bare path-and-rule entry (`dispositions-malformed`),
+  the three content rules (`private-key-header`, `owner-placeholder`, `source-slug`; a `source-slug` path hit has no line and cannot be covered); the builder refuses a bare path-and-rule entry (`dispositions-malformed`),
   so no disposition suppresses a whole file. A `lines` entry goes stale (REJECTED) when a reviewed
   line changes or disappears, and a new match is a finding. Where the builder differs from
   `exposure_scan.py` (each difference fails closed, as a finding or a stale entry): it hashes the RAW
   line (a CRLF line hashes with its `\r`, and a hash that `--propose` computed for a line with
   edge whitespace will not match); it counts one finding per matching line per rule, not per regex
   match; a trailing newline in a hash passes validation but such an entry can only go stale; the
-  `blob` form takes 40 hex only; the rules are limited to the two content rules, and an entry under
+  `blob` form takes 40 hex only; the rules are limited to the three content rules, and an entry under
   an excluded prefix is dropped as moot; a non-UTF-8 file is refused (`non-utf8`) rather than
   decoded with replacement. Every report finding carries its
   `line_sha256` so an entry can be written from the report. It holds the fixtures and regex sources

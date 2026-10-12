@@ -344,9 +344,9 @@ def _references_rx(excluded):
 
 
 _ESCAPED_SLASH = re.compile(r"\\+/|%2f|&#0*47;|&#x0*2f;|&sol;|\\x2f|\\u002f|\\057", re.I)
-_BREAK_AROUND_SLASH = re.compile(r"/[ \t]*\n[ \t]*(?:#|//|\*|>)?[ \t]*|[ \t]*\n[ \t]*(?:#|//|\*|>)?[ \t]*/")
 
 
+_BREAK_ANYWHERE = re.compile(r"[ \t]*\n[ \t]*(?:#|//|\*|>)?[ \t]*")
 _LITERAL_BREAK = re.compile(r"/(?:\\r)?\\n[ \t]*|(?:\\r)?\\n[ \t]*/")  # a line break written as the two characters \n
 
 
@@ -365,7 +365,7 @@ class SlugScan(object):
     as the product's own name would flag the public text). A name is a hit unless an ALPHANUMERIC
     touches it on either side (a different, longer name such as the public repository's); `-`, `_`,
     `.`, `/` or any other neighbour is a hit, so `x-NAME`, `NAME_y` and `a.OWNER/NAME` count. Text is
-    matched after `_normalise`, and a name split over a line break is joined (#1204)."""
+    matched after `_normalise`; a break next to the slash, or inside the name, between two adjacent lines is joined (#1204)."""
 
     def __init__(self, slugs):
         names = set(x.lower() for x in slugs)
@@ -388,8 +388,10 @@ class SlugScan(object):
         for n in range(1, len(lines)):
             if single[n - 1] or single[n]:
                 continue
-            joined = _BREAK_AROUND_SLASH.sub("/", _normalise(lines[n - 1].rstrip("\r") + "\n" + lines[n]))
-            if self.rx.search(joined) is not None:
+            window = _normalise(lines[n - 1].rstrip("\r") + "\n" + lines[n])
+            # the break (with its quote or comment leader) is dropped wherever it falls: next to the
+            # slash or inside a token. Two lines only: a name over three is not covered.
+            if self.rx.search(_BREAK_ANYWHERE.sub("", window)) is not None:
                 found.append(n + 1)
         return sorted(found)
 
@@ -1500,6 +1502,10 @@ def _main(argv, run, state):
     scans_line = "builder=%d leak_refs=%s/%s exposure=%s/%d+%d leak_scan=%s" % (
         len(builder_findings), leak_refs["exit"], leak_refs["hits"], exposure["exit"], len(exposure["findings"]),
         len(exposure["stale"]), "absent" if leak_scan["status"] == "absent" else leak_scan["exit"])
+    if not args.repo:  # last, so it never hides or precedes a refusal
+        print("build_public_tree: WARNING the source name was derived from the remote(s) only; a real export "
+              "must pass --repo OWNER/NAME naming the source itself (a fork under the same owner cannot be "
+              "told apart)", file=sys.stderr)
     for line in ("verdict: %s" % verdict, "commit: %s" % commit, "tree: %s" % planned_py,
                  "export-commit: %s" % export_commit, "out: %s" % _tilde(dest), "report: %s" % _tilde(json_path),
                  "scans: %s" % scans_line):
