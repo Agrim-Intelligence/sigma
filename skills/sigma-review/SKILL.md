@@ -92,9 +92,8 @@ Every axis, every review, each finding with `file:line` evidence. An axis you sk
 not a saved token — say so rather than imply coverage you did not have. Name the specific fault;
 "this could be cleaner" is not a finding.
 
-These eight axes merge four sources; each names the harm it prevents and how to detect it. Where an
-axis's boundary is unclear (e.g. the axis-4/axis-5 OWASP A09 split, or the axis-6/axis-7 near-miss),
-decide by the harm each axis names. The full canon is
+Each axis names the harm it prevents and how to detect it. Where an
+axis's boundary is unclear, decide by the harm each axis names. The full canon is
 [axes](references/axes.md).
 
 1. **Correctness & Intent** — *ships the wrong thing.* Walk the diff against the goal's acceptance
@@ -149,12 +148,12 @@ Two gates run alongside the axes:
 
 ## 3. Verdict + findings
 Open with **how this review was run** — `Reviewed by: dispatched subagent | fresh process (<host>) |
-operator command | inline, author self-review` — then an **overall verdict**, then findings by
+operator command | inline, author self-review` — then an **overall verdict** (**APPROVE**, **SEND-BACK** or **BLOCK**: the words `work.py record-review` takes), then findings by
 category, most-severe first:
 **Bug** (will misbehave) · **Concern** (design risk) · **Coverage** (untested behavior) · **Missing**
 (a required piece absent) · **Good** (worth keeping) · **Minor / Nit** (style). Each: what, where
 (`file:line`), why it matters, and the fix. Don't pad with praise; if you didn't try to break it, you
-didn't review it. Rules are lessons, not laws — a finding can be waived with a stated reason.
+didn't review it. Rules are lessons, not laws — only a documented in-code waiver or the user can waive a finding, with a stated reason.
 
 ### Before you report it
 **A finding is a claim in prose, and a claim in prose is not evidence** — the north-star's own
@@ -193,5 +192,5 @@ When grading an external review, for each of its findings: **accept** (correct),
 with a one-line read on the reviewer's overall signal.
 
 ## In the loop
-Findings feed the Review phase; a real bug is **FIX-FIRST** (back to Implement). Verify any "fixed"
+Findings feed the Review phase; a real bug is a **SEND-BACK** (back to Implement). Verify any "fixed"
 claim with `sigma-verify` before moving on.

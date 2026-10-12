@@ -88,7 +88,7 @@ Then repeat until the helper says stop:
    downgrade: `references/running.md`.
 
    Then run **each phase as its own subagent** with that host's model override (see
-   `references/running.md`). One subagent PER PHASE, **tier `off` included** (with `gates.phase_record` on and `action_log.enabled`, `record done` and `work.py merge` REFUSE a goal missing any phase; `/sigma-init` ships it on, an absent key is off and then only this rule remains).
+   `references/running.md`). One subagent PER PHASE on a host with subagents, **tier `off` included** (with `gates.phase_record` on and `action_log.enabled`, `record done` and `work.py merge` REFUSE a goal missing any phase; `/sigma-init` ships it on, an absent key is off and then only this rule remains).
    Artifacts pass between phases through the filesystem, not shared context. Run the goal through the
    full SDLC (research → plan → plan-review → implement → review), each phase via its **executor**.
    `$goal` is a **file path** (local) or a **GitHub issue number** in github mode (`gh api repos/{owner}/{repo}/issues/"$goal"`).
@@ -125,7 +125,7 @@ Then repeat until the helper says stop:
    `config.work.enabled`, first register its worker:
    `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" agent-start .sdlc "$goal" --pid $PPID`.
    **A nonzero exit from `agent-start` means task ownership was not established — another live
-   agent may own this (goal, thread); STOP this goal before `work.py start` rather than proceed (#2527: this refusal is real for a plain Claude collision now, not only a Codex thread mismatch).** With `config.work.enabled` on: `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" start
+   agent may own this (goal, thread); STOP this goal before `work.py start` rather than proceed.** With `config.work.enabled` on: `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" start
    .sdlc "$goal" --session-pid "$PPID"`. **Pass `--session-pid "$PPID"` — the same value you just
    gave `agent-start --pid`, and the same one every `loop.py` call takes.** Read the line it prints — it
    names the base it actually cut from. **If this command exits 4, STOP this goal and do NOT
@@ -174,7 +174,7 @@ Then repeat until the helper says stop:
    `references/progress.md`.
 4. Entering the **review** phase? Move the board card to QC:
    `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" qc .sdlc "$goal"` (github-project board only — a no-op for local/issues).
-5. **Retrospective (Learn)** — after Review, run the **`sigma-retro`** executor (advisory). Under
+5. **Retrospective (Learn)** — after Review, run the **`sigma-retro`** executor (output advisory; the phase is required). Under
    `config.review.independent` this too runs through the resolver, not as an assertion. Autonomous
    mode → **write only the audit-trail notes**, and **park** any north-star / standing-rule proposal
    to the review queue for a human; never edit a standing doc unattended.

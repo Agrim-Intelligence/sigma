@@ -115,8 +115,8 @@ counterpart to the autonomous `/sigma-loop`).
    (#2112); a refusal falls back to the pre-#2112 `PHASE END` banner with the reason on stderr,
    never to silence. The console print is
    unconditional; the ledger write still gates on `journal.enabled` (off by default) like every
-   other EVENTS-stream write — a different flag from `action_log`. Running inline (no
-   subagent dispatched)? Call `end` without `--agent-id` — it falls back to a windowed read of your
+   other EVENTS-stream write — a different flag from `action_log`. Running inline (a host
+   without subagents only; elsewhere `record done` can refuse it)? Call `end` without `--agent-id` — it falls back to a windowed read of your
    own session transcript, printing `cost: unavailable on this host` only when that too is absent.
    During **Implement**, announce each plan step as you start it — `python3
    "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/phase_report.py" step .sdlc "<goal>" implement --num <n>
@@ -129,12 +129,12 @@ counterpart to the autonomous `/sigma-loop`).
    audit-trail notes and **proposes** any north-star or standing-rule change for you to approve; it
    never auto-writes your standing docs.
 4. When the goal is genuinely complete (verified, not assumed), record it — including the retro
-   grade from step 3 if Retrospective ran (`--retro-grade achieved|partial|diverged`):
+   grade from step 3 (`--retro-grade achieved|partial|diverged`):
    `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" record .sdlc "<goal-path>" done
    --retro-grade achieved|partial|diverged`
    so it shows as done in `/sigma-status`. If the user stops early, or it hits an irreversible action
-   they don't approve, record `parked "reason" --retro-grade ...` instead (omit the flag if
-   Retrospective never ran).
+   they don't approve, record `parked "reason" --retro-grade ...` instead (omit the flag only if the goal
+   stopped before Retrospective).
    Passing `--retro-grade` is also what refreshes the knowledge graph when
    `knowledge_graph.auto_refresh` is `true` (issue #1562) — `record` calls `kg.py refresh` itself
    once the outcome is recorded, so there is no separate graph build to run.

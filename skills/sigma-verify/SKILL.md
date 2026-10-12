@@ -23,8 +23,8 @@ it's dishonesty. **No completion claim without fresh verification output in this
 run it just now, you can't claim it. (Different words don't exempt you: spirit over letter.)
 
 ## The gate — run this before ANY "done / fixed / passing"
-1. **Identify** the command that proves the claim — the repo's tests/build/lint, or `.sdlc/project.md`
-   → **Verify command**.
+1. **Identify** the command that proves the claim — `.sdlc/project.md` → **Verify command** if set,
+   else the repo's tests/build/lint.
 2. **Run** it fresh and in full.
 3. **Read** the actual output — exit code, failure count.
 4. **Verify** the output confirms the claim. If it doesn't, state the *real* status *with* the output —

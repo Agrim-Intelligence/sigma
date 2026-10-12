@@ -43,7 +43,7 @@ it tests the right thing. Wrote code before the test? Delete it and re-derive fr
    implementation (PR #1838), to a fixture totaling exactly the 200-item `_BACKLOG_FETCH_CAP` —
    true but vacuous, its widening-query assertion holding without the widening query ever running.
    The corrected test's own docstring records an independent post-implementation review catching
-   it; the fix added a standing assertion so it can't silently drift back.
+   it; the fix added a standing assertion.
 2. **GREEN** — write the *minimal* code to pass. Run it. All green.
 3. **REFACTOR** — clean up while staying green. "Clean up" is not a feeling; it is this list, and it
    is the same list `sigma-review` axis 6 will judge by. Long Method, Large Class, Long Parameter List,
@@ -60,7 +60,7 @@ python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" verify .sdlc "$goal"
 Record assertion-red then green. Plain commands do not; changed tests need red again.
 Refactors: break, red, restore, green.
 
-Skip TDD for prototypes, generated code, or config; say so. With
+Skip TDD only for throwaway prototypes, generated code, or config; name which. With
 `verify.enforce`, `work.py pr --no-tests <reason>` is a PR-body exception;
 it bypasses only test-first proof, never other gates.
 
@@ -86,7 +86,7 @@ Cheapest at write time, expensive at review, and the one thing a passing test ca
 
 ## Execute the plan, step by step
 1. **Load** the plan and **review it critically** — raise any concern *before* starting (last cheap
-   moment to catch a bad plan; it should already have passed `sigma-plan-review`).
+   moment to catch a bad plan; it must already carry an approving `sigma-plan-review` verdict, else stop and run it).
 2. For **each step**: announce it (`## Announce each step` below), do exactly what it says (steps
    are bite-sized), **verify** it (run the check — see `sigma-verify`), then move on. Track progress
    as you go.
@@ -146,8 +146,8 @@ the mutant, and looked like coverage until it was retargeted.
 
 The pattern is "Revert fix → Run (MUST FAIL) → Restore → Run (pass)": a live revert against the
 running suite, never a mental exercise ("mentally mutate the production code").
-It applies to any non-trivial guard, not only regression tests, and it is a standing, expected
-step rather than one option in a list.
+It applies to any non-trivial guard, not only regression tests, and it is a required
+step, not one option in a list.
 
 ## Security defaults (fail-closed, untrusted input)
 This repo already has standing rules for this — they stay undiscovered until Review unless you read

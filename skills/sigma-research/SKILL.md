@@ -36,8 +36,8 @@ are the only outputs — except the one-line `lane:` write-back in step 5.
 
 ## Proportion first
 Research is a cost, not a virtue. Before starting, ask whether this goal earns it: a typo fix, a
-rename, or a one-file change does **not** — record a one-line radius in the goal's journey note and go
-straight to Plan. Run the full pass when the goal touches a contract, crosses a module boundary,
+rename, or a one-file change does **not** — record a one-line radius in the goal's journey note, run
+`loop.py waive-phases` for research (the phase gate wants it), and go straight to Plan. Run the full pass when the goal touches a contract, crosses a module boundary,
 changes shared state, or you cannot yet name every file it will touch. Skipping it is a legitimate
 outcome; say so explicitly rather than producing a ceremonial dossier.
 
@@ -111,7 +111,7 @@ Classify the goal, then **record the lane where this project's backlog actually 
   the timeline.
 
 - **small** — fits the existing structure, few files, one module. Skip the heavy ceremony: plan
-  briefly and go.
+  briefly (Plan-Review still runs in full).
 - **medium** — fits the existing structure but spans multiple modules or a contract between them. The
   normal full pass.
 - **large** — introduces new structure: a new source of truth, a new boundary or layer, a contract

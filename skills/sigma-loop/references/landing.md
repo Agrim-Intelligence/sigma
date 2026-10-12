@@ -131,8 +131,8 @@ real, mergeable diff** (post-commit, post-CI). **Resolve the mechanism, never as
 `process` / `command`; only a machine where it returns `inline` reviews inline, and that verdict
 must say so). The skills ask that the maker not clear its own PR; code cannot stop it. Fed the reviewer brief for this gate:
 `python3 "${CLAUDE_SKILL_DIR}/scripts/review_context.py" brief .sdlc "$goal" --for pr-review
---artifact <PR#>` (see the maker≠checker rule, step 3), running `/code-review` on the PR, else
-`/sigma-review` in diff mode. That subagent decides the verdict below. **Create a generation and
+--artifact <PR#>` (see the maker≠checker rule, step 3), running `/sigma-review` in diff mode (`/code-review` may add
+a pass, never replaces it). That subagent decides the verdict below. **Create a generation and
 bind its verdict to evidence before posting:** `python3 "${CLAUDE_SKILL_DIR}/scripts/review_context.py"
 brief .sdlc "$goal" --for pr-review --artifact "PR#$pr" --output
 ".sdlc/state/review-manifests/$goal.json"`; then load the immutable paths with `source <(python3
