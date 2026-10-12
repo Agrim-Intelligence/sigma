@@ -36,6 +36,10 @@ FILE_TOKENS = {
     # The shipped maintainer contact address (company domain), for that exact token in the two files that carry it.
     "SECURITY.md": ("admin@" + OLD + ".ai",),
     "CODE_OF_CONDUCT.md": ("admin@" + OLD + ".ai",),
+    # The shipped code-owner team address (company domain), for that exact token in the three files that carry it.
+    ".github/CODEOWNERS": ("teamsigma@" + OLD + ".ai",),
+    "docs/launch/definition.md": ("teamsigma@" + OLD + ".ai",),
+    "tests/test_repo_settings_doc.py": ("teamsigma@" + OLD + ".ai",),
 }
 #: First line of the CHANGELOG rename entry; everything from it down is history.
 CHANGELOG = "CHANGELOG.md"

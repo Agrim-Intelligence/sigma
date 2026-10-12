@@ -390,6 +390,8 @@ BOUNDED_FIELDS = {
     "agent_dispatch": ("role", "phase"),
     "agent_done": ("role", "phase", "result"),
     "note": (),
+    "action": (),                       # free text: never rendered as a bounded field
+    "permission_use": (),
 }
 
 #: `owner/name`, and nothing that could break the `**[ref](url)**` markdown render.py builds.

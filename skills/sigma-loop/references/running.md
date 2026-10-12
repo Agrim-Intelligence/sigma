@@ -68,7 +68,7 @@ pass the goal, phase, worktree and relevant artifact paths in the prompt; the de
 maker's conversation into the child. Bracket each phase-subagent dispatch itself:
 `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" log .sdlc "$goal" agent_dispatch --role phase --phase
 <phase> --model <tier>` right after dispatching it, `agent_done --role phase --phase <phase>
---result <...>` right when it returns. **`--model <tier>` is REQUIRED (#2514): `loop.py log` refuses a `--role phase` dispatch without it.** `<tier>` is the `model_choice` value above, never a fresh resolve. Before a deploy, credentials, spend or production-data step: `log .sdlc "$goal" action --action "<cmd>"`; `permission_use` with that text if granted. One subagent PER PHASE, not one for the whole goal: that is
+--result <...>` right when it returns. **`--model <tier>` is REQUIRED (#2514): `loop.py log` refuses a `--role phase` dispatch without it.** `<tier>` is the `model_choice` value above, never a fresh resolve. Before a deploy, credentials, spend or production-data step: `log .sdlc "$goal" action --action '<the step in plain words, no quotes, $ or backticks>'`; `permission_use` with that text if granted. One subagent PER PHASE, not one for the whole goal: that is
 what keeps a reviewer phase a **sibling** of the maker phase it checks (fresh context, no nesting),
 never a continuation of it — see the maker≠checker rule below. Artifacts pass between phases through
 the filesystem (`.sdlc/plans/`, the worktree diff, the issue timeline), not shared context. Where
