@@ -395,6 +395,8 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | tools/readiness/blast_radius_drive.py | drive | gh-issue | 1 | explicit drive command; OWNER/sigma-drill- fullmatch; repository read back and must be private, not a fork or archived; refuses under CI; files one goal issue; never run by Sigma | high |
 | tools/readiness/blast_radius_drive.py | drive | gh-pr | 1 | explicit drive command; same repository checks; one approve comment on the goal's own PR | high |
 | tools/readiness/blast_radius_drive.py | drive | git-push | 1 | explicit drive command; same repository checks; origin guard; one setup push only when the repository is empty, never forced | high |
+| tools/readiness/dead_vs_idle.py | main | fs-write | 3 | explicit control command; writes only the JSON record at the path it is given | medium |
+| tools/readiness/dead_vs_idle.py | run | fs-write | 3 | explicit control command; writes only inside the empty scratch workdir it is given (repo, home, daemon log); signals only the pid it spawned | medium |
 | tools/readiness/drills.py | _kill_after_fixture_merge | fs-write | 2 | ungated | medium |
 | tools/readiness/drills.py | _real_fixture | fs-write | 9 | ungated | medium |
 | tools/readiness/drills.py | _scratch_sdlc | fs-write | 2 | ungated | medium |
@@ -417,6 +419,9 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | tools/readiness/mutation_sample.py | _write | fs-remove | 1 | explicit sample command; replaces only its own temporary file beside --out | medium |
 | tools/readiness/mutation_sample.py | _write | fs-write | 1 | explicit sample command; caller-supplied --out evidence path | medium |
 | tools/readiness/review_units.py | main | fs-write | 1 | explicit --json PATH; caller-supplied output path | medium |
+| tools/readiness/scale_probe.py | main | fs-write | 3 | explicit probe command; refuses a non-empty workdir; writes only the JSON record at the path it is given | medium |
+| tools/readiness/scale_probe.py | probe_claims | fs-write | 3 | explicit probe command; writes only synthetic lock files inside the empty scratch workdir it is given | medium |
+| tools/readiness/scale_probe.py | probe_slots | fs-write | 2 | explicit probe command; writes only synthetic action-log files inside the empty scratch workdir it is given | medium |
 | tools/readiness/seed_defects.py | apply | fs-write | 1 | explicit apply command; manifest.json beside the patches, outside the clone; detached clean clone only | medium |
 | tools/readiness/shared_paths.py | _prepare | fs-write | 2 | explicit scan with samples; scratch repository inside a fresh temporary directory; fake HOME | medium |
 | tools/readiness/shared_paths.py | main | fs-write | 3 | explicit scan command; caller-supplied --json, --table and --fixture-out paths | medium |
