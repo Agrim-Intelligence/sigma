@@ -4,6 +4,7 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **PR `test` job timeout 45 -> 60 minutes (CI).** The macOS `test` job took 29-35 minutes on earlier PR runs and was cancelled at the 45-minute cap on #1212's PR run (annotation: "exceeded the maximum execution time of 45m0s"; started 06:52 UTC, cancelled 07:37 UTC), a docs-only change, so the margin was gone. The owner chose 60 on 2026-10-12; the new figure is a margin, not a measurement. Trimming the PR subset (a parallel job for the slowest files) is the follow-up, not done here. The `full` job's 90-minute cap is unchanged.
 - **The ledger retries a failed push on the next tick, not on the next entry (#1210).**
   - **What was wrong.** When a push failed, `sync.py publish` kept the commit locally. Every later tick then
     reported `nothing to publish` until some new entry was staged, so the "will retry next tick" it had
