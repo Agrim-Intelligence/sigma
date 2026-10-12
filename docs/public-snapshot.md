@@ -145,6 +145,10 @@ VERIFIED, so read that field. The report prints, in `not_covered`, what the scan
 - `tools/readiness/exposure_scan.py` de-duplicates its rules by name, so a second rule of one name
   never runs there;
 - file NAMES are checked against the private patterns only;
+- the OWNER'S pattern-file scan (`leak_refs.py` with `--patterns`, and the `exposure` scan's private-pattern
+  rule) matches each line as written: it does NOT join a name wrapped over a line break. Only the derived
+  source-name scan (`source-slug`) joins two adjacent lines. A private pattern split across a wrap passed
+  the pattern-file scan in two forms in the end-to-end verification;
 - the origin-owner rule of `tools/leak_scan.py` is skipped, because the export has no origin;
 - names absent from the patterns file, and e-mail addresses, which `tools/leak_scan.py` does not
   check;
