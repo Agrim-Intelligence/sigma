@@ -469,16 +469,20 @@ def test_gh_failure_is_malformed_never_zero_blockers(tmp_path, capsys):
 
 # -- the shipped files and the documented gesture ---------------------------------------------
 
-def test_shipped_scorecard_is_valid_and_no_gating_dimension_reaches_3():
-    """The shipped card, validated in-process: nothing in it needs a read at main."""
+def test_shipped_scorecard_is_valid_and_not_a_go():
+    """The shipped card, validated in-process. Dimensions scored 3 or more must cite evidence files that
+    exist, so the reader is the working tree; the card as a whole must still be NO-GO while any gating
+    dimension is below 3, and the benchmark results file must be the named measured-results document."""
     card = json.loads(SHIPPED_CARD.read_text(encoding="utf-8"))
 
-    def no_read_at_main(rel):
-        raise AssertionError(f"an unscored card needs no read at main, but {rel} was asked for")
+    def tracked(rel):
+        f = ROOT / rel
+        return None if f.is_file() and f.stat().st_size > 0 else f"{rel} is not a non-empty file"
 
-    reasons, _ = dz.check_scorecard(card, no_read_at_main)
+    reasons, _ = dz.check_scorecard(card, tracked)
     assert "D1 Correctness: score 2 < 3 (gating)" in reasons, reasons
-    assert "benchmark results: not named in the scorecard" in reasons, reasons
+    assert not any("not a non-empty file" in r for r in reasons), reasons
+    assert card["benchmark_results"] == "docs/launch/evidence/measured-results.md", card["benchmark_results"]
 
 
 def test_shipped_scorecard_on_a_fixture_main_is_nogo_via_the_gesture(tmp_path):
