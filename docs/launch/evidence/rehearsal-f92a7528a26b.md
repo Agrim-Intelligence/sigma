@@ -6,6 +6,8 @@ throwaway repository whose workflow does not trigger there. Every pass or fail b
 the operator's own macOS machine or in local Docker containers. It does not satisfy #473's Done-when
 item "CI green on each supported leg"; that item stays open.
 
+To run the GitHub CI legs once spend is approved (one line): `git -C <export> push https://github.com/<owner>/<throwaway repo>.git main && gh workflow run ci.yml --repo <owner>/<throwaway repo> --ref main` (details under "What ran where").
+
 Goals served: #397 (builder and verifier, rehearsal step), #473 (owner-side rehearsal evidence), the
 agent-doable part of #471. Date: 2026-10-12. Measured commit:
 `f92a7528a26bda354583b9ab67974981cb633c88` (origin/main at the start of the run).
@@ -27,8 +29,7 @@ agent-doable part of #471. Date: 2026-10-12. Measured commit:
 | Doctor from the installed copy (public-snapshot.md Rehearsal step 7) | NOT RUN | needs an initialised scratch repo; not part of this task |
 | `regression-control` job | NOT RUN | not required by the task |
 
-To run the GitHub legs once the spend is approved: re-create an EMPTY private throwaway, then
-`git -C <export> push https://github.com/<owner>/<throwaway>.git main && gh workflow run ci.yml --repo <owner>/<throwaway> --ref main`
+To run the GitHub legs: re-create an EMPTY private throwaway, then the line above
 (the `full` job is `workflow_dispatch`, and a dispatch needs the workflow on the default branch, so
 the export must be pushed to `main`; that push alone also starts the one-job `test` subset). The
 issue estimates about 129 runner-minutes per run; that figure is quoted from #473, not measured here.
@@ -53,10 +54,16 @@ Command, from a clean detached worktree of the commit, exactly as the doc gives 
 | tree | `91edef64bd7ad311a6b70499f2a0bda035779efa` | same |
 | export-commit | `67dc17198b4e06708f4244c8869b211d39385429` | same |
 | scans line | `builder=0 leak_refs=0/0 exposure=0/0+0 leak_scan=0` | same |
-| wall (shell `time`) | 49.1 s | 55.0 s |
+| wall (shell `time`) | 35.5 s | 33.5 s |
+| report timings (scans / total) | 30.87 s / 35.45 s | 28.87 s / 33.41 s |
 
-Source: builder stdout and its JSON report (`files 1229`, `bytes 24177780`, planned git tree = python
-tree = disk tree = export tree; report timings: scans 49.12 s of total 54.9 s). Excluded: `.sdlc`
+These are a RE-RUN on 2026-10-12 of both builds from the same detached worktree of the same commit
+(`f92a7528a26b`; main has since moved, the measured commit did not), with `--report-dir` set to the
+kept directory: files `build1.stdout`, `build2.stdout`, `*.stderr` and the four report files there. The
+tree and export commit are identical to the first run's, so nothing differed because main moved. The
+first run's wall times (49.1 s and 55.0 s; host load was not measured) were not kept as raw logs and are
+superseded by these. Source: builder stdout and its JSON reports (`files 1229`, `bytes 24177780`,
+planned git tree = python tree = disk tree = export tree). Excluded: `.sdlc`
 607 files, 3,952,574 bytes, `references_remaining` 73. Review: requested and reached `pr-merged`
 (pull 1185), `independent: true`, branch protection `none`, `public_source_override: true`. Patterns
 file: 2 patterns (count only; content never read into this record). Dispositions: exposure allowlist
@@ -81,7 +88,7 @@ report and the `.md` twin (grep count 0 each).
 
 ## 3. Throwaway repository, push, verifier
 
-Created `Agrim-Intelligence/sigma-rehearsal-1` private with `auto_init` (so `main` held a README
+Created `<throwaway repo>` (private, in the owner's organisation) with `auto_init` (so `main` held a README
 commit), pushed the export from `main` to branch `rehearsal` only: one orphan commit
 `67dc17198b4e` (same id as the build). A fresh clone of `rehearsal` returned commit `67dc17198b4e`
 and tree `91edef64bd7a`. GitHub Actions: `GET repos/<throwaway>/actions/runs` returned
@@ -115,8 +122,8 @@ macOS (the `test` job of `ci.yml` at this commit):
 | `evals/safety/check.py` | rc 0 | 40 s |
 | `hooks/decision_gate.py validate .` and `check .` | rc 0, rc 0 (no registry: gate off) | <1 s |
 | `tests/test_skill_frontmatter_yaml.py` (with PyYAML) | 1 passed | 1 s |
-| the six SLOW files (`-n auto`) | 189 passed | 352.7 s |
-| `evals/regression/budget.py` (onboarding-control job) | ok true, 36.9 s against a 300 s ceiling | 37 s |
+| the six SLOW files (`-n auto`), re-run with the log kept (`mac-slow-six.log`) | 189 passed | 700.6 s |
+| `evals/regression/budget.py` (onboarding-control job), re-run with the log kept (`mac-budget.log`) | ok, 40.2 s against a 300 s ceiling | 40 s |
 
 The 8 failures all trace to one cause (tests and inventories reading `.sdlc/` paths that the default
 export removes); they are listed in #1203. The same cause fails `write_surface.py check`.
@@ -133,6 +140,8 @@ suite, not the CI subset, `pytest tests -q -n 4 -p no:cacheprovider`, as `ci.yml
 | python:3.12 | 8 failed, 16710 passed, 29 skipped, 9 xfailed | 1702.5 s | 1733 s |
 | python:3.13 | 8 failed, 16710 passed, 29 skipped, 9 xfailed | 1702.8 s | 1734 s |
 | ubuntu:24.04 (python 3.12.3) | 10 failed, 16708 passed, 29 skipped, 9 xfailed | 947.6 s | 977 s |
+
+The python 3.12 and 3.13 rows are separate runs (separate logs) whose pytest wall times happen to coincide (1702.49 s vs 1702.83 s).
 
 Every leg: `rename_check` rc 0, `write_surface check` rc 1, `evals/run.py` rc 0, `evals/safety/check.py` rc 0,
 decision gate rc 0. Wall times differ by up to 1.8x between legs on one machine; the load on the host
