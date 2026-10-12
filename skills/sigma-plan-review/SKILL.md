@@ -62,13 +62,12 @@ python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/reviewer.py" run .sdlc /tmp/b
   --scratch "$(pwd)/.sdlc/work/<goal>"
 ```
 
-It exits non-zero if the brief NAMES a shared scratch path — a file the maker can write and the
+`check` and `run` exit non-zero if the brief NAMES a shared scratch path (`check` also if it cannot be read) — a file the maker can write and the
 reviewer would read is a maker→reviewer channel whatever the artifact is. It deliberately does **not**
 flag implementation content: a breaker must never see the implementation, but a reviewer must — the
-diff is the artifact under review.
+diff is the artifact under review. A non-zero `check` blocks dispatch on every mechanism, `subagent` included: fix the brief, dispatch only after `check` exits 0.
 
-A maker reviewing its own plan just confirms it. You
-have full read access to the repo: use it. The diff-to-come is the change; the codebase is the impact
+A maker reviewing its own plan just confirms it. The diff-to-come is the change; the codebase is the impact
 surface.
 
 ## 1. Forensic verification

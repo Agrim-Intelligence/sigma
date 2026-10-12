@@ -57,6 +57,8 @@ counterpart to the autonomous `/sigma-loop`).
    `sigma-plan-review` skill — never skip) → **Implement** (test-first) → **Review** (evidence before
    "done") → **Retrospective** (step 3). Each phase runs via Sigma's own **executor** (`sigma-brainstorm` → Goal, `sigma-research` → Research, `sigma-plan` → Plan,
    `sigma-implement` → Implement, `sigma-review` + `sigma-verify` → Review, `sigma-retro` → Retrospective).
+   An installed companion (such as `/code-review`) changes who executes a step, never which gates bind:
+   Plan-Review, `sigma-review` and `sigma-verify` run on every goal and may not be skipped.
 
    **Before Research or code, capture P1 acceptance for every goal:** run
    `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/acceptance.py" record .sdlc "<goal>"`.

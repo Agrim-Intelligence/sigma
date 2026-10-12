@@ -61,23 +61,21 @@ python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/reviewer.py" run .sdlc /tmp/b
   --scratch "$(pwd)/.sdlc/work/<goal>"
 ```
 
-It exits non-zero if the brief NAMES a shared scratch path — a file the maker can write and the
-reviewer would read is a maker→reviewer channel. It deliberately does **not**
-flag implementation content: a breaker must never see the implementation, but a reviewer must — the
-diff is the artifact under review.
+`check` and `run` exit non-zero if the brief NAMES a shared scratch path (`check` also if it cannot be read) — a file the maker can write and the
+reviewer would read is a maker→reviewer channel. It does not flag implementation
+content: a reviewer must see the diff, its artifact. A non-zero `check` blocks dispatch on every mechanism, `subagent` included: fix the brief, dispatch only after `check` exits 0.
 
 **A diff-only review misses blast radius:** the diff is the *change*, the codebase is
 the *impact surface*. Before judging any change, read the code around it and grep every caller — you
-have full repo access. A small change with a wide radius is what a review exists to catch.
+have full repo access. Small changes can have wide radii.
 
 **Executor:** this skill is the review. On Claude Code with the optional `code-review` plugin
-installed, `/code-review` is a useful extra pass over the diff; it does not replace this one.
+installed, `/code-review` is a useful extra pass over the diff; it does not replace this one or satisfy any of its gates.
 
 Pick the mode from the request:
 - **Diff review** (default before a merge) — review the branch's changes vs base. Fast, targeted.
-- **Whole-repo audit** — not this skill. A periodic sweep for what accumulated across many changes is
-  `/sigma-audit`, which measures the tree first and judges it against four lenses. Auditing a whole
-  repo here would re-derive that measurement every run and blur the diff review this skill is for.
+- **Whole-repo audit** — not this skill. A periodic sweep is
+  `/sigma-audit`.
 - **Counter-review** — the user pasted an external review (Cursor, GPT, SonarQube, another agent):
   evaluate each finding critically — accept what's right, push back on what's wrong, add what it missed.
 
@@ -87,7 +85,7 @@ Run the objective tools the repo has and report the numbers, so quality is measu
 - **JS/TS:** the repo's `eslint` / `tsc` / test-coverage.
 - **Hotspots:** `git log` churn × current size — the files most likely to hide risk.
 
-Skip any tool the repo doesn't use; never invent numbers (see `sigma-verify` — evidence only).
+Skip any tool the repo doesn't use; never invent numbers.
 
 ## 2. Qualitative scan — the eight axes
 Every axis, every review, each finding with `file:line` evidence. An axis you skipped is a blind spot,
@@ -96,8 +94,8 @@ not a saved token — say so rather than imply coverage you did not have. Name t
 
 These eight axes merge four sources; each names the harm it prevents and how to detect it. Where an
 axis's boundary is unclear (e.g. the axis-4/axis-5 OWASP A09 split, or the axis-6/axis-7 near-miss),
-decide by the harm each axis names. The full canon — each axis's harm, sources and detection, and
-the precision rules — is [axes](references/axes.md).
+decide by the harm each axis names. The full canon is
+[axes](references/axes.md).
 
 1. **Correctness & Intent** — *ships the wrong thing.* Walk the diff against the goal's acceptance
    criteria, not just against itself. Name the inputs that break it: null, empty, zero, negative, max,
@@ -145,6 +143,9 @@ Two gates run alongside the axes:
   `/sigma-migration-check`, `contract` → `/sigma-contract-check`, `sensitive` → `/sigma-security-review`.
   The detector is a bash trigger (zero LLM cost); it names the risk, the skill judges it. A code-quality
   pass alone will not catch a broken public contract or an unsafe migration.
+  **An empty `matched` is NOT a clearance on a committed branch or PR**: it reads only uncommitted, staged
+  and untracked files. There, decide each category from `git diff --name-only <base>...HEAD` and run the
+  matching review; the verdict says which way.
 
 ## 3. Verdict + findings
 Open with **how this review was run** — `Reviewed by: dispatched subagent | fresh process (<host>) |
