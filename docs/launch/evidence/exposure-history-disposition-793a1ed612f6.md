@@ -85,23 +85,25 @@ commit in origin/main (1 REAL), 73 are only on other refs (8 REAL). No finding h
   (a change-detection vocabulary in the work and migrate scripts, a transcript, plans); detector false positive. The other 4
   are test strings for the Basic and Bearer schemes: a Basic value that decodes to a dummy `user:password` pair and Bearer
   values of the form `abc123...` (fixture).
-- **absolute-home-path.** 34 fixtures in tests (`/home/u/`, `/Users/alice/`, `/Users/bob/`, `/Users/you/`, `/Users/fixture/`,
-  `/Users/x/` style), 12 placeholders in records (`/Users/.../`, `/Users/someone/`, `/home/someone/`), and the 9 REAL above.
+- **absolute-home-path.** 34 fixtures in tests (home directories of invented one-word users such as a
+  person's first name, "u", "you" or "fixture", on Linux, macOS and Windows layouts), 12 placeholders in records (an
+  ellipsis in the user position, or "someone"), and the 9 REAL above.
 - **aws-key.** 5 distinct values, all documented or obviously synthetic (the AWS documentation example key, `...EXAMPLE`
   variants, an `ABCDEFGHIJKLMNOP` run, a `...SECRETVALUE12345` and a `...LEAK0000...` string); in tests (fixture) and in the
   scrubber's own allow-listed fixture constants (detector literal).
 - **gh-token.** 4 distinct values: alphabet runs, `SECRETSECRET...`, `REALSECRETTOKENLEAK01`; the name is bait for a scrubber
   test, the value is synthetic. All in `tests/`.
 - **jwt.** 2 distinct values: the public jwt.io sample header and payload with a truncated signature, and a `{"sub":"1"}` token.
-- **sk-key, slack-token, url-password.** `sk-livesecretvalue...`, `xoxb-fake-token` and `xoxb-commands-token`, and
-  `https://<name>:s3cret@host` test strings.
+- **sk-key, slack-token, url-password.** one sk-style string spelling out "live secret value", two
+  Slack-style strings whose body reads "fake token" and "commands token", and clone URLs with a dummy password in
+  the user-info part (a two-word invented name and a "secret" misspelt with a digit).
 - **private-key.** 17 findings. The key bodies in the fixtures are one or two lines of 60 to 95 characters built from a
   repeated 66 to 71 character line with at most 39 distinct characters. A real PKCS#8 key is far longer than two such lines,
   so these cannot be a whole key; they start with the common header prefix, which is why the scrubber test uses them. 11 are
   fixture, 6 are matches whose text already contains a scrubbed-output literal (redaction marker).
 - **credential-assignment.** Constant names ending in a token word assigned a label string (feature, tier and backlog label
   names; detector prose in `skills/` and `.sdlc/`), a shell variable reference, a path-fragment constant, and dummy
-  assignments in tests (`SECRET = "<example key>"`, `api_key = "<abcd1234...>"`).
+  assignments in tests (a secret-named variable holding the documentation example key or an alphabet-and-digits run).
 
 ## Method
 
