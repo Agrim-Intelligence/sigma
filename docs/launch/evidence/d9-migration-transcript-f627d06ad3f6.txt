@@ -1,0 +1,237 @@
+======================================================================
+SCRATCH REPO repo-fresh (fresh predecessor state)
+======================================================================
+BEFORE: 7 files; sha256[:12] per file:
+  fddfc854f7f5  .sdlc/config.json
+  d4863daba698  .sdlc/features/index.json
+  d4863daba698  .sdlc/features/units/voice.json
+  1cfa880a3571  .sdlc/features/voice.md
+  eb7463229c2d  .sdlc/state/landing/7.json
+  4e1b4fd6709e  .sdlc/state/withheld/7.json
+  37d312527b34  AGENTS.md
+BEFORE refs (hashes elided):
+  refs/heads/main
+
+$ (cd <repo>) python3 <worktree>/skills/sigma-doctor/scripts/migrate.py .sdlc
+migrate: DRY RUN (nothing is written; add --apply to write) for .sdlc -- looking for the plugin's previous name '<old>' (env prefix <OLD>_).
+  would change .sdlc/features/index.json: schema id <old>/features@1 -> sigma/features@1
+  would change .sdlc/features/units/voice.json: schema id <old>/features@1 -> sigma/features@1
+  would change .sdlc/state/landing/7.json: schema id <old>/landing@1 -> sigma/landing@1
+  would change .sdlc/state/withheld/7.json: schema id <old>/withheld@1 -> sigma/withheld@1
+  would change .sdlc/features/voice.md: managed-block markers respelled (body and digest unchanged)
+  would change AGENTS.md: Codex block regenerated with Sigma's text (was the previous plugin's, naming its old skills)
+  would change .sdlc/config.json: <OLD>_SLACK_BOT_SOCKET_TOKEN -> SIGMA_SLACK_BOT_SOCKET_TOKEN; <OLD>_SLACK_BOT_TOKEN -> SIGMA_SLACK_BOT_TOKEN; drift_watch.channels.<old> -> drift_watch.channels.sigma
+  left as is .sdlc/config.json: the previous '<old-journal-key>' block is not carried over to `journal`: turning the journal on is an explicit opt-in (doctor reports it)
+  note    every file listed as changed is one the plugin under its previous name also reads: a machine still running it can no longer read them, and committed ones (config.json, features/) reach teammates through git -- switch the team together.
+migrate: 7 change(s) would be made, 0 refused, 1 left as is.
+[exit 0]
+
+dry run wrote nothing: True
+
+$ (cd <repo>) python3 <worktree>/skills/sigma-doctor/scripts/migrate.py .sdlc --apply
+migrate: APPLY for .sdlc -- looking for the plugin's previous name '<old>' (env prefix <OLD>_).
+  changed .sdlc/features/units/voice.json: schema id <old>/features@1 -> sigma/features@1
+  changed .sdlc/state/landing/7.json: schema id <old>/landing@1 -> sigma/landing@1
+  changed .sdlc/state/withheld/7.json: schema id <old>/withheld@1 -> sigma/withheld@1
+  changed .sdlc/features/voice.md: managed-block markers respelled (body and digest unchanged)
+  changed AGENTS.md: Codex block regenerated with Sigma's text (was the previous plugin's, naming its old skills)
+  changed .sdlc/config.json: <OLD>_SLACK_BOT_SOCKET_TOKEN -> SIGMA_SLACK_BOT_SOCKET_TOKEN; <OLD>_SLACK_BOT_TOKEN -> SIGMA_SLACK_BOT_TOKEN; drift_watch.channels.<old> -> drift_watch.channels.sigma
+  changed .sdlc/features/index.json: schema id <old>/features@1 -> sigma/features@1
+  left as is .sdlc/config.json: the previous '<old-journal-key>' block is not carried over to `journal`: turning the journal on is an explicit opt-in (doctor reports it)
+  note    every file listed as changed is one the plugin under its previous name also reads: a machine still running it can no longer read them, and committed ones (config.json, features/) reach teammates through git -- switch the team together.
+migrate: 7 change(s) applied, 0 refused, 1 left as is.
+[exit 0]
+
+AFTER: 8 files; created by migration: ['.sdlc/state/features/voice.lock']
+files rewritten (7): ['.sdlc/config.json', '.sdlc/features/index.json', '.sdlc/features/units/voice.json', '.sdlc/features/voice.md', '.sdlc/state/landing/7.json', '.sdlc/state/withheld/7.json', 'AGENTS.md']
+files byte-identical (0): []
+lost-state findings (missing file, or content differs after respelling the old name): []
+git refs unchanged: True; old-name tokens left in rewritten files: []
+$ (cd <repo>) python3 <worktree>/skills/sigma-doctor/scripts/migrate.py .sdlc --apply
+migrate: APPLY for .sdlc -- looking for the plugin's previous name '<old>' (env prefix <OLD>_).
+  left as is .sdlc/config.json: the previous '<old-journal-key>' block is not carried over to `journal`: turning the journal on is an explicit opt-in (doctor reports it)
+migrate: nothing to migrate in .sdlc.
+[exit 0]
+
+second apply left everything unchanged: True
+Sigma reads the registry after migration: units ['voice']
+
+======================================================================
+SCRATCH REPO repo-inflight (in-flight claims/records)
+======================================================================
+BEFORE: 22 files; sha256[:12] per file:
+  fddfc854f7f5  .sdlc/config.json
+  444a2bbf4f03  .sdlc/features/billing.md
+  e5c27d8454b2  .sdlc/features/index.json
+  1bac9655843c  .sdlc/features/search.md
+  dc2d6a4b7cb8  .sdlc/features/units/billing.json
+  acf633418b20  .sdlc/features/units/search.json
+  d4863daba698  .sdlc/features/units/voice.json
+  1cfa880a3571  .sdlc/features/voice.md
+  22e6ef1e0be0  .sdlc/ledger/entries/2026-09-30.jsonl
+  1fccbe84f75d  .sdlc/state/landing/21.json
+  a8be3287b961  .sdlc/state/landing/22.json
+  fe335dd33fa2  .sdlc/state/landing/23.json
+  48c1779b90f3  .sdlc/state/landing/31.json
+  eb7463229c2d  .sdlc/state/landing/7.json
+  fb90d3d9c0c2  .sdlc/state/pending-claim-21.txt
+  05030e99a058  .sdlc/state/propagation/21.json
+  44d1f29a5658  .sdlc/state/time/session-1.json
+  4e1b4fd6709e  .sdlc/state/withheld/7.json
+  bb048f1cf006  .sdlc/work/goal-21/note.json
+  37d312527b34  AGENTS.md
+  0161a655017d  feature_work.py
+  877568524beb  uncommitted_wip.txt
+BEFORE refs (hashes elided):
+  refs/heads/main
+  refs/heads/sdlc/goal-21
+
+$ (cd <repo>) python3 <worktree>/skills/sigma-doctor/scripts/migrate.py .sdlc
+migrate: DRY RUN (nothing is written; add --apply to write) for .sdlc -- looking for the plugin's previous name '<old>' (env prefix <OLD>_).
+  would change .sdlc/features/index.json: schema id <old>/features@1 -> sigma/features@1
+  would change .sdlc/features/units/billing.json: schema id <old>/features@1 -> sigma/features@1
+  would change .sdlc/features/units/search.json: schema id <old>/features@1 -> sigma/features@1
+  would change .sdlc/features/units/voice.json: schema id <old>/features@1 -> sigma/features@1
+  would change .sdlc/state/landing/21.json: schema id <old>/landing@1 -> sigma/landing@1
+  would change .sdlc/state/landing/22.json: schema id <old>/landing@1 -> sigma/landing@1
+  would change .sdlc/state/landing/23.json: schema id <old>/landing@1 -> sigma/landing@1
+  would change .sdlc/state/landing/31.json: schema id <old>/landing@1 -> sigma/landing@1
+  would change .sdlc/state/landing/7.json: schema id <old>/landing@1 -> sigma/landing@1
+  would change .sdlc/state/propagation/21.json: schema id <old>/propagation@1 -> sigma/propagation@1
+  would change .sdlc/state/withheld/7.json: schema id <old>/withheld@1 -> sigma/withheld@1
+  would change .sdlc/features/billing.md: managed-block markers respelled (body and digest unchanged)
+  would change .sdlc/features/search.md: managed-block markers respelled (body and digest unchanged)
+  would change .sdlc/features/voice.md: managed-block markers respelled (body and digest unchanged)
+  would change AGENTS.md: Codex block regenerated with Sigma's text (was the previous plugin's, naming its old skills)
+  would change .sdlc/config.json: <OLD>_SLACK_BOT_SOCKET_TOKEN -> SIGMA_SLACK_BOT_SOCKET_TOKEN; <OLD>_SLACK_BOT_TOKEN -> SIGMA_SLACK_BOT_TOKEN; drift_watch.channels.<old> -> drift_watch.channels.sigma
+  left as is .sdlc/state/time/session-1.json: schema id '<old>/time@1' is not one Sigma knows, so it is not rewritten
+  left as is .sdlc/config.json: the previous '<old-journal-key>' block is not carried over to `journal`: turning the journal on is an explicit opt-in (doctor reports it)
+  left as is .sdlc/ledger: 1 history file(s) mention the previous name; history is not rewritten
+  left as is .sdlc/state/time: 1 history file(s) mention the previous name; history is not rewritten
+  note    every file listed as changed is one the plugin under its previous name also reads: a machine still running it can no longer read them, and committed ones (config.json, features/) reach teammates through git -- switch the team together.
+migrate: 16 change(s) would be made, 0 refused, 4 left as is.
+[exit 0]
+
+dry run wrote nothing: True
+
+$ (cd <repo>) python3 <worktree>/skills/sigma-doctor/scripts/migrate.py .sdlc --apply
+migrate: APPLY for .sdlc -- looking for the plugin's previous name '<old>' (env prefix <OLD>_).
+  changed .sdlc/features/units/billing.json: schema id <old>/features@1 -> sigma/features@1
+  changed .sdlc/features/units/search.json: schema id <old>/features@1 -> sigma/features@1
+  changed .sdlc/features/units/voice.json: schema id <old>/features@1 -> sigma/features@1
+  changed .sdlc/state/landing/21.json: schema id <old>/landing@1 -> sigma/landing@1
+  changed .sdlc/state/landing/22.json: schema id <old>/landing@1 -> sigma/landing@1
+  changed .sdlc/state/landing/23.json: schema id <old>/landing@1 -> sigma/landing@1
+  changed .sdlc/state/landing/31.json: schema id <old>/landing@1 -> sigma/landing@1
+  changed .sdlc/state/landing/7.json: schema id <old>/landing@1 -> sigma/landing@1
+  changed .sdlc/state/propagation/21.json: schema id <old>/propagation@1 -> sigma/propagation@1
+  changed .sdlc/state/withheld/7.json: schema id <old>/withheld@1 -> sigma/withheld@1
+  changed .sdlc/features/billing.md: managed-block markers respelled (body and digest unchanged)
+  changed .sdlc/features/search.md: managed-block markers respelled (body and digest unchanged)
+  changed .sdlc/features/voice.md: managed-block markers respelled (body and digest unchanged)
+  changed AGENTS.md: Codex block regenerated with Sigma's text (was the previous plugin's, naming its old skills)
+  changed .sdlc/config.json: <OLD>_SLACK_BOT_SOCKET_TOKEN -> SIGMA_SLACK_BOT_SOCKET_TOKEN; <OLD>_SLACK_BOT_TOKEN -> SIGMA_SLACK_BOT_TOKEN; drift_watch.channels.<old> -> drift_watch.channels.sigma
+  changed .sdlc/features/index.json: schema id <old>/features@1 -> sigma/features@1
+  left as is .sdlc/state/time/session-1.json: schema id '<old>/time@1' is not one Sigma knows, so it is not rewritten
+  left as is .sdlc/config.json: the previous '<old-journal-key>' block is not carried over to `journal`: turning the journal on is an explicit opt-in (doctor reports it)
+  left as is .sdlc/ledger: 1 history file(s) mention the previous name; history is not rewritten
+  left as is .sdlc/state/time: 1 history file(s) mention the previous name; history is not rewritten
+  note    every file listed as changed is one the plugin under its previous name also reads: a machine still running it can no longer read them, and committed ones (config.json, features/) reach teammates through git -- switch the team together.
+migrate: 16 change(s) applied, 0 refused, 4 left as is.
+[exit 0]
+
+AFTER: 25 files; created by migration: ['.sdlc/state/features/billing.lock', '.sdlc/state/features/search.lock', '.sdlc/state/features/voice.lock']
+files rewritten (16): ['.sdlc/config.json', '.sdlc/features/billing.md', '.sdlc/features/index.json', '.sdlc/features/search.md', '.sdlc/features/units/billing.json', '.sdlc/features/units/search.json', '.sdlc/features/units/voice.json', '.sdlc/features/voice.md', '.sdlc/state/landing/21.json', '.sdlc/state/landing/22.json', '.sdlc/state/landing/23.json', '.sdlc/state/landing/31.json', '.sdlc/state/landing/7.json', '.sdlc/state/propagation/21.json', '.sdlc/state/withheld/7.json', 'AGENTS.md']
+files byte-identical (6): ['.sdlc/ledger/entries/2026-09-30.jsonl', '.sdlc/state/pending-claim-21.txt', '.sdlc/state/time/session-1.json', '.sdlc/work/goal-21/note.json', 'feature_work.py', 'uncommitted_wip.txt']
+lost-state findings (missing file, or content differs after respelling the old name): []
+git refs unchanged: True; old-name tokens left in rewritten files: []
+uncommitted file survives: 'dirty, uncommitted in-flight edit\n'; branch checked out: sdlc/goal-21
+$ (cd <repo>) python3 <worktree>/skills/sigma-doctor/scripts/migrate.py .sdlc --apply
+migrate: APPLY for .sdlc -- looking for the plugin's previous name '<old>' (env prefix <OLD>_).
+  left as is .sdlc/state/time/session-1.json: schema id '<old>/time@1' is not one Sigma knows, so it is not rewritten
+  left as is .sdlc/config.json: the previous '<old-journal-key>' block is not carried over to `journal`: turning the journal on is an explicit opt-in (doctor reports it)
+  left as is .sdlc/ledger: 1 history file(s) mention the previous name; history is not rewritten
+  left as is .sdlc/state/time: 1 history file(s) mention the previous name; history is not rewritten
+migrate: nothing to migrate in .sdlc.
+[exit 0]
+
+second apply left everything unchanged: True
+Sigma reads the registry after migration: units ['billing', 'search', 'voice']
+
+======================================================================
+CONTROLS: each step broken once
+======================================================================
+[control 1: feature doc with its end marker deleted]
+$ (cd <repo>) python3 <worktree>/skills/sigma-doctor/scripts/migrate.py .sdlc --apply
+migrate: APPLY for .sdlc -- looking for the plugin's previous name '<old>' (env prefix <OLD>_).
+  changed .sdlc/features/units/voice.json: schema id <old>/features@1 -> sigma/features@1
+  changed .sdlc/state/landing/7.json: schema id <old>/landing@1 -> sigma/landing@1
+  changed .sdlc/state/withheld/7.json: schema id <old>/withheld@1 -> sigma/withheld@1
+  changed AGENTS.md: Codex block regenerated with Sigma's text (was the previous plugin's, naming its old skills)
+  changed .sdlc/config.json: <OLD>_SLACK_BOT_SOCKET_TOKEN -> SIGMA_SLACK_BOT_SOCKET_TOKEN; <OLD>_SLACK_BOT_TOKEN -> SIGMA_SLACK_BOT_TOKEN; drift_watch.channels.<old> -> drift_watch.channels.sigma
+  changed .sdlc/features/index.json: schema id <old>/features@1 -> sigma/features@1
+  left as is .sdlc/config.json: the previous '<old-journal-key>' block is not carried over to `journal`: turning the journal on is an explicit opt-in (doctor reports it)
+  refused .sdlc/features/voice.md: its managed block is not intact (its end marker is missing, so where the managed block stops is unknown)
+  note    every file listed as changed is one the plugin under its previous name also reads: a machine still running it can no longer read them, and committed ones (config.json, features/) reach teammates through git -- switch the team together.
+migrate: 6 change(s) applied, 1 refused, 1 left as is.
+[exit 2]
+
+voice.md untouched: True
+
+[control 2: a live watcher pid recorded for this .sdlc]
+$ (cd <repo>) python3 <worktree>/skills/sigma-doctor/scripts/migrate.py .sdlc --apply
+migrate: APPLY for .sdlc -- looking for the plugin's previous name '<old>' (env prefix <OLD>_).
+refused all: a watcher (pid 65527) is running for this .sdlc and may be writing the old spellings -- nothing was written, and Sigma never signals it. Stop it politely: uninstall the old plugin first (or its triggers start its watcher again), then create .sdlc/state/watch.stop, wait one watcher tick for it to exit, and delete that file again (no watcher starts while it exists); then rerun
+[exit 2]
+
+nothing written: True
+
+[control 3: the previous plugin still enabled for this user]
+$ (cd <repo>) python3 <worktree>/skills/sigma-doctor/scripts/migrate.py .sdlc --apply
+migrate: APPLY for .sdlc -- looking for the plugin's previous name '<old>' (env prefix <OLD>_).
+sigma: notice: the plugin previously published as '<old>' is also enabled here; Sigma is handling this repository -- uninstall it when ready: claude plugin uninstall <old>@<old>; the old plugin cannot read Sigma's registry; if it starts a goal in this repo afterwards it writes unit records Sigma can only merge as partial deltas, so disable it here before `migrate.py --apply` (Sigma saves one copy of .sdlc/features to .sdlc/state/backup/features-<time> before its first registry write here) (docs/upgrading.md (Switching over from the previous plugin); SIGMA_ALLOW_COEXIST=1 silences this)
+refused --apply: the plugin previously published as '<old>' can still run on this repository (Claude Code has <old>@<old> enabled (user settings, <scratch>/nohome-old/.claude/settings.json); its hooks and watcher run in every session here). The old plugin cannot read Sigma's registry; if it starts a goal in this repo afterwards it writes unit records Sigma can only merge as partial deltas. Nothing was written; the changes it would make are listed below.
+  next: stop it on this repository first -- claude plugin disable <old>@<old> --scope local   (run in this repository; this repository on this machine only) -- then rerun: python3 <worktree>/skills/sigma-doctor/scripts/migrate.py .sdlc --apply
+  or, to convert with it still running (a copy of .sdlc/features is saved under .sdlc/state/backup/ first): python3 <worktree>/skills/sigma-doctor/scripts/migrate.py .sdlc --apply --replace-old-plugin
+  would change .sdlc/features/index.json: schema id <old>/features@1 -> sigma/features@1
+  would change .sdlc/features/units/voice.json: schema id <old>/features@1 -> sigma/features@1
+  would change .sdlc/state/landing/7.json: schema id <old>/landing@1 -> sigma/landing@1
+  would change .sdlc/state/withheld/7.json: schema id <old>/withheld@1 -> sigma/withheld@1
+  would change .sdlc/features/voice.md: managed-block markers respelled (body and digest unchanged)
+  would change AGENTS.md: Codex block regenerated with Sigma's text (was the previous plugin's, naming its old skills)
+  would change .sdlc/config.json: <OLD>_SLACK_BOT_SOCKET_TOKEN -> SIGMA_SLACK_BOT_SOCKET_TOKEN; <OLD>_SLACK_BOT_TOKEN -> SIGMA_SLACK_BOT_TOKEN; drift_watch.channels.<old> -> drift_watch.channels.sigma
+  left as is .sdlc/config.json: the previous '<old-journal-key>' block is not carried over to `journal`: turning the journal on is an explicit opt-in (doctor reports it)
+  note    every file listed as changed is one the plugin under its previous name also reads: a machine still running it can no longer read them, and committed ones (config.json, features/) reach teammates through git -- switch the team together.
+migrate: nothing applied -- 7 change(s) wait for the old plugin to be disabled on this repository (or for --replace-old-plugin), 0 refused, 1 left as is.
+[exit 2]
+
+nothing written: False
+
+[control 4: the lost-state check itself, run on a sabotaged AFTER]
+$ (cd <repo>) python3 <worktree>/skills/sigma-doctor/scripts/migrate.py .sdlc --apply
+migrate: APPLY for .sdlc -- looking for the plugin's previous name '<old>' (env prefix <OLD>_).
+  changed .sdlc/features/units/billing.json: schema id <old>/features@1 -> sigma/features@1
+  changed .sdlc/features/units/search.json: schema id <old>/features@1 -> sigma/features@1
+  changed .sdlc/features/units/voice.json: schema id <old>/features@1 -> sigma/features@1
+  changed .sdlc/state/landing/21.json: schema id <old>/landing@1 -> sigma/landing@1
+  changed .sdlc/state/landing/22.json: schema id <old>/landing@1 -> sigma/landing@1
+  changed .sdlc/state/landing/23.json: schema id <old>/landing@1 -> sigma/landing@1
+  changed .sdlc/state/landing/31.json: schema id <old>/landing@1 -> sigma/landing@1
+  changed .sdlc/state/landing/7.json: schema id <old>/landing@1 -> sigma/landing@1
+  changed .sdlc/state/propagation/21.json: schema id <old>/propagation@1 -> sigma/propagation@1
+  changed .sdlc/state/withheld/7.json: schema id <old>/withheld@1 -> sigma/withheld@1
+  changed .sdlc/features/billing.md: managed-block markers respelled (body and digest unchanged)
+  changed .sdlc/features/search.md: managed-block markers respelled (body and digest unchanged)
+  changed .sdlc/features/voice.md: managed-block markers respelled (body and digest unchanged)
+  changed AGENTS.md: Codex block regenerated with Sigma's text (was the previous plugin's, naming its old skills)
+  changed .sdlc/config.json: <OLD>_SLACK_BOT_SOCKET_TOKEN -> SIGMA_SLACK_BOT_SOCKET_TOKEN; <OLD>_SLACK_BOT_TOKEN -> SIGMA_SLACK_BOT_TOKEN; drift_watch.channels.<old> -> drift_watch.channels.sigma
+  changed .sdlc/features/index.json: schema id <old>/features@1 -> sigma/features@1
+  left as is .sdlc/state/time/session-1.json: schema id '<old>/time@1' is not one Sigma knows, so it is not rewritten
+  left as is .sdlc/config.json: the previous '<old-journal-key>' block is not carried over to `journal`: turning the journal on is an explicit opt-in (doctor reports it)
+  left as is .sdlc/ledger: 1 history file(s) mention the previous name; history is not rewritten
+  left as is .sdlc/state/time: 1 history file(s) mention the previous name; history is not rewritten
+  note    every file listed as changed is one the plugin under its previous name also reads: a machine still running it can no longer read them, and committed ones (config.json, features/) reach teammates through git -- switch the team together.
+migrate: 16 change(s) applied, 0 refused, 4 left as is.
+[exit 0]
+
+findings: [('content-differs', '.sdlc/features/units/search.json'), ('missing', '.sdlc/state/landing/22.json')]

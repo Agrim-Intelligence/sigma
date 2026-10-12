@@ -70,6 +70,25 @@
     ]
   },
   {
+    "path": "docs/launch/evidence/d9-migration-transcript-f627d06ad3f6.txt",
+    "rule": "auth",
+    "reason": "recorded output of migrate.py in a D9 evidence transcript: the auth rule matches the ordinary word in the tool's own message about managed-block markers (the body and its checksum unchanged); no credential, reviewed by hand",
+    "lines": [
+      "35a866d7f258a15ecd638a98153489667d1850f11079cfd758e7aefd3ed6f353",
+      "3e69fbeb8e773f18a143a75ace3f4b16f9f833169adf1446c538ac3e1342f083",
+      "3e69fbeb8e773f18a143a75ace3f4b16f9f833169adf1446c538ac3e1342f083",
+      "3e69fbeb8e773f18a143a75ace3f4b16f9f833169adf1446c538ac3e1342f083",
+      "787275ddae470679e240a81aba04bd4955280f0b11648ac23b209bc02e291df6",
+      "787275ddae470679e240a81aba04bd4955280f0b11648ac23b209bc02e291df6",
+      "7b3dd2a03412560f7c9d345f1a52882e0be346a9a11f586ba4cb16337c62ef89",
+      "7b3dd2a03412560f7c9d345f1a52882e0be346a9a11f586ba4cb16337c62ef89",
+      "7b3dd2a03412560f7c9d345f1a52882e0be346a9a11f586ba4cb16337c62ef89",
+      "9b17f2fa0f56d4d89f2f86ee93bd9029b21703cd30b73f705f1018872f161e8d",
+      "c83b7260fe5958942f70e8a16c8952513998eb50ed6a1da655d1ee368c89d120",
+      "c83b7260fe5958942f70e8a16c8952513998eb50ed6a1da655d1ee368c89d120"
+    ]
+  },
+  {
     "path": "docs/launch/evidence/mutation-70c2c6e96136.json",
     "rule": "email-address",
     "reason": "recorded mutation diff text containing a decorator (@contextlib), not an address",
