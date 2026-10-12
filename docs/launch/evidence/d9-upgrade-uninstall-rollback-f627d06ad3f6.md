@@ -18,6 +18,8 @@ the old plugin name is written `<old>` and scratch paths `<scratch>`, which are 
 
 ## 1. Migration: 0 lost state on two scratch repos
 
+Scope: "0 lost state" holds for these two scratch repos only, under the comparator defined below. By design the migration also leaves some state unconverted, which is not loss: the previous config's journal block is not carried over to `journal` (turning the journal on is an explicit opt-in); the ledger and timing history keep the old name; and the timing session file, whose schema id Sigma does not know, is not rewritten.
+
 Both repos are git repositories built hermetically: the fresh one by the fixture builder
 `legacy_repo` in `tests/test_legacy_migrate.py` (the same builder the unit tests use, so it is shaped
 like real predecessor state), the in-flight one by extending it. The environment is a scratch `HOME`,
@@ -82,7 +84,7 @@ python3 tools/readiness/leftovers.py .
 | Adopted, before | 1 | 13: `.sdlc`, `agents-block`, 2 `cursor-rule`, `hooks-path`, `ignore-block`, 2 `installed-plugin`, 2 `local-branch`, `running-pid`, 2 `worktree` |
 | Control: only step 4 (`rm -rf .sdlc`) run | 1 | the other residue still named |
 | After steps 1 to 6 as documented | **1** | 2 `installed-plugin` (the host cache directory for the plugin, left by `claude plugin uninstall`), the ledger `local-branch`, `local-branch: sdlc/goal-1` |
-| After additionally `git branch -D` of both local branches and removing the two cache directories | **0** | none |
+| After additionally `git branch -D` of both local branches and one `rm -rf` of the parent plugin cache directory (the checker lists it and its child, two rows) | **0** | none |
 
 So the documented gesture does not reach "nothing left behind" on its own. Two gaps:
 `docs/uninstall.md` never says to delete the local `sdlc/*` and `sdlc-ledger` branches (step 7 covers
@@ -91,8 +93,10 @@ profile, which `leftovers.py` correctly reports. The exit-0 row is therefore a r
 document does not give. Neither gap is fixed by this change; the owner decides whether the document
 or the checker moves.
 
-Controls on the clean state: planting one residue at a time (`.sdlc`, an ignore block, a torn
-AGENTS.md marker, a Cursor rule, the stale hooks path, a local `sdlc/` branch) turned the checker to
+Two details of the uninstall run: step 1's stop-file path was not exercised (the stand-in watcher does not read the stop file; it was stopped by its own recorded pid), and `.git/info/exclude` was unchanged by step 5 (6 lines before and after; it held no Sigma block).
+
+Controls on the clean state: planting one residue at a time (`.sdlc`, an ignore block, an AGENTS.md
+Codex-block marker, a Cursor rule, the stale hooks path, a local `sdlc/` branch) turned the checker to
 exit 1 naming that row each time, and exit 0 again once removed. The pid and worktree rows were red in
 the adopted state above and went green through steps 1 and 3.
 
@@ -107,7 +111,7 @@ isolated profile (`HOME`, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `XDG_CONFIG_HOME` u
    `claude plugin marketplace add <dir>`, `claude plugin install sigmaloop@sigmaloop`. All exit 0;
    `claude plugin list` reported version `0.0.2`.
 2. Roll back: `claude plugin uninstall`, `claude plugin marketplace remove`, the same clone at
-   `rehearsal-a`, add, install. All exit 0; `claude plugin list` reported `0.0.1`.
+   `rehearsal-a`, add, install. All exit 0; `claude plugin list` reported `0.0.1`. A plugin.json scan of the profile lists both `0.0.1` and `0.0.2` after the rollback: the host cache keeps the earlier version's directory, a leftover that rollback does not remove (the same cache residue as in the uninstall run).
 3. The incident-table gesture (revert the default branch to the last-good tag's tree as a NEW commit):
    `git checkout rehearsal-a -- .` then commit. `git diff --stat rehearsal-a HEAD` was empty, and the
    bad commit stays an ancestor, so history was not rewritten.

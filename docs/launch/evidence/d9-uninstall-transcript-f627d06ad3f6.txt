@@ -90,6 +90,7 @@ worktree: <scratch>/repo-uninstall/.sdlc/work/goal-1
 [exit 1]
 
 # D. docs/uninstall.md, steps 1-6 in order, on a freshly adopted copy of the same shape
+NOTE: the commands that rebuild the repo for this section (git init, README and AGENTS.md seed, initial commit, sdlc_init.py --codex --cursor, `git branch sdlc/goal-1`, worktrees for sdlc/goal-1 and the ledger branch, the stale hooks setting, a stand-in `sleep` watcher with its pid file) were run with their output suppressed and are NOT shown here; they repeat section A. The setup is therefore not reproducible from this transcript alone; the 'before' listing below is the evidence that the same residue was present.
 $ git worktree prune
 
 [exit 0]
@@ -114,7 +115,7 @@ worktree: <scratch>/repo-uninstall/.sdlc/ledger
 worktree: <scratch>/repo-uninstall/.sdlc/work/goal-1
 [exit 1]
 
-## step 1 (stop daemons) -- the doc's gesture, plus our stand-in watcher honouring the stop file by exiting
+## step 1 (stop daemons) -- the doc's gesture; the stand-in watcher does not read the stop file
 $ touch .sdlc/state/watch.stop .sdlc/state/slack-commands.stop .sdlc/state/supervisor.stop
   sleep 2
   for f in .sdlc/state/*.pid; do [ -e "$f" ] || continue; pid=$(cat "$f")
