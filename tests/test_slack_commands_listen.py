@@ -2284,7 +2284,7 @@ ok, reason = sc.acquire_single_instance(sys.argv[1])
 if ok:
     print("WON")
     sys.stdout.flush()
-    time.sleep(10)
+    time.sleep(120)
 else:
     print("LOSER: %s" % reason)
 """
@@ -2297,6 +2297,10 @@ else:
 #: settling before this test's own snapshot of "who is still alive" would otherwise risk racing the
 #: winner's own exit.
 _ACQUIRE_N_RACERS = 15
+#: Settle bound for losers to exit (the loop still returns the moment one racer is left). The winner
+#: sleeps 120 s, well past it, and is killed after the snapshot. Was 8 s against a 10 s sleep: on a
+#: loaded CI runner all 15 were still alive (interpreter start-up) at 8 s, each later printing LOSER.
+_ACQUIRE_SETTLE_SECONDS = 60
 
 
 def _race_acquire(d, n=_ACQUIRE_N_RACERS):
@@ -2309,10 +2313,12 @@ def _race_acquire(d, n=_ACQUIRE_N_RACERS):
                   str(S / "slack_commands_listen.py")],
                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
              for _ in range(n)]
-    deadline = time.monotonic() + 8
+    deadline = time.monotonic() + _ACQUIRE_SETTLE_SECONDS
     while time.monotonic() < deadline and sum(1 for p in procs if p.poll() is None) > 1:
         time.sleep(0.05)
     alive = [p for p in procs if p.poll() is None]
+    for p in alive:  # the winner sleeps far past the settle bound; stop it so communicate() returns
+        p.kill()
     results = [p.communicate(timeout=20) for p in procs]
     outs = [f"[rc={p.returncode}] out={out!r} err={err!r}" for p, (out, err) in zip(procs, results)]
     return alive, outs
@@ -2325,8 +2331,8 @@ def test_acquire_single_instance_exactly_one_of_several_genuinely_concurrent_rac
     R-1). The deterministic controls are
     `test_acquire_single_instance_no_intermediate_state_of_a_live_winner_is_reclaimable` and
     `test_acquire_single_instance_reclaiming_a_crashed_holder_is_not_itself_reclaimable_mid_startup`.
-    Residual harness timing assumptions: the 8 s settle deadline against a 10 s winner sleep, and
-    all 15 racers starting within the winner's 10 s. The assertions are ordered so the failure
+    Residual harness timing assumptions: the 60 s settle deadline against a 120 s winner sleep, and
+    all 15 racers starting within the winner's 120 s. The assertions are ordered so the failure
     signature names its cause: two `WON` lines is the real defect; a loser still alive at the
     settle deadline is harness timing."""
     d = _sdlc(tmp_path)
@@ -2334,8 +2340,8 @@ def test_acquire_single_instance_exactly_one_of_several_genuinely_concurrent_rac
     winners = [o for o in outs if "WON" in o]
     losers = [o for o in outs if "WON" not in o]
     assert len(winners) == 1, f"DOUBLE WIN (the real defect): expected exactly one winner, got {len(winners)}: {outs}"
-    assert len(alive) == 1, (f"harness timing, not a double win: a loser was still alive at the 8s "
-                             f"settle deadline ({len(alive)} alive): {outs}")
+    assert len(alive) == 1, (f"harness timing, not a double win: a loser was still alive at the "
+                             f"{_ACQUIRE_SETTLE_SECONDS}s settle deadline ({len(alive)} alive): {outs}")
     assert len(losers) == _ACQUIRE_N_RACERS - 1
     assert all("LOSER" in o for o in losers), f"a loser produced unexpected output: {losers}"
     assert sc.heartbeat_path(d).exists()
