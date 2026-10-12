@@ -1159,6 +1159,53 @@ def test_two_proposals_on_the_same_day_do_not_overwrite_each_other(tmp_path):
     assert rc.load_proposal(b)["proposals"][0]["issue"] == "2"
 
 
+def _seed_proposals(tmp_path, n, age_days, start=0):
+    import os, time
+    d = tmp_path / "plans" / "reconcile"
+    d.mkdir(parents=True, exist_ok=True)
+    made = []
+    for i in range(start, start + n):
+        p = d / ("2026-01-%02dT%06d-reconcile.json" % (1 + i // 100, i))
+        p.write_text("{}")
+        t = time.time() - age_days * 86400
+        os.utime(p, (t, t))
+        made.append(p)
+    return d, made
+
+
+def test_proposals_beyond_the_newest_20_and_older_than_30_days_are_pruned(tmp_path):
+    """B6 (#1267): every human-run `propose` used to leave a file forever."""
+    rc = _mod("reconcile")
+    d, old = _seed_proposals(tmp_path, 22, age_days=40)
+    rc.write_proposal(str(tmp_path), [], [])
+    left = {p.name for p in d.glob("*-reconcile.json")}
+    assert len(left) == rc.PROPOSAL_KEEP == 20
+    assert not any(p.exists() for p in old[:3])                     # the three oldest are gone
+    assert all(p.exists() for p in old[3:])
+    assert (d / "active.json").exists()
+
+
+def test_recent_proposals_are_never_pruned_even_beyond_the_count(tmp_path):
+    rc = _mod("reconcile")
+    d, recent = _seed_proposals(tmp_path, 25, age_days=5)
+    rc.write_proposal(str(tmp_path), [], [])
+    assert all(p.exists() for p in recent)
+
+
+def test_stale_temp_files_of_a_crashed_write_are_pruned_but_fresh_and_foreign_ones_are_not(tmp_path):
+    import os, time
+    rc = _mod("reconcile")
+    d, _ = _seed_proposals(tmp_path, 1, age_days=1)
+    stale, fresh, foreign = d / "tmpAAAA1111", d / "tmpBBBB2222", d / "notes.txt"
+    for p in (stale, fresh, foreign):
+        p.write_text("x")
+    old = time.time() - 3 * 86400
+    os.utime(stale, (old, old))
+    os.utime(foreign, (old, old))
+    rc.write_proposal(str(tmp_path), [], [])
+    assert not stale.exists() and fresh.exists() and foreign.exists()
+
+
 # --- #2295 (`.sdlc/design/2287.md` detailed design section 2): promote DECISIVE open-issue --------
 # corrections from the PROPOSED tier to AUTOMATIC. Condition: resolve_primary returned a real winner
 # (not AMBIGUOUS, not None) AND winner == goal_label, full stop -- narrower than "only adds or
