@@ -1,0 +1,247 @@
+{
+  "measured_commit": "f627d06ad3f6fe391936a0e0bb1e6061f2af6aa4",
+  "date": "2026-10-12",
+  "host": "macOS, Apple silicon, one machine",
+  "migration": {
+    "repo-fresh": {
+      "files_before": 7,
+      "files_after": 8,
+      "created": [
+        ".sdlc/state/features/voice.lock"
+      ],
+      "rewritten": [
+        ".sdlc/config.json",
+        ".sdlc/features/index.json",
+        ".sdlc/features/units/voice.json",
+        ".sdlc/features/voice.md",
+        ".sdlc/state/landing/7.json",
+        ".sdlc/state/withheld/7.json",
+        "AGENTS.md"
+      ],
+      "byte_identical": 0,
+      "lost": [],
+      "dry_run_wrote_nothing": true,
+      "exits": {
+        "dry": 0,
+        "apply": 0,
+        "rerun": 0
+      },
+      "rerun_stable": true,
+      "refs_unchanged": true,
+      "registry_units_after": [
+        "voice"
+      ]
+    },
+    "repo-inflight": {
+      "files_before": 22,
+      "files_after": 25,
+      "created": [
+        ".sdlc/state/features/billing.lock",
+        ".sdlc/state/features/search.lock",
+        ".sdlc/state/features/voice.lock"
+      ],
+      "rewritten": [
+        ".sdlc/config.json",
+        ".sdlc/features/billing.md",
+        ".sdlc/features/index.json",
+        ".sdlc/features/search.md",
+        ".sdlc/features/units/billing.json",
+        ".sdlc/features/units/search.json",
+        ".sdlc/features/units/voice.json",
+        ".sdlc/features/voice.md",
+        ".sdlc/state/landing/21.json",
+        ".sdlc/state/landing/22.json",
+        ".sdlc/state/landing/23.json",
+        ".sdlc/state/landing/31.json",
+        ".sdlc/state/landing/7.json",
+        ".sdlc/state/propagation/21.json",
+        ".sdlc/state/withheld/7.json",
+        "AGENTS.md"
+      ],
+      "byte_identical": 6,
+      "lost": [],
+      "dry_run_wrote_nothing": true,
+      "exits": {
+        "dry": 0,
+        "apply": 0,
+        "rerun": 0
+      },
+      "rerun_stable": true,
+      "refs_unchanged": true,
+      "registry_units_after": [
+        "billing",
+        "search",
+        "voice"
+      ]
+    },
+    "controls": {
+      "garbled_doc": {
+        "exit": 2,
+        "voice_md_untouched": true
+      },
+      "live_watcher": {
+        "exit": 2,
+        "nothing_written": true
+      },
+      "old_plugin_enabled": {
+        "exit": 2,
+        "nothing_written": false,
+        "diff": [
+          ".sdlc/state/coexist.notice"
+        ]
+      },
+      "verifier_red": [
+        [
+          "content-differs",
+          ".sdlc/features/units/search.json"
+        ],
+        [
+          "missing",
+          ".sdlc/state/landing/22.json"
+        ]
+      ]
+    }
+  },
+  "rollback": {
+    "pin_gestures_exit": {
+      "repo@tag": 1,
+      "repo#tag": 1
+    },
+    "install_b_exits": [
+      0,
+      0,
+      0
+    ],
+    "installed_after_b": [
+      "0.0.2"
+    ],
+    "install_a_exits": [
+      0,
+      0,
+      0
+    ],
+    "installed_after_rollback": [
+      "0.0.1",
+      "0.0.2"
+    ],
+    "tree_equals_tag_a": true,
+    "bad_commit_still_ancestor": true,
+    "commit_count": "3",
+    "ctl_missing_tag_exit": 128,
+    "ctl_before_rollback_differs": true,
+    "ctl_tree_vs_b_nonempty": true,
+    "installed_after_rollback_note": "`claude plugin list` reports the rolled-back version; the profile cache also keeps the earlier version's directory, so a plugin.json scan lists both"
+  },
+  "uninstall": {
+    "before": {
+      "exit": 1,
+      "rows": [
+        ".sdlc: .sdlc",
+        "agents-block: AGENTS.md",
+        "cursor-rule: .cursor/rules/output-contract.mdc",
+        "cursor-rule: .cursor/rules/sdlc.mdc",
+        "hooks-path: core.hooksPath",
+        "ignore-block: .gitignore",
+        "installed-plugin: <scratch>/rb-profile/.claude/plugins/cache/sigmaloop",
+        "installed-plugin: <scratch>/rb-profile/.claude/plugins/cache/sigmaloop/sigmaloop",
+        "local-branch: <ledger-branch>",
+        "local-branch: sdlc/goal-1",
+        "running-pid: .sdlc/state/watch.pid",
+        "worktree: <scratch>/repo-uninstall/.sdlc/ledger",
+        "worktree: <scratch>/repo-uninstall/.sdlc/work/goal-1"
+      ]
+    },
+    "ctl_partial": {
+      "exit": 1,
+      "rows": [
+        "agents-block: AGENTS.md",
+        "cursor-rule: .cursor/rules/output-contract.mdc",
+        "cursor-rule: .cursor/rules/sdlc.mdc",
+        "hooks-path: core.hooksPath",
+        "ignore-block: .gitignore",
+        "installed-plugin: <scratch>/rb-profile/.claude/plugins/cache/sigmaloop",
+        "installed-plugin: <scratch>/rb-profile/.claude/plugins/cache/sigmaloop/sigmaloop",
+        "local-branch: <ledger-branch>",
+        "local-branch: sdlc/goal-1",
+        "worktree: <scratch>/repo-uninstall/.sdlc/ledger",
+        "worktree: <scratch>/repo-uninstall/.sdlc/work/goal-1"
+      ]
+    },
+    "before_clean_run": {
+      "exit": 1,
+      "rows": [
+        ".sdlc: .sdlc",
+        "agents-block: AGENTS.md",
+        "cursor-rule: .cursor/rules/output-contract.mdc",
+        "cursor-rule: .cursor/rules/sdlc.mdc",
+        "hooks-path: core.hooksPath",
+        "ignore-block: .gitignore",
+        "installed-plugin: <scratch>/rb-profile/.claude/plugins/cache/sigmaloop",
+        "installed-plugin: <scratch>/rb-profile/.claude/plugins/cache/sigmaloop/sigmaloop",
+        "local-branch: <ledger-branch>",
+        "local-branch: sdlc/goal-1",
+        "running-pid: .sdlc/state/watch.pid",
+        "worktree: <scratch>/repo-uninstall/.sdlc/ledger",
+        "worktree: <scratch>/repo-uninstall/.sdlc/work/goal-1"
+      ]
+    },
+    "step2": 0,
+    "after_steps_1_6": {
+      "exit": 1,
+      "rows": [
+        "installed-plugin: <scratch>/rb-profile/.claude/plugins/cache/sigmaloop",
+        "installed-plugin: <scratch>/rb-profile/.claude/plugins/cache/sigmaloop/sigmaloop",
+        "local-branch: <ledger-branch>",
+        "local-branch: sdlc/goal-1"
+      ]
+    },
+    "final": {
+      "exit": 0,
+      "rows": []
+    },
+    "plants": {
+      ".sdlc": {
+        "planted_exit": 1,
+        "planted_rows": [
+          ".sdlc: .sdlc"
+        ],
+        "after_undo_exit": 0
+      },
+      "ignore-block": {
+        "planted_exit": 1,
+        "planted_rows": [
+          "ignore-block: .gitignore"
+        ],
+        "after_undo_exit": 0
+      },
+      "agents-block": {
+        "planted_exit": 1,
+        "planted_rows": [
+          "agents-block: AGENTS.md"
+        ],
+        "after_undo_exit": 0
+      },
+      "cursor-rule": {
+        "planted_exit": 1,
+        "planted_rows": [
+          "cursor-rule: .cursor/rules/sdlc.mdc"
+        ],
+        "after_undo_exit": 0
+      },
+      "hooks-path": {
+        "planted_exit": 1,
+        "planted_rows": [
+          "hooks-path: core.hooksPath"
+        ],
+        "after_undo_exit": 0
+      },
+      "local-branch": {
+        "planted_exit": 1,
+        "planted_rows": [
+          "local-branch: sdlc/x"
+        ],
+        "after_undo_exit": 0
+      }
+    }
+  }
+}

@@ -1,0 +1,202 @@
+# A. adopt Sigma in a scratch repo (real scaffolder, plus the by-hand pieces uninstall.md names)
+$ git init -q -b main
+
+[exit 0]
+
+$ git add -A
+
+[exit 0]
+
+$ git -c core.hooksPath=/dev/null commit -q -m initial
+
+[exit 0]
+
+$ python3 <worktree>/skills/sigma-init/scripts/sdlc_init.py . --codex --cursor
+sigma-init: 7 created, 0 skipped (target: <scratch>/repo-uninstall)
+  + .sdlc/config.json
+  + .sdlc/goals/0001-example.md
+  + .sdlc/goals/README.md
+  + .sdlc/ledger/README.md
+  + .sdlc/project.md
+  + .sdlc/state/STATE.md
+  + .sdlc/state/review-queue.md
+
+Tip: commit .sdlc/goals/, .sdlc/project.md and .sdlc/config.json. The machine-written dirs ('.sdlc/state/', '.sdlc/ledger/', '.sdlc/work/', '.sdlc/knowledge/') are now git-ignored automatically (`setup.py ignore`, the same mechanism /sigma-setup uses). To change the ignore scope later (tracked vs. local-only), move the lines from .gitignore to .git/info/exclude by hand -- /sigma-setup never relocates an existing rule.
+
+sigma-init: Cursor adapter queued - `.cursor/rules/sdlc.mdc`, `.cursor/rules/output-contract.mdc` (always-applied rules; `sdlc.mdc` is the SDLC discipline, the hook analog, and `output-contract.mdc` points status output at render.py). companions pinned off (portable executors). The zero-dep python helpers run from your Sigma checkout via Cursor's terminal.
+
+sigma-init: Codex adapter written to `AGENTS.md` (other rules preserved).
+
+sigma-init: preflight - 2 problem(s) the loop would otherwise hit at the first goal:
+  [FAIL] git remote 'origin': no remote named 'origin' (this repository has no remote at all)
+    Claude Code: the agent may run it once you say yes, or type it with the `!` prefix: `git remote add origin <url-of-your-repository>`
+    Codex:       run it in a terminal outside the Codex sandbox, or let Codex run it once you approve: `git remote add origin <url-of-your-repository>`
+    Cursor:      run it in Cursor's integrated terminal (View > Terminal): `git remote add origin <url-of-your-repository>`
+    Meanwhile:   with work.enabled on, `work.py start` refuses every goal with this message befo
+[exit 0]
+
+$ git branch sdlc/goal-1
+
+[exit 0]
+
+$ git worktree add -q .sdlc/work/goal-1 sdlc/goal-1
+
+[exit 0]
+
+$ git worktree add -q -b <ledger-branch> .sdlc/ledger
+
+[exit 0]
+
+$ git config --local core.hooksPath <stale-hooks-dir>
+
+[exit 0]
+
+(a stand-in watcher: a `sleep` process, recorded in .sdlc/state/watch.pid; stopped by its own pid below, never by pattern)
+
+# B. BEFORE: leftovers.py sees the adoption
+$ python3 <worktree>/tools/readiness/leftovers.py .
+.sdlc: .sdlc
+agents-block: AGENTS.md
+cursor-rule: .cursor/rules/output-contract.mdc
+cursor-rule: .cursor/rules/sdlc.mdc
+hooks-path: core.hooksPath
+ignore-block: .gitignore
+installed-plugin: <scratch>/rb-profile/.claude/plugins/cache/sigmaloop
+installed-plugin: <scratch>/rb-profile/.claude/plugins/cache/sigmaloop/sigmaloop
+local-branch: <ledger-branch>
+local-branch: sdlc/goal-1
+running-pid: .sdlc/state/watch.pid
+worktree: <scratch>/repo-uninstall/.sdlc/ledger
+worktree: <scratch>/repo-uninstall/.sdlc/work/goal-1
+[exit 1]
+
+# C. CONTROL (gesture as the doc gives it, steps skipped): run uninstall.md step 4 and 5 ONLY, then the final check -- it must stay red
+$ rm -rf .sdlc
+
+[exit 0]
+
+$ python3 <worktree>/tools/readiness/leftovers.py .
+agents-block: AGENTS.md
+cursor-rule: .cursor/rules/output-contract.mdc
+cursor-rule: .cursor/rules/sdlc.mdc
+hooks-path: core.hooksPath
+ignore-block: .gitignore
+installed-plugin: <scratch>/rb-profile/.claude/plugins/cache/sigmaloop
+installed-plugin: <scratch>/rb-profile/.claude/plugins/cache/sigmaloop/sigmaloop
+local-branch: <ledger-branch>
+local-branch: sdlc/goal-1
+worktree: <scratch>/repo-uninstall/.sdlc/ledger
+worktree: <scratch>/repo-uninstall/.sdlc/work/goal-1
+[exit 1]
+
+# D. docs/uninstall.md, steps 1-6 in order, on a freshly adopted copy of the same shape
+$ git worktree prune
+
+[exit 0]
+
+$ git init -q -b main
+
+[exit 0]
+
+$ python3 <worktree>/tools/readiness/leftovers.py .
+.sdlc: .sdlc
+agents-block: AGENTS.md
+cursor-rule: .cursor/rules/output-contract.mdc
+cursor-rule: .cursor/rules/sdlc.mdc
+hooks-path: core.hooksPath
+ignore-block: .gitignore
+installed-plugin: <scratch>/rb-profile/.claude/plugins/cache/sigmaloop
+installed-plugin: <scratch>/rb-profile/.claude/plugins/cache/sigmaloop/sigmaloop
+local-branch: <ledger-branch>
+local-branch: sdlc/goal-1
+running-pid: .sdlc/state/watch.pid
+worktree: <scratch>/repo-uninstall/.sdlc/ledger
+worktree: <scratch>/repo-uninstall/.sdlc/work/goal-1
+[exit 1]
+
+## step 1 (stop daemons) -- the doc's gesture, plus our stand-in watcher honouring the stop file by exiting
+$ touch .sdlc/state/watch.stop .sdlc/state/slack-commands.stop .sdlc/state/supervisor.stop
+  sleep 2
+  for f in .sdlc/state/*.pid; do [ -e "$f" ] || continue; pid=$(cat "$f")
+    kill -0 "$pid" 2>/dev/null && printf 'still running: %s (%s)\n' "$f" "$pid"
+  done
+still running: .sdlc/state/watch.pid (66208)
+[exit 0]
+
+(the stand-in does not read the stop file, so the doc's check correctly reports it. Stopping it by its own recorded pid:)
+stopped pid 66208 via terminate(); exit -15
+
+## step 2 (plugin uninstall, real `claude plugin` in the isolated profile)
+$ claude plugin uninstall sigmaloop@sigmaloop --scope user
+✔ Successfully uninstalled plugin: sigmaloop (scope: user)
+[exit 0]
+
+$ claude plugin marketplace remove sigmaloop
+✔ Successfully removed marketplace: sigmaloop
+[exit 0]
+
+## step 3 (worktrees)
+$ git worktree remove .sdlc/ledger
+
+[exit 0]
+
+$ git worktree remove .sdlc/work/goal-1
+
+[exit 0]
+
+## step 4 (.sdlc)
+$ rm -rf .sdlc
+
+[exit 0]
+
+## step 5 (ignore blocks, AGENTS block, cursor rules). Edits below are the manual deletions the doc prescribes, done with python for byte-exactness
+edited .gitignore: 7 -> 1 lines
+edited .git/info/exclude: 6 -> 6 lines
+AGENTS.md: 2113 -> 23 bytes; remaining content: '# Mine\n\nkeep this line\n'
+$ rm -f .cursor/rules/sdlc.mdc .cursor/rules/output-contract.mdc
+
+[exit 0]
+
+## step 6 (hooksPath)
+$ git config --local --get core.hooksPath
+<stale-hooks-dir>
+[exit 0]
+
+$ git config --local --unset core.hooksPath
+
+[exit 0]
+
+## step 7 (optional remote/GitHub actions): NOT run -- no remote exists in this scratch repo
+## local branches left (the doc's step 3/7 do not name local sdlc/ branches; the checker does):
+$ python3 <worktree>/tools/readiness/leftovers.py .
+installed-plugin: <scratch>/rb-profile/.claude/plugins/cache/sigmaloop
+installed-plugin: <scratch>/rb-profile/.claude/plugins/cache/sigmaloop/sigmaloop
+local-branch: <ledger-branch>
+local-branch: sdlc/goal-1
+[exit 1]
+
+## BEYOND the documented steps: the residue the checker still names is removed by hand (scratch repo; not what uninstall.md says)
+$ git branch -D sdlc/goal-1
+Deleted branch sdlc/goal-1 (was 91579a6).
+[exit 0]
+
+$ git branch -D <ledger-branch>
+Deleted branch <ledger-branch> (was 91579a6).
+[exit 0]
+
+rm -rf <scratch>/rb-profile/.claude/plugins/cache/sigmaloop
+$ python3 <worktree>/tools/readiness/leftovers.py .
+
+[exit 0]
+
+$ python3 <worktree>/tools/readiness/leftovers.py . --json
+[]
+[exit 0]
+
+## CONTROLS on the final clean state: plant ONE residue at a time; the checker must go red with that kind, then green again
+plant .sdlc: exit 1 ['.sdlc: .sdlc'] ; undone: exit 0
+plant ignore-block: exit 1 ['ignore-block: .gitignore'] ; undone: exit 0
+plant agents-block: exit 1 ['agents-block: AGENTS.md'] ; undone: exit 0
+plant cursor-rule: exit 1 ['cursor-rule: .cursor/rules/sdlc.mdc'] ; undone: exit 0
+plant hooks-path: exit 1 ['hooks-path: core.hooksPath'] ; undone: exit 0
+plant local-branch: exit 1 ['local-branch: sdlc/x'] ; undone: exit 0
