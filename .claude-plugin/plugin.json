@@ -3,7 +3,7 @@
   "description": "Sigma Loop: guardrails + an overnight autopilot for your AI coding agent: an SDLC loop that will not finish a goal without a recorded plan, plan review and review, runs your backlog autonomously and tracks each goal on a GitHub Projects board.",
   "version": "1.0.10",
   "author": {
-    "name": "Swapnil Dubey"
+    "name": "Agrim Intelligence Private Limited"
   },
   "license": "MIT",
   "keywords": [
