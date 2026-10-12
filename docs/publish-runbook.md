@@ -29,11 +29,11 @@ From the root of this checkout, with the patterns file exported once:
 
 ```
 export SIGMA_LEAK_PATTERNS="$HOME/.sigma-ops/leak-patterns.txt"     # yours; outside every repository
-python3 tools/leak_refs.py scan --repo Agrim-Intelligence/sigma
+python3 tools/leak_refs.py scan --repo OWNER/NAME
 python3 tools/leak_refs.py tree
 python3 tools/leak_refs.py text pr-body.md
-python3 tools/leak_refs.py rewrite --repo Agrim-Intelligence/sigma --out ~/.sigma-ops/leak-dryrun.md
-python3 tools/leak_refs.py rewrite --apply --from ~/.sigma-ops/leak-dryrun.md --repo Agrim-Intelligence/sigma
+python3 tools/leak_refs.py rewrite --repo OWNER/NAME --out ~/.sigma-ops/leak-dryrun.md
+python3 tools/leak_refs.py rewrite --apply --from ~/.sigma-ops/leak-dryrun.md --repo OWNER/NAME
 ```
 
 Text you are about to post can be checked from stdin, before it reaches GitHub:
@@ -141,13 +141,13 @@ OWNER RUNBOOK. Run by the owner, attended, from the root of a current checkout.
 
 1. **Stop every writer.** End the loop sessions, then `touch .sdlc/state/watch.stop`. The loop edits
    issue bodies with a read-then-write that an apply could race.
-2. **Scan.** `python3 tools/leak_refs.py scan --repo Agrim-Intelligence/sigma` exits 1 while
+2. **Scan.** `python3 tools/leak_refs.py scan --repo OWNER/NAME` exits 1 while
    anything matches. Note the per-pattern-line counts: a pattern line with 0 hits may be a format
    mismatch in the patterns file, not a clean repository.
-3. **Dry-run.** `python3 tools/leak_refs.py rewrite --repo Agrim-Intelligence/sigma --out ~/.sigma-ops/leak-dryrun.md`
+3. **Dry-run.** `python3 tools/leak_refs.py rewrite --repo OWNER/NAME --out ~/.sigma-ops/leak-dryrun.md`
    writes the plan outside every repository.
 4. **Review the file**: every diff, the manual list and the history list.
-5. **Apply.** `python3 tools/leak_refs.py rewrite --apply --from ~/.sigma-ops/leak-dryrun.md --repo Agrim-Intelligence/sigma`.
+5. **Apply.** `python3 tools/leak_refs.py rewrite --apply --from ~/.sigma-ops/leak-dryrun.md --repo OWNER/NAME`.
    Run it again while it says edits remain; make a new dry-run for anything `changed since the
    dry-run`.
 6. **Rescan**, and handle the manual items by hand: edit your own, ask other authors, or minimize.

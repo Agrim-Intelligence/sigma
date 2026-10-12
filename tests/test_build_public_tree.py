@@ -65,6 +65,9 @@ def _load(path, name):
     return mod
 
 
+SRC_URL = "https://github.com/fake-src-org/fake-src-repo.git"  # the fixture's private source remote
+
+
 def _tool():
     """A FRESH copy of the builder (a unique module name per call), behind an existence assert."""
     assert TOOL.exists(), "tools/build_public_tree.py is missing"
@@ -161,6 +164,7 @@ def _fixture(tmp_path, files=None, exec_paths=None, name="src", extra=None):
     _git(repo, "commit", "-q", "-m", "fixture",
          env_extra={"GIT_AUTHOR_DATE": AUTHOR_DATE + " +0000", "GIT_COMMITTER_DATE": SOURCE_DATE + " +0000"})
     _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _git(repo, "config", "remote.origin.url", SRC_URL)
     return repo, _git(repo, "rev-parse", "HEAD")
 
 
@@ -1080,3 +1084,73 @@ def test_issue_template_slug_reads_the_ssh_form(tmp_path):
     scan, findings = mod._issue_template_slug(tmp_path, b'{"public_repo": "acme/demo"}', {})
     assert scan["status"] == "mismatch" and scan["found"] == ["acme/demo", "acme/demo-x"]
     assert [f["line"] for f in findings] == [2]
+
+
+# ------------------------------------------------------------------------------ the source's own slug (#1204)
+
+def _fake_slug():
+    return "fake-src-org" + "/" + "fake-src-repo"  # assembled at run time: no literal slug in the file
+
+
+@pytest.mark.parametrize("rel,text", [
+    ("docs/runbook.md", "run `tool --repo {s}` first\n"),
+    ("tests/test_fixture.py", 'URL = "https://github.com/{s}/issues/1"\n'),
+    ("docs/evidence/run.json", '{{"run_url": "https://github.com/{s}.git"}}\n'),
+    ("CODEOWNERS", "* @{s}\n"),
+    ("docs/upper.md", "see {u}#77\n"),
+])
+def test_source_slug_in_any_exported_file_type_rejects(tmp_path, capsys, rel, text):
+    """Control: on the builder before #1204 this tree is VERIFIED (the patterns file never held the
+    source's own name); now it is REJECTED, by name and line, never by text."""
+    mod = _tool()
+    repo, sha = _fixture(tmp_path, extra={rel: text.format(s=_fake_slug(), u=_fake_slug().upper())})
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha))
+    assert rc == 1, err
+    fields = _fields(out)
+    assert fields["verdict"] == "REJECTED"
+    found = _report(fields)["scans"]["builder"]["findings"]
+    assert [(f["rule"], f["path"]) for f in found] == [("source-slug", rel)]
+    assert _fake_slug().split("/")[1] not in out + err + _md(fields)
+
+
+def test_source_slug_in_a_path_rejects_and_a_longer_name_does_not(tmp_path, capsys):
+    mod = _tool()
+    repo, sha = _fixture(tmp_path, extra={
+        "docs/" + _fake_slug().replace("/", "_") + ".md": "no slug in the text\n",
+        "docs/" + _fake_slug() + "/x.md": "a slug as a path\n",
+        "CODEOWNERS": "* @%s-maintainers\nsee %sloop and %s-x and %s_y\n" % ((_fake_slug(),) * 4)})
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha))
+    assert rc == 1, err
+    found = _report(_fields(out))["scans"]["builder"]["findings"]
+    assert [(f["rule"], f["path"], f["line"]) for f in found] == [("source-slug", "docs/" + _fake_slug() + "/x.md", 0)]
+
+
+def test_clean_tree_with_a_derived_slug_is_verified_and_counts_the_scan(tmp_path, capsys):
+    mod = _tool()
+    repo, sha = _fixture(tmp_path)
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha))
+    assert rc == 0, err
+    assert _report(_fields(out))["scans"]["source_slug"] == {"slugs": 1, "findings": 0}
+
+
+def test_repo_flag_adds_a_slug_and_no_derivable_slug_is_refused(tmp_path, capsys):
+    mod = _tool()
+    repo, sha = _fixture(tmp_path, extra={"docs/a.md": "see other-org/other-repo here\n"})
+    _git(repo, "config", "--unset", "remote.origin.url")
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha))
+    assert rc == 2 and out == "" and "REFUSED [source-slug-unknown]" in err
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "o2"),
+                                             extra=["--repo", "other-org/other-repo"]))
+    assert rc == 1, err
+    assert _report(_fields(out))["scans"]["source_slug"]["findings"] == 1
+
+
+def test_a_source_slug_finding_cannot_be_dispositioned(tmp_path, capsys):
+    mod = _tool()
+    entry = {"path": "docs/a.md", "rule": "source-slug", "reason": "x", "lines": ["0" * 64]}
+    repo, sha = _fixture(tmp_path, extra={
+        "docs/a.md": "see %s\n" % _fake_slug(),
+        "docs/launch/public-tree-dispositions.json": json.dumps(
+            {"schema": "sigma.public-tree-dispositions/v1", "entries": [entry]})})
+    rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha))
+    assert rc == 2 and "REFUSED [dispositions-malformed]" in err

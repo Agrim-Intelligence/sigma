@@ -472,7 +472,7 @@
       "dimensions": [
         "D11"
       ],
-      "command": "python3 tools/readiness/verify_repo_settings.py Agrim-Intelligence/sigma",
+      "command": "python3 tools/readiness/verify_repo_settings.py OWNER/NAME",
       "cwd": "frozen-clone",
       "exit_code": 1,
       "wall_s": 2.4,

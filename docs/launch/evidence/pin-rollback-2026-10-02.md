@@ -13,7 +13,7 @@ probes: `4c72c166677e3d48` / `4c72c166677e3d48` (unchanged). The real profile an
 predecessor installations were not modified. No repository, release, tag, or
 GitHub setting was created or changed.
 
-The proposed public release source is `Agrim-Intelligence/sigma` at `v1.0.0`.
+The proposed public release source is `OWNER/NAME` at `v1.0.0`.
 The source tag lookup exited 2 with no output; it was absent.
 
 ## Command transcripts
@@ -24,7 +24,7 @@ redaction. Exit codes and diagnostic text are otherwise copied from the runs.
 ### a. `repo@tag` — exit 1
 
 ```
-$ env HOME=<temporary-dir>/a-home CLAUDE_CONFIG_DIR=<temporary-dir>/a-config CODEX_HOME=<temporary-dir>/a-codex claude plugin marketplace add Agrim-Intelligence/sigma@v1.0.0 --scope user
+$ env HOME=<temporary-dir>/a-home CLAUDE_CONFIG_DIR=<temporary-dir>/a-config CODEX_HOME=<temporary-dir>/a-codex claude plugin marketplace add OWNER/NAME@v1.0.0 --scope user
 Adding marketplace…
 ✘ Failed to add marketplace: Failed to clone marketplace repository: SSH authentication failed. Please ensure your SSH keys are configured for GitHub, or use an HTTPS URL instead.
 
@@ -36,7 +36,7 @@ fatal: Could not read from remote repository.
 ### b. `repo#tag` — exit 1
 
 ```
-$ env HOME=<temporary-dir>/b-home CLAUDE_CONFIG_DIR=<temporary-dir>/b-config CODEX_HOME=<temporary-dir>/b-codex claude plugin marketplace add Agrim-Intelligence/sigma#v1.0.0 --scope user
+$ env HOME=<temporary-dir>/b-home CLAUDE_CONFIG_DIR=<temporary-dir>/b-config CODEX_HOME=<temporary-dir>/b-codex claude plugin marketplace add OWNER/NAME#v1.0.0 --scope user
 Adding marketplace…
 ✘ Failed to add marketplace: Failed to clone marketplace repository: SSH authentication failed. Please ensure your SSH keys are configured for GitHub, or use an HTTPS URL instead.
 
@@ -48,7 +48,7 @@ fatal: Could not read from remote repository.
 ### c. local clone/path — exit 128
 
 ```
-$ git clone --branch v1.0.0 --depth 1 https://github.com/Agrim-Intelligence/sigma.git <temporary-dir>/tagged-clone
+$ git clone --branch v1.0.0 --depth 1 https://github.com/OWNER/NAME.git <temporary-dir>/tagged-clone
 Cloning into '<temporary-dir>/tagged-clone'...
 fatal: Remote branch v1.0.0 not found in upstream origin
 ```

@@ -50,9 +50,9 @@ def test_release_runbook_and_pin_rollback_evidence_are_shipped():
     assert len(hashes) >= 2 and hashes[0] == hashes[1], hashes
     assert re.search(r"Measured commit: `[0-9a-f]{40}`", evidence)
     for gesture in (
-        "claude plugin marketplace add Agrim-Intelligence/sigma@v1.0.0 --scope user",
-        "claude plugin marketplace add Agrim-Intelligence/sigma#v1.0.0 --scope user",
-        "git clone --branch v1.0.0 --depth 1 https://github.com/Agrim-Intelligence/sigma.git",
+        "claude plugin marketplace add OWNER/NAME@v1.0.0 --scope user",
+        "claude plugin marketplace add OWNER/NAME#v1.0.0 --scope user",
+        "git clone --branch v1.0.0 --depth 1 https://github.com/OWNER/NAME.git",
     ):
         assert gesture in evidence
     assert "SSH authentication failed" in evidence

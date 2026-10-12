@@ -343,13 +343,26 @@ def _references_rx(excluded):
     return re.compile("|".join(re.escape(p) for p in alternatives))
 
 
-def materialise(src_root, entries, dest, excluded=()):
+def source_slug_rx(slugs):
+    """-> a compiled regex for the source repository's own OWNER/NAME (any case, a whole name: not a
+    longer one such as a team or a sibling repository), or None for no slug. The patterns file is the
+    owner's list of names; the source's own name is derived from its remote, so a mention of it cannot
+    be missed for being absent from that list (#1204)."""
+    if not slugs:
+        return None
+    alt = "|".join(re.escape(x) for x in sorted(set(slugs), key=lambda x: (-len(x), x)))
+    return re.compile(r"(?<![A-Za-z0-9_.-])(?:%s)(?![A-Za-z0-9_-])" % alt, re.I)
+
+
+def materialise(src_root, entries, dest, excluded=(), slug_rx=None):
     """Write `entries` [(path, mode, blob_hex)] of the source repository at `src_root` under `dest`
     through ONE `git cat-file --batch`, request-response, memory bounded by one blob. Refuses
     `[oversize]` (before reading), `[binary]` and `[non-utf8]`. Files are created 0600 with O_EXCL
     and then chmod-ed 0644/0755 (never the umask's choice). -> {files, bytes, modes, findings,
     references_remaining}: findings are the content rules' hits, one per matching line;
-    references_remaining maps each excluded path to the number of exported lines naming it."""
+    references_remaining maps each excluded path to the number of exported lines naming it.
+    `slug_rx` (source_slug_rx) adds the `source-slug` rule over every line and every path; it has no
+    disposition (CONTENT_RULES omits it), so a mention is fixed in the source, never waved through."""
     dest = str(dest)
     os.makedirs(dest, mode=0o700, exist_ok=True)
     refs_rx = _references_rx([str(p) for p in excluded])
@@ -368,6 +381,8 @@ def materialise(src_root, entries, dest, excluded=()):
             if size > MAX_BLOB_BYTES:
                 raise Refused("oversize", "a planned blob is %d bytes, over the %d-byte cap" % (size, MAX_BLOB_BYTES))
             data = _read_exact(proc.stdout, size + 1)[:size]
+            if slug_rx is not None and slug_rx.search(path):
+                findings.append({"rule": "source-slug", "path": path, "line": 0, "blob": oid, "line_sha256": None})
             if b"\0" in data:
                 raise Refused("binary", "a planned blob holds a NUL byte")
             try:
@@ -375,8 +390,9 @@ def materialise(src_root, entries, dest, excluded=()):
             except UnicodeDecodeError:
                 raise Refused("non-utf8", "a planned blob is not UTF-8")
             for number, line in enumerate(text.split("\n"), 1):
-                for rule, rx in (("private-key-header", KEY_HEADER), ("owner-placeholder", OWNER_PLACEHOLDER)):
-                    if rx.search(line):
+                for rule, rx in (("private-key-header", KEY_HEADER), ("owner-placeholder", OWNER_PLACEHOLDER),
+                                 ("source-slug", slug_rx)):
+                    if rx is not None and rx.search(line):
                         findings.append({"rule": rule, "path": path, "line": number, "blob": oid,
                                          "line_sha256": hashlib.sha256(line.encode("utf-8")).hexdigest()})
                 if refs_rx is not None:
@@ -813,6 +829,18 @@ def _disposition_covers(entries, findings):
         else:
             uncovered += group
     return uncovered, used
+
+
+def _source_slugs(args, src):
+    """-> the source repository's OWNER/NAME names (lower case): --repo, and the GitHub slug of the
+    remote named by --remote."""
+    found = set([args.repo.lower()]) if args.repo else set()
+    _rc, url = _git(src, "config", "--get", "remote.%s.url" % args.remote, allow=True)
+    match = _GITHUB_REPO_RX.search(url or "")
+    if match:
+        name = re.sub(r"\.git$", "", match.group(2), flags=re.I)
+        found.add(("%s/%s" % (match.group(1), name)).lower())
+    return sorted(found)
 
 
 def _doctor_slug(partial, definition_raw, blobs):
@@ -1267,6 +1295,13 @@ def _main(argv, run, state):
     pt_live = [e for e in pt_entries if not _under(e["path"], names)]
     allow_live = [e for e in allow_entries if not _under(e["path"], names)]
 
+    # 9b. the source's own name, derived (never typed into a file): the export must not carry it
+    slugs = _source_slugs(args, src)
+    if not slugs:
+        raise Refused("source-slug-unknown", "the source's own OWNER/NAME cannot be derived: pass --repo, or "
+                      "give the source a GitHub remote named by --remote, so the export can be scanned for it")
+    slug_rx = source_slug_rx(slugs)
+
     # 10. the planned tree, twice
     tmp = tempfile.mkdtemp(prefix="build_public_tree-")
     state.temps.append(tmp)
@@ -1293,7 +1328,7 @@ def _main(argv, run, state):
     os.mkdir(str(partial), 0o700)
     state.partial = partial
     excluded_paths = [path for path, _row in excluded_rows]
-    mat = materialise(src, plan, partial, excluded_paths)
+    mat = materialise(src, plan, partial, excluded_paths, slug_rx)
     actual_disk = disk_tree(partial)
     if actual_disk != planned_py:
         raise Refused("tree-mismatch", "the files on disk are not the planned tree")
@@ -1379,6 +1414,7 @@ def _main(argv, run, state):
             "public_tree": {"present": pt_raw is not None, "entries": len(pt_entries),
                             "moot": len(pt_entries) - len(pt_live)}},
         "scans": {"builder": {"exit": 1 if builder_findings else 0, "findings": builder_findings},
+                  "source_slug": {"slugs": len(slugs), "findings": len([f for f in builder_findings if f["rule"] == "source-slug"])},
                   "doctor_slug": doctor_slug, "issue_template_slug": issue_slug, "leak_refs": leak_refs, "exposure": exposure, "leak_scan": leak_scan},
         "notes": notes,
         "not_covered": list(NOT_COVERED),
