@@ -492,6 +492,7 @@ VERSION_ALLOW = {
     ("docs/agent-rules-detail.md", "2.1.284"): "a Claude Code CLI version, measured",
     ("docs/onboarding-control.md", "2.1.284"): "the measured Claude Code CLI version of the #524 plugin-id re-run",
     ("docs/launch/evidence/live-onboarding-2026-10-12.md", "2.1.284"): "the measured Claude Code CLI version the #300 and #301 live drills ran on; it is not a Sigma release",
+    ("docs/launch/evidence/measured-results.md", "2.1.284"): "the measured Claude Code CLI version of the live drills the page quotes; it is not a Sigma release",
     ("docs/launch/evidence/pin-rollback-2026-10-02.md", "2.1.284"): "the measured Claude Code CLI version for #359's isolated pin probe",
     ("docs/launch/evidence/rehearsal-f92a7528a26b.md", "2.1.284"): "a measured tool version, not a Sigma release: the Claude Code CLI the install control ran",
     ("docs/launch/evidence/rehearsal-f92a7528a26b.md", "9.1.1"): "a measured tool version, not a Sigma release: the pytest in the clean venv",
