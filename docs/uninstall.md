@@ -21,14 +21,35 @@ residue and exits 1 until nothing remains.
    ```sh
    rm -rf .sdlc
    ```
-5. In `.gitignore` and `.git/info/exclude`, delete the comment
+5. Delete the local branches Sigma created: `sdlc/*` goal branches, `feature/*` unit branches and the
+   `sdlc-ledger` branch. List them first and read the list: `git branch -D` discards commits that were
+   never merged or pushed, and the list can include a `feature/*` branch of your own. Step 3 already
+   removed the worktrees that held them, because git refuses to delete a branch that is checked out
+   in one.
+   ```sh
+   git for-each-ref --format='%(refname:short)' refs/heads/sdlc/ refs/heads/feature/ refs/heads/sdlc-ledger
+   git for-each-ref --format='%(refname:short)' refs/heads/sdlc/ refs/heads/feature/ refs/heads/sdlc-ledger |
+     while read -r b; do git branch -D "$b"; done
+   ```
+   The remote copies are step 9's.
+6. Remove the plugin cache. `claude plugin uninstall` leaves the plugin's directory under the Claude
+   profile (`leftovers.py` reports it as two `installed-plugin` rows, the directory and its child). The
+   cache is shared by every repository on this machine that uses the plugin, so skip this step while
+   another repository still needs it; `leftovers.py` keeps listing the rows until you do. If you set
+   `CLAUDE_CONFIG_DIR`, the profile is that directory, not `~/.claude`:
+   ```sh
+   rm -rf "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/sigmaloop"
+   ```
+   If `leftovers.py` prints a different path (a Codex home, or the pre-launch directory name), remove
+   that path instead.
+7. In `.gitignore` and `.git/info/exclude`, delete the comment
    `# Sigma runtime dirs (machine-written)` and the consecutive Sigma runtime-directory lines
    below it. In `AGENTS.md`, delete everything from `<!-- sigma:codex:start -->` through
    `<!-- sigma:codex:end -->`, inclusive. Remove the two init-owned Cursor rules if present:
    ```sh
    rm -f .cursor/rules/sdlc.mdc .cursor/rules/output-contract.mdc
    ```
-6. Check the repository's git hook setting. Sigma releases before #614 set a local `core.hooksPath`
+8. Check the repository's git hook setting. Sigma releases before #614 set a local `core.hooksPath`
    at `/sigma-init` that named a directory nothing creates, so git ran none of the repository's hooks:
    ```sh
    git config --local --get core.hooksPath
@@ -39,7 +60,7 @@ residue and exits 1 until nothing remains.
    git config --local --unset core.hooksPath
    ```
    Leave any other value alone; it is yours (husky and similar tools set one).
-7. Optionally delete the remote `sdlc-ledger` branch, `sdlc:*` labels, and linked board. These
+9. Optionally delete the remote `sdlc-ledger` branch, `sdlc:*` labels, and linked board. These
    GitHub actions are irreversible.
 
 Finally run:

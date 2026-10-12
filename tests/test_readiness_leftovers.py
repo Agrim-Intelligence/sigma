@@ -3,9 +3,12 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -179,3 +182,63 @@ def test_hook_path_read_ignores_an_exported_git_dir(tmp_path, monkeypatch):
                    check=True, env=_CLEAN_GIT_ENV)
     monkeypatch.setenv("GIT_DIR", str(other / ".git"))
     assert mod.find_leftovers(target) == []
+
+
+def _doc_blocks(text=None):
+    """The fenced `sh` blocks of docs/uninstall.md, in order: the gestures a reader copies."""
+    text = (ROOT / "docs" / "uninstall.md").read_text(encoding="utf-8") if text is None else text
+    return [m.group(1) for m in re.finditer(r"```sh\n(.*?)```", text, re.S)]
+
+
+def _block_with(needle, text=None):
+    found = [b for b in _doc_blocks(text) if needle in b]
+    assert found, f"docs/uninstall.md has no sh block containing {needle!r}"
+    return found[-1]
+
+
+def test_documented_branch_and_plugin_cache_steps_leave_nothing_behind(tmp_path):
+    """D9: the uninstall guide's branch-deletion and plugin-cache blocks, copied out of the doc and run
+    on a scratch repo, take leftovers.py from red to green. Never touches a real repo or profile."""
+    mod = _mod()
+    repo, profile = tmp_path / "repo", tmp_path / "profile"
+    repo.mkdir()
+    env = {**_CLEAN_GIT_ENV, "CLAUDE_CONFIG_DIR": str(profile), "CODEX_HOME": str(tmp_path / "codex"),
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+           "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+
+    def run(cmd):
+        return subprocess.run(cmd, cwd=repo, env=env, text=True, capture_output=True)
+
+    def kinds(proc):
+        return {line.split(":")[0] for line in proc.stdout.splitlines()}
+
+    assert run(["git", "init", "-q", "-b", "main"]).returncode == 0
+    assert run(["git", "commit", "-q", "--allow-empty", "-m", "i"]).returncode == 0
+    for branch in ("sdlc/goal-1", "feature/demo", mod.LEDGER_BRANCH, "keep-me"):
+        assert run(["git", "branch", branch]).returncode == 0
+    (profile / "plugins" / "cache" / "sigmaloop" / "sigmaloop").mkdir(parents=True)
+    check = lambda: run([sys.executable, str(SCRIPT), str(repo)])
+    red = check()
+    assert red.returncode == 1 and kinds(red) == {"local-branch", "installed-plugin"}, red.stdout
+    # Control: each block alone leaves the other's residue.
+    assert run(["sh", "-c", _block_with("git branch -D")]).returncode == 0
+    mid = check()
+    assert mid.returncode == 1 and kinds(mid) == {"installed-plugin"}, mid.stdout
+    assert run(["sh", "-c", _block_with("plugins/cache")]).returncode == 0
+    green = check()
+    assert green.returncode == 0 and green.stdout == "", green.stdout
+    # The branch step is scoped: a branch that is not Sigma's survives.
+    assert "keep-me" in run(["git", "branch", "--format=%(refname:short)"]).stdout.split()
+
+
+def test_pre_change_guide_had_no_branch_or_cache_block():
+    """Red control for the test above: the guide as it stood before the change had neither block, so
+    the gesture the old doc gave cannot reach exit 0 on a repo that holds those residues."""
+    old = subprocess.run(["git", "show", "64076300:docs/uninstall.md"], cwd=ROOT, text=True,
+                         capture_output=True, env=_CLEAN_GIT_ENV)
+    if old.returncode != 0:      # a clone without that commit: nothing to compare against
+        pytest.skip("pre-change guide not available")
+    for needle in ("git branch -D", "plugins/cache"):
+        with pytest.raises(AssertionError):
+            _block_with(needle, old.stdout)
