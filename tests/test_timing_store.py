@@ -842,7 +842,12 @@ def test_loading_the_store_imports_neither_state_nor_subprocess():
         "print('state-attr', 'state' in vars(m))\n"
         "print('subprocess-imported', 'subprocess' in sys.modules)\n"
     )
-    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True)
+    # #390: strip pytest-cov's environment. Under `--cov` (the command `loop.py verify` runs) the
+    # child inherits `COV_CORE_*` and the coverage `.pth` hook starts coverage in it, and coverage
+    # itself imports `subprocess` -- so the assertion would measure pytest-cov, not the store. The
+    # probe must see only what loading the store imports.
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("COV_CORE", "COVERAGE"))}
+    out = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, env=env)
     assert out.returncode == 0, out.stderr
     assert "state-attr False" in out.stdout
     assert "subprocess-imported False" in out.stdout

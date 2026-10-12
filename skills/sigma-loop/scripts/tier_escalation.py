@@ -129,6 +129,72 @@ def shown_tier(config, entries=(), floor=None):
     return from_tier(config, "haiku", entries, floor)
 
 
+#: Mirrors `discovery.py`'s `LANES` (#390) -- not imported, same "skills don't import each other's
+#: Python" boundary `PRICE_ORDER` above already crosses for `predict.py`'s vocabulary. Pinned
+#: against the original by test_the_lane_vocabulary_matches_the_researcher_it_mirrors, exactly like
+#: the ceiling constants above are pinned against predict.py's.
+LANES = ("small", "medium", "large")
+
+#: The `model_choice` signal prefix a lane re-resolve records with (#390) -- so `recorded_tier`
+#: (which looks only for `SIGNAL_PREFIX`, "escalated: ") never mistakes a lane cap for a genuine
+#: review-triggered escalation, and a lane re-resolve can never itself raise the escalation floor.
+LANE_SIGNAL_PREFIX = "lane:"
+
+
+def lane_signal(lane):
+    """The `model_choice` signal a lane re-resolve is recorded with -- WHY this tier (#390)."""
+    return f"{LANE_SIGNAL_PREFIX}{lane}"
+
+
+def lane_tier(config, lane, current, entries=(), floor=None):
+    """#390: the tier P3+ actually runs at, re-resolved from Research's MEASURED lane rather than
+    only the pre-P2 text signal `current` carries.
+
+      - small  -> `current` capped at sonnet. A CAP, not a floor: a title-only haiku match (below
+        sonnet already) is left alone -- a lane never pushes a goal UP, only narrows an
+        overconfident text match down.
+      - medium -> sonnet outright, whatever `current` says. Matches `predict.py`'s own `_DEFAULT`
+        -- the ceremony a goal this size earns regardless of what its wording guessed.
+      - large  -> opus outright, regardless of wording -- the issue's own red-first control: a
+        structural, multi-module or new-source-of-truth goal earns the top tier even when nothing
+        in its text says so.
+
+    `entries`/`floor` are the SAME escalation-floor inputs `from_tier`/`shown_tier` read -- a
+    genuine review-triggered escalation recorded before this call (e.g. research re-run after a
+    park/resume) must still win over a lane cap, never be silently downgraded by one. This is
+    DELIBERATELY NOT `from_tier(config, current, entries, floor)`: that helper's own
+    `effective_tier` starts its max at `current`, so with NO recorded escalation at all
+    `from_tier(config, "opus", (), None)` still returns `"opus"` -- combining with THAT would
+    re-inject the very un-capped text tier this lane rule exists to correct (caught in plan
+    review, #390). Instead the escalation side of the max is computed from escalation MEMORY
+    ALONE, baselining `effective_tier` at the lowest tier so only a genuine `recorded_tier`/
+    `floor` can raise it:
+
+        esc = effective_tier(PRICE_ORDER[0], entries, floor)
+
+    The final tier is the higher-priced of the lane result and this escalation-only `esc`, clamped
+    to the price ceiling last (the lane side, e.g. a `large`-lane `opus`, may still exceed a
+    lowered ceiling even though `esc` was already clamped by construction).
+
+    Raises `ValueError` for an unrecognised `lane` or `current`, mirroring `next_tier`/`decide`."""
+    if lane not in LANES:
+        raise ValueError(f"unknown lane {lane!r} (expected one of {', '.join(LANES)})")
+    if current not in PRICE_ORDER:
+        raise ValueError(f"unknown tier {current!r} (expected one of {', '.join(PRICE_ORDER)})")
+    cap = ceiling(config)
+    if lane == "small":
+        lane_capped = current if PRICE_ORDER.index(current) <= PRICE_ORDER.index("sonnet") \
+            else "sonnet"
+    elif lane == "medium":
+        lane_capped = "sonnet"
+    else:                                                           # "large"
+        lane_capped = "opus"
+    esc = effective_tier(PRICE_ORDER[0], entries, floor)
+    esc = cap if PRICE_ORDER.index(esc) > PRICE_ORDER.index(cap) else esc
+    best = lane_capped if PRICE_ORDER.index(lane_capped) > PRICE_ORDER.index(esc) else esc
+    return cap if PRICE_ORDER.index(best) > PRICE_ORDER.index(cap) else best
+
+
 def read_floor(path):
     """The recorded escalation floor at `path`, or None. Unreadable/malformed reads as no floor --
     the worst case is one extra rung re-requested, never a crash on the way to a revision."""
