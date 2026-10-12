@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+## 1.0.11 — 2026-10-12 — an owner's "no" reply vetoes an auto-applied answer, copyright holder, and a Python 3.10 diagnose fix
+
 - **Copyright holder is now "Agrim Intelligence Private Limited" everywhere it is stated.** `LICENSE`, `NOTICE`, and the `author` / `owner` of `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` (were an individual's name). `docs/launch/evidence/legal.md` records, as owner decisions made without counsel on 2026-10-12, the entity name and that there are no obligations to predecessor users; the name cells stay OPEN (owner chose to hold the name until the German register entry is looked at). No version bump. Not legal advice; nothing measured beyond the tests.
 - **The documented `invocation.py diagnose .sdlc <id>` gesture no longer says `refused` on Python 3.10 and 3.11.** `run_adapter` built the adapter's private run directory from the sdlc path as given, so a relative `.sdlc` gave a relative executable path, which Python 3.10/3.11 resolve against the child's `cwd` (the run directory) and not the caller's, so the spawn failed `FileNotFoundError`; 3.12 and later resolve it from the caller. The path is now absolute. Cause found by reproducing in `python:3.10` and `python:3.11`; `tests/test_invocation.py::test_the_documented_install_and_diagnose_gesture_works_as_written` was red there before and is green after. The same code path serves `authorize` with a relative sdlc dir.
 
