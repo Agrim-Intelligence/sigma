@@ -187,6 +187,19 @@ Every build is REJECTED until the owner fills the two owner-name placeholders in
 `CODE_OF_CONDUCT.md`: the placeholder is a finding, not a pre-materialisation refusal, so one run
 still reports every other scan.
 
+## What the skip pin does not cover
+
+`tests/test_no_skip_hooks.py` is a static check, not a lock. It pins: conftest hooks that can skip or
+ignore by rule (`pytest_collection_modifyitems`, `pytest_ignore_collect`, `pytest_configure` beyond marker
+registration, the run and report hooks, `add_marker`, `collect_ignore`/`collect_ignore_glob`), and, for the
+eight guard tests, any skip/xfail marker, `pytest.skip`/`importorskip`/`xfail` call (one reviewed
+`not a git checkout` skip excepted) or `return` before the first assert; the only exemption is the exact
+skip the export-time transform of #1203 writes into five named tests. NOT covered: a blanket skip (a hook
+or an autouse fixture that skips every test, or a skip in an imported helper), `--deselect`, `-k` or `addopts`
+in `pytest.ini`/`pyproject.toml`/`tox.ini`, a plugin, and the CI command line. Mitigation: review of any
+conftest or pytest-config change, and the measured exported-suite counts (passed, skipped and the five
+`EXPORT-SKIP` lines of `pytest -rs`) in the #1203 PR.
+
 ## What was and was not measured
 
 Every export built so far for rehearsal and for these controls used `--review-level clean` (the checkout
