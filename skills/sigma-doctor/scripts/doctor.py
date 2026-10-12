@@ -2773,11 +2773,15 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
         if leftovers:
             shown = ", ".join(f"#{n}" for n in leftovers[:10])
             more = f" (+{len(leftovers) - 10} more)" if len(leftovers) > 10 else ""
+            gate_on = _block(_block(cfg, "ai_filed"), "triage").get("enabled") is not False
+            how = ("Run `/sigma-promote migrate-confirmation` (dry run first, see docs/label-model.md) to move them all, or "
+                   if gate_on else "Run ")
             out.append(_chk(
                 "no issue still carries the legacy confirmation label (advisory)",
                 False,
-                f"{shown}{more} carry the legacy confirmation label. Nothing writes it any more, so "
-                "this is a leftover from an older board: the loop will never pick these. Run "
+                f"{len(leftovers)} open issue(s) ({shown}{more}) carry the legacy confirmation label. Nothing "
+                "writes it any more, so "
+                "this is a leftover from an older board: the loop will never pick these. " + how +
                 "`/sigma-promote` to approve or clear each one. Advisory only -- nothing was changed."))
 
         # #1392: blockers nothing can pick -- see `_unreachable_blocker_scan` for why
@@ -4886,6 +4890,16 @@ def _decision_rubric_state(cfg, sdlc_dir=None):
         return "unreadable (%s)" % type(exc).__name__
 
 
+def _category_clause(row):
+    """Category and thresholds in force; empty unless the row carries them (opt-in categories file)."""
+    if "thresholds" not in row:
+        return ""
+    t = row["thresholds"]
+    return " [category %s: l1>=%s, l2>=%s@%s, l3>=%s@%s, l4>=%s@%s]" % (
+        row.get("category") or "none", t["l1_min_answers"], t["l2_min_answers"], t["l2_agreement"],
+        t["l3_min_answers"], t["l3_agreement"], t["l4_min_answers"], t["l4_agreement"])
+
+
 def _autonomy_state(cfg, sdlc_dir=None):
     """Autonomy-level readout (informational, read-only, no network): one clause per kind and area."""
     try:
@@ -4893,10 +4907,11 @@ def _autonomy_state(cfg, sdlc_dir=None):
         out = mod.readout(sdlc_dir if sdlc_dir is not None else ".sdlc", cfg)
         if not out.get("enabled"):
             return "off (default)"
-        rows = ["%s/%s level %d%s" % (r["qkind"], r["area"] or "-", r["level"], " (paused)" if r["paused"] else "")
-                for r in out["kinds"]]
-        return "on: " + ("; ".join(rows) if rows else "no kinds yet") + "; %d watch records, %d vetoes" % (
+        rows = ["%s/%s level %d%s%s" % (r["qkind"], r["area"] or "-", r["level"], " (paused)" if r["paused"] else "",
+                                         _category_clause(r)) for r in out["kinds"]]
+        head = "on: " + ("; ".join(rows) if rows else "no kinds yet") + "; %d watch records, %d vetoes" % (
             out["watch_records"], out["vetoes"])
+        return head + "".join("\n      " + l for l in ([mod.NO_RECORDS_LINE] if not rows else [mod.describe(r) for r in out["kinds"]]))
     except Exception as exc:  # a readout never fails the dashboard
         return "unreadable (%s)" % type(exc).__name__
 

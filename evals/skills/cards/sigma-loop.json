@@ -58,6 +58,10 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/categories.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/channel_notify.py",
       "role": "gesture"
     },
@@ -127,6 +131,10 @@
     },
     {
       "path": "skills/sigma-loop/scripts/drift_judge.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/drift_shadow.py",
       "role": "library"
     },
     {
@@ -251,7 +259,7 @@
     },
     {
       "path": "skills/sigma-loop/scripts/feature_upkeep_sched.py",
-      "role": "library"
+      "role": "gesture"
     },
     {
       "path": "skills/sigma-loop/scripts/feature_upkeep_state.py",
@@ -434,6 +442,10 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/decision_import.py",
+      "role": "gesture"
+    },
+    {
       "path": "skills/sigma-loop/scripts/rule_draft.py",
       "role": "gesture"
     },
@@ -515,6 +527,10 @@
     },
     {
       "path": "skills/sigma-loop/scripts/unpark.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/upkeep_session.py",
       "role": "gesture"
     },
     {

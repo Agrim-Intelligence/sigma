@@ -42,6 +42,9 @@ DEFAULTS = {"l1_min_answers": 10, "l2_min_answers": 30, "l3_min_answers": 60, "l
 DEFAULT_PAUSE = {"veto_pause_consecutive": 3, "veto_pause_total": 20}
 DEFAULT_RETENTION_DAYS = 30
 HARDSTOP_CAP = 2
+#: Evidence that was imported from past work (`how: imported`) counts toward levels 1 and 2 and never
+#: lifts a kind and area above this level: levels 3 and 4 need live (human) answers. Fixed, not configurable.
+IMPORTED_LEVEL_CAP = 2
 
 
 def _load(name):
@@ -145,7 +148,7 @@ def _pair(rec, qkind, area):
     return rec.get("qkind") == qkind and _area(rec.get("area")) == _area(area)
 
 
-def record_watch(sdlc_dir, qkind, area, would, actual, config=None, now=None, machine=None):
+def record_watch(sdlc_dir, qkind, area, would, actual, config=None, now=None, machine=None, imported=None):
     """Write what the rule would have chosen next to what was chosen; returns the file id, or None
     when the part is closed or the inputs are unusable. Never raises."""
     try:
@@ -154,9 +157,11 @@ def record_watch(sdlc_dir, qkind, area, would, actual, config=None, now=None, ma
         if not isinstance(would, str) or not isinstance(actual, str):
             return None
         when = _now(now)
-        fid = _write_new(sdlc_dir, "watch-", {"qkind": qkind, "area": _area(area), "would": would,
-                                              "actual": actual, "machine": machine or _machine(),
-                                              "time": when.isoformat()}, when)
+        body = {"qkind": qkind, "area": _area(area), "would": would, "actual": actual,
+                "machine": machine or _machine(), "time": when.isoformat()}
+        if isinstance(imported, dict):  # a replayed comparison from decision_import: marked, with its source
+            body.update(imported, how="imported")
+        fid = _write_new(sdlc_dir, "watch-", body, when)
         _maybe_prune(sdlc_dir, when, config)
         return fid
     except Exception:
@@ -192,11 +197,41 @@ def _ladder(answers, comparisons, agreement, cfg):
     return lvl if lvl >= 1 else 0
 
 
-def _state(sdlc_dir, qkind, area, config):
+def _capped_ladder(answers, live, items, cfg):
+    """`_ladder` with imported evidence limited to IMPORTED_LEVEL_CAP: above it only live answers AND live
+    comparisons (watch files not marked imported) count."""
+    def rate(ws):
+        return (sum(1 for w in ws if w.get("would") == w.get("actual")) / len(ws)) if ws else 0.0
+    lvl = _ladder(answers, len(items), rate(items), cfg)
+    if lvl > IMPORTED_LEVEL_CAP:
+        own = [w for w in items if w.get("how") != "imported"]
+        lvl = max(IMPORTED_LEVEL_CAP, min(lvl, _ladder(live, len(own), rate(own), cfg)))
+    return lvl
+
+
+def _pair_settings(sdlc_dir, qkind, area, config):
+    """`(thresholds, category, has_file)` in force for the pair: the global settings with the first
+    covering category's overrides applied. The one resolution shared by the ladder and the watch."""
     cfg = settings(config)
+    cat, has_file = None, False
+    try:
+        cats = _load("categories")
+        has_file = cats.exists(sdlc_dir)
+        cat = cats.resolve(sdlc_dir, qkind, area) if has_file else None
+        if cat:
+            cfg.update(cat["levels"])
+    except Exception:
+        cat = None
+    return cfg, cat, has_file
+
+
+def _state(sdlc_dir, qkind, area, config):
+    cfg, cat, has_file = _pair_settings(sdlc_dir, qkind, area, config)
     store = _load("decision_store")
     recs = [r for r in store.list_by(sdlc_dir, config, qkind=qkind) if _pair(r, qkind, area)]
-    answers = sum(1 for r in recs if r.get("how") == "human")
+    live = sum(1 for r in recs if r.get("how") == "human")
+    imported = sum(1 for r in recs if r.get("how") == "imported")
+    answers = live + imported
     watch = [w for w in _facts(sdlc_dir, "watch-") if _pair(w, qkind, area)]
     vetoes = sorted((v for v in _facts(sdlc_dir, "veto-") if _pair(v, qkind, area)),
                     key=lambda v: str(v.get("time")))
@@ -206,8 +241,7 @@ def _state(sdlc_dir, qkind, area, config):
     if by_machine:
         per = []
         for items in by_machine.values():
-            agree = sum(1 for w in items if w.get("would") == w.get("actual"))
-            per.append(_ladder(answers, len(items), agree / len(items), cfg))
+            per.append(_capped_ladder(answers, live, items, cfg))
         lvl = min(per)
         total_agree = sum(1 for w in watch if w.get("would") == w.get("actual"))
         agreement = total_agree / len(watch)
@@ -229,8 +263,14 @@ def _state(sdlc_dir, qkind, area, config):
         capped = True  # cannot tell: the safe reading
     if capped:
         lvl = min(lvl, HARDSTOP_CAP)
-    return {"qkind": qkind, "area": _area(area), "level": lvl, "answers": answers, "comparisons": len(watch),
-            "agreement": agreement, "vetoes": len(vetoes), "paused": paused, "capped": capped}
+    row = {"qkind": qkind, "area": _area(area), "level": lvl, "answers": answers, "comparisons": len(watch),
+           "agreement": agreement, "vetoes": len(vetoes), "paused": paused, "capped": capped}
+    if imported:  # shown only when something was imported; otherwise the row is unchanged
+        row["imported"] = imported
+    if has_file:  # shown only when the opt-in file exists; otherwise the row is unchanged
+        row["category"] = cat["id"] if cat else None
+        row["thresholds"] = {k: cfg[k] for k in DEFAULTS}
+    return row
 
 
 def level(sdlc_dir, qkind, area, config):
@@ -252,10 +292,80 @@ def readout(sdlc_dir, config):
         pairs = {(r.get("qkind"), _area(r.get("area"))) for r in store.list_by(sdlc_dir, config)}
         pairs |= {(f.get("qkind"), _area(f.get("area"))) for p in ("watch-", "veto-") for f in _facts(sdlc_dir, p)}
         rows = [_state(sdlc_dir, q, a, config) for q, a in sorted(pairs, key=str) if isinstance(q, str)]
+        rows = [dict(r, **_need(r, config)) for r in rows]
         return {"enabled": True, "kinds": rows, "watch_records": len(_facts(sdlc_dir, "watch-")),
                 "vetoes": len(_facts(sdlc_dir, "veto-"))}
     except Exception:
         return {"enabled": False, "error": "unreadable"}
+
+
+def _need(row, config):
+    """What the next level asks for, from the thresholds in force; all None at the top or at the cap."""
+    lvl = row["level"]
+    top = HARDSTOP_CAP if row["capped"] else 4
+    if lvl >= top:
+        return {"next_level": None, "answers_needed": None, "comparisons_needed": None, "agreement_needed": None}
+    cfg, nxt = settings(config), lvl + 1
+    if nxt == 1:
+        return {"next_level": 1, "answers_needed": cfg["l1_min_answers"], "comparisons_needed": 0,
+                "agreement_needed": None}
+    return {"next_level": nxt, "answers_needed": cfg["l%d_min_answers" % nxt],
+            "comparisons_needed": cfg["l%d_min_answers" % nxt], "agreement_needed": cfg["l%d_agreement" % nxt]}
+
+
+NO_RECORDS_LINE = "learning has not started, every question is asked"
+HARDSTOP_TEXT = "hard-stop kind, never learns beyond level 2, always asked"
+
+
+def describe(row):
+    """One plain line for a row of `readout`; the doctor and the question list share it."""
+    line = _describe(row)
+    return line + (" (%d imported)" % row["imported"] if row.get("imported") else "")
+
+
+def _describe(row):
+    head = "%s / %s: " % (row["qkind"], row["area"] or "-")
+    if row["capped"]:
+        return head + HARDSTOP_TEXT
+    if row["paused"]:
+        return head + "paused after vetoes, still asking"
+    if row["level"] == 0 and row["answers"] >= row["answers_needed"] and row["vetoes"]:
+        return head + "%d answers is enough, held at level 0 by %d veto%s, still asking" % (
+            row["answers"], row["vetoes"], "" if row["vetoes"] == 1 else "es")
+    if row["level"] == 0:
+        return head + "%d of %d answers, still asking" % (row["answers"], row["answers_needed"])
+    if row["next_level"] is None:
+        return head + "level %d, nothing further to learn" % row["level"]
+    agree = "none yet" if row["agreement"] is None else "%d%%" % round(row["agreement"] * 100)
+    return head + ("level %d, level %d needs %d answers (have %d), %d comparisons (have %d), %d%% agreement (have %s)"
+                   % (row["level"], row["next_level"], row["answers_needed"], row["answers"],
+                      row["comparisons_needed"], row["comparisons"], round(row["agreement_needed"] * 100), agree))
+
+
+def learning_line(sdlc_dir, qkind, config):
+    """One line for the question list when `qkind` is below level 1 or a hard-stop kind; None when the
+    gate is closed or the kind has learned. Never raises."""
+    try:
+        out = readout(sdlc_dir, config)
+        if not out.get("enabled") or not isinstance(qkind, str):
+            return None
+        rows = [r for r in out["kinds"] if r["qkind"] == qkind]
+        if any(r["capped"] for r in rows) or _load("hard_stop").is_hardstop_kind(qkind, None, config):
+            return "%s: it never learns beyond level 2 and is always asked" % qkind
+        best = max(rows, key=lambda r: (r["level"], r["answers"]), default=None)
+        if best is not None and best["level"] >= 1:
+            return None
+        need = settings(config)["l1_min_answers"]
+        if best is not None and best["answers"] >= need and best["vetoes"]:
+            return ("the rulebook is holding this kind at level 0 after a veto and will keep asking "
+                    "(area %s, %d answers)" % (best["area"] or "-", best["answers"]))
+        if best is None:
+            return "the rulebook is still learning and will keep asking this kind (0 of %d answers)" % need
+        return "the rulebook is still learning and will keep asking this kind (%d of %d answers in area %s%s)" % (
+            best["answers"], need, best["area"] or "-",
+            ", %d imported" % best["imported"] if best.get("imported") else "")
+    except Exception:
+        return None
 
 
 def _parse_time(text):
