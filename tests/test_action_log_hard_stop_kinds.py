@@ -36,6 +36,10 @@ def _sdlc(tmp_path, config):
     d = tmp_path / ".sdlc"
     (d / "state").mkdir(parents=True)
     (d / "config.json").write_text(json.dumps(config))
+    # #1247: `record` now refuses a goal that is not in the backlog, so the goal these tests record
+    # against has to exist (they test the hard-stop net, which sits after that check).
+    (d / "goals").mkdir()
+    (d / "goals" / "7-x.md").write_text("---\nstatus: pending\n---\nx\n")
     (d / "state" / "STATE.md").write_text("# Loop State\niteration: 0\nrun_iteration: 0\nlast_run: none\n")
     return str(d)
 

@@ -9235,3 +9235,41 @@ def test_the_preserved_marker_still_trips_the_foreign_agent_guard(monkeypatch):
             assert blocker and "REFUSED" in blocker and "DIFFERENT live process" in blocker
         finally:
             proc.kill(); proc.wait()
+
+
+# --- D7 first-run refusals (#1245, #1247): record must say what is wrong ----------------------------
+
+def _record_goal(d, name="0001-x.md"):
+    base = _backlog(d, 0)
+    goal = pathlib.Path(base) / "goals" / name
+    goal.write_text("---\nid: 0001\nstatus: pending\n---\nx\n")
+    return base, str(goal)
+
+
+def test_record_refuses_an_unknown_status_and_leaves_the_goal_alone(capsys):
+    """#1245: `record <goal> bogus` used to exit 0 and park the goal. It must refuse (exit 2), name
+    the accepted statuses, and not touch the goal file."""
+    with tempfile.TemporaryDirectory() as d:
+        base, goal = _record_goal(d)
+        before = pathlib.Path(goal).read_text()
+        assert _loop().main(["loop.py", "record", base, goal, "bogus-status"]) == 2
+        err = capsys.readouterr().err
+        assert "bogus-status" in err and "done|review|parked|failed" in err
+        assert pathlib.Path(goal).read_text() == before
+
+
+@pytest.mark.parametrize("status", ["done", "parked", "failed"])
+def test_record_still_accepts_every_documented_status(status):
+    with tempfile.TemporaryDirectory() as d:
+        base, goal = _record_goal(d)
+        assert _loop().main(["loop.py", "record", base, goal, status]) == 0
+
+
+def test_record_done_of_a_goal_that_does_not_exist_says_so_not_the_phase_record(capsys):
+    """#1247: the phase-record refusal (six phases to run) was printed for a goal that is not
+    there. The real problem is named first, exit 2."""
+    with tempfile.TemporaryDirectory() as d:
+        base, _ = _record_goal(d)
+        assert _loop().main(["loop.py", "record", base, "9999", "done"]) == 2
+        err = capsys.readouterr().err
+        assert "no such goal 9999" in err and "phase record" not in err

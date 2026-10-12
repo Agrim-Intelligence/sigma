@@ -631,7 +631,7 @@ def main(argv):
         print(f"sigma-init: {err}\n{USAGE}", file=sys.stderr)
         return 2
     if not pathlib.Path(target).is_dir():
-        print(f"sigma-init: target directory does not exist: {target}", file=sys.stderr)
+        print(_si.missing_target_message(target), file=sys.stderr)
         return 2
     refusal = _si.git_refusal(target)                    # #229: before anything is written
     if refusal:
