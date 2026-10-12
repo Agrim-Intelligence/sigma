@@ -114,15 +114,24 @@ repo that already ignores its `.env` never sees this refusal, because `git add -
 the anchored `credential-assignment` rule (a credential-named key, then `:` or `=`, then a run of 4
 or more characters) a gate-only filter (#961) judges the value, failing closed. The value it judges
 is the rule's own run, which ends at the first space, quote, `<`, `>` or `&`; anything after that run
-is judged only by the two line-wide checks below (a secret-like token, an assigning `=` that starts
-a literal):
+is judged only by the three line-wide checks below (a secret-like token, an assigning `=` that starts
+a literal, a statement that continues onto the next line):
 
-- Refused in every file: a quoted value directly after the separator; a bare identifier or a
+- Refused in every file: a quoted value directly after the separator (a plain `"` or `'`: see the
+  caveat below); a bare identifier or a
   number as the whole value; a `${...}` or `$(...)` template; any line with an assigning `=` after the separator whose
   right side starts a quoted literal of any length or wraps onto the next line (an annotated,
-  chained or keyword-argument default); and any line with a secret-like token after the separator
+  chained or keyword-argument default); any line with a secret-like token after the separator
   (a known provider prefix, 3 or more letter/digit alternations, a run of 24 or more letters and
-  digits, or 6 or more characters mixing letters and digits outside an upper-snake name).
+  digits, or 6 or more characters mixing letters and digits outside an upper-snake name); and any
+  line whose statement continues past the value onto the next line, where a literal has no key and
+  no rule sees it. A statement continues when, after the separator, an opener `(`, `[` or `{` is
+  left open (a closer of another kind closes nothing), a quoted literal is left open at the end, or
+  the code ends, before a `#`, `//` or `/*` comment, in `\`, `=`, `?` (so `??`), `||`, `&&`, `+`,
+  `or`, `and`, `if`, `else`, `do` (with or without `|<params>|`), or a `:` after a `?` (a ternary or
+  `?:`). A trailing `,`, `.`, `!`, lone `|` or bare `:` does not count: each ends an argument, a
+  docstring sentence, a Swift, Kotlin or TypeScript statement, a Markdown table row or a Python
+  block opener.
 - Passes in a code file only: an expression (a call, an attribute or subscript read) and, after
   `:`, a type name from a closed set (`str`, `bytes`, `bool`, `int`, `float`, `Any`, `SecretStr`,
   `string`, `boolean`, `number`, `any`, `unknown`, `String`, or a `|` union of them with `None`,
@@ -134,6 +143,20 @@ A code file is one whose basename has a stem and whose last suffix, compared cas
 `scrub.COMMIT_CODE_SUFFIXES`: Python, JavaScript and TypeScript, the JVM languages, Go, Rust, Ruby,
 PHP, C#, Swift, Dart, C and C++, Objective-C, Lua and Elixir. Every other file (config, data, docs,
 a suffix nobody listed, an upper-case variant) reads an unquoted value as a literal.
+
+The quoted-value refusal reads a plain `"` or `'` directly after the separator only. A prefixed or
+triple-quoted string (`f"..."`, `b"..."`, `r"..."`, `"""..."""`, `'''...'''`), a parenthesised
+`= ("...")`, Go's `:=`, Ruby's and PHP's `=>`, C#'s `@"..."` and Rust's `: &str = "..."` never reach
+the anchored rule or its quoted twin, before #961 or after: a 32-character hex value in each passed
+the gate before #961 and this one alike (measured, each in its own language's file). Only the other
+shapes in the table judge those lines.
+
+The continuation check costs little, measured over every line #961 exempts, against this filter
+without the check: 0 of 30 in this repository, 2 of 91 in the Python 3.13 standard library, 0 of 36
+in the global npm modules and 23 of 1,442 in a `site-packages` tree are refused again. The gate
+before #961 refused every one. All but one is a wrapped call or subscript; the one is a C++ block
+opener (`if (auto <key> = weak.lock()) {`), refused because a `{` cannot be told from a Ruby, Kotlin
+or Swift block whose body is the default.
 
 **Residual misses, measured against this filter.** In a code file, once the value's first word is
 an expression or a closed-set type name, a quoted literal anywhere later on the line passes when none
@@ -161,16 +184,26 @@ argument; a no-digit value of 8 to 40 letters and symbols passed 99.8%, refused 
 unbroken run of 24 or more letters; the same symbol values with one digit added passed 0%. Quoted
 directly after the separator, the hyphen-joined and symbol values were refused 100% and the
 space-joined ones 98.5%: the 1.5% open with a word under 4 characters, which the rule's own run never
-matched, before #961 or after. A literal on the line after a plain assignment (a wrapped `= (` or a
-triple quote) passes, as it did before. Closing these misses is tracked by #978. Provider rules
+matched, before #961 or after. A literal on the NEXT line is judged only through its key line, and
+one line cannot show a continuation that starts on the next one. So a key line that looks complete
+passes even when the next line continues it with a leading operator or an indent: Kotlin's
+`?: "<hex>"` under `<key> = System.getenv("<NAME>")`; the `or "<hex>",` that Black 26.1 starts on its
+own line under a wrapped keyword argument `<key>=os.environ.get("<NAME>")` (measured); a leading-dot
+chain; a key line ending in `.` (not counted, above); and a YAML plain scalar continued on a
+more-indented line (`<key>: null`, then `  <hex>`, loads as the one string `null <hex>`, measured with
+PyYAML). The gate before #961 refused each of those key lines only because it refused every value of
+4 or more characters. A plain `<key> = (` or `<key> = """` never matched the rule (its run is under 4
+characters or opens with a quote), so its next-line literal passes, before #961 or after. Closing
+these misses is tracked by #978. Provider rules
 (`aws-key`, `gh-token`, `stripe-key` and the rest) still fire on their own shapes and have no
 allowlist: a synthetic value that matches one parks the goal.
 
 **Further misses, found in review and confirmed against this filter.** The old gate refused each of
 these, and each follows from judging only the first word as the value. In every file, a boolean or
-null first word passes with a quoted literal later on the line (`<key> = None or "<letters>"`,
-`<key> = True if x else "<letters>"`, `<key> = null ?? "<letters>"`), and so does YAML's
-`<key>: true <letters>`. In a code file, an annotated default passes whatever unquoted number or
+null first word, or one of Sigma's redaction markers, passes with a quoted literal later on the line
+(`<key> = None or "<letters>"`, `<key> = True if x else "<letters>"`, `<key> = null ?? "<letters>"`,
+`<key> = [REDACTED] or "<letters>"`), and so does YAML's `<key>: true <letters>` or
+`<key>: [REDACTED] <letters>`. In a code file, an annotated default passes whatever unquoted number or
 identifier it assigns, when the annotation is an expression or a closed-set type of 4 or more
 characters (`<key>: Optional[int] = <8 digits>`, `<key>: float = <digits>`; a shorter annotation
 never reached the old rule either). The trailing value is still judged by the secret-like check:
@@ -185,7 +218,9 @@ file and in a `.py` file alike (2,000 each, the old gate refused all), at every 
 is cleared only by an entry in the MAIN checkout's `.sdlc/config.json`, and an entry is an OPERATOR
 ruling: a loop agent never writes one itself, attended or not. The agent removes the literal, reads
 the value from the environment, or parks the goal with `record parked "<why>"`, in the order the
-refusal prints. Two entry forms, narrowest first:
+refusal prints. Where `.sdlc/config.json` is tracked, the operator's edit leaves the main checkout
+dirty, so #954's dirty-root check refuses the next `work.py start` (with `work.base` set and the main
+checkout on it) until the edit is committed. Two entry forms, narrowest first:
 
 - `{"rule": "credential-assignment", "line_sha256": "<hash>", "reason": "<why>"}` clears that one
   line, in any file, until the line changes. The refusal prints the command that hashes the goal

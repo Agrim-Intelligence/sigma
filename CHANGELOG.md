@@ -22,9 +22,14 @@ All notable changes to Sigma are recorded here, newest first.
   now passes a whole boolean or null word and Sigma's own redaction markers in every file, and an
   expression or (after `:`) a closed-set type name only in a code file (`scrub.COMMIT_CODE_SUFFIXES`,
   case-sensitive). A quoted value, a bare identifier or number as the whole value, an assigning `=`
-  later on the line that starts a quoted literal, and any secret-like token after the separator stay
-  refused; only the first word is judged as the value, so a number can still pass as a code file's
-  annotated default. A quoted literal is reported once, not twice. The rule table, `scrub()`, the publish leak gate and the exposure
+  later on the line that starts a quoted literal, any secret-like token after the separator, and a key
+  line whose statement continues onto the next line (an opener or a quoted literal left open, or a
+  trailing `\`, `=`, `??`, `||`, `&&`, `?:`, `+`, `or`, `and` and the like, so a formatter's wrapped
+  call keeps the old refusal) stay refused; only the first word is judged as the value, so a number can
+  still pass as a code file's annotated default. Measured, of the lines this filter would otherwise
+  pass, the continuation check refuses 0 of 30 in this repository, 2 of 91 in the Python standard
+  library and 23 of 1,442 in a `site-packages` tree, each refused before #961 too. A quoted literal is
+  reported once, not twice. The rule table, `scrub()`, the publish leak gate and the exposure
   scanner are unchanged. New `work.allow_secret_content`: an OPERATOR ruling that clears only
   `credential-assignment`, by exact line hash (`work.py line-hash <file> <line>` prints it without
   showing the line) or by exact path (wide: it clears future literals in that file too); a reason is
@@ -34,10 +39,13 @@ All notable changes to Sigma are recorded here, newest first.
   secret-like token that no assigning `=` starts passes at any length anywhere later on the line once
   the first word is a code file's expression or type name (a call argument, a getenv default, a
   fallback after `||`, `??` or `or`, a `+` concatenation, a ternary branch, a block default) and, in
-  any file, a boolean or null word (the check judges tokens, so the 24-character bound holds only for an
-  unbroken letter/digit run; measured, 2,000 draws per shape: passphrases joined by spaces or hyphens
-  passed 100%, no-digit values with symbols 99.8%); so do a number or identifier as a code file's
-  annotated default and a literal on a wrapped line.
+  any file, a boolean or null word or a redaction marker (the check judges tokens, so the 24-character
+  bound holds only for an unbroken letter/digit run; measured, 2,000 draws per shape: passphrases joined
+  by spaces or hyphens passed 100%, no-digit values with symbols 99.8%); so do a number or identifier
+  as a code file's annotated default, and a literal on the next line under a key line that looks
+  complete (a leading `?:`, `or` or `.` on that next line, a key line ending in `.`, or a YAML
+  continuation: one line cannot show it, and the old gate refused such a key line only because it
+  refused every value).
 - **Upkeep no longer refuses a base deletion of a path the branch only inherited (#1146).** `dropped_paths` now excuses a deleted path the branch carries byte-identical to the fork point (two extra guarded reads, only when the replay deletes something); a path the branch added or changed is still refused, and any failure to find one fork point keeps the old refusal. PROVISIONAL, owner to ratify: a base revert of work already on the base at the fork point now reads as inherited and is not refused (documented limit, `docs/branching-model.md` §3b and §15).
 - **Rule drafting says plainly it cannot draft on public record visibility (#1149).** Public visibility drops the free-text choice, so `rule_draft.py` found no option and yielded nothing silently. `draft` now refuses with a clear reason and `list` prints it on stderr and exits 1. PROVISIONAL, owner to ratify: refuse rather than add a surviving field to the record writers. Gates closed is unchanged.
 - **Draft a rule from a learned pattern, tested on held-back decisions (#1138, story #988).** New `rule_draft.py` with `list` (kind and area pairs at autonomy level 2 or more whose answers agree at a threshold) and `draft` (majority option, source record ids linked, handed to `rulebook.propose` so it stays proposed; approval is the owner's, unchanged). Answers are split deterministically by a hash of the record id; the draft must also hold on the held-out part, else no draft (fail closed, also on a small set, a tie, a hard-stop kind or an existing rule). Inert unless the rulebook, autonomy and records parts are all enabled. PROVISIONAL thresholds: `rulebook.draft.min_agreement` 0.90, `min_held_out` 5.

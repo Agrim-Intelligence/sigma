@@ -204,9 +204,11 @@ def commit_code_path(path):
 #      hit (`_last_assigned_literal_start`): an annotated, chained or keyword-argument default;
 #   4. only then may the WHOLE value run be exempt: a boolean/null word or a marker in every file, an
 #      expression or (after `:`) a closed-set type in a code file only. Numbers and bare identifiers
-#      never are.
+#      never are;
+#   5. an exempt value still hits when its statement continues onto the next line (`_continues`): the
+#      literal of a wrapped call, fallback or collection sits on a line with no key, which no rule sees.
 # Linear by construction: each whole-value pattern is a fullmatch whose adjacent runs share no
-# character, so a failed match cannot be re-split, and the two line scans run once per line, lazily.
+# character, so a failed match cannot be re-split, and the three line scans run once per line, lazily.
 _ASSIGNMENT_SEPARATOR = re.compile(r"[\"']?\s*([:=])\s*([\"']?)")
 _CLOSERS = r"[,;:)}\]]*"
 _BOOLEAN_OR_NULL = re.compile(r"(?:True|False|true|false|None|null|nil|undefined)" + _CLOSERS)
@@ -286,10 +288,75 @@ def _last_assigned_literal_start(text):
     return last
 
 
+#: One token of the continuation scan: a quoted literal paired as `_QUOTED_LITERAL` pairs it, its group
+#: the closing quote (empty or a lone backslash when it runs to the end of the line unterminated); a
+#: comment start (`//`, `/*`, or `#` that opens the line or follows whitespace, so `this.#x` is code);
+#: a bracket; or a `?`. Every attempt fails at once on any other character, so one `finditer` is linear.
+_LINE_TOKEN = re.compile(r'"(?:[^"\\]|\\.)*("|\\?$)|\'(?:[^\'\\]|\\.)*(\'|\\?$)|`(?:[^`\\]|\\.)*(`|\\?$)'
+                         r"|//|/\*|(?:^|(?<=\s))#|[(\[{)\]}?]", re.DOTALL)
+_OPENER_OF = {")": "(", "]": "[", "}": "{"}
+#: The operators that, ending a statement's code, carry the next line's operand into the value: a
+#: backslash continues the line; a trailing `=` assigns what follows (an annotated, chained or keyword
+#: default); `??`, `||`, `or` and `?:` return their right operand when the left is empty, and `&&` and
+#: `and` when it is set; `?`, `:` and `if`/`else` start a conditional branch; `+` concatenates; `do`,
+#: with or without `|params|`, opens a Ruby or Elixir block whose body is a default. A `:` counts only
+#: after a `?` (a ternary or `?:`): alone it ends a Python block opener or a label. Never `,`: the next
+#: line is then another argument or element, and an argument that holds the value leaves its own
+#: bracket open. Never `.`: it ends a docstring sentence (`- <key>: Optional[str].`, measured in
+#: site-packages) far more often than it continues a member chain, which formatters start on the next
+#: line. Never `!` (a postfix operator that ends a Swift, Kotlin or TypeScript statement), a lone `|` (a
+#: Markdown table's border) or an arithmetic, comparison or bitwise operator, whose result is computed,
+#: not the next line's literal. Every alternative is at most 52 characters, so a search that starts 64
+#: characters before the end is O(1).
+_TRAILING_OPERATOR = re.compile(r"(?:\\|=|\?|:|\+|\|\||&&"
+                                r"|(?<![\w.$])(?:or|and|if|else|do(?:[ \t]{0,8}\|[^|]{0,40}\|)?))\Z")
+
+
+def _continuation_scan(text):
+    """`(last_open, open_quote, last_question, trailing)` for one line's code, in ONE pass: the offset
+    of the last opener no later closer of its kind closes, the start of a quoted literal left open at
+    the end, the last `?` outside literals, and the start of a `_TRAILING_OPERATOR` at the code's end
+    (-1 for each when absent). The code stops at a comment's start; trailing spaces and a CRLF row's
+    `\\r` are dropped. A closer of another kind is skipped, so a mismatch leaves the opener open."""
+    openers, open_quote, last_question, code_end = [], -1, -1, len(text)
+    for match in _LINE_TOKEN.finditer(text):
+        lexeme = match.group()
+        if lexeme[0] in "\"'`":
+            if (match.group(1) or match.group(2) or match.group(3) or "\\") == "\\":
+                open_quote = match.start()
+        elif lexeme[0] in "/#":
+            code_end = match.start()
+            break
+        elif lexeme == "?":
+            last_question = match.start()
+        elif lexeme in "([{":
+            openers.append((lexeme, match.start()))
+        elif openers and openers[-1][0] == _OPENER_OF[lexeme]:
+            openers.pop()
+    code = text[:code_end].rstrip()
+    trailing = _TRAILING_OPERATOR.search(code, max(0, len(code) - 64))
+    return (openers[-1][1] if openers else -1, open_quote, last_question,
+            trailing.start() if trailing else -1)
+
+
+def _continues(text, start, line_scan):
+    """True when the statement whose value starts at `start` continues onto the next line: an opener
+    after `start` is left open, a quoted literal opened after it runs past the end, or its code ends in
+    a continuation operator (a `:` only after a `?` that follows `start`). Every offset lies before the
+    code's end, so a match inside a comment that starts before `start` continues nothing."""
+    if "continuation" not in line_scan:
+        line_scan["continuation"] = _continuation_scan(text)
+    last_open, open_quote, last_question, trailing = line_scan["continuation"]
+    if last_open >= start or open_quote >= start:
+        return True
+    return trailing >= start and (text[trailing] != ":" or last_question >= start)
+
+
 def _anchored_verdict(text, match, line_scan):
     """`_HIT`, `_CODE_ONLY` (cleared in a code file only) or `_EXEMPT` (cleared in every file) for one
-    match of the anchored rule. `line_scan` caches the two per-line scans, so a line with k anchored
-    matches costs one pass of each plus O(k), not k passes."""
+    match of the anchored rule. `line_scan` caches the three per-line scans, so a line with k anchored
+    matches costs one pass of each plus O(k), not k passes. An exempt value whose statement continues
+    onto the next line keeps its hit: the gate judges one line, and the next one has no key."""
     sep = _ASSIGNMENT_SEPARATOR.match(text, match.end(1))
     if not sep or sep.group(2) or sep.end() >= match.end():
         return _HIT                     # quoted, or a match this cannot parse: refuse
@@ -303,10 +370,12 @@ def _anchored_verdict(text, match, line_scan):
         return _HIT
     value = text[sep.end():match.end()]
     if _BOOLEAN_OR_NULL.fullmatch(value) or _PLACEHOLDER.fullmatch(value):
-        return _EXEMPT
-    if _EXPRESSION.fullmatch(value) or (sep.group(1) == ":" and _TYPE.fullmatch(value)):
-        return _CODE_ONLY
-    return _HIT
+        verdict = _EXEMPT
+    elif _EXPRESSION.fullmatch(value) or (sep.group(1) == ":" and _TYPE.fullmatch(value)):
+        verdict = _CODE_ONLY
+    else:
+        return _HIT
+    return _HIT if _continues(text, sep.end(), line_scan) else verdict
 
 
 def commit_secret_findings(text):

@@ -551,3 +551,118 @@ def test_a_crlf_file_is_refused_like_its_lf_twin_in_real_git(tmp_path):
     (repo / "rows.py").write_bytes(crlf(R1, R2, R3, R4, PW + ": Optional[str] = " + chr(92), "    " + _Q))
     out = tw.work.commit(d, tw.ON, "0001-x.md", message="test: crlf wrapped")
     assert out.startswith("REFUSED") and RULE + " at rows.py:5:1" in out
+
+
+# --- a key line whose statement continues onto the next line (post-PR review B1) -------------------
+
+HEX = ("ab12" + "cd34") * 4          # 32 hex characters: the literal a continuation line carries
+AK, BS = "api" + "_key", chr(92)
+#: `(key line, path)`: the value alone is exempt, but the statement continues onto the next line, where
+#: a literal has no key and no rule sees it: an opener left open after the separator (a formatter's
+#: wrap of a call, a fallback or a collection, with or without a trailing comment), an unterminated
+#: quoted literal, or a continuation operator at the end; a closer of another kind closes nothing. The
+#: gate before #961 refused each key line.
+CONTINUED = ((K + " = os.getenv(", "a.py"),
+             (AK + " = SecretStr(", "a.py"),
+             (PW + ": Optional[str] = (  # prod", "a.py"),
+             (PW + ": List[str] = [", "a.py"),
+             (SC + ": Dict[str, str] = {", "a.py"),
+             (K + " = os.getenv(]", "a.py"),
+             (PW + ": Optional[str] = [  # prod", "a.py"),
+             (PW + ": Optional[str] =  # prod", "a.py"),
+             (K + " = cfg.x " + BS, "a.py"),
+             (K + " = None or", "a.py"),
+             (K + " = None if x else", "a.py"),
+             (K + " = cfg.x and", "a.py"),
+             ("const " + K + " = process.env.X ??", "a.ts"),
+             ("const " + K + " = process.env.X ||", "a.ts"),
+             ("const " + K + " = process.env.X &&", "a.ts"),
+             ("const " + K + " = getenv(  // prod", "a.ts"),
+             ("const " + K + " = cfg.x ?", "a.ts"),
+             ("const " + K + " = cfg.x ? cfg.y :", "a.ts"),
+             ("const " + K + " = cfg.x + `", "a.ts"),
+             ("val " + K + ' = System.getenv("X") ?:', "a.kt"),
+             (K + " = cfg.x +", "a.rb"),
+             (K + ' = ENV.fetch("X") do', "a.rb"),
+             (K + ' = ENV.fetch("X") do |name|', "a.rb"),
+             (K + ": null " + BS, "app.properties"))
+#: The same statements closed on one line with no literal, a trailing comment that holds the opener or
+#: the operator, a `,` that ends one argument, a block opener's `:`, a stub's `...` and a docstring
+#: sentence's `.`: each passes.
+CLOSED = ((R2, "a.py"),
+          (K + ' = os.getenv("X")', "a.py"),
+          (AK + " = SecretStr(cfg.x)", "a.py"),
+          (PW + ": Optional[str] = None  # prod (", "a.py"),
+          (PW + ": List[str] = []", "a.py"),
+          (SC + ": Dict[str, str] = {}", "a.py"),
+          (K + " = cfg.x  # see " + BS, "a.py"),
+          ("def f(self, " + K + ": Optional[str] = None) -> bool:", "a.py"),
+          ("foo(" + K + '=os.getenv("X"),', "a.py"),
+          ("    " + K + "=None,", "a.py"),
+          ("const " + K + " = process.env.X ?? fallback;", "a.ts"),
+          ("const " + K + " = getenv();  // prod (", "a.ts"),
+          ("val " + K + ' = System.getenv("X")', "a.kt"),
+          (PW + ": Optional[str] = ...", "a.pyi"),
+          ("    - " + AK + ": typing.Optional[str].", "a.py"),
+          (K + ": null", "config.yml"))
+
+
+def test_a_key_line_whose_statement_continues_onto_the_next_line_stays_refused(monkeypatch, tmp_path):
+    """The next line's literal has no key, so the key line is the only place to refuse it. Each shape
+    is judged in its own path and in `config.yml`, on LF and on CRLF."""
+    for index, (line, name) in enumerate(CLOSED):
+        for twin in (line, line + "\r"):
+            assert S.commit_secret_hits(twin, path=name) == [], (index, twin == line)
+    assert _gate(monkeypatch, tmp_path, R2 + "\r") == []
+    for index, (line, name) in enumerate(CONTINUED):
+        for path in (name, "config.yml"):
+            for twin in (line, line + "\r"):
+                rules = {rule for rule, _column in S.commit_secret_hits(twin, path=path)}
+                assert RULE in rules, (index, path, twin == line)
+        assert _refused(monkeypatch, tmp_path, line, name), index
+
+
+def test_a_wrapped_call_with_its_literal_on_the_next_line_is_refused_in_real_git(tmp_path):
+    """Black's wrap of a getenv call: the key line ends with the open call and the default sits on the
+    next line. The closed call with no literal commits; the wrapped one is refused at its key line, in
+    an LF file and in a CRLF file, and the literal is never echoed."""
+    for ending, sub in (("\n", "lf"), ("\r\n", "crlf")):
+        repo, d, committed = tw._real_repo(tmp_path / sub)
+        subprocess.run(["git", "-C", str(repo), "config", "core.autocrlf", "false"], check=True)
+        (repo / "env.py").write_bytes((K + ' = os.getenv("APP_NAME")' + ending).encode("utf-8"))
+        assert tw.work.commit(d, tw.ON, "0001-x.md", message="test: closed") == COMMITTED, sub
+        assert committed() == {"env.py"}
+        rows = (K + " = os.getenv(", '    "APP_NAME", "' + HEX + '"', ")")
+        (repo / "env.py").write_bytes("".join(row + ending for row in rows).encode("utf-8"))
+        out = tw.work.commit(d, tw.ON, "0001-x.md", message="test: wrapped")
+        assert out.startswith("REFUSED") and RULE + " at env.py:1:1" in out, sub
+        assert HEX not in out
+
+
+#: Exempt values followed by one long run the continuation scan walks: openers, quoted literals, pairs
+#: that close, and an operator run. Each is refused; the last two pass (closers past an empty stack,
+#: and a long comment).
+LONG_CONTINUED = (K + " = a(" + "[" * 32768, K + " = cfg.get(" + '"x",' * 8192,
+                  K + " = a(" + "[]" * 16384, K + " = cfg.x" + " +" * 16384)
+LONG_CLOSED = (K + " = a(" + ")" * 32768, K + " = cfg.x()  # " + "(" * 32768)
+
+
+def test_a_long_continued_line_is_judged_in_linear_time(monkeypatch, tmp_path):
+    """Relative, as the pathological-value test: the gate against the rule table's own scan, back to
+    back on one line."""
+    for line in LONG_CLOSED:
+        assert _gate(monkeypatch, tmp_path, line) == []
+    for line in LONG_CONTINUED + LONG_CLOSED:
+        refused = line in LONG_CONTINUED
+        assert _refused(monkeypatch, tmp_path, line) is refused, len(line)
+        scan_best = gate_best = float("inf")
+        for _attempt in range(3):
+            started = time.perf_counter()
+            _scan(line)
+            scan_best = min(scan_best, time.perf_counter() - started)
+            started = time.perf_counter()
+            _gate(monkeypatch, tmp_path, line)
+            gate_best = min(gate_best, time.perf_counter() - started)
+            if gate_best < 40 * scan_best:
+                break
+        assert gate_best < 40 * scan_best, (gate_best, scan_best)
