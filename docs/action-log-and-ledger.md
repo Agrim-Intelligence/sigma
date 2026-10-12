@@ -2,7 +2,7 @@
 
 The local trace of what the loop did, and the shared team ledger. Back to the [README](../README.md).
 
-## Local action log (on by default)
+## Local action log (on in a scaffolded config)
 
 The ledger below is shared, git-tracked, and meant for team-visible coordination — the wrong place
 for a full local trace of what the loop is doing *right now*: every file touched, every model/effort
@@ -12,7 +12,7 @@ choice, every subagent dispatch. That is a separate, local-only mechanism:
 "action_log": { "enabled": true }
 ```
 
-From then on, `.sdlc/state/log/<goal-stem>.jsonl` fills up with one line per event — millisecond
+The code default is off when the key is absent; the config that `/sigma-init` scaffolds turns it on. From then on, `.sdlc/state/log/<goal-stem>.jsonl` fills up with one line per event — millisecond
 timestamps, since two slice subagents can write to the same goal's log in the same wave. It's
 gitignored by default (matches the existing `RUNTIME_IGNORES`, no setup needed) and never imported
 by the ledger — the two mechanisms can't leak into each other even if both are on.
@@ -35,7 +35,7 @@ bug, just a narrower definition of "active" than the write path above might sugg
 An agent can add its own notes to the same trace — `file` / `model_choice` / `agent_dispatch` /
 `agent_done` / `note` / `action` / `permission_use`, a closed vocabulary the CLI enforces, each with
 its own whitelisted fields (e.g. `note` takes `text`, `file` takes `path`/`op`; `action` and
-`permission_use` take a required `action` text, which the hard-stop record-done net reads: an
+`permission_use` take a required `action` text, which the hard-stop record-done net reads when `decision_rubric.hard_stops.enabled` is true (default false): an
 `action` that classifies to a hard-stop class refuses `record done` until a `permission_use` or a
 park entry carries the same text; entries exist only with `action_log.enabled` true):
 
@@ -50,7 +50,7 @@ nobody else ever sees it. Once more than one person runs the loop against a repo
 you need a **committed** record of what everyone's loop actually did, with a timestamp and a name on
 every line.
 
-`/sigma-init` creates `.sdlc/ledger/` empty apart from a README; the ledger stays off until enabled.
+`/sigma-init` creates `.sdlc/ledger/` empty apart from a README; the template leaves `ledger.enabled` undecided (null, off), and `/sigma-setup` turns it on the first time it adopts a github repo.
 
 Turn it on:
 
@@ -102,7 +102,7 @@ python3 <installed-sigma>/skills/sigma-loop/scripts/ledger.py render  .sdlc --wr
 ```
 
 Write anything else explicitly — kinds are
-`claimed · done · parked · failed · handoff · ack · release · note`:
+`claimed · done · parked · failed · handoff · ack · release · note`, and the code also accepts `merged`, `merge-armed` and `acceptance`:
 
 ```bash
 ledger.py append .sdlc note 0007-cache.md --why "spike looks viable"

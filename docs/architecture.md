@@ -32,7 +32,7 @@ Threat boundaries, assets, and the mitigations currently present are recorded in
 
 ```mermaid
 flowchart TB
-    PROMPT(["Prompt / queued goal"]) --> HOOK["Always-on intent hook"]
+    PROMPT(["Prompt / queued goal"]) --> HOOK["Repo-scoped intent hook"]
     HOOK --> ORCH["Orchestrator<br/>/sigma-goal (interactive) · /sigma-loop (autonomous)"]
     ORCH --> SPINE["7-phase SDLC spine<br/>two review steps: Plan-Review + Strategy-Alignment"]
     ORCH -.->|"model_selection: auto"| MDL["Model per goal<br/>haiku · sonnet · opus · fable"]
@@ -78,8 +78,8 @@ flowchart TD
     NX -->|"goal"| WT["Cut its worktree + branch from the base<br/>(work.enabled — else edit in place)"]
     WT --> RUN["Run it through the 7-phase pipeline"]
     RUN -->|"done + verified"| GATE{"Merge gate:<br/>clean AND safe?"}
-    GATE -->|"yes"| CMP["Mark done — arm GitHub auto-merge"]
-    GATE -->|"conflict · failing check · BEHIND · no evidence"| PRK
+    GATE -->|"yes"| CMP["Land the PR, or record review"]
+    GATE -->|"conflict · failing check · no evidence"| PRK
     RUN -->|"needs you / irreversible / unresolved"| PRK["Park to review queue"]
     CMP --> NX
     PRK --> NX

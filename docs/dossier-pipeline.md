@@ -219,7 +219,7 @@ the body already carries the identical record.
 **Both discovery modes work.** `_resolve_source` reproduces `sources.get_source`'s own precedence
 and threads a `run` for test injection; in local-goals mode the Dossier becomes a goal file with
 `status: proposed` — the local counterpart of "queued, never auto-picked" — and the comment step
-no-ops, because `LocalSource` has neither `_run` nor `_repo_args`.
+no-ops, because `LocalSource` has no `_issue_comment`.
 
 ### 4d. What `file()` refuses — before any write
 
@@ -867,6 +867,10 @@ counts that a reader must not have to open the design for: `(<k> open questions 
 good news. This comment is the **only** place an open-but-not-blocking item is recorded against the
 ticket, so one omitted here is one dropped.
 
+**vi. Land the Stage-1 design PR.** Every CONFIRM branch runs `work.py merge-design .sdlc <n>`
+(`skills/sigma-goal-review/references/confirm.md`, step 4d), which needs `work.enabled`; otherwise land
+the design PR by hand. The outcome comment (step v) ends `-- design PR: <merge-design's result>`.
+
 ### 7e. The phantom-blocker rule, and its control
 
 **A hand-authored body containing `#N` can mint a real dependency edge.** `blocker_scan._compile`
@@ -939,13 +943,15 @@ mandates — turns the refusal on **without** the flag.
 observable outcome — **zero tickets** — is the one an adopter is most likely to meet first and most
 likely to read as the tool failing.
 
-**i. What it writes.** One comment, through `sigma-goal-review` §3:
+**i. What it writes.** One comment, through `sigma-goal-review` §3, after closing the Stage-1 design PR
+with `work.py close-design .sdlc <n> --comment "goal-review: REJECTED"` (#2482; see
+`docs/cloud-sessions.md`):
 
 ```
-loop.py note .sdlc <n> "goal-review: REJECTED -- <findings>"
+loop.py note .sdlc <n> "goal-review: REJECTED -- <findings> -- design PR: <close-design's result>"
 ```
 
-**And nothing else.** No `sdlc:designed` (§7d-i is never reached), no Epic, no children, no label
+**And nothing else beyond that closed design PR.** No `sdlc:designed` (§7d-i is never reached), no Epic, no children, no label
 added and none removed, no board move, no edit to `#<n>`'s body. A `story` stays a `story`; a
 target the retrofit gate parked stays parked (§6). **The comment is the entire output**, which also
 makes it the entire record — see §12 for how that write is now made to survive, and what a
@@ -1066,6 +1072,9 @@ afterwards, and the comment says so — that is the whole recovery path.
    together costs nothing extra and avoids leaving the epic and its children in two different
    eventual-vs-immediate states. `not-supported` per row is expected on a `LocalSource` repo (no
    label surface; the body marker still landed, which is the half that matters locally).
+7. Ask the feature priority ("give `feature:<name>` a priority? P0-P4, or skip") and, if answered, run
+   `define.py set-priority .sdlc --unit <name> --priority <P>`
+   (`skills/sigma-goal-review/references/feature-ification.md`).
 
 ---
 
@@ -1077,7 +1086,7 @@ thing as each other.
 | Label | Colour | Bootstrapped by `_ensure_labels`? | Written by | Meaning |
 |---|---|---|---|---|
 | `story` | `#d4c5f9` | **no** | `dossier.py`'s `create_dependency` call | the Dossier tier. Never `sdlc:goal`. |
-| `epic` | — | no | `compile_plan.py`'s `EPIC_LABEL` | the Spec/Epic tier. Never `sdlc:goal`. |
+| `epic` | `#d4c5f9` | no | `compile_plan.py`'s `EPIC_LABEL` | the Spec/Epic tier. Never `sdlc:goal`. |
 | `sdlc:designed` | `#0e8a16` | **yes** | `sources.mark_designed`, only | goal-design **and** goal-review both confirmed |
 
 **`story` and `epic` are minted at attach time, not bootstrapped.** `create_dependency` issues an
@@ -1087,7 +1096,7 @@ the one prefix Sigma attaches and never creates; `story` is not in that class.
 
 **`sdlc:designed` is an OVERLAY, in the `docs/label-model.md` §2 sense** — it rides alongside
 whatever state the issue is already in, exactly like `sdlc:in-progress`/`sdlc:blocked`/
-`sdlc:blocking`. It joined `_ensure_labels`'s bootstrap table in #1826, making eight seeded labels.
+`sdlc:blocking`. It joined `_ensure_labels`'s bootstrap table in #1826, so the bootstrap table now seeds nine labels.
 `loop.py design-check` is its **only reader** and `goal-review` its **only writer**; there is no
 sweep that clears it and no gesture that removes it.
 

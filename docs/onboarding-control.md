@@ -7,7 +7,7 @@ epic #227 (plugin install -> `/sigma-init` -> one goal to done), built in #237.
 On a pull request and on a push to main the `onboarding-control` job (macOS, parallel to the required `test` job) runs the plain gesture under
 `evals/regression/budget.py` (wall time against `evals/regression/budget.json`) and only the `-k planted` tests of
 `tests/test_onboarding_control.py` (#879); the rest of that file is in the job's SLOW list and runs in the nightly and
-on-demand `full` job (the whole file, so the planted tests run there twice). The only skip is Windows, `os.name == "nt"`. It has
+on-demand `full` job (the whole file, so the planted tests run there twice). The skip is POSIX-only: it skips on Windows (`os.name == "nt"`) or when `make` or `git` is absent from PATH. It has
 no secrets, no network and no model session. CI runs it WITHOUT `--install`: the host plugin CLIs
 are not on CI runners, so the install lines are parsed and checked there, and run only by hand.
 
@@ -377,7 +377,7 @@ python -m pytest tests/test_onboarding_control.py -k planted -q -n 2
 `evals/regression/budget.json`, or 2 when that file is unreadable; a null ceiling is "unset": it prints and does not fail.
 The ceiling (300 s) is about 3.2x the max of 5 wall times read from real CI job logs on the macOS PR cell (58.6 to 95.1 s,
 mean 74.3 s; run ids in the file), never a laptop number (the laptop run is about 2 minutes). The `-k planted` step took
-181 to 279 s in the same runs (context, not held to the ceiling). The weekly Ubuntu and older-Python legs do not run this
+181 to 279 s in the same runs (context, not held to the ceiling). The nightly Ubuntu and older-Python legs do not run this
 step and were not measured. The job is not a required check (the owner adds it to the ruleset if wanted); until then a red job is visible on the PR and
 blocks nothing. The lever for a slow runner is re-running the job; a wrong ceiling is repaired by a PR that edits
 `budget.json` with new measured runs.

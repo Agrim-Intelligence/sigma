@@ -105,7 +105,7 @@ fallback log are the ones `read_issue` uses (`op: issue_list`, `number: null`), 
 `sdlc_dir` exists. Sites: `auto_unpark` (the parked/blocked loop and the `sdlc:blocking` read; any error
 keeps `complete=False` / `set()`, so a failed read never removes labels), `reconcile` census,
 `assign._active_members` (a non-list page now lands in its "could not rank active repo members" arm), and
-six `doctor` scans. `status.py:174` stays direct by design, and the `issue edit` in `assign.py` was a write (moved in slice 3a).
+six `doctor` scans. `status.py`'s no-sources fallback stays direct by design (it tries `fetch_issues_rest` first), and the `issue edit` in `assign.py` was a write (moved in slice 3a).
 
 Direction rule: `gh issue list` is newest-created-first, so every site asks `sort=created&direction=desc`
 (a board over its cap keeps its NEWEST rows); `doctor._dependency_marker_scan` asks `updated`/`desc`
@@ -370,8 +370,8 @@ returns them, so a BLOCKED PR waiting only on such a context parks "not safe to 
 waiting and arming `--auto`. That fails closed.
 
 Remaining PR sites, still direct `gh pr` and still open on #895 (counts from the ratchet's `scan()`, PRINTED
-after PR B): work.py 7 (R4's residual `reviewDecision` read, R5 the sibling list, and writes W1-W5 including
-`--auto`), doctor 5 (all non-PR sites), verify_merge 3 (`pr ready|create|merge`); TOTAL 47. Next: R5; PR writes
+after PR B): at that slice, work.py 7 (R4's residual `reviewDecision` read, R5 the sibling list, and writes W1-W5 including
+`--auto`), doctor 5 (all non-PR sites), verify_merge 3 (`pr ready|create|merge`); TOTAL 47, a historical snapshot (the current ratchet total is 36). Next: R5; PR writes
 are slices 4b/4c.
 
 ## Design-PR list and review-gate reads (#895 slice 4a-2, PR B)
@@ -666,7 +666,7 @@ Real cloud limits left in the merge path (from the code, not measured):
 - `merge_rights` is REST but needs the token to receive `permissions` on `GET repos/{owner}/{repo}`: UNMEASURED; if absent it fails closed to `record review`.
 - Board work is skipped with one notice (slice 5), UNMEASURED live.
 
-The 36 ratchet sites (`tests/test_no_direct_gh.py` `scan()`, enumerated by running it; line numbers drift). The
+The 36 ratchet sites (`tests/test_no_direct_gh.py` `scan()`, enumerated by running it; the line numbers below were true when written and have drifted since, so re-run `scan()` for current ones). The
 transport column is DERIVED from gh CLI behaviour, UNMEASURED (no call was run).
 
 | file:line | gh command | transport | blocks a cloud drain? |
@@ -733,7 +733,7 @@ helper's `_default_run`; `tests/test_issue_creation_boundary.py` pins the caller
 
 ## Landing plumbing (upkeep part C, slice 2)
 
-`gh_api` gains REST-only helpers for landing a feature unit onto the base branch; nothing calls them yet and they
+`gh_api` gains REST-only helpers for landing a feature unit onto the base branch; only the upkeep landing path (`feature_land*.py`) calls them, and they
 are inert unless the upkeep gate is open. `merge_pr_pinned` requires an explicit merge method, a repository and a
 40-hex head pin, and refuses before any call otherwise; `commit_parents`, `branch_rules`, `repo_settings` and
 `create_pr_nondraft` are the supporting reads and the explicit non-draft create; `bounded_runner` binds a working

@@ -27,7 +27,7 @@ it does not force. It parks on:
 
 - a hard checkpoint / a decision only you can make,
 - an **irreversible or expensive action** (deploy, delete, overwrite, spend, migrate) — its
-  instructions ask the agent to park it rather than run it unattended (advice: no code reads `gates.irreversible_actions`;
+  instructions ask the agent to park it rather than run it unattended (advice: no code reads `gates.irreversible_actions` unless `decision_rubric.hard_stops.enabled` is true, default false, where it is the legacy alias for the class toggles;
   that advice is about the agent, and two things Sigma's own code does are outside it because each is bounded by
   construction: the lease-protected force-push of a unit branch, and, only once you enable upkeep, the removal of old
   backup refs under Sigma's own backup namespace; see `docs/branching-model.md` section 13b),
@@ -78,7 +78,7 @@ review queue needs attention.
 | Approval | every gate | only what it parks |
 | Stops on | goal complete / you stop | backlog empty, per-run budget, or a context hand-off (then resumes fresh) |
 | Context bounded across goals | not yet — see issue tracker for the follow-up | goal count capped at 20 per session by default (`handoff.after_goals`); post-change token measurement pending |
-| Irreversible action | asks you | asks the agent to park it (advice; no code check) |
+| Irreversible action | asks you | asks the agent to park it (advice; a code check only when `decision_rubric.hard_stops.enabled` is true) |
 
 `/sigma-goal` claims its own named goal directly and is not driven by `loop.py next`/`next-batch`,
 so the hand-off ceiling above does not reach it — a human re-running `/sigma-goal` many times in one
@@ -117,7 +117,7 @@ Each phase runs via one of Sigma's own `sigma-*` skills, on every host.
 
 A one-line rename doesn't need Opus; a schema migration shouldn't run on Haiku. Set
 **`model_selection: auto`** in `.sdlc/config.json` and `/sigma-loop` **predicts a tier per goal** —
-`haiku · sonnet · opus · fable` — from the goal text (deterministic regex, zero-dep), then runs that
+`haiku · sonnet · opus · fable` (`fable` only if `model_selection_max_tier` is raised; the default is `opus`) — from the goal text (deterministic regex, zero-dep), then runs that
 goal's phases at it inside a subagent (the session can't switch its own model). Conflicts resolve
 **upward**, so a hard goal is never under-powered, and a review send-back a tier cannot converge raises it one
 rung (`loop.py escalate`) instead of parking. Off by default; run **`/sigma-model "<goal>"`** any

@@ -4,7 +4,7 @@ How each goal becomes a branch and a pull request, and when it merges. Back to t
 
 ## One worktree, one branch, one PR per goal (on by default)
 
-`work: {"enabled": true}` — this is the only feature that lets the loop commit at all. Set it to
+`work: {"enabled": true}` (the value in a config scaffolded by `/sigma-init`; with the key absent the code reads `work.enabled` as off, and `require_review` as `off`) — this is the only feature that lets the loop commit at all. Set it to
 `false` explicitly to keep the loop writing to git exactly as little as before this shipped.
 
 ```json
@@ -54,8 +54,8 @@ wrong (or stale) tree is a green that proves nothing, which `record done` would 
 
 - a **fork PR**, or a repo where you have only `READ`/`TRIAGE` → the loop opens the PR and stops:
   `PR #123 opened — read access on this repo; a maintainer merges.` That's the open-source path,
-  where the PR *is* the deliverable. It records **`done`**, not a park — the loop did everything it
-  could, and nothing about it wants your attention. If rights can't be determined, it fails **closed**.
+  where the PR *is* the deliverable. It records **`review`** (awaiting merge), not a park and not `done` — `record done` is
+  refused while the PR is unmerged, and the goal becomes `done` once the upstream merge lands. If rights can't be determined, it fails **closed**.
 
 **2. Should we merge?** Three legs, all required:
 
@@ -65,8 +65,8 @@ wrong (or stale) tree is a green that proves nothing, which `record done` would 
 | `mergeable` | GitHub | textual conflicts with the base |
 | `mergeStateStatus == CLEAN` | GitHub | failing required checks, missing reviews, a stale branch |
 
-A `BEHIND` branch is rebased once and re-checked. Everything else goes to the existing review queue —
-a failing check records `failed` (needs a fix), a conflict records `parked` (needs a decision). No new
+A `BEHIND` branch is rebased and re-checked, up to 3 times (`BEHIND_REBASES`), then parked. Everything else goes to the existing review queue —
+a failing check first triggers bounded CI-fix cycles and records `failed` (needs a fix) once they are exhausted (`work.max_review_cycles`), a conflict records `parked` (needs a decision). No new
 human-intervention path.
 
 **3. Is anything actually enforcing the answer?** That's `work.auto_merge`:
@@ -85,7 +85,7 @@ case GitHub reports `CLEAN` simply because it was never asked to object. So the 
 `repos/{owner}/{repo}/branches/{base}/protection` — a 404 means nothing is enforced — and **not**
 whether a check happened to run.
 
-Then it lands the PR with a direct `gh pr merge`. GitHub's own `--auto` is armed only when a required
+Then it lands the PR directly over REST (`PUT pulls/N/merge`, carrying the vetted head sha; `gh pr merge` is only a fallback on a primary rate limit). GitHub's own `--auto` is armed only when a required
 check has not answered yet (and the repository allows auto-merge); anything else parks with the reason.
 
 **A real review, after the PR — `work.require_review` (on by default).** Without it the
@@ -101,8 +101,8 @@ own. `work.require_review` adds a real review gate, **independent of branch prot
 | `"approval"` | The above, **and** requires an approval before merging — parks until the PR is `sigma:approve`d (or formally `APPROVED`). |
 
 It reads the PR's real review state (`reviewDecision`, review threads, and `sigma:` comment markers)
-and **parks** if the PR isn't cleared — nothing auto-merges past unaddressed feedback. Fail-open: an
-unreadable review state never blocks (the other gates still hold).
+and **parks** if the PR isn't cleared — nothing auto-merges past unaddressed feedback. Fail-closed: an
+unreadable comment list or review list parks the merge; only the unresolved-thread count fails open.
 
 **The loop reviews its own PR — no human in the loop.** After it opens the PR, the loop runs a **fresh,
 adversarial pass over the real mergeable diff** (a review *after* the PR, distinct from the pre-PR

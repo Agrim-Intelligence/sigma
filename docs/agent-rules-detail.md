@@ -155,7 +155,8 @@ this section is the rule.
 (`skills/sigma-loop/scripts/feature_rebase.py`) does not trust the rule — before it force-pushes
 `feature/<name>` it walks that branch's own `--first-parent` line (`landed_commits`) and asks of
 every commit whether GitHub left a trace of the pull request that landed it: `(#N)` from a squash,
-`Merge pull request #N` from a merge (`arrived_through_a_pull_request`). One commit with no trace and
+`Merge pull request #N` from a merge (`arrived_through_a_pull_request`). One commit with no trace, and not
+acknowledged under `.sdlc/features/rebase-acks/<unit>.json` (`feature_rebase.py ack`, #2756), and
 the pass stops — the branch is left exactly as it was, and the finding is filed as a tracked issue
 naming each unaccounted-for commit. Filing is best-effort: if it fails the finding still reaches
 stderr, and is attempted again on the next pick.
