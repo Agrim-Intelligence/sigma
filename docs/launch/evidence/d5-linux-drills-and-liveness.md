@@ -15,10 +15,12 @@ The macOS record stays at `drills-cde9869d0cf8.json` (different commit).
 
 ## 2. Dead vs idle on a really stopped watcher
 
+This section was re-run after review fixes (SIGKILL escalation on timeout, `stale_after` read from `sync`) at commit `31c54de05af6da8b6340c413502bde36acbad502`, same container limits; the drills and scale probe stay at `4d16cfe49c34` (those tools did not change).
+
 `tools/readiness/dead_vs_idle.py` starts the real `watch_daemon.py` in a scratch repository (interval 60 s,
 so `stale_after` = max(180, 3 x 60) = 180 s), signals the exact `Popen` pid (no pattern kill, no SIGSTOP), and
 reads both the doctor's `_ledger_watcher_state` and the real `hooks/session_start.sh`. Record:
-`dead-vs-idle-4d16cfe49c34.json`.
+`dead-vs-idle-31c54de05af6.json`.
 
 | Stage | Doctor row | Session start | pid alive |
 | --- | --- | --- | --- |
@@ -39,7 +41,7 @@ Findings, stated plainly: after a clean SIGTERM the watcher reads NEVER RUN, the
 ### The control: break the age clause and see it red
 
 `--break` makes the doctor's `sync.stale_after_seconds` return an effectively infinite bound (the age rule
-removed, leaving an existence-style check). Record: `dead-vs-idle-break-4d16cfe49c34.json`, exit 1:
+removed, leaving an existence-style check). Record: `dead-vs-idle-break-31c54de05af6.json`, exit 1:
 `FAIL C1_dead_reads_STALE_by_age` (the doctor row read `ON — last heartbeat 3 min ago` for the dead watcher).
 A first version of this mutant patched a module object the doctor reloads on every call, so it changed nothing and all
 checks stayed green; it was caught by running it, and fixed to patch the loader. The break covers the doctor's age

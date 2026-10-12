@@ -51,7 +51,7 @@
       "passed": true
     }
   ],
-  "commit": "4d16cfe49c34e42ac3e1857f1ed814987029191c",
+  "commit": "31c54de05af6da8b6340c413502bde36acbad502",
   "interval_seconds": 60,
   "passed": false,
   "platform": "linux",
@@ -59,7 +59,7 @@
   "stages": [
     {
       "doctor_row": "ON \u2014 last heartbeat 1 min ago",
-      "heartbeat_age_s": 39.0,
+      "heartbeat_age_s": 38.9,
       "name": "A_alive_between_ticks",
       "pid_alive": true,
       "pid_file": "21",
@@ -78,7 +78,7 @@
     },
     {
       "doctor_row": "ON \u2014 last heartbeat 0 min ago",
-      "heartbeat_age_s": 14.7,
+      "heartbeat_age_s": 14.8,
       "name": "C0_just_killed",
       "pid_alive": false,
       "pid_file": "80",
@@ -87,7 +87,7 @@
     },
     {
       "doctor_row": "ON \u2014 last heartbeat 3 min ago",
-      "heartbeat_age_s": 204.7,
+      "heartbeat_age_s": 204.8,
       "name": "C1_killed_older_than_stale_after",
       "pid_alive": false,
       "pid_file": "80",
