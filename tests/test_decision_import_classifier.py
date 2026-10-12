@@ -239,3 +239,13 @@ def test_limits_defaults_and_validation():
     assert o["model"] == "sonnet" and o["classifier"] == "model"
     assert o["max_budget_usd_per_call"] == d["max_budget_usd_per_call"]
     assert o["max_budget_usd_per_run"] == d["max_budget_usd_per_run"]
+
+
+def test_class_cache_is_capped_and_keeps_the_newest(tmp_path):
+    """B6: the fingerprint cache grew by one entry per classified question forever; it is now capped."""
+    sd = _sd(tmp_path)
+    n = DI.MAX_CACHE + 25
+    DI._cache_save(sd, {"fp%d" % i: {"qkind": "quota", "area": "repo"} for i in range(n)})
+    saved = json.loads((pathlib.Path(sd) / CACHE).read_text())["classes"]
+    assert len(saved) == DI.MAX_CACHE
+    assert "fp%d" % (n - 1) in saved and "fp0" not in saved

@@ -23,6 +23,7 @@ MAX_LINE = 8000000  # a longer single line is skipped unparsed, so memory stays 
 CHECK_EVERY = 256
 CHECK_BYTES = 8000000  # the deadline is also checked after this many bytes, so a few huge lines cannot outrun it
 CACHE = "decision-import-classes.json"  # fingerprint -> {qkind, area}; classification only, never text
+MAX_CACHE = 5000  # fingerprints kept in the class cache; 61 B each with a short area name (measured), so about 0.3 MB
 QUESTION_CLIP = 300
 MAX_LABELS = 12
 _SCHEMA = {"type": "object", "properties": {"kind": {"type": "string"}, "area": {"type": "string"}},
@@ -380,7 +381,8 @@ def _cache_save(sdlc_dir, classes):
     path = _cache_path(sdlc_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(CACHE + ".tmp")
-    tmp.write_text(json.dumps({"classes": classes}), encoding="utf-8")
+    kept = dict(list(classes.items())[-MAX_CACHE:])   # newest N: an evicted class costs one paid re-classification, bounded per run
+    tmp.write_text(json.dumps({"classes": kept}), encoding="utf-8")
     os.replace(str(tmp), str(path))
 
 
