@@ -92,7 +92,7 @@ GO if and only if all four hold:
 4. the benchmark results file named in the scorecard (`benchmark_results`) is a file under
    `docs/launch/evidence/`, is non-empty, and exists on `main`.
 
-Condition 4 for the launch of 1.0.x (owner decision, chat, 2026-10-12): the benchmark results file is the
+Condition 4 for the launch (owner decision, chat, 2026-10-12): the benchmark results file is the
 published measured-results document, `docs/launch/evidence/measured-results.md`, which makes no comparative
 claim. The comparative benchmark (#275) is past launch. BEFORE: the file was expected to be the comparative
 benchmark's result. AFTER: it is the measured-results document. This lowers the written bar because the owner decided
