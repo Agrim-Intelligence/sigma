@@ -10,7 +10,7 @@ supported cell.
 1. `gh issue list --label launch:blocker --state open --limit 200` on the repository: 4 issues.
 2. `gh issue list --state open --limit 1000` (657 open issues returned, below the limit), searched on
    title and body for: data loss, corrupt, path traversal, injection, token leak or exposure,
-   vulnerability, exfiltrat, destroy, force-push. Each hit was read. The titles of every open S4 review
+   vulnerability, exfiltrat, destroy, force-push, bypass, symlink. Each hit was read. The titles of every open S4 review
    (units A01 to A16), S5 and red-team grouped issue were also listed.
 3. `docs/launch/` and `docs/launch/evidence/` searched for B1 and B8 mentions, and the issue each names
    was looked up (open or closed).
@@ -41,6 +41,9 @@ re-checked here.
 | Issue | Finding | Confirmed B1/B8? Reason |
 |---|---|---|
 | #214 | `setup.ensure_ignore` writes through a symlinked `.gitignore` or `.git` and blocks on a FIFO | Not confirmed. Written as a design note from plan-review rounds, with no measured reproducer; hostile-checkout only. It describes a write outside the repository, so it is the one open candidate that could be B8 or B1 if reproduced. Recommend the owner decide whether to label it. |
+| #435 | `leak_scan` exits 1 or 0 instead of REFUSED (exit 2) when `scrub.py` fails to load | Not B8. Fail-closed hardening: it needs a modified `scrub.py`, which is visible in review, so it is not an attacker-reachable bypass. It is adjacent to the B2 gate (the leak gate can pass without scanning), so the owner may want it read against B2; labelled `launch:next`. |
+| #1184 | `post_guard` bypassed by bundled short flags (`-db`, `-sb`, `-fb`, `-eb`, `-wt`) | Not B8. The body check is an opt-in second layer; the export builder independently rejects a leak, and a hit needs a hand-written bundled-flag command. B2-adjacent (a leak could post), not an injection or traversal. Reconsider if the loop is found to emit a bundled form (not checked). |
+| #1195 | A direct `gh` `sigma:approve` comment passes the merge gate | Not B8 by the issue's own reading: the gate is advisory against a same-user process by design, and the commenter must already be an owner, member or collaborator. It is not injection, traversal or token exposure. It could be asked against B4 (a gate documented as enforced); this record does not decide that. |
 | #653 | `set_local_only` traceback; atomic config write has no `fsync` | Not B1. The issue says no write and no data loss, and calls the fsync gap a documented ceiling. |
 | #591 | work.py: non-atomic `_save` can lose the PR link and counters; `_run` has no timeout | Not B1. Loses Sigma's own work-record fields, not user data, git history or GitHub state; filed `launch:next`. Resiliency defects. |
 | #601 | Secret-scan residuals | Not B8. The issue states none is a new bypass in normal use; each is a limit or a lever. |
