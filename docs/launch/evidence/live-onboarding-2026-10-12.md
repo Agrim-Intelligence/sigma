@@ -230,7 +230,7 @@ REFUSED: the SDLC phase record is incomplete (README: every goal runs its seven 
   lever: for a trivial goal, `loop.py waive-phases <sdlc> <goal> research,retro --reason "<why>"` (recorded, visible; only research and retro can be waived); the whole gate is `gates.phase_record.enabled: false` in .sdlc/config.json
 REFUSED: the SDLC phase record is incomplete (README: every goal runs its seven phases):
   - review: the review verdict was recorded AFTER retro -> re-run the phases in order: a change after its review needs a fresh review
-  lever: (same line as above)
+  lever: for a trivial goal, `loop.py waive-phases <sdlc> <goal> research,retro --reason "<why>"` (recorded, visible; only research and retro can be waived); the whole gate is `gates.phase_record.enabled: false` in .sdlc/config.json
 ```
 
 Host-reported figures (list-price estimate on a subscription login, not billing): `modelUsage` claude-sonnet-5-5
@@ -302,7 +302,7 @@ loop session**: `0000-demo` (`sigma-demo.md` written, `loop.py verify` `VERIFIED
 model's own report: it ended the loop session by mistake while 0002 was claimed and restarted it (not seen by me
 in a captured gesture), and it filed `.sdlc/research/0000-demo.md` itself from the research subagent's report.
 
-Refusals, verbatim (the first `record done` on the demo goal; the same ordering slip as #1199, now with a second cause):
+Refusals, verbatim, from two different `record done` attempts on the demo goal. The first block is the first attempt (research artifact missing, filed as #1206, plus no review verdict); the second block is a LATER attempt, after the model recorded the review verdict late (review-after-retro ordering, #1199):
 
 ```
 REFUSED: the SDLC phase record is incomplete (README: every goal runs its seven phases):
@@ -311,8 +311,10 @@ REFUSED: the SDLC phase record is incomplete (README: every goal runs its seven 
   lever: for a trivial goal, `loop.py waive-phases <sdlc> <goal> research,retro --reason "<why>"` (recorded, visible; only research and retro can be waived); the whole gate is `gates.phase_record.enabled: false` in .sdlc/config.json
 REFUSED: the SDLC phase record is incomplete (README: every goal runs its seven phases):
   - review: the review verdict was recorded AFTER retro -> re-run the phases in order: a change after its review needs a fresh review
-  lever: (same line as above)
+  lever: for a trivial goal, `loop.py waive-phases <sdlc> <goal> research,retro --reason "<why>"` (recorded, visible; only research and retro can be waived); the whole gate is `gates.phase_record.enabled: false` in .sdlc/config.json
 ```
+
+**Deviations filed:** the missing research artifact and missing review verdict on the first `record done` is #1206; the review-after-retro ordering is #1199.
 
 Host-reported figures (list-price estimate on a subscription login, not billing): `modelUsage` claude-sonnet-5-5
 input 186, output 20,119, cache read 4,154,280, cache creation 293,683 tokens; `total_cost_usd` $1.873. 14
@@ -342,9 +344,10 @@ session, the current 1.0.10, Linux, Codex, Cursor.
 
 ## Not measured or not run
 
-Linux; Codex; Cursor; the README marketplace install in a live session (`--plugin-dir` instead); a run
-by a person outside the team (D7); a continuous first-run clock from install to merged PR; the gh call
-count of the live run; billing (subscription login, list-price estimates only); whether the model
-tier chosen for the github run (haiku) was derived by Sigma or by the model ("I chose haiku from the
-goal's size", its words). Repository `Agrim-Intelligence/sigma-drill-3` remains for the owner to delete
-by hand.
+Linux; Codex; Cursor; the README marketplace install observed from an empty profile in a live session (the
+third #300 run used the installed 1.0.9 copy in the owner's profile, how it was installed was not observed; the
+first two runs used `--plugin-dir`); current main 1.0.10 in a live session; a run by a person outside the team
+(D7); a continuous first-run clock from install to merged PR; the gh call count of the live run; billing
+(subscription login, list-price estimates only); whether the model tier chosen for the github run (haiku) was
+derived by Sigma or by the model ("I chose haiku from the goal's size", its words). Repository
+`Agrim-Intelligence/sigma-drill-3` remains for the owner to delete by hand.
