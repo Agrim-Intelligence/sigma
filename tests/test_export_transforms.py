@@ -35,14 +35,17 @@ def test_the_exact_skip_set_is_pinned_and_every_target_exists_once():
 
 
 def test_tests_carry_no_export_skip_beyond_the_pinned_set_in_either_tree():
-    """Private tree: none at all. Exported tree: exactly the pinned set, so a new skip fails here."""
+    """Source tree (`.sdlc/` present, or inventories not pruned): none at all. Exported tree: none or exactly
+    the pinned set, so a new skip fails here."""
+    from test_no_skip_hooks import export_mode
     found = set()
     for path in sorted((ROOT / "tests").glob("*.py")):
         if path.name in ("test_export_transforms.py", "test_build_public_tree.py"):
             continue
         for test in SKIP_RX.findall(path.read_text(encoding="utf-8")):
             found.add(("tests/" + path.name, test))
-    assert found in (set(), PINNED_SKIPS), sorted(found ^ PINNED_SKIPS)
+    allowed = (set(), PINNED_SKIPS) if export_mode() else (set(),)
+    assert found in allowed, sorted(found ^ PINNED_SKIPS)
 
 
 SKIP_FILES = {path: "def %s(tmp_path):\n    assert False\n" % test for path, test in sorted(PINNED_SKIPS)}

@@ -145,6 +145,10 @@ VERIFIED, so read that field. The report prints, in `not_covered`, what the scan
 - `tools/readiness/exposure_scan.py` de-duplicates its rules by name, so a second rule of one name
   never runs there;
 - file NAMES are checked against the private patterns only;
+- the OWNER'S pattern-file scan (`leak_refs.py` with `--patterns`, and the `exposure` scan's private-pattern
+  rule) matches each line as written: it does NOT join a name wrapped over a line break. Only the derived
+  source-name scan (`source-slug`) joins two adjacent lines. A private pattern split across a wrap passed
+  the pattern-file scan in two forms in the end-to-end verification;
 - the origin-owner rule of `tools/leak_scan.py` is skipped, because the export has no origin;
 - names absent from the patterns file, and e-mail addresses, which `tools/leak_scan.py` does not
   check;
@@ -194,7 +198,7 @@ ignore by rule (`pytest_collection_modifyitems`, `pytest_ignore_collect`, `pytes
 registration, the run and report hooks, `add_marker`, `collect_ignore`/`collect_ignore_glob`), and, for the
 eight guard tests, any skip/xfail marker, `pytest.skip`/`importorskip`/`xfail` call (one reviewed
 `not a git checkout` skip excepted) or `return` before the first assert; the only exemption is the exact
-skip the export-time transform of #1203 writes into five named tests. NOT covered: a blanket skip (a hook
+skip the export-time transform of #1203 writes into five named tests. The exemption holds only in a tree that is an export: no `.sdlc/` directory AND shipped inventories already pruned of `.sdlc/` rows (`export_mode()`); with `.sdlc/` present, or deleted without the pruning, the decorator is itself a finding. Not covered: a hand-built tree that deletes `.sdlc/`, prunes both inventories and adds the decorators (a visible rewrite, reviewed as such). NOT covered: a blanket skip (a hook
 or an autouse fixture that skips every test, or a skip in an imported helper), `--deselect`, `-k` or `addopts`
 in `pytest.ini`/`pyproject.toml`/`tox.ini`, a plugin, and the CI command line. Mitigation: review of any
 conftest or pytest-config change, and the measured exported-suite counts (passed, skipped and the five
