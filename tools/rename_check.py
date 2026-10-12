@@ -16,6 +16,7 @@ does not trip itself. The allowlist is deliberately narrow:
   * the organisation name and the owner's GitHub login, wherever they appear;
   * the maintainer contact address (company domain) in SECURITY.md and CODE_OF_CONDUCT.md, that exact token only;
   * two private-name guard tests that must spell the retired names, for those exact tokens only;
+  * the owners' role address (company domain) in CODEOWNERS and the two files that name it, that exact token only;
   * CHANGELOG.md below the rename entry (history), never the lines above it;
   * the retired plugin install id (#524) only in docs/upgrading.md and five pinned history records (see PATTERNS);
   * the recorded launch evidence files named in EVIDENCE: output captured at a named commit, which a
@@ -36,6 +37,10 @@ FILE_TOKENS = {
     # The shipped maintainer contact address (company domain), for that exact token in the two files that carry it.
     "SECURITY.md": ("admin@" + OLD + ".ai",),
     "CODE_OF_CONDUCT.md": ("admin@" + OLD + ".ai",),
+    # The owners' role address (owner decision 2026-10-12): CODEOWNERS and the two files that name it.
+    ".github/CODEOWNERS": ("teamsigma@" + OLD + ".ai",),
+    "docs/launch/definition.md": ("teamsigma@" + OLD + ".ai",),
+    "tests/test_repo_settings_doc.py": ("teamsigma@" + OLD + ".ai",),
 }
 #: First line of the CHANGELOG rename entry; everything from it down is history.
 CHANGELOG = "CHANGELOG.md"
