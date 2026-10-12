@@ -177,8 +177,8 @@ ordinary characters, a name spread over three or more lines, the bare short repo
 text in a tree built with `--sdlc include` (the `.sdlc` records name the source and the build is then
 REJECTED until each is dispositioned or removed). A build whose name cannot be derived is refused
 `source-slug-unknown`. The patterns file never held that name, which is why the other scans missed it.
-Measured: 13 files named it before the fix, 0 after; with the wider rule 4 shipped files name a sibling
-and are dispositioned by line (the maintainers team handle in `.github/CODEOWNERS`; throwaway drill repositories in
+Measured: 13 files named it before the fix, 0 after; with the wider rule 3 shipped files name a sibling
+and are dispositioned by line (throwaway drill repositories in
 `docs/launch/evidence/blast-radius-2026-10-04.json`, `live-onboarding-2026-10-12.md`, `docs/onboarding-control.md`); 19 more tracked
 files in `.sdlc/` carry it and are excluded by default), the doctor marketplace slug against `docs/launch/definition.json`, and every
 `github.com/<owner>/<repo>` in `.github/ISSUE_TEMPLATE/config.yml` against the same `public_repo`: a

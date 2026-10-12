@@ -1,10 +1,9 @@
-* @Agrim-Intelligence/sigma-maintainers
+* @swapnil-agrim @mstomar-ag
 
 # Sensitive paths (red team, TM-04): code that runs on every adopter's machine, the CI that gates it,
-# and the threat model. Later lines win, so these name the owner explicitly.
-/skills/*/scripts/ @swapnil-agrim
-/hooks/ @swapnil-agrim
-/.github/ @swapnil-agrim
-/.sdlc/ @swapnil-agrim
-/tools/ @swapnil-agrim
-/docs/threat-model.md @swapnil-agrim
+# and the threat model. Later lines win, so these name the owners explicitly.
+/skills/*/scripts/ @swapnil-agrim @mstomar-ag
+/hooks/ @swapnil-agrim @mstomar-ag
+/.github/ @swapnil-agrim @mstomar-ag
+/tools/ @swapnil-agrim @mstomar-ag
+/docs/threat-model.md @swapnil-agrim @mstomar-ag

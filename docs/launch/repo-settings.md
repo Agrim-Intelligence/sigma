@@ -40,7 +40,7 @@ can live is the repository's own settings.
 | Secret scanning and push protection | GitHub blocks a push that contains a recognised secret. Nothing in the loop changes. |
 | Private vulnerability reporting | The channel `SECURITY.md` names for reports. Nothing in the loop changes. |
 | Default workflow token `read`, cannot approve pull requests | Workflows start with a read-only token and cannot approve a pull request. `ci.yml` declares no permissions of its own and needs only read access. |
-| Maintainers team with `maintain` (an `admin` grant also passes the check) | The team `.github/CODEOWNERS` names has the rights to triage and merge, without admin. The team is created in GitHub; membership is never written to a file. |
+| Maintainers team with `maintain` (an `admin` grant also passes the check) | A team with the rights to triage and merge without admin. `.github/CODEOWNERS` names two people, not the team; the team is created in GitHub and membership is never written to a file. |
 
 `strict` ("require branches to be up to date") is left off: with a 19-minute CI it would make every merge race
 the next one. `work.py merge` already rebases a pull request that GitHub reports `BEHIND`.
