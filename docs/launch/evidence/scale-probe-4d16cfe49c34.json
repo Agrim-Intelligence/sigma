@@ -1,0 +1,40 @@
+{
+  "commit": "4d16cfe49c34e42ac3e1857f1ed814987029191c",
+  "cpus": 12,
+  "liveness_prune_claims_dry_run": [
+    {
+      "files": 1000,
+      "items": 1000,
+      "wall_s": 0.397
+    },
+    {
+      "files": 10000,
+      "items": 10000,
+      "wall_s": 0.575
+    },
+    {
+      "files": 100000,
+      "items": 100000,
+      "wall_s": 2.476
+    }
+  ],
+  "platform": "darwin",
+  "schema": "readiness-scale-probe/v1",
+  "sigma_log_slots": [
+    {
+      "files": 85,
+      "items": 85,
+      "wall_s": 0.037
+    },
+    {
+      "files": 850,
+      "items": 850,
+      "wall_s": 0.128
+    },
+    {
+      "files": 8500,
+      "items": 8500,
+      "wall_s": 1.071
+    }
+  ]
+}
