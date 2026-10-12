@@ -75,6 +75,19 @@ STDERR_CUT = 200
 TOOL_PATHS = ("tools/build_public_tree.py", "tools/leak_refs.py", "tools/readiness/exposure_scan.py",
               "skills/sigma-loop/scripts/scrub.py")
 LEAK_SCAN_PATH = "tools/leak_scan.py"
+# Export-time transforms (#1203): the export is built to be self-consistent, so the SOURCE holds no
+# switch. Rows for a left-out path leave these inventories; the listed tests are given an explicit
+# skip in the exported copy only, when `.sdlc` is left out. The list is pinned by a test.
+PRUNED_INVENTORIES = (("docs/launch/write-surface.json", "entries"), ("docs/launch/exposure-allowlist.json", None))
+EXPORT_SKIP_TOKEN = "EXPORT-SKIP"
+EXPORT_SKIP_REASON = EXPORT_SKIP_TOKEN + " public export without .sdlc/: this test reads the private .sdlc store or cites its records"
+EXPORT_SKIPS = (
+    ("tests/test_b6_466.py", "test_documented_gesture_resolves_the_rows"),
+    ("tests/test_goal_state_disposition.py", "test_documented_gesture_resolves_the_rows"),
+    ("tests/test_liveness_disposition.py", "test_documented_gesture_resolves_the_rows"),
+    ("tests/test_worktree_disposition.py", "test_documented_gesture_resolves_the_rows"),
+    ("tests/test_no_private_sdlc_citations.py", "test_no_shipped_file_cites_an_untracked_sdlc_design_or_plan"),
+)
 LEAK_SCAN_LABEL = "commit-time scan; key-body rule known incomplete, #433"
 NOT_COVERED = (
     "header-less private key bodies (#433)",
@@ -396,14 +409,15 @@ class SlugScan(object):
         return sorted(found)
 
 
-def materialise(src_root, entries, dest, excluded=(), slug_scan=None):
+def materialise(src_root, entries, dest, excluded=(), slug_scan=None, synthetic=None):
     """Write `entries` [(path, mode, blob_hex)] of the source repository at `src_root` under `dest`
     through ONE `git cat-file --batch`, request-response, memory bounded by one blob. Refuses
     `[oversize]` (before reading), `[binary]` and `[non-utf8]`. Files are created 0600 with O_EXCL
     and then chmod-ed 0644/0755 (never the umask's choice). -> {files, bytes, modes, findings,
     references_remaining}: findings are the content rules' hits, one per matching line;
     references_remaining maps each excluded path to the number of exported lines naming it.
-    `slug_scan` (SlugScan) adds the `source-slug` rule over every line and every path. A path hit
+    `synthetic` {path: bytes} are the transformed files (see `export_transforms`): never read from
+    git, scanned like any other file. `slug_scan` (SlugScan) adds the `source-slug` rule over every line and every path. A path hit
     carries no blob and no line hash, so no disposition can cover it; a line hit can be covered only by
     a reviewed line of its own file."""
     dest = str(dest)
@@ -415,15 +429,19 @@ def materialise(src_root, entries, dest, excluded=(), slug_scan=None):
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=_git_env())
     try:
         for path, mode, oid in sorted(entries, key=lambda e: e[0].encode("utf-8", "surrogateescape")):
-            proc.stdin.write(oid.encode("ascii") + b"\n")
-            proc.stdin.flush()
-            header = proc.stdout.readline().decode("ascii", "replace").split()
-            if len(header) != 3 or header[0] != oid or header[1] != "blob":
-                raise Refused("git-failed", "git cat-file could not read a planned blob")
-            size = int(header[2])
-            if size > MAX_BLOB_BYTES:
-                raise Refused("oversize", "a planned blob is %d bytes, over the %d-byte cap" % (size, MAX_BLOB_BYTES))
-            data = _read_exact(proc.stdout, size + 1)[:size]
+            if synthetic and path in synthetic:
+                data = synthetic[path]
+                size = len(data)
+            else:
+                proc.stdin.write(oid.encode("ascii") + b"\n")
+                proc.stdin.flush()
+                header = proc.stdout.readline().decode("ascii", "replace").split()
+                if len(header) != 3 or header[0] != oid or header[1] != "blob":
+                    raise Refused("git-failed", "git cat-file could not read a planned blob")
+                size = int(header[2])
+                if size > MAX_BLOB_BYTES:
+                    raise Refused("oversize", "a planned blob is %d bytes, over the %d-byte cap" % (size, MAX_BLOB_BYTES))
+                data = _read_exact(proc.stdout, size + 1)[:size]
             if slug_scan is not None and slug_scan.in_path(path):
                 findings.append({"rule": "source-slug", "path": path, "line": 0, "blob": None, "line_sha256": None})
             if b"\0" in data:
@@ -903,6 +921,43 @@ def _source_slugs(args, src, definition_raw):
     return sorted(found | derived)
 
 
+def export_transforms(plan, names, read_blob):
+    """Step 5b. -> (plan', {path: bytes}, [report rows]). The export is the source minus the excluded
+    prefixes, EXCEPT these files, rewritten here so the exported tree passes its own gates: rows of
+    PRUNED_INVENTORIES for a left-out path are dropped, and when `.sdlc` is left out the tests of
+    EXPORT_SKIPS get an explicit skip decorator. Nothing in the source can switch this on: the builder
+    decides, and the report lists every change. A target that cannot be rewritten exactly is refused."""
+    by_path = dict((path, (mode, oid)) for path, mode, oid in plan)
+    changed, rows = {}, []
+    for path, key in PRUNED_INVENTORIES:
+        if path not in by_path or not names:
+            continue
+        data = json.loads(read_blob(by_path[path][1]).decode("utf-8"))
+        items = data[key] if key else data
+        kept = [x for x in items if not _under(str(x.get("path", "")), names)]
+        if len(kept) == len(items):
+            continue
+        if key:
+            data[key] = kept
+        else:
+            data = kept
+        changed[path] = (json.dumps(data, indent=2) + "\n").encode("utf-8")
+        rows.append({"path": path, "change": "rows-dropped", "count": len(items) - len(kept)})
+    if ".sdlc" in names:
+        for path, test in EXPORT_SKIPS:
+            if path not in by_path:
+                continue
+            text = changed.get(path, read_blob(by_path[path][1])).decode("utf-8")
+            rx = re.compile(r"^def %s\(" % re.escape(test), re.M)
+            if len(rx.findall(text)) != 1:
+                raise Refused("transform-failed", "%s: %s is not defined exactly once" % (path, test))
+            text = rx.sub(lambda m: '@__import__("pytest").mark.skip(reason=%s)\n%s' % (json.dumps(EXPORT_SKIP_REASON), m.group(0)), text)
+            changed[path] = text.encode("utf-8")
+            rows.append({"path": path, "change": "skip", "test": test})
+    plan = [(path, mode, blob_id(changed[path]) if path in changed else oid) for path, mode, oid in plan]
+    return plan, changed, rows
+
+
 def _doctor_slug(partial, definition_raw, blobs):
     doctor = os.path.join(str(partial), *DOCTOR_PATH.split("/"))
     if not os.path.isfile(doctor):
@@ -1308,6 +1363,7 @@ def _main(argv, run, state):
     remaining = [row for path, row in decoded if not _under(path, names)]
     paths = _check_structure(remaining)
     plan = [(path, row[1], row[3]) for path, row in zip(paths, remaining)]
+    plan, transformed, transforms = export_transforms(plan, names, lambda oid: _commit_blob(src, oid))
     if LEAK_SCAN_PATH in full and LEAK_SCAN_PATH not in paths:
         raise Refused("leak-scan-absent", "an exclusion drops %s, the export's own commit-time scan; the "
                       "fourth scan would not run" % LEAK_SCAN_PATH)
@@ -1377,6 +1433,9 @@ def _main(argv, run, state):
     env = _git_env()
     env.update({"GIT_INDEX_FILE": os.path.join(tmp, "index"), "GIT_OBJECT_DIRECTORY": objects,
                 "GIT_ALTERNATE_OBJECT_DIRECTORIES": os.path.join(common.strip(), "objects")})
+    for path, data in sorted(transformed.items()):  # the private object directory only
+        if _gitb(src, ["hash-object", "-w", "--stdin"], input_bytes=data, env=env).decode("ascii").strip() != blob_id(data):
+            raise Refused("tree-mismatch", "a transformed file hashes to another blob than planned")
     info = b"".join(("%s %s\t" % (mode, oid)).encode("ascii") + path.encode("utf-8") + b"\0"
                     for path, mode, oid in plan)
     if info:
@@ -1394,7 +1453,7 @@ def _main(argv, run, state):
     os.mkdir(str(partial), 0o700)
     state.partial = partial
     excluded_paths = [path for path, _row in excluded_rows]
-    mat = materialise(src, plan, partial, excluded_paths, slug_scan)
+    mat = materialise(src, plan, partial, excluded_paths, slug_scan, transformed)
     actual_disk = disk_tree(partial)
     if actual_disk != planned_py:
         raise Refused("tree-mismatch", "the files on disk are not the planned tree")
@@ -1473,7 +1532,7 @@ def _main(argv, run, state):
         "patterns": {"source": "flag" if args.patterns else "env", "count": pattern_count},
         "export": {"out": _tilde(dest), "files": mat["files"], "bytes": mat["bytes"], "modes": mat["modes"],
                    "planned_tree_git": planned_git, "planned_tree_python": planned_py,
-                   "actual_tree_disk": actual_disk, "export_tree": planned_py, "commit": export_commit,
+                   "actual_tree_disk": actual_disk, "export_tree": planned_py, "transforms": transforms, "commit": export_commit,
                    "message": message, "author": "%s <%s>" % (AUTHOR_NAME, AUTHOR_EMAIL), "date": "%s +0000" % ct},
         "dispositions": {
             "exposure_allowlist": {"entries": len(allow_entries), "moot": len(allow_entries) - len(allow_live)},

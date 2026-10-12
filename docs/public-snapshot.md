@@ -82,7 +82,7 @@ The refusal codes: `windows`, `no-patterns-source`, `patterns-inside-work-tree`,
 `not-a-repo`, `bad-commit`, `bad-version` (the plugin version is not a plain `N.N.N[-alpha|beta|rc[.N]]` number, or the export commit message matches a content rule: the version enters the commit message, which no file scan reads), `object-format`, `bad-exclude`, `exclude-matches-nothing`, `symlink`,
 `gitlink`, `bad-mode`, `bad-path`, `secret-file-name`, `case-collision` (two paths equal after
 case folding and Unicode NFC normalisation), `head-not-commit`,
-`dirty`, `tool-mismatch`, `tool-missing`, `no-remote-ref`, `not-landed`, `repo-required`, `bad-slug`, `source-slug-unknown`, `source-slug-owner-mismatch`, `report-dir-inside-out`,
+`dirty`, `tool-mismatch`, `tool-missing`, `no-remote-ref`, `not-landed`, `repo-required`, `bad-slug`, `source-slug-unknown`, `source-slug-owner-mismatch`, `report-dir-inside-out`, `transform-failed`,
 `gh-failed`, `review-repo-public`, `not-pr-merged`, `not-owner-merged`, `dispositions-malformed`,
 `tree-mismatch`, `oversize`, `binary`, `non-utf8`, `report-exists`, `unpublish-failed`,
 `work-tree-unknown`, `git-failed`, `bad-ref`, `bad-timeout`, `leak-scan-absent` (the commit holds
@@ -219,6 +219,32 @@ tree and, since #1204, refused `report-dir-inside-out` when inside `OUT` or `OUT
 Not covered: the local report does echo what the operator passed (`--repo`, the review logins `gh`
 returned) and the `out:`/`report:` paths, tilde-shortened under the operator's home; it is 0600 and
 never inside a repository.
+
+## The export's own suite and gates (#1203)
+
+The export is a repository with its own CI, so its tests and gates must pass on the tree it ships,
+which has no `.sdlc/` by default. This is done by the BUILDER, at export time, not by a switch in the
+source (`export_transforms` in `tools/build_public_tree.py`); the report lists every change under
+`export.transforms`:
+
+- rows whose `path` is under a left-out prefix leave `docs/launch/write-surface.json` and
+  `docs/launch/exposure-allowlist.json` (the shipped copies only), so `write_surface.py check` and
+  `exposure_scan.py tracked` pass in the export;
+- when `.sdlc` is left out, five tests get an explicit `@pytest.mark.skip(reason="EXPORT-SKIP ...")` in
+  the exported file only: the four `test_documented_gesture_resolves_the_rows` tests (they measure the
+  private `.sdlc` store) and `test_no_shipped_file_cites_an_untracked_sdlc_design_or_plan` (16 shipped
+  cites of `.sdlc` records the export does not ship dangle for a public reader: `.gitignore`,
+  `CHANGELOG.md`, `docs/board-fields.md`, `docs/branching-model.md`, `skills/sigma-init/references/board.md`,
+  `sources.py`, `sync.py`, `tools/goal433_attack.py`, `tools/rename_check.py`; not fixed here);
+- a target that is not defined exactly once is refused `transform-failed`; with `--sdlc include` nothing
+  is rewritten.
+
+Trust model: the source holds no marker, flag or fixture that can make a guard skip or ignore a row, so
+nothing a contributor adds to the private tree can disarm one (`tests/test_export_transforms.py` runs a
+hand-written marker tracked, untracked, with extra fields and as a symlink next to a deleted `.sdlc`:
+both gates still fail). The skip set is pinned by that test (`EXPORT_SKIPS`), in the builder and in
+the exported tests: a new skip must change the pin in review. The exported repository's owners can edit
+their own tests; the guarantee is about what the builder produced at export time, recorded in the report.
 
 ## Dispositions and drift
 
