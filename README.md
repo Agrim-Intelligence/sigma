@@ -321,7 +321,7 @@ Settings live in `.sdlc/config.json`, which `/sigma-init` writes for you. The on
 | `verify.enforce` | on once you confirm a test command | Refuses "done" until your test command passes in this run. |
 | `work.enabled` | on | One worktree, branch and pull request per goal. |
 | `work.auto_merge` | `"off"` | `"protected"` or `"always"` lets the loop merge a clean, reviewed PR. |
-| `budget.max_iterations` / `max_minutes` / `max_tokens` | 20 / 480 / 500,000 | Per-run limits on goals, wall-clock time and spend. |
+| `budget.max_iterations` / `max_minutes` / `max_tokens` | 20 / 480 / 100,000,000 | Per-run limits on goals, wall-clock time and spend. |
 | `model_selection` | off | `"auto"` picks a model tier per goal (haiku, sonnet, opus or fable). |
 | `ledger.enabled` | off | A shared, committed record of what each person's loop did. |
 
