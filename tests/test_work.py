@@ -1621,7 +1621,8 @@ def test_a_content_only_refusal_does_not_offer_the_name_allowlist_as_its_fix(tmp
     (repo / "bg.bin").write_bytes(b"\0K = " + _key().encode() + b"\n")
     refusal = work.commit(d, ON, "0001-x.md", message="test: content only")
     assert refusal.startswith("REFUSED") and "bg.bin" in refusal
-    assert "by hand outside the loop" in refusal and "NAME, never its content" in refusal
+    assert "by hand" not in refusal                   # #961: a hand commit is the bypass, never a remedy
+    assert "NAME, never its content" in refusal
     assert "Add the EXACT path" not in refusal
 
 
@@ -11394,3 +11395,138 @@ def test_protection_an_empty_string_classic_check_name_is_discarded(tmp_path):
     classic = [("branches/main/protection", json.dumps({"required_status_checks": {"contexts": ["", "ci"]}}))]
     got, _ = _protection(tmp_path, classic + _ruleset())
     assert got == (True, "`main` enforces 1 required check"), got
+
+
+# ---- #612: the opt-in invocation adapter gates only the autonomous APPROVAL post -----------------
+# Protocol simulation (a fixture executable), not a live host: see tests/test_invocation.py.
+
+def _adapter_rig(tmp_path, mode=None, host="claude"):
+    import test_invocation as ti
+    cfg = {**ON, "invocation": {"adapter": host}}
+    d = _sdlc(tmp_path, cfg)
+    goal = _started(d)
+    if mode:
+        ti.Rig(tmp_path / "adapter-rig", host, mode=mode, repo=tmp_path)
+    return d, cfg, goal
+
+
+def test_post_review_approve_parks_with_no_post_when_no_adapter_is_pinned(tmp_path):
+    d, cfg, goal = _adapter_rig(tmp_path)
+    run = _runner([])
+    out = _post_review(d, cfg, goal, run, "approve")
+    assert out.startswith("PARK:") and "attended review" in out
+    assert not any(_posted(c) for c in run.calls)
+
+
+@pytest.mark.parametrize("mode", ["defer", "wrongack", "nonzero"])
+def test_post_review_approve_parks_with_no_post_on_a_deferred_or_bad_receipt(tmp_path, mode):
+    d, cfg, goal = _adapter_rig(tmp_path, mode)
+    run = _runner([])
+    out = _post_review(d, cfg, goal, run, "approve")
+    assert out.startswith("PARK:")
+    assert not any(_posted(c) for c in run.calls)
+
+
+def test_post_review_approve_posts_once_with_an_accepted_receipt_and_block_is_ungated(tmp_path):
+    d, cfg, goal = _adapter_rig(tmp_path, "ok")
+    run = _runner([])
+    assert "posted sigma:approve" in _post_review(d, cfg, goal, run, "approve")
+    assert any(_posted(c) and "sigma:approve" in c for c in run.calls)
+    statuses = [json.loads(p.read_text())["status"]
+                for p in (pathlib.Path(d) / "state" / "invocations").glob("*.json")]
+    assert statuses == ["consumed"]
+    blocked = _runner([])
+    assert "posted sigma:block" in _post_review(d, cfg, goal, blocked, "block", "x")
+
+
+def test_post_review_with_the_adapter_unconfigured_is_unchanged(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    run = _runner([])
+    assert "posted sigma:approve" in _post_review(d, ON, goal, run, "approve")
+    assert not (pathlib.Path(d) / "state" / "invocations").exists()
+
+
+def test_post_review_approve_parks_when_the_pin_exists_but_repo_config_turns_the_gate_off(tmp_path):
+    d, cfg, goal = _adapter_rig(tmp_path, "ok")
+    (pathlib.Path(d) / "config.json").write_text(json.dumps({**ON, "invocation": {"adapter": None}}))
+    run = _runner([])
+    out = _post_review(d, {**ON, "invocation": {"adapter": None}}, goal, run, "approve")
+    assert out.startswith("PARK:") and "pin exists" in out
+    assert not any(_posted(c) for c in run.calls)
+
+
+def test_a_retry_of_an_already_prepared_post_needs_no_fresh_receipt(tmp_path):
+    """Recovery must not depend on the adapter being up: an existing request only reconciles."""
+    import test_invocation as ti
+    d, cfg, goal = _adapter_rig(tmp_path, "ok")
+    evidence, head = _review_chain(d, goal, "approve")
+    pr = int(work._record(d, goal)["pr"])
+
+    def run_for(replies):
+        def evidence_run(cwd, argv):
+            if prfake.is_pr_get(argv, pr):
+                return prfake.rest_pull(number=pr, headRefOid=head)
+            return replies(cwd, argv)
+        return evidence_run
+    first = _runner([])
+    ok = work.post_review(d, cfg, goal, run=run_for(lambda c, a: _comment_reply(99) if _posted(" ".join(map(str, a))) else first(c, a)),
+                          verdict="approve", evidence=str(evidence))
+    assert "posted sigma:approve" in ok
+    ti.Rig(tmp_path / "adapter-rig2", "claude", mode="nonzero", repo=tmp_path)       # adapter now down
+    second = _runner([])
+    again = work.post_review(d, cfg, goal, run=run_for(second), verdict="approve", evidence=str(evidence))
+    assert not again.startswith("PARK: the invocation") and not any(_posted(c) for c in second.calls)
+
+
+def test_an_unexpected_adapter_side_exception_parks_never_posts(tmp_path, monkeypatch):
+    d, cfg, goal = _adapter_rig(tmp_path, "ok")
+    real = work._load
+
+    def boom(name, *a, **k):
+        if name == "invocation":
+            raise RuntimeError("boom")
+        return real(name, *a, **k)
+    monkeypatch.setattr(work, "_load", boom)
+    run = _runner([])
+    out = _post_review(d, cfg, goal, run, "approve")
+    assert out.startswith("PARK: invocation check failed") and not any(_posted(c) for c in run.calls)
+
+
+def test_the_receipt_is_bound_to_this_pr_head_and_brief(tmp_path):
+    d, cfg, goal = _adapter_rig(tmp_path, "ok")
+    evidence, head = _review_chain(d, goal, "approve")
+    bound = json.loads(pathlib.Path(evidence).read_text())
+    pr = int(work._record(d, goal)["pr"])
+
+    def run(cwd, argv):
+        if prfake.is_pr_get(argv, pr):
+            return prfake.rest_pull(number=pr, headRefOid=head)
+        return _comment_reply(99)
+    assert "posted" in work.post_review(d, cfg, goal, run=run, verdict="approve", evidence=str(evidence))
+    sent = json.loads(pathlib.Path(str(tmp_path / "adapter-rig" / "ran.mark") + ".request").read_text())
+    assert (sent["pr"], sent["head_sha"], sent["brief_sha256"], sent["kind"]) == (
+        pr, head, bound["brief_sha256"], "review-post")
+    assert sent["payload_sha256"] == hashlib.sha256(pathlib.Path(evidence).read_bytes()).hexdigest()
+
+
+def test_evidence_changed_after_the_adapter_check_parks_with_no_post(tmp_path, monkeypatch):
+    d, cfg, goal = _adapter_rig(tmp_path, "ok")
+    evidence, head = _review_chain(d, goal, "approve")
+    pr = int(work._record(d, goal)["pr"])
+    real = work._invocation_refusal
+
+    def check_then_tamper(*a):
+        out = real(*a)
+        p = pathlib.Path(a[-1])
+        p.write_text(p.read_text() + " ")
+        return out
+    monkeypatch.setattr(work, "_invocation_refusal", check_then_tamper)
+    calls = []
+
+    def run(cwd, argv):
+        calls.append(" ".join(map(str, argv)))
+        if prfake.is_pr_get(argv, pr):
+            return prfake.rest_pull(number=pr, headRefOid=head)
+        return _comment_reply(99)
+    out = work.post_review(d, cfg, goal, run=run, verdict="approve", evidence=str(evidence))
+    assert out.startswith("PARK: review evidence changed") and not any(_posted(c) for c in calls)

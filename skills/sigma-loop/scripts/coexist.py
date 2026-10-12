@@ -763,10 +763,21 @@ def overridden(env=None):
     return env.get(OVERRIDE_ENV) == "1"
 
 
-def _removals(report):
-    """The exact removal step for each ACTIVE signal that names one (uninstall, config edit, hook)."""
-    return [s.fix for s in report.active if s.kind in ("claude-enabled", "codex-enabled", "hook")
-            and s.fix]
+def _removals(report, verified_hosts=()):
+    """The exact removal step for each ACTIVE signal that names one (uninstall, config edit, hook).
+    #612: a Codex step carries a machine-wide config PATH, so the one-line notice shows it only when
+    the caller passes "codex" in `verified_hosts` (a host proven by a verified invocation, never by
+    the environment); otherwise it names Codex and points at `coexist.py check`, which lists it."""
+    out = []
+    for s in report.active:
+        if s.kind not in ("claude-enabled", "codex-enabled", "hook") or not s.fix:
+            continue
+        if s.kind == "codex-enabled" and "codex" not in verified_hosts:
+            out.append("%s is also enabled in Codex on this machine (run `coexist.py check` for the "
+                       "step)" % (s.plugin or OLD))
+        else:
+            out.append(s.fix)
+    return out
 
 
 def runs_here(report):
@@ -806,10 +817,20 @@ def marketplaces(report):
     return out
 
 
-def notice_line(report):
+def _verified_hosts(sdlc_dir):
+    """Hosts proven by a fresh verified invocation receipt (#612) -- never the environment. Opt-in:
+    with no `invocation.adapter` configured this is always empty and reads no state."""
+    try:
+        inv = _load("invocation")
+        return tuple(sorted(inv.fresh_hosts(sdlc_dir))) if inv.settings(sdlc_dir) else ()
+    except Exception:                # noqa: BLE001 - an unreadable source proves nothing
+        return ()
+
+
+def notice_line(report, verified_hosts=()):
     """THE notice (#314): one line, naming the uninstall command, the ordering caveat for the one
     step that converts the registry, and the one-time backup. It never says "refused"."""
-    removals = _removals(report)
+    removals = _removals(report, verified_hosts)
     line = ("%s: notice: the plugin previously published as %r is also enabled here; %s -- "
             "uninstall it when ready%s" % (BRAND, OLD, HANDLING,
                                            (": " + " ; ".join(removals)) if removals else ""))
@@ -994,7 +1015,7 @@ def gate(sdlc_dir, surface, env=None, home=None, stream=None, repo_root=None, on
         return True
     report = assess(sdlc_dir, env=env, home=home, repo_root=repo_root)
     if report.active:
-        print(notice_line(report), file=stream)
+        print(notice_line(report, _verified_hosts(sdlc_dir)), file=stream)
         _mark(marker)
     return True
 
@@ -1004,7 +1025,7 @@ def warn_line(sdlc_dir, env=None, home=None):
     if overridden(env):
         return None
     report = assess(sdlc_dir, env=env, home=home)
-    return notice_line(report) if report.active else None
+    return notice_line(report, _verified_hosts(sdlc_dir)) if report.active else None
 
 
 def doctor_row(sdlc_dir, env=None, home=None):

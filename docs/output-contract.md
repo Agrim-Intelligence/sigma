@@ -331,3 +331,10 @@ Waiting on the merge notification.
 This contract governs status reporting. It does **not** apply to content the user
 explicitly asked for — a report, a design walkthrough, a code explanation. Give
 those in full. The ban is on unrequested narration, not on requested prose.
+
+## 9. Opt-in host relay
+
+With the opt-in invocation adapter configured ([docs/invocation-adapter.md](invocation-adapter.md)),
+`phase_report.py end` also writes one `phase_report: host relay ...` line to **stderr**: `acknowledged`
+(the adapter acknowledged the exact Block B bytes) or `unavailable: <reason>`. Block B on stdout is
+unchanged and the line never says a UI displayed anything.

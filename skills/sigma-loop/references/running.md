@@ -49,7 +49,7 @@ logging a second, differently-computed value here would silently contradict the 
 recorded. A defaulted tier matches nothing and correctly carries no signal — pass it empty or
 omit it. **Per-step `resolve-step` below is UNCHANGED** — it stays prose-invoked, since a plan
 step's free text has no structured, goal-agnostic artifact code could read on its own.
-**`agent_dispatch --role phase/goal-slot/slice` below stays prose-invoked:** whether a phase ran as its own dispatched subagent or inline is the host's decision and no code here sits inside it. A phase that silently regresses to inline breaks the maker≠checker discipline, so since #684 the gate is on the OTHER side: `loop.py record ... done` refuses a goal whose action log lacks the phases (below). Detecting the gap after the fact stays tracked in #1779. The goal-slot tier is captured at pick time, like the phase tier (`references/picking.md` step 1a).
+**`agent_dispatch --role phase/goal-slot/slice` below stays prose-invoked:** whether a phase ran as its own dispatched subagent or inline is the host's decision and no code here sits inside it. A silent regression to inline breaks maker≠checker, so since #684 `loop.py record ... done` refuses a goal whose action log lacks the phases (below). The goal-slot tier is captured at pick time, like the phase tier (`references/picking.md` step 1a).
 Then run **each phase as its own subagent** with that host's model override. Before dispatch, hold
 the canonical portable pair (`<tier-or-off>`, `<effort>`) selected for this goal; Claude's Task tool
 accepts the tier directly: pass that exact Task `model` selector to
@@ -69,9 +69,8 @@ maker's conversation into the child. Bracket each phase-subagent dispatch itself
 `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" log .sdlc "$goal" agent_dispatch --role phase --phase
 <phase> --model <tier>` right after dispatching it, `agent_done --role phase --phase <phase>
 --result <...>` right when it returns. **`--model <tier>` is now REQUIRED on this call (#2514) —
-`loop.py log` refuses a `--role phase` dispatch with no `--model`.** `<tier>` here is the SAME
-value you already read from `model_choice` above, never a fresh resolve at this call site — the
-tier is already known by the time you dispatch. One subagent PER PHASE, not one for the whole goal: that is
+`loop.py log` refuses a `--role phase` dispatch with no `--model`.** `<tier>` is the SAME
+value you already read from `model_choice` above, never a fresh resolve here. One subagent PER PHASE, not one for the whole goal: that is
 what keeps a reviewer phase a **sibling** of the maker phase it checks (fresh context, no nesting),
 never a continuation of it — see the maker≠checker rule below. Artifacts pass between phases through
 the filesystem (`.sdlc/plans/`, the worktree diff, the issue timeline), not shared context. If it
@@ -274,6 +273,11 @@ an issue number with no frontmatter, so read the lane from Research's phase note
 timeline you already fetched. Either way an unsized goal is **`medium`** — unknown gets more rigour,
 not less. On **small**, plan in a few lines and keep the retro to one; on **large**, work the design
 out before planning and consider splitting it into several goals. **Plan-Review runs in full at every lane**.
+
+**Re-resolve the tier from this lane, right here, before dispatching P3:** run
+`python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" lane-tier .sdlc "$goal" <lane> <current-tier>`.
+`LANE <tier>` is the ceiling from P3 on; `OFF` (exit 3): do nothing.
+
 The lane is a *starting* call: if implementation shows the goal is bigger, escalate and say so in the
 phase note. **Park instead of forcing through**
 if you hit any of:

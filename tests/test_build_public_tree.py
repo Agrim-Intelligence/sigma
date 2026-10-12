@@ -671,6 +671,37 @@ def test_doctor_slug_mismatch_rejects(tmp_path, capsys):
             assert (slug["doctor"], slug["definition"]) == ("acme/demo", "acme/other")
 
 
+def test_issue_template_slug_check(tmp_path, capsys):
+    mod = _tool()
+    cfg = ".github/ISSUE_TEMPLATE/config.yml"
+    defn = {"docs/launch/definition.json": json.dumps({"public_repo": "acme/demo"})}
+
+    def config(*urls):
+        return "contact_links:\n" + "".join("  - url: %s\n" % u for u in urls)
+
+    cases = (
+        ("equal", dict(defn, **{cfg: config("https://github.com/acme/demo/security/advisories/new")}), 0, []),
+        ("equal", dict(defn, **{cfg: config('"https://GitHub.com/ACME/Demo.git"', "see https://github.com/acme/demo.",
+                                            "https://notgithub.com/other/x")}), 0, []),
+        ("mismatch", dict(defn, **{cfg: config("https://github.com/other-org/other/security/advisories/new")}), 1, [2]),
+        ("mismatch", dict(defn, **{cfg: config("https://github.com/acme/demo-fork")}), 1, [2]),
+        ("mismatch", dict(defn, **{cfg: config("https://github.com/acme/demo", "https://github.com/acme/private")}), 1, [3]),
+        ("mismatch", dict(defn, **{cfg: config("https://github.com/sponsors/acme")}), 1, [2]),
+        ("unverifiable", dict(defn, **{cfg: config("https://github.com.example.io/acme/demo", "https://example.io/x")}), 1, [0]),
+        ("unverifiable", {cfg: config("https://github.com/acme/demo")}, 1, [0]),
+        ("not-applicable", dict(defn), 0, []),
+    )
+    for index, (status, extra, want_rc, lines) in enumerate(cases):
+        repo, sha = _fixture(tmp_path, name="src-%d" % index, extra=extra)
+        rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "i-%d" % index)))
+        assert rc == want_rc, (index, status, se)
+        report = _report(_fields(so))
+        assert report["scans"]["issue_template_slug"]["status"] == status, index
+        rules = [(f["rule"], f["line"]) for f in report["scans"]["builder"]["findings"]
+                 if f["rule"].startswith("issue-template-slug")]
+        assert [line for _rule, line in rules] == lines, (index, rules)
+
+
 # ============================================================================== report
 
 def test_report_is_outside_the_repo_names_the_commit_and_is_private(tmp_path):
@@ -1037,3 +1068,15 @@ def test_a_draft_reason_disposition_is_refused(tmp_path, capsys):
                                                        DISPOSITIONS: _disposition_file([entry])})
     rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, out=_out(tmp_path, "odraft")))
     assert rc == 2 and so == "" and "REFUSED [dispositions-malformed]" in se, (rc, so, se)
+
+
+def test_issue_template_slug_reads_the_ssh_form(tmp_path):
+    """The exposure scan rejects an ssh remote in an end-to-end build, so the ssh grammar is seen here."""
+    mod = _tool()
+    path = tmp_path / ".github" / "ISSUE_TEMPLATE"
+    path.mkdir(parents=True)
+    remote = "git" + "@github.com:acme/%s.git"  # assembled: a literal ssh remote trips the exposure scan
+    (path / "config.yml").write_text("url: %s\nurl: %s\n" % (remote % "demo", remote % "demo-x"))
+    scan, findings = mod._issue_template_slug(tmp_path, b'{"public_repo": "acme/demo"}', {})
+    assert scan["status"] == "mismatch" and scan["found"] == ["acme/demo", "acme/demo-x"]
+    assert [f["line"] for f in findings] == [2]

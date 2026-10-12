@@ -151,7 +151,10 @@ VERIFIED, so read that field. The report prints, in `not_covered`, what the scan
 - destination GitHub state beyond what `python3 tools/verify_public_repo.py` counts;
 
 The four scans are: `builder` (the header rule `private-key-header`, the placeholder rule
-`owner-placeholder`, and the doctor marketplace slug against `docs/launch/definition.json`),
+`owner-placeholder`, the doctor marketplace slug against `docs/launch/definition.json`, and every
+`github.com/<owner>/<repo>` in `.github/ISSUE_TEMPLATE/config.yml` against the same `public_repo`: a
+check, not a rewrite, rule `issue-template-slug-mismatch`/`-unverifiable`; a bare `owner/repo` with no
+`github.com` and the sibling templates are not read),
 `leak_refs` (the private patterns over every exported path and file), `exposure` (the exposure
 scanner over the export) and `leak_scan` (the export's own commit-time scan).
 

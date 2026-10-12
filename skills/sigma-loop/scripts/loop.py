@@ -746,10 +746,13 @@ def _check_cross_repo_at_pick(sdlc_dir, goal, config):
 
 
 #: `predict.py why`'s line. #2827 added an optional `in=<title|body>` BEFORE `signal=`, so the
-#: signal stays the free-text tail (signals contain spaces: `dead code`). The location is parsed
-#: and not recorded -- the ledger's `model_choice` fields are unchanged.
+#: signal stays the free-text tail (signals contain spaces: `dead code`). #390 added `hits=<n>`
+#: between them, same reason, always present together with `in=` (both or neither -- `predict.py`
+#: prints them as one unit). The location and hit count are parsed and not recorded -- the ledger's
+#: `model_choice` fields are unchanged.
 _WHY_LINE = re.compile(
-    r"^model=(?P<model>\S+)(?: in=(?P<where>title|body))? signal=(?P<signal>.*)$")
+    r"^model=(?P<model>\S+)(?: in=(?P<where>title|body) hits=(?P<hits>\d+))?"
+    r" signal=(?P<signal>.*)$")
 
 # Keep the pick-time recording boundary strict even if a resolver process is stale or corrupted.
 # This mirrors the versioned Codex catalog in sigma-model without importing that skill's Python.
@@ -5830,6 +5833,7 @@ USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> [--se
          "log <dir> <goal> <kind> [--thread T] [--k v ...] | "
          "escalate <dir> <goal> <tier> --after plan-review|code-review|pr-review | "
          "escalate <dir> <goal> --show | "
+         "lane-tier <dir> <goal> <small|medium|large> <current-tier> | "
          "verify <dir> <goal>")
 
 
@@ -5962,6 +5966,68 @@ def _escalate(sdlc_dir, goal, current, rest):
         return 0
     print(f"{verdict} {tier} -- {message}" if verdict == te.CEILING else f"{verdict} -- {message}")
     return 3
+
+
+_LANE_TIER_USAGE = "usage: loop.py lane-tier <dir> <goal> <lane> <current-tier>"
+
+
+def _lane_tier(sdlc_dir, goal, lane, current):
+    """#390: `loop.py lane-tier` -- re-resolve a goal's model ceiling from Research's MEASURED
+    lane, right after P2, rather than leaving P3+ at the pre-P2 text tier. The decision lives in
+    `tier_escalation.lane_tier` (pure, host-agnostic); this is the CLI shell around it plus the
+    recording, mirroring `_escalate` above: same lazy `tier_escalation` load, same host-aware
+    config, same escalation-floor read (a genuine escalation recorded before this call must still
+    win over a lane cap, per `lane_tier`'s own docstring), same two-write recording shape
+    `tier_escalation.record` uses.
+
+    stdout's FIRST WORD is the answer, the same read-the-first-word convention `escalate`/
+    `work.py merge` use:
+      `LANE <tier>` (exit 0) -- this goal's ceiling for P3 onward; recorded as `model_choice` with
+                     signal `lane:<lane>`.
+      `OFF`         (exit 3) -- `model_selection` is not "auto"; there is no tier-driven dispatch
+                     to re-resolve, phases already run at the session model.
+    Bad input (unknown lane, unknown tier) exits 2 and writes nothing -- mirrors `_escalate`'s
+    bad-input contract. So does a lane tier the Codex host mapping refuses: it is validated BEFORE
+    anything is recorded, as `_escalate` and `predict.resolve` do. The action-log row carries
+    `phase="plan"`: the tier applies P3 onward, the phase `escalate` stamps its own rows with."""
+    te = _load("tier_escalation")
+    config = _host_model_config(state.load_config(sdlc_dir))
+    if (config.get("model_selection") or "off") != "auto":
+        print(f"{te.OFF} -- model_selection is not \"auto\": phases already run at the session "
+              "model, so there is no tier to re-resolve.")
+        return 3
+    if lane not in te.LANES:
+        print(f"loop.py lane-tier: unknown lane {lane!r} (expected one of "
+              f"{', '.join(te.LANES)})\n{_LANE_TIER_USAGE}", file=sys.stderr)
+        return 2
+    if current not in te.PRICE_ORDER:
+        print(f"loop.py lane-tier: unknown tier {current!r} (expected one of "
+              f"{', '.join(te.PRICE_ORDER)})\n{_LANE_TIER_USAGE}", file=sys.stderr)
+        return 2
+    try:
+        floor_path = _escalation_floor_path(sdlc_dir, goal)
+    except ValueError as exc:
+        print(f"loop.py lane-tier: {exc}", file=sys.stderr)
+        return 2
+    try:
+        entries = actionlog.read_goal(sdlc_dir, goal)
+    except Exception:                               # noqa: BLE001 - memory is best-effort
+        entries = []
+    floor = te.read_floor(floor_path)
+    tier = te.lane_tier(config, lane, current, entries, floor)
+    problem = _codex_mapping_problem(sdlc_dir, tier, te.EFFORT[tier])
+    if problem:
+        print(f"loop.py lane-tier: Codex host mapping refused for {tier} ({problem}); nothing "
+              f"was recorded. Fix model_host_overrides.codex in config.json and run it again.",
+              file=sys.stderr)
+        return 2
+    signal = te.lane_signal(lane)
+    ledger.safe_append(sdlc_dir, "model_choice", goal, config=config, stream=ledger.EVENTS,
+                       model=tier, signal=signal)
+    actionlog.safe_append(sdlc_dir, goal, "model_choice", actor="agent", model=tier,
+                          signal=signal, phase="plan")
+    print(f"LANE {tier}")
+    return 0
 
 
 def main(argv, *, _merge_lock_held=False):
@@ -6642,6 +6708,11 @@ def _dispatch(argv):
         if argv[4] == "--show" and len(argv) == 5:
             return _escalate_show(argv[2], argv[3])
         return _escalate(argv[2], argv[3], argv[4], argv[5:])
+    if len(argv) >= 2 and argv[1] == "lane-tier":   # #390: re-resolve the tier from the lane
+        if len(argv) != 6:                          # mirrors `escalate`'s own usage-on-mismatch
+            print(_LANE_TIER_USAGE, file=sys.stderr)
+            return 2
+        return _lane_tier(argv[2], argv[3], argv[4], argv[5])
     if len(argv) >= 5 and argv[1] == "log":         # agent-emitted LOCAL action-trace (never the ledger)
         sdlc_dir, goal, kind = argv[2], argv[3], argv[4]
         flags = _flags(argv[5:])

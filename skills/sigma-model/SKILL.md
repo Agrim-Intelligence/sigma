@@ -59,9 +59,20 @@ over-powering a trivial one.
 **A haiku signal counts only in the title (#2827).** The title is the text's first line (for a goal
 file path: its frontmatter `title:`, else its file stem). A real issue body almost always mentions a
 comment, a docstring or a lint, so a haiku stem found only in the body is ignored and the goal gets
-the `sonnet` default; opus and fable stems still count anywhere. `why` says where the signal was
-found — `model=haiku in=title signal=typo` — and the signal stays the text after `signal=`.
-`resolve-step` is unchanged: a mechanical step's downgrade is what it is for.
+the `sonnet` default. `resolve-step` is unchanged: a mechanical step's downgrade is what it is for.
+
+**An opus or fable signal found only in the body needs two hits (#390).** A title hit still wins on
+one. In the body, one mention is usually a citation (a doc path, a test path, a `feature/...` branch,
+"authorization" meaning spend approval, a JSON key, a shipped migration recalled in a retro), not a
+description of the work, so the goal falls through to the `sonnet` default; two or more occurrences
+of the stem (or of any opus/fable stem — occurrences, not distinct words) win. A match lying wholly
+inside a backtick code span, a fenced block or a path-shaped token (`\S+/\S+`, so `a/b` and
+`and/or` count as paths) never counts, in the title or the body. For scale, and as the predecessor's
+measurement on its own two boards, not Sigma's (Sigma's boards have not been measured): 61 of 167
+open goals routed to opus, 58 of those 61 from one body word, and 16 of 21 hand-read cases were
+false positives. `why` says where the signal was found and how many hits backed it —
+`model=haiku in=title hits=1 signal=typo`, `model=opus in=body hits=2 signal=migrat` — and the
+signal stays the text after `signal=`.
 
 ### The price ceiling (`model_selection_max_tier`, default `opus`)
 
@@ -76,7 +87,7 @@ what happened:
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/scripts/predict.py" why "Draft the launch blog series"
-model=sonnet in=title signal=blog  # `blog` fired; the tier was capped
+model=sonnet in=title hits=1 signal=blog  # `blog` fired; the tier was capped
 ```
 
 A repo whose work genuinely is creative writing opts the ceiling up, in `.sdlc/config.json`:
@@ -142,7 +153,7 @@ Find the values by asking the router itself, and copy the literal it prints:
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/scripts/predict.py" why "Align the retry logic with the north-star vision doc"
-model=sonnet in=title signal=vision  # -> add "vision" (tier capped; copy what follows signal=)
+model=sonnet in=title hits=1 signal=vision  # -> add "vision" (tier capped; copy what follows signal=)
 ```
 
 What it keys on, and what that buys:
@@ -212,3 +223,32 @@ recording described above — both can fire for the same goal (harmless: `resolv
 and a duplicate ledger entry is not a correctness problem) — it closes the gap where NEITHER fired
 unless a calling skill's own prose remembered to invoke `resolve` by hand, which issue #1627
 measured as happening almost never.
+
+## Re-resolving from the measured lane, after Research (#390)
+
+Everything above resolves a tier from the goal's TEXT, before any code has been examined: the best
+evidence available at pick time, and no more. Research (P2) then measures the goal's structural
+footprint into a **lane** (`small`/`medium`/`large`, `discovery.py`'s `LANES`), and that measurement
+used to be thrown away for tiering: P3 onward kept the pre-P2 text tier even when Research found the
+goal much smaller (or much bigger) than its wording suggested.
+
+`python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" lane-tier .sdlc "<goal>" <lane>
+<current-tier>` re-resolves the goal's ceiling from that lane, right after Research and before P3 is
+dispatched; `<current-tier>` is the SAME pick-time tier already resolved above, never a fresh `why`
+call. It lives in `sigma-loop`, not here, because it must cooperate with that skill's escalation
+floor (`loop.py escalate`, `.sdlc/state/escalation/<goal>.json`): a floor already recorded there
+still wins over a lane cap. The rule:
+
+| Lane | Result | |
+|------|--------|---|
+| **small** | `current-tier` capped at `sonnet` | a CAP, not a floor: a title-only `haiku` match is left alone; only `opus`/`fable` are pulled down |
+| **medium** | `sonnet`, always | matches this skill's own `sonnet` default, whatever the text guessed |
+| **large** | `opus`, always | can RAISE a goal: a structural change earns the top tier even when nothing in the text says so |
+
+`model_selection_max_tier` (above) still clamps the result, and a floor this goal already escalated
+to (via a `plan-review`/`code-review`/`pr-review` send-back) still wins over the lane cap; the verb
+reads that floor itself. Prints `LANE <tier>` (the ceiling from P3 onward; Research keeps the pre-P2
+tier it was dispatched with) or `OFF` when `model_selection` is not `"auto"` for the running host,
+and exits 2 with nothing recorded when the Codex host mapping refuses the tier. Records
+`model_choice` with signal `lane:<lane>`; nothing to log by hand. The exact call site is "Match the
+ceremony to the goal" in `sigma-loop/references/running.md`.
