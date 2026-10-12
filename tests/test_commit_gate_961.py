@@ -404,8 +404,8 @@ def test_template_registry_and_loop_docs_make_the_content_allowlist_an_operator_
                    "never writes one", "code file", "COMMIT_CODE_SUFFIXES", "MAIN checkout"):
         assert needle in section, needle
     assert "do exactly what the refusal prints" in _norm((SCRIPTS.parent / "SKILL.md").read_text())
-    unreleased = (ROOT / "CHANGELOG.md").read_text().split("## Unreleased", 1)[1].split("\n## ", 1)[0]
-    assert "work.allow_secret_content" in unreleased
+    sections = (ROOT / "CHANGELOG.md").read_text().split("\n## ")      # Unreleased, then the newest release
+    assert "work.allow_secret_content" in "\n".join(sections[1:3])
 
 
 # --- the assigned-literal guard, the code-file rule and linear time --------------------------------
