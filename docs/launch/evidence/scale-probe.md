@@ -2,7 +2,7 @@
 
 Measured by `tools/readiness/scale_probe.py` at commit `4d16cfe49c34e42ac3e1857f1ed814987029191c`; raw
 numbers in `scale-probe-4d16cfe49c34.json`. macOS, 12 CPUs, one machine, warm cache, median of 3 wall
-times of a fresh process, run on its own (no other container running). Synthetic scratch `.sdlc`.
+times of a fresh process, run natively on macOS with no other heavy job running. Synthetic scratch `.sdlc`.
 
 | Path | 1x | 10x | 100x |
 | --- | --- | --- | --- |

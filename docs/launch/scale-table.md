@@ -40,4 +40,5 @@ developer's heavily agent-driven machine (macOS unless noted), not an adopter fl
 - No 10x or 100x row is an adopter figure; every "C" cell is a per-item size times a count.
 - The cells marked "not measured" stay that way: directory-lookup cost at 100,000 lock files on a real
   filesystem, clone time at 7,700 goals, `flock` contention on the 256 stripes, any network filesystem,
-  Linux and Windows sweep times (except those recorded in the scale-probe evidence).
+  Linux and Windows sweep times. The dead-vs-idle control is not a scale cell; its caveat is that a clean
+  SIGTERM leaves no heartbeat to age, so only a crash (SIGKILL leg) is told from idle by age.

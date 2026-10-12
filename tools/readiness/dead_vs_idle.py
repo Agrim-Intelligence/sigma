@@ -29,7 +29,9 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 INTERVAL = 60
-STALE_AFTER = max(3 * INTERVAL, 180)
+# The doctor's own rule, read from its source (sync.stale_after_seconds) rather than copied, so a change
+# there moves this control with it.
+STALE_AFTER = None  # set in run() from sync.stale_after_seconds(INTERVAL)
 SCHEMA = "readiness-dead-vs-idle/v1"
 SCRATCH = re.compile(r"(?:/(?:private/)?tmp|/var/tmp|/(?:private/)?var/folders|/scratch|/w)(?:/[^\s'\"]*)?")
 
@@ -57,6 +59,8 @@ class Watcher:
         self.proc = None
 
     def start(self):
+        if self.proc and self.proc.poll() is None:
+            raise RuntimeError("a previous watcher is still running; refusing to lose its handle")
         self.proc = subprocess.Popen([sys.executable, str(SCRIPTS / "watch_daemon.py"), ".sdlc"], cwd=self.repo,
                                      env=self.env, stdout=self.log, stderr=subprocess.STDOUT, start_new_session=True)
         hb = self.repo / ".sdlc" / "state" / "watch.heartbeat"
@@ -70,7 +74,14 @@ class Watcher:
         try:
             return self.proc.wait(timeout=20)
         except subprocess.TimeoutExpired:
-            return None
+            self.kill_exact()
+            raise RuntimeError("watcher ignored the signal for 20 s; SIGKILLed its exact pid and refusing to continue")
+
+    def kill_exact(self):
+        # Only the pid we spawned (never a pattern kill, never SIGSTOP).
+        if self.proc and self.proc.poll() is None:
+            os.kill(self.proc.pid, signal.SIGKILL)
+            self.proc.wait(timeout=20)
 
 
 def observe(repo, doctor, broken):
@@ -112,6 +123,8 @@ def run(workdir, broken):
     env = {k: v for k, v in os.environ.items() if not k.startswith("SIGMA_") and k != "GH_TOKEN" and k != "GITHUB_TOKEN"}
     env.update({"HOME": str(home), "SIGMA_WATCH_CALL_TIMEOUT": "20", "GH_CONFIG_DIR": str(home / "gh")})
     doctor = _doctor()
+    global STALE_AFTER
+    STALE_AFTER = doctor._load_loop_script("sync").stale_after_seconds(INTERVAL)
     log = open(workdir / "daemon.log", "ab")
     stages, checks = [], []
 
@@ -152,7 +165,10 @@ def run(workdir, broken):
     finally:
         if w.proc and w.proc.poll() is None:
             os.kill(w.proc.pid, signal.SIGTERM)
-            w.proc.wait(timeout=20)
+            try:
+                w.proc.wait(timeout=20)
+            except subprocess.TimeoutExpired:
+                w.kill_exact()
         log.close()
     return {
         "schema": SCHEMA,

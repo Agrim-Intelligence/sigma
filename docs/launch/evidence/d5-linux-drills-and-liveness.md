@@ -27,7 +27,7 @@ reads both the doctor's `_ledger_watcher_state` and the real `hooks/session_star
 | C0. second watcher, SIGKILL, read at once (heartbeat 15 s old) | `ON — last heartbeat 0 min ago` | silent | no |
 | C1. same, heartbeat 205 s old | `STALE — last heartbeat 0.1h ago; the watcher is probably dead` | "looks stale" | no |
 
-Findings, stated plainly:
+Findings, stated plainly: after a clean SIGTERM the watcher reads NEVER RUN, the same as one that never started, so "dead is distinguishable from idle" holds for crash deaths by age and for clean stops only by absence.
 
 - A clean SIGTERM removes `watch.pid` and `watch.heartbeat` (the daemon's own cleanup), so the stopped
   watcher reads "never run", not "stale". It is still told apart from the alive one, but by absence and not by age.
