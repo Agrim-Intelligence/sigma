@@ -5432,6 +5432,28 @@ def scope_to_feature(source, unit):
     return unit
 
 
+def local_goal_missing(sdlc_dir, config, goal):
+    """#1247: the refusal text when `goal` names no goal in a local-goals backlog, else "".
+    A mistyped goal reference is the likeliest first-run mistake, and without this `work.py start`
+    cut a worktree for nothing and `record ... done` answered with the phase-record list.
+
+    Local-goals only: a GitHub issue cannot be looked up without the network, so the github source
+    returns "" (no claim made). A goal is present when it is a real file, a file under
+    `<sdlc>/goals/` by name (with or without `.md`), or a numeric id some `NNNN-slug.md` leads with."""
+    if (((config or {}).get("discovery") or {}).get("source") or "local-goals") != "local-goals":
+        return ""
+    ref = str(goal)
+    goals = pathlib.Path(sdlc_dir) / "goals"
+    if pathlib.Path(ref).is_file() or (goals / ref).is_file() or (goals / (ref + ".md")).is_file():
+        return ""
+    if state.unsafe_goal_reason(pathlib.Path(ref).stem if ref.endswith(".md") else ref):
+        return ""                       # an unsafe reference has its own, more specific refusal
+    if ref.strip().isdigit() and LocalSource(sdlc_dir)._resolve_ref(ref).is_file():
+        return ""
+    return (f"no such goal {ref} under {sdlc_dir} -- in local-goals mode a goal is a file under "
+            f"{goals.as_posix()}/ (list them with `ls {goals.as_posix()}`)")
+
+
 def get_source(sdlc_dir, config):
     """Factory: pick the backlog source from config.discovery.source (default 'local-goals')."""
     source = ((config.get("discovery") or {}).get("source")) or "local-goals"

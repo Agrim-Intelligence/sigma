@@ -1419,7 +1419,20 @@ def _run(cwd, argv):
         # `git add`/`commit` to a different index than the one `_staged_added_rows` scans, which reads
         # this worktree's own. Both must see the same repository: the one `cwd` names (#589).
         env = {k: v for k, v in os.environ.items() if k not in _GIT_LOCATION_ENV}
-    proc = subprocess.run([str(a) for a in argv], cwd=str(cwd), capture_output=True, text=True, env=env)
+    try:
+        proc = subprocess.run([str(a) for a in argv], cwd=str(cwd), capture_output=True, text=True, env=env)
+    except FileNotFoundError as exc:
+        # #1246: a MISSING PROGRAM (filename is the program) is a first-run condition with a fix;
+        # a vanished cwd (filename is the directory) stays the FileNotFoundError `finish`'s
+        # recovery and `gh_api` already expect.
+        if exc.filename is None or str(exc.filename) != str(argv[0]):
+            raise
+        tool = str(argv[0])
+        url = {"gh": "https://cli.github.com", "git": "https://git-scm.com/downloads"}.get(tool)
+        raise RuntimeError(f"`{tool}` is not on PATH -- install it"
+                           + (f" from {url}" if url else "")
+                           + (" and run `gh auth login`" if tool == "gh" else "")
+                           + ", then re-run this command") from exc
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout).strip()
         block = gh_session.proxy_session_block(detail)
@@ -2648,7 +2661,12 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None):
         # Fail-closed is right — a base that does not exist must never become a worktree — but git's
         # own "couldn't find remote ref X" names the ref and not where it CAME from, so an operator
         # whose config says `base: main` has nothing pointing back at the issue body. One clause.
-        raise RuntimeError(f"{exc} — base {base!r} came from {provenance}") from exc
+        fix = ""
+        if "couldn't find remote ref" in str(exc):
+            # #1246: preflight prints this fix at setup; print it where the user actually hits it.
+            fix = (f" -- if {base!r} should exist, publish it with `git push -u {s['remote']} {base}`; "
+                   "otherwise point `work.base` (or the goal's declared base) at a branch that does")
+        raise RuntimeError(f"{exc} — base {base!r} came from {provenance}{fix}") from exc
     reattached = False                      # #2009: initialised HERE, not only in the except -- an
                                             # un-taken except would otherwise NameError on the
                                             # guard below, on the fresh-cut path every pick uses.
@@ -7876,8 +7894,18 @@ def main(argv):
         sdlc_dir, goal = argv[2], argv[3]
         config = state.load_config(sdlc_dir)
         if not enabled(config):
-            print('work is off (config: "work": {"enabled": true})', file=sys.stderr)
+            # #1246: the key alone is not a fix. Name the command that sets it, and the manual edit.
+            print('work is off (config: "work": {"enabled": true}) -- run `/sigma-init --work on` to '
+                  'turn the branch-and-PR flow on (or set that key in .sdlc/config.json), then re-run '
+                  f'`work.py {argv[1]}`', file=sys.stderr)
             return 1
+        if argv[1] == "start" and not _record(sdlc_dir, goal):
+            # #1247: a goal that is not in the backlog must not get a worktree and a branch. A goal
+            # that already has a work record is a resume, whatever its file looks like now.
+            missing = _load("sources").local_goal_missing(sdlc_dir, config, goal)
+            if missing:
+                print(f"work: {missing}", file=sys.stderr)
+                return 2
         if argv[1] in ("commit", "pr", "post-review", "merge"):
             # #1902: these four verbs are a goal's own high-frequency, potentially long-running
             # activity — verify/commit/pr/post-review/merge, not just goal-pick time

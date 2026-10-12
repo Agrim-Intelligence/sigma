@@ -759,3 +759,11 @@ def test_scaffolded_config_carries_the_decision_rubric_block_closed():
         _generated(tmp, "--cursor")
         cfg = json.loads((pathlib.Path(tmp) / ".sdlc" / "config.json").read_text(encoding="utf-8"))
     assert cfg["decision_rubric"]["records"]["enabled"] is False
+
+
+def test_scaffolder_missing_target_directory_says_how_to_create_the_repository(tmp_path, capsys):
+    """#1246: the scaffolder shares init_flow's missing-target refusal and its fix."""
+    mod = _load()
+    assert mod.main(["sdlc_init.py", str(tmp_path / "nope")]) == 1
+    err = capsys.readouterr().err
+    assert "does not exist" in err and "git init" in err and "re-run /sigma-init" in err
