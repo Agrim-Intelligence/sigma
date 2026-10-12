@@ -222,7 +222,7 @@ def test_documented_branch_and_plugin_cache_steps_leave_nothing_behind(tmp_path)
     red = check()
     assert red.returncode == 1 and kinds(red) == {"local-branch", "installed-plugin"}, red.stdout
     # The guide's order: the list block first (it deletes nothing), then the delete block.
-    listing = [b for b in _doc_blocks() if "for-each-ref" in b and "git branch -D" not in b]
+    listing = [b for b in _doc_blocks() if "refs/heads/" in b and "git branch -D" not in b]
     assert len(listing) == 1, "the guide must give the list command in its own block"
     shown = run(["sh", "-c", listing[0]])
     assert shown.returncode == 0
@@ -273,3 +273,80 @@ _OLD_GUIDE = """\
    git config --local --unset core.hooksPath
    ```
 """
+
+
+def _scratch(tmp_path):
+    """A scratch repo plus a runner with global git config off and the profile pointed at scratch."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    env = {**_CLEAN_GIT_ENV, "CLAUDE_CONFIG_DIR": str(tmp_path / "profile"), "CODEX_HOME": str(tmp_path / "codex"),
+           "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull,
+           "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+
+    def run(cmd, timeout=60):
+        return subprocess.run(cmd, cwd=repo, env=env, text=True, capture_output=True, timeout=timeout)
+    assert run(["git", "init", "-q", "-b", "main"]).returncode == 0
+    assert run(["git", "commit", "-q", "--allow-empty", "-m", "i"]).returncode == 0
+    return repo, run
+
+
+def test_documented_stop_wait_sees_nested_pids_and_waits_for_them(tmp_path):
+    """Guide step 1: the block touches the stop files, then repeats the live-pid check (nested
+    `.sdlc/state/**.pid` too, as the final check does) until none prints. Run exactly as written."""
+    repo, run = _scratch(tmp_path)
+    nested = repo / ".sdlc" / "state" / "sub"
+    nested.mkdir(parents=True)
+    # A process that outlives the first check and is then reaped by init (no zombie for kill -0 to see).
+    pid = run(["sh", "-c", "sleep 2 >/dev/null 2>&1 & echo $!"]).stdout.strip()
+    (nested / "w.pid").write_text(pid)
+    block = _block_with(".stop")
+    assert "sleep 2\n" not in block      # the old one-shot wait is gone
+    done = run(["sh", "-c", block], timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert "still running: .sdlc/state/sub/w.pid" in done.stdout, done.stdout
+    for name in ("watch", "slack-commands", "supervisor"):
+        assert (repo / ".sdlc" / "state" / f"{name}.stop").is_file()
+    env = {"CLAUDE_CONFIG_DIR": str(tmp_path / "p"), "CODEX_HOME": str(tmp_path / "c")}
+    assert not [r for r in _mod().find_leftovers(repo, environ=env) if r["kind"] == "running-pid"]
+
+
+def test_documented_remote_branch_steps_clear_remote_tracking_rows(tmp_path):
+    """Guide steps 9 and 10: delete the remote Sigma branches, then `git fetch --prune`. Run as written
+    against a local bare remote. Each block alone leaves `remote-branch` rows."""
+    mod = _mod()
+    repo, run = _scratch(tmp_path)
+    bare = tmp_path / "remote.git"
+    assert run(["git", "init", "-q", "--bare", str(bare)]).returncode == 0
+    assert run(["git", "remote", "add", "origin", str(bare)]).returncode == 0
+    names = ("sdlc/goal-1", "feature/demo", mod.LEDGER_BRANCH)
+    for branch in (*names, "keep-me"):
+        assert run(["git", "branch", branch]).returncode == 0
+    assert run(["git", "push", "-q", "origin", *names, "keep-me"]).returncode == 0
+    assert run(["git", "fetch", "-q", "origin"]).returncode == 0
+    for branch in names:      # local branches are step 5's; only the remote rows are under test here
+        assert run(["git", "branch", "-q", "-D", branch]).returncode == 0
+    env = {"CLAUDE_CONFIG_DIR": str(tmp_path / "p"), "CODEX_HOME": str(tmp_path / "c")}
+    kinds = lambda: {r["kind"] for r in mod.find_leftovers(repo, environ=env)}
+    assert kinds() == {"remote-branch"}
+    push, prune = _block_with("push origin --delete"), _block_with("fetch --prune")
+    assert run(["sh", "-c", prune]).returncode == 0        # prune alone: the remote still has them
+    assert kinds() == {"remote-branch"}
+    assert run(["sh", "-c", push]).returncode == 0
+    assert kinds() == set()
+    remote = run(["git", "ls-remote", "--heads", "origin"]).stdout
+    assert "keep-me" in remote and "sdlc/goal-1" not in remote     # scoped: the other branch survives
+    # Step 10 is for a branch somebody else deleted on the remote: the tracking ref outlives it.
+    assert run(["git", "push", "-q", "origin", "main:refs/heads/sdlc/other"]).returncode == 0
+    assert run(["git", "fetch", "-q", "origin"]).returncode == 0
+    assert kinds() == {"remote-branch"}
+    assert run(["git", f"--git-dir={bare}", "branch", "-q", "-D", "sdlc/other"]).returncode == 0
+    assert kinds() == {"remote-branch"}                    # no prune yet: the stale ref is still a row
+    assert run(["sh", "-c", prune]).returncode == 0
+    assert kinds() == set()
+
+
+def test_guide_mentions_the_flags_the_checker_accepts():
+    text = (ROOT / "docs" / "uninstall.md").read_text(encoding="utf-8")
+    help_text = subprocess.run([sys.executable, str(SCRIPT), "--help"], text=True, capture_output=True).stdout
+    for flag in ("--json", "--github"):
+        assert flag in help_text and flag in text

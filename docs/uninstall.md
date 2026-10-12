@@ -6,11 +6,17 @@ residue and exits 1 until nothing remains.
 1. Stop local daemons, then wait and confirm no recorded PID is still alive:
    ```sh
    touch .sdlc/state/watch.stop .sdlc/state/slack-commands.stop .sdlc/state/supervisor.stop
-   sleep 2
-   for f in .sdlc/state/*.pid; do [ -e "$f" ] || continue; pid=$(cat "$f")
-     kill -0 "$pid" 2>/dev/null && printf 'still running: %s (%s)\n' "$f" "$pid"
+   while :; do
+     live=$(find .sdlc/state -name '*.pid' | while read -r f; do pid=$(cat "$f")
+       kill -0 "$pid" 2>/dev/null && printf 'still running: %s (%s)\n' "$f" "$pid"; done)
+     [ -z "$live" ] && break
+     printf '%s\n' "$live"; sleep 5
    done
    ```
+   The watcher looks at its stop file once per tick and then sleeps the whole interval in one call
+   (900 seconds unless you changed it), and the supervisor looks only between runs, so this loop can
+   take that long to finish. Do not kill the processes to hurry it; press Ctrl-C to stop waiting and
+   come back to it. It looks in subdirectories of `.sdlc/state` too, as the final check does.
 2. Uninstall the plugin: `claude plugin uninstall sigmaloop@sigmaloop`; add `--scope project` for a
    project installation. An install made before the plugin was renamed sits under the previous id: follow
    [From the pre-launch name](upgrading.md#from-the-pre-launch-name) instead. Codex's plugin removal command must be verified with `codex plugin --help`
@@ -64,8 +70,18 @@ residue and exits 1 until nothing remains.
    git config --local --unset core.hooksPath
    ```
    Leave any other value alone; it is yours (husky and similar tools set one).
-9. Optionally delete the remote `sdlc-ledger` branch, `sdlc:*` labels, and linked board. These
-   GitHub actions are irreversible.
+9. Optionally delete the remote `sdlc/*`, `feature/*` and `sdlc-ledger` branches, the `sdlc:*` labels, and
+   the linked board. These GitHub actions are irreversible; the final check lists the remote branches as
+   `remote-branch` rows until you do. Replace `origin` with your remote's name if it differs. Branches:
+   ```sh
+   git for-each-ref --format='%(refname:short)' refs/remotes/origin/sdlc/ refs/remotes/origin/feature/ refs/remotes/origin/sdlc-ledger |
+     while read -r b; do git push origin --delete "${b#origin/}"; done
+   ```
+10. Drop the local remote-tracking copies of those branches, whether you deleted them in step 9 or
+   someone else did:
+   ```sh
+   git fetch --prune origin
+   ```
 
 Finally run:
 
@@ -73,4 +89,7 @@ Finally run:
 python3 tools/readiness/leftovers.py .
 ```
 
-It exits 0 only when the checked local residue is gone.
+It exits 0 only when the checked local residue is gone. `--json` prints the rows as JSON, and
+`--github OWNER/REPO` also lists the repository's `sdlc:*` labels and linked boards (read-only).
+Besides the repository, the checker looks under `~/.claude` and `~/.codex` (or `CLAUDE_CONFIG_DIR` and
+`CODEX_HOME`) for any `sigmaloop` or `sigma` directory and reports remote-tracking branches too.
