@@ -107,6 +107,13 @@ EXIT_APPROVED, EXIT_DENIED, EXIT_OFF = 0, 3, 4
 HONOURED_CLASSES = ("spend",)
 #: Per-machine use counter, in the gitignored state directory; survives a deleted audit comment.
 COUNTER_FILE = "spend-approval-used.json"
+#: Cap (#1263). At most MAX_USED full entries (about 80 B each); older ones are folded into 16-hex hash
+#: tombstones under TOMB_KEY (about 21 B each, at most MAX_TOMBSTONES), and a tombstoned key STILL refuses
+#: reuse, so eviction never re-arms a label. Ceiling about 0.2 MB of full entries plus 1.1 MB of tombstones.
+#: Only a tombstone past MAX_TOMBSTONES is forgotten; the issue-side used-marker is then the sole record.
+MAX_USED = 2000
+MAX_TOMBSTONES = 50000
+TOMB_KEY = "__tombstones__"      # has no ":", so it can never equal a "<goal>:<label>" key
 
 
 def parse_marker(body, full=False):
@@ -182,6 +189,31 @@ def _counter_write(sdlc_dir, data):
     tmp = p.with_name(p.name + ".%d.tmp" % os.getpid())
     tmp.write_text(json.dumps(data, sort_keys=True), encoding="utf-8")
     os.replace(tmp, p)
+
+
+def _tomb(key):
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()[:16]
+
+
+def _counter_used(counter, key):
+    tombs = counter.get(TOMB_KEY)
+    return key in counter or (isinstance(tombs, list) and _tomb(key) in tombs)
+
+
+def _counter_add(counter, key, entry):
+    """Record `key`, then fold the oldest full entries beyond MAX_USED into tombstones (never forgetting one
+    until MAX_TOMBSTONES is exceeded)."""
+    counter[key] = entry
+    full = [k for k in counter if k != TOMB_KEY]
+    if len(full) > MAX_USED:
+        full.sort(key=lambda k: (str((counter[k] or {}).get("at", "")) if isinstance(counter[k], dict) else "", k))
+        tombs = counter.get(TOMB_KEY)
+        tombs = list(tombs) if isinstance(tombs, list) else []
+        for k in full[:len(full) - MAX_USED]:
+            tombs.append(_tomb(k))
+            del counter[k]
+        counter[TOMB_KEY] = tombs[-MAX_TOMBSTONES:]
+    return counter
 
 
 def _used_count(comments, label):
@@ -276,7 +308,7 @@ def _check(sdlc_dir, goal, action, config, source, hardstop_class=None):
         return (f"DENIED the action text does not match the digest bound to marker {label!r} "
                 "-- the permission was written for a different step")
     key = f"{goal}:{label}"
-    if key in _counter_read(sdlc_dir):
+    if _counter_used(_counter_read(sdlc_dir), key):
         return (f"DENIED marker {label!r} was already used for this goal (single use, recorded "
                 "locally) -- write a new label to authorise again")
     if _used_count(source.fetch_comment_bodies(goal), label):
@@ -301,8 +333,7 @@ def _check(sdlc_dir, goal, action, config, source, hardstop_class=None):
 
     try:
         counter = _counter_read(sdlc_dir)
-        counter[key] = {"at": stamp, "class": hardstop_class or "spend"}
-        _counter_write(sdlc_dir, counter)
+        _counter_write(sdlc_dir, _counter_add(counter, key, {"at": stamp, "class": hardstop_class or "spend"}))
     except Exception as exc:                                      # noqa: BLE001
         return (f"DENIED the use counter could not be recorded ({type(exc).__name__}) -- no "
                 "grant without a durable single-use record")
