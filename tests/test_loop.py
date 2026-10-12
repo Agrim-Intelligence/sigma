@@ -1705,21 +1705,37 @@ def test_ensure_ledger_delivery_warns_on_a_deferred_publish(capsys):
 
 
 def test_ensure_ledger_delivery_warns_when_nothing_to_publish_still_leaves_a_real_backlog(capsys):
-    """Plan-review finding 1: `publish()`'s own "nothing to publish" means nothing NEW to stage
-    this call, not nothing outstanding -- an earlier commit that failed to push is invisible to
-    that string alone, so this re-measures the real backlog rather than trusting it."""
+    """Plan-review finding 1: `publish()`'s own "nothing to publish" is not "nothing outstanding",
+    so this re-measures the real backlog rather than trusting the string. The real `publish()`,
+    no stub: two entries written under an older actor name are pending lines this actor's
+    publish never stages, so it truthfully has nothing to publish while the backlog stays."""
+    with tempfile.TemporaryDirectory() as d:
+        lp, sync, base, config = _real_ledger_clone(d)
+        renamed = {"ledger": {"enabled": True, "actor": "oldname"}}
+        lp.ledger.append(base, renamed, "note", "g.md", why="one")
+        lp.ledger.append(base, renamed, "note", "g.md", why="two")
+        lp._ensure_ledger_delivery(base, config, threshold=1)
+        err = capsys.readouterr().err
+        assert "ledger backlog is 2 entries" in err, err
+        assert "another actor name" in err, err
+        assert "/sigma-doctor" in err, err
+
+
+def test_ensure_ledger_delivery_delivers_a_stranded_commit_without_a_word(capsys):
+    """#1210 at the loop's level: a commit an earlier failed push left behind is pushed by the
+    real `publish()` even though nothing new is staged. Before #1210 publish said "nothing to
+    publish" here, so this warned once per cooldown window while the commit stayed local."""
     with tempfile.TemporaryDirectory() as d:
         lp, sync, base, config = _real_ledger_clone(d)
         lp.ledger.append(base, config, "note", "g.md", why="one")
         lp.ledger.append(base, config, "note", "g.md", why="two")
         wt = sync.worktree(base)
+        sync._write_team(base, wt)
         _git(wt, "add", "-A")
         _git(wt, "commit", "-q", "-m", "ledger: local only")     # committed, never pushed
-        lp._ensure_ledger_delivery(base, config, threshold=1,
-                                   publish_fn=lambda *a, **k: "nothing to publish")
-        err = capsys.readouterr().err
-        assert "ledger backlog is 2 entries" in err, err
-        assert "/sigma-doctor" in err, err
+        lp._ensure_ledger_delivery(base, config, threshold=1)
+        assert capsys.readouterr().err == ""
+        assert sync.pending_entry_count(base, config) == 0
 
 
 def test_ensure_ledger_delivery_is_silent_when_nothing_to_publish_and_the_backlog_is_actually_clear(monkeypatch, capsys):

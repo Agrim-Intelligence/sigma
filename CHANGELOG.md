@@ -4,6 +4,30 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The ledger retries a failed push on the next tick, not on the next entry (#1210).**
+  - **What was wrong.** When a push failed, `sync.py publish` kept the commit locally. Every later tick then
+    reported `nothing to publish` until some new entry was staged, so the "will retry next tick" it had
+    printed was false.
+  - **What publish does now.** For an actor that owns an entries file, it pushes whenever the ledger
+    branch is ahead of its remote-tracking ref. It also pushes when that ref is absent on a configured
+    remote name, which happens when the first push after a bootstrap failed.
+  - **What has not changed.**
+    - A caught-up clone still makes no push or fetch.
+    - A clone with no remote configured, or with a path or URL where a remote name belongs, keeps today's
+      behaviour: it pushes only alongside a new commit, because no tracking ref can ever exist there.
+  - **The cost.** While a commit stays stranded, every idle tick now does work it previously skipped while
+    falsely reporting `nothing to publish`:
+    - against a server that rejects every push: 5 pushes, 4 fetches and 4 rebases (the bound
+      `PUSH_ATTEMPTS` already set for ticks with a new entry);
+    - against an unreachable remote: 1 push attempt and 1 fetch attempt;
+    - against a remote branch that was deleted and recreated with unrelated history: 1 push and 1 fetch,
+      and the tick now says `publish refused: … shares no history`.
+  - **Other fixes in this change.**
+    - A failing `git add` or `git diff --cached` (a held `index.lock`, say) now returns `publish deferred: …`
+      instead of raising, as the commit already did (#2449).
+    - Two existing hints are now true: `/sigma-doctor`'s "`sync.py publish .sdlc` publishes now", and a
+      hand-typed write's "`sync.py publish .sdlc` will retry it".
+
 ## 1.0.11 — 2026-10-12 — an owner's "no" reply vetoes an auto-applied answer, copyright holder, and a Python 3.10 diagnose fix
 
 - **The public export's own suite and gates pass on the exported tree (#1203).** The default export left out `.sdlc/` but shipped tests and inventories that read it: 8 tests failed on every platform, `write_surface.py check` and `exposure_scan.py tracked` exited 1, so a fresh public repository's CI would have been red on day one. The builder now rewrites a few exported files itself (`export_transforms`, listed in the report under `export.transforms`): stale rows leave the shipped write-surface inventory and exposure allowlist, and five tests carry an explicit skip in the exported copy only. The source holds no switch (a first design with a marker file was forgeable and was dropped): the skip set is pinned in `tests/test_export_transforms.py`, and a hand-written marker changes nothing in the private tree. Measured and not measured: see the PR body.

@@ -488,6 +488,173 @@ def test_bootstrap_does_not_crash_when_the_underlying_commit_is_rejected(tmp_pat
     assert "publish deferred" in result
 
 
+# --------------------------------------------------------------------- #1210: a stranded commit
+# A push that failed leaves a local commit. Until #1210 `publish()` returned "nothing to publish"
+# whenever it had nothing NEW to stage, so that commit waited for the next entry while every tick
+# said "will retry next tick". Except in the end-to-end reproduction (the first test below), each
+# stranded state is built BY HAND (`_strand`), never through a publish call: a publish that
+# commits takes the unchanged "this call committed" path, so a setup built that way never reaches
+# the clause it claims to test -- measured in #1210's plan review, where such a test passed on
+# the old code.
+
+
+def _spy(log):
+    """A `run=` that records each git verb, then runs it for real."""
+    def run(cwd, args):
+        log.append(args[0])
+        return sync._run_git(cwd, args)
+    return run
+
+
+def _strand(base, why):
+    """Leave a note as a local commit no push has carried -- what a failed push leaves behind.
+    TEAM.md is regenerated with the function `publish()` itself calls, so the retry finds nothing
+    of its own to stage."""
+    _note(base, why=why)
+    wt = sync.worktree(base)
+    sync._write_team(base, wt)
+    _git(wt, "add", "-A")
+    _git(wt, "commit", "-q", "-m", "ledger: dana")
+
+
+def _retry(base, config=ON):
+    """One publish with nothing new to stage. It must not commit before it pushes: a setup that
+    drifted back onto the committed path would otherwise pass without touching the retry rule."""
+    calls = []
+    out = sync.publish(base, config, run=_spy(calls))
+    before_push = calls[:calls.index("push")] if "push" in calls else calls
+    assert "commit" not in before_push, calls
+    return out, calls
+
+
+def _ahead_of_origin(base):
+    return int(_git(sync.worktree(base), "rev-list", "--count",
+                    f"{sync.remote(ON)}/{sync.branch(ON)}..HEAD"))
+
+
+def _origin_has(origin, text):
+    """Whether any entries file on the origin's ops branch carries `text`."""
+    return subprocess.run(["git", "-C", str(origin), "grep", "-q", "-F", text, sync.branch(ON),
+                           "--", ledger.ENTRIES], capture_output=True).returncode == 0
+
+
+def _teammate(tmp_path, origin, actor):
+    """A second clone of the same bare origin, built with the `clone` fixture's own recipe (a
+    `git clone` of an origin with no `main` leaves an unborn HEAD)."""
+    repo = tmp_path / f"repo-{actor}"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", actor)
+    _git(repo, "config", "commit.gpgsign", "false")
+    _git(repo, "remote", "add", "origin", str(origin))
+    (repo / ".gitignore").write_text(".sdlc/\n", encoding="utf-8")
+    _git(repo, "add", "--", ".gitignore")
+    _git(repo, "commit", "-q", "-m", "base")
+    config = {"ledger": {"enabled": True, "actor": actor}}
+    return _sdlc(repo, config), config
+
+
+def test_a_push_that_failed_once_is_retried_by_the_next_publish_with_no_new_entry(clone, tmp_path):
+    """#1210 end to end, as the field hits it: a push fails once, a teammate publishes meanwhile,
+    and the next publish -- the watcher's next tick -- writes nothing new. Before #1210 it said
+    "nothing to publish" and the commit stayed local until a later entry happened to carry it."""
+    _repo, base = clone
+    origin = tmp_path / "origin.git"
+    _bootstrap(base)
+    eli, eli_config = _teammate(tmp_path, origin, "eli")
+    assert sync.bootstrap(eli, eli_config).endswith("published")
+    _note(base, why="stranded by a blip")
+
+    def blip(cwd, args):
+        if args[0] == "push":
+            raise RuntimeError("git push: simulated network blip")
+        return sync._run_git(cwd, args)
+
+    first = sync.publish(base, ON, run=blip, attempts=1)
+    assert first.startswith("publish deferred (will retry next tick): "), first
+    assert _ahead_of_origin(base) == 1
+    ledger.append(eli, eli_config, "note", "g.md", why="meanwhile on eli")
+    assert sync.publish(eli, eli_config) == "published"      # origin moves on under the stranded commit
+    out, calls = _retry(base)
+    assert out == "published", out
+    assert "rebase" in calls, calls                          # the contention path really ran
+    assert _ahead_of_origin(base) == 0
+    assert _origin_has(origin, "stranded by a blip") and _origin_has(origin, "meanwhile on eli")
+
+
+def test_a_publish_with_nothing_ahead_makes_no_network_call(clone):
+    """The control on the other side: a caught-up clone's tick stays a local no-op. Pushing
+    whenever nothing was staged would turn every idle tick of every clone into a round-trip."""
+    _repo, base = clone
+    _bootstrap(base)
+    calls = []
+    assert sync.publish(base, ON, run=_spy(calls)) == "nothing to publish"
+    assert not {"push", "fetch", "ls-remote"} & set(calls), calls
+
+
+def test_a_stranded_commit_ahead_of_the_tracking_ref_is_pushed_with_no_new_entry(clone, tmp_path):
+    """The `ahead > 0` clause of `_stranded`."""
+    _repo, base = clone
+    _bootstrap(base)
+    _strand(base, "left behind")
+    assert _ahead_of_origin(base) == 1
+    out, _calls = _retry(base)
+    assert out == "published", out
+    assert _ahead_of_origin(base) == 0
+    assert _origin_has(tmp_path / "origin.git", "left behind")
+
+
+def test_a_first_push_that_failed_is_retried_though_no_tracking_ref_exists_yet(clone, tmp_path):
+    """The absent-ref clause for a configured remote NAME: this clone's first push never landed, so
+    no fetch or push has ever written `refs/remotes/origin/sdlc-ledger` -- and "no ref" has to read
+    as "push", or a bootstrap whose push hit a blip never publishes until a later entry."""
+    _repo, base = clone
+    sync.init(base, ON)                         # the origin has no ops branch yet
+    _strand(base, "first words")
+    tracking = f"refs/remotes/{sync.remote(ON)}/{sync.branch(ON)}"
+    assert subprocess.run(["git", "-C", str(sync.worktree(base)), "rev-parse", "--verify", "-q",
+                           tracking], capture_output=True).returncode != 0
+    out, _calls = _retry(base)
+    assert out == "published", out
+    assert _origin_has(tmp_path / "origin.git", "first words")
+
+
+@pytest.mark.parametrize("shape", ["no remote configured", "a path, not a remote name"])
+def test_an_idle_clone_whose_tracking_ref_can_never_exist_does_not_push(clone, tmp_path, shape):
+    """The absent-ref clause's other side. With no remote configured, or a path where a remote name
+    belongs (a worktree made before #1142, which `init` never re-checks), no tracking ref can ever
+    be written, so "no ref" carries no information -- reading it as "push" would push on every tick,
+    forever (#1210 plan review, B1)."""
+    repo, base = clone
+    config = ON
+    if shape == "no remote configured":
+        _git(repo, "remote", "remove", "origin")
+        assert "publish deferred" in sync.bootstrap(base, ON)
+    else:
+        _bootstrap(base)
+        config = {"ledger": {**ON["ledger"], "remote": str(tmp_path / "origin.git")}}
+    calls = []
+    assert sync.publish(base, config, run=_spy(calls)) == "nothing to publish"
+    assert "push" not in calls, calls
+
+
+def test_a_git_add_that_fails_returns_a_status_instead_of_raising(clone):
+    """#2449's contract -- always a status string, never a raise -- covered the commit only; `git
+    add` (a held index.lock, say) escaped as a RuntimeError until #1210 moved staging inside it."""
+    _repo, base = clone
+    _bootstrap(base)
+    _note(base)
+
+    def add_locked(cwd, args):
+        if args[0] == "add":
+            raise RuntimeError("git add: fatal: Unable to create 'index.lock': File exists.")
+        return sync._run_git(cwd, args)
+
+    result = sync.publish(base, ON, run=add_locked)             # must not raise
+    assert result.startswith("publish deferred: ") and "index.lock" in result, result
+
+
 def test_an_off_ledger_says_nothing_at_all(tmp_path):
     off = {"ledger": {"enabled": False}}
     assert sync.publish_after_write(_sdlc(tmp_path, off), off) is None
