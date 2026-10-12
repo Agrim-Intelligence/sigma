@@ -15,7 +15,7 @@ Base commit: `640763007037` (the guide before this change). Platform: macOS, one
 ## Reproduction (before)
 
 The pre-change guide has no `sh` block containing `git branch -D` or `plugins/cache`
-(`test_pre_change_guide_had_no_branch_or_cache_block`, which reads the guide from `64076300:docs/uninstall.md`).
+(`test_pre_change_guide_had_no_branch_or_cache_block`, which checks a literal copy of the old guide's blocks held in the test, so it cannot skip in a shallow clone). Step 5 gives the list command in its own block, with the instruction to read the list before deleting; the test runs the list block, then the delete block, then the cache block, in the guide's order.
 So the documented gesture cannot clear those rows; the earlier evidence page shows the same with a
 full adoption (exit 1, three rows left after steps 1 to 6).
 

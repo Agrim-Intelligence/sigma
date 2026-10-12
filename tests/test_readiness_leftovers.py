@@ -221,7 +221,14 @@ def test_documented_branch_and_plugin_cache_steps_leave_nothing_behind(tmp_path)
     check = lambda: run([sys.executable, str(SCRIPT), str(repo)])
     red = check()
     assert red.returncode == 1 and kinds(red) == {"local-branch", "installed-plugin"}, red.stdout
-    # Control: each block alone leaves the other's residue.
+    # The guide's order: the list block first (it deletes nothing), then the delete block.
+    listing = [b for b in _doc_blocks() if "for-each-ref" in b and "git branch -D" not in b]
+    assert len(listing) == 1, "the guide must give the list command in its own block"
+    shown = run(["sh", "-c", listing[0]])
+    assert shown.returncode == 0
+    assert set(shown.stdout.split()) == {"sdlc/goal-1", "feature/demo", mod.LEDGER_BRANCH}, shown.stdout
+    still = check()     # control: listing alone removes nothing, so dropping the delete block stays red
+    assert still.returncode == 1 and kinds(still) == {"local-branch", "installed-plugin"}, still.stdout
     assert run(["sh", "-c", _block_with("git branch -D")]).returncode == 0
     mid = check()
     assert mid.returncode == 1 and kinds(mid) == {"installed-plugin"}, mid.stdout
@@ -235,10 +242,34 @@ def test_documented_branch_and_plugin_cache_steps_leave_nothing_behind(tmp_path)
 def test_pre_change_guide_had_no_branch_or_cache_block():
     """Red control for the test above: the guide as it stood before the change had neither block, so
     the gesture the old doc gave cannot reach exit 0 on a repo that holds those residues."""
-    old = subprocess.run(["git", "show", "64076300:docs/uninstall.md"], cwd=ROOT, text=True,
-                         capture_output=True, env=_CLEAN_GIT_ENV)
-    if old.returncode != 0:      # a clone without that commit: nothing to compare against
-        pytest.skip("pre-change guide not available")
     for needle in ("git branch -D", "plugins/cache"):
         with pytest.raises(AssertionError):
-            _block_with(needle, old.stdout)
+            _block_with(needle, _OLD_GUIDE)
+    # The fixture is a real guide, not an empty string: it still has the blocks it did have.
+    assert any("rm -rf .sdlc" in b for b in _doc_blocks(_OLD_GUIDE))
+
+
+#: The sh blocks of docs/uninstall.md as it stood at 64076300, kept as a literal so the control cannot
+#: skip in a shallow clone (CI fetches no history). Only the fenced blocks matter to the control.
+_OLD_GUIDE = """\
+1. Stop local daemons:
+   ```sh
+   touch .sdlc/state/watch.stop .sdlc/state/slack-commands.stop .sdlc/state/supervisor.stop
+   sleep 2
+   ```
+4. Remove `.sdlc/`:
+   ```sh
+   rm -rf .sdlc
+   ```
+5. Remove the two init-owned Cursor rules if present:
+   ```sh
+   rm -f .cursor/rules/sdlc.mdc .cursor/rules/output-contract.mdc
+   ```
+6. Check the repository's git hook setting:
+   ```sh
+   git config --local --get core.hooksPath
+   ```
+   ```sh
+   git config --local --unset core.hooksPath
+   ```
+"""

@@ -25,13 +25,17 @@ residue and exits 1 until nothing remains.
    `sdlc-ledger` branch. List them first and read the list: `git branch -D` discards commits that were
    never merged or pushed, and the list can include a `feature/*` branch of your own. Step 3 already
    removed the worktrees that held them, because git refuses to delete a branch that is checked out
-   in one.
+   in one. First list them:
    ```sh
    git for-each-ref --format='%(refname:short)' refs/heads/sdlc/ refs/heads/feature/ refs/heads/sdlc-ledger
+   ```
+   Read this list; run the delete only for what you mean to lose. If every branch on it is Sigma's,
+   delete them all with:
+   ```sh
    git for-each-ref --format='%(refname:short)' refs/heads/sdlc/ refs/heads/feature/ refs/heads/sdlc-ledger |
      while read -r b; do git branch -D "$b"; done
    ```
-   The remote copies are step 9's.
+   If one is yours, run `git branch -D <name>` for each of the others instead. The remote copies are step 9's.
 6. Remove the plugin cache. `claude plugin uninstall` leaves the plugin's directory under the Claude
    profile (`leftovers.py` reports it as two `installed-plugin` rows, the directory and its child). The
    cache is shared by every repository on this machine that uses the plugin, so skip this step while
