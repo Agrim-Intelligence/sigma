@@ -187,6 +187,30 @@ def unattended_env(base=None):
 
 # ------------------------------------------------------------------------------------------ the group
 
+def _live_member(pgid):
+    """Is any member of the group still alive, not just a zombie? `killpg(pgid, 0)` also succeeds while the only
+    members left are zombies nobody has reaped yet (an orphan reparented to a process that reaps late, or never),
+    which made `_stop_group` wait out the whole grace and report a KILL it did not need (#1242). Linux has /proc to
+    tell them apart; where it is missing, or on any doubt, the answer is yes, as before."""
+    try:
+        names = os.listdir("/proc")
+    except OSError:
+        return True
+    for name in names:
+        if not name.isdigit():
+            continue
+        try:
+            with open("/proc/%s/stat" % name) as f:
+                fields = f.read().rsplit(")", 1)[1].split()
+            if int(fields[2]) == pgid and fields[0] != "Z":
+                return True
+        except (FileNotFoundError, ProcessLookupError):      # exited while we looked: not alive
+            continue
+        except (OSError, ValueError, IndexError):
+            return True
+    return False
+
+
 def _group_alive(pgid):
     try:
         os.killpg(pgid, 0)
@@ -194,7 +218,7 @@ def _group_alive(pgid):
         return False
     except PermissionError:          # on darwin: the only member left is an unreaped zombie leader
         return True
-    return True
+    return _live_member(pgid)
 
 
 def _signal_group(pgid, signum):
