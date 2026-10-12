@@ -29,6 +29,8 @@ developer's heavily agent-driven machine (macOS unless noted), not an adopter fl
 | `STATE.md` | 340 KB (M) | flat (S) | flat (S) | 4,096 attempts cap | b6-singletons-and-home |
 | Slack listener and supervisor logs (per event line, about 100 B) | capped | capped | capped at 4 MiB per log (3 predecessors) (S); the retention window shrinks to about 40,000 lines | the `launchd` file Sigma does not own is uncapped and linear (S) | b6-slack-supervisor-logs |
 
+| Human-rate stores, capped in #1262, #1263, #1264, #1267: PRD intake files, spend-approval counter, unit approvals, reconcile proposals (per human action) | count capped in code: intake 50 finished pairs, spend 2,000 full entries, reconcile 20 proposals (S, tested) | same ceilings | same ceilings | none serialised; spend file is rewritten whole per grant, at most about 1.3 MB (C from 2,000 x 80 B and 50,000 x 21 B tombstones); unit approvals and reconcile proposals are also bounded by age (30 days) and so grow with the action rate inside that window | b6-late-stores |
+
 ## Re-measured here
 
 `sigma-log slots` at 85 / 850 / 8,500 goals: 0.037 / 0.128 / 1.071 s (M). Claims sweep dry run at
