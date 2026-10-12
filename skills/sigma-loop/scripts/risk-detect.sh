@@ -30,16 +30,18 @@
 # jq-free, bash-3.2-safe, zero-dep.
 
 USAGE="usage: risk-detect.sh [--base <ref>]   (no args: scans the uncommitted change; --base also scans <ref>...HEAD)"
-BASE_REF=""
+BASE_REF=""; BASE_SET=0
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) echo "$USAGE"; exit 0 ;;
-    --base=*) BASE_REF="${1#--base=}" ;;
-    --base) shift; [ $# -gt 0 ] || { echo "risk-detect: --base needs a ref. $USAGE" >&2; exit 2; }; BASE_REF="$1" ;;
+    --base=*) BASE_REF="${1#--base=}"; BASE_SET=1 ;;
+    --base) shift; [ $# -gt 0 ] || { echo "risk-detect: --base needs a ref. $USAGE" >&2; exit 2; }; BASE_REF="$1"; BASE_SET=1 ;;
     *) ;;   # any other argument was always ignored; keep it that way (the default invocation is unchanged)
   esac
   shift
 done
+# An EMPTY ref (an unset shell variable) must not read as "no --base": that is the empty-means-cleared trap.
+[ "$BASE_SET" -eq 0 ] || [ -n "$BASE_REF" ] || { echo "risk-detect: --base needs a non-empty ref. $USAGE" >&2; exit 2; }
 case "$BASE_REF" in -*) echo "risk-detect: --base ref may not start with '-'. $USAGE" >&2; exit 2 ;; esac
 set -uo pipefail
 # Pin the locale ONCE, here, in the unforked main shell, and never assign a locale variable again —

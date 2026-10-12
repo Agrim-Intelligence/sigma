@@ -504,6 +504,37 @@ def test_base_without_a_value_is_refused(tmp_path):
     assert p.returncode == 2 and p.stdout == "" and "--base" in p.stderr, p
 
 
+def _raw(repo, *args):
+    return subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True,
+                          env={**os.environ, "CLAUDE_PROJECT_DIR": str(repo)})
+
+
+def test_base_with_an_empty_value_is_refused(tmp_path):
+    # an unset variable (`--base "$BASE"`) must not silently become an uncommitted-only scan
+    repo = _committed_branch(tmp_path)
+    for args in (("--base", ""), ("--base=",)):
+        p = _raw(repo, *args)
+        assert p.returncode == 2 and p.stdout == "" and "non-empty" in p.stderr, (args, p)
+
+
+def test_base_ref_with_unrelated_history_warns_not_silent(tmp_path):
+    # the merge-base clause: an orphan branch resolves as a commit but shares no history with HEAD
+    repo = _committed_branch(tmp_path)
+    _git(repo, "checkout", "-q", "--orphan", "island")
+    (repo / "other.txt").write_text("x\n")
+    _commit(repo, "unrelated root")
+    _git(repo, "checkout", "-q", "feature")
+    p = _raw(repo, "--base", "island")
+    assert p.returncode == 0 and json.loads(p.stdout)["schema"] == "risk-detect/v1", p
+    assert "NOT a clearance" in p.stderr, p.stderr
+
+
+def test_dash_ref_is_refused_before_any_git_call(tmp_path):
+    repo = _committed_branch(tmp_path)
+    p = _raw(repo, "--base", "--stat")
+    assert p.returncode == 2 and p.stdout == "" and "may not start with" in p.stderr, p
+
+
 def test_review_skill_names_the_base_flag():
     review = (SCRIPT.parent.parent.parent / "sigma-review" / "SKILL.md").read_text(encoding="utf-8")
     assert "risk-detect.sh" in review and "--base" in review
