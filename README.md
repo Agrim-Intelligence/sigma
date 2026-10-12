@@ -389,3 +389,6 @@ documented in [docs/privacy.md](docs/privacy.md). To remove it from a repository
 
 MIT: see [LICENSE](LICENSE). If this checkout carries a `NOTICE` file, it lists any path under a
 different licence. The companion plugins have their own licences.
+
+Claude Code and Claude are trademarks of their respective owners, as are Codex, Cursor and GitHub. Sigma Loop is an
+independent project and is not affiliated with, endorsed by or sponsored by them.

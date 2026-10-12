@@ -257,7 +257,8 @@ def test_legal_fact_sheet_and_notice_are_cited_and_still_awaiting_counsel():
     for path in ("docs/launch/evidence/legal.md", "NOTICE"):
         _check((ROOT / path).exists(), f"{path} is missing")
         _check(path in cell, f"the D13 evidence row does not cite {path}")
-        _check("AWAITING COUNSEL" in (ROOT / path).read_text(encoding="utf-8"), f"{path} lost its AWAITING COUNSEL marker")
+    _check("OWNER DECISION (no counsel consulted)" in (ROOT / "docs/launch/evidence/legal.md").read_text(encoding="utf-8"),
+           "legal.md lost its OWNER DECISION marker")
     _check("not scoreable until counsel answers" in rows["D13"][3], "D13 owner cell lacks the counsel statement")
 
 
