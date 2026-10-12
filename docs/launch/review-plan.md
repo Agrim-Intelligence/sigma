@@ -200,7 +200,7 @@ quotes the earlier rule or figures, it is history and these decisions govern.
 ## Facts as of 2026-10-03
 
 Measured on 2026-10-03 against main at `4c8562f`, over REST. The state of every issue this plan cites
-was read with `python3 tools/readiness/baseline.py status . --issues <list> --repo Agrim-Intelligence/sigma --json`,
+was read with `python3 tools/readiness/baseline.py status . --issues <list> --repo OWNER/NAME --json`,
 and the counts with `gh api`, not from the older plan.
 
 | Fact | State |
@@ -245,10 +245,10 @@ Source: the plan review of 2026-09-29 (findings 4, 8, 9, 14, 15, 19 and 22), wri
 ## Pointing #307 at this page
 
 Once this page is on main, #307's body gets one prepended line, written with REST and a file so the body
-is not mangled: `gh api -X PATCH repos/Agrim-Intelligence/sigma/issues/307 -F body=@<file>`
+is not mangled: `gh api -X PATCH repos/OWNER/NAME/issues/307 -F body=@<file>`
 (`-F`, not `-f`, because only `-F` reads the file). The line is
 `Superseded plan: the executable plan is docs/launch/review-plan.md; the text below is kept for history.`
-Verify with `gh api repos/Agrim-Intelligence/sigma/issues/307 --jq '.body | split("\n")[0]'`, and compare the
+Verify with `gh api repos/OWNER/NAME/issues/307 --jq '.body | split("\n")[0]'`, and compare the
 rest of the body with the copy read before the write.
 
 ## How to change this page

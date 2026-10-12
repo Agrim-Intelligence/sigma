@@ -84,7 +84,7 @@ they write no breaker or log, and the injected `run` is also the fallback runner
 each such call costs REST plus one fallback and a stderr line. Cost per read is one REST request (plus
 comment pages for `unpark`), the same count as one GraphQL view; not measured at scale.
 
-Live read on 2026-10-10: `gh api repos/Agrim-Intelligence/sigma/issues/928` returned `state: closed`,
+Live read on 2026-10-10: `gh api repos/OWNER/NAME/issues/928` returned `state: closed`,
 `state_reason: null`, `pull_request.merged_at: 2026-10-09T17:46:12Z`, which is the shape the MERGED
 mapping keys on. Unmeasured: a real cloud session; bot-author spelling beyond the single public sample
 (promote reads `author`); call counts at scale; comment-heavy `unpark` latency; an old closed issue whose
@@ -511,7 +511,7 @@ OVER-report "enforces", the same blind spot classic `enforce_admins: false` has;
 deployments / workflows / signatures / thread resolution, and more than 100 rules (`per_page=100`, no paging; an
 overflowing requirement is missed, which UNDERCOUNTS, the safe direction).
 
-MEASURED locally 2026-10-11 against Agrim-Intelligence/sigma: `GET repos/Agrim-Intelligence/sigma` returns
+MEASURED locally 2026-10-11 against OWNER/NAME: `GET repos/OWNER/NAME` returns
 `permissions` admin/maintain/push/triage/pull; `rules/branches/main` returns a `pull_request` rule
 (`required_approving_review_count` 1) and a `required_status_checks` rule (context `test`); classic protection is a
 404; both `sdlc%2F895` and `sdlc/895` are accepted by `rules/branches/`.

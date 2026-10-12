@@ -11,7 +11,7 @@
     "always_failing": [],
     "context": {
       "python": "3.12",
-      "run_url": "https://github.com/Agrim-Intelligence/sigma/actions/runs/37187467571",
+      "run_url": "https://github.com/OWNER/NAME/actions/runs/37187467571",
       "runner": "ubuntu-latest"
     },
     "duplicate_node_ids": [],

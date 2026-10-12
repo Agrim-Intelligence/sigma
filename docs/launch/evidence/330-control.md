@@ -43,11 +43,11 @@ FAILED tests/test_launch_definition.py::test_markdown_status_line_agrees_with_js
 
 ## Control 3: public_repo not in owner/name form
 
-`public_repo`: `Agrim-Intelligence/sigma` -> `sigma`.
+`public_repo`: `OWNER/NAME` -> `sigma`.
 
 ```
 E           AssertionError: public_repo is not owner/name: 'sigma'
-E       AssertionError: assert 'Agrim-Intelligence/sigma' == 'sigma'
+E       AssertionError: assert 'OWNER/NAME' == 'sigma'
 FAILED tests/test_launch_definition.py::test_public_repo_when_set_is_an_owner_name_slug
 FAILED tests/test_launch_definition.py::test_scalar_decisions_agree[public_repo-## What ships-Public repository]
 2 failed, 13 passed
