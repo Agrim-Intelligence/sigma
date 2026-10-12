@@ -44,9 +44,8 @@ Then repeat until the helper says stop:
    unmanaged worker) — and **never** hand a subagent's own scratch work a `cp`/`rsync` of another
    goal's live worktree. As EACH subagent finishes, immediately refill just that ONE freed slot:
    `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" next .sdlc --session-pid "$PPID" --skip
-   <comma-separated other still-live goals>`. **The `--skip` list is not optional for a refill**,
-   and neither is `--session-pid "$PPID"`. Omitting it can re-dispatch a goal a sibling slot already
-   holds. Slot sizing, dispatch logging, releasing an undispatched goal: `references/picking.md`.
+   <comma-separated other still-live goals>`. **The `--skip` list and `--session-pid "$PPID"` are not
+   optional for a refill**: omitting either can re-dispatch a goal a sibling slot holds. Slot sizing, dispatch logging, releasing an undispatched goal: `references/picking.md`.
 2. Dispatch `goal` lines before a terminal line. If output is `DONE` (nothing pickable), `BUDGET` (iterations, wall-clock
    minutes, or reported tokens — each only when `config.json` sets it), or `HANDOFF` (a goal-count
    hand-off, on by default) → STOP, and report the stderr `BUDGET (...)`/`HANDOFF (...)` line, which
@@ -74,22 +73,22 @@ Then repeat until the helper says stop:
    That order is load-bearing. It, what each park writes, and how to dismiss a false positive
    (never restore `sdlc:goal` by hand — **run `/sigma-unpark`**): `references/picking.md`.
 
-   Then **recall prior art** — if the knowledge graph is enabled, run the `sigma-context` pre-flight
-   to pull a cited brief from the graph + past issues + conventions (no-op when the KG is off).
+   Then **recall prior art**: if the knowledge graph is enabled, run the `sigma-context` pre-flight
+   for a cited brief (no-op when the KG is off).
 
-   **Match the model to the goal.** **Read the tier IT resolved from the pick's own stderr** — a
+   **Match the model to the goal.** **Read the tier from the pick's own stderr** — a
    line shaped `sigma: model tier for <goal> resolved to <tier> (signal=<signal>)` — rather
    than recomputing it yourself, **especially in github mode**: `"$goal"` there is the bare issue
    number, and a manual `predict.py resolve "$goal" .sdlc` classifies that literal digit string,
    not the issue's real text. **You DO still need to log this same tier+signal to the LOCAL
    action-log copy yourself**: `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" log .sdlc "$goal"
-   model_choice --model <tier> --signal <signal>`. **Use the SAME tier+signal you just established
-   above — never a fresh, separate `why "$goal"` call here.** Never run a step ABOVE the goal
+   model_choice --model <tier> --signal <signal>`. **Use the SAME tier+signal as above — never a
+   fresh `why "$goal"` call.** Never run a step ABOVE the goal
    ceiling. The fallback when that stderr line is missing, and the per-step `resolve-step`
    downgrade: `references/running.md`.
 
    Then run **each phase as its own subagent** with that host's model override (see
-   `references/running.md`). One subagent PER PHASE, **tier `off` included** (`record done` is REFUSED without each, #684).
+   `references/running.md`). One subagent PER PHASE, **tier `off` included** (`record done` is REFUSED without each while `gates.phase_record` is on; `/sigma-init` ships it on, an absent key is off, and the rule binds either way).
    Artifacts pass between phases through the filesystem, not shared context. Then read the goal and
    run it through the full SDLC (research → plan → plan-review → implement → review) — each phase
    via its **executor**. `$goal` is a **file path** (local) or a **GitHub

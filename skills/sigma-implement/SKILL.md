@@ -51,7 +51,9 @@ it tests the right thing. Wrote code before the test? Delete it and re-derive fr
    Middle Man (units too entangled) · Duplicate Code, Dead Code, Speculative Generality (code that
    should not exist). Fix it now, while the context is in your head and the diff is yours.
 
-After writing the plan's `## Tests` entries, record both stages through Sigma:
+After writing the plan's `## Tests` entries, record both stages through Sigma. This recording is not
+optional and is not replaced by a companion TDD skill (superpowers or any other): a companion may help you
+write the test, but only this command records the red and the green:
 
 ```sh
 python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" verify .sdlc "$goal"

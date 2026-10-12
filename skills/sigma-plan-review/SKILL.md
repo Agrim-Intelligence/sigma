@@ -54,6 +54,10 @@ python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/reviewer.py" check /tmp/brief
   --scratch "$(pwd)/.sdlc/work/<goal>"
 ```
 
+`reviewer.py check` exiting non-zero means the brief names a shared scratch path, on every mechanism
+(`subagent` included). Do NOT dispatch that brief: rebuild it without the path and check again, and
+dispatch only after `check` exits 0. A reviewer that read it is not independent.
+
 For **`process`** / **`command`** only, execute the checked brief. `run` repeats the leak check on
 the exact text it sends, stops the process group on timeout, and rejects non-zero or empty output:
 

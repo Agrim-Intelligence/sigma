@@ -53,6 +53,10 @@ python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/reviewer.py" check /tmp/brief
   --scratch "$(pwd)/.sdlc/work/<goal>"
 ```
 
+`reviewer.py check` exiting non-zero means the brief names a shared scratch path, on every mechanism
+(`subagent` included). Do NOT dispatch that brief: rebuild it without the path and check again, and
+dispatch only after `check` exits 0. A reviewer that read it is not independent.
+
 For **`process`** / **`command`** only, execute the checked brief. `run` repeats the leak check on
 the exact text it sends, stops the process group on timeout, and rejects non-zero or empty output:
 
@@ -71,7 +75,9 @@ the *impact surface*. Before judging any change, read the code around it and gre
 have full repo access. A small change with a wide radius is what a review exists to catch.
 
 **Executor:** this skill is the review. On Claude Code with the optional `code-review` plugin
-installed, `/code-review` is a useful extra pass over the diff; it does not replace this one.
+installed, `/code-review` is a useful extra pass over the diff; it does not replace this one. Every gate
+here (independent reviewer, KPI pass, eight axes, conditional-risk reviews, verdict) runs whether or not it
+is installed, and `/code-review` never satisfies one of them.
 
 Pick the mode from the request:
 - **Diff review** (default before a merge) — review the branch's changes vs base. Fast, targeted.
@@ -145,6 +151,10 @@ Two gates run alongside the axes:
   `/sigma-migration-check`, `contract` → `/sigma-contract-check`, `sensitive` → `/sigma-security-review`.
   The detector is a bash trigger (zero LLM cost); it names the risk, the skill judges it. A code-quality
   pass alone will not catch a broken public contract or an unsafe migration.
+  **An empty `matched` is NOT a clearance on a committed branch or PR.** The script scans only uncommitted,
+  staged and untracked files, so once the change is committed it prints nothing. There, list the change
+  yourself (`git diff --name-only <base>...HEAD`), decide each category from those paths and diff, and run
+  the matching review for every one that applies. The verdict says which way it was decided.
 
 ## 3. Verdict + findings
 Open with **how this review was run** — `Reviewed by: dispatched subagent | fresh process (<host>) |
