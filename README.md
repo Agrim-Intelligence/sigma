@@ -32,6 +32,7 @@ dependencies.
 - [Configuration](#configuration)
 - [Documentation](#documentation)
 - [Platform support](#platform-support)
+- [Measured results and known limits](#measured-results-and-known-limits)
 - [Privacy and uninstalling](#privacy-and-uninstalling)
 - [Contributing, support and security](#contributing-support-and-security)
 - [Credits](#credits)
@@ -350,18 +351,34 @@ see which features are live for your config.
 | [What is enforced](docs/enforcement.md) | know which rules are checked by code and which are advice |
 | [Architecture](docs/architecture.md) | see how the hooks, phases and loop fit together |
 | [Platform support](docs/platform-support.md) | check what is validated on Claude Code, Codex and Cursor |
+| [Measured results](docs/launch/evidence/measured-results.md) | see what the maintainers measured: cost, review, tests, CI (no comparison with other tools) |
 | [Threat model](docs/threat-model.md) | review the security boundaries |
 
 ## Platform support
 
 | Host | Status |
 |---|---|
-| Claude Code | Full run validated end to end, including PRs and merges. |
+| Claude Code | Run end to end, including PRs and merges, by the maintainers on one machine class (macOS) with no outside users; see [Measured results](docs/launch/evidence/measured-results.md). |
 | Codex | Partially validated: install and first loop command run in a real session; a full goal through to merge has not yet been measured. |
 | Cursor | Experimental: scaffolding is unit-tested but has not been run in Cursor. |
 
-CI runs the full suite on Linux with Python 3.10, 3.11, 3.12, and 3.13, and on macOS with Python 3.12.
+CI runs the full suite on Linux with Python 3.10, 3.11, 3.12, and 3.13, and on macOS with Python 3.12. That full matrix runs nightly and on demand; pull requests and merges to main run one macOS Python 3.12 leg (results: [Measured results](docs/launch/evidence/measured-results.md)).
 Details, including what each host has been measured to do: [docs/platform-support.md](docs/platform-support.md).
+
+## Measured results and known limits
+
+What the maintainers have measured, with the source file and date for each figure, is in
+[Measured results](docs/launch/evidence/measured-results.md). It makes no comparison with any other tool.
+
+Known limits:
+
+- Running the loop unattended uses your host account; check your plan's terms for automated use. The vendor's
+  documentation (<https://code.claude.com/docs/en/legal-and-compliance>, read 2026-10-12) recommends API-key
+  authentication for developers building products or services on Claude and describes subscription sign-in as
+  designed for ordinary use; this README makes no claim about what the terms permit.
+- Budgets are per clone, and a supervisor relaunch after a budget stop starts with a fresh budget. One machine
+  can therefore spend up to `SIGMA_SUPERVISE_MAX_RUNS` (default 48) times `budget.max_tokens` (default
+  100,000,000 in the scaffolded config).
 
 ## Privacy and uninstalling
 
