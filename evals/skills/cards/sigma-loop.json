@@ -398,6 +398,10 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/invocation.py",
+      "role": "gesture"
+    },
+    {
       "path": "skills/sigma-loop/scripts/red_green.py",
       "role": "library"
     },

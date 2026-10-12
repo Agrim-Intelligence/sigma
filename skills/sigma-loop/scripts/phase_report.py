@@ -1360,6 +1360,36 @@ def emit(block_facts, fallback_lines):
     block = render_block("event", block_facts)
     for line in ([block] if block is not None else fallback_lines):
         print(line)
+    return block
+
+
+def relay_block(sdlc_dir, goal, phase, block):
+    """#612, OPT-IN (`invocation.adapter`): hand the EXACT bytes just printed (block + newline) to the
+    operator-pinned adapter and report the outcome on STDERR, so stdout stays the contract's Block B.
+    `acknowledged` means the adapter acked those bytes, not that any UI displayed them. A fallback
+    banner (block None) has no constructed bytes to attest, so nothing is relayed. Never raises."""
+    try:
+        inv = _load("invocation")
+        if not inv.settings(sdlc_dir):
+            return
+        if block is None:
+            print("phase_report: host relay unavailable: no constructed Block B to attest",
+                  file=sys.stderr)
+            return
+        payload = (block + "\n").encode("utf-8")
+        import base64
+        import hashlib
+        got = inv.authorize(sdlc_dir, "phase-relay", goal, hashlib.sha256(payload).hexdigest(),
+                            phase=phase, request_extra={"payload_b64": base64.b64encode(payload).decode()})
+    except Exception as exc:            # noqa: BLE001 - the local boundary is already recorded
+        print(f"phase_report: host relay unavailable: {exc}", file=sys.stderr)
+        return
+    if got["status"] == "accepted":
+        print(f"phase_report: host relay acknowledged by adapter {got['adapter_id']} "
+              f"(receipt {got['receipt_id']}); exact bytes acknowledged, display not claimed",
+              file=sys.stderr)
+    else:
+        print("phase_report: host relay unavailable: adapter deferred", file=sys.stderr)
 
 
 # --------------------------------------------------------------------------- marker file
@@ -2282,8 +2312,9 @@ def cmd_end(argv):
     # the correct 6_000_000 for a single $12.00 phase) before this comment replaced that call.
 
     ref = goal_ref(goal)
-    emit(end_facts(ref, phase, title, elapsed, result, totals=goal_totals, no_elapsed=no_elapsed),
-         end_lines(ref, phase, title, elapsed, result, totals=goal_totals, no_elapsed=no_elapsed))
+    printed = emit(end_facts(ref, phase, title, elapsed, result, totals=goal_totals, no_elapsed=no_elapsed),
+                   end_lines(ref, phase, title, elapsed, result, totals=goal_totals, no_elapsed=no_elapsed))
+    relay_block(sdlc_dir, goal, phase, printed)
     if model_mismatch:
         print(f"phase_report.py: phase model unverified/mismatched: expected "
               f"{expected_model or tier!r}, observed {observed_models or 'unavailable'}; "
