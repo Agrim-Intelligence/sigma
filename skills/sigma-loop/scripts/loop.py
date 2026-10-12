@@ -143,10 +143,11 @@ def _ensure_ledger_delivery(sdlc_dir, config, threshold=15, publish_fn=None, coo
 
     ONE CLEAR STDERR LINE on any non-benign outcome, naming the real entry count and pointing at
     `/sigma-doctor` -- including `sync.publish`'s own `"nothing to publish"`, which plan-review
-    finding 1 established is not always benign: `publish()` only ever commits+pushes files newly
-    staged by THIS call, so a clone already holding an earlier commit that failed to push reports
-    "nothing to publish" (nothing NEW to stage) while that earlier commit sits there unpushed --
-    re-measured here via a second `pending_entry_count` call, never inferred from the string alone.
+    finding 1 established is not always benign. Since #1210 `publish()` pushes a commit an earlier
+    failed push stranded, but it still reports "nothing to publish" when this actor owns no entries
+    file, or when it committed nothing and has nothing stranded -- and pending lines in files this
+    actor's publish does not stage leave a backlog either way. So the backlog is re-measured here
+    via a second `pending_entry_count` call, never inferred from the string alone.
 
     `publish_fn` is `sync.publish` by default, injectable for tests."""
     try:
@@ -188,9 +189,9 @@ def _ensure_ledger_delivery(sdlc_dir, config, threshold=15, publish_fn=None, coo
             still = sync.pending_entry_count(sdlc_dir, config)
             if still is None or still <= threshold:
                 return
-            print("loop: ledger backlog is %d entries -- publish had nothing new to stage but the "
-                  "backlog persists (an earlier commit likely failed to push); run /sigma-doctor"
-                  % still, file=sys.stderr)
+            print("loop: ledger backlog is %d entries -- publish had nothing of this actor's to "
+                  "stage or push, but the backlog persists (likely entries written under another "
+                  "actor name); run /sigma-doctor" % still, file=sys.stderr)
             return
         print("loop: ledger backlog is %d entries and could not be published (%s); run "
               "/sigma-doctor" % (count, result), file=sys.stderr)

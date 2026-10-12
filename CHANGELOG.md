@@ -6,6 +6,29 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## 1.0.11 — 2026-10-12 — an owner's "no" reply vetoes an auto-applied answer, copyright holder, and a Python 3.10 diagnose fix
 
+- **The ledger retries a failed push on the next tick, not on the next entry (#1210).**
+  - **What was wrong.** When a push failed, `sync.py publish` kept the commit locally. Every later tick then
+    reported `nothing to publish` until some new entry was staged, so the "will retry next tick" it had
+    printed was false.
+  - **What publish does now.** For an actor that owns an entries file, it pushes whenever the ledger
+    branch is ahead of its remote-tracking ref. It also pushes when that ref is absent on a configured
+    remote name, which happens when the first push after a bootstrap failed.
+  - **What has not changed.**
+    - A caught-up clone still makes no push or fetch.
+    - A clone with no remote configured, or with a path or URL where a remote name belongs, keeps today's
+      behaviour: it pushes only alongside a new commit, because no tracking ref can ever exist there.
+  - **The cost.** While a commit stays stranded, every idle tick now does work it previously skipped while
+    falsely reporting `nothing to publish`:
+    - against a server that rejects every push: 5 pushes, 4 fetches and 4 rebases (the bound
+      `PUSH_ATTEMPTS` already set for ticks with a new entry);
+    - against an unreachable remote: 1 push attempt and 1 fetch attempt;
+    - against a remote branch that was deleted and recreated with unrelated history: 1 push and 1 fetch,
+      and the tick now says `publish refused: … shares no history`.
+  - **Other fixes in this change.**
+    - A failing `git add` or `git diff --cached` (a held `index.lock`, say) now returns `publish deferred: …`
+      instead of raising, as the commit already did (#2449).
+    - Two existing hints are now true: `/sigma-doctor`'s "`sync.py publish .sdlc` publishes now", and a
+      hand-typed write's "`sync.py publish .sdlc` will retry it".
 - **Copyright holder is now "Agrim Intelligence Private Limited" everywhere it is stated.** `LICENSE`, `NOTICE`, and the `author` / `owner` of `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` (were an individual's name). `docs/launch/evidence/legal.md` records, as owner decisions made without counsel on 2026-10-12, the entity name and that there are no obligations to predecessor users; the name cells stay OPEN (owner chose to hold the name until the German register entry is looked at). No version bump. Not legal advice; nothing measured beyond the tests.
 - **The documented `invocation.py diagnose .sdlc <id>` gesture no longer says `refused` on Python 3.10 and 3.11.** `run_adapter` built the adapter's private run directory from the sdlc path as given, so a relative `.sdlc` gave a relative executable path, which Python 3.10/3.11 resolve against the child's `cwd` (the run directory) and not the caller's, so the spawn failed `FileNotFoundError`; 3.12 and later resolve it from the caller. The path is now absolute. Cause found by reproducing in `python:3.10` and `python:3.11`; `tests/test_invocation.py::test_the_documented_install_and_diagnose_gesture_works_as_written` was red there before and is green after. The same code path serves `authorize` with a relative sdlc dir.
 - **The public export no longer names the private source repository, and a build is REJECTED if it does (#1204).** The rehearsal found the source's own `OWNER/NAME` in 13 exported files that no scan flagged: the patterns file never held that name, and the other scans read only the patterns. `tools/build_public_tree.py` now derives the name from `--repo` and the `--remote` URL and adds the builder rule `source-slug` over every exported file and path (any case, whole name; a team handle or the public repository's name is not a hit); it has no disposition, and a build whose name cannot be derived is refused `source-slug-unknown`. The 13 files were fixed in the source (examples now say `OWNER/NAME`; fixtures use a made-up name). Measured: the new tests are red on the old builder (8 of 9) and green on the new one; a planted fake name in a `.md`, `.py`, `.json`, extensionless and path position is REJECTED; builder run on the fixed tree: see the PR. Not measured: a real go-public build.

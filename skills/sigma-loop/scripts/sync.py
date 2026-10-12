@@ -688,12 +688,31 @@ def _secret_shaped(path, relative):
 
 
 def _ahead(git, path, rem, name):
-    """Commits on HEAD the remote-tracking ref lacks, or `None` when that ref does not exist (never
-    fetched or pushed) — which a publisher must read as "push", not as "nothing to do"."""
+    """Commits on HEAD the remote-tracking ref lacks, or `None` when `rev-list` cannot answer —
+    usually because that ref does not exist (never fetched or pushed). `None` is never "nothing to
+    do": the knowledge channel reads it as "push", the ledger's `_stranded` as "push if `rem` is a
+    configured remote name"."""
     try:
         return int(git(path, ["rev-list", "--count", f"{rem}/{name}..HEAD"]))
     except Exception:                           # noqa: BLE001 - no such ref
         return None
+
+
+def _stranded(git, path, rem, name):
+    """True when HEAD holds commits a push should still carry although this call committed nothing:
+    it is ahead of `<rem>/<name>`, or there is no such ref and `rem` is a configured remote NAME --
+    the ref is then absent only because no fetch or push of the branch has succeeded yet (a first
+    push that failed). For a remote that is not configured, or a URL or path where a name belongs,
+    the ref can never exist (`_record_push` cannot write it), so "absent" carries no information
+    there, and reading it as "push" would push on every tick, forever (#1210 plan review, B1).
+    Never raises: an unanswerable `git remote` reads as "no", which costs latency, never a write."""
+    ahead = _ahead(git, path, rem, name)
+    if ahead is not None:
+        return ahead > 0
+    try:
+        return rem in git(path, ["remote"]).split()
+    except Exception:                           # noqa: BLE001 - cannot tell: no new network write
+        return False
 
 
 def _record_push(git, path, rem, name, before):
@@ -975,33 +994,42 @@ def publish(sdlc_dir, config, run=None, attempts=PUSH_ATTEMPTS, channel=LEDGER):
     file, with `merge=union` as a backstop). TEAM.md is a pure function of the entries, so on a race
     we rebase (taking the winner's TEAM.md), regenerate it from the now-merged entries, and retry —
     the conflict is resolved by re-running, never by hand. Always returns a status string
-    describing the outcome; never raises (#2449). `channel=KNOWLEDGE` is `_publish_knowledge`."""
+    describing the outcome; never raises (#2449), staging included (#1210) — except #710's REFUSED
+    for a remote/branch value that would reach git as an option, which stays loud on purpose.
+    `channel=KNOWLEDGE` is `_publish_knowledge`.
+
+    A call that stages nothing, made by an actor that owns an entries file, still pushes a STRANDED
+    commit (`_stranded`): a push that failed leaves its commit local, and before #1210 the next call
+    returned "nothing to publish" because it had nothing new to stage, so "will retry next tick" was
+    false until a later entry carried the commit. The knowledge channel already pushed whenever it
+    was ahead (its P4 finding B1)."""
     git = run or _run_git
     if channel == KNOWLEDGE:
         return _publish_knowledge(sdlc_dir, config, git, attempts)
     path, name, rem = worktree(sdlc_dir), branch(config), remote(config)
     if not is_worktree(sdlc_dir):
         return "not a worktree — run `sync.py init` first (nothing published)"
-    who = ledger.actor(config)
-    mine = _staged_paths(path, ledger.ENTRIES, who)
-    if not mine:
-        return "nothing to publish"
-    # #2574/S1-G3: THE EVENTS STREAM IS NO LONGER STAGED. It used to be
-    # `to_stage += _staged_paths(path, ledger.EVENTS, who)`, which published a machine's events to
-    # the ops branch whenever the old `share` setting was not explicitly false. PRD §6.2 deletes
-    # publishing: the journal is local-only, at `.sdlc/events/`, which is not in this worktree at
-    # all. Nothing already on the branch is removed — a teammate's clone still pulls it, and it is
-    # still read for one release.
-    to_stage = list(mine)
-    if _ensure_gitattributes(path):
-        to_stage.append(".gitattributes")
-    _write_team(sdlc_dir, path)
-    to_stage.append("TEAM.md")
-    git(path, ["add", *to_stage])
-    if not git(path, ["diff", "--cached", "--name-only"]):
-        return "nothing to publish"
     try:
-        git(path, ["commit", "-m", f"ledger: {ledger.actor(config)}"])
+        who = ledger.actor(config)
+        mine = _staged_paths(path, ledger.ENTRIES, who)
+        if not mine:
+            return "nothing to publish"
+        # #2574/S1-G3: THE EVENTS STREAM IS NO LONGER STAGED. It used to be
+        # `to_stage += _staged_paths(path, ledger.EVENTS, who)`, which published a machine's events to
+        # the ops branch whenever the old `share` setting was not explicitly false. PRD §6.2 deletes
+        # publishing: the journal is local-only, at `.sdlc/events/`, which is not in this worktree at
+        # all. Nothing already on the branch is removed — a teammate's clone still pulls it, and it is
+        # still read for one release.
+        to_stage = list(mine)
+        if _ensure_gitattributes(path):
+            to_stage.append(".gitattributes")
+        _write_team(sdlc_dir, path)
+        to_stage.append("TEAM.md")
+        git(path, ["add", *to_stage])
+        if git(path, ["diff", "--cached", "--name-only"]):
+            git(path, ["commit", "-m", f"ledger: {who}"])      # a new commit: pushed, as always
+        elif not _stranded(git, path, rem, name):
+            return "nothing to publish"
     except Exception as exc:                     # noqa: BLE001 - honour the "always returns a status
         return f"publish deferred: {exc}"        # string, never raises" contract every other branch keeps
 
