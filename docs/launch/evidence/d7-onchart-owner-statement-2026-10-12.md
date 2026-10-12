@@ -26,7 +26,7 @@ that it is true.
   owner or by someone who knew the tool. No time to first goal done was taken from them.
 - Whether any of them hit a refusal listed on [the refusal page](d7-onboarding-refusals-f627d06a.md).
 
-No log, ticket, message, issue or telemetry from OnChart was seen. No issue in this repository
+No log, ticket, message or issue from OnChart was seen, and no usage data. No issue in this repository
 cites an OnChart report.
 
 ## What this does and does not support for D7

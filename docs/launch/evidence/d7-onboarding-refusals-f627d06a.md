@@ -18,7 +18,7 @@ can plausibly reach, chosen by reading the README Quickstart and the first-run l
 Not covered: the github-mode `work.py pr|merge` refusals on a live board (the onboarding control
 `docs/onboarding-control.md` exercises the review-gate and done-means-merged refusals against a fake
 `gh`), the refusals only Windows, Linux, Codex or Cursor produce, and the model-side refusals the live
-runs hit (see "Seen in the live runs").
+runs hit (listed in the live drill file `live-onboarding-2026-10-12.md`, not repeated here).
 
 ## How "prints its fix" was checked
 
@@ -28,7 +28,7 @@ traceback never counts. That is a weak test (a backtick can name the problem), s
 read by hand; the "note" column records each place the reading disagreed with the mechanical result.
 Result: 45 scenarios, 3 that are not refusals at all (exit 0), 1 that is a refusal with a misleading
 fix, 3 that print no fix and 1 that names a config key only. Each became an issue labelled
-`launch:next`, none was dropped:
+`launch:next`, none was dropped, except W5, which is not a refusal and is deliberately unfiled (see its row):
 
 - #1245: `loop.py record <goal> <unknown-status>` exits 0 and parks the goal silently (L9).
 - #1246: refusals that print no fix: `work.py pr` without gh (W9), `work.py start` without a base
@@ -88,7 +88,7 @@ Exit codes are as the script returned them. "UNJUDGED" would mark a row neither 
 | W2 | work.py start .sdlc <goal> where origin has no base branch | 1 | `work: git fetch origin main: fatal: couldn't find remote ref main — base 'main' came from the current HEAD` | NO FIX | git's error only; the fix (`git push -u origin main`) is printed by preflight.py, not here (#1246) |
 | W3 | work.py start .sdlc 9999 (no such goal) | 0 | `worktree <tmp>/w3/.sdlc/work/9999 on sdlc/9999 (cut from origin/main)` | NOT A REFUSAL | exit 0, a worktree and branch were cut for a goal that does not exist (#1247) |
 | W4 | work.py start .sdlc <goal> with work.enabled false (local-only) | 1 | `work is off (config: "work": {"enabled": true})` | weak fix | names the config key, not the command that sets it (#1246) |
-| W5 | work.py start .sdlc <goal> in a root checkout with tracked uncommitted changes | 0 | `worktree <tmp>/w5/.sdlc/work/0001-x on sdlc/0001-x (cut from origin/main)` | NOT A REFUSAL | a dirty root checkout did not stop `work.py start` |
+| W5 | work.py start .sdlc <goal> in a repository whose root checkout has tracked uncommitted changes (the printed path is the goal worktree it cut under that root) | 0 | `worktree <tmp>/w5/.sdlc/work/0001-x on sdlc/0001-x (cut from origin/main)` | NOT A REFUSAL | a dirty root checkout did not stop `work.py start`; unfiled, because cutting the worktree from origin/main does not depend on the root's dirt and no defect was shown |
 | W6 | work.py <bogus verb> | 2 | `usage: work.py start\|commit\|pr\|rebase\|post-review\|merge\|finish <sdlc_dir> <goal>` | fix |  |
 | W7 | work.py start .sdlc (missing goal) | 2 | `usage: work.py start\|commit\|pr\|rebase\|post-review\|merge\|finish <sdlc_dir> <goal>` | fix |  |
 | W8 | work.py commit .sdlc <goal> --message x with a secret-shaped file (.env) in the goal worktree | 0 | `REFUSED — `git add -A` staged 1 path(s) or added-content match(es) requiring attention in this goal's worktree. Nothing was committed and those index entries were reset; every file is still on disk, untouched.` | fix | exit 0 by design: the commit is withheld and the path is listed with two fixes |
