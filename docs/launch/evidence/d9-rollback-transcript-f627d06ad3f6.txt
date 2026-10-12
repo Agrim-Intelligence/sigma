@@ -1,0 +1,179 @@
+# 1. scratch release repo with two LOCAL rehearsal tags (never pushed; no remote exists)
+$ git -c core.hooksPath=/dev/null init -q -b main    # cwd <rb-src>
+
+[exit 0]
+
+$ git -c core.hooksPath=/dev/null add -A    # cwd <rb-src>
+
+[exit 0]
+
+$ git -c core.hooksPath=/dev/null commit -q -m rehearsal release A    # cwd <rb-src>
+
+[exit 0]
+
+$ git -c core.hooksPath=/dev/null tag -a rehearsal-a -m rehearsal tag A (known good)    # cwd <rb-src>
+
+[exit 0]
+
+$ git -c core.hooksPath=/dev/null commit -q -a -m rehearsal release B (the bad one)    # cwd <rb-src>
+
+[exit 0]
+
+$ git -c core.hooksPath=/dev/null tag -a rehearsal-b -m rehearsal tag B    # cwd <rb-src>
+
+[exit 0]
+
+$ git -c core.hooksPath=/dev/null remote    # cwd <rb-src>
+
+[exit 0]
+
+$ git -c core.hooksPath=/dev/null tag -l rehearsal-*    # cwd <rb-src>
+rehearsal-a
+rehearsal-b
+[exit 0]
+
+# 2. the four documented pin gestures (docs/release.md), local path in place of <repo>
+$ claude plugin marketplace add <scratch>/rb-src@rehearsal-a --scope user
+✘ Path does not exist: <scratch>/rb-src@rehearsal-a
+[exit 1]
+
+$ claude plugin marketplace list
+No marketplaces configured
+[exit 0]
+
+$ claude plugin marketplace add <scratch>/rb-src#rehearsal-a --scope user
+✘ Path does not exist: <scratch>/rb-src#rehearsal-a
+[exit 1]
+
+$ claude plugin marketplace list
+No marketplaces configured
+[exit 0]
+
+# 3. install the BAD tag (rehearsal-b)
+$ git clone -q --branch rehearsal-b <scratch>/rb-src <scratch>/rb-clone-b
+Note: switching to 'e3696e311645a1f2ec3f6b6964a39fa7cc01895e'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+[exit 0]
+
+$ claude plugin marketplace add <scratch>/rb-clone-b --scope user
+Adding marketplace…✔ Successfully added marketplace: sigmaloop (declared in user settings)
+[exit 0]
+
+$ claude plugin install sigmaloop@sigmaloop --scope user
+Installing plugin "sigmaloop@sigmaloop"...✔ Successfully installed plugin: sigmaloop@sigmaloop (scope: user)
+[exit 0]
+
+$ claude plugin list
+Installed plugins:
+
+  ❯ sigmaloop@sigmaloop
+    Version: 0.0.2
+    Scope: user
+    Status: ✔ enabled
+[exit 0]
+
+installed plugin.json version(s) after B: ['0.0.2']
+
+# 4. ROLLBACK: uninstall, drop the marketplace, install the known-good tag (rehearsal-a)
+$ claude plugin uninstall sigmaloop@sigmaloop --scope user
+✔ Successfully uninstalled plugin: sigmaloop (scope: user)
+[exit 0]
+
+$ claude plugin marketplace remove sigmaloop
+✔ Successfully removed marketplace: sigmaloop
+[exit 0]
+
+$ git clone -q --branch rehearsal-a <scratch>/rb-src <scratch>/rb-clone-a
+Note: switching to '22e9a8b5b78c509dcce17084396365222bc3a0e9'.
+
+You are in 'detached HEAD' state. You can look around, make experimental
+changes and commit them, and you can discard any commits you make in this
+state without impacting any branches by switching back to a branch.
+
+If you want to create a new branch to retain commits you create, you may
+do so (now or later) by using -c with the switch command. Example:
+
+  git switch -c <new-branch-name>
+
+Or undo this operation with:
+
+  git switch -
+
+Turn off this advice by setting config variable advice.detachedHead to false
+[exit 0]
+
+$ claude plugin marketplace add <scratch>/rb-clone-a --scope user
+Adding marketplace…✔ Successfully added marketplace: sigmaloop (declared in user settings)
+[exit 0]
+
+$ claude plugin install sigmaloop@sigmaloop --scope user
+Installing plugin "sigmaloop@sigmaloop"...✔ Successfully installed plugin: sigmaloop@sigmaloop (scope: user)
+[exit 0]
+
+$ claude plugin list
+Installed plugins:
+
+  ❯ sigmaloop@sigmaloop
+    Version: 0.0.1
+    Scope: user
+    Status: ✔ enabled
+[exit 0]
+
+installed plugin.json version(s) after rollback: ['0.0.1', '0.0.2']
+
+# 5. docs/release.md S1 gesture: revert the default branch to the last-good tag's tree as a new commit (history not rewritten)
+$ git rev-parse HEAD    # cwd <rb-src>
+e3696e311645a1f2ec3f6b6964a39fa7cc01895e
+[exit 0]
+
+$ git -c core.hooksPath=/dev/null checkout -q rehearsal-a -- .    # cwd <rb-src>
+
+[exit 0]
+
+$ git -c core.hooksPath=/dev/null commit -q -m revert main to rehearsal-a tree    # cwd <rb-src>
+
+[exit 0]
+
+$ git diff --stat rehearsal-a HEAD    # cwd <rb-src>
+
+[exit 0]
+
+$ git merge-base --is-ancestor e3696e311645a1f2ec3f6b6964a39fa7cc01895e HEAD    # cwd <rb-src>
+
+[exit 0]
+
+$ git rev-list --count HEAD    # cwd <rb-src>
+3
+[exit 0]
+
+tree identical to tag A: True; bad commit still an ancestor (nothing rewritten): True
+
+# CONTROLS
+[control 1: a tag that does not exist]
+$ git clone -q --branch rehearsal-zzz <scratch>/rb-src <scratch>/rb-clone-zzz
+fatal: Remote branch rehearsal-zzz not found in upstream origin
+[exit 128]
+
+[control 2: the check 'installed version equals the selected tag' evaluated BEFORE the rollback; it must read the bad version, i.e. the rollback was not a no-op]
+differs: True
+[control 3: tree check on a tag that is NOT the revert target (rehearsal-b) must be non-empty]
+$ git diff --stat rehearsal-b HEAD    # cwd <rb-src>
+.claude-plugin/marketplace.json | 2 +-
+ .claude-plugin/plugin.json      | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+[exit 0]
+
