@@ -12,7 +12,7 @@ been consulted; none is engaged.
 On 2026-10-12 the owner (a startup founder with no legal advisor) decided in chat to go public without counsel and to record
 owner decisions with the risk accepted, instead of waiting for counsel. The owner's statements, recorded as made and not as
 legal conclusions: the company owns the code; everyone who contributed is a founder or an employee of the company, apart from
-Claude (AI-assisted work); the public name is `Sigma Loop` (repository and install id `sigmaloop`), which stays OPEN after the register search in section 7.4;
+Claude (AI-assisted work); the public name is `Sigma Loop` (repository and install id `sigmaloop`), which stays OPEN after the register search in section 7.4 (held, option C);
 the predecessor plugin is the company's own earlier project. A cell became an OWNER DECISION only where one of these
 statements decides it. Nothing here was checked against a legal source, and nothing is a legal conclusion.
 
@@ -38,9 +38,9 @@ The tree already carries these names: `.claude-plugin/plugin.json:2` and `.claud
 | Fact | Where | Verified how |
 |---|---|---|
 | Licence is MIT | `LICENSE:1` | read the file |
-| Copyright line is "Copyright (c) 2026 Agrim Intelligence" | `LICENSE:3` | read the file |
+| Copyright line is "Copyright (c) 2026 Agrim Intelligence Private Limited" | `LICENSE:3` | read the file |
 | Plugin manifest licence is `MIT` | `.claude-plugin/plugin.json:8` | read the file |
-| Plugin manifest author is an individual, "Swapnil Dubey", not the company in `LICENSE:3` | `.claude-plugin/plugin.json:5-7`; `.claude-plugin/marketplace.json:4-6` (owner) | read the files |
+| Plugin manifest author and marketplace owner are "Agrim Intelligence Private Limited", the same as `LICENSE:3` | `.claude-plugin/plugin.json:5-7`; `.claude-plugin/marketplace.json:4-6` (owner) | read the files |
 | Git history in this repository starts 2026-09-29 and has 128 commits under two author names that share one email address | `git log` | read the log |
 | No assignment, contributor agreement, CLA or DCO document is in the tree | whole tree | searched file names; absence in the tree says nothing about whether one exists elsewhere |
 | A `NOTICE` file did not exist before this change | whole tree | `git ls-files` |
@@ -209,12 +209,12 @@ Nothing here is shipped as a bundle: the user installs these with Bun (`README.m
 | The owner's statement (issue #343): this project is the rebrand of an earlier plugin by the same owner | stated by the owner; not independently verified by the agent |
 | Evidence in the tree that an earlier plugin existed | the fixture `tests/fixtures/predecessor_written_paths.json` and an old-plugin constant at `skills/sigma-doctor/scripts/doctor.py:1829`; the earlier plugin's name and repository are deliberately not written in this tree |
 | The predecessor's licence file | NOT READ by the agent for this sheet. No licence term of the predecessor is stated anywhere in this change |
-| Copyright holder of this repository's code (company in `LICENSE:3`, individual in the manifests) | OWNER DECISION (no counsel consulted), 2026-10-12: the owner states the company owns the code (owner statement, chat, 2026-10-12); risk accepted: the statement is not independently verified and no counsel reviewed it. OPEN: the exact legal entity name for the copyright line (`LICENSE:3` reads "Agrim Intelligence"; the manifests name an individual); neither file was changed |
+| Copyright holder of this repository's code | OWNER DECISION (no counsel consulted), 2026-10-12: Agrim Intelligence Private Limited (owner statement, chat); risk accepted: not independently verified |
 | Who owns the predecessor's code and under what licence it was written | OWNER DECISION (no counsel consulted), 2026-10-12: the owner states the predecessor plugin is the company's own earlier project (owner statement, chat, 2026-10-12); risk accepted: its licence file was not read and nothing here checks that statement |
 | Whether relicensing the ported parts as MIT needs any consent or notice | OWNER DECISION (no counsel consulted), 2026-10-12: none sought, because the owner states the predecessor is the company's own project and the company owns the code; risk accepted: if any third party contributed to the predecessor, this decision does not cover it |
 | Whether, and in what words, a NOTICE names the predecessor | OWNER DECISION (no counsel consulted), 2026-10-12: `NOTICE` does not name the predecessor, as the owner's own earlier project; public text says "the predecessor" if it must be mentioned; risk accepted: no attribution is given |
 | Written assignment from any individual contributor, including AI-assisted work, to the company | OWNER DECISION (no counsel consulted), 2026-10-12: no written assignment is made; the owner states every contributor is a founder or employee of the company, apart from Claude (AI-assisted work) (owner statement, chat, 2026-10-12); risk accepted: no assignment document exists, and the status of AI-assisted output is not examined here |
-| Obligations to teams that still use the predecessor | OPEN: the owner's statements do not cover this; a business decision on any commitment to those teams is needed |
+| Obligations to teams that still use the predecessor | OWNER DECISION (no counsel consulted), 2026-10-12: none; the owner states no one outside the company uses the predecessor, and internal employees will deactivate the old plugin and install this one; risk accepted: not verified |
 | CLA or DCO for contributions after launch | OWNER DECISION (no counsel consulted), 2026-10-12: no CLA now; outside contributions are not accepted yet; a DCO sign-off (`Signed-off-by`) will be required when contributions open (`CONTRIBUTING.md`); risk accepted: whether a DCO alone suffices is not examined |
 
 ## 6. Nominative use of other parties' names
@@ -292,10 +292,10 @@ appears in `LICENSE:3` and in two lines of `skills/sigma-doctor/scripts/doctor.p
 
 | Question | Answer |
 |---|---|
-| Is `Sigma Loop` acceptable for a developer tool given the hits above and the registers not searched? | OPEN: the owner stated on 2026-10-12 (owner statement, chat) that the public name is `Sigma Loop`; the owner has not yet decided after seeing the register-search result in section 7.4 (a live word mark in Germany, amber hits elsewhere, limits stated there) |
+| Is `Sigma Loop` acceptable for a developer tool given the hits above and the registers not searched? | OPEN: the owner stated on 2026-10-12 (owner statement, chat) that the public name is `Sigma Loop`; the owner has not yet decided after seeing the register-search result in section 7.4 (a live word mark in Germany, amber hits elsewhere, limits stated there); the owner chose on 2026-10-12 to hold the name until the German register entry (section 7.4) has been looked at (option C) |
 | Does the bare `sigma-` prefix on commands and skills change the answer? | OPEN: the prefix stays as is for now; the owner has not decided on it after seeing section 7.4, which found live SIGMA word marks held by others |
 | Trademark register and company-name search (USPTO, EUIPO at minimum), domains, handles | OPEN: a first-pass search was done on 2026-10-12 (7.4) and covers only the registers and limits listed there; a human-verified search is still needed |
-| Is the `sigma-loop` organisation or the `SigmaLoop` user a concern for the repository or install id `sigmaloop`? | OPEN: the owner stated on 2026-10-12 (owner statement, chat) that the public name is `Sigma Loop` and the repository and install id `sigmaloop`; the owner has not yet decided after seeing the register-search result in section 7.4 (a live word mark in Germany, amber hits elsewhere, limits stated there) |
+| Is the `sigma-loop` organisation or the `SigmaLoop` user a concern for the repository or install id `sigmaloop`? | OPEN: the owner stated on 2026-10-12 (owner statement, chat) that the public name is `Sigma Loop` and the repository and install id `sigmaloop`; the owner has not yet decided after seeing the register-search result in section 7.4 (a live word mark in Germany, amber hits elsewhere, limits stated there); the owner chose on 2026-10-12 to hold the name until the German register entry (section 7.4) has been looked at (option C) |
 
 ### 7.4 First-pass register search, 2026-10-12
 
@@ -314,14 +314,13 @@ a statement; the owner has not yet decided after seeing this result.
 
 ## 8. Everything still open
 
-1. The exact legal entity name for the copyright line: `LICENSE:3` says "Agrim Intelligence", `.claude-plugin/plugin.json`
-   names an individual. Neither was changed. The owner must confirm the name.
+1. (Closed 2026-10-12) The copyright holder is the owner decision "Agrim Intelligence Private Limited" (section 5); `LICENSE`, `NOTICE` and both manifests now say so.
 2. The name `Sigma Loop`, the id `sigmaloop` and the `sigma-` prefix: the owner's decision after seeing the first-pass search in section 7.4, and a human-verified register search (section 7).
 3. Codex and Cursor catalogue terms, and each vendor's brand guidelines (section 6).
-4. Obligations to teams still using the predecessor (section 5).
+4. (Closed 2026-10-12) Obligations to teams still using the predecessor: owner decision, none (section 5).
 
 ## 9. Decision line
 
 Owner decision on the notice, no counsel consulted, 2026-10-12: `NOTICE` lists third-party licences only. Risk accepted.
 The name `Sigma Loop` and the id `sigmaloop`: OPEN. The owner stated the name on 2026-10-12 and has not yet decided after seeing
-the register-search result in section 7.4. Other items in section 8 remain OPEN.
+the register-search result in section 7.4; the owner chose on 2026-10-12 to hold the name until the German register entry has been looked at (option C). The copyright holder is Agrim Intelligence Private Limited (owner statement). Other items in section 8 remain OPEN.
