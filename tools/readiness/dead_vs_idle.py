@@ -77,8 +77,14 @@ def observe(repo, doctor, broken):
     state = repo / ".sdlc" / "state"
     cfg = json.loads((repo / ".sdlc" / "config.json").read_text())
     if broken:
-        sync = doctor._load_loop_script("sync")
-        sync.stale_after_seconds = lambda interval: 10 ** 12       # the age clause removed
+        real_load = doctor._load_loop_script
+
+        def load(name):                       # doctor re-loads sync on every call, so patch the loader
+            mod = real_load(name)
+            if name == "sync":
+                mod.stale_after_seconds = lambda interval: 10 ** 12   # the age clause removed
+            return mod
+        doctor._load_loop_script = load
     row = doctor._ledger_watcher_state(repo / ".sdlc", cfg)
     env = {k: v for k, v in os.environ.items() if k != "SIGMA_RUN_ID"}
     env["CLAUDE_PROJECT_DIR"] = str(repo)
