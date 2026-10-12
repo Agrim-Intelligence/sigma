@@ -80,7 +80,7 @@ This list is from a grep of the whole tree for the slug and for every configurat
 holds one (`skills/sigma-init/templates/config.json.tmpl`, hooks, `.claude-plugin/`, the ledger,
 `sync.py`, the board settings). Tests that use the slug as a fixture are not listed; they do not
 address GitHub. `.claude-plugin/marketplace.json` names no repository (its source is `./`), and
-`.github/CODEOWNERS` names two people (`@swapnil-agrim`, `@mstomar-ag`) and the address `team_sigma@agrim.ai`; each needs write access to the new repository for it to take effect.
+`.github/CODEOWNERS` names two people (`@swapnil-agrim`, `@mstomar-ag`) and the address `teamsigma@agrim.ai`; each needs write access to the new repository for it to take effect.
 
 `docs/publish-runbook.md` and `docs/release.md` now describe this model (a fresh snapshot in a new repository;
 this repository is not renamed, and the loop is not repointed unless a clone of the new repository still names this
