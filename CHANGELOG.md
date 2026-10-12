@@ -12,6 +12,11 @@ All notable changes to Sigma are recorded here, newest first.
   where it was not. It makes no comparative claim. The README links it and gains a "Known limits" list:
   unattended use runs on your host account, and budgets are per clone, so supervisor relaunches each start with
   a fresh budget.
+- **Local verification evidence for the public export at `de188d1fb5dd`.** Added
+  `docs/launch/evidence/export-verify-de188d1fb5dd.md`: two identical VERIFIED builds (1235 files), the
+  CI `test` job commands run on the exported tree on macOS (1 failed, 16870 passed, 30 skipped), and the
+  planted-fake controls. It finds one failing guard test in the export and a line-wrap gap in the private
+  pattern scan, neither fixed here. Local runs only, not GitHub CI.
 
 - **The ledger retries a failed push on the next tick, not on the next entry (#1210).**
   - **What was wrong.** When a push failed, `sync.py publish` kept the commit locally. Every later tick then
