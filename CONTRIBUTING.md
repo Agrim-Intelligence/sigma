@@ -6,8 +6,8 @@ work so maintainers can confirm the scope. When outside contributions open, a DC
 
 ## Development setup
 
-Sigma Loop needs Python 3.10 or newer. CI runs the full suite on Linux with Python 3.10, 3.11, 3.12 and 3.13, and on
-macOS with Python 3.12 only; macOS on other Python versions is untested. Install the test dependencies:
+Sigma Loop needs Python 3.10 or newer. CI runs the full suite nightly and on demand on Linux with Python 3.10, 3.11, 3.12 and 3.13, and on
+macOS with Python 3.12 only (pull requests and merges to main run one macOS Python 3.12 leg); macOS on other Python versions is untested. Install the test dependencies:
 
 ```sh
 python -m pip install pytest pytest-xdist pyyaml
