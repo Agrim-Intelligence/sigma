@@ -63,7 +63,7 @@ python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/reviewer.py" run .sdlc /tmp/b
 
 `check` and `run` exit non-zero if the brief NAMES a shared scratch path (`check` also if it cannot be read) — a file the maker can write and the
 reviewer would read is a maker→reviewer channel. It does not flag implementation
-content: a reviewer must see the diff, its artifact. A non-zero `check` blocks dispatch on every mechanism, `subagent` included: fix the brief, recheck.
+content: a reviewer must see the diff, its artifact. A non-zero `check` blocks dispatch on every mechanism, `subagent` included: fix the brief, dispatch only after `check` exits 0.
 
 **A diff-only review misses blast radius:** the diff is the *change*, the codebase is
 the *impact surface*. Before judging any change, read the code around it and grep every caller — you
