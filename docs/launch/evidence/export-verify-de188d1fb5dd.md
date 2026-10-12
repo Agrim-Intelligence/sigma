@@ -21,10 +21,10 @@ while an earlier run on that commit was in progress, so that run was discarded a
 | Check | Result | Kept log |
 |-------|--------|----------|
 | Build the export twice | VERIFIED twice, identical tree `269fb8b53b6a67322bcc1d97eb745a8b42a50e25`, 1235 files each, same export commit `89618a74697f3d8556b6a4842b44eb778d8612b0` | `build1.stdout`, `build2.stdout`, `filecount1.txt`, `filecount2.txt` |
-| Exported suite, CI `test` job, macOS Python 3.12 | **1 failed**, 16870 passed, 30 skipped, 9 xfailed, in 5273.44 s | `pytest.log` |
+| Exported suite, plain whole-suite pytest (NOT the CI `test` job command), macOS Python 3.12 | **1 failed**, 16870 passed, 30 skipped, 9 xfailed, in 5273.44 s | `pytest.log` |
 | The five export-transform skips | all five present (`EXPORT-SKIP`, listed below) | `pytest.log` |
 | The one failure | deterministic, a real failure (not a load flake): see "The failure" | `pytest.log`, `alone-export.log` |
-| Other CI `test` job steps | rename check, write-surface ratchet, quality gate, decision gate validate and check, SKILL.md frontmatter test: all exit 0 | `ci_exits.txt` |
+| Other steps run (a subset of the `test` job's steps; the smoke runner and the safety check were not run) | rename check, write-surface ratchet, quality gate, decision gate validate and check, SKILL.md frontmatter test: all exit 0 | `ci_exits.txt` |
 | Planted fake controls | md, py, extensionless file, path: REJECTED; two wrapped forms: NOT caught | `controls/summary.json` |
 | Onboarding control, `--install claude --from-install` | GREEN, exit 0, real profile untouched | `onboarding.log`, `onboarding.json` |
 | Leak scan of the export tree | 0 hits over 1235 files and 1 commit | `leak_refs_tree.out` |
@@ -50,11 +50,18 @@ builder's WARNING line, `build1.stderr`, `build2.stderr`).
 
 Sources: `build1.stdout`, `build2.stdout`, `filecount1.txt`, `filecount2.txt`, `report1/`, `report2/`.
 
-## 2. The exported suite (CI `test` job commands)
+## 2. The exported suite (plain whole-suite run, not the CI `test` job)
 
-The commands of `.github/workflows/ci.yml` job `test`, in order, in a copy of the export, with a fresh
-Python 3.12 venv holding only pytest and PyYAML, and a throwaway git identity supplied through
-`GIT_CONFIG_GLOBAL` (what the CI step sets globally). Script: `ci_job.sh`; exit codes: `ci_exits.txt`.
+**Correction of fact.** An earlier wording of this section called these "the CI `test` job commands". That
+was wrong. The pytest command actually run is the plain whole-suite command `python -m pytest tests/ -rs -q`:
+serial, no `-n auto`, no `$SLOW` ignore list (so the six slow files, including the onboarding-control test,
+were included), no `--durations`. The `ci.yml` `test` job (unchanged in these respects from this commit to
+today, only its timeout differs) runs `python -m pytest tests/ $SLOW -rs -q -n auto --durations=30` after
+installing pytest-xdist, preceded by the per-skill smoke runner and followed by the safety check. This run
+resembles neither the `test` job nor the `full` job's command (`pytest tests/ -rs -q -n auto`). It also
+ran no smoke runner and no safety check. What it did run, in a copy of the export with a fresh Python 3.12
+venv holding only pytest and PyYAML, and a throwaway git identity supplied through `GIT_CONFIG_GLOBAL`
+(`ci_job.sh`; exit codes `ci_exits.txt`):
 
 - `python -m pytest tests/ -rs -q`: `1 failed, 16870 passed, 30 skipped, 9 xfailed in 5273.44s (1:27:53)` (`pytest.log`, last line).
 - `python3 tools/rename_check.py`: exit 0 (`rename_check.log`).

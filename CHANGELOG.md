@@ -14,7 +14,7 @@ All notable changes to Sigma are recorded here, newest first.
   a fresh budget.
 - **Local verification evidence for the public export at `de188d1fb5dd`.** Added
   `docs/launch/evidence/export-verify-de188d1fb5dd.md`: two identical VERIFIED builds (1235 files), the
-  CI `test` job commands run on the exported tree on macOS (1 failed, 16870 passed, 30 skipped), and the
+  plain whole-suite pytest run on the exported tree on macOS (1 failed, 16870 passed, 30 skipped), and the
   planted-fake controls. It finds one failing guard test in the export and a line-wrap gap in the private
   pattern scan, neither fixed here. Local runs only, not GitHub CI.
 
