@@ -491,6 +491,7 @@ VERSION_ALLOW = {
                                      "repository the upgrade guide describes (#326)",
     ("docs/agent-rules-detail.md", "2.1.284"): "a Claude Code CLI version, measured",
     ("docs/onboarding-control.md", "2.1.284"): "the measured Claude Code CLI version of the #524 plugin-id re-run",
+    ("docs/launch/evidence/live-onboarding-2026-10-12.md", "2.1.284"): "the measured Claude Code CLI version the #300 and #301 live drills ran on; it is not a Sigma release",
     ("docs/launch/evidence/pin-rollback-2026-10-02.md", "2.1.284"): "the measured Claude Code CLI version for #359's isolated pin probe",
     ("contract/README.md", "1.0.0"): "the first plugin release the event contract was frozen in: a historical fact, not the current version",
     ("skills/sigma-init/templates/config.json.tmpl", "1.0.0"): "the first release that carries the documented default: a minimum, not the current version",

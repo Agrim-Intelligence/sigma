@@ -258,6 +258,34 @@ laptop, which is why only the planted tests ride the PR job): `tests/test_onboar
 run of the documented gesture), 55.5s on Python 3.12 and 47.0s on 3.10 (this Mac, from the
 checkout); the PR #306 repro through the CLI is ~20s of that.
 
+## Live runs, 2026-10-12 (#300, #301)
+
+One live-model run per mode, headless `claude -p` on Claude Code 2.1.284 (Max login, no API key),
+plugin from origin/main 03fa8189 via `--plugin-dir` (not the marketplace install), throwaway repositories
+(a local scratch repo; `Agrim-Intelligence/sigma-drill-3`, private). Verbatim outputs, token counts and
+the 28 `phase_report.py end` lines (12 local, 8 github, 8 vanilla re-run) are in `docs/launch/evidence/live-onboarding-2026-10-12.md`.
+
+| Run | Wall | Host-reported cost (list price estimate) | Outcome |
+|---|---|---|---|
+| #300 `/sigma-init --demo` (local-goals) | 22 s | $0.127 | one `[ask] verify`, answered; no refusal |
+| #300 `/sigma-loop`, `acceptEdits` | 17 s | $0.128 | did nothing: `$PPID` expansion denied (#721) |
+| #300 `/sigma-loop`, `auto` | 286 s | $2.018 (phase lines sum $0.82) | 1 done, 1 failed: the filed goal `done`, the demo goal `failed` (#1196) |
+| #301 `/sigma-init --demo` (github) | 32 s | $0.130 | same `[ask] verify`; 13 `sdlc:`/`priority:` labels (model summary; 22 captured later incl. 9 GitHub defaults) |
+| #301 `/sigma-loop`, `auto` | 440 s | $1.480 (phase lines sum $0.31) | PR #2 opened, `sigma:approve` posted, left for a human; four refusal messages in three groups, recovered by the model (#1197) |
+| #301 human merge + `reconcile-merges` | 12 s (merge.start to merge.end; reconcile itself 6.9 s, interactive terminal, not logged) | none | `1 done (PR #2 merged)`; issue closed, PR merged, `hello.txt` on main, verify evidence `pass` |
+
+Clean-repo re-run of #300 (origin/main cc92a834, Makefile `test: true`, nothing else): `/sigma-init --demo` 19 s ($0.127;
+three `[ask]` questions: work, mode, verify), `/sigma-loop` under `auto` 160 s ($1.244 host-reported list-price estimate, phase lines sum
+$0.53): **the demo goal reached `done`**, after two `record done` refusals for a review verdict recorded after retro (#1199).
+
+Deviations from the script control above: the demo goal failed live because the repository's
+`make test` ran alongside the demo's own command (#1196); acceptance was recorded after the work and
+the PR needed `--no-tests` (#1197); `phase_report.py end` MEASURED cost on every phase live, where
+the control prints `cost: unavailable`; the PR title is the last commit headline (#1014) and
+`git pull` aborts on untracked `.sdlc` records (#1161). Acceptance for #300 (demo AND one filed goal
+`done`) is NOT met by this run. Acceptance for #301 is met except the owner-only deletion. Unmeasured:
+Linux, Codex, Cursor, the marketplace install in a live session, outside people, live gh call count.
+
 ## The controls, seen red
 
 Each was run through the CLI gesture above, not only through pytest, and each is also a test.
