@@ -12,7 +12,7 @@ been consulted; none is engaged.
 On 2026-10-12 the owner (a startup founder with no legal advisor) decided in chat to go public without counsel and to record
 owner decisions with the risk accepted, instead of waiting for counsel. The owner's statements, recorded as made and not as
 legal conclusions: the company owns the code; everyone who contributed is a founder or an employee of the company, apart from
-Claude (AI-assisted work); the public name is `Sigma Loop` (repository and install id `sigmaloop`), which stays OPEN after the register search in 7.4;
+Claude (AI-assisted work); the public name is `Sigma Loop` (repository and install id `sigmaloop`), which stays OPEN after the register search in section 7.4;
 the predecessor plugin is the company's own earlier project. A cell became an OWNER DECISION only where one of these
 statements decides it. Nothing here was checked against a legal source, and nothing is a legal conclusion.
 
@@ -292,10 +292,10 @@ appears in `LICENSE:3` and in two lines of `skills/sigma-doctor/scripts/doctor.p
 
 | Question | Answer |
 |---|---|
-| Is `Sigma Loop` acceptable for a developer tool given the hits above and the registers not searched? | OPEN: the owner stated on 2026-10-12 (owner statement, chat) that the public name is `Sigma Loop`; the owner has not yet decided after seeing the register-search result in 7.4 (a live word mark in Germany, amber hits elsewhere, limits stated there) |
-| Does the bare `sigma-` prefix on commands and skills change the answer? | OPEN: the prefix stays as is for now; the owner has not decided on it after seeing 7.4, which found live SIGMA word marks held by others |
+| Is `Sigma Loop` acceptable for a developer tool given the hits above and the registers not searched? | OPEN: the owner stated on 2026-10-12 (owner statement, chat) that the public name is `Sigma Loop`; the owner has not yet decided after seeing the register-search result in section 7.4 (a live word mark in Germany, amber hits elsewhere, limits stated there) |
+| Does the bare `sigma-` prefix on commands and skills change the answer? | OPEN: the prefix stays as is for now; the owner has not decided on it after seeing section 7.4, which found live SIGMA word marks held by others |
 | Trademark register and company-name search (USPTO, EUIPO at minimum), domains, handles | OPEN: a first-pass search was done on 2026-10-12 (7.4) and covers only the registers and limits listed there; a human-verified search is still needed |
-| Is the `sigma-loop` organisation or the `SigmaLoop` user a concern for the repository or install id `sigmaloop`? | OPEN: the owner stated on 2026-10-12 (owner statement, chat) that the public name is `Sigma Loop` and the repository and install id `sigmaloop`; the owner has not yet decided after seeing the register-search result in 7.4 (a live word mark in Germany, amber hits elsewhere, limits stated there) |
+| Is the `sigma-loop` organisation or the `SigmaLoop` user a concern for the repository or install id `sigmaloop`? | OPEN: the owner stated on 2026-10-12 (owner statement, chat) that the public name is `Sigma Loop` and the repository and install id `sigmaloop`; the owner has not yet decided after seeing the register-search result in section 7.4 (a live word mark in Germany, amber hits elsewhere, limits stated there) |
 
 ### 7.4 First-pass register search, 2026-10-12
 
@@ -316,7 +316,7 @@ a statement; the owner has not yet decided after seeing this result.
 
 1. The exact legal entity name for the copyright line: `LICENSE:3` says "Agrim Intelligence", `.claude-plugin/plugin.json`
    names an individual. Neither was changed. The owner must confirm the name.
-2. The name `Sigma Loop`, the id `sigmaloop` and the `sigma-` prefix: the owner's decision after seeing the first-pass search in 7.4, and a human-verified register search (section 7).
+2. The name `Sigma Loop`, the id `sigmaloop` and the `sigma-` prefix: the owner's decision after seeing the first-pass search in section 7.4, and a human-verified register search (section 7).
 3. Codex and Cursor catalogue terms, and each vendor's brand guidelines (section 6).
 4. Obligations to teams still using the predecessor (section 5).
 
@@ -324,4 +324,4 @@ a statement; the owner has not yet decided after seeing this result.
 
 Owner decision on the notice, no counsel consulted, 2026-10-12: `NOTICE` lists third-party licences only. Risk accepted.
 The name `Sigma Loop` and the id `sigmaloop`: OPEN. The owner stated the name on 2026-10-12 and has not yet decided after seeing
-the register-search result in 7.4. Other items in section 8 remain OPEN.
+the register-search result in section 7.4. Other items in section 8 remain OPEN.
