@@ -1122,7 +1122,7 @@ def test_source_slug_in_a_path_rejects_and_a_longer_name_does_not(tmp_path, caps
     rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha))
     assert rc == 1, err
     found = _report(_fields(out))["scans"]["builder"]["findings"]
-    assert [(f["rule"], f["path"], f["line"]) for f in found] == [("source-slug", "docs/" + _fake_slug() + "/x.md", 0)]
+    assert [(f["rule"], f["path"], f["line"]) for f in found] == [("source-slug", "docs/[redacted: pattern 0]/x.md", 0)]  # the path is redacted in the report
 
 
 def test_clean_tree_with_a_derived_slug_is_verified_and_counts_the_scan(tmp_path, capsys):
@@ -1154,3 +1154,50 @@ def test_a_source_slug_finding_cannot_be_dispositioned(tmp_path, capsys):
             {"schema": "sigma.public-tree-dispositions/v1", "entries": [entry]})})
     rc, out, err = _build(mod, capsys, _argv(tmp_path, repo, sha))
     assert rc == 2 and "REFUSED [dispositions-malformed]" in err
+
+
+# ------------------------------------------------------------------------------ information disclosure (builder output)
+
+def _all_text(tmp_path, fields, so, se):
+    parts = [so, se, _report_path(fields).read_text(encoding="utf-8"), _md(fields)]
+    return "\n".join(parts)
+
+
+def test_a_slug_in_a_path_is_redacted_from_every_output_and_the_report(tmp_path, capsys):
+    mod = _tool()
+    repo, sha = _fixture(tmp_path, extra={"docs/" + _fake_slug() + "/x.md": "x\n"})
+    rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, extra=["--repo", _fake_slug()]))
+    assert rc == 1, se
+    text = _all_text(tmp_path, _fields(so), so, se)
+    assert "fake-src-repo" not in text and "fake-src-org" not in text
+    assert "[redacted: pattern 0]" in text
+
+
+def test_a_report_directory_inside_the_export_is_refused(tmp_path, capsys):
+    mod = _tool()
+    repo, sha = _fixture(tmp_path)
+    out = _out(tmp_path)
+    for report_dir in (out / "reports", pathlib.Path(str(out) + ".rejected") / "r"):
+        argv = _argv(tmp_path, repo, sha, out=out)
+        argv[argv.index("--report-dir") + 1] = report_dir
+        rc, so, se = _build(mod, capsys, argv)
+        assert rc == 2 and so == "" and "REFUSED [report-dir-inside-out]" in se, se
+        assert not out.exists() and not report_dir.exists()
+
+
+def test_the_export_git_directory_and_outputs_name_no_operator_path_host_or_source(tmp_path, capsys):
+    mod = _tool()
+    repo, sha = _fixture(tmp_path)
+    rc, so, se = _build(mod, capsys, _argv(tmp_path, repo, sha, extra=["--repo", _fake_slug()]))
+    assert rc == 0, se
+    export = _out(tmp_path)
+    needles = [str(tmp_path), os.environ["HOME"], _fake_slug().lower(), "fake-src-org"]
+    for path in (export / ".git").rglob("*"):
+        if path.is_file() and "objects" not in path.parts:
+            data = path.read_text(encoding="utf-8", errors="replace").lower()
+            assert not [n for n in needles if n.lower() in data], path
+    config = (export / ".git" / "config").read_text(encoding="utf-8")
+    assert "url" not in config and "remote" not in config
+    assert os.environ["HOME"] not in "\n".join([so, se])
+    assert not (export / ".git" / "logs").exists() and not (export / ".git" / "hooks").exists()
+    assert not any(p.is_symlink() for p in export.rglob("*") if ".git" not in p.parts)

@@ -82,7 +82,7 @@ The refusal codes: `windows`, `no-patterns-source`, `patterns-inside-work-tree`,
 `not-a-repo`, `bad-commit`, `bad-version` (the plugin version is not a plain `N.N.N[-alpha|beta|rc[.N]]` number, or the export commit message matches a content rule: the version enters the commit message, which no file scan reads), `object-format`, `bad-exclude`, `exclude-matches-nothing`, `symlink`,
 `gitlink`, `bad-mode`, `bad-path`, `secret-file-name`, `case-collision` (two paths equal after
 case folding and Unicode NFC normalisation), `head-not-commit`,
-`dirty`, `tool-mismatch`, `tool-missing`, `no-remote-ref`, `not-landed`, `repo-required`, `bad-slug`, `source-slug-unknown`,
+`dirty`, `tool-mismatch`, `tool-missing`, `no-remote-ref`, `not-landed`, `repo-required`, `bad-slug`, `source-slug-unknown`, `report-dir-inside-out`,
 `gh-failed`, `review-repo-public`, `not-pr-merged`, `not-owner-merged`, `dispositions-malformed`,
 `tree-mismatch`, `oversize`, `binary`, `non-utf8`, `report-exists`, `unpublish-failed`,
 `work-tree-unknown`, `git-failed`, `bad-ref`, `bad-timeout`, `leak-scan-absent` (the commit holds
@@ -167,6 +167,19 @@ scanner over the export) and `leak_scan` (the export's own commit-time scan).
 Every build is REJECTED until the owner fills the two owner-name placeholders in `SECURITY.md` and
 `CODE_OF_CONDUCT.md`: the placeholder is a finding, not a pre-materialisation refusal, so one run
 still reports every other scan.
+
+## What the builder's own output may disclose
+
+Measured against a real export and pinned in `tests/test_build_public_tree.py`: the report (JSON and
+`.md`), stdout, stderr and the `.rejected` directory carry locations (path, line, rule, hash), never
+matched text; every string passes the pattern belt, which now also redacts the source repository's own
+name (`[redacted: pattern 0]`, e.g. in a finding's path). Reports are written only outside the work
+tree and, since #1204, refused `report-dir-inside-out` when inside `OUT` or `OUT.rejected`. The export's
+`.git` holds one orphan commit by the fixed identity, no remote, hook, reflog or operator path; its
+`config` records two host facts of the machine that ran `git init` (`ignorecase`, `precomposeunicode`).
+Not covered: the local report does echo what the operator passed (`--repo`, the review logins `gh`
+returned) and the `out:`/`report:` paths, tilde-shortened under the operator's home; it is 0600 and
+never inside a repository.
 
 ## Dispositions and drift
 

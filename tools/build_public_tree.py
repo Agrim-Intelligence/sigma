@@ -1195,6 +1195,7 @@ def _main(argv, run, state):
     except (OSError, UnicodeDecodeError):
         raise Refused("patterns-unreadable", "cannot read the patterns file")
     state.patterns = parse_patterns(text)
+    pattern_count = len(state.patterns)
     patterns_path = patterns_path.resolve()
 
     # 3. where things land
@@ -1205,6 +1206,10 @@ def _main(argv, run, state):
     _refuse_inside_work_tree(out, "out-inside-work-tree", run)
     report_dir = pathlib.Path(os.path.abspath(os.path.expanduser(args.report_dir or DEFAULT_REPORT_DIR)))
     _refuse_inside_work_tree(report_dir, "report-dir-inside-work-tree", run)
+    for tree in (out, rejected):
+        if report_dir == tree or tree in report_dir.parents:
+            raise Refused("report-dir-inside-out", "the report directory is inside OUT or OUT.rejected, so a report "
+                          "would ship in the export")
     _make_private_dir(out.parent)
     _make_private_dir(report_dir)
     mark = lap("arguments", started)
@@ -1301,6 +1306,7 @@ def _main(argv, run, state):
         raise Refused("source-slug-unknown", "the source's own OWNER/NAME cannot be derived: pass --repo, or "
                       "give the source a GitHub remote named by --remote, so the export can be scanned for it")
     slug_rx = source_slug_rx(slugs)
+    state.patterns = state.patterns + [(0, slug_rx)]  # pattern 0: the output belt redacts it too (path findings)
 
     # 10. the planned tree, twice
     tmp = tempfile.mkdtemp(prefix="build_public_tree-")
@@ -1404,7 +1410,7 @@ def _main(argv, run, state):
         "review": review,
         "sdlc": {"mode": sdlc_mode, "source": "flag" if args.sdlc else "default"},
         "exclusions": exclusions,
-        "patterns": {"source": "flag" if args.patterns else "env", "count": len(state.patterns)},
+        "patterns": {"source": "flag" if args.patterns else "env", "count": pattern_count},
         "export": {"out": _tilde(dest), "files": mat["files"], "bytes": mat["bytes"], "modes": mat["modes"],
                    "planned_tree_git": planned_git, "planned_tree_python": planned_py,
                    "actual_tree_disk": actual_disk, "export_tree": planned_py, "commit": export_commit,
