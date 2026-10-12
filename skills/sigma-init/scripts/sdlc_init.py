@@ -682,6 +682,13 @@ def scaffold_extras(target, flags):
 USAGE = "usage: sdlc_init.py [target_dir] [--github] [--codex] [--cursor] [--vision] [--demo]"
 
 
+def missing_target_message(target):
+    """#1246: the refusal for a target directory that is not there, WITH its fix. Shared with
+    init_flow.py, which prints the same line, so the two entry points cannot drift."""
+    return (f"sigma-init: target directory does not exist: {target} -- check the path, or create the "
+            f"repository first (`mkdir -p {target} && cd {target} && git init`), then re-run /sigma-init")
+
+
 def main(argv):
     if argv[1:] in (["-h"], ["--help"]):
         print(USAGE)
@@ -690,7 +697,7 @@ def main(argv):
     pos = [a for a in argv[1:] if not a.startswith("--")]
     target = pos[0] if pos else "."
     if not pathlib.Path(target).is_dir():
-        print(f"sigma-init: target directory does not exist: {target}", file=sys.stderr)
+        print(missing_target_message(target), file=sys.stderr)
         return 1
     refusal = git_refusal(target)                 # #229: before anything is written
     if refusal:
