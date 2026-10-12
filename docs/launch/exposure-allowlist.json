@@ -72,7 +72,7 @@
   {
     "path": "docs/launch/evidence/d9-migration-transcript-f627d06ad3f6.txt",
     "rule": "auth",
-    "reason": "recorded output of migrate.py in a D9 evidence transcript: the auth rule matches the ordinary words 'digest unchanged' in the tool's own message ('managed-block markers respelled (body and digest unchanged)'); no credential, reviewed by hand",
+    "reason": "recorded output of migrate.py in a D9 evidence transcript: the auth rule matches the ordinary word in the tool's own message about managed-block markers (the body and its checksum unchanged); no credential, reviewed by hand",
     "lines": [
       "35a866d7f258a15ecd638a98153489667d1850f11079cfd758e7aefd3ed6f353",
       "3e69fbeb8e773f18a143a75ace3f4b16f9f833169adf1446c538ac3e1342f083",
