@@ -3567,6 +3567,46 @@
       "count": 1,
       "gate": "removes only the private run-* directory holding the verified adapter copy it just created",
       "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/dead_vs_idle.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "explicit control command; writes only the JSON record at the path it is given",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/dead_vs_idle.py",
+      "function": "run",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "explicit control command; writes only inside the empty scratch workdir it is given (repo, home, daemon log); signals only the pid it spawned",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/scale_probe.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "explicit probe command; refuses a non-empty workdir; writes only the JSON record at the path it is given",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/scale_probe.py",
+      "function": "probe_claims",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "explicit probe command; writes only synthetic lock files inside the empty scratch workdir it is given",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/scale_probe.py",
+      "function": "probe_slots",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "explicit probe command; writes only synthetic action-log files inside the empty scratch workdir it is given",
+      "risk": "medium"
     }
   ]
 }
