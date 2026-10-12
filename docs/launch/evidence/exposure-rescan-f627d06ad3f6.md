@@ -65,7 +65,7 @@ python3 tools/readiness/exposure_scan.py history . --patterns <owner patterns fi
 python3 tools/readiness/exposure_scan.py tracked . --patterns <owner patterns file> --allowlist docs/launch/exposure-allowlist.json --json <out>
 python3 tools/readiness/exposure_scan.py refs . --json <out>
 python3 tools/leak_refs.py tree --patterns <owner patterns file>
-python3 tools/build_public_tree.py f627d06ad3f6fe391936a0e0bb1e6061f2af6aa4 --out <dir> --patterns <owner patterns file> \
+python3 tools/build_public_tree.py COMMIT --out <dir> --patterns <owner patterns file> \
     --repo Agrim-Intelligence/sigma --allow-public-source --review-level clean --report-dir <dir>
 python3 tools/leak_refs.py tree --patterns <owner patterns file> --root <export dir>
 python3 tools/readiness/exposure_scan.py history|tracked <export dir> --patterns <owner patterns file> [--allowlist ...]

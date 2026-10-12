@@ -280,7 +280,7 @@ def _budget_resource_reason(cursor, budget):
     reason"), because on the SHIPPED DEFAULT config `handoff.after_goals` and `budget.max_iterations`
     are the identical number (20) watching the identical counter, so max_iterations tripping at the
     exact same tick as a genuine max_tokens/max_minutes breach is the COMMON case, not a rare corner
-    one (a `large`-lane drain can plausibly burn `max_tokens`'s own 500k-token shipped default
+    one (a `large`-lane drain can plausibly burn `max_tokens`'s own configured cap (the scaffold ships 100,000,000; a smaller cap)
     within 20 goals, given a fresh subagent's own ~70-77k-token starting cost alone). Eliminating on
     "iterations already explains it" would silently mask that live breach behind HANDOFF or the
     iterations reason, forever, one hand-off at a time — precisely the bug this function exists to
