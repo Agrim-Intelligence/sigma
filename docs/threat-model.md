@@ -23,9 +23,9 @@ risk has been eliminated.
 | T2 | Repository content enters commands through configured checks: `skills/sigma-loop/scripts/pipeline.py:68`, `skills/sigma-loop/scripts/backlog_check.py:810`, `skills/sigma-loop/scripts/loop.py:5222`, `skills/sigma-rebase/scripts/verify_merge.py:122`, and `skills/sigma-loop/scripts/reviewer.py:243`. |
 | T3 | Host hooks execute at prompts and tool calls: `hooks/hooks.json:3`, repo adoption is checked by `hooks/sigma_gate.sh:20`, and session-start's watcher/doctor diagnostic layer begins at `hooks/session_start.sh:173`. |
 | T4 | Network destinations are GitHub, Slack, a configured webhook, SMTP, and the host's model process, enumerated in `docs/privacy.md:7-15`. |
-| T5 | Background boundaries include detached watcher startup `skills/sigma-loop/scripts/loop.py:85`, the watcher loop `skills/sigma-loop/scripts/watch_daemon.py:906`, Slack listener lifecycle `skills/sigma-loop/scripts/slack_commands_listen.py:757`, and model subprocesses `skills/sigma-loop/scripts/autowatch.py:915`. |
+| T5 | Background boundaries include detached watcher startup `skills/sigma-loop/scripts/loop.py:85`, the watcher loop `skills/sigma-loop/scripts/watch_daemon.py:906`, Slack listener lifecycle `skills/sigma-loop/scripts/slack_commands_listen.py:757`, and model subprocesses `skills/sigma-loop/scripts/autowatch.py:923`. |
 | T6 | Local policy comes from managed settings `skills/sigma-loop/scripts/managed_settings.py:237` and the direct-edit sentinel is described in `docs/enforcement.md:59`. |
-| T7 | Model-spawned sessions include `skills/sigma-loop/scripts/feature_judge.py:155`, `skills/sigma-loop/scripts/autowatch.py:915`, and `skills/sigma-loop/scripts/supervise_daemon.py:1`. |
+| T7 | Model-spawned sessions include `skills/sigma-loop/scripts/feature_judge.py:155`, `skills/sigma-loop/scripts/autowatch.py:923`, and `skills/sigma-loop/scripts/supervise_daemon.py:1`. |
 
 ## Threats and current mitigations
 

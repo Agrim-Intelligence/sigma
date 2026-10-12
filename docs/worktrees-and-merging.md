@@ -102,7 +102,7 @@ own. `work.require_review` adds a real review gate, **independent of branch prot
 
 It reads the PR's real review state (`reviewDecision`, review threads, and `sigma:` comment markers)
 and **parks** if the PR isn't cleared — nothing auto-merges past unaddressed feedback. Fail-closed: an
-unreadable comment list or review list parks the merge; only the unresolved-thread count fails open.
+unreadable comment list or review list parks the merge; what fails open is the unresolved-thread count and, under `require_review: changes`, an unreadable `reviewDecision`.
 
 **The loop reviews its own PR — no human in the loop.** After it opens the PR, the loop runs a **fresh,
 adversarial pass over the real mergeable diff** (a review *after* the PR, distinct from the pre-PR
