@@ -51,9 +51,7 @@ it tests the right thing. Wrote code before the test? Delete it and re-derive fr
    Middle Man (units too entangled) · Duplicate Code, Dead Code, Speculative Generality (code that
    should not exist). Fix it now, while the context is in your head and the diff is yours.
 
-After writing the plan's `## Tests` entries, record both stages through Sigma. This recording is not
-optional and is not replaced by a companion TDD skill (superpowers or any other): a companion may help you
-write the test, but only this command records the red and the green:
+After writing the plan's `## Tests` entries, record both stages through Sigma (a companion TDD skill never replaces this):
 
 ```sh
 python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" verify .sdlc "$goal"
@@ -110,15 +108,15 @@ marked `(step)`. `--phase-model` asserts that this phase agent itself executes t
 requested host ID can be read from the phase start marker. For a separately dispatched step,
 replace that flag with both `--model <step-tier>` and `--host-model <exact-host-model-id>` from the
 step's dispatch call. Both are required so the banner cannot borrow the phase's tier either.
-Without either, the step prints `unrecorded` rather than guessing from a matching tier. This is
+Without either it prints `unrecorded`, never a guess. This is
 the requested model. `phase_report.py end` checks the phase agent's observed model, not a separately
 dispatched step's model. It writes nothing — no marker, no
 ledger event — so it cannot disturb the elapsed
 time and cost `end` measures. `--total` is optional; `--title` is the goal's title, as on
 `start`/`end`. `.sdlc` means the main checkout's: from a goal worktree use the absolute path your
 dispatch prompt gave you, or the tier reads `unrecorded` (and in github mode the title is lost too).
-The brief is capped at 88 characters. Best-effort like every banner — skip it with no goal id (a
-standalone `/sigma-implement`), and never let it block a step.
+The brief is capped at 88 characters. Best-effort: skip it with no goal id (a
+standalone `/sigma-implement`); never let it block a step.
 
 ## Mutation testing (prove the guard, don't assert it)
 A green suite says a guard exists; only reverting it and watching the right test fail proves it
