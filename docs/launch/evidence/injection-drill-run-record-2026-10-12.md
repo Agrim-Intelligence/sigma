@@ -12,8 +12,8 @@ occurred.
 
 | Command | Exit | Result |
 |---------|-----:|--------|
-| `injection_drill.py plan --repo Agrim-Intelligence/sigma-drill-1 --max-usd 5` | 0 | printed the plan: three payload issues (H01, H09, H12), then one supervised pick by the owner |
-| `injection_drill.py plan --repo Agrim-Intelligence/sigma-injection-drill-1 --max-usd 5` | 2 | `REFUSED [repo-form]`: the repository name must start with `sigma-drill-` |
+| `injection_drill.py plan --repo OWNER/sigma-drill-1 --max-usd 5` | 0 | printed the plan: three payload issues (H01, H09, H12), then one supervised pick by the owner |
+| `injection_drill.py plan --repo OWNER/sigma-injection-drill-1 --max-usd 5` | 2 | `REFUSED [repo-form]`: the repository name must start with `sigma-drill-` |
 
 The `$5` is the tool's required declaration; the tool measures and spends nothing.
 
