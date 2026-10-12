@@ -198,7 +198,7 @@ ignore by rule (`pytest_collection_modifyitems`, `pytest_ignore_collect`, `pytes
 registration, the run and report hooks, `add_marker`, `collect_ignore`/`collect_ignore_glob`), and, for the
 eight guard tests, any skip/xfail marker, `pytest.skip`/`importorskip`/`xfail` call (one reviewed
 `not a git checkout` skip excepted) or `return` before the first assert; the only exemption is the exact
-skip the export-time transform of #1203 writes into five named tests. NOT covered: a blanket skip (a hook
+skip the export-time transform of #1203 writes into five named tests. The exemption holds only in a tree that is an export: no `.sdlc/` directory AND shipped inventories already pruned of `.sdlc/` rows (`export_mode()`); with `.sdlc/` present, or deleted without the pruning, the decorator is itself a finding. Not covered: a hand-built tree that deletes `.sdlc/`, prunes both inventories and adds the decorators (a visible rewrite, reviewed as such). NOT covered: a blanket skip (a hook
 or an autouse fixture that skips every test, or a skip in an imported helper), `--deselect`, `-k` or `addopts`
 in `pytest.ini`/`pyproject.toml`/`tox.ini`, a plugin, and the CI command line. Mitigation: review of any
 conftest or pytest-config change, and the measured exported-suite counts (passed, skipped and the five
