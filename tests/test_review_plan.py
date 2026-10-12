@@ -12,7 +12,7 @@ they are called and which gate. They must not disagree:
   - the nine reviewer rules are numbered 1 to 9, and rule 9 is the phantom-blocker rule;
   - every dimension has a row saying what already exists on main and what is still to be produced,
     and every file path cited as existing is on disk;
-  - D13 says it is not scoreable until counsel answers; D3 says "as amended" and names 3 arms;
+  - D13 says it cannot be scored 3 while the name cells read OPEN (owner decision 2026-10-12, replacing the counsel wait); D3 says "as amended" and names 3 arms;
   - the plan contains no sentence the loop's own blocker scan would read as a dependency edge;
   - the calibration record (#361) has one section per pilot, each measured or "Not measured" with a reason, its rows
     add up, and the plan's measured ceilings carry their formulas, the headroom factor and the pilot counters.
@@ -223,9 +223,9 @@ def test_cited_existing_paths_are_on_disk():
     _check(not missing, f"cited as existing but not on disk: {missing}")
 
 
-def test_d13_waits_for_counsel_and_d3_states_the_reduced_design():
+def test_d13_waits_for_the_name_decision_and_d3_states_the_reduced_design():
     text, rows = _plan(), _evidence_rows(_plan())
-    _check("not scoreable until counsel answers" in rows["D13"][3], "D13 owner cell lacks the counsel statement")
+    _check("cannot be scored 3 while the name cells read OPEN" in rows["D13"][2], "D13 row lacks the name-OPEN statement")
     d3 = next(line for line in text.splitlines() if line.startswith("| D3 |"))
     _check("as amended" in d3 and "3 arms" in d3 and "5 arms" not in d3, f"D3 row is stale: {d3!r}")
     _check("`3.12`" not in text and "Python 3.12" in _section(text, "## Scope"), "macOS 3.12 claim missing from Scope")
@@ -259,7 +259,7 @@ def test_legal_fact_sheet_and_notice_are_cited_and_still_awaiting_counsel():
         _check(path in cell, f"the D13 evidence row does not cite {path}")
     _check("OWNER DECISION (no counsel consulted)" in (ROOT / "docs/launch/evidence/legal.md").read_text(encoding="utf-8"),
            "legal.md lost its OWNER DECISION marker")
-    _check("not scoreable until counsel answers" in rows["D13"][3], "D13 owner cell lacks the counsel statement")
+    _check("cannot be scored 3 while the name cells read OPEN" in rows["D13"][2], "D13 row lacks the name-OPEN statement")
 
 
 CAL = ROOT / "docs" / "launch" / "evidence" / "cost-calibration.md"

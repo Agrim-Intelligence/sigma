@@ -92,6 +92,13 @@ GO if and only if all four hold:
 4. the benchmark results file named in the scorecard (`benchmark_results`) is a file under
    `docs/launch/evidence/`, is non-empty, and exists on `main`.
 
+Condition 4 for the launch of 1.0.x (owner decision, chat, 2026-10-12): the benchmark results file is the
+published measured-results document, `docs/launch/evidence/measured-results.md`, which makes no comparative
+claim. The comparative benchmark (#275) is past launch. BEFORE: the file was expected to be the comparative
+benchmark's result. AFTER: it is the measured-results document. This lowers the written bar because the owner decided
+the comparative run is not a launch gate; the checker is unchanged, because it tests only that the named file is
+under `docs/launch/evidence/`, non-empty and on `main`, and never reads it.
+
 Otherwise NO-GO. An unscored gating dimension, a missing definition, a `signed` definition without
 a valid signer or date, or an unnamed benchmark file (`null` or blank) is NO-GO, never GO. An input
 the checker cannot read (a scorecard missing at `main`, a scorecard or definition at `main` that is
@@ -234,6 +241,9 @@ issues carry `launch:blocker` now, not their bodies or their label history.
   comment on the issue.
 - **Demote.** Nobody may demote a `launch:blocker`. It leaves the blocker set only by being closed,
   either with the fix or with a reproduced "cannot reproduce".
+- Whatever file condition 4 names, no comparative claim is made from it. INCONCLUSIVE and any comparative claim
+  stay forbidden, as `docs/bench/preregistration.md` says. The checker cannot read the file's content, so this is
+  a rule for the people who write and review it.
 - Removing the label from an open issue is a demotion and is not allowed; a later review that finds
   one restores the label.
 
