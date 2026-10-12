@@ -28,7 +28,7 @@ intention; this grounds it in the code: what the change will actually touch, wha
 there, and how much ceremony it earns.
 
 ## Executor
-Always Sigma's own (same as `sigma-retro`). Pure `grep` / `git` / markdown discipline — it degrades
+Always Sigma's own. Pure `grep` / `git` / markdown discipline — it degrades
 gracefully on any host.
 
 **Read-only.** It never edits code, plans, or standing docs. The dossier and the questions it raises
@@ -37,9 +37,9 @@ are the only outputs — except the one-line `lane:` write-back in step 5.
 ## Proportion first
 Research is a cost, not a virtue. Before starting, ask whether this goal earns it: a typo fix, a
 rename, or a one-file change does **not** — record a one-line radius in the goal's journey note, run
-`loop.py waive-phases` for research (the phase gate wants it), and go straight to Plan. Run the full pass when the goal touches a contract, crosses a module boundary,
-changes shared state, or you cannot yet name every file it will touch. Skipping it is a legitimate
-outcome; say so explicitly rather than producing a ceremonial dossier.
+`loop.py waive-phases <dir> <goal> research --reason "<why>"` (`record done` is refused without it), and go straight to Plan. Run the full pass when the goal touches a contract, crosses a module boundary,
+changes shared state, or you cannot yet name every file it will touch. Skipping it is legitimate;
+say so rather than producing a ceremonial dossier.
 
 ## 1. Seed
 Start from the goal text (`.sdlc/goals/NNNN-*.md` or the issue body) plus, if the knowledge graph is

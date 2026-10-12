@@ -153,7 +153,7 @@ category, most-severe first:
 **Bug** (will misbehave) · **Concern** (design risk) · **Coverage** (untested behavior) · **Missing**
 (a required piece absent) · **Good** (worth keeping) · **Minor / Nit** (style). Each: what, where
 (`file:line`), why it matters, and the fix. Don't pad with praise; if you didn't try to break it, you
-didn't review it. Rules are lessons, not laws — only a documented in-code waiver or the user can waive a finding, with a stated reason.
+didn't review it. Rules are lessons, not laws — you may waive a Nit or Concern with a stated reason; a Bug, Missing or project-rule finding only the user can waive.
 
 ### Before you report it
 **A finding is a claim in prose, and a claim in prose is not evidence** — the north-star's own
@@ -183,8 +183,7 @@ blocking finding costs a full fix -> push -> re-review round, and `work.max_revi
 
 Reporting a real finding as follow-up is a judgement you are allowed to make. Reporting one you could
 not write a failing case for, as blocking, is the failure this section exists to prevent. A
-**Missing** with no constructible failing case is exactly this case, not an exception to it: it
-still gets reported, as Follow-up per the bullet above — never dropped for having nowhere to go.
+**Missing** with no constructible failing case is Follow-up per the bullet above, never dropped.
 
 ## Counter-review
 When grading an external review, for each of its findings: **accept** (correct), **downgrade / reframe**

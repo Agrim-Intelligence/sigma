@@ -69,7 +69,7 @@ Status F = reworded in this change; R = remaining; P = fixed in code by a separa
 | G3 | sigma-goal/SKILL.md:55, 222 | "pausing for the user at each gate", "the user approves each gate" | The set of gates is never listed; a blanket "go ahead" could be read as approving all | Low | R: needs an owner decision on what the gates are |
 | B1 | sigma-brainstorm/SKILL.md:25-27 | "the user has approved it" | What counts as approval is unstated (the original request?) | Low | F: "explicitly approved". Residual: no statement for an unattended run |
 | R1 | sigma-research/SKILL.md:113-114 | "plan briefly and go" | "go" reads as straight to Implement; the Plan-Review rule is 17 lines later (130-131) | Med | F: "Plan-Review still runs in full" added in place |
-| R2 | sigma-research/SKILL.md:38-42 | "record a one-line radius in the goal's journey note and go straight to Plan" | With the phase gate on, `phase_gate.py:130-134` wants a non-empty research file or a recorded waiver; a journey note alone leaves `record done` refused | Med | F: names `loop.py waive-phases` |
+| R2 | sigma-research/SKILL.md:38-42 | "record a one-line radius in the goal's journey note and go straight to Plan" | With the phase gate on, `phase_gate.py:130-134` wants a non-empty research file or a recorded waiver; a journey note alone leaves `record done` refused | Med | F: names `loop.py waive-phases <dir> <goal> research --reason "<why>"` and that `record done` is refused without it |
 | R3 | sigma-research/SKILL.md:86, 188 | "Tensions and blocking questions go to the user" | Nothing says what halts an unattended run while a blocking question is open | Low | R |
 | P1 | sigma-plan/SKILL.md:19 | "concrete, testable steps; `sigma-plan-review`." | Fragment; does not say the review is mandatory (line 71 does) | Low | F: "then ... (never skipped)" |
 | PR1 | sigma-plan-review/SKILL.md:113-118 | "FIX-FIRST (blocking issues)" | Never states that Implement waits for a fresh approving verdict; only `work.py pr` (when enabled) enforces it | Med | F |
@@ -80,7 +80,7 @@ Status F = reworded in this change; R = remaining; P = fixed in code by a separa
 | I3 | sigma-implement/SKILL.md:149-150 | "a standing, expected step rather than one option in a list" | "expected" is weaker than required | Low | F |
 | I4 | sigma-implement/SKILL.md:54 | "After writing the plan's `## Tests` entries, record both stages" | Unclear when recording starts; "never replaces" implies it is mandatory | Low | R |
 | I5 | sigma-implement/SKILL.md:60 | "Plain commands do not; changed tests need red again." | Elliptical; the object of "do not" is implied | Low | R |
-| RV1 | sigma-review/SKILL.md:157 | "a finding can be waived with a stated reason" | Does not say by whom; reads as the reviewer waiving a project-rule finding the skill calls a gate (132-135) | Med | F: only a documented in-code waiver or the user |
+| RV1 | sigma-review/SKILL.md:157 | "a finding can be waived with a stated reason" | Does not say by whom; reads as the reviewer waiving a project-rule finding the skill calls a gate (132-135) | Med | F: the reviewer may waive a Nit or Concern with a stated reason; a Bug, Missing or project-rule finding only the user |
 | RV2 | sigma-review/SKILL.md:146-148 | "decide each category from `git diff --name-only <base>...HEAD`" | `risk-detect.sh` scans only uncommitted files; on a committed branch the agent judges the categories by hand with no criteria | Med | P: `risk-detect.sh --base <ref>`, pull request 1275 |
 | RV3 | sigma-review/SKILL.md:150-153, 196 | "an overall verdict", "a real bug is FIX-FIRST" | No verdict words given; `FIX-FIRST` is plan-review's and `work.py record-review` accepts only `APPROVE`, `SEND-BACK`, `BLOCK` (`phase_gate.py:43`) | Med | F: names the three words. Residual: the difference between SEND-BACK and BLOCK is not defined in this skill |
 | RV4 | sigma-review/SKILL.md:185-188 | "Reporting a real finding as follow-up is a judgement you are allowed to make" | Lets a real finding without a written failing case be filed instead of blocking; by design, but open-ended | Low | R |
@@ -100,11 +100,23 @@ Status F = reworded in this change; R = remaining; P = fixed in code by a separa
 ## Fixes: what was checked
 
 Each edit was word-neutral or trimmed elsewhere; `evals/phase_context_budget.json` ceilings are unchanged and
-`python3 evals/phase_context_budget.py` prints clean (sigma-research sits exactly at its word ceiling, and
-sigma-loop's SKILL.md is below its estimator limit). To fit, two redundant passages were shortened: the
-"(e.g. ...)" examples and the "merge four sources" lead-in in sigma-review, and one sentence of the
-incident note in sigma-implement. Nothing here is pinned by a test, so none of the new sentences has been
-seen red against its removal.
+`python3 evals/phase_context_budget.py` prints clean (sigma-research sits at its word ceiling, and
+sigma-loop's SKILL.md is below its estimator limit). To fit, passages were shortened, listed here because
+they are edits beyond the table above:
+
+- sigma-review: the "(e.g. ...)" examples and the "merge four sources" lead-in; the sentence that restated
+  the Missing-without-a-failing-case rule (kept as one short clause).
+- sigma-implement: the incident note's closing clause ("so it can't silently drift back").
+- sigma-research: "explicitly", "a ... outcome" and "(same as `sigma-retro`)".
+- sigma-loop SKILL.md: the parenthetical "(#2527: this refusal is real for a plain Claude collision now,
+  not only a Codex thread mismatch)" was removed; the refusal itself is unchanged.
+- sigma-plan-review: "Be specific and opinionated;" was removed.
+
+Pinned by tests: `tests/test_d2_cold_read_wording.py` greps five of the rewordings (the research waiver
+command, the review verdict words read from `phase_gate.REVIEW_VERDICTS` with no `FIX-FIRST` in
+sigma-review, the Implement plan-review precondition, the Verify-command preference, the plan-review
+FIX-FIRST sentence). All five go red when the five skill files are put back to main's earlier text, and green
+again after. The other thirteen rewordings are not pinned.
 
 ## What this does not show
 
