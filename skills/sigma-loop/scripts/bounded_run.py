@@ -196,19 +196,22 @@ def _live_member(pgid):
         names = os.listdir("/proc")
     except OSError:
         return True
+    seen = False
     for name in names:
         if not name.isdigit():
             continue
         try:
             with open("/proc/%s/stat" % name) as f:
                 fields = f.read().rsplit(")", 1)[1].split()
-            if int(fields[2]) == pgid and fields[0] != "Z":
-                return True
+            if int(fields[2]) == pgid:
+                seen = True
+                if fields[0] != "Z":
+                    return True
         except (FileNotFoundError, ProcessLookupError):      # exited while we looked: not alive
             continue
         except (OSError, ValueError, IndexError):
             return True
-    return False
+    return not seen      # members seen and all zombies: gone. None seen at all (a /proc that hides them): doubt, yes
 
 
 def _group_alive(pgid):
