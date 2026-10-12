@@ -4,6 +4,37 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The commit gate stops refusing non-literal `credential-assignment` values (#961).** `work.py commit`
+  refused any 4+ character run after a credential-named key, so a call, an env read, a type annotation
+  and a boolean parked green goals at their last step. A gate-only filter (`scrub.commit_secret_findings`)
+  now passes a whole boolean or null word and Sigma's own redaction markers in every file, and an
+  expression or (after `:`) a closed-set type name only in a code file (`scrub.COMMIT_CODE_SUFFIXES`,
+  case-sensitive). A quoted value, a bare identifier or number as the whole value, an assigning `=`
+  later on the line that starts a quoted literal, any secret-like token after the separator, and a key
+  line whose statement continues onto the next line (an opener or a quoted literal left open, or a
+  trailing `\`, `=`, `??`, `||`, `&&`, `?:`, `+`, `or`, `and` and the like, so a formatter's wrapped
+  call keeps the old refusal) stay refused; only the first word is judged as the value, so a number can
+  still pass as a code file's annotated default. Measured, of the lines this filter would otherwise
+  pass, the continuation check refuses 0 of 30 in this repository, 2 of 91 in the Python standard
+  library and 23 of 1,442 in a `site-packages` tree, each refused before #961 too. A quoted literal is
+  reported once, not twice. The rule table, `scrub()`, the publish leak gate and the exposure
+  scanner are unchanged. New `work.allow_secret_content`: an OPERATOR ruling that clears only
+  `credential-assignment`, by exact line hash (`work.py line-hash <file> <line>` prints it without
+  showing the line) or by exact path (wide: it clears future literals in that file too); a reason is
+  required and a malformed entry is ignored and counted. The refusal tells the agent to remove the
+  literal or park, names the allowlist as the operator's, and no longer offers a hand commit.
+  Residual misses, tracked by #978 and listed in the threat model: a quoted literal with no
+  secret-like token that no assigning `=` starts passes at any length anywhere later on the line once
+  the first word is a code file's expression or type name (a call argument, a getenv default, a
+  fallback after `||`, `??` or `or`, a `+` concatenation, a ternary branch, a block default) and, in
+  any file, a boolean or null word or a redaction marker (the check judges tokens, so the 24-character
+  bound holds only for an unbroken letter/digit run; measured, 2,000 draws per shape: passphrases joined
+  by spaces or hyphens passed 100%, no-digit values with symbols 99.8%); so do a number or identifier
+  as a code file's annotated default, and a literal on the next line under a key line that looks
+  complete (a leading `?:`, `or` or `.` on that next line, a key line ending in `.`, or a YAML
+  continuation: one line cannot show it, and the old gate refused such a key line only because it
+  refused every value).
+
 ## 1.0.10 — 2026-10-12 — rubric wiring, upkeep deletion guard fix, applier asks
 
 - **The applier's ask is opened at park and closed at answer (#1178, story #988).** `applier.py` gains `open_for_park` (a park with a declared, non-hard-stop kind opens one ask when an approved rule matches the issue's `area:*` label, else nothing; a pending ask is reused) and `close_for_issue` (unpark, keep-parked and promote answer the issue's pending asks; the applier's own promote does not). Called from `loop.py record parked`, the park at filing, `unpark.py` and `promote.py`, each guarded so a failure never blocks the gesture. Gates closed changes nothing. PROVISIONAL, owner to ratify: a learned pattern is served by the same approved-rule match the tick uses.
