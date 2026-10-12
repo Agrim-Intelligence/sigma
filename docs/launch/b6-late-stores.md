@@ -29,6 +29,25 @@ covered anywhere and has no pruner: `.sdlc/state/unit-approvals/<digest>.json` a
 (`feature_land_approval.py` `approve` line 100 and `consume` line 158), one pair per human approval and head.
 It is filed as #1264.
 
+## What "0 unresolved" does not cover
+
+The scanner does not follow paths built from constants such as `STORE_REL`, `ACKS_REL` or `MIRROR_REL`
+(for example `"state/upkeep/level2"`), so "0 unresolved" means every pattern the scan produces has a
+decision, not that every store is in the scan. Stores a reviewer found that the audit cannot see:
+
+| Store | Writer | Status |
+| --- | --- | --- |
+| `.sdlc/plans/reconcile/<timestamp>-reconcile.json` | `reconcile.py` lines 692 and 767-795 | unbounded; issue #1267 |
+| `.sdlc/state/unit-approvals/` | `feature_land_approval.py` | unbounded; issue #1264 |
+| `.sdlc/state/upkeep/level2/<unit>.json` | `feature_upkeep_level2.py` (`STORE_REL`) | bounded per file (50 attempts), one file per unit, intentionally unbounded per unit |
+| `.sdlc/state/board-mirror.ndjson`, `board-mirror.meta.json` | `mirror.py` (`MIRROR_REL`, `META_REL`) | apparently bounded (rewritten whole, one line per issue); the size beyond that was not traced |
+| `.sdlc/state/ai_filed_counter.json` | `ai_filed_counter.py` | apparently bounded: 14-day prune |
+| `.sdlc/state/gh-fallback.json` | `gh_api.py` (`_LOG_REL`) | apparently bounded: capped |
+| `.sdlc/state/gh-rest-breaker.json` | `gh_api.py` (`_BREAKER_REL`) | apparently bounded: one record |
+| `.sdlc/state/upkeep/acks.json`, `upkeep/last_start.json` | `feature_upkeep_pass.py`, `feature_upkeep_sched.py` | apparently bounded: one file each, rewritten in place |
+
+"Apparently bounded" is a reading of the writer, not a measurement or a test.
+
 ## What this does not prove
 
 A static scan cannot show that no other writer hides behind `.sdlc/<part>`; the reading above is of the

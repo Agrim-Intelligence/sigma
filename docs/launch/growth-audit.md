@@ -46,6 +46,13 @@ cannot see. The JSON's `b6_disposition.issue`
 still reads `#419` because the documented gesture passes it; it is a label, not a claim that #419 is open.
 The disposition files do not authorize pruning host configuration roots.
 
+**Zero unresolved is not full coverage.** The scanner does not follow constant-built paths (`*_REL`
+constants such as `STORE_REL`), so stores written through them never reach the table. Known ones, listed
+with their status in [b6-late-stores.md](b6-late-stores.md): the reconcile proposals
+(`.sdlc/plans/reconcile/`, unbounded, #1267), `state/unit-approvals/` (#1264), `state/upkeep/level2/<unit>.json`
+(intentionally unbounded per unit), and several apparently bounded ones (board mirror, AI-filed counter,
+`gh-fallback.json`, `gh-rest-breaker.json`, `upkeep/acks.json`, `upkeep/last_start.json`).
+
 ## Per-slice dispositions
 
 A pattern is resolved by a disposition file, not by code. Each B6 slice adds its own
