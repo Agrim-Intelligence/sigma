@@ -274,6 +274,10 @@ the 20 `phase_report.py end` lines are in `docs/launch/evidence/live-onboarding-
 | #301 `/sigma-loop`, `auto` | 440 s | $1.480 (phase lines sum $0.31) | PR #2 opened, `sigma:approve` posted, left for a human; three refusals recovered by the model (#1197) |
 | #301 human merge + `reconcile-merges` | 12 s | none | `1 done (PR #2 merged)`; issue closed, PR merged, `hello.txt` on main, verify evidence `pass` |
 
+Clean-repo re-run of #300 (origin/main cc92a834, Makefile `test: true`, nothing else): `/sigma-init --demo` 19 s ($0.127;
+three `[ask]` questions: work, mode, verify), `/sigma-loop` under `auto` 160 s ($1.244 host-reported list-price estimate, phase lines sum
+$0.53): **the demo goal reached `done`**, after two `record done` refusals for a review verdict recorded after retro (#1199).
+
 Deviations from the script control above: the demo goal failed live because the repository's
 `make test` ran alongside the demo's own command (#1196); acceptance was recorded after the work and
 the PR needed `--no-tests` (#1197); `phase_report.py end` MEASURED cost on every phase live, where

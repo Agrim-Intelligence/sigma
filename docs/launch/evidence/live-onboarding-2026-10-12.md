@@ -192,6 +192,66 @@ recreates the files locally and the PR also commits them. Existing issue #1161.
 | 86 gh calls, 34 label creates, 14 of them init's | not counted live (unmeasured); init created 13 labels on first run | |
 | Board offer, `@me` resolution | `@me` resolved (assignee set at filing, the goal was picked). Board declined; the Projects board path was NOT exercised | |
 
+## #300 re-run on a vanilla repo (second dated subsection, 2026-10-12)
+
+Same rules as above, run after the coordinator pointed out that the first demo failure came from the scratch
+repo's own `make test` needing `hello.txt` (#1196). Plugin re-exported from origin/main cc92a834 (main had moved).
+Fresh local scratch repo, no remote, `README.md` and a `Makefile` whose `test` target is `true`; nothing else.
+Answers are what a first-time user would give: local-goals, local only, accept the detected command.
+
+### `/sigma-init --demo` (19 s, 3 turns, $0.127 host list-price estimate, 0 denials)
+
+Without any answer flags in the prompt it asked three questions, verbatim:
+
+```
+[ask] work: fix the remote above, or re-run with --local-only -> --local-only
+[ask] mode: local-goals (goal files) or github (issues)? default: local-goals (origin is not a GitHub repository). -> --mode github|local-goals
+[ask] verify: re-run with --verify N:ID (a candidate above), --verify-command-file FILE (your own), or --no-verify -> --verify N:ID ; --verify-command-file FILE ; --no-verify
+```
+
+Messages, verbatim: `[FAIL] git remote 'origin': no remote named 'origin' (this repository has no remote at all)`;
+`DECISION: work.enabled is ON, but this repository has no usable remote, so no goal can be pushed or opened as a PR.`;
+``detected `make test` (Makefile test target runs 'true') [id 22cc66aa7d26]. verify.enforce stays OFF until you confirm one.``;
+final `Next: /sigma-loop`. Answers: `--local-only`, `--mode local-goals`, `--verify 1:22cc66aa7d26`. No refusal.
+
+### `/sigma-loop`, `--permission-mode auto` (160 s wall, 3 turns reported, 0 denials)
+
+Result, verbatim: `LOOP STOP: backlog-empty` / `1 done, 0 parked, 0 failed.` **The demo goal reached `done`**:
+frontmatter `status: done`, `sigma-demo.md` holds the one-line note, `loop.py verify` printed
+`VERIFIED exit=0`. Only the demo goal was queued, so no second goal ran. `work.enabled` is off, so nothing
+was committed.
+
+Two refusals on the way, verbatim (the model recorded the review verdict after retro, then re-ran review and
+retro; filed as #1199):
+
+```
+REFUSED: the SDLC phase record is incomplete (README: every goal runs its seven phases):
+  - review: no verdict recorded -> python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" record-review <sdlc> <goal> --verdict APPROVE|SEND-BACK|BLOCK --agent-id <reviewer agentId>
+  lever: for a trivial goal, `loop.py waive-phases <sdlc> <goal> research,retro --reason "<why>"` (recorded, visible; only research and retro can be waived); the whole gate is `gates.phase_record.enabled: false` in .sdlc/config.json
+REFUSED: the SDLC phase record is incomplete (README: every goal runs its seven phases):
+  - review: the review verdict was recorded AFTER retro -> re-run the phases in order: a change after its review needs a fresh review
+  lever: (same line as above)
+```
+
+Host-reported figures (list-price estimate on a subscription login, not billing): `modelUsage` claude-sonnet-5-5
+input 124, output 13,742, cache read 2,751,538, cache creation 190,786 tokens; `total_cost_usd` $1.244.
+8 subagent calls. `phase_report.py end` lines, verbatim (8 lines for 6 phases, review and retro twice; sum
+$0.53; none `cost: unavailable`; the other ~$0.71 is the orchestrating session):
+
+```
+**0000-demo Demo - write a Sigma hello note** P2 RESEARCH → P3 PLAN — 19s · $0.11 · tokens 8 in, 292 out · claude-sonnet-5-5 · goal so far: active 19s · effort 19s.
+**0000-demo Demo - write a Sigma hello note** P3 PLAN → P4 PLAN-REVIEW — 15s · $0.06 · tokens 8 in, 331 out · claude-sonnet-5-5 · goal so far: active 33s · effort 33s.
+**0000-demo Demo - write a Sigma hello note** P4 PLAN-REVIEW → P5 IMPLEMENT — 16s · $0.06 · tokens 8 in, 220 out · claude-sonnet-5-5 · goal so far: active 50s · effort 50s.
+**0000-demo Demo - write a Sigma hello note** P5 IMPLEMENT → P6 REVIEW — 14s · $0.06 · tokens 8 in, 281 out · claude-sonnet-5-5 · goal so far: active 1m03s · effort 1m03s.
+**0000-demo Demo - write a Sigma hello note** P6 REVIEW → P7 RETRO — 12s · $0.06 · tokens 6 in, 259 out · claude-sonnet-5-5 · goal so far: active 1m15s · effort 1m15s.
+**0000-demo Demo - write a Sigma hello note** P7 RETRO → last phase — 14s · $0.06 · tokens 8 in, 257 out · claude-sonnet-5-5 · goal so far: active 1m29s · effort 1m29s.
+**0000-demo Demo - write a Sigma hello note** P6 REVIEW → P7 RETRO — 11s · $0.07 · tokens 8 in, 383 out · claude-sonnet-5-5 · goal so far: active 1m40s · effort 1m40s.
+**0000-demo Demo - write a Sigma hello note** P7 RETRO → last phase — 10s · $0.05 · tokens 6 in, 187 out · claude-sonnet-5-5 · goal so far: active 1m50s · effort 1m50s.
+```
+
+Agent wall time for the clean first run: 19 s init + 160 s loop = 179 s, excluding my pauses between calls
+(unmeasured as one continuous interval). One run, one machine; no outside person.
+
 ## Not measured or not run
 
 Linux; Codex; Cursor; the README marketplace install in a live session (`--plugin-dir` instead); a run
