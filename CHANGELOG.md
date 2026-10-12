@@ -6,6 +6,11 @@ All notable changes to Sigma are recorded here, newest first.
 
 - **#300 live run with the marketplace-installed plugin: demo goal and a filed goal both `done` in one `/sigma-loop` session.** Third dated subsection of `docs/launch/evidence/live-onboarding-2026-10-12.md` and `docs/onboarding-control.md`. The owner's normal profile and auth, no `--plugin-dir`; the session's init event reported plugin `sigmaloop` 1.0.9 (the installed copy, not main at 1.0.10). Measured: init 25 s ($0.148), loop 240 s ($1.873 host-reported list-price estimate), 14 captured `phase_report.py end` lines (sum $0.76), two `record done` refusals recovered by the model (#1206, #1199). The second goal was hand-written. Not measured: the marketplace install from empty in a live session, 1.0.10, Linux, Codex, Cursor, outside people. Evidence only, no product change.
 
+- **Legal fact sheet records owner decisions made without counsel (#343, D13).** On 2026-10-12 the owner decided to go public
+  without counsel; `docs/launch/evidence/legal.md` now reads `OWNER DECISION (no counsel consulted)` with the accepted risk where
+  the owner's statements decide a cell, and `OPEN:` where they do not (legal entity name for the copyright line, the public name after a first-pass register search that found a live word mark in Germany, Codex and Cursor catalogue terms, vendor brand guidelines). `NOTICE` is now a plain third-party-notices file,
+  `README.md` carries a non-affiliation paragraph, and `CONTRIBUTING.md` says a DCO sign-off will be required when contributions
+  open. Not legal advice.
 - **The commit gate stops refusing non-literal `credential-assignment` values (#961).** `work.py commit`
   refused any 4+ character run after a credential-named key, so a call, an env read, a type annotation
   and a boolean parked green goals at their last step. A gate-only filter (`scrub.commit_secret_findings`)
