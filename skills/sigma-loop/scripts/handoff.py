@@ -485,6 +485,10 @@ def _triage_finish(sdlc_dir, config, source, plan, issue, key_goal, report):
                 source.park(str(issue), text)
             ledger.safe_append(sdlc_dir, "park", str(issue), config=config, stream=ledger.EVENTS,
                                reason_class="needs_decision", why=plan["reason"])
+            try:                                               # #1178: open the applier's ask (gate closed: nothing)
+                _load("applier").open_for_park(sdlc_dir, config, issue, plan["qkind"], source=source)
+            except Exception:                                  # noqa: BLE001 - never block the filing
+                pass
         except Exception as exc:                               # noqa: BLE001 - never block the filing
             report["warnings"].append("could not park #%s at filing (%s): it carries no goal label and "
                                       "no parked label until a human looks at it" % (issue, exc))
@@ -1255,7 +1259,11 @@ def _record_ack(sdlc_dir, config, issue, goal, state, why, area=None):
             return
         rec = dr.build("ack", issue or goal, "unknown", state, why, dr.how_for("ack"),
                        area=area or dr.REPO_AREA)
-        dr.point(sdlc_dir, dr.decision_store.append(sdlc_dir, rec, config), rec, config)
+        would = dr._safe(dr.would_for, sdlc_dir, rec, config)
+        rid = dr.decision_store.append(sdlc_dir, rec, config)
+        dr.point(sdlc_dir, rid, rec, config)
+        if rid:
+            dr._safe(dr.record_comparison, sdlc_dir, rec, would, config)
     except Exception:                                   # noqa: BLE001 - best-effort side record
         pass
 
