@@ -88,11 +88,10 @@ Then repeat until the helper says stop:
    downgrade: `references/running.md`.
 
    Then run **each phase as its own subagent** with that host's model override (see
-   `references/running.md`). One subagent PER PHASE, **tier `off` included** (`record done` is REFUSED without each while `gates.phase_record` is on; `/sigma-init` ships it on, an absent key is off, and the rule binds either way).
-   Artifacts pass between phases through the filesystem, not shared context. Then read the goal and
-   run it through the full SDLC (research → plan → plan-review → implement → review) — each phase
-   via its **executor**. `$goal` is a **file path** (local) or a **GitHub
-   issue number** in github mode (`gh api repos/{owner}/{repo}/issues/"$goal"`).
+   `references/running.md`). One subagent PER PHASE, **tier `off` included** (with `gates.phase_record` on and `action_log.enabled`, `record done` and `work.py merge` REFUSE a goal missing any phase; `/sigma-init` ships it on, an absent key is off and then only this rule remains).
+   Artifacts pass between phases through the filesystem, not shared context. Run the goal through the
+   full SDLC (research → plan → plan-review → implement → review), each phase via its **executor**.
+   `$goal` is a **file path** (local) or a **GitHub issue number** in github mode (`gh api repos/{owner}/{repo}/issues/"$goal"`).
 
    **The maker must not be the checker (`config.review.independent`, default on); asked, not proved.**
    Every review gate (plan-review, pre-PR code review, post-PR review at step 6) is asked to run as a
@@ -105,8 +104,7 @@ Then repeat until the helper says stop:
 
    **No phase subagent commits — only `work.py commit` does, once, at step 6.** This binds every
    dispatched phase subagent (research, plan, plan-review, implement, review, retro, and each
-   individual slice under 3b), and it does not travel from one dispatch prompt
-   to the next on its own: **say it in each one**. A phase that wants a local checkpoint leaves the
+   slice under 3b), and does not carry between dispatch prompts: **say it in each one**. A phase that wants a local checkpoint leaves the
    worktree DIRTY and says so in its own handoff; it never stages or commits anything itself.
 
    **Match the ceremony to the goal** — after Research, resolve the lane it measured. Either way an
