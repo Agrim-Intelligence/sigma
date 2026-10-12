@@ -65,14 +65,6 @@
       ]
     },
     {
-      "path": ".github/CODEOWNERS",
-      "rule": "source-slug",
-      "reason": "the organisation's maintainers team handle: valid in the public repository, which lives in the same organisation; a different whole name than the source repository",
-      "lines": [
-        "4026308ec6f917ff69c60f2738c50180995a8f940a68230d57b805c8e02a1f66"
-      ]
-    },
-    {
       "path": "docs/launch/evidence/blast-radius-2026-10-04.json",
       "rule": "source-slug",
       "reason": "a throwaway drill repository recorded as evidence: a sibling whose name starts with the private source's name, not the source itself; kept as recorded evidence (owner to reword if the sibling's name should not be public)",
