@@ -158,6 +158,56 @@ def _refusal(capsys):
     return out, (m.group(1) if m else None)
 
 
+# --------------------------------------------------------------------------- B6 (#1262): the intake store is capped
+
+
+def _pair(d, name, age_days, umbrella=None, dossiers=None, now=10_000_000.0):
+    """One plan file, plus a resume record unless `umbrella` and `dossiers` are both None."""
+    import os
+    plan = d / (name + ".json")
+    plan.write_text(json.dumps({"version": 1, "n": name}), encoding="utf-8")
+    t = now - age_days * 86400
+    os.utime(plan, (t, t))
+    if umbrella is not None or dossiers is not None:
+        key = _intake()._plan_key(plan)
+        (d / (key + ".filed.json")).write_text(
+            json.dumps({"dossiers": dossiers or {}, "umbrella": umbrella}), encoding="utf-8")
+    return plan
+
+
+def test_intake_prune_keeps_newest_complete_pairs_and_everything_resumable(tmp_path):
+    intake, now = _intake(), 10_000_000.0
+    d = tmp_path / "intake"
+    d.mkdir()
+    done = [_pair(d, "done%02d" % i, age_days=1 + i, umbrella="9", dossiers={"a": "1"}, now=now)
+            for i in range(intake.KEEP_DONE + 3)]
+    old_unfiled = _pair(d, "oldunfiled", age_days=intake.UNFILED_DAYS + 5, now=now)
+    new_unfiled = _pair(d, "newunfiled", age_days=2, now=now)
+    partial = _pair(d, "partial", age_days=400, umbrella=None, dossiers={"a": "1"}, now=now)
+    intake.prune(d, now=now)
+    kept = {p.name for p in d.glob("*.json") if not p.name.endswith(".filed.json")}
+    assert kept == ({p.name for p in done[:intake.KEEP_DONE]} | {new_unfiled.name, partial.name})
+    assert not old_unfiled.exists()
+    # a pruned pair leaves no orphan resume record behind
+    assert len(list(d.glob("*.filed.json"))) == intake.KEEP_DONE + 1       # + the partial's
+
+
+def test_plan_runs_the_prune(tmp_path, capsys, monkeypatch):
+    intake = _intake()
+    sdlc = _sdlc(tmp_path)
+    d = sdlc / "intake"
+    d.mkdir()
+    old = _pair(d, "olddone", age_days=3, umbrella="9", dossiers={"a": "1"}, now=__import__("time").time())
+    monkeypatch.setattr(intake, "KEEP_DONE", 0)
+    _, rc, _ = _plan(tmp_path, [_outcome()], sdlc=sdlc)
+    assert rc == 0, capsys.readouterr().err
+    assert not old.exists() and _plan_file_count(sdlc) == 1
+
+
+def _plan_file_count(sdlc):
+    return len([p for p in (sdlc / "intake").glob("*.json") if not p.name.endswith(".filed.json")])
+
+
 # --------------------------------------------------------------------------- step 1: fixtures
 
 def test_fixtures_have_planted_defects():
