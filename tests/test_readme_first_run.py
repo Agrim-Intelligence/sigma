@@ -497,6 +497,7 @@ VERSION_ALLOW = {
     ("docs/launch/evidence/rehearsal-f92a7528a26b.md", "2.1.284"): "a measured tool version, not a Sigma release: the Claude Code CLI the install control ran",
     ("docs/launch/evidence/rehearsal-f92a7528a26b.md", "9.1.1"): "a measured tool version, not a Sigma release: the pytest in the clean venv",
     ("docs/launch/evidence/rehearsal-f92a7528a26b.md", "3.8.0"): "a measured tool version, not a Sigma release: the pytest-xdist in the clean venv",
+    ("docs/launch/evidence/export-verify-de188d1fb5dd.md", "5273.44"): "a measured pytest duration in seconds, not a Sigma release",
     ("contract/README.md", "1.0.0"): "the first plugin release the event contract was frozen in: a historical fact, not the current version",
     ("skills/sigma-init/templates/config.json.tmpl", "1.0.0"): "the first release that carries the documented default: a minimum, not the current version",
     ("contract/README.md", "1.3.0"): "the event contract's own semver (contract/VERSION)",
