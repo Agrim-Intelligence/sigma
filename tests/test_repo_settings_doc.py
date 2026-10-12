@@ -99,7 +99,8 @@ def test_codeowners_names_people_not_the_organisation_team():
     """The public repository is a new repo in no team's scope: CODEOWNERS names the two owners (owner
     decision 2026-10-12), so no `@org/team` handle can be left dangling in the export."""
     lines = [l.split() for l in _read(CODEOWNERS).splitlines() if l.strip() and not l.startswith("#")]
-    assert lines and lines[0][0] == "*" and set(lines[0][1:]) == {"@swapnil-agrim", "@mstomar-ag"}
+    assert lines and lines[0][0] == "*"
+    assert all(set(l[1:]) == {"@swapnil-agrim", "@mstomar-ag"} for l in lines), lines
     assert not re.search(r"@[\w.-]+/[\w.-]+", _read(CODEOWNERS))
 
 
