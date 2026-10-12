@@ -38,7 +38,7 @@ are listed by commit, path and rule only:
 | `3a71d4f372ad` | `.sdlc/research/881-controls.md` | absolute-home-path | 1 | no (an `sdlc/881` branch, on origin only) |
 | `ee140e1b676d` | `.sdlc/design/729.md` | absolute-home-path | 5 | no (local `sdlc/729` branch) |
 | `b0d449ab56c6` | `.sdlc/design/729.md` | absolute-home-path | 4 | no (local `sdlc/729` branch) |
-| `44ee86ec9f67` | `.sdlc/plans/258.md` | absolute-home-path | 2 | **yes** (in 43 commits of main history) |
+| `44ee86ec9f67` | `.sdlc/plans/258.md` | absolute-home-path | 2 | **yes**, same blob `95410bc9a4ec` as on main at `a6bf9d8dc6d6` (`44ee86ec9f67` itself is only on `sdlc/337-wip-ref`) |
 
 What "REAL" means here, and does not: the matched text is the owner's local operating-system account name (and, in two
 matches, a local temporary-directory name carrying a numeric user id) inside a path a model wrote into a goal record. It is
@@ -46,7 +46,7 @@ personal data and a private reference by this review's rule, so it is not classe
 this scan cannot say whether anything else in those records is sensitive. Only one of the nine, `.sdlc/plans/258.md`, is in the
 history of origin/main; the other eight sit on unmerged goal branches, a local stash and a WIP branch, three of them also
 pushed to origin as goal branches. The earlier record (`exposure-disposition-8aee0c74c526.md`) routed historical
-absolute-home-path findings to launch blocker #400; this page gives that blocker its exact list. Rewriting history, or
+absolute-home-path findings to launch blocker #400 (reopened 2026-10-13 for this decision); this page gives that blocker its exact list. Rewriting history, or
 deleting the pushed goal branches and the stash entries, is an owner decision and was not done.
 
 ## By rule and class (findings)
