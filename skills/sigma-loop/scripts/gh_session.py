@@ -97,3 +97,41 @@ def graphql_unavailable(text):
         return False
     haystack = text.lower()
     return any(marker in haystack for marker in _GRAPHQL_UNAVAILABLE_MARKERS)
+
+
+# ---------------------------------------------------------------- D7: a remedy for a classified gh failure
+
+#: One fix line per `gh_api.classify` kind. A failure that prints a reason and no remedy sends a
+#: first-run user to a search engine; these are appended AFTER the raw reason, never in place of it
+#: (callers and classifiers read the reason's prefix and `.hint`). The scopes named under
+#: "permission" are what the first-run preflight (`skills/sigma-init/scripts/preflight.py`) demands:
+#: repo + workflow, and project only when the board is on.
+REMEDIES = {
+    "auth": "fix: run `gh auth login` (check with `gh auth status`); a GH_TOKEN or GITHUB_TOKEN in the "
+            "environment overrides gh's login, so unset or replace it if it is wrong",
+    "not_found": "fix: check discovery.github.repo in .sdlc/config.json names a repository this "
+                 "account can see (OWNER/NAME), and that `gh auth status` is the account that owns it",
+    "permission": "fix: the token needs the repo and workflow scopes (plus project when the board is "
+                  "on): `gh auth refresh -s repo,workflow`; a fine-grained token needs Issues and "
+                  "Pull requests read and write; an SSO organisation must authorize the token",
+    "rate_limit": "fix: wait for the quota to reset; `gh api rate_limit` shows when",
+    "transport": "fix: check your network connection and retry",
+    "server": "fix: GitHub returned a server error; retry in a minute (https://www.githubstatus.com)",
+}
+_REMEDY_MARK = "fix: "
+
+
+def remedy_for_kind(kind):
+    """The fix line for a `gh_api.classify` kind, or None for a kind with no single fix (`other`,
+    `invalid`, `proxy` -- the proxy shape already carries its own remedy in the failure text)."""
+    return REMEDIES.get(kind)
+
+
+def with_remedy(text, kind):
+    """`text` with the kind's fix line APPENDED. Idempotent (a text that already carries a fix is
+    returned as it is) and total: no remedy for the kind returns `text` unchanged."""
+    fix = REMEDIES.get(kind)
+    text = str(text)
+    if not fix or _REMEDY_MARK in text:
+        return text
+    return "%s -- %s" % (text, fix)

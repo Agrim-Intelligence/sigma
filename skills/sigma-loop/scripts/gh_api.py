@@ -168,6 +168,11 @@ class GhApiError(Exception):
         self.kind = kind
         self.returncode = returncode      # the gh exit code when one was observed (#931), else None
 
+    @property
+    def remedy(self):
+        """D7: the one-line fix for `.kind` (None when the kind has no single fix)."""
+        return gh_session.remedy_for_kind(self.kind)
+
 
 # ---------------------------------------------------------------- failure classification (#895)
 
@@ -209,6 +214,17 @@ def classify(exc):
     if _RATE_RE.search(text):
         return None, "rate_limit"
     return None, "other"
+
+
+def with_remedy(exc, text=None):
+    """D7: `text` (default `str(exc)`) with the fix for `exc`'s classified kind APPENDED, the raw
+    reason first and untouched. Works for a GhApiError and for any exception `classify` reads (a
+    `sources._run_gh` RuntimeError carries `.hint`). Never raises."""
+    try:
+        kind = exc.kind if isinstance(exc, GhApiError) else classify(exc)[1]
+        return gh_session.with_remedy(str(exc) if text is None else text, kind)
+    except Exception:                                 # noqa: BLE001 - a remedy must never mask the failure
+        return str(exc) if text is None else text
 
 
 GH_MISSING_HINT = ('`gh` is not on PATH -- install the GitHub CLI from https://cli.github.com and run `gh auth login`, then re-run this command')
