@@ -218,10 +218,16 @@ def classify(exc):
 
 def with_remedy(exc, text=None):
     """D7: `text` (default `str(exc)`) with the fix for `exc`'s classified kind APPENDED, the raw
-    reason first and untouched. Works for a GhApiError and for any exception `classify` reads (a
-    `sources._run_gh` RuntimeError carries `.hint`). Never raises."""
+    reason first and untouched. Works for a GhApiError and for an exception carrying gh's stderr as
+    `.hint` (a `sources._run_gh` RuntimeError); any other exception is returned unchanged, because
+    its `str()` embeds argv and `classify` must not read that. Never raises."""
     try:
-        kind = exc.kind if isinstance(exc, GhApiError) else classify(exc)[1]
+        if isinstance(exc, GhApiError):
+            kind = exc.kind
+        elif isinstance(getattr(exc, "hint", None), str) and exc.hint:
+            kind = classify(exc)[1]                   # gh's own stderr, never the argv in str(exc)
+        else:
+            return str(exc) if text is None else text     # no stderr to read: leave it as it is
         return gh_session.with_remedy(str(exc) if text is None else text, kind)
     except Exception:                                 # noqa: BLE001 - a remedy must never mask the failure
         return str(exc) if text is None else text

@@ -1620,7 +1620,9 @@ class GitHubSource:
             login = None
             if not self._assignee_login_warned:
                 self._assignee_login_warned = True
-                print(f"sources.py: could not resolve `@me` to a login ({_fx(exc)}) — the client-side "
+                lead = ("gh could not read the signed-in user" if gh_api.classify(exc)[1] == "auth"
+                        else "could not resolve `@me` to a login")
+                print(f"sources.py: {lead} ({_fx(exc)}) — the client-side "
                       "assignee check is skipped this pick; a caller with an independent "
                       "server-side scope (the board query) is unaffected, but a caller that must "
                       "pass this value into its own query (the REST backlog fetch, #1829) runs "
@@ -2448,7 +2450,7 @@ class GitHubSource:
                     print(f"sources.py: could not read the backlog ({_fx(exc)}) — stopping", file=sys.stderr)
                     self._last_read_degraded = True    # #905: a give-up, not a genuine empty read
                     return 0, None
-                print(f"sources.py: could not read the backlog ({_fx(exc)}) — retrying (attempt "
+                print(f"sources.py: could not read the backlog ({exc}) — retrying (attempt "
                       f"{attempt + 1}/{self._BACKLOG_READ_RETRIES})", file=sys.stderr)
                 time.sleep(self._BACKLOG_READ_RETRY_BASE * (2 ** attempt))
                 continue
