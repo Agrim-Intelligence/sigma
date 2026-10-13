@@ -34,22 +34,44 @@ approximate (named below). It is not a claim that every message in the repositor
 
 ## Counts
 
-| Module group | Sites | Prints-fix | No-fix or misleading, reachable on a first run | Unreachable on a first run | Other |
+| Module group | Sites | Prints-fix | No-fix or misleading, reachable on a first run | Unreachable on a first run | Undetermined |
 |---|---|---|---|---|---|
-| `loop.py` | 103 | 59 | 5 | 39 | about 40 "non-fatal, continuing" diagnostics excluded as not refusals |
-| `work.py` | about 243 | about 59 | 22 sites in 17 rows (+3 only after opting in to `work.auto_merge`) | about 162 | 3 kinds excluded as not refusals; the unreachable count is grep-derived, about +/-10% |
-| init, setup, wizard, preflight, verify_detect, board_*, define, doctor | 218 | 154 | 15 (8 no-fix, 1 misleading, 6 edge cases) | 47 | 2 undetermined (text built in files outside the group) |
-| hooks, sync, state, gh_api, promote, unpark, phase_gate, hard_stop, ledger, shell_policy | 285 | 47 | 30 (22 no-fix, 8 misleading) | 208 | `gh_api.py` (119 sites) was classified from the grep line list, not read one by one |
-| **Total** | **about 849** | **about 319** | **72** (+3 opt-in) | **about 456** | 2 undetermined |
+| `loop.py` | 103 | 59 | 5 | 39 | 0 |
+| `work.py` | about 243 | about 59 | 22 sites in 17 rows | about 162 | 0 |
+| init, setup, wizard, preflight, verify_detect, board_*, define, doctor | 218 | 136 | 22 (20 no-fix, 2 misleading) | 57 | 3 |
+| hooks, sync, state, gh_api, promote, unpark, phase_gate, hard_stop, ledger, shell_policy | 285 | 47 | 30 (22 no-fix, 8 misleading) | 208 | 0 |
+| **Total** | **about 849** | **about 301** | **79** | **about 466** | **3** |
 
-Per file in the last group (sites / prints-fix / no-fix / misleading / unreachable): `plan_gate.sh` 3/3/0/0/0,
-`completion_gate.sh` 1/1/0/0/0, `decision_gate.py` 15/1/1/0/13, `issue_field_gate.py` 1/1/0/0/0,
-`research_capture.py` 1/0/0/0/1, `sync.py` 34/2/3/1/28, `state.py` 40/10/2/1/27, `gh_api.py` 119/1/13/0/105,
-`promote.py` 21/10/1/3/7, `unpark.py` 15/7/1/3/4, `phase_gate.py` 11/9/0/0/2, `hard_stop.py` 4/0/0/0/4,
-`ledger.py` 19/1/1/0/17, `shell_policy.py` 1/1/0/0/0. Per file in the init group: `init_flow.py` 22/20/0/0/2,
-`sdlc_init.py` 12/9/3/0/0, `preflight.py` 27/21/3/0/2 (+1 undetermined), `verify_detect.py` 18/14/2/1/1,
-`setup_wizard.py` 1/1/0/0/0, `wizard_actions.py` 4/0/1/0/3, `board_setup.py` 23/0/0/0/23, `board_layout.py`
-18/0/0/0/18, `setup.py` 9/6/0/0/3, `doctor.py` (grouped by check) 62/56/1/0/5, `define.py` 22/9/10/1/0.
+Every row sums to its Sites cell and the Total row is the column sums (301 + 79 + 466 + 3 = 849). Not counted in
+any cell: about 40 "non-fatal, continuing" diagnostics in `loop.py` and three kinds of message in `work.py`
+(a non-refusal, three advisories that proceed anyway, a by-design human escalation), excluded as not refusals;
+and three more `work.py` no-fix sites that are reachable only after opting in to `work.auto_merge`, which the
+`work.py` reviewer counted inside its unreachable figure. The `work.py` unreachable count is grep-derived,
+about +/-10%, so the work.py row and the totals are approximate; `gh_api.py` (119 sites) was classified from the
+grep line list, not read one by one.
+
+Per file in the last group (sites / prints-fix / no-fix / misleading / unreachable; sums to 285 / 47 / 22 / 8 / 208):
+`plan_gate.sh` 3/3/0/0/0, `completion_gate.sh` 1/1/0/0/0, `decision_gate.py` 15/1/1/0/13,
+`issue_field_gate.py` 1/1/0/0/0, `research_capture.py` 1/0/0/0/1, `sync.py` 34/2/3/1/28,
+`state.py` 40/10/2/1/27, `gh_api.py` 119/1/13/0/105, `promote.py` 21/10/1/3/7, `unpark.py` 15/7/1/3/4,
+`phase_gate.py` 11/9/0/0/2, `hard_stop.py` 4/0/0/0/4, `ledger.py` 19/1/1/0/17, `shell_policy.py` 1/1/0/0/0.
+
+Per file in the init group (sites / prints-fix / no-fix / misleading / unreachable / undetermined; sums to
+218 / 136 / 20 / 2 / 57 / 3): `init_flow.py` 22/20/0/0/2/0, `sdlc_init.py` 12/9/3/0/0/0,
+`preflight.py` 27/21/3/0/2/1, `verify_detect.py` 18/14/2/1/1/0, `setup_wizard.py` 1/1/0/0/0/0,
+`wizard_actions.py` 4/0/1/0/3/0, `board_setup.py` 23/0/0/0/23/0, `board_layout.py` 18/0/0/0/18/0,
+`setup.py` 9/6/0/0/3/0, `doctor.py` (grouped by check) 62/56/1/0/5/0, `define.py` 22/9/10/1/0/2.
+
+**Which numbers are authoritative.** The reviewer's own headline for the init group (154 prints-fix, 8 + 1 + 6
+reachable defective, 47 unreachable, 2 undetermined) did not agree with its own per-file table. The per-file table
+sums to 218 sites and is the authoritative one; the headline was recomputed from it. Two judgment calls in the
+recount: the 41 board sites (`board_setup.py`, `board_layout.py`) are all opt-in, so they are counted as
+unreachable on a first run although the reviewer's note says 33 of them do print a fix and about 8 do not (those
+8 are filed as #1291); and the 3 undetermined sites are the one preflight proxy-block row plus the two `define.py`
+messages whose text is built in files outside the group, which no one read.
+
+All of these classifications are static source-reading by four reviewers; none is a measurement, and only the
+sites that were fixed were triggered (by a failing test).
 
 ## Every fixed site
 
@@ -114,12 +136,21 @@ Pull requests: #1286 (A), #1287 (B), #1293 (C), #1294 (D).
 
 ## Controls
 
-For every fixed clause the guarding test was run with that clause deleted or weakened and seen to fail; the
-mutations that first survived (a weakened `--force-with-lease` clause, a "then re-run" wording, a rebase
-tail, a github-config guard whose test injected its own runner) were each fixed by strengthening the test and
-re-broken until red. Counts at the end of the series: part A about 34 mutations, part B 5, part C 20, part D 7, none
-surviving. The by-hand reading of each message is still the system of record for "prints its fix", exactly as
-in the first record.
+For every fixed clause the guarding test was run with that clause deleted or weakened, and the by-hand reading
+of each message is still the system of record for "prints its fix", as in the first record. True results per part:
+
+- Part A (work.py and shared): the first pass ran 23 mutations and 4 survived (a weakened `--force-with-lease`
+  clause, the "then re-run" wording of the UNKNOWN-mergeability message, the rebase-deferred tail, and a
+  github-config guard whose test injected its own runner); each was fixed by strengthening its test and re-run red.
+  The review pass added 8 mutations (the three `gh`-missing checks, the setting hint, the pickle form, the strict
+  config read, the shared guard twice), all red, and the last commit added 3 (plan-sync, refused direct merge,
+  closed PR), all red. No survivors at the end.
+- Part B: 5 mutations, all red.
+- Part C: 20 mutations, all red.
+- Part D: 7 mutations were run, all red. One clause changed in that PR, the `OFF` line in `handoff.py`, was NOT
+  covered by any mutation and no test asserted it (reverting it left every test green); a reviewer found that.
+  A `handoff.py ack` test was added afterwards and 2 mutations of that clause were run, both red. So the 9
+  mutation count and "no survivors" are true only as of the commit that added that test.
 
 ## What could not be reached
 
