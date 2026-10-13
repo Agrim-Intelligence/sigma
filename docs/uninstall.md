@@ -20,10 +20,19 @@ residue and exits 1 until nothing remains.
 2. Uninstall the plugin: `claude plugin uninstall sigmaloop@sigmaloop`; add `--scope project` for a
    project installation. An install made before the plugin was renamed sits under the previous id: follow
    [From the pre-launch name](upgrading.md#from-the-pre-launch-name) instead. Codex's plugin removal command must be verified with `codex plugin --help`
-   on the target host before use. Then remove the marketplace the install came through:
-   `claude plugin marketplace remove sigmaloop` (skip it while another plugin you use comes from that
-   marketplace). `claude plugin uninstall` leaves the marketplace registered in the profile's
-   `settings.json` and `plugins/known_marketplaces.json`, and `leftovers.py` does not look for either.
+   on the target host before use.
+
+   Then remove the marketplace the install came through. **Read this first:** `claude plugin marketplace
+   remove` also uninstalls every other plugin that was installed from that marketplace and deletes their
+   saved options, secrets and data, and without `--scope` it removes the marketplace declaration from every
+   settings scope (user, project and local). The command's own help says none of this. List what else
+   comes from it first with `claude plugin list`: every id ending `@sigmaloop` is one. Skip the removal while
+   another plugin you use comes from that marketplace; otherwise run:
+   ```sh
+   claude plugin marketplace remove sigmaloop
+   ```
+   `claude plugin uninstall` leaves the marketplace registered in the profile's `settings.json` and
+   `plugins/known_marketplaces.json`, and `leftovers.py` does not look for either.
 3. Remove each Sigma worktree with `git worktree remove .sdlc/ledger` and
    `git worktree remove .sdlc/work/<goal>`.
 4. Remove `.sdlc/`:
@@ -49,7 +58,15 @@ residue and exits 1 until nothing remains.
    profile (`leftovers.py` reports it as two `installed-plugin` rows, the directory and its child). The
    cache is shared by every repository on this machine that uses the plugin, so skip this step while
    another repository still needs it; `leftovers.py` keeps listing the rows until you do. If you set
-   `CLAUDE_CONFIG_DIR`, the profile is that directory, not `~/.claude`:
+   `CLAUDE_CONFIG_DIR`, the profile is that directory, not `~/.claude`. First copy the final check out of
+   the cache, because the removal below deletes it and the repository you are cleaning has no copy of its
+   own (if this prints the fallback line, use `tools/readiness/leftovers.py` from a Sigma checkout in the
+   final command instead):
+   ```sh
+   src=$(ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/sigmaloop/sigmaloop/*/tools/readiness/leftovers.py 2>/dev/null | tail -n 1)
+   if [ -n "$src" ]; then mkdir -p "${TMPDIR:-/tmp}/sigmaloop-check" && cp "$src" "${TMPDIR:-/tmp}/sigmaloop-check/leftovers.py"; else echo "no cached copy: use a Sigma checkout"; fi
+   ```
+   Then remove the cache:
    ```sh
    rm -rf "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/sigmaloop"
    ```
@@ -62,9 +79,14 @@ residue and exits 1 until nothing remains.
    ```sh
    rm -f .cursor/rules/sdlc.mdc .cursor/rules/output-contract.mdc
    ```
-   If adoption created `AGENTS.md` (the repository had none before) it is now empty: delete the file. If it
-   created `.cursor`, remove the now-empty directories with `rmdir .cursor/rules .cursor`, which refuses
-   while they hold anything of yours. The final check does not report either one.
+   If adoption created `AGENTS.md` (the repository had none before) it is now empty. Delete it only if it
+   is zero bytes; a non-empty file is yours, so leave it. If adoption created `.cursor`, `rmdir` removes the
+   now-empty directories and refuses while they hold anything of yours. The final check does not report
+   either one:
+   ```sh
+   [ -s AGENTS.md ] || rm -f AGENTS.md
+   rmdir .cursor/rules .cursor 2>/dev/null || true
+   ```
 8. Check the repository's git hook setting. Sigma releases before #614 set a local `core.hooksPath`
    at `/sigma-init` that named a directory nothing creates, so git ran none of the repository's hooks:
    ```sh
@@ -85,14 +107,12 @@ residue and exits 1 until nothing remains.
    sets the remote in the ref patterns, in the prefix that is stripped and in the push. First list them:
    ```sh
    remote=origin
-   branches="refs/remotes/$remote/sdlc/ refs/remotes/$remote/feature/ refs/remotes/$remote/sdlc-ledger"
-   git for-each-ref --format='%(refname:short)' $branches
+   git for-each-ref --format='%(refname:short)' "refs/remotes/$remote/sdlc/" "refs/remotes/$remote/feature/" "refs/remotes/$remote/sdlc-ledger"  # the three Sigma branch patterns
    ```
    Read this list; delete only what you mean to lose. If every branch on it is Sigma's, delete them all:
    ```sh
    remote=origin
-   branches="refs/remotes/$remote/sdlc/ refs/remotes/$remote/feature/ refs/remotes/$remote/sdlc-ledger"
-   git for-each-ref --format='%(refname:short)' $branches |
+   git for-each-ref --format='%(refname:short)' "refs/remotes/$remote/sdlc/" "refs/remotes/$remote/feature/" "refs/remotes/$remote/sdlc-ledger" | # the three Sigma branch patterns
      while read -r b; do git push "$remote" --delete "${b#"$remote"/}"; done
    ```
    If one is yours, delete the others one at a time instead: `git push <remote> --delete <name>`.
@@ -103,13 +123,11 @@ residue and exits 1 until nothing remains.
    git fetch --prune "$remote"
    ```
 
-Finally run the checker from the repository, naming a Sigma checkout by path. The repository you are
-cleaning has no `tools/` directory, and step 6 removes the plugin's own copy of the checker, which is one
-standalone file at `plugins/cache/sigmaloop/sigmaloop/<version>/tools/readiness/leftovers.py` under the
-profile; copy it out before step 6 if you have no checkout:
+Finally run the checker from the repository, using the copy step 6 made (a repository you are cleaning has no
+`tools/` directory of its own):
 
 ```sh
-python3 <checkout>/tools/readiness/leftovers.py .
+python3 "${TMPDIR:-/tmp}/sigmaloop-check/leftovers.py" .
 ```
 
 It exits 0 only when the checked local residue is gone. `--json` prints the rows as JSON, and

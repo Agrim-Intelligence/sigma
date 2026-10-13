@@ -204,10 +204,10 @@ def test_guide_final_check_runs_from_the_adopted_repository():
     block = _doc_blocks()[-1]
     assert "leftovers.py" in block
     program = re.search(r"python3\s+(\S*leftovers\.py)", block).group(1)
-    assert program.startswith(("<", "/", "$", "~")), (
+    assert program.startswith(('"', "<", "/", "$", "~")), (
         f"final check names {program!r}, a path relative to the repository being cleaned")
     text = (ROOT / "docs" / "uninstall.md").read_text(encoding="utf-8")
-    assert "plugins/cache/sigmaloop" in text.split("Finally run")[1]
+    assert "plugins/cache/sigmaloop" in text.split("\n6. ")[1].split("\n7. ")[0]
 
 
 def test_guide_removes_the_marketplace_registration_the_install_came_through():
@@ -226,6 +226,91 @@ def test_guide_step7_says_what_to_do_with_files_adoption_created():
     text = (ROOT / "docs" / "uninstall.md").read_text(encoding="utf-8")
     step7 = text.split("\n7. ")[1].split("\n8. ")[0]
     assert "AGENTS.md" in step7 and "empty" in step7 and "created" in step7
+
+
+def _guide():
+    return (ROOT / "docs" / "uninstall.md").read_text(encoding="utf-8")
+
+
+def test_guide_warns_before_the_marketplace_removal_command():
+    """Reviewer finding on the D9 run: `marketplace remove` also uninstalls every other plugin from that
+    marketplace and deletes their saved data, and without --scope clears every settings scope. The
+    warning must precede the command in the step, and the step names a command that lists the others."""
+    step2 = _guide().split("\n2. ")[1].split("\n3. ")[0]
+    command = step2.index("claude plugin marketplace remove sigmaloop")
+    for phrase in ("every other plugin", "saved options", "user, project and local", "claude plugin list"):
+        assert phrase in step2[:command], f"step 2 must say {phrase!r} before the command"
+    assert "skip the removal while another plugin you use comes from that" in " ".join(step2.lower().split())
+
+
+def test_guide_copies_the_checker_out_before_the_cache_is_removed():
+    """Reviewer finding: the copy-out was told after step 10 but step 6 deletes the cache copy. In document
+    order a block that creates the final command's program must come before the block that removes the
+    cache, and the final command must run that copy."""
+    blocks = _doc_blocks()
+    program = re.search(r"python3\s+\"?(\S*sigmaloop-check/leftovers\.py)", blocks[-1]).group(1)
+    created = [i for i, b in enumerate(blocks[:-1]) if "cp " in b and "sigmaloop-check/leftovers.py" in b]
+    removal = [i for i, b in enumerate(blocks) if "rm -rf" in b and "plugins/cache" in b]
+    assert program and created and removal, (program, created, removal)
+    assert max(created) < min(removal), "the copy-out must come before the cache removal"
+    assert "[ -n " in blocks[created[0]], "the copy-out needs a guard"
+
+
+def test_documented_copy_out_then_cache_removal_then_final_check_is_green(tmp_path):
+    """Run the copy-out block, the cache removal and the final command exactly as the guide orders them,
+    with a fake cache holding the real checker, and see the final check exit 0 after the cache is gone."""
+    repo, run = _scratch(tmp_path)
+    profile, tmpdir = tmp_path / "profile", tmp_path / "tmp"
+    tmpdir.mkdir()
+    cache = profile / "plugins" / "cache" / "sigmaloop" / "sigmaloop" / "9.9.9" / "tools" / "readiness"
+    cache.mkdir(parents=True)
+    shutil.copy(SCRIPT, cache / "leftovers.py")
+    blocks = _doc_blocks()
+    copy_block = [b for b in blocks if "sigmaloop-check/leftovers.py" in b and "cp " in b][0]
+    removal = _block_with("rm -rf")
+    final = blocks[-1]
+    env = {**os.environ, "CLAUDE_CONFIG_DIR": str(profile), "CODEX_HOME": str(tmp_path / "codex"),
+           "TMPDIR": str(tmpdir), "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull}
+    go = lambda block: subprocess.run(["sh", "-c", block], cwd=repo, env=env, text=True, capture_output=True)
+    assert go(copy_block).returncode == 0
+    assert go(removal).returncode == 0 and not (profile / "plugins" / "cache" / "sigmaloop").exists()
+    done = go(final)
+    assert done.returncode == 0 and done.stdout == "", done.stdout + done.stderr
+
+
+def test_guide_step7_deletes_agents_md_only_when_empty():
+    """Reviewer finding: 'delete the file' had no command and no guard. The block deletes only a zero-byte
+    file, and the prose says to leave a non-empty one."""
+    block = _block_with("[ -s AGENTS.md ]")
+    assert "||" in block and "rm" in block
+    step7 = _guide().split("\n7. ")[1].split("\n8. ")[0]
+    assert "non-empty" in step7
+
+
+@pytest.mark.parametrize("shell", ["sh", "bash", "zsh"])
+def test_documented_remote_blocks_work_in_sh_bash_and_zsh(tmp_path, shell):
+    """Reviewer finding: an unquoted `$branches` does not word-split in zsh (the macOS default), so the
+    step 9 delete loop deleted nothing and exited 0. Every step 9 and 10 block runs under each shell."""
+    exe = shutil.which(shell)
+    if exe is None:
+        pytest.skip(f"{shell} is not installed on this machine")
+    repo, run = _scratch(tmp_path)
+    bare = tmp_path / "remote.git"
+    assert run(["git", "init", "-q", "--bare", str(bare)]).returncode == 0
+    assert run(["git", "remote", "add", "origin", str(bare)]).returncode == 0
+    led = _mod().LEDGER_BRANCH
+    names = ("sdlc/goal-1", "feature/demo", led, "release")
+    for branch in names:
+        assert run(["git", "branch", branch]).returncode == 0
+    assert run(["git", "push", "-q", "origin", *names]).returncode == 0
+    assert run(["git", "fetch", "-q", "origin"]).returncode == 0
+    listing, push, prune = _remote_blocks()
+    heads = lambda: {line.split("refs/heads/")[1] for line in run(["git", "ls-remote", "--heads", "origin"]).stdout.splitlines()}
+    shown = run([exe, "-c", listing])
+    assert set(shown.stdout.split()) == {"origin/sdlc/goal-1", "origin/feature/demo", "origin/" + led}, shown.stdout
+    assert run([exe, "-c", push]).returncode == 0
+    assert heads() == {"release"}, heads()
+    assert run([exe, "-c", prune]).returncode == 0
 
 
 def test_documented_branch_and_plugin_cache_steps_leave_nothing_behind(tmp_path):

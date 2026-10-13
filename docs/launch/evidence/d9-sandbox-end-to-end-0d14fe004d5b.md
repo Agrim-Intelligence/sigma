@@ -104,22 +104,39 @@ commits.
 1. **The final command could not be run as written.** The guide ends `python3 tools/readiness/leftovers.py .`
    run "from the repository you are removing Sigma Loop from"; that path exists only in a Sigma checkout,
    and step 6 deletes the plugin's own copy. Exit 2 in the adopted repository (measured above). FIXED in
-   `docs/uninstall.md`: the block names a Sigma checkout by path and the prose says where the standalone
-   file sits in the cache and to copy it out before step 6. Guard: `test_guide_final_check_runs_from_the_adopted_repository`,
-   seen red before the edit and red again when each clause of the new prose was broken on its own.
+   `docs/uninstall.md`, in two rounds. Round one named a checkout by path and told the copy-out AFTER step 10,
+   which a reviewer showed cannot work for a reader following in order (step 6 had already deleted the cache copy;
+   verified: no checker file left on the profile). Round two puts a guarded `cp` of the cached checker to
+   `${TMPDIR:-/tmp}/sigmaloop-check/leftovers.py` in step 6, before the cache removal, and the final command runs that
+   copy. Guards: `test_guide_final_check_runs_from_the_adopted_repository`,
+   `test_guide_copies_the_checker_out_before_the_cache_is_removed` (red when the copy block is moved after the
+   removal) and `test_documented_copy_out_then_cache_removal_then_final_check_is_green` (runs the three in order).
 2. **The marketplace registration survived the whole guide and the checker exited 0.** After step 10 the
    profile still held an `extraKnownMarketplaces` entry in `settings.json` and a row in
    `plugins/known_marketplaces.json`. `claude plugin marketplace remove sigmaloop` removed both
-   (exit 0, files re-read). FIXED in `docs/uninstall.md` step 2 with the command and the sharing caveat.
-   Guard: `test_guide_removes_the_marketplace_registration_the_install_came_through`, red before, red
-   with the command altered. NOT FIXED: `leftovers.py` still cannot see a registration; a launch:next
+   (exit 0, files re-read). FIXED in `docs/uninstall.md` step 2. A reviewer added that this command also
+   uninstalls every other plugin installed from that marketplace and deletes their saved options, secrets and
+   data, and without `--scope` clears the declaration from every settings scope (the CLI help says neither);
+   step 2 now carries that warning BEFORE the command, and `claude plugin list` (ids ending `@sigmaloop`) as the
+   way to see what else comes from it (the listing was run; it shows `<plugin>@<marketplace>` per row). The
+   warning's two claims come from the reviewer's run; this run did not install a second plugin from the
+   marketplace, so it did not re-measure them. Guards:
+   `test_guide_removes_the_marketplace_registration_the_install_came_through` and
+   `test_guide_warns_before_the_marketplace_removal_command`, each red before and red when its clause is broken. NOT FIXED: `leftovers.py` still cannot see a registration; a launch:next
    issue (number 1348) records it.
 3. **Empty files adoption created stayed behind, unreported.** On a repository that had no `AGENTS.md` and
    no `.cursor`, the guide left a zero-byte `AGENTS.md` and an empty `.cursor/rules` directory; the
-   checker looks for markers and the two rule files, so it exited 0. FIXED in step 7 (delete the empty
-   file, `rmdir` the empty directories; the removal was run and the checker stayed at 0). Guard:
-   `test_guide_step7_says_what_to_do_with_files_adoption_created`, red before the edit.
-4. **Seen once, not reproduced:** a stray `.sdlc/.sdlc/state/log` directory appeared during the ledger
+   checker looks for markers and the two rule files, so it exited 0. FIXED in step 7 with a block:
+   `[ -s AGENTS.md ] || rm -f AGENTS.md` (zero bytes only; a non-empty file is left) and `rmdir` of the empty
+   directories. Guards: `test_guide_step7_says_what_to_do_with_files_adoption_created` and
+   `test_guide_step7_deletes_agents_md_only_when_empty`, red before the edit.
+4. **Step 9 silently deleted nothing under zsh (reviewer finding).** The blocks passed three ref patterns
+   through an unquoted `$branches`, which zsh (the macOS default) does not word-split; the loop ran on one
+   nonsense pattern, printed nothing and exited 0. FIXED: the patterns are spelled on the `git for-each-ref`
+   command line, each quoted. Guard: `test_documented_remote_blocks_work_in_sh_bash_and_zsh`, run under
+   `sh`, `bash` and `zsh` (skips with a reason if a shell is missing); it was red under zsh only before the
+   fix, and red again when the old form was put back.
+5. **Seen once, not reproduced:** a stray `.sdlc/.sdlc/state/log` directory appeared during the ledger
    steps (cause not isolated; an invalid-kind `ledger.py append` with the ledger on, retried in a scratch copy, did not
    recreate it). It sat inside `.sdlc`, so step 4 removed it. Not claimed as a defect.
 
@@ -127,7 +144,7 @@ commits.
 
 ### Is there a real local clone of the predecessor?
 
-No git clone and no archive of it exists under `<home>/Documents`, `<home>/.sigma-ops` or `/private/tmp`
+No git clone and no archive of it exists under `<home>/Documents`, an owner tooling directory or `/private/tmp`
 (a depth-limited name search for the predecessor's name and its skill-directory prefix returned nothing in
 each). What does exist is **an installed copy in the host's plugin cache** (four releases, the exact
 location `tests/test_registry_survives_predecessor_fold.py` reads). That is a different thing from a git
@@ -197,10 +214,21 @@ commit per tree), so `git archive` of that prefix was not run against the predec
 - GitHub mode: no authenticated `gh`, so labels, the board and the `--github` flag of the checker were not run;
   step 9's label and board half is untested. The remote-branch steps ran against a local bare repository, not
   a hosted one.
-- A marketplace added from a hosted repository: a git clone of it under `plugins/marketplaces/` would be a
-  directory named like the plugin; whether `marketplace remove` deletes it was not measured. Only a
-  local-path (directory) marketplace was.
+- A marketplace added from a hosted repository: a clone of it under `plugins/marketplaces/` was NOT measured.
+  It is not known whether `marketplace remove` then also removes the plugin cache, which would defeat the
+  copy-out advice for those users (the cache is already gone when step 6 runs; the guide's fallback line says to
+  use a checkout). Only a local-path (directory) marketplace was run.
 - Supervisor and Slack daemons (only the watcher ran); a project- or local-scope plugin install.
 - The pre-launch install-id path of `docs/upgrading.md`.
 - Rollback: unchanged. The clause stays an owner ruling and nothing here demonstrates it.
 - A real predecessor git clone and its real history; a population of migrated repositories.
+
+## Re-run after the reviewer's fixes (guide as it stands in the PR)
+
+The whole flow was re-run twice from a clean profile (install, adoption, state, then every fenced block of the
+edited guide extracted and run unedited): once with the blocks under bash and once under zsh (macOS default),
+the real `claude` commands in between. Both: copy-out wrote the checker to the scratch temporary directory
+(7332 bytes), cache removal, step 9 listed and deleted all three remote branches, and the final command
+`python3 "${TMPDIR:-/tmp}/sigmaloop-check/leftovers.py" .` exited 0 with no output; only `main` remained, the
+marketplace maps in `settings.json` and `known_marketplaces.json` were empty. Shells: bash and zsh as shipped
+on this machine; plain `sh` ran in the test suite only.
