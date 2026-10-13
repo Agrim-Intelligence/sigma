@@ -15,7 +15,13 @@ the marketplace's current one — and if it is below the floor, update with
 with "not found" (2.1.284 resolves it, measured), and the full id is unambiguous on every release. `claude plugin marketplace update sigmaloop` is a DIFFERENT
 command that only refreshes the marketplace's listing cache — it does not upgrade an
 already-installed plugin. `claude plugin install` on an already-installed plugin is also a no-op
-and will NOT upgrade it.
+and will NOT upgrade it. All three were re-measured on 2026-10-14 against a scratch profile
+(`CLAUDE_CONFIG_DIR` pointed at a temporary directory) on that same release: the bare
+`claude plugin update <name>` resolved and answered either "updated" or "already at the latest
+version"; after the marketplace's listing moved ahead, `claude plugin marketplace update` left the installed version where it
+was, `claude plugin install` answered "already installed" and changed nothing, and only
+`claude plugin update` moved it. That run used a directory marketplace, which loads plugins in place; a
+marketplace fetched from GitHub was not tried.
 
 ## Labels
 
