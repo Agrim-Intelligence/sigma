@@ -196,6 +196,38 @@ def _block_with(needle, text=None):
     return found[-1]
 
 
+def test_guide_final_check_runs_from_the_adopted_repository():
+    """D9 sandbox run: the guide is followed from the adopted repository, which has no `tools/` directory,
+    so a final check spelled `python3 tools/readiness/leftovers.py .` exited 2 (file not found) there. The
+    last block must name the checker by a path that is not relative to the repository being cleaned, and the
+    prose must say where the file is once step 6 has removed the plugin's copy of it."""
+    block = _doc_blocks()[-1]
+    assert "leftovers.py" in block
+    program = re.search(r"python3\s+(\S*leftovers\.py)", block).group(1)
+    assert program.startswith(("<", "/", "$", "~")), (
+        f"final check names {program!r}, a path relative to the repository being cleaned")
+    text = (ROOT / "docs" / "uninstall.md").read_text(encoding="utf-8")
+    assert "plugins/cache/sigmaloop" in text.split("Finally run")[1]
+
+
+def test_guide_removes_the_marketplace_registration_the_install_came_through():
+    """D9 sandbox run (real `claude`): `claude plugin uninstall` leaves the marketplace registered in the
+    profile's settings.json and plugins/known_marketplaces.json; `claude plugin marketplace remove`
+    clears both. The guide must give that command, in the plugin-removal step, before the cache step."""
+    text = (ROOT / "docs" / "uninstall.md").read_text(encoding="utf-8")
+    step2 = text.split("\n2. ")[1].split("\n3. ")[0]
+    assert "claude plugin marketplace remove sigmaloop" in step2
+
+
+def test_guide_step7_says_what_to_do_with_files_adoption_created():
+    """D9 sandbox run: on a repository that had no AGENTS.md and no .cursor, steps 1 to 10 leave a zero-byte
+    AGENTS.md and an empty .cursor/rules directory that leftovers.py (which looks for the markers and the
+    two rule files, not for empties) passes over with exit 0. The step must tell the reader to remove them."""
+    text = (ROOT / "docs" / "uninstall.md").read_text(encoding="utf-8")
+    step7 = text.split("\n7. ")[1].split("\n8. ")[0]
+    assert "AGENTS.md" in step7 and "empty" in step7 and "created" in step7
+
+
 def test_documented_branch_and_plugin_cache_steps_leave_nothing_behind(tmp_path):
     """D9: the uninstall guide's branch-deletion and plugin-cache blocks, copied out of the doc and run
     on a scratch repo, take leftovers.py from red to green. Never touches a real repo or profile."""

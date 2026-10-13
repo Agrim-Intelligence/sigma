@@ -20,7 +20,10 @@ residue and exits 1 until nothing remains.
 2. Uninstall the plugin: `claude plugin uninstall sigmaloop@sigmaloop`; add `--scope project` for a
    project installation. An install made before the plugin was renamed sits under the previous id: follow
    [From the pre-launch name](upgrading.md#from-the-pre-launch-name) instead. Codex's plugin removal command must be verified with `codex plugin --help`
-   on the target host before use.
+   on the target host before use. Then remove the marketplace the install came through:
+   `claude plugin marketplace remove sigmaloop` (skip it while another plugin you use comes from that
+   marketplace). `claude plugin uninstall` leaves the marketplace registered in the profile's
+   `settings.json` and `plugins/known_marketplaces.json`, and `leftovers.py` does not look for either.
 3. Remove each Sigma worktree with `git worktree remove .sdlc/ledger` and
    `git worktree remove .sdlc/work/<goal>`.
 4. Remove `.sdlc/`:
@@ -59,6 +62,9 @@ residue and exits 1 until nothing remains.
    ```sh
    rm -f .cursor/rules/sdlc.mdc .cursor/rules/output-contract.mdc
    ```
+   If adoption created `AGENTS.md` (the repository had none before) it is now empty: delete the file. If it
+   created `.cursor`, remove the now-empty directories with `rmdir .cursor/rules .cursor`, which refuses
+   while they hold anything of yours. The final check does not report either one.
 8. Check the repository's git hook setting. Sigma releases before #614 set a local `core.hooksPath`
    at `/sigma-init` that named a directory nothing creates, so git ran none of the repository's hooks:
    ```sh
@@ -97,10 +103,13 @@ residue and exits 1 until nothing remains.
    git fetch --prune "$remote"
    ```
 
-Finally run:
+Finally run the checker from the repository, naming a Sigma checkout by path. The repository you are
+cleaning has no `tools/` directory, and step 6 removes the plugin's own copy of the checker, which is one
+standalone file at `plugins/cache/sigmaloop/sigmaloop/<version>/tools/readiness/leftovers.py` under the
+profile; copy it out before step 6 if you have no checkout:
 
 ```sh
-python3 tools/readiness/leftovers.py .
+python3 <checkout>/tools/readiness/leftovers.py .
 ```
 
 It exits 0 only when the checked local residue is gone. `--json` prints the rows as JSON, and
