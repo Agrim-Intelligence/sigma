@@ -228,6 +228,10 @@ Failing tests, from the failed jobs' logs:
 - Whether the 2026-10-11 failures were fixed, flaky or environmental was not investigated for this page.
   The red legs are reported as red. Pull requests and merges to main run only one macOS 3.12 leg (the
   required check); the other four legs run in this nightly and on demand.
+  Note added 2026-10-14, the text above unchanged: these failures are now triaged in
+  [d1-nightly-failure-triage-3a303bee2cea.md](d1-nightly-failure-triage-3a303bee2cea.md). Two were a test-clock race and
+  one a worker-memory reading, all fixed by #1153; the 2026-10-12 failure was fixed by #1213. The natural trigger on a runner
+  was not reproduced, and issue #1242 (a separate zombie mechanism) remains open.
 
 **Export rehearsal**, [rehearsal-f92a7528a26b.md](rehearsal-f92a7528a26b.md), 2026-10-12, commit
 `f92a7528a26b`. The file's first line says it is local evidence only, not GitHub CI.

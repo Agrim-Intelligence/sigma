@@ -38,8 +38,12 @@ so the resolver stays closed until a validated override is supplied. The launche
 `--model` (alias form), flags already used in the tree and not probed by this change; every other design flag
 (`--max-budget-usd`, `--permission-mode`, `--allowedTools`, `--disallowedTools`, `--tools`, `--settings`,
 `--setting-sources`, `--strict-mcp-config`, `--no-session-persistence`, `--add-dir`, `--bare`, `--append-system-prompt`) is
-UNVERIFIED and refused. Also UNVERIFIED: the variable that moves the configuration directory and the place and shape of
-the session transcript. The ledger guard keeps 10,000 entry files as its ceiling of record; the working limit is derived
+UNVERIFIED and refused: the launcher's own registry still lists them as unprobed. On 2026-10-14 `claude --help` on
+the installed host was read (no model call): it lists every one of those flags by name, and `-p`, `--output-format` (print
+mode only) and `--model` (aliases accepted). That settles that the flags exist, not what they do, so the launcher is unchanged.
+The variable that moves the configuration directory is `CLAUDE_CONFIG_DIR`: with it set to a temporary directory, plugin
+installs, marketplace records and the user settings file all landed there and the real profile was not written. The place and
+shape of the session transcript remain UNVERIFIED. The ledger guard keeps 10,000 entry files as its ceiling of record; the working limit is derived
 from a timed sample against a time budget. Measured on one warm local disk: 0.2 s at 1,000 files, 0.5 to 1.8 s at 10,000;
 cold and network disks were not measured.
 
