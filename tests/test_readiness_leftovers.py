@@ -239,7 +239,7 @@ def test_guide_warns_before_the_marketplace_removal_command():
     step2 = _guide().split("\n2. ")[1].split("\n3. ")[0]
     command = step2.index("claude plugin marketplace remove sigmaloop")
     for phrase in ("every other plugin", "saved options", "user, project and local", "claude plugin list"):
-        assert phrase in step2[:command], f"step 2 must say {phrase!r} before the command"
+        assert phrase in " ".join(step2[:command].split()), f"step 2 must say {phrase!r} before the command"
     assert "skip the removal while another plugin you use comes from that" in " ".join(step2.lower().split())
 
 

@@ -18,23 +18,21 @@ residue and exits 1 until nothing remains.
    take that long to finish. Do not kill the processes to hurry it; press Ctrl-C to stop waiting and
    come back to it. It looks in subdirectories of `.sdlc/state` too, as the final check does.
 2. Uninstall the plugin: `claude plugin uninstall sigmaloop@sigmaloop`; add `--scope project` for a
-   project installation. The marketplace declaration stays after the plugin is uninstalled (checked on 2026-10-14);
-   `claude plugin marketplace remove sigmaloop` removes it, and also uninstalls every plugin installed from that
-   marketplace. An install made before the plugin was renamed sits under the previous id: follow
+   project installation. An install made before the plugin was renamed sits under the previous id: follow
    [From the pre-launch name](upgrading.md#from-the-pre-launch-name) instead. Codex's plugin removal command must be verified with `codex plugin --help`
    on the target host before use.
 
-   Then remove the marketplace the install came through. **Read this first:** `claude plugin marketplace
-   remove` also uninstalls every other plugin that was installed from that marketplace and deletes their
-   saved options, secrets and data, and without `--scope` it removes the marketplace declaration from every
-   settings scope (user, project and local). The command's own help says none of this. List what else
-   comes from it first with `claude plugin list`: every id ending `@sigmaloop` is one. Skip the removal while
-   another plugin you use comes from that marketplace; otherwise run:
+   The marketplace declaration stays after the plugin is uninstalled (checked on 2026-10-14), in the profile's
+   `settings.json` and `plugins/known_marketplaces.json`, and `leftovers.py` does not look for either. Removing
+   it is a separate step. **Read this first:** `claude plugin marketplace remove` also uninstalls every other
+   plugin that was installed from that marketplace and deletes their saved options, secrets and data, and
+   without `--scope` it removes the marketplace declaration from every settings scope (user, project and
+   local). The command's own help says none of this. List what else comes from it first with
+   `claude plugin list`: every id ending `@sigmaloop` is one. Skip the removal while another plugin you use
+   comes from that marketplace; otherwise run:
    ```sh
    claude plugin marketplace remove sigmaloop
    ```
-   `claude plugin uninstall` leaves the marketplace registered in the profile's `settings.json` and
-   `plugins/known_marketplaces.json`, and `leftovers.py` does not look for either.
 3. Remove each Sigma worktree with `git worktree remove .sdlc/ledger` and
    `git worktree remove .sdlc/work/<goal>`.
 4. Remove `.sdlc/`:
