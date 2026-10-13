@@ -65,6 +65,8 @@ HOOKS_PATH = "." + "git" + "hooks"
 UNSET_HOOKS_PATH = "git config --local --unset core.hooksPath"
 
 
+# `_hook_git` runs `git -C <dir> ...`; the only OSError that reaches here is git itself being absent or
+# not executable (a bad <dir> is a non-zero exit, not an OSError), so "install git" is the right fix.
 _GIT_MISSING = ("could not start git -- fix: install git (https://git-scm.com/downloads) and put it "
                 "on PATH, then re-run")
 
