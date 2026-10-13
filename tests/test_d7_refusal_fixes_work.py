@@ -176,3 +176,43 @@ def test_rebase_deferred_keeps_its_prefix_and_names_the_manual_rebase(tmp_path):
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: rebase deferred: ")          # loop.py's merge_conflict needle reads this
     assert "git rebase origin/main" in out and f"`work.py merge {d} {goal}`" in out
+
+
+# --- opt-in auto_merge parks and the plan-sync refusal --------------------------------------------
+
+from test_work import _landing_cfg, _landing_pr, _merge_run     # noqa: E402
+
+
+def test_a_refused_direct_merge_says_what_to_do_next(tmp_path):
+    d = _sdlc(tmp_path, _landing_cfg())
+    goal = _started(d, goal="1642.md")
+    _evidence(d, goal)
+    run = _merge_run(RuntimeError("HTTP 409: Head branch was modified. Review and try the merge again."),
+                     landing=_landing_pr("MERGED"))
+    out = work.merge(d, _landing_cfg(), goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PARK: direct merge of PR #7 was refused (")
+    assert "fix the cause on the PR" in out and f"`work.py merge {d} {goal}`" in out
+
+
+def test_a_pr_closed_without_merging_says_to_reopen_or_open_a_new_one(tmp_path):
+    d = _sdlc(tmp_path, _landing_cfg())
+    goal = _started(d, goal="1642.md")
+    _evidence(d, goal)
+    run = _merge_run(RuntimeError("HTTP 502: Server Error"), landing=_landing_pr("CLOSED"))
+    out = work.merge(d, _landing_cfg(), goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PARK: PR #7 was closed without merging")
+    assert "reopen it" in out and f"`work.py pr {d} {goal}`" in out
+
+
+def test_differing_plans_name_both_copies_and_the_rerun(tmp_path):
+    sdlc = tmp_path / ".sdlc"
+    wt = tmp_path / "wt"
+    for base, text in ((sdlc, "plan A"), (wt / ".sdlc", "plan B")):
+        (base / "plans").mkdir(parents=True)
+        (base / "plans" / "0001-x.md").write_text(text)
+    with pytest.raises(ValueError) as exc:
+        work.verification_plan(str(sdlc), "0001-x.md", str(wt))
+    msg = str(exc.value)
+    assert "main and worktree plans differ" in msg
+    assert str(sdlc / "plans" / "0001-x.md") in msg and str(wt / ".sdlc" / "plans" / "0001-x.md") in msg
+    assert "copy the one you want over the other" in msg and "re-run `loop.py verify`" in msg

@@ -3664,7 +3664,8 @@ def verification_plan(sdlc_dir, goal, root):
     main = rc.phase_doc_file(sdlc_dir, goal, "plans")
     branch = rc.phase_doc_file(pathlib.Path(root) / pathlib.Path(sdlc_dir).name, goal, "plans")
     if main and branch and main.read_bytes() != branch.read_bytes():
-        raise ValueError("main and worktree plans differ; synchronize them before verify")
+        raise ValueError(f"main and worktree plans differ ({main} vs {branch}); copy the one you want "
+                         "over the other, then re-run `loop.py verify`")
     return branch or main
 
 
@@ -6787,7 +6788,8 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
         # caller's decision table has no branch for "nothing on stdout". A named line always gives
         # the caller something to act on.
         if not getattr(exc, "outcome_unknown", True):
-            return f"PARK: direct merge of PR #{rec['pr']} was refused ({exc})"
+            return (f"PARK: direct merge of PR #{rec['pr']} was refused ({exc}); fix the cause on the PR, "
+                    f"then re-run `work.py merge {sdlc_dir} {goal}`")
         # The merge MAY have landed (5xx, timeout, malformed 2xx): never re-PUT, never `gh pr merge`
         # or GraphQL -- READ, up to RECONCILE_ATTEMPTS times while the answer is still open/unknown.
         for attempt in range(RECONCILE_ATTEMPTS):
@@ -6797,7 +6799,9 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
             if landing in (MERGED, CLOSED_PR):
                 break
         if landing == CLOSED_PR:
-            return f"PARK: PR #{rec['pr']} was closed without merging (the merge call failed: {_first_line(exc)})"
+            return (f"PARK: PR #{rec['pr']} was closed without merging (the merge call failed: "
+                    f"{_first_line(exc)}); reopen it on GitHub, or run `work.py pr {sdlc_dir} {goal}` "
+                    "to open a new one")
         if landing != MERGED:
             return (f"merge outcome unknown for PR #{rec['pr']} ({_first_line(exc)}; REST read: {landing}"
                     f"{' ' + why if why else ''}) -- NOT retried and NOT sent via GraphQL; leaving PR "
