@@ -94,7 +94,7 @@ The skill is seven steps:
    several unrelated areas with no shared owner, ask which one to resolve against rather than
    guessing.
    - `python3 "${CLAUDE_SKILL_DIR}/scripts/assign.py" resolve .sdlc "<area>"` returns `options`
-     (self / CODEOWNERS owner / up to 3 active members) — present them and let the user pick one
+     (self; the CODEOWNERS owner when one resolves, otherwise up to 3 active members) — present them and let the user pick one
      login, or explicitly choose to leave the plan unassigned.
    - Ask the same run-now-vs-file-and-stop question `/sigma-triage`'s own step 5 already uses. The
      issues themselves are already created and real, as of step 6 — this choice only decides what
@@ -156,11 +156,12 @@ touched — this is a new, thin, independently-tested bridge, not a rewrite of e
 
 ## Caveats
 
-**Proposed, not actionable, until step 7 says so:** every issue `scope.py`/`compile_plan.py` creates
-is armed at its plan priority, or parked when the deny-list matches (triage off: filed with the
-legacy `sdlc:needs-confirmation`, never `sdlc:goal`). Only step 7's `assign.py execute` with a `start-now-*` path promotes it to
-`sdlc:goal`. `file-and-stop` leaves it exactly as created, on purpose — nothing else happens until a
-later `/sigma-triage` or manual promotion picks it up.
+**What "actionable" means depends on triage:** with `ai_filed.triage.enabled` true (the default), every
+issue `scope.py`/`compile_plan.py` creates is armed (`sdlc:goal`) at its plan priority at filing, or parked
+when the deny-list matches; step 7's `start-now-*` paths then add no label, and a parked issue stays parked
+(`/sigma-unpark` is the way out). With it false, every issue is filed with the legacy
+`sdlc:needs-confirmation`, never `sdlc:goal`, and only step 7's `assign.py execute` with a `start-now-*`
+path promotes it to `sdlc:goal`. `file-and-stop` leaves every issue exactly as created, on purpose.
 
 **Multi-blocker markers are never comma-joined:** `compile_plan.py` already guards the same
 `backlog_check._BLOCK_RE` single-capture trap `/sigma-triage`'s own caveats document — one

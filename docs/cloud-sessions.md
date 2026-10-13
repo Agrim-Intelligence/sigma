@@ -85,7 +85,7 @@ each such call costs REST plus one fallback and a stderr line. Cost per read is 
 comment pages for `unpark`), the same count as one GraphQL view; not measured at scale.
 
 Live read on 2026-10-10: `gh api repos/OWNER/NAME/issues/928` returned `state: closed`,
-`state_reason: null`, `pull_request.merged_at: 2026-10-09T17:46:12Z`, which is the shape the MERGED
+`state_reason: null`, `pull_request.merged_at: 2026-10-09T17:46:12Z` (read again on 2026-10-13, same values), which is the shape the MERGED
 mapping keys on. Unmeasured: a real cloud session; bot-author spelling beyond the single public sample
 (promote reads `author`); call counts at scale; comment-heavy `unpark` latency; an old closed issue whose
 REST `state_reason` is null (it would read as unresolved, the safe direction: a stale blocker would not
@@ -93,7 +93,7 @@ auto-unpark).
 
 Unmeasured: the real 429, secondary-limit 403 and 5xx stderr text and the Go transport wording are
 inferred and tested with fixtures only; any live cloud run; live request cost. The bot spellings were
-measured on one public issue, not on this repo (it has no bot-authored issue or comment).
+measured on one public issue, not on this repo (it has no bot-authored issue or comment; re-checked over REST on 2026-10-13 across every issue, pull request and comment).
 
 ### Slice 2c: ten `gh issue list` sites
 
@@ -340,7 +340,7 @@ STALE HEAD. Only `_PARK_NO_REMOTE_HEAD` (no head, no rollup read) is unaffected.
 Costs (DERIVED from the call shapes; nothing timed): a clean gate round is 3 REST calls (pull, check-runs,
 status) against 1 GraphQL call before; +1 per UNKNOWN retry; a rollup is `ceil(runs/100) +
 ceil(statuses/100)`, 15 at the caps. Worst `merge()`: 11 rounds x (<= 4 pull reads + 2) = 66 calls against 44;
-about 230 worst-case merges per hour on one 5,000/h token (a documented limit, UNMEASURED). With the breaker
+about 75 worst-case merges per hour on one 5,000/h token (5,000 / 66, counting only those gate reads; a documented limit, UNMEASURED). With the breaker
 OPEN, both the pull read and the rollup read go straight to their GraphQL fallback: 2 GraphQL calls per round,
 not 1, i.e. up to twice today's GraphQL cost while the breaker is open. Doctor: 2 calls per open unit, 4 for
 a conflicted PR, against 1; 100 open units is about 200 calls per on-demand run.
@@ -486,7 +486,7 @@ Three GraphQL reads stood between a cloud session and the REST PUT above. All th
   the `nameWithOwner` GraphQL read is gone. Required checks are unioned by context name, reviews take the larger
   count; each read is independent, so one failing or malformed contributes nothing (never a crash, never an
   invented requirement). Both unreadable keeps `not protected` (parks under `auto_merge: protected`, WARNING under
-  `always`). A repo that enforces only through rulesets, such as this one (classic is a 404 here), used to read as
+  `always`). A repo that enforces only through rulesets, such as this one (classic is a 404 here; re-read over REST on 2026-10-13: `branches/main/protection` answers 404 "Branch not protected" while `rules/branches/main` lists the pull-request and required-check rules), used to read as
   "not protected"; it now reads as enforcing.
 - `post_review`'s comment: `gh_api.comment_pr` = `POST issues/N/comments` (non-idempotent write). ONE
   `gh pr comment` fallback only on a primary rate limit while GraphQL is available, so none in a cloud session.
@@ -666,7 +666,7 @@ Real cloud limits left in the merge path (from the code, not measured):
 - `merge_rights` is REST but needs the token to receive `permissions` on `GET repos/{owner}/{repo}`: UNMEASURED; if absent it fails closed to `record review`.
 - Board work is skipped with one notice (slice 5), UNMEASURED live.
 
-The 36 ratchet sites (`tests/test_no_direct_gh.py` `scan()`, enumerated by running it; the line numbers below were true when written and have drifted since, so re-run `scan()` for current ones). The
+The 36 ratchet sites (`tests/test_no_direct_gh.py` `scan()`, enumerated by running it; the line numbers below were re-read from `scan()`'s AST at the HEAD of the 2026-10-13 sweep and drift with every edit, so re-run `scan()` for current ones). The
 transport column is DERIVED from gh CLI behaviour, UNMEASURED (no call was run).
 
 | file:line | gh command | transport | blocks a cloud drain? |
@@ -675,14 +675,14 @@ transport column is DERIVED from gh CLI behaviour, UNMEASURED (no call was run).
 | board_migrate.py:122, 135 | project item-list / item-edit | GraphQL | no (operator tool) |
 | doctor.py:414, 474, 905, 945 | project list / view / item-list / field-list | GraphQL | no (doctor report) |
 | doctor.py:1387 | `["gh", *args]` runner | varies | no |
-| sources.py:1745, 1809, 3840; triage.py:2267 | label create | REST | no |
-| sources.py:2091, 3921, 3972, 3978, 4498, 4973, 4988, 5014, 5069, 5366 | project item-list / item-edit / item-add / field-list | GraphQL | no: board skipped with one notice |
-| sources.py:4179, 4187, 4207, 4219, 4247, 4315 | project create / link / list / view / field-create | GraphQL | no (setup only) |
-| work.py:5404 | pr view reviewDecision | GraphQL | guarded: approval mode parks |
-| work.py:5568 | pr list (sibling gate) | GraphQL | no (`unit_completion`, after done, decides nothing) |
-| work.py:6335 | pr merge --auto | GraphQL | guarded: only when GraphQL is available |
+| sources.py:1761, 1823, 3835; triage.py:2269 | label create | REST | no |
+| sources.py:2105, 3916, 3967, 3973, 4493, 4968, 4983, 5009, 5064, 5361 | project item-list / item-edit / item-add / field-list | GraphQL | no: board skipped with one notice |
+| sources.py:4174, 4182, 4202, 4214, 4242, 4310 | project create / link / list / view / field-create | GraphQL | no (setup only) |
+| work.py:5799 | pr view reviewDecision | GraphQL | guarded: approval mode parks |
+| work.py:5963 | pr list (sibling gate) | GraphQL | no (`unit_completion`, after done, decides nothing) |
+| work.py:6730 | pr merge --auto | GraphQL | guarded: only when GraphQL is available |
 | verify_merge.py:299, 324, 351 | pr ready / create / merge | GraphQL | no (human-attended rebase) |
-| status.py:174 | issue list | GraphQL | no (display fallback) |
+| status.py:178 | issue list | GraphQL | no (display fallback) |
 
 `GitHubSource.note()` (fixed in slice 8, UNMEASURED in a real cloud session): REST first through
 `gh_api.comment_issue` (`POST issues/N/comments`); no GraphQL-first attempt, and none at all in a cloud session. It re-POSTs

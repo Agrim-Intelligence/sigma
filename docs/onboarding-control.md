@@ -376,7 +376,7 @@ python -m pytest tests/test_onboarding_control.py -k planted -q -n 2
 `budget.py` exits with the control's own code, or 1 when the wall time is over `ceiling_seconds` in
 `evals/regression/budget.json`, or 2 when that file is unreadable; a null ceiling is "unset": it prints and does not fail.
 The ceiling (300 s) is about 3.2x the max of 5 wall times read from real CI job logs on the macOS PR cell (58.6 to 95.1 s,
-mean 74.3 s; run ids in the file), never a laptop number (the laptop run is about 2 minutes). The `-k planted` step took
+mean 74.3 s; run ids in the file, each re-read over REST on 2026-10-13: the five job step times match to the second), never a laptop number (the laptop run is about 2 minutes). The `-k planted` step took
 181 to 279 s in the same runs (context, not held to the ceiling). The nightly Ubuntu and older-Python legs do not run this
 step and were not measured. The job is not a required check (the owner adds it to the ruleset if wanted); until then a red job is visible on the PR and
 blocks nothing. The lever for a slow runner is re-running the job; a wrong ceiling is repaired by a PR that edits

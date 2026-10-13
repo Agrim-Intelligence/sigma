@@ -44,6 +44,8 @@ This one reads for BEHAVIOURAL claims: "X does Y", "X refuses Z", "the loop does
 
 ## Coverage gaps (named)
 
+Closed in the second pass at the end of this record (2026-10-13); the list is kept as the first pass left it.
+
 - `docs/uninstall.md`: read and checked in full at the earlier commit. It was not edited here; the pull request that
   rewrote it (#1260) landed first and corrects both findings (the stop-file wait and the missing branch and cache steps).
   The page was not re-read after that change.
@@ -151,3 +153,134 @@ equals the recorded hash, and every row sum and ratio in the token-budget table 
 and the coverage gaps above were unread or only partly checked. What this sweep supports: for the 46 pages, the
 behavioural claims that could be checked against code were checked, 73 were wrong or stale, 70 of those are corrected here,
 72 are corrected (2 of them by #1260), and 1 remains open with a stated reason.
+
+## Second pass (2026-10-13)
+
+Goal: close the coverage gaps named above and settle every unverifiable claim that live GitHub state can settle.
+Docs only, plus three passages of skill prose that repeated doc claims. Local work and GitHub reads only: every GitHub
+read was a `gh api` REST GET (no GraphQL, no write), except filing the two issues below. `OWNER/NAME` is this repository;
+"the source repository" is the private repository this one was exported from, whose issue numbers the older pages still use.
+No pytest file was run by the readers; the author ran `--collect-only` once on `tests/test_onboarding_control.py`.
+
+### Part 1: coverage gaps closed
+
+Three readers took the gaps; each claim was checked against the code, a constant, an error code or the test that pins it.
+Counts are the readers' own and approximate. Some of these claims were partly covered by the first pass, so a few overlap it.
+
+| Gap | TRUE | FALSE or STALE | UNVERIFIABLE |
+|-----|-----:|---------------:|-------------:|
+| `features.md` rows 12, 17, 33, 38, 39 and the `sigma-scope`, `sigma-triage`, `sigma-wizard` prose | 88 | 5 | 2 |
+| `uninstall.md` (re-read in full after #1260) | 31 | 0 | 2 |
+| `upgrading.md` plugin verbs | 14 | 0 | 3 |
+| `output-contract-detail.md` host-model mapping | 28 | 0 | 2 |
+| `publish-runbook.md` per-item ceilings | 45 | 0 | 2 |
+| `branching-model.md` loss guard | 40 | 5 | 3 |
+| `branching-model.md` ownership gate | 17 | 3 | 1 |
+| `branching-model.md` chat landing | 5 | 1 | 0 |
+| `branching-model.md` "eight causes" | 0 | 1 | 0 |
+| `label-model.md` sections 2b-ii, 2b-iii, 2b | 15 | 2 | 3 |
+| `cloud-sessions.md` mapping tables, write-site counts | 66 | 9 | 3 |
+| Total | 349 | 26 | 21 |
+
+Corrections made (docs unless noted):
+
+- `features.md` row 33 (and the same sentence in `skills/sigma-loop/references/landing.md`): `GitHubSource.complete()` on an
+  open issue dispatches six `gh` commands, not five (the REST completion comment was missing); measured with an injected runner.
+- `features.md` row 39: `goal_decompose.max_children` is only written into the meta-goal's instructions; no code enforces
+  it. Filed as #1283.
+- `skills/sigma-scope/SKILL.md`: step 7 offers the active members only when CODEOWNERS resolves no owner; the Caveats
+  paragraph said filed issues are "proposed, not actionable", which is false under the default `ai_filed.triage.enabled`
+  (they are armed at filing).
+- `branching-model.md`: the "eight causes" of `sibling_gate` was a miscount (about 13 refusal sites; now listed by name;
+  the stale docstring is #1284); the #1146 carve-out refuses an inherited file reverted to an OLDER version and excuses only a
+  deletion, reads up to three guarded commands not two, and the manual-recovery push does not recover the `pull (finish)` and
+  `rebase (continue) (finish)` reflog shapes; the ownership gate skips goal-less upkeep findings, writes the ledger entry only
+  after the hold landed, and reads the author also when a unit has no owner yet; `--unsafe-merge` still runs
+  `verify.command` first when upkeep is off.
+- `label-model.md`: a gate hold writes TWO issue comments (the park comment with the machine line and the flag comment), and the
+  ledger entry only when the ledger is on; `sdlc:blocking` re-ranking is on by default (`blocking_priority_override`) and only a
+  literal `false` turns it off.
+- `cloud-sessions.md`: "about 230 worst-case merges per hour" contradicted its own 66 calls per merge (about 75); eight
+  line-number groups in the ratchet-site table were re-read from `scan()` (36 sites in 8 files, equal to `BASELINE`).
+
+Verified without change: the 12-row `PR_FIELDS` table, the 5-row `mergeable` and rollup table, the 11-row `WRITE_POLICY`
+table, every named page cap and breaker constant, the write-site history 101 down to 36, `uninstall.md` end to end, the
+`claude plugin` and `codex plugin` verb grammar (against the copy of the host help text pinned in
+`tests/test_readme_first_run.py`), the Codex `host-model` mapping through `predict.py resolve_host_model`, and the
+`publish-runbook.md` ceilings against `tools/leak_refs.py` (100 revisions, titles and reviews; 1,000 pages; pacing; 400 writes).
+
+### Part 2: claims that live GitHub state can settle
+
+Each row: the doc, the claim, the read and its result on 2026-10-13. All reads are REST GETs on `repos/OWNER/NAME/...`
+(this repository), the source repository, or the named upstream projects.
+
+| Doc | Claim | Read and result | Verdict |
+|-----|-------|-----------------|---------|
+| `how-branching-works.md` | #1571 and #1564 are open adoption-readiness items | `issues/1571` and `issues/1564` in the source repository: closed 2026-09-26, each with a "moved to" comment; the re-filed issues are #13 and #9 here, both open. The fix for #13 is in `work.py` (`_declaration_moves_the_base`). Page rewritten with the public numbers | STALE, corrected |
+| `branching-model.md` | "Nothing in the kit creates `.sdlc/features/` (#1576)" | #1576 is now #18 (open). `define.py _step_registry` creates the directory as the last step of `/sigma-define`. Reworded | FALSE, corrected |
+| `onboarding-control.md` | five CI wall times 58.6 to 95.1 s, mean 74.3 s, run ids in `budget.json` | `actions/jobs/<id>` for all five jobs: each exists, success, onboarding step 95, 82, 58, 76, 61 s (second resolution) and planted-test step 263, 279, 181, 254, 228 s, equal to the file | TRUE |
+| `onboarding-control.md` | the file "has since grown to 76 tests" | `pytest --collect-only -q tests/test_onboarding_control.py`: 76 collected | TRUE |
+| `public-snapshot.md` | one CI run is about 129 runner-minutes, 34 minutes wall, run 36952374676 | `actions/runs/36952374676` and its jobs: five jobs summing to 128.6 minutes, 34.1 minutes wall, success | TRUE |
+| `platform-support.md` | "9+ merged PRs showing the `sigma:approve` comment then same-account merge, as of 2026-08-06" | search for PRs merged by 2026-08-06 in the source repository (223), comments read on each: 97 carry an independent-review comment headed APPROVE and all 97 were merged by an account that posted it. None contains the literal string `sigma:approve` | count TRUE (97 is at least 9); marker wording STALE, corrected |
+| `ownership.md` | no branch protection rule requires CODEOWNERS approval | `rulesets` and `rules/branches/main`: one approving review and the `test` status check are required; `require_code_owner_review` is false; classic protection is a 404. Page clarified | TRUE for code-owner review; clarified (STALE as worded) |
+| `cloud-sessions.md` | classic protection is a 404 here, rulesets enforce | `branches/main/protection` answers 404 "Branch not protected"; `rules/branches/main` lists the pull-request and required-check rules | TRUE |
+| `cloud-sessions.md` | `issues/928` is closed, `state_reason` null, `merged_at` 2026-10-09T17:46:12Z | read again: identical | TRUE |
+| `cloud-sessions.md` | this repository has no bot-authored issue or comment | every issue and pull request (`issues?state=all`) and every comment (`issues/comments`) filtered on `user.type == Bot`: none | TRUE |
+| `cloud-sessions.md`, `running-unattended.md`, `bench/preregistration.md`, `onboarding-control.md` | #895, #721, #410 open; #304 closed | `issues/895`, `721`, `410` open; `304` closed 2026-09-29 | TRUE (4) |
+| `label-model.md` | issue #226 carried `sdlc:goal` and `sdlc:parked`, parked 45.8 hours after the goal label | `issues/226/events` in the source repository: goal labelled 2026-08-11 12:55:35, in-progress removed and parked added 2026-08-13 10:45:14 and :15, goal label removed only 2026-08-20 | TRUE |
+| `label-model.md` | story #2017 and epic #2020 labelled in-progress 2 s before each comment | events and comments in the source repository: label 11:34:41, comment 11:34:43; label 11:35:02, comment 11:35:04 | TRUE (2) |
+| `label-model.md` | "57 of the 89 pickable goals", "126 of 605 issues" | point-in-time backlog counts, not reproducible from today's backlog. Restated in the page as dated figures from before 2026-09-29 | still UNVERIFIABLE; page no longer claims them as current |
+| `dossier-pipeline.md` | the 2026-09-01 run wrote `priority: P2` into all six children | the six issues after epic #2020 (#2021 to #2026) each have one `priority:P2` labelled event, 11:33:01 to 11:33:13 | TRUE |
+| `how-the-dossier-pipeline-works.md` | the throwaway repository `dossier-e2e-v2-2026-08-28` and its issue numbers | its `repos/` read answers 404; page now says so | still UNVERIFIABLE (repository gone or not visible) |
+| `dossier-pipeline.md` | `git check-ignore` exits 0 for ignored, 1 for not ignored with no output | run locally on this checkout: `.sdlc/design/1.md` exit 1 and silent, `.sdlc/state/x.json` exit 0 with the matching rule | TRUE |
+| `bench/task-sourcing.md` | eight tasks: licence, merged PR, PR creation date; seven rejected-row figures | `repos/<repo>`, `pulls/<n>`, `issues/<n>` on the upstream projects: all eight licences, merged states and PR creation dates match; the nox (2,165 added), omegaconf (2,282), pip-tools (167 + 52 = 219), semantic-release (239 + 27 = 266), starlette (6), tiktoken (created 2025) and more-itertools (two merged PRs) figures match. Stars moved by up to 10 since 2026-10-04 (dated column); non-test line counts not re-derived | TRUE; note added |
+| `board-fields.md` | an organisation's 14 boards on 2026-09-29, 4 with the default `Todo` lane and a lowercase `In progress`, 3 with `In Progress` | `orgs/OWNER/projectsV2` and each board's fields: 11 boards now, 4 with `Todo` and lowercase `In progress` (one with the duplicated lane), none with the capital P (two of those three were untitled web-UI boards that are gone). Note added | TRUE for the 4; the rest is history; clarified (STALE as worded) |
+| `release.md` | at the probes (2026-10-02) the public repository and its tag did not exist; "not re-probed" | the named public repository now exists, is private, lists no tags or releases; this repository lists six release tags. Installation was not re-probed | STALE, corrected |
+| `dossier-pipeline.md` | the plugin payload is "26M" | consistent with the 26.6 MiB export measured above; not re-derived | consistent |
+
+### Counts
+
+"Claim" is the readers' unit (a checkable sentence or table cell); all counts are approximate.
+
+| | Claims | TRUE | FALSE or STALE | UNVERIFIABLE |
+|---|-------:|-----:|---------------:|-------------:|
+| After the first pass (46 pages) | 1,509 | 1,375 | 73 (33 FALSE, 40 STALE) | 61 |
+| New claims, coverage gaps (8 pages, 3 skill files) | 396 | 349 | 26 | 21 |
+| New claims, GitHub reads (10 pages) | 21 | 20 | 1 | 0 |
+| First-pass UNVERIFIABLE claims resolved by the GitHub reads | 0 | +16 | +4 | -20 |
+| After the second pass | 1,926 | 1,760 | 104 | 62 |
+
+The 104 FALSE or STALE sites are all corrected in the tree or on main: the 72 corrected in the first pass (2 of them by #1260),
+the held `how-branching-works.md` item (corrected in this pass), and the 31 found in this pass. The first pass's "1 left open"
+is now 0. Filed this pass: #1283 and #1284, both `launch:next` and `priority:P3`. Pages edited this pass: 14 under `docs/` and
+2 skill files.
+
+### What still cannot be verified, and why (about 62)
+
+By cause, approximate:
+
+- Host CLIs not installed here (`claude`, `codex`, `graphify`): the host help text itself, what `claude plugin disable
+  --scope local` writes, the real plugin cache layout after an uninstall, the Codex runs, the marketplace URL test of
+  2026-10-08, host behaviour of skill overrides (about 8).
+- Live host, model or cloud-session runs and hosted validations: the 25-PR GraphQL-versus-REST parity run, the cloud-session
+  claims, the hosted validation of 2026-10-10 and the hosted upkeep run (both on a private throwaway repository), the live
+  board validator run of 2026-09-11, subagent banner visibility (about 12).
+- Private or deleted objects: the dossier throwaway repository, the private throwaway boards (about 6).
+- One-off past measurements that cannot be rerun: the lost-goal counts, the incident file counts and the real-git reflog
+  patterns, the 292 benchmark timings, the 2026-10-02 scan counts, the token-budget session totals and rate windows, the
+  57-of-89 and 126-of-605 backlog counts, the onboarding timings and the planning measurements in the publish runbook
+  (about 24).
+- Not checkable without GraphQL or a write, both excluded from this pass: the board schema introspection of 2026-09-29, the
+  `copyProjectV2` survival, the atomicity of the aliased label mutation, host refusal of branch names starting with `refs/`,
+  live `publish-runbook` `--apply` behaviour (about 8).
+- Judgement or policy rather than fact: whether `watch_daemon.py:906` counts as "the watcher loop", the S1 response policy,
+  the issue-number provenance of three output-contract items (about 4).
+
+### Result against the D8 threshold
+
+"0 unresolvable claims" is NOT met as a plain count: about 62 claims remain unverifiable, for the causes above. What this
+second pass supports: every coverage gap named in the first record has been read against the code; every claim that live
+GitHub state could settle was confirmed, corrected or restated as a dated figure; no FALSE or STALE site is known to be open.
+The bar can be read as met only "for claims checkable from the repository and GitHub", with the remaining claims
+unverifiable by nature (a host CLI, a live model session, a deleted or private object, a one-off measurement). Whether that
+reading satisfies the threshold is left to the owner.

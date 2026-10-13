@@ -101,7 +101,7 @@ A park is the one exit that gives up membership, and deliberately — its whole 
 human's review queue, not to be re-examined by every sweep.
 
 **The second most common misreading:** `sdlc:followup` is *provenance*, not a state. On our own
-backlog **57 of the 89 pickable goals carry it**. Treating it as "needs review" would freeze most of
+backlog **57 of the 89 pickable goals carried it** (a point-in-time count from before 2026-09-29, not re-derivable now because the backlog has moved on). Treating it as "needs review" would freeze most of
 the board.
 
 **`sdlc:designed`** rides alongside `sdlc:goal` exactly like `sdlc:in-progress`/`sdlc:blocked`/
@@ -168,7 +168,9 @@ it is **being worked**. A thing does not stop being a noun while the verb is hap
 **It doesn't — and that is worth knowing before you rely on the label.**
 
 `sdlc:blocking` is applied automatically to an issue that other work is waiting on. It is a
-**signal**, not a queue: it re-ranks issues that are **already** eligible.
+**signal**, not a queue: it re-ranks issues that are **already** eligible. While
+`discovery.blocking_priority_override` is on (the default; only the literal `false` turns it off), an
+eligible issue carrying it sorts ahead of every other pending one, whatever its priority tier.
 
 ```
       What people assume                    What actually happens
@@ -294,8 +296,9 @@ codebase its owner never agreed to touch. So the goal is held:
    sdlc:parked + kind scope_hold     (stands alone — sdlc:goal is given up)
         │
         │   the registry is NOT edited: `repos` is unchanged
-        │   a ledger entry goes to the UNIT's owner, naming the goal and the repo
-        │   one comment lands on the issue itself, saying the same thing
+        │   a ledger entry (when the ledger is on) goes to the UNIT's owner, naming the goal and the repo
+        │   one flag comment lands on the issue itself, saying the same thing, beside the park
+        │   comment that carries the machine line; both are written once, on the pick that holds it
         │
         └── the owner adds the repo to `repos`, then runs /sigma-unpark
 ```
@@ -314,7 +317,7 @@ this kind, so a release can never send the goal back for exactly one more pick.
 Added in the branching model (#1479). §2b-ii asks whether a unit may touch this **repo**; this one
 asks whether the person who opened the issue was entitled to put work on this **board** at all. They
 are short-circuited against each other: a goal already held for scope is never also held for
-ownership, so one pick produces one comment and one ledger entry.
+ownership, so one pick produces one flag comment and one ledger entry (the park comment carrying the machine line is separate from both).
 
 An entry records **two** owners, and they are accountable for different things:
 
@@ -333,8 +336,9 @@ and the more restrictive gate applies.**
    sdlc:parked + kind owner_hold     (stands alone — sdlc:goal is withheld, or given up)
         │
         │   the registry is NOT edited: no grant is ever written by a machine
-        │   a ledger entry goes to the BOARD owner (the unit owner where there is no board owner)
-        │   one comment lands on the issue itself, saying the same thing
+        │   a ledger entry (when the ledger is on) goes to the BOARD owner (the unit owner where
+        │   there is no board owner); one flag comment lands on the issue itself, saying the same
+        │   thing, beside the park comment that carries the machine line
         │
         ├── the owner authorizes the author and runs /sigma-unpark, OR
         └── the owner sets `repos.<repo>.authorized = true` once, and every issue under that
@@ -557,7 +561,7 @@ separate calls, each independently able to fail, each failure silently swallowed
    every search is "find label X".
 ```
 
-Measured on our own backlog: **126 of 605 issues (about 1 in 5)** were sitting in a state the system
+Measured once on our own backlog, before 2026-09-29 (a point-in-time count, not re-derivable now): **126 of 605 issues (about 1 in 5)** were sitting in a state the system
 cannot name. That is where they came from.
 
 The new version also **retries** (label writes previously got zero retries, while drawing on exactly

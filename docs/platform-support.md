@@ -13,8 +13,11 @@ not yet been measured. Cursor scaffolding remains experimental and has not been 
 The **git half** of per-goal worktrees is verified end-to-end against a real repo (worktree cut from
 `<remote>/<base>`, `verify_command` running in the goal's tree, the main checkout left untouched). The
 **`gh` half** — opening the PR and the merge gate — is verified end-to-end against real, live, merged
-PRs with independent post-PR review + auto-merge (confirmed via 9+ merged PRs showing the
-`sigma:approve` independent-review comment followed by same-account merge, as of 2026-08-06). The
+PRs with independent post-PR review + auto-merge (confirmed via 9+ merged PRs showing an
+independent-review APPROVE comment from the same account that merged, as of 2026-08-06; a REST re-count
+on 2026-10-13 of the source repository found 97 such PRs merged by that date, all merged by the account that
+posted the APPROVE comment, though their comments carry the bare word APPROVE rather than the literal
+`sigma:approve` marker). The
 gate fires reliably in production use on this very repo.
 
 ## Other platforms supported
