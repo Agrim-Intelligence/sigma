@@ -33,6 +33,33 @@ class ConfigMissing(Exception):
     just whichever verb a bug report happens to name (#403)."""
 
 
+class ConfigInvalid(json.JSONDecodeError):
+    """`.sdlc/config.json` exists but is not valid JSON (D7 triage). A JSONDecodeError subclass on
+    purpose: every caller and test that already catches the bare parse error keeps working, while a
+    CLI boundary can catch THIS type and print the fix (`str()` is the whole advice, not the parser's
+    bare 'Expecting value: line 1 column 1') instead of a traceback. Deliberately NOT a ConfigMissing:
+    that one means 'run /sigma-init', and several callers treat it as 'use the defaults', which a
+    corrupt file must never silently become."""
+
+    def __init__(self, sdlc_dir, err):
+        super().__init__(err.msg, err.doc, err.pos)
+        self.sdlc_dir = str(sdlc_dir)
+        path = pathlib.Path(sdlc_dir) / "config.json"
+        self.advice = (f"{path} is not valid JSON ({err.msg}, line {err.lineno} column {err.colno}) -- "
+                       f"fix that line (a trailing comma is the usual cause; `python3 -m json.tool {path}` "
+                       "shows it), or move the file aside and run /sigma-init to scaffold a fresh one")
+
+    def __str__(self):
+        return self.advice
+
+    def __reduce__(self):
+        return (_rebuild_config_invalid, (self.sdlc_dir, self.msg, self.doc, self.pos))
+
+
+def _rebuild_config_invalid(sdlc_dir, msg, doc, pos):
+    return ConfigInvalid(sdlc_dir, json.JSONDecodeError(msg, doc, pos))
+
+
 def load_config(sdlc_dir):
     try:
         text = (pathlib.Path(sdlc_dir) / "config.json").read_text()
@@ -41,7 +68,10 @@ def load_config(sdlc_dir):
             f"no config.json under {sdlc_dir} — this .sdlc directory was never initialized. "
             "Run /sigma-init to scaffold it (or /sigma-setup to adopt Sigma into an existing repo)."
         ) from None
-    parsed = json.loads(text)
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ConfigInvalid(sdlc_dir, exc) from None
     if not isinstance(parsed, dict):
         raise ConfigMissing(
             f"config.json under {sdlc_dir} does not contain a JSON object (is {type(parsed).__name__} instead). "

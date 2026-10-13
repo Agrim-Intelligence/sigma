@@ -595,20 +595,35 @@ def _value(tail, name):
     return None
 
 
+
 def main(argv, run=None):
+    try:
+        return _main(argv, run)
+    except triage.state.ConfigInvalid as exc:      # D7: the file, the line and the fix
+        print(f"unpark.py: {exc}", file=sys.stderr)
+        return 2
+
+
+def _main(argv, run=None):
     if argv[1:] in (["-h"], ["--help"]):
         print(_USAGE)
         return 0
     if len(argv) >= 3 and argv[1] == "list":
         sdlc_dir, tail = argv[2], argv[3:]
-        result = list_parked(sdlc_dir, triage._config(sdlc_dir), run=run,
+        blocked = triage.needs_github(triage.config_strict(sdlc_dir), "unparking", 1, run, None)
+        if blocked is not None:
+            return blocked
+        result = list_parked(sdlc_dir, triage.config_strict(sdlc_dir), run=run,
                              assignee=_value(tail, "--assignee"))
         print(json.dumps(result, indent=2) if "--json" in tail else render_list(result))
         return 0 if result["complete"] else 1
     if len(argv) >= 4 and argv[1] == "brief":
         sdlc_dir, number, tail = argv[2], argv[3], argv[4:]
+        blocked = triage.needs_github(triage.config_strict(sdlc_dir), "unparking", 1, run, None)
+        if blocked is not None:
+            return blocked
         try:
-            b = brief(sdlc_dir, triage._config(sdlc_dir), number, run=run)
+            b = brief(sdlc_dir, triage.config_strict(sdlc_dir), number, run=run)
         except Exception as exc:                        # noqa: BLE001 - a usable refusal, not a trace
             # Names the ISSUE, not just the transport error: "simulated gh failure: issue view 5"
             # tells a human nothing they can act on, and a bare traceback tells them less.
@@ -634,7 +649,10 @@ def main(argv, run=None):
             print("unpark.py resolve: --answers must be a JSON object with an \"answers\" object",
                   file=sys.stderr)
             return 2
-        result = resolve(sdlc_dir, triage._config(sdlc_dir), number, answers, decision, run=run,
+        blocked = triage.needs_github(triage.config_strict(sdlc_dir), "unparking", 1, run, None)
+        if blocked is not None:
+            return blocked
+        result = resolve(sdlc_dir, triage.config_strict(sdlc_dir), number, answers, decision, run=run,
                          apply="--dry-run" not in tail,
                          questions_asked=(payload.get("questions") or []))
         print("[%s] #%s: %s" % (result["outcome"], result["number"], result["detail"]))

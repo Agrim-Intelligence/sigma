@@ -1041,7 +1041,16 @@ def _migrate_flags(tail):
     return switches, unit, only, limit
 
 
+
 def main(argv, run=None, source=None):
+    try:
+        return _main(argv, run, source)
+    except triage.state.ConfigInvalid as exc:      # D7: the file, the line and the fix
+        print(f"promote.py: {exc}", file=sys.stderr)
+        return 2
+
+
+def _main(argv, run=None, source=None):
     if argv[1:] in (["-h"], ["--help"]):
         print(_USAGE)
         return 0
@@ -1051,7 +1060,10 @@ def main(argv, run=None, source=None):
             print(_USAGE, file=sys.stderr)
             return 2
         flags, unit, only, limit = parsed
-        config = triage._config(argv[2])
+        config = triage.config_strict(argv[2])
+        blocked = triage.needs_github(config, "promotion", 2, run, source)
+        if blocked is not None:
+            return blocked
         rep = migrate(source or sources.GitHubSource(config, run=run), config, apply="--apply" in flags,
                       sdlc_dir=argv[2], unit=unit, only=only, limit=limit)
         print(render_migrate(rep))
@@ -1064,7 +1076,10 @@ def main(argv, run=None, source=None):
         if "--assignee" in tail:
             i = tail.index("--assignee")
             assignee = tail[i + 1] if i + 1 < len(tail) else None
-        result = survey(sdlc_dir, triage._config(sdlc_dir), run=run, assignee=assignee)
+        blocked = triage.needs_github(triage.config_strict(sdlc_dir), "promotion", 1, run, None)
+        if blocked is not None:
+            return blocked
+        result = survey(sdlc_dir, triage.config_strict(sdlc_dir), run=run, assignee=assignee)
         print(json.dumps(result, indent=2) if flags.get("json") else render_survey(result))
         return 0 if result["complete"] else 1
     if len(argv) >= 4 and argv[1] in ("apply", "demote"):
@@ -1073,7 +1088,10 @@ def main(argv, run=None, source=None):
         if not numbers:
             print(_USAGE, file=sys.stderr)
             return 2
-        result = promote(sdlc_dir, triage._config(sdlc_dir), numbers, run=run,
+        blocked = triage.needs_github(triage.config_strict(sdlc_dir), "promotion", 1, run, None)
+        if blocked is not None:
+            return blocked
+        result = promote(sdlc_dir, triage.config_strict(sdlc_dir), numbers, run=run,
                          apply="--dry-run" not in argv[3:], demote=(argv[1] == "demote"))
         print(render_promote(result))
         return 1 if any(r["outcome"] in ("failed", "rate-limited") for r in result["results"]) else 0

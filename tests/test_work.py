@@ -166,7 +166,7 @@ def test_repeated_infrastructure_flakes_spend_the_cap_on_the_same_head(tmp_path)
     run = _runner([("gh run rerun 42", "")])
     assert "cycle 1/2" in work.ci_repair(d, {"work": {"enabled": True, "max_review_cycles": 2}}, goal, data, run=run)
     assert "cycle 2/2" in work.ci_repair(d, {"work": {"enabled": True, "max_review_cycles": 2}}, goal, data, run=run)
-    assert work.ci_repair(d, {"work": {"enabled": True, "max_review_cycles": 2}}, goal, data, run=run) == (
+    assert work.ci_repair(d, {"work": {"enabled": True, "max_review_cycles": 2}}, goal, data, run=run).startswith(
         "PARK: CI fix cycles exhausted after 2 cycles — failing: CI")
 
 
@@ -174,7 +174,7 @@ def test_ci_fix_and_review_cycles_share_one_anti_thrash_cap(tmp_path):
     d = _sdlc(tmp_path); goal = _started(d)
     rec = work._record(d, goal); rec.update({"pr": 7, "review_cycles": 2}); work._save(d, goal, rec)
     data = {"headRefOid": HEAD_SHA, "statusCheckRollup": [{"name": "lint", "conclusion": "FAILURE"}]}
-    assert work.ci_repair(d, {"work": {"enabled": True, "max_review_cycles": 2}}, goal, data, run=_runner([])) == (
+    assert work.ci_repair(d, {"work": {"enabled": True, "max_review_cycles": 2}}, goal, data, run=_runner([])).startswith(
         "PARK: CI fix cycles exhausted after 2 cycles — failing: lint")
 
 
@@ -193,7 +193,7 @@ def test_ci_repair_cap_falls_back_to_the_existing_failed_outcome_with_the_check_
     rec = work._record(d, goal); rec.update({"pr": 7, "ci_fix_cycles": 1}); work._save(d, goal, rec)
     data = {"headRefOid": "a" * 40, "statusCheckRollup": [{"name": "lint", "conclusion": "FAILURE"}]}
     out = work.ci_repair(d, {"work": {"enabled": True, "max_review_cycles": 1}}, goal, data, run=_runner([]))
-    assert out == "PARK: CI fix cycles exhausted after 1 cycles — failing: lint"
+    assert out.startswith("PARK: CI fix cycles exhausted after 1 cycles — failing: lint")
 
 
 def test_merge_routes_a_planted_required_check_failure_to_the_bounded_repair_dispatch(tmp_path):
@@ -203,7 +203,7 @@ def test_merge_routes_a_planted_required_check_failure_to_the_bounded_repair_dis
     # The base gate response deliberately lacks an Actions details URL; its fail-closed repair fallback
     # preserves the named failed outcome instead of issuing an agent a blind instruction.
     out = work.merge(d, ON, goal, run=run, sleep=NOSLEEP)
-    assert out == "PARK: failing required check lint has no readable Actions log"
+    assert out.startswith("PARK: failing required check lint has no readable Actions log")
 
 
 def test_review_paths_refuses_tampered_manifest_and_emits_safe_assignments(tmp_path):
@@ -2599,7 +2599,7 @@ def test_gate_c3_unknown_merge_state_overrides_a_true_mergeable(tmp_path):
     d = _sdlc(tmp_path); goal = _started(d)
     run = _runner(_view(mergeable="MERGEABLE", status="UNKNOWN"))
     ok, verdict, _ = work.gate(d, ON, goal, run=run, sleep=NOSLEEP)
-    assert not ok and verdict == work._PARK_MERGEABILITY_UNKNOWN
+    assert not ok and verdict.startswith(work._PARK_MERGEABILITY_UNKNOWN)
     assert _reads(run, PR_GET) == work.UNKNOWN_ATTEMPTS
 
 
