@@ -38,7 +38,9 @@ At `scope: full` the **code** is graphed too; at `scope: research` the code is s
      SDLC keeps working without it (graceful degradation).
 4. **Query** the graph to retrieve learnings: e.g. `graphify query "<question>"`. The `/graphify` skill's query flow files
    the answer with `graphify save-result` (into `graphify-out/memory/`, read by the next build); the bare
-   `graphify query` only prints — that closes the enhancement loop, so each saved answer makes the next better.
+   `graphify query` only prints (it appends to graphify's own query log, outside the graph). Saving the answer back
+   into the graph is that separate `graphify save-result` step, and it is what closes the enhancement loop: each saved
+   answer makes the next query better.
    A query that comes up empty is logged as a **gap** (`kg.py gap log "<q>"`, done automatically by
    `/sigma-context`); review the backlog of what the graph doesn't know yet with
    `python3 "${CLAUDE_SKILL_DIR}/scripts/kg.py" gap list .sdlc`.

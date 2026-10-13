@@ -37,8 +37,8 @@ copy of the repository carries the plugin under its new name too). A fresh insta
 the version in use is resolved afresh. With a marketplace shared by other plugins, the uninstall and marketplace-removal steps were run
 on 2026-10-14 in a scratch profile against a two-plugin directory marketplace (a stand-in, not a real old release): uninstalling
 one plugin left the other installed. The marketplace removal is the step to skip: `claude plugin marketplace
-remove` on that marketplace also uninstalled the second plugin ("Also uninstalled 1 plugin from this marketplace"),
-so the guard above is not a courtesy. The sequence has not been run against a real pre-launch install.
+remove` on that marketplace also uninstalled the second plugin ("Also uninstalled 1 plugin from this marketplace"), and the CLI added that the removal "also deletes their saved
+options, secrets and data where it can", so the guard above is not a courtesy. The sequence has not been run against a real pre-launch install.
 
 **Codex.**
 
