@@ -70,3 +70,12 @@ def test_decision_gate_init_on_an_existing_registry_says_what_to_do_next(tmp_pat
                             capture_output=True, text=True)
     assert second.returncode == 1 and "already exists; not overwriting it" in second.stderr, (first, second)
     assert "decision_gate.py validate" in second.stderr
+
+
+def test_handoff_ack_with_the_ledger_off_says_nothing_was_written_and_how_to_turn_it_on(tmp_path, capsys):
+    handoff = _mod("handoff")
+    d = _sdlc(tmp_path)
+    rc = handoff.main(["handoff.py", "ack", d, "--issue", "61", "--state", "declined"])
+    out = capsys.readouterr().out
+    assert rc == 0 and out.startswith('OFF (config: "ledger": {"enabled": true})')
+    assert "nothing written" in out and "`/sigma-init --ledger yes`" in out
