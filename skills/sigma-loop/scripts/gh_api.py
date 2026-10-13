@@ -211,9 +211,20 @@ def classify(exc):
     return None, "other"
 
 
+GH_MISSING_HINT = ('`gh` is not on PATH -- install the GitHub CLI from https://cli.github.com and run `gh auth login`, then re-run this command')
+
+
 def _default_run(args):
     post_guard.check(args)                # #375: opt-in; a no-op unless SIGMA_LEAK_PATTERNS is set
-    proc = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=120)
+    try:
+        proc = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=120)
+    except FileNotFoundError as missing:
+        if str(missing.filename) != "gh":
+            raise
+        # D7: a MISSING PROGRAM is a first-run condition with a fix, not a raw errno.
+        exc = RuntimeError(GH_MISSING_HINT)
+        exc.hint = GH_MISSING_HINT
+        raise exc from missing
     if proc.returncode != 0:
         hint = proc.stderr.strip() or "is `gh` installed and authenticated? run `gh auth status`"
         exc = RuntimeError("gh " + " ".join(args) + " failed: " + hint)
@@ -1106,7 +1117,10 @@ def bounded_runner(cwd=None, timeout=120, *, popen=None):
             raise GhApiError("gh timed out after %ss" % timeout, "gh timed out after %ss" % timeout,
                              None, "transport") from exc
         except OSError as exc:
-            hint = "could not run gh (%s); is it installed?" % exc.__class__.__name__
+            # Only a missing PROGRAM is "install gh": a vanished `cwd` (deleted worktree) raises the
+            # same FileNotFoundError with the directory as its filename and keeps the old text.
+            hint = (GH_MISSING_HINT if isinstance(exc, FileNotFoundError) and str(exc.filename) == "gh"
+                    else "could not run gh (%s); is it installed?" % exc.__class__.__name__)
             raise GhApiError(hint, hint, None, "other") from exc
         if proc.returncode != 0:
             hint = (proc.stderr or "").strip() or "gh exited %s with no message" % proc.returncode

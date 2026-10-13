@@ -300,8 +300,9 @@ def read_config_strict(path):
             problem = "is JSON but not an object (top level is %s)" % type(data).__name__
     raise ConfigUnreadable(
         f"{path} {problem}. Nothing was written and the file is untouched. Fix it: repair the JSON "
-        f"by hand (your keys are still in the file), or back it up (`cp {path.name} {path.name}.bak`) "
-        f"and delete it on purpose so /sigma-init writes a fresh one.")
+        f"by hand (your keys are still in the file), or move it aside under a new name (so an earlier "
+        f"backup is never overwritten): `mv .sdlc/config.json .sdlc/config.json.broken-$(date +%s)`, "
+        f"re-run /sigma-init to write a fresh one, then copy your settings back from the moved file.")
 
 
 def _write_json(path, data):
@@ -704,7 +705,11 @@ def main(argv):
     extras = {"--" + k for k in ("demo", "vision", "codex", "cursor") if opts.get(k)}
     if source == "github":
         extras.add("--github")                           # only for the demo's gh-issue hint
-    _si.scaffold_extras(target, extras)
+    extras_refusal = None
+    try:
+        _si.scaffold_extras(target, extras)
+    except (ValueError, OSError) as exc:
+        extras_refusal = _si.extras_refusal_lines(exc)   # recorded; exit 2 at the END, after every step
     if opts.get("github-templates"):
         gcreated, _ = _si.scaffold_github(target)
         print(f"\nsigma-init: .github/ scaffolding - {len(gcreated)} created")
@@ -821,6 +826,12 @@ def main(argv):
              if (cfg.get("discovery") or {}).get("source") == "github" else ""))
     print(f"  work:   {'PR per goal' if (cfg.get('work') or {}).get('enabled') else 'local-only (this checkout)'}")
     print(f"  verify: {('`' + _vd.printable(verify['command']) + '`') if verify.get('command') else 'none (enforce OFF)'}")
+    if extras_refusal:
+        for line in extras_refusal:
+            print(line, file=sys.stderr)
+        # stdout too: a host that relays only stdout must not show a clean-looking finish
+        print("  result: REFUSED at codex adapter - everything else done (see the REFUSED lines on stderr; "
+              "exit status 2)")
     if failed:
         print(f"  result: FAILED at {', '.join(failed)} - everything written so far is kept")
         _say_resume(target, args)
@@ -843,7 +854,7 @@ def main(argv):
     else:
         print("Next: re-run with --demo to queue a demo goal first (or add .sdlc/goals/NNNN-*.md with "
               f"status: pending), then /sigma-loop (Codex/Cursor: {loop}).")
-    return 0
+    return 2 if extras_refusal else 0
 
 
 if __name__ == "__main__":

@@ -1357,7 +1357,7 @@ def test_corrupt_config_is_refused_and_left_byte_identical(tmp_path, name, raw):
     for argv in ([FLOW, w["repo"]], [FLOW, w["repo"], "--mode", "local-goals", "--no-verify"]):
         r = _run(w, argv)
         assert r.returncode == 2, r.stdout + r.stderr
-        assert "REFUSED" in r.stderr and "config.json" in r.stderr and "back it up" in r.stderr, r.stderr
+        assert "REFUSED" in r.stderr and "config.json" in r.stderr and "mv .sdlc/config.json .sdlc/config.json.broken-$(date +%s)" in r.stderr, r.stderr
         assert cfg.read_bytes() == raw
         assert sorted(p.name for p in w["sdlc"].iterdir()) == ["config.json"]  # no scaffold, no tmp
 

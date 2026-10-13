@@ -72,6 +72,37 @@ def _config(sdlc_dir):
         return {}
 
 
+def config_strict(sdlc_dir):
+    """`_config`, except that a config.json which EXISTS but does not parse raises
+    `state.ConfigInvalid` (with the file, line and fix) instead of reading as `{}` -- which made
+    promote/unpark say `discovery.source is local-goals` about a repo whose real problem is a stray
+    comma. A missing file is still `{}`. Callers that print and exit (promote, unpark) use this one;
+    the sweeps that run unattended keep `_config`'s tolerant read."""
+    try:
+        return json.loads((pathlib.Path(sdlc_dir) / "config.json").read_text(encoding="utf-8"))
+    except OSError:
+        return {}
+    except json.JSONDecodeError as exc:
+        raise state.ConfigInvalid(sdlc_dir, exc) from None
+    except ValueError:
+        return {}
+
+
+def needs_github(config, what, code, run, source):
+    """D7: promotion/unparking read GitHub labels. In the scaffold-default local-goals mode the old
+    path built a GitHubSource anyway and printed `unable to expand placeholder in path: no git
+    remotes found`, which reads as a broken repo. Say what is true and what resolves it. An injected
+    `run`/`source` (tests, in-process callers) skips the check: they bring their own transport.
+    Shared by promote.py and unpark.py (one wording, one place). -> the exit code to return, or None."""
+    if run is not None or source is not None or _is_github(config):
+        return None
+    print(f"{what} needs github discovery mode (discovery.source is "
+          f"{((config.get('discovery') or {}).get('source') or 'local-goals')!r}; local goals have no "
+          "labels to cross). To use it run `/sigma-init --mode github` (or set discovery.source to "
+          '"github" in .sdlc/config.json), then re-run this command.', file=sys.stderr)
+    return code
+
+
 def _is_github(config):
     return ((config.get("discovery") or {}).get("source")) == "github"
 

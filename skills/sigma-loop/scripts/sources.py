@@ -709,7 +709,16 @@ def _run_gh(args, binary="gh"):
     failure — a real GitHub error, `gh` missing entirely, a genuinely bad token — never matches, so
     `hint` is exactly what it always was for those."""
     import subprocess
-    proc = subprocess.run([binary, *args], capture_output=True, text=True)
+    try:
+        proc = subprocess.run([binary, *args], capture_output=True, text=True)
+    except FileNotFoundError as missing:
+        if str(missing.filename) != binary:
+            raise
+        # D7: a MISSING PROGRAM is a first-run condition with a fix, not a raw errno.
+        hint = ('`gh` is not on PATH -- install the GitHub CLI from https://cli.github.com and run `gh auth login`, then re-run this command')
+        exc = RuntimeError(hint)
+        exc.hint = hint
+        raise exc from missing
     if proc.returncode != 0:
         raw_hint = proc.stderr.strip() or "is `gh` installed and authenticated? run `gh auth status`"
         hint = gh_session.proxy_session_block(raw_hint) or raw_hint

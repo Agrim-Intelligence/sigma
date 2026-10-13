@@ -512,7 +512,9 @@ def check_gh_auth(host, runner, timeout):
         return _chk("gh-auth", "gh auth", False, proxy, meanwhile="every gh call fails in this "
                     "session whatever the token; local work continues."), None
     if rc == 124:
-        return _chk("gh-auth", "gh auth", None, f"cannot verify: {printable(out.strip())}"), None
+        return _chk("gh-auth", "gh auth", None, f"cannot verify: {printable(out.strip())}",
+                    meanwhile="Re-run this check when the network is up (`gh auth status` runs the "
+                              "same probe), or run /sigma-doctor."), None
     return _chk("gh-auth", "gh auth", False, f"gh is not logged in to {printable(host)} (or its "
                 "token is invalid)", [f"gh auth login -h {host} -s repo,workflow,read:org"],
                 interactive=True,
@@ -559,7 +561,10 @@ def _gh_unknown_host(url):
     return _chk("gh-auth", "gh auth", None,
                 f"cannot verify: could not tell the host from the remote URL "
                 f"'{printable(redact(url))}', so it is not assumed to be github.com",
-                meanwhile="Sigma assumes nothing: the first gh call shows gh's own error.")
+                meanwhile="Sigma assumes nothing: the first gh call shows gh's own error. If this "
+                          "remote is not GitHub, go local-only (`preflight.py local-only <sdlc>`); if "
+                          "it should be, run `git remote set-url origin https://github.com/OWNER/NAME.git`, "
+                          "then re-run this check.")
 
 
 def check_owner_type(owner, host, runner, timeout):
@@ -826,9 +831,22 @@ def _config_path(sdlc_arg):
     return sdlc, path
 
 
+def _read_config(path):
+    """D7: a config.json that does not parse used to surface as the parser's bare `Expecting value:
+    line 1 column 1` with no file name and no remedy. Raises ValueError (the verbs' own refusal path)."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{printable(path)} is not valid JSON ({printable(exc.msg)}, line {exc.lineno} "
+                         f"column {exc.colno}) -- repair it by hand, or "
+                         "move it aside under a new name (so an earlier backup is never overwritten): "
+                         "`mv .sdlc/config.json .sdlc/config.json.broken-$(date +%s)`, re-run /sigma-init to "
+                         "scaffold a fresh one, then copy your settings back from the moved file") from None
+
+
 def set_local_only(sdlc_arg):
     _sdlc, path = _config_path(sdlc_arg)
-    cfg = json.loads(path.read_text(encoding="utf-8"))
+    cfg = _read_config(path)
     work = cfg.get("work") if isinstance(cfg.get("work"), dict) else {}
     work["enabled"] = False
     work["_enabled_why"] = ("set false by the user at preflight (preflight.py local-only): no usable "
@@ -848,7 +866,7 @@ def set_remote(sdlc_arg, name, runner=None):
     if name not in remotes:
         raise ValueError(f"no remote named '{printable(name)}' in {printable(sdlc.parent)} "
                          f"(remotes: {', '.join(sorted(printable(r) for r in remotes)) or 'none'})")
-    cfg = json.loads(path.read_text(encoding="utf-8"))
+    cfg = _read_config(path)
     work = cfg.get("work") if isinstance(cfg.get("work"), dict) else {}
     work["remote"] = name
     cfg["work"] = work

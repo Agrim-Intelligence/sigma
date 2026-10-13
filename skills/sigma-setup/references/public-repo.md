@@ -121,7 +121,7 @@ The default `discovery.github.assignee: "@me"` picks only goals assigned to the 
 loop.
 
 Then the sequence a goal follows once landed: `work.py merge` runs the post-PR review gate and ends
-`… — review gate passed (require_review: changes) — auto_merge is off, leaving PR #N for a human`;
+`… — review gate passed (require_review: changes) — auto_merge is off (…), leaving PR #N for a human`;
 `loop.py record .sdlc <goal> review` keeps the goal's issue open (card in QC) and the worktree kept —
 `record done` is refused while the PR is unmerged, because done means merged; a human merges the PR;
 the next `loop.py next`, the watch tick, or `loop.py reconcile-merges .sdlc` observes the merge,
