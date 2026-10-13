@@ -46,5 +46,5 @@ removed, leaving an existence-style check). Record: `dead-vs-idle-break-31c54de0
 A first version of this mutant patched a module object the doctor reloads on every call, so it changed nothing and all
 checks stayed green; it was caught by running it, and fixed to patch the loader. The break covers the doctor's age
 clause only; the session-start hook keeps its own copy of the rule and `C1_session_start_warns` stayed green
-under it (a separate clause, not separately broken here). The existing hermetic dead-loop fixtures in
+under it (a separate clause, not separately broken here; it is broken on its own, with the result, in `d5-drills-and-liveness-0d14fe004d5b.md`). The existing hermetic dead-loop fixtures in
 `tests/test_session_start.py` and `tests/test_doctor.py` are unchanged.

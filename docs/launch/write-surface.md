@@ -395,6 +395,8 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | tools/readiness/blast_radius_drive.py | drive | gh-issue | 1 | explicit drive command; OWNER/sigma-drill- fullmatch; repository read back and must be private, not a fork or archived; refuses under CI; files one goal issue; never run by Sigma | high |
 | tools/readiness/blast_radius_drive.py | drive | gh-pr | 1 | explicit drive command; same repository checks; one approve comment on the goal's own PR | high |
 | tools/readiness/blast_radius_drive.py | drive | git-push | 1 | explicit drive command; same repository checks; origin guard; one setup push only when the repository is empty, never forced | high |
+| tools/readiness/dead_vs_idle.py | broken_hook | fs-remove | 1 | only with --break-hook; unlinks the symlink it just made to the one hook file inside the empty scratch workdir, never the real hook | medium |
+| tools/readiness/dead_vs_idle.py | broken_hook | fs-write | 2 | only with --break-hook; writes one mutated copy of the hook and symlinks into the empty scratch workdir it is given, never the real hook | medium |
 | tools/readiness/dead_vs_idle.py | main | fs-write | 3 | explicit control command; writes only the JSON record at the path it is given | medium |
 | tools/readiness/dead_vs_idle.py | run | fs-write | 3 | explicit control command; writes only inside the empty scratch workdir it is given (repo, home, daemon log); signals only the pid it spawned | medium |
 | tools/readiness/drills.py | _kill_after_fixture_merge | fs-write | 2 | ungated | medium |
