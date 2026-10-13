@@ -196,6 +196,12 @@ def validate(name, kind):
     """-> `(ok, why)`. The two questions asked before anything is written anywhere.
 
     `why` is prose for a human, never a code: the caller is a person who just typed a name."""
+    if kind is None:
+        return False, ("--type <%s> is required -- a unit is one of them, and nothing else"
+                       % "|".join(TYPES))
+    if name is None:
+        return False, ("--name <name> is required -- a unit name is one git branch segment (no '/', "
+                       "no '..', no leading '.', no trailing '.' or '.lock')")
     if kind not in TYPES:
         return False, ("%r is not a unit type -- a unit is one of %s, and nothing else; the type is "
                        "metadata about the work, never a branch prefix"
@@ -379,6 +385,15 @@ def _step_registry(ctx):
     return CREATED, str(path)
 
 
+#: D7: the recovery differs per step, so each failure names its own first check (the raw detail stays).
+_STEP_HINTS = {
+    "branch": " -- check that `git remote -v` lists the remote and that you can push to it "
+              "(/sigma-doctor runs the same checks)",
+    "label": " -- needs `gh` installed and logged in with repo scope: run `gh auth status` "
+             "(or /sigma-doctor)",
+    "registry": " -- check that the .sdlc directory is writable",
+}
+
 _RUNNERS = {"branch": _step_branch, "label": _step_label, "registry": _step_registry}
 
 
@@ -406,7 +421,7 @@ def open_unit(sdlc_dir, name, kind, *, config=None, run=None, cwd=None, remote=N
             return report                 # a refusal stops the gesture: see the module docstring
         except Exception as exc:          # noqa: BLE001 - every failure is a report, never a raise
             report["steps"].append({"step": step, "outcome": FAILED, "detail": _flat(exc)})
-            report["why"] = "%s: %s" % (step, _flat(exc))
+            report["why"] = "%s: %s%s" % (step, _flat(exc), _STEP_HINTS.get(step, ""))
             return report
         report["steps"].append({"step": step, "outcome": outcome, "detail": detail})
     report["ok"] = True
@@ -498,7 +513,8 @@ def declare(source, unit, issues):
         report["outcome"] = NOT_SUPPORTED
         report["why"] = ("this backlog source has no label surface (missing %s), so the unit's label "
                          "half cannot be written; the body marker in each issue still declares the "
-                         "unit" % ", ".join(missing))
+                         "unit. Nothing to do for a source without a label surface (the exit stays 1 so "
+                         "callers see the label half was skipped)" % ", ".join(missing))
         return report
     for issue in issues:
         report["issues"].append(_declare_one(source, unit, label, issue))
@@ -733,7 +749,9 @@ def bump_priority(source, unit, priority, *, cap=_MEMBER_FETCH_CAP):
     if missing or not hasattr(source, "repo"):
         report["outcome"] = NOT_SUPPORTED
         report["why"] = ("this backlog source has no priority-label surface (missing %s), so "
-                         "feature-level priority cannot be applied" % ", ".join(missing or ["repo"]))
+                         "feature-level priority cannot be applied. Use `define.py set-priority "
+                         "<sdlc_dir> --unit NAME --priority P1` instead: it records the tie-break on "
+                         "the unit and works without GitHub" % ", ".join(missing or ["repo"]))
         return report
     try:
         issues = sources.fetch_issues_rest(source._run, source.repo, [label], cap)
