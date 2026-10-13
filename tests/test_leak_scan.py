@@ -227,6 +227,51 @@ def test_a_missing_redactor_table_refuses_too(tmp_path):
     assert proc.returncode == 2 and "REFUSED" in proc.stderr, proc.stdout + proc.stderr
 
 
+_SCRUB = pathlib.Path("skills") / "sigma-loop" / "scripts" / "scrub.py"
+
+
+@pytest.mark.parametrize("planted", [
+    "raise NameError('x')\n",        # was a traceback and exit 1: read as "findings"
+    "raise SystemExit(0)\n",         # was exit 0 with no scan and no summary: a gate passing unscanned
+    "raise SystemExit(2)\n",         # the intended path already
+    "raise SystemExit\n",            # bare: code None
+    "raise SystemExit('boom')\n",    # a string code, which would exit 1 unhandled
+    "raise KeyboardInterrupt\n",     # not an Exception subclass; a failed load all the same
+    "import no_such_module_leakscan\n",
+], ids=["NameError", "SystemExit0", "SystemExit2", "SystemExitBare", "SystemExitStr", "Interrupt", "ImportError"])
+def test_any_failure_to_load_scrub_refuses_with_exit_2(tmp_path, planted):
+    """#435: every shape of load failure is REFUSED (exit 2, reason on stderr, nothing on stdout)."""
+    repo = _scratch(tmp_path)
+    scrub = repo / _SCRUB
+    scrub.write_text(planted + scrub.read_text(encoding="utf-8"), encoding="utf-8")
+    proc = _run(repo)
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert "leak_scan: REFUSED:" in proc.stderr and "Traceback" not in proc.stderr, proc.stderr
+    assert proc.stdout == "", proc.stdout
+
+
+@pytest.mark.parametrize("body", [
+    "SHAPE_RULES = [('x', 'not-a-compiled-regex')]\n_SECRET_PATTERNS = [(None, '[REDACTED:y]')]\n",
+    "SHAPE_RULES = [('x',)]\n_SECRET_PATTERNS = ()\n",
+    "SHAPE_RULES = 5\n_SECRET_PATTERNS = 5\n",
+], ids=["strings-not-regexes", "short-tuple", "not-iterable"])
+def test_a_scrub_that_loads_but_has_no_usable_rules_refuses(tmp_path, body):
+    repo = _scratch(tmp_path)
+    (repo / _SCRUB).write_text(body, encoding="utf-8")
+    proc = _run(repo)
+    assert proc.returncode == 2 and "leak_scan: REFUSED:" in proc.stderr, proc.stdout + proc.stderr
+    assert "finding(s)" not in proc.stdout and "Traceback" not in proc.stderr
+
+
+def test_a_scan_of_zero_files_refuses_rather_than_pass(tmp_path):
+    """A gate must say what it scanned: a checkout git tracks nothing in is `cannot scan`, not 0 findings."""
+    repo = _scratch(tmp_path)
+    _git(repo, "rm", "-q", "-r", "--cached", ".")
+    proc = _run(repo)
+    assert proc.returncode == 2 and "leak_scan: REFUSED:" in proc.stderr, proc.stdout + proc.stderr
+    assert "0 finding(s)" not in proc.stdout
+
+
 def test_a_large_file_is_skipped_by_name_never_silently(tmp_path):
     repo = _scratch(tmp_path)
     src = (repo / "tools" / "leak_scan.py").read_text(encoding="utf-8")

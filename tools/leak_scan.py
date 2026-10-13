@@ -43,7 +43,9 @@ THE RULES (a finding's line is 0 when the rule is about the whole file).
     never copied: its `SHAPE_RULES` (named there) plus the redactor-only shapes in `_SECRET_PATTERNS`
     (PEM private keys, AWS `AKIA`/`ASIA`, classic GitHub `gh[pousr]_`, JWT, bearer/basic auth),
     including Hugging Face `hf_` tokens, named from their `[REDACTED:<name>]` label. Missing tables REFUSE (exit 2): a gate with no rules
-    must not print 0 findings. PEM private keys need a real body (40+ base64 chars).
+    must not print 0 findings. So does ANY failure to load scrub.py (an exception, or the module
+    calling `exit` -- `SystemExit(0)` included), a table that is not `(name, compiled regex)` pairs,
+    and a checkout in which zero files were scanned (#435). PEM private keys need a real body (40+ base64 chars).
   * config-credential (the gate's own, in config-like files only -- `_is_config`: `.env*`, `.ini`,
     `.cfg`, `.conf`, `.toml`, `.yml`/`.yaml`, `.json`, `.properties`, `.tmpl`, `.npmrc`/`.pypirc`/
     `.yarnrc*`/`.netrc`, `Dockerfile*`/`*dockerfile` (incl. `ENV`/`ARG KEY value`), `.sh`/`.bash`/
@@ -334,8 +336,19 @@ def _scrub_rules():
         mod = _load(rel, "sigma_scrub_for_leak_scan")
         shape = tuple(mod.SHAPE_RULES)
         patterns = tuple(mod._SECRET_PATTERNS)
-    except (OSError, AttributeError, SyntaxError, TypeError) as exc:
-        print(f"leak_scan: REFUSED: cannot load SHAPE_RULES/_SECRET_PATTERNS from {rel}: {exc}",
+        # A table that loads but is not made of (name, compiled-regex) pairs is no rule set (#435).
+        if not all(isinstance(r, tuple) and len(r) == 2 and isinstance(r[0], str)
+                   and hasattr(r[1], "finditer") for r in shape) \
+                or not all(isinstance(r, tuple) and len(r) == 2 and hasattr(r[0], "finditer")
+                           for r in patterns):
+            raise ValueError("a rule table entry is not a (name, compiled regex) pair")
+    # Any failure to load is a refusal: never a traceback (exit 1, read as "findings") and never the
+    # module's own SystemExit(0) (a pass with no scan). BaseException covers SystemExit and
+    # KeyboardInterrupt raised at import time (#435).
+    except BaseException as exc:  # noqa: BLE001
+        reason = (f"the module exited (code {exc.code!r}) while loading" if isinstance(exc, SystemExit)
+                  else f"{type(exc).__name__}: {exc}")
+        print(f"leak_scan: REFUSED: cannot load SHAPE_RULES/_SECRET_PATTERNS from {rel}: {reason}",
               file=sys.stderr)
         raise SystemExit(2)
     if not shape or not patterns:
@@ -870,6 +883,10 @@ def main(argv):
             continue
         scanned += 1
         findings += [(rel, n, rule) for n, rule in _scan_path(rel, rules, owner, stats)]
+    if not scanned:
+        print("leak_scan: REFUSED: scanned 0 files (git tracks nothing here, or all of it is in "
+              "ALLOW_PATHS): a gate that read nothing must not report 0 findings", file=sys.stderr)
+        return 2
     for rel, n, rule in findings:
         print(f"{rel}:{n}: {rule}")
     unscannable = sum(rule in FILE_RULES[1:] for _, _, rule in findings)
