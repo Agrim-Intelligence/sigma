@@ -155,7 +155,7 @@ def _why(exc):
     text = text[:200]
     if any(m in text.lower() for m in _RATE_LIMIT_MARKERS):
         return "rate-limited — %s; retry once the quota resets (`gh api rate_limit`)" % text
-    return text
+    return sources.gh_api.with_remedy(exc, text)      # D7: the fix for an auth/404/403/network kind
 
 
 def _rate_limited(why):
@@ -174,11 +174,14 @@ def _fetch(source, labels, assignee=None):
     is exactly when a human runs `list` to see what is waiting. REST is a separate budget, and the
     same migration `mirror.py`, `triage.py` and `status.py` already made (#1829/#1833)."""
     try:
-        login = sources.resolve_assignee_login(source._run, assignee) if assignee else None
+        failed = []
+        login = sources.resolve_assignee_login(source._run, assignee, failed) if assignee else None
         # DELIBERATELY NOT fail-open, unlike `mirror.py`/`triage.py`: an unscoped read rendered
         # under a "scoped to @me" header would silently show everyone's queue as yours. A human is
         # reading this to decide what to approve, so an unresolvable scope is a failed read.
         if assignee and login is None:
+            if failed:          # D7: gh itself failed (bad token, no network) -- say THAT, not "@me"
+                return [], False, _why(failed[0])
             return [], False, "could not resolve assignee %r to a login" % assignee
         data = sources.fetch_issues_rest(source._run, getattr(source, "repo", None), list(labels),
                                          cap=_LIST_LIMIT, assignee=login)
@@ -576,7 +579,7 @@ def promote(sdlc_dir, config, numbers, source=None, run=None, apply=True, demote
             source._swap_labels(n, add=this_add, remove=this_remove)
         except Exception as exc:                        # noqa: BLE001 - reported, never raised
             out["results"].append({"number": n, "outcome": "failed",
-                                   "detail": "label write did not land: %s" % exc})
+                                   "detail": "label write did not land: %s" % sources._fx(exc)})
             continue
         detail = triage._swap_detail(this_add, this_remove) + note
         column = source.col["backlog" if demote else "ready"]
