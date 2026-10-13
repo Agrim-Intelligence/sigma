@@ -179,6 +179,9 @@ class GhApiError(Exception):
         and prints as it always did. `_plain` is the text WITHOUT the fix, for the places that quote
         one error inside another."""
         text = Exception.__str__(self)
+        own = getattr(self, "fix", None)  # a fix this error carries itself (set where it is raised)
+        if own and "fix: " + own not in text:
+            return "%s -- fix: %s" % (text, own)
         if not self.hint:                 # no gh stderr: the kind came from str(), which embeds argv
             return text
         return gh_session.with_remedy(text, self.kind)
@@ -238,6 +241,8 @@ def with_remedy(exc, text=None):
     its `str()` embeds argv and `classify` must not read that. Never raises."""
     try:
         if isinstance(exc, GhApiError):
+            if not exc.hint:                          # no gh stderr: its kind was read off str(), argv included
+                return str(exc) if text is None else text
             kind = exc.kind
         elif isinstance(getattr(exc, "hint", None), str) and exc.hint:
             kind = classify(exc)[1]                   # gh's own stderr, never the argv in str(exc)
@@ -1055,10 +1060,11 @@ def add_assignees(run, number, assignees, repo=None, *, fallback_run=None, env=N
             if isinstance(resp, dict) else set()
         missing = [n for n in logins if n.lower() not in got]
         if missing:
-            raise GhApiError("GitHub did not assign %s to #%d (not assignable, or not a collaborator)"
-                             " -- fix: the user must be a collaborator on the repository (or a member of "
-                             "its organisation) and assignable there: add them, or assign someone who is"
+            err = GhApiError("GitHub did not assign %s to #%d (not assignable, or not a collaborator)"
                              % (", ".join("@" + m for m in missing), number), kind="invalid")
+            err.fix = ("the user must be a collaborator on the repository (or a member of its "
+                       "organisation) and assignable there: add them, or assign someone who is")
+            raise err
         return resp
 
     fb = ["issue", "edit", str(number), *_repo_flag(repo)]

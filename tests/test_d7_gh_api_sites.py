@@ -132,6 +132,45 @@ def test_an_error_with_no_gh_stderr_gets_no_remedy_even_if_argv_has_a_marker_wor
     assert "fix: " not in str(ei.value)
 
 
+@pytest.mark.parametrize("label", ["sdlc:timeout", "rate-limit-rework"])
+def test_no_gh_stderr_means_no_remedy_through_every_wrapper(label):
+    """The guard lives in with_remedy, not only in __str__: sources._fx, promote._why and
+    gh_api.with_remedy all take the same hint-less GhApiError."""
+    src = _mod("sources")
+    api = src.gh_api                                  # the module sources.py itself uses
+    prom = _mod("promote")
+
+    def run(args):
+        raise RuntimeError("unknown label(s) on this repo: " + label)
+    with pytest.raises(api.GhApiError) as ei:
+        api.add_labels(run, 5, [label], "OWNER/NAME", env={})
+    e = ei.value
+    assert not e.hint
+    for out in (str(e), src._fx(e), api.with_remedy(e), prom._why(e)):
+        assert "fix: " not in out and "network" not in out and "quota" not in out, out
+
+
+def test_the_assign_failure_comment_on_the_issue_carries_no_fix_line():
+    """The remedy is for the local message; the public issue comment gets the plain text."""
+    src = _mod("sources")
+    api = src.gh_api
+    gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "OWNER/NAME"}}}, run=lambda a: "")
+
+    def run(args):
+        return '{"assignees": []}' if "assignees" in " ".join(args) else "{}"
+    with pytest.raises(api.GhApiError) as ei:
+        api.add_assignees(run, 5, ["vox"], "OWNER/NAME", env={})
+    err = ei.value
+    assert "fix: " in str(err)                        # the local message keeps it
+    posted = []
+    gh._create_issue = lambda title, body, labels: 7
+    gh._issue_add_assignees = lambda number, assignee: (_ for _ in ()).throw(err)
+    gh._issue_comment = lambda number, text: posted.append(text)
+    gh.create_dependency("t", "b", "vox")
+    assert posted and "Could not assign @vox" in posted[0] and "did not assign" in posted[0]
+    assert "fix: " not in posted[0]
+
+
 def test_a_permission_403_does_not_trip_the_board_scope_note(capsys):
     """The permission fix used to contain the words _note_scope matches on."""
     src = _mod("sources")
