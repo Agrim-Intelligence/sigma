@@ -109,8 +109,10 @@ def graphql_unavailable(text):
 REMEDIES = {
     "auth": "fix: run `gh auth login` (check with `gh auth status`); a GH_TOKEN or GITHUB_TOKEN in the "
             "environment overrides gh's login, so unset or replace it if it is wrong",
-    "not_found": "fix: check discovery.github.repo in .sdlc/config.json names a repository this "
-                 "account can see (OWNER/NAME), and that `gh auth status` is the account that owns it",
+    "not_found": "fix: Not Found means the resource does not exist or this token cannot see it; "
+                 "check the repository, issue number or label named above (discovery.github.repo in "
+                 ".sdlc/config.json is the repository), and that `gh auth status` is an account with "
+                 "access to it (a private repository needs the repo scope)",
     "permission": "fix: the token needs the repo and workflow scopes (plus project when the board is "
                   "on): `gh auth refresh -s repo,workflow`; a fine-grained token needs Issues and "
                   "Pull requests read and write; an SSO organisation must authorize the token",
@@ -118,7 +120,6 @@ REMEDIES = {
     "transport": "fix: check your network connection and retry",
     "server": "fix: GitHub returned a server error; retry in a minute (https://www.githubstatus.com)",
 }
-_REMEDY_MARK = "fix: "
 
 
 def remedy_for_kind(kind):
@@ -132,6 +133,6 @@ def with_remedy(text, kind):
     returned as it is) and total: no remedy for the kind returns `text` unchanged."""
     fix = REMEDIES.get(kind)
     text = str(text)
-    if not fix or _REMEDY_MARK in text:
+    if not fix or fix in text:          # the EXACT line, so a 'fix: ...' title in argv cannot suppress it
         return text
     return "%s -- %s" % (text, fix)

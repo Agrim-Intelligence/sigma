@@ -49,7 +49,9 @@ Then write a **short, cited, pointer-rich brief** — a handful of bullets (rele
 constraints, gotchas), each tagged with a `file:line` / `#issue` / graph-node pointer — and carry it
 into Goal → Research → Plan. Keep it compact; pull deeper detail on demand, don't preload everything.
 
-> **Live pull (recommended):** run `graphify --mcp` (or add the graphify MCP server to your Claude
-> Code config, pointed at the repo's `graphify-out/graph.json`) so the graph is a *live tool* during
+> **Live pull (recommended):** start graphify's MCP server (`python -m graphify.serve graphify-out/graph.json`
+> in graphify's Python environment, which needs the `graphifyy[mcp]` extra; or the `/graphify <path> --mcp` skill flag; there is no `graphify --mcp`
+> command), or add that server to your Claude
+> Code config, pointed at the repo's `graphify-out/graph.json`, so the graph is a *live tool* during
 > the run — query it whenever you touch unfamiliar code, instead of holding everything in context. The
 > brief is the up-front push; the MCP is the on-demand pull.

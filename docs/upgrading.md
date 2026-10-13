@@ -34,8 +34,11 @@ claude plugin install sigmaloop@sigmaloop
 `/sigma-doctor` prints these lines for your install, with the repository your install recorded filled in (a private
 copy of the repository carries the plugin under its new name too). A fresh install from the public repository uses
 `claude plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop` instead. Then restart the session, so
-the version in use is resolved afresh. With a marketplace shared by other plugins this exact sequence has not been run
-end to end.
+the version in use is resolved afresh. With a marketplace shared by other plugins, the uninstall and marketplace-removal steps were run
+on 2026-10-14 in a scratch profile against a two-plugin directory marketplace (a stand-in, not a real old release): uninstalling
+one plugin left the other installed. The marketplace removal is the step to skip: `claude plugin marketplace
+remove` on that marketplace also uninstalled the second plugin ("Also uninstalled 1 plugin from this marketplace"), and the CLI added that the removal "also deletes their saved
+options, secrets and data where it can", so the guard above is not a courtesy. The sequence has not been run against a real pre-launch install.
 
 **Codex.**
 
@@ -306,7 +309,8 @@ The cut-over, per machine:
    - Claude Code, this repository only: run `claude plugin disable <old>@<marketplace> --scope local`
      in the repository. It writes `"<old>@<marketplace>": false` under `enabledPlugins` in the
      repository's `.claude/settings.local.json`, which wins over the project and user settings on
-     this machine. Or uninstall it now (step 5). A machine-wide managed setting that enables it
+     this machine (checked on 2026-10-14 in a scratch project: the file held exactly that one entry, and
+     `claude plugin enable <old>@<marketplace> --scope local` set it back to `true`). Or uninstall it now (step 5). A machine-wide managed setting that enables it
      wins over both: ask whoever manages it.
    - Codex: set `enabled = false` in the `[plugins."<old>@<marketplace>"]` table of `config.toml`
      (`CODEX_HOME`, else `~/.codex`), or remove the table. Codex has no per-repository switch, so
