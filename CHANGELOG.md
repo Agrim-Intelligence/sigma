@@ -26,6 +26,7 @@ All notable changes to Sigma are recorded here, newest first.
 - **A follow-up matching only a mid-score closed issue is now filed (#1217).** Closed matches fold a follow-up away only at `dedup.closed_duplicate_threshold` (default 0.8); weaker ones are reported as related. Open-issue folding is unchanged.
 - **`define.py open` commits the unit record; doctor flags records other machines cannot see (#1312).** Open writes the unit's record when it has none, then commits just that path on the current branch (never a push); if it cannot write or commit, it prints the exact command. A new doctor row warns on an untracked record or a remote `feature/*` branch with no record, and appears only where `.sdlc/features/` exists.
 - **A park whose label write fails no longer exits 0 and leaves the issue pickable (#1303).** `loop.py record <N> parked` now falls back to REST label writes when the GraphQL swap fails, and exits non-zero with one clear message if the label still cannot be applied; other transitions are unchanged.
+- **Unpark records a decision only for a gesture that landed (#1304).** A failed label write no longer writes the decision record, and `keep-parked` or `unpark` on an issue that is not parked is refused with nothing recorded.
 
 ## 1.0.12 — 2026-10-13 — rulebook categories file, cold-start visibility, past-decision import, upkeep trigger and session report, drift judge in shadow, hard-stop net, and the confirmation-queue migration
 
