@@ -66,6 +66,7 @@ CONSENT_FLAG = "--user-requested"
 FINGERPRINTS = ("SIGMA_RUN_ID", "SIGMA_AUTOWATCH_HOP", "SIGMA_SESSION_GENERATION")
 DEFAULT_TTL_SECONDS = 3600
 MAX_TTL_SECONDS = 86400
+PRUNE_GRACE_SECONDS = 30 * 86400   #: a pair is removed only this long after its record expired (30x the longest TTL)
 _HEAD = re.compile(r"[0-9a-f]{40}([0-9a-f]{24})?\Z")
 _SLUG = re.compile(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}\Z")
 
@@ -113,6 +114,7 @@ def approve(config, sdlc_dir, unit, slug, head, *, ttl_seconds=DEFAULT_TTL_SECON
     body = {"v": 1, "unit": registry.unit_key(unit), "slug": slug, "head": head,
             "created_at": created, "expires_at": created + ttl_seconds}
     state.atomic_write_text(record, json.dumps(body, sort_keys=True))
+    _load("feature_land_approval_prune").prune(record.parent, created, PRUNE_GRACE_SECONDS, MAX_TTL_SECONDS)   # #1264
     return {"ok": True, "expires_at": body["expires_at"]}
 
 
@@ -129,7 +131,7 @@ def _validate(unit, slug, head, sdlc_dir, now):
         return "approval path has a symlink component; refusing", None
     try:
         data = json.loads(record.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):
         return "no readable approval for this unit at this head; run the approve verb", None
     if not isinstance(data, dict):
         return "approval record is malformed", None

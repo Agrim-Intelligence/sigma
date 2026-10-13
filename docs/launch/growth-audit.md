@@ -41,15 +41,16 @@ At the snapshot's revision no pattern is unresolved. The first pass carried all 
 #419, which is closed; the 11 patterns that pass had left open were read from their writer code and decided
 in `dispositions/1261.json`, with the evidence in [b6-late-stores.md](b6-late-stores.md): six patterns bounded or
 capped (one of them capped by that change), two unresolvable placeholder patterns, and three patterns with
-no pruner or cap, filed as accepted gaps #1262 (two patterns) and #1263; a fourth gap, #1264, is a store the scan
-cannot see. The JSON's `b6_disposition.issue`
+no pruner or cap that have since been capped too (#1262 two patterns, #1263). Two further stores the scan cannot
+see (#1264 unit approvals, #1267 reconcile proposals) were also given a prune, and are recorded as `unscanned`
+rows in the same file. The JSON's `b6_disposition.issue`
 still reads `#419` because the documented gesture passes it; it is a label, not a claim that #419 is open.
 The disposition files do not authorize pruning host configuration roots.
 
 **Zero unresolved is not full coverage.** The scanner does not follow constant-built paths (`*_REL`
 constants such as `STORE_REL`), so stores written through them never reach the table. Known ones, listed
 with their status in [b6-late-stores.md](b6-late-stores.md): the reconcile proposals
-(`.sdlc/plans/reconcile/`, unbounded, #1267), `state/unit-approvals/` (#1264), `state/upkeep/level2/<unit>.json`
+(`.sdlc/plans/reconcile/`, now capped, #1267), `state/unit-approvals/` (now pruned, #1264), `state/upkeep/level2/<unit>.json`
 (intentionally unbounded per unit), and several apparently bounded ones (board mirror, AI-filed counter,
 `gh-fallback.json`, `gh-rest-breaker.json`, `upkeep/acks.json`, `upkeep/last_start.json`).
 

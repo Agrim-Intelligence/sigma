@@ -35,6 +35,8 @@ triage = _load("sigma-loop", "triage")
 
 MAX_PRD_BYTES = 262144          #: a PRD past this is split by the human
 MAX_OUTCOMES = 12               #: above this the umbrella is the wrong shape
+KEEP_DONE = 50                  #: finished intakes (umbrella filed) kept; the oldest beyond this go
+UNFILED_DAYS = 90               #: a plan never filed and this old is stale; re-planning recreates it
 MIN_QUOTE_CHARS = 20            #: a one-character "quote" would match anything
 STATUSES = ("silent", "vague", "contradiction")
 PLACEHOLDER = "Not stated in the PRD; see %s."
@@ -245,7 +247,8 @@ def cmd_plan(tail):
     plan_path = sdlc / "intake" / (sha[:12] + ".json")
     _write_json(plan_path, {"version": 1, "prd": {"path": shown, "sha256": sha},
                             "outcomes": outcomes})
-    lines = ["PRD %s" % shown, "sha256 %s" % sha, "plan %s" % plan_path, "",
+    prune(plan_path.parent)
+    lines =["PRD %s" % shown, "sha256 %s" % sha, "plan %s" % plan_path, "",
              "PRD section -> Dossier title -> answer ids"]
     for o in outcomes:
         lines.append("%s -> %s -> %s" % (o["section"] or "(whole PRD)", o["answers"]["title"],
@@ -263,6 +266,32 @@ def _load_record(path):
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {"dossiers": {}, "umbrella": None}
+
+
+def prune(intake_dir, now=None):
+    """Cap `.sdlc/intake` (#1262). Removes a finished intake's plan and resume record beyond the newest
+    KEEP_DONE, and a plan that has no resume record and is older than UNFILED_DAYS. A plan with a resume
+    record but no umbrella is mid-filing and is never touched (a resume needs both files). Best effort."""
+    import time
+    now = time.time() if now is None else now
+    d = pathlib.Path(intake_dir)
+    done = []
+    try:
+        plans = [p for p in d.glob("*.json") if not p.name.endswith(".filed.json")]
+        for plan in plans:
+            record = d / (_plan_key(plan) + ".filed.json")
+            mtime = plan.stat().st_mtime
+            if not record.exists():
+                if now - mtime > UNFILED_DAYS * 86400:
+                    plan.unlink()
+            elif _load_record(record).get("umbrella"):
+                done.append((mtime, plan, record))
+        done.sort(key=lambda t: t[0], reverse=True)
+        for _, plan, record in done[KEEP_DONE:]:
+            record.unlink(missing_ok=True)
+            plan.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _umbrella_body(prd, filed):

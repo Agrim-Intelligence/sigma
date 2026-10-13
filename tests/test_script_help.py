@@ -66,6 +66,7 @@ LIBRARY_ONLY = {
     "bounded_run",
     "feature_landed",
     "feature_land_merge",
+    "feature_land_approval_prune",
     "conflict_state",
     "feature_park",
     "qkind",

@@ -262,6 +262,97 @@ def test_module_is_offline_and_deletes_nothing():
     assert "SIGMA_" not in text.replace("SIGMA_RUN_ID", "").replace("SIGMA_AUTOWATCH_HOP", "").replace("SIGMA_SESSION_GENERATION", "")
 
 
+def test_old_approvals_and_markers_are_pruned_on_approve_and_recent_ones_are_not(tmp_path):
+    """B6 (#1264): one record and one marker per approval used to pile up forever. `approve` now removes a pair only
+    when its record expired more than PRUNE_GRACE_SECONDS ago (30 days, 30x the longest TTL); a used marker younger
+    than that still denies a second consume."""
+    mod = load()
+    d = tmp_path / "state" / "unit-approvals"
+    old = ["%040x" % i for i in (1, 2, 3)]
+    for h in old:
+        assert approve(mod, tmp_path, head=h, now=1000, ttl_seconds=60)["ok"]
+        assert mod.consume(OPEN, tmp_path, "voice", SLUG, h, now=1010)["ok"]       # records expire at 1060
+    foreign = d / "notes.txt"
+    foreign.write_text("keep")
+    inside = 1060 + mod.PRUNE_GRACE_SECONDS            # exactly the grace: not yet past it
+    assert approve(mod, tmp_path, head=OTHER, now=inside, ttl_seconds=60)["ok"]
+    assert len(list(d.glob("*.used"))) == 3 and len(list(d.glob("*.json"))) == 4     # nothing pruned inside the grace
+    denied = mod.consume(OPEN, tmp_path, "voice", SLUG, old[0], now=inside)
+    assert denied["ok"] is False                                                     # a young marker still refuses
+    past = inside + 1
+    assert approve(mod, tmp_path, head=HEAD, now=past, ttl_seconds=60)["ok"]
+    assert len(list(d.glob("*.used"))) == 0                                          # the three consumed pairs are gone
+    assert len(list(d.glob("*.json"))) == 2                                          # OTHER (still live) and HEAD
+    assert foreign.read_text() == "keep"                                             # a non-approval file is never touched
+    assert mod.consume(OPEN, tmp_path, "voice", SLUG, HEAD, now=past)["ok"]
+    assert mod.consume(OPEN, tmp_path, "voice", SLUG, HEAD, now=past)["ok"] is False  # the fresh one is single use
+
+
+def _pruner():
+    import importlib.util
+    path = SCRIPTS / "feature_land_approval_prune.py"
+    spec = importlib.util.spec_from_file_location("fla_prune", path)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def test_the_grace_is_pinned_to_thirty_days_and_thirty_times_the_longest_ttl():
+    mod = load()
+    assert mod.PRUNE_GRACE_SECONDS == 30 * 86400
+    assert mod.PRUNE_GRACE_SECONDS == 30 * mod.MAX_TTL_SECONDS
+
+
+def test_an_orphan_marker_is_kept_until_the_grace_plus_the_longest_ttl(tmp_path):
+    import os
+    pr = _pruner()
+    grace, ttl = 1000, 100
+    marker = tmp_path / ("a" * 40 + ".used")
+    marker.write_text("")
+    os.utime(marker, (5000, 5000))
+    assert pr.prune(tmp_path, 5000 + grace + ttl, grace, ttl) == 0 and marker.exists()      # exactly at the bound
+    assert pr.prune(tmp_path, 5000 + ttl + 1, grace, ttl) == 0 and marker.exists()          # grace is part of the bound
+    assert pr.prune(tmp_path, 5000 + grace + ttl + 1, grace, ttl) == 1 and not marker.exists()
+
+
+def test_a_malformed_record_ages_from_its_mtime_plus_the_longest_ttl(tmp_path):
+    import os
+    pr = _pruner()
+    grace, ttl = 1000, 100
+    record = tmp_path / ("b" * 40 + ".json")
+    record.write_text("not json")
+    os.utime(record, (5000, 5000))
+    assert pr.prune(tmp_path, 5000 + ttl + grace, grace, ttl) == 0 and record.exists()
+    assert pr.prune(tmp_path, 5000 + ttl + grace + 1, grace, ttl) == 1 and not record.exists()
+
+
+def test_a_deeply_nested_planted_record_cannot_crash_approve_or_consume(tmp_path):
+    """A planted <40 hex>.json of 200,000 brackets makes json.loads raise RecursionError, which is neither OSError
+    nor ValueError: it must neither escape `approve` (after its own record is written) nor `consume`."""
+    mod = load()
+    d = tmp_path / "state" / "unit-approvals"
+    assert approve(mod, tmp_path, head=HEAD, now=1000)["ok"]
+    (d / ("e" * 40 + ".json")).write_text("[" * 200000)
+    assert approve(mod, tmp_path, head=OTHER, now=2000)["ok"]                       # the prune reads the planted file
+    record, _ = mod.approval_path(tmp_path, SLUG, HEAD, "voice")
+    record.write_text("[" * 200000)                                                  # and the validator reads this one
+    out = mod.consume(OPEN, tmp_path, "voice", SLUG, HEAD, now=2000)
+    assert out["ok"] is False
+
+
+def test_prune_never_follows_a_symlink_or_touches_a_foreign_name(tmp_path):
+    mod = load()
+    d = tmp_path / "state" / "unit-approvals"
+    approve(mod, tmp_path, head=HEAD, now=1000, ttl_seconds=60)
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}")
+    (d / ("c" * 40 + ".json")).symlink_to(outside)
+    (d / ("d" * 40 + ".used")).symlink_to(outside)
+    far = 4 * 10 ** 9            # past the real mtimes of the planted links, so a followed link WOULD be aged out
+    assert approve(mod, tmp_path, head=OTHER, now=far, ttl_seconds=60)["ok"]
+    assert outside.read_text() == "{}"
+    assert (d / ("c" * 40 + ".json")).is_symlink() and (d / ("d" * 40 + ".used")).is_symlink()
+
 def test_record_copied_to_another_heads_name_denies(tmp_path):
     """The file name is only an address; the fields inside are what bind the approval."""
     mod = load()
