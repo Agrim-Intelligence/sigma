@@ -250,11 +250,25 @@ def test_any_failure_to_load_scrub_refuses_with_exit_2(tmp_path, planted):
     assert proc.stdout == "", proc.stdout
 
 
-@pytest.mark.parametrize("body", [
+_GOOD_SHAPE = "[('x', re.compile('a'))]"
+_GOOD_PAT = "[(re.compile('b'), '[REDACTED:y]')]"
+#: ONE table malformed, the other valid, one case per sub-clause of the check (#435 review): with both
+#: tables broken at once either clause alone catches it, so each clause is exercised on its own here.
+_BAD_SHAPE = {"shape-not-tuple": "[['x', re.compile('a')]]", "shape-len-3": "[('x', re.compile('a'), 1)]",
+              "shape-name-not-str": "[(7, re.compile('a'))]", "shape-no-finditer": "[('x', 'nope')]"}
+_BAD_PAT = {"pat-not-tuple": "[[re.compile('b'), '[REDACTED:y]']]",
+            "pat-len-3": "[(re.compile('b'), '[REDACTED:y]', 1)]", "pat-no-finditer": "[('b', '[REDACTED:y]')]"}
+_ONE_BAD = [("import re\nSHAPE_RULES = %s\n_SECRET_PATTERNS = %s\n" % (v, _GOOD_PAT), k)
+            for k, v in _BAD_SHAPE.items()] \
+    + [("import re\nSHAPE_RULES = %s\n_SECRET_PATTERNS = %s\n" % (_GOOD_SHAPE, v), k)
+       for k, v in _BAD_PAT.items()]
+
+
+@pytest.mark.parametrize("body", [b for b, _ in _ONE_BAD] + [
     "SHAPE_RULES = [('x', 'not-a-compiled-regex')]\n_SECRET_PATTERNS = [(None, '[REDACTED:y]')]\n",
     "SHAPE_RULES = [('x',)]\n_SECRET_PATTERNS = ()\n",
     "SHAPE_RULES = 5\n_SECRET_PATTERNS = 5\n",
-], ids=["strings-not-regexes", "short-tuple", "not-iterable"])
+], ids=[i for _, i in _ONE_BAD] + ["strings-not-regexes", "short-tuple", "not-iterable"])
 def test_a_scrub_that_loads_but_has_no_usable_rules_refuses(tmp_path, body):
     repo = _scratch(tmp_path)
     (repo / _SCRUB).write_text(body, encoding="utf-8")
