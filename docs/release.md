@@ -14,12 +14,10 @@ manifest drift and an undated published CHANGELOG heading.
 
 ## Release checklist
 
-1. Set the date. For the first release the entries are already folded under
-   `## 1.0.0 — DATE-PENDING — the first public release` in `CHANGELOG.md`: replace `DATE-PENDING` with the
-   release date (`YYYY-MM-DD`; no date is invented for you). For a later release, move the intended entries
-   out of `## Unreleased` and under `## X.Y.Z — YYYY-MM-DD`. The consistency controls accept
+1. Set the date. Move the intended entries out of `## Unreleased` and under `## X.Y.Z — YYYY-MM-DD` in
+   `CHANGELOG.md` (no date is invented for you). The consistency controls accept
    `DATE-PENDING` only as the newest heading, and `tools/release_notes.py` (step 7) refuses it. Review the
-   curated 1.0.0 summary above the `<!-- release-notes:end -->` line: that is the release notes (GitHub rejects a body over
+   curated summary above the `<!-- release-notes:end -->` line: that is the release notes (GitHub rejects a body over
    125,000 characters, so the tool refuses one over 120,000); the detailed log below the marker is not sent.
 2. Bump both plugin manifests to the same `X.Y.Z` version.
 3. Run the full suite successfully on every supported CI cell.
@@ -37,8 +35,8 @@ manifest drift and an undated published CHANGELOG heading.
 
 ## Pin and rollback
 
-**Pinning is not supported for the currently unreleased source.** The planned
-public repository and `v1.0.0` tag do not yet exist. The isolated probes in
+**Pinning is not supported for the currently unreleased source.** At the time of the probes below (2026-10-02) the
+public repository and `v1.0.0` tag did not exist; this page has not re-probed installation since. A REST read on 2026-10-13 shows the repository named below now exists but is private and lists no tags, while this repository lists six release tags, the oldest `v1.0.0`. The isolated probes in
 [`pin-rollback-2026-10-02.md`](launch/evidence/pin-rollback-2026-10-02.md)
 did not produce an installed tagged plugin: the two marketplace source forms
 could not authenticate over SSH, and cloning the public HTTPS source at

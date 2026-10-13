@@ -44,9 +44,8 @@ Then repeat until the helper says stop:
    unmanaged worker) — and **never** hand a subagent's own scratch work a `cp`/`rsync` of another
    goal's live worktree. As EACH subagent finishes, immediately refill just that ONE freed slot:
    `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" next .sdlc --session-pid "$PPID" --skip
-   <comma-separated other still-live goals>`. **The `--skip` list is not optional for a refill**,
-   and neither is `--session-pid "$PPID"`. Omitting it can re-dispatch a goal a sibling slot already
-   holds. Slot sizing, dispatch logging, releasing an undispatched goal: `references/picking.md`.
+   <comma-separated other still-live goals>`. **The `--skip` list and `--session-pid "$PPID"` are not
+   optional for a refill**: omitting either can re-dispatch a goal a sibling slot holds. Slot sizing, dispatch logging, releasing an undispatched goal: `references/picking.md`.
 2. Dispatch `goal` lines before a terminal line. If output is `DONE` (nothing pickable), `BUDGET` (iterations, wall-clock
    minutes, or reported tokens — each only when `config.json` sets it), or `HANDOFF` (a goal-count
    hand-off, on by default) → STOP, and report the stderr `BUDGET (...)`/`HANDOFF (...)` line, which
@@ -74,26 +73,25 @@ Then repeat until the helper says stop:
    That order is load-bearing. It, what each park writes, and how to dismiss a false positive
    (never restore `sdlc:goal` by hand — **run `/sigma-unpark`**): `references/picking.md`.
 
-   Then **recall prior art** — if the knowledge graph is enabled, run the `sigma-context` pre-flight
-   to pull a cited brief from the graph + past issues + conventions (no-op when the KG is off).
+   Then **recall prior art**: if the knowledge graph is enabled, run the `sigma-context` pre-flight
+   for a cited brief (no-op when the KG is off).
 
-   **Match the model to the goal.** **Read the tier IT resolved from the pick's own stderr** — a
+   **Match the model to the goal.** **Read the tier from the pick's own stderr** — a
    line shaped `sigma: model tier for <goal> resolved to <tier> (signal=<signal>)` — rather
    than recomputing it yourself, **especially in github mode**: `"$goal"` there is the bare issue
    number, and a manual `predict.py resolve "$goal" .sdlc` classifies that literal digit string,
    not the issue's real text. **You DO still need to log this same tier+signal to the LOCAL
    action-log copy yourself**: `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" log .sdlc "$goal"
-   model_choice --model <tier> --signal <signal>`. **Use the SAME tier+signal you just established
-   above — never a fresh, separate `why "$goal"` call here.** Never run a step ABOVE the goal
+   model_choice --model <tier> --signal <signal>`. **Use the SAME tier+signal as above — never a
+   fresh `why "$goal"` call.** Never run a step ABOVE the goal
    ceiling. The fallback when that stderr line is missing, and the per-step `resolve-step`
    downgrade: `references/running.md`.
 
    Then run **each phase as its own subagent** with that host's model override (see
-   `references/running.md`). One subagent PER PHASE, **tier `off` included** (`record done` is REFUSED without each, #684).
-   Artifacts pass between phases through the filesystem, not shared context. Then read the goal and
-   run it through the full SDLC (research → plan → plan-review → implement → review) — each phase
-   via its **executor**. `$goal` is a **file path** (local) or a **GitHub
-   issue number** in github mode (`gh api repos/{owner}/{repo}/issues/"$goal"`).
+   `references/running.md`). One subagent PER PHASE on a host with subagents, **tier `off` included** (with `gates.phase_record` on and `action_log.enabled`, `record done` and `work.py merge` REFUSE a goal missing any phase; `/sigma-init` ships it on, an absent key is off and then only this rule remains).
+   Artifacts pass between phases through the filesystem, not shared context. Run the goal through the
+   full SDLC (research → plan → plan-review → implement → review), each phase via its **executor**.
+   `$goal` is a **file path** (local) or a **GitHub issue number** in github mode (`gh api repos/{owner}/{repo}/issues/"$goal"`).
 
    **The maker must not be the checker (`config.review.independent`, default on); asked, not proved.**
    Every review gate (plan-review, pre-PR code review, post-PR review at step 6) is asked to run as a
@@ -106,8 +104,7 @@ Then repeat until the helper says stop:
 
    **No phase subagent commits — only `work.py commit` does, once, at step 6.** This binds every
    dispatched phase subagent (research, plan, plan-review, implement, review, retro, and each
-   individual slice under 3b), and it does not travel from one dispatch prompt
-   to the next on its own: **say it in each one**. A phase that wants a local checkpoint leaves the
+   slice under 3b), and does not carry between dispatch prompts: **say it in each one**. A phase that wants a local checkpoint leaves the
    worktree DIRTY and says so in its own handoff; it never stages or commits anything itself.
 
    **Match the ceremony to the goal** — after Research, resolve the lane it measured. Either way an
@@ -128,7 +125,7 @@ Then repeat until the helper says stop:
    `config.work.enabled`, first register its worker:
    `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" agent-start .sdlc "$goal" --pid $PPID`.
    **A nonzero exit from `agent-start` means task ownership was not established — another live
-   agent may own this (goal, thread); STOP this goal before `work.py start` rather than proceed (#2527: this refusal is real for a plain Claude collision now, not only a Codex thread mismatch).** With `config.work.enabled` on: `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" start
+   agent may own this (goal, thread); STOP this goal before `work.py start` rather than proceed.** With `config.work.enabled` on: `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" start
    .sdlc "$goal" --session-pid "$PPID"`. **Pass `--session-pid "$PPID"` — the same value you just
    gave `agent-start --pid`, and the same one every `loop.py` call takes.** Read the line it prints — it
    names the base it actually cut from. **If this command exits 4, STOP this goal and do NOT
@@ -177,7 +174,7 @@ Then repeat until the helper says stop:
    `references/progress.md`.
 4. Entering the **review** phase? Move the board card to QC:
    `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" qc .sdlc "$goal"` (github-project board only — a no-op for local/issues).
-5. **Retrospective (Learn)** — after Review, run the **`sigma-retro`** executor (advisory). Under
+5. **Retrospective (Learn)** — after Review, run the **`sigma-retro`** executor (output advisory; the phase is required). Under
    `config.review.independent` this too runs through the resolver, not as an assertion. Autonomous
    mode → **write only the audit-trail notes**, and **park** any north-star / standing-rule proposal
    to the review queue for a human; never edit a standing doc unattended.

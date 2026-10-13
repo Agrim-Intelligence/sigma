@@ -61,23 +61,21 @@ python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/reviewer.py" run .sdlc /tmp/b
   --scratch "$(pwd)/.sdlc/work/<goal>"
 ```
 
-It exits non-zero if the brief NAMES a shared scratch path — a file the maker can write and the
-reviewer would read is a maker→reviewer channel. It deliberately does **not**
-flag implementation content: a breaker must never see the implementation, but a reviewer must — the
-diff is the artifact under review.
+`check` and `run` exit non-zero if the brief NAMES a shared scratch path (`check` also if it cannot be read) — a file the maker can write and the
+reviewer would read is a maker→reviewer channel. It does not flag implementation
+content: a reviewer must see the diff, its artifact. A non-zero `check` blocks dispatch on every mechanism, `subagent` included: fix the brief, dispatch only after `check` exits 0.
 
 **A diff-only review misses blast radius:** the diff is the *change*, the codebase is
 the *impact surface*. Before judging any change, read the code around it and grep every caller — you
-have full repo access. A small change with a wide radius is what a review exists to catch.
+have full repo access. Small changes can have wide radii.
 
 **Executor:** this skill is the review. On Claude Code with the optional `code-review` plugin
-installed, `/code-review` is a useful extra pass over the diff; it does not replace this one.
+installed, `/code-review` is a useful extra pass over the diff; it does not replace this one or satisfy any of its gates.
 
 Pick the mode from the request:
 - **Diff review** (default before a merge) — review the branch's changes vs base. Fast, targeted.
-- **Whole-repo audit** — not this skill. A periodic sweep for what accumulated across many changes is
-  `/sigma-audit`, which measures the tree first and judges it against four lenses. Auditing a whole
-  repo here would re-derive that measurement every run and blur the diff review this skill is for.
+- **Whole-repo audit** — not this skill. A periodic sweep is
+  `/sigma-audit`.
 - **Counter-review** — the user pasted an external review (Cursor, GPT, SonarQube, another agent):
   evaluate each finding critically — accept what's right, push back on what's wrong, add what it missed.
 
@@ -87,17 +85,16 @@ Run the objective tools the repo has and report the numbers, so quality is measu
 - **JS/TS:** the repo's `eslint` / `tsc` / test-coverage.
 - **Hotspots:** `git log` churn × current size — the files most likely to hide risk.
 
-Skip any tool the repo doesn't use; never invent numbers (see `sigma-verify` — evidence only).
+Skip any tool the repo doesn't use; never invent numbers.
 
 ## 2. Qualitative scan — the eight axes
 Every axis, every review, each finding with `file:line` evidence. An axis you skipped is a blind spot,
 not a saved token — say so rather than imply coverage you did not have. Name the specific fault;
 "this could be cleaner" is not a finding.
 
-These eight axes merge four sources; each names the harm it prevents and how to detect it. Where an
-axis's boundary is unclear (e.g. the axis-4/axis-5 OWASP A09 split, or the axis-6/axis-7 near-miss),
-decide by the harm each axis names. The full canon — each axis's harm, sources and detection, and
-the precision rules — is [axes](references/axes.md).
+Each axis names the harm it prevents and how to detect it. Where an
+axis's boundary is unclear, decide by the harm each axis names. The full canon is
+[axes](references/axes.md).
 
 1. **Correctness & Intent** — *ships the wrong thing.* Walk the diff against the goal's acceptance
    criteria, not just against itself. Name the inputs that break it: null, empty, zero, negative, max,
@@ -145,10 +142,13 @@ Two gates run alongside the axes:
   `/sigma-migration-check`, `contract` → `/sigma-contract-check`, `sensitive` → `/sigma-security-review`.
   The detector is a bash trigger (zero LLM cost); it names the risk, the skill judges it. A code-quality
   pass alone will not catch a broken public contract or an unsafe migration.
+  **On a committed branch or PR add `--base <base-ref>`**: without it only uncommitted, staged and
+  untracked files are read, so an empty `matched` clears nothing. If stderr says the base failed,
+  decide each category from `git diff --name-only <base>...HEAD`. The verdict says which way.
 
 ## 3. Verdict + findings
 Open with **how this review was run** — `Reviewed by: dispatched subagent | fresh process (<host>) |
-operator command | inline, author self-review` — then an **overall verdict**, then findings by
+operator command | inline, author self-review` — then an **overall verdict** (**APPROVE**, **SEND-BACK** or **BLOCK**: the words `work.py record-review` takes), then findings by
 category, most-severe first:
 **Bug** (will misbehave) · **Concern** (design risk) · **Coverage** (untested behavior) · **Missing**
 (a required piece absent) · **Good** (worth keeping) · **Minor / Nit** (style). Each: what, where
@@ -183,8 +183,7 @@ blocking finding costs a full fix -> push -> re-review round, and `work.max_revi
 
 Reporting a real finding as follow-up is a judgement you are allowed to make. Reporting one you could
 not write a failing case for, as blocking, is the failure this section exists to prevent. A
-**Missing** with no constructible failing case is exactly this case, not an exception to it: it
-still gets reported, as Follow-up per the bullet above — never dropped for having nowhere to go.
+**Missing** with no constructible failing case is Follow-up per the bullet above, never dropped.
 
 ## Counter-review
 When grading an external review, for each of its findings: **accept** (correct), **downgrade / reframe**
@@ -192,5 +191,5 @@ When grading an external review, for each of its findings: **accept** (correct),
 with a one-line read on the reviewer's overall signal.
 
 ## In the loop
-Findings feed the Review phase; a real bug is **FIX-FIRST** (back to Implement). Verify any "fixed"
+Findings feed the Review phase; a real bug is a **SEND-BACK** (back to Implement). Verify any "fixed"
 claim with `sigma-verify` before moving on.

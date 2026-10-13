@@ -11530,3 +11530,79 @@ def test_evidence_changed_after_the_adapter_check_parks_with_no_post(tmp_path, m
         return _comment_reply(99)
     out = work.post_review(d, cfg, goal, run=run, verdict="approve", evidence=str(evidence))
     assert out.startswith("PARK: review evidence changed") and not any(_posted(c) for c in calls)
+
+
+# --- D7 first-run refusals (#1246, #1247) -----------------------------------------------------------
+
+def test_run_names_the_fix_when_gh_is_not_installed(tmp_path, monkeypatch):
+    """#1246: `work.py pr` without the GitHub CLI printed `[Errno 2] No such file or directory:
+    'gh'`. The same condition preflight explains at setup must be explained here, with the install
+    URL and the re-run."""
+    def no_such_program(argv, **kw):          # what subprocess raises for a program not on PATH
+        raise FileNotFoundError(2, "No such file or directory", argv[0])
+    monkeypatch.setattr(work.subprocess, "run", no_such_program)
+    with pytest.raises(RuntimeError) as err:
+        work._run(tmp_path, ["gh", "--version"])
+    text = str(err.value)
+    assert "gh" in text and "not on PATH" in text and "https://cli.github.com" in text
+    assert "re-run" in text and "Errno" not in text
+
+
+def test_run_still_raises_filenotfound_for_a_vanished_cwd(tmp_path):
+    """The control for the clause above: `finish`'s recovery relies on a vanished working
+    directory staying a FileNotFoundError, NOT being renamed 'tool missing'."""
+    with pytest.raises(FileNotFoundError):
+        work._run(tmp_path / "gone", ["git", "status"])
+
+
+def test_cli_start_of_a_local_goal_that_does_not_exist_refuses_before_cutting_anything(tmp_path, capsys, monkeypatch):
+    """#1247: `work.py start .sdlc 9999` cut a worktree and a branch for a goal that is not there."""
+    d = _sdlc(tmp_path)
+    called = []
+    monkeypatch.setitem(work._COMMANDS, "start", lambda *a, **k: called.append(a) or "cut")
+    assert work.main(["work.py", "start", d, "9999"]) == 2
+    err = capsys.readouterr().err
+    assert "no such goal 9999" in err and called == []
+
+
+def test_cli_start_of_a_local_goal_that_exists_still_proceeds(tmp_path, capsys, monkeypatch):
+    d = _sdlc(tmp_path)
+    (pathlib.Path(d) / "goals").mkdir()
+    (pathlib.Path(d) / "goals" / "0001-x.md").write_text("---\nstatus: pending\n---\nx\n")
+    monkeypatch.setitem(work._COMMANDS, "start", lambda *a, **k: "cut")
+    for ref in ("0001-x", "0001-x.md", "1", str(pathlib.Path(d) / "goals" / "0001-x.md")):
+        assert work.main(["work.py", "start", d, ref]) == 0, ref
+
+
+def test_cli_start_does_not_second_guess_a_github_issue_number(tmp_path, monkeypatch):
+    """A github goal cannot be looked up offline; the check is local-goals only."""
+    d = _sdlc(tmp_path, ON_GITHUB)
+    monkeypatch.setitem(work._COMMANDS, "start", lambda *a, **k: "cut")
+    assert work.main(["work.py", "start", d, "9999"]) == 0
+
+
+def test_cli_work_off_names_the_command_that_turns_it_on(tmp_path, capsys):
+    """#1246: `work is off` named a config key; say what to run."""
+    d = _sdlc(tmp_path, {"work": {"enabled": False}})
+    assert work.main(["work.py", "start", d, "0001-x.md"]) == 1
+    assert "/sigma-init --work on" in capsys.readouterr().err
+
+
+def test_a_missing_base_branch_prints_the_command_that_publishes_it(tmp_path):
+    """#1246: `work.py start` against an origin with no base branch printed only git's error. The
+    fix (preflight prints it at setup) belongs in the message at the moment the user hits it."""
+    d = _sdlc(tmp_path, FEAT)
+    run = _runner([("api repos/", _issue()),
+                   ("fetch", RuntimeError("fatal: couldn't find remote ref main"))])
+    with pytest.raises(RuntimeError) as err:
+        work.start(d, FEAT, "1467", run=run)
+    text = str(err.value)
+    assert "git push -u origin main" in text and "work.base" in text
+
+
+def test_an_unrelated_fetch_failure_gets_no_base_branch_advice(tmp_path):
+    d = _sdlc(tmp_path, FEAT)
+    run = _runner([("api repos/", _issue()), ("fetch", RuntimeError("fatal: unable to access remote"))])
+    with pytest.raises(RuntimeError) as err:
+        work.start(d, FEAT, "1467", run=run)
+    assert "git push -u" not in str(err.value)

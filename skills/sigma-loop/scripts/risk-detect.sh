@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Sigma — risk-skill tripwire detector (read-only, deterministic).
 #
-# Inspects the CURRENT change (working tree + staged + untracked) and prints ONE
+# Inspects the CURRENT change (working tree + staged + untracked; with `--base <ref>`, also every
+# commit on HEAD since it diverged from <ref>) and prints ONE
 # JSON object naming which conditional-risk categories the change touches:
 #   migration -> sigma-migration-check · contract -> sigma-contract-check
 #   sensitive -> sigma-security-review
@@ -20,10 +21,28 @@
 #      discarded. stdout is consumed by the loop and may surface to the engineer.
 #
 # Output: {"schema":"risk-detect/v1","matched":[<cat>...],"hits":[{category,file,line,pattern_id}...]}
-# Usage:  risk-detect.sh        (no args; scans the current change)
+# Usage:  risk-detect.sh                 scans the uncommitted change only (the default; unchanged)
+#         risk-detect.sh --base <ref>    ALSO scans `git diff <ref>...HEAD`, so a COMMITTED branch or PR
+#                                        gets a real answer. Without it, an empty `matched` on a branch
+#                                        whose work is all committed means "nothing uncommitted", not
+#                                        "nothing risky". An unresolvable <ref> is named on stderr and
+#                                        the uncommitted scan still runs (fail-open, never silent).
 # jq-free, bash-3.2-safe, zero-dep.
 
-case "${1:-}" in -h|--help) echo "usage: risk-detect.sh   (no args; scans the current change)"; exit 0 ;; esac
+USAGE="usage: risk-detect.sh [--base <ref>]   (no args: scans the uncommitted change; --base also scans <ref>...HEAD)"
+BASE_REF=""; BASE_SET=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) echo "$USAGE"; exit 0 ;;
+    --base=*) BASE_REF="${1#--base=}"; BASE_SET=1 ;;
+    --base) shift; [ $# -gt 0 ] || { echo "risk-detect: --base needs a ref. $USAGE" >&2; exit 2; }; BASE_REF="$1"; BASE_SET=1 ;;
+    *) ;;   # any other argument was always ignored; keep it that way (the default invocation is unchanged)
+  esac
+  shift
+done
+# An EMPTY ref (an unset shell variable) must not read as "no --base": that is the empty-means-cleared trap.
+[ "$BASE_SET" -eq 0 ] || [ -n "$BASE_REF" ] || { echo "risk-detect: --base needs a non-empty ref. $USAGE" >&2; exit 2; }
+case "$BASE_REF" in -*) echo "risk-detect: --base ref may not start with '-'. $USAGE" >&2; exit 2 ;; esac
 set -uo pipefail
 # Pin the locale ONCE, here, in the unforked main shell, and never assign a locale variable again —
 # not even per command (`LC_ALL=C cmd`). sigma#244: bash calls setlocale() on every locale-variable
@@ -88,6 +107,17 @@ command -v git >/dev/null 2>&1 || { emit_empty; exit 0; }
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$PWD}"
 git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { emit_empty; exit 0; }
 
+# -- base-ref mode: resolve <ref>...HEAD once; BASE_RANGE stays empty (uncommitted-only) on any failure
+BASE_RANGE=""
+if [ -n "$BASE_REF" ]; then
+  if git -C "$PROJECT_DIR" rev-parse --verify -q "$BASE_REF^{commit}" >/dev/null 2>&1 \
+     && git -C "$PROJECT_DIR" merge-base "$BASE_REF" HEAD >/dev/null 2>&1; then
+    BASE_RANGE="$BASE_REF...HEAD"
+  else
+    echo "risk-detect: --base '$BASE_REF' does not resolve to a commit sharing history with HEAD; scanning the uncommitted change only, so an empty matched is NOT a clearance of the committed branch" >&2
+  fi
+fi
+
 # -- config: category path globs (mainstream defaults; conf overrides) ---------
 # Substring globs (no leading-slash requirement) so they match at any depth:
 # e.g. *migration* matches both migrations/001.sql and db/migrate/2_x.rb.
@@ -144,6 +174,7 @@ done < <( {
   git -C "$PROJECT_DIR" diff --name-only -z "${EXCL[@]}" 2>/dev/null
   git -C "$PROJECT_DIR" diff --cached --name-only -z "${EXCL[@]}" 2>/dev/null
   git -C "$PROJECT_DIR" ls-files --others --exclude-standard -z "${EXCL[@]}" 2>/dev/null
+  [ -z "$BASE_RANGE" ] || git -C "$PROJECT_DIR" diff --name-only -z "$BASE_RANGE" "${EXCL[@]}" 2>/dev/null
 } )
 
 # -- content scan: classify ADDED lines in-stream, emit location only ----------
@@ -155,6 +186,7 @@ done < <( {
 emit_combined_diff() {
   git -C "$PROJECT_DIR" diff --no-color -U0 "${EXCL[@]}" 2>/dev/null
   git -C "$PROJECT_DIR" diff --cached --no-color -U0 "${EXCL[@]}" 2>/dev/null
+  [ -z "$BASE_RANGE" ] || git -C "$PROJECT_DIR" diff --no-color -U0 "$BASE_RANGE" "${EXCL[@]}" 2>/dev/null
   while IFS= read -r -d '' f; do
     [ -f "$PROJECT_DIR/$f" ] || continue
     grep -Iq . -- "$PROJECT_DIR/$f" 2>/dev/null || continue   # skip binary (C locale, pinned at top)

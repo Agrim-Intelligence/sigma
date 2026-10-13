@@ -36,7 +36,7 @@ and inspect a bounded excerpt.
 - **The original intent** — read `.sdlc/acceptance/<goal-stem>.md` verbatim; the supplied
   PR-review/retro context pack also includes it. This P1 record is
   authoritative even if the issue changed. If missing/invalid, report that original acceptance
-  is unavailable and do not claim achieved. Goal text: `.sdlc/goals/NNNN-*.md` (local) or the
+  is unavailable and grade no better than partial. Goal text: `.sdlc/goals/NNNN-*.md` (local) or the
   issue body (`gh api repos/{owner}/{repo}/issues/"$goal"`, github).
 - **What shipped** — the diff for this goal's work (`git diff` / `git log` over its branch or commits).
 - **The journey** — `.sdlc/journey/<goal>.md` (local) or the issue timeline (github): the phase notes

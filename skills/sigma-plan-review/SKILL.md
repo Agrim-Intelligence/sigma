@@ -62,13 +62,12 @@ python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/reviewer.py" run .sdlc /tmp/b
   --scratch "$(pwd)/.sdlc/work/<goal>"
 ```
 
-It exits non-zero if the brief NAMES a shared scratch path — a file the maker can write and the
+`check` and `run` exit non-zero if the brief NAMES a shared scratch path (`check` also if it cannot be read) — a file the maker can write and the
 reviewer would read is a maker→reviewer channel whatever the artifact is. It deliberately does **not**
 flag implementation content: a breaker must never see the implementation, but a reviewer must — the
-diff is the artifact under review.
+diff is the artifact under review. A non-zero `check` blocks dispatch on every mechanism, `subagent` included: fix the brief, dispatch only after `check` exits 0.
 
-A maker reviewing its own plan just confirms it. You
-have full read access to the repo: use it. The diff-to-come is the change; the codebase is the impact
+A maker reviewing its own plan just confirms it. The diff-to-come is the change; the codebase is the impact
 surface.
 
 ## 1. Forensic verification
@@ -115,7 +114,7 @@ One line, first token the verdict. Branch on it — the three are **not** interc
 Open with **how this review was run** — `Reviewed by: dispatched subagent | fresh process (<host>) |
 operator command | inline, author self-review`. Then one of: **SOUND** (implement as-is) /
 **SOUND-WITH-REFINEMENTS** (list them) / **FIX-FIRST**
-(blocking issues). Be specific and opinionated; don't pad with praise. If you didn't try to break
+(blocking; Implement waits for a fresh approving verdict). Don't pad with praise. If you didn't try to break
 it, you didn't review it.
 
 **Record it** — the site that dispatched this review does, never the dispatched reviewer; from the
@@ -134,7 +133,7 @@ emit` one. It refuses, writing nothing, when the plan no longer hashes to that `
 With `gates.plan_review.enabled`, `work.py pr` refuses to push unless an approving verdict (SOUND or
 SOUND-WITH-REFINEMENTS) is recorded for the exact bytes of the plan on the branch.
 
-**SOUND-WITH-REFINEMENTS:** record the verdict as returned, BEFORE editing the plan. Refinements
+**SOUND-WITH-REFINEMENTS:** record the verdict as returned, BEFORE editing the plan. Listed refinements
 carried into Implement without editing the plan file stay inside the approval (note each
 disposition with `loop.py note`). Edit the plan FILE and the approval no longer covers it: run a
 fresh plan-review of the refined plan and record that verdict.

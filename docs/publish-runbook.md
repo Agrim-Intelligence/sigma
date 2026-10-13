@@ -236,7 +236,7 @@ file can be slow: the standard library has no regex timeout.
 
 `tests/test_leak_refs.py` runs offline, with a fake `gh`. Its CLI tests run `tools/leak_refs.py`
 as a child from the repository root, but under the interpreter running pytest (or
-`LEAK_REFS_TEST_PYTHON`, which the Python 3.9 check sets to the system `python3`), not a literal
+`LEAK_REFS_TEST_PYTHON`, an optional override that no CI job sets), not a literal
 `python3`; most pass `--patterns FILE`, and `test_c2_cli_exported_variable_gesture` runs the
 exported-variable gesture with `SIGMA_LEAK_PATTERNS` and no `--patterns`.
 `test_runbook_gestures_parse` parses every gesture on this page with the tool's own parser. Each

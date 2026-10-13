@@ -218,6 +218,32 @@ def test_overrun_stops_the_whole_group(tmp_path, monkeypatch):
         support.reap(grand2)
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="/proc and subreapers are Linux")
+def test_an_unreaped_zombie_does_not_keep_the_group_alive(tmp_path):
+    """#1242: `killpg(pgid, 0)` also succeeds while the only members left are zombies nobody has reaped yet (an
+    orphan reparented to a process that reaps late or never). The runner then waited out the whole TERM grace and
+    reported a KILL it did not need. The test process is made a subreaper that does not reap, and the command
+    leaves exactly such an orphan (double fork), so the zombie is deterministic, not a race."""
+    import ctypes
+    libc = ctypes.CDLL(None, use_errno=True)
+    PR_SET_CHILD_SUBREAPER = 36
+    assert libc.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) == 0
+    br = support.load("bounded_run")
+    ready = tmp_path / "ready"
+    cmd = "trap 'exit 0' TERM; (sleep 60 &); : > %s; sleep 60 & wait" % ready
+    try:
+        result = br.run_group(cmd, tmp_path, 60, shell=True, term_grace=3, clock=after(ready))
+        assert (result.outcome, result.escalated) == (br.TIMEOUT, False), tuple(result)
+        assert result.seconds < 2.5, "the zombie kept the group 'alive' through the grace: %r" % (tuple(result),)
+    finally:
+        libc.prctl(PR_SET_CHILD_SUBREAPER, 0, 0, 0, 0)
+        try:
+            while os.waitpid(-1, os.WNOHANG)[0]:
+                pass
+        except ChildProcessError:
+            pass
+
+
 def test_term_comes_before_kill(tmp_path, monkeypatch):
     """The group is asked to stop before it is killed; a tree that ignores the request is killed after the grace.
 

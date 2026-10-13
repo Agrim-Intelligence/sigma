@@ -119,7 +119,10 @@ GitHub's default spelling, as one read-only GraphQL read of an organisation's 14
 2026-09-29 shows (`.sdlc/research/280.md`). 4 boards still have GitHub's default `Todo` lane and
 carry `In progress`, with a lowercase p. One of them has the loop's own default title
 `<repo> — SDLC`, and it holds a duplicated `In progress` lane. 3 other `Todo / In Progress / Done`
-boards carry `In Progress`. Both spellings are live, so neither one is assumed. What GitHub's API gives a
+boards carry `In Progress`. Both spellings are live, so neither one is assumed. (A REST read of the same
+organisation on 2026-10-13 lists 11 boards; four of them still carry `Todo` and a lowercase `In progress`, one
+of them with the duplicated lane, and none carries the capital-P spelling now, because two of those three were
+web-UI "untitled project" boards that no longer exist.) What GitHub's API gives a
 brand-new board today was not measured, because doing so would mean creating a board on real
 GitHub.
 

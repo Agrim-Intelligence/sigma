@@ -1932,7 +1932,7 @@
       "path": "skills/sigma-loop/scripts/spend_approval.py",
       "function": "_counter_write",
       "rule": "fs-write",
-      "count": 2,
+      "count": 1,
       "gate": "opt-in (spend_approval.enabled); writes only the one per-machine use counter file under the local state directory (atomic temp then replace); never deletes another writer's file; a failed write denies the grant",
       "risk": "medium"
     },
@@ -3606,6 +3606,30 @@
       "rule": "fs-write",
       "count": 2,
       "gate": "explicit probe command; writes only synthetic action-log files inside the empty scratch workdir it is given",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_land_approval_prune.py",
+      "function": "prune",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "removes only regular files named <40 hex>.json or .used in state/unit-approvals whose approval expired more than 30 days ago; called by approve; never follows a symlink",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/reconcile.py",
+      "function": "remove_if_old",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "removes only a regular file (lstat, never a link or directory) in plans/reconcile: a *-reconcile.json beyond the newest 20 and older than 30 days, or a tmp* file older than a day; called by write_proposal after its own write",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-prd-intake/scripts/intake.py",
+      "function": "prune",
+      "rule": "fs-remove",
+      "count": 3,
+      "gate": "removes only intake plans and their resume records beyond the newest 50 finished ones, and plans with no resume record older than 90 days, in the intake directory; called by plan; never touches a mid-filing plan",
       "risk": "medium"
     }
   ]

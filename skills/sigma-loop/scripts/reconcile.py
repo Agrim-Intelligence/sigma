@@ -795,7 +795,41 @@ def write_proposal(sdlc_dir, proposals, unresolved, generated_at=None):
     _write(base / name, json.dumps(payload, indent=2))
     _write(base / "active.json", json.dumps(
         {"schema": PROPOSAL_SCHEMA, "proposal_json": name, "generated_at": generated_at}, indent=2))
+    prune_proposals(base, keep_name=name)
     return str(base / name)
+
+
+#: Cap (#1267): a proposal is removed only when it is BOTH beyond the newest PROPOSAL_KEEP (names sort by time)
+#: AND older than PROPOSAL_MAX_AGE_DAYS, so a proposal a human is still reviewing by explicit path is not pulled
+#: away; ceiling = 20 files plus whatever was written in the last 30 days. A `tmp*` file of a crashed write
+#: (mkstemp, no suffix) older than a day is removed too. Nothing else in the directory is touched.
+PROPOSAL_KEEP = 20
+PROPOSAL_MAX_AGE_DAYS = 30
+_TMP_MAX_AGE_SECONDS = 86400
+
+
+def prune_proposals(base, keep_name=None, now=None):
+    import os, stat, time
+    now = time.time() if now is None else now
+    base = pathlib.Path(base)
+
+    def remove_if_old(p, max_age):      # a regular file only (lstat: a link is never followed or removed); per-entry errors skip
+        try:
+            st = os.lstat(p)
+            if stat.S_ISREG(st.st_mode) and now - st.st_mtime > max_age:
+                p.unlink()
+        except OSError:
+            pass
+
+    try:
+        names = sorted(p.name for p in base.glob("*-reconcile.json"))
+        for name in names[:-PROPOSAL_KEEP] if len(names) > PROPOSAL_KEEP else []:
+            if name != keep_name:
+                remove_if_old(base / name, PROPOSAL_MAX_AGE_DAYS * 86400)
+        for p in list(base.glob("tmp*")):
+            remove_if_old(p, _TMP_MAX_AGE_SECONDS)
+    except OSError:
+        pass
 
 
 def load_proposal(path):

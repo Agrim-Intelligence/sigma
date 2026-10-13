@@ -1426,3 +1426,13 @@ def test_setup_write_cfg_is_atomic(tmp_path, monkeypatch):
     monkeypatch.setattr(os, "replace", real)
     mod.write_cfg(str(tmp_path), {"new": 1})
     assert json.loads(path.read_text()) == {"new": 1}
+
+
+def test_a_missing_target_directory_says_how_to_create_the_repository(tmp_path, capsys):
+    """#1246: `init_flow.py <missing dir>` printed only the path. Name the commands that make it a
+    repository and the re-run."""
+    flow = _load_flow()
+    target = tmp_path / "nope"
+    assert flow.main(["init_flow.py", str(target)]) == 2
+    err = capsys.readouterr().err
+    assert "does not exist" in err and "mkdir" in err and "git init" in err and "re-run /sigma-init" in err

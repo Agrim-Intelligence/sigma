@@ -64,6 +64,8 @@ that PR created after the cutoff; 300 or fewer non-test lines changed; at least 
 | `ext-sqlparse-601` | andialbrecht/sqlparse | BSD-3-Clause | 4021 | [#601](https://github.com/andialbrecht/sqlparse/issues/601) | [#868](https://github.com/andialbrecht/sqlparse/pull/868) | 2026-07-25 | 10 | `test_regressions.py` | none: reports the symptom and its output (the issue is from 2020; only the fix PR is post-cutoff) |
 | `ext-voluptuous-541` | alecthomas/voluptuous | BSD-3-Clause | 1851 | [#541](https://github.com/alecthomas/voluptuous/issues/541) | [#542](https://github.com/alecthomas/voluptuous/pull/542) | 2026-07-02 | 6 | `voluptuous/tests/tests.py` | a one-line sketch in prose: detect the non-finite case and raise `Invalid`; no code (the hidden test also pins the message text, which the starting tree already uses elsewhere) |
 
+Re-read over REST on 2026-10-13: all eight licences, the merged state and the creation date of every merged PR in the table match. Star counts moved by up to 10 since 2026-10-04 (as the column header says, they are dated figures). Non-test line counts were not re-derived.
+
 The prompt is the issue's title and body verbatim plus one line, `Make the change in this repository.` No prompt links the fixing PR or names the fix commit
 (`check` refuses both). **The issue texts are not neutral:** all eight carry a diagnosis and most suggest a fix (last column), which the pre-registration makes part of the task ("the prompt is its issue text"). The rule applied: a candidate was excluded when its issue text quotes the replacement code for the defective lines, as a diff, a fenced replacement block or an inline replacement expression (markdown-it-py #415, more-itertools #1250 and tinydb #632). `ext-bottle-1539` was kept although its issue contains a fenced diff: it is the diff of an earlier regression (the removed lines are the old constructor check), and restoring them would not implement the two configs the issue asks for; a fix described in prose, with no replacement code, was kept and is disclosed above, as is a diagnosis. That makes the kept tasks easier and a ceiling effect likelier. **Owner decision, open:** accept issue texts as they are (the pre-registered rule), or screen out any issue that proposes a fix, which shrinks the pool further and was not tried. `ext-bottle-1539` is the other way round: its issue leaves the design open, and the hidden tests fix one design (an application configuration with `json.enable` or `json.dump_func` set after creation, and a custom plugin after `uninstall`), so an arm that picks another design can fail them. The base tree is fetched at run time at the pinned base sha and its digest is recorded in `fetch.json`; `materialize` refuses a
 tree that differs. Availability of a third-party repository is not pinned: before the freeze, keep a copy of each fetched
@@ -77,6 +79,8 @@ Command: `python3 tools/readiness/bench_tasks.py verify --hidden-root ~/.sigma-o
 the `verify.json` argv are the harness's), and a second plain run of the same command must agree. A hidden run on the starting tree must exit with pytest status 1 (tests ran and failed), not a collection error.
 Result: **15 verified, 0 failed** (8 external, 4 internal, 3 agent-authored traps; the traps' hidden tests also fail on their trap-falling implementation), every hidden run under 4 seconds (the longest, 3.2 s, `ext-more-itertools-1304`) and every visible suite under 11 seconds (the longest, 10.8 s, `ext-more-itertools-1304`), on this machine. The full output (interpreter, per-run timings, check result) is committed as
 `docs/launch/evidence/355-bench-task-verification.json`, which names the base commit and the sha256 of the tool, manifest and lock it measured.
+
+The pytest timings below are from one run; the committed JSON records the first run and the second plain run, which differ by hundredths of a second (counts and pass/fail agree).
 
 | Task | Visible tests on the starting tree | Hidden on the starting tree | Hidden on the reference fix |
 |---|---|---|---|
@@ -103,7 +107,7 @@ discriminate between the arms.
 
 ## Environment, visible tests and selection effects
 
-- **One scoring environment.** The harness resolves every task's `visible_command` and hidden `verify.json` argv on one PATH, so all 12 tasks are scored in one
+- **One scoring environment.** The harness resolves every task's `visible_command` and hidden `verify.json` argv on one PATH, so all 15 tasks are scored in one
   virtualenv: `bench_tasks.py lock` resolved pytest plus every external task's test dependencies once, under CPython 3.12 on macOS arm64, from binary wheels only,
   into `evals/bench/tasks/environment.lock`, whose hash and interpreter are in the manifest. `verify --external` builds the environment from that lock; the run must
   do the same (the harness does not enforce it). Wheels-only biases the pool toward projects whose test dependencies publish wheels. The project under test is never installed:

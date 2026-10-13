@@ -101,7 +101,7 @@ A park is the one exit that gives up membership, and deliberately — its whole 
 human's review queue, not to be re-examined by every sweep.
 
 **The second most common misreading:** `sdlc:followup` is *provenance*, not a state. On our own
-backlog **57 of the 89 pickable goals carry it**. Treating it as "needs review" would freeze most of
+backlog **57 of the 89 pickable goals carried it** (a point-in-time count from before 2026-09-29, not re-derivable now because the backlog has moved on). Treating it as "needs review" would freeze most of
 the board.
 
 **`sdlc:designed`** rides alongside `sdlc:goal` exactly like `sdlc:in-progress`/`sdlc:blocked`/
@@ -168,7 +168,9 @@ it is **being worked**. A thing does not stop being a noun while the verb is hap
 **It doesn't — and that is worth knowing before you rely on the label.**
 
 `sdlc:blocking` is applied automatically to an issue that other work is waiting on. It is a
-**signal**, not a queue: it re-ranks issues that are **already** eligible.
+**signal**, not a queue: it re-ranks issues that are **already** eligible. While
+`discovery.blocking_priority_override` is on (the default; only the literal `false` turns it off), an
+eligible issue carrying it sorts ahead of every other pending one, whatever its priority tier.
 
 ```
       What people assume                    What actually happens
@@ -209,27 +211,25 @@ acted on:
 ```
    the blocker is…                             what happens
    ───────────────────────────────────────     ─────────────────────────────────────────
-   already sdlc:goal                       →   nothing; it is already in the queue
-   Sigma's OWN legacy-held follow-up    →   PROMOTED — gets sdlc:goal, comment says why
-     (sdlc:followup + legacy needs-confirm)
+   already sdlc:goal                       →   nothing; it is already in the queue (PICKABLE)
+   parked                                   →   sdlc:blocking only — a park is human domain (CHAINED)
    assigned to someone else                 →   ROUTED — membership + a ledger entry for them
-   a proposal a HUMAN filed                 →   sdlc:blocking only — that is a real decision
-   parked                                   →   sdlc:blocking only — a park is human domain
-   a plain third-party issue                →   sdlc:blocking only — never ours to adopt
+   Sigma-filed (sdlc:followup or            →   ROUTED — an orphan missing only its membership
+     sdlc:dependency), no sdlc:goal              label, so membership is granted
+   a leftover sdlc:goal + legacy label      →   ROUTED — the legacy label is stripped
+   a plain third-party issue                →   sdlc:blocking only — never ours to adopt (UNMANAGED)
+   closed                                   →   not a blocker (STALE)
 ```
+
+`blockers.classify` returns only those verdicts. Its older `PROMOTED` verdict (a legacy-held Sigma
+follow-up gets `sdlc:goal`) and `NEEDS_HUMAN` verdict (a proposal a human filed) are marked legacy in
+the code and never returned now, because a filed follow-up is already a goal.
 
 The same policy runs on **both** paths that can mark something as blocking: the moment a block is
 recorded, and the sweep that derives `sdlc:blocking` from live "Blocked by #N" references. Wherever
-that label goes on, membership goes with it — except in the three rows above, where the issue is
-waiting on a person and Sigma must not put it in the queue behind their back.
-
-**Is promoting Sigma's own follow-up skipping a ruling?** No — and the reasoning is
-worth having ready, because it is the obvious objection. The old queue existed to stop *speculative*
-AI-filed work from consuming the backlog. An issue that real, already-approved work is now stalled
-behind is by definition not speculative. And the labels answer it exactly: `sdlc:followup` means
-Sigma filed it, the legacy `sdlc:needs-confirmation` means **no human has ever ruled on it**. There is no
-decision to override. When a person filed the proposal themselves, `sdlc:followup` is absent, and it
-is left alone.
+that label goes on, membership goes with it — except for a parked issue and a plain third-party
+issue, where the issue is waiting on a person or is not ours, and Sigma must not put it in the queue
+behind their back.
 
 The park that follows names each blocker and what happened to it — so a park is never a bare
 "blocked" someone has to investigate from scratch. When every blocker was resolved, the goal is
@@ -296,8 +296,9 @@ codebase its owner never agreed to touch. So the goal is held:
    sdlc:parked + kind scope_hold     (stands alone — sdlc:goal is given up)
         │
         │   the registry is NOT edited: `repos` is unchanged
-        │   a ledger entry goes to the UNIT's owner, naming the goal and the repo
-        │   one comment lands on the issue itself, saying the same thing
+        │   a ledger entry (when the ledger is on) goes to the UNIT's owner, naming the goal and the repo
+        │   one flag comment lands on the issue itself, saying the same thing, beside the park
+        │   comment that carries the machine line; both are written once, on the pick that holds it
         │
         └── the owner adds the repo to `repos`, then runs /sigma-unpark
 ```
@@ -316,7 +317,7 @@ this kind, so a release can never send the goal back for exactly one more pick.
 Added in the branching model (#1479). §2b-ii asks whether a unit may touch this **repo**; this one
 asks whether the person who opened the issue was entitled to put work on this **board** at all. They
 are short-circuited against each other: a goal already held for scope is never also held for
-ownership, so one pick produces one comment and one ledger entry.
+ownership, so one pick produces one flag comment and one ledger entry (the park comment carrying the machine line is separate from both).
 
 An entry records **two** owners, and they are accountable for different things:
 
@@ -335,8 +336,9 @@ and the more restrictive gate applies.**
    sdlc:parked + kind owner_hold     (stands alone — sdlc:goal is withheld, or given up)
         │
         │   the registry is NOT edited: no grant is ever written by a machine
-        │   a ledger entry goes to the BOARD owner (the unit owner where there is no board owner)
-        │   one comment lands on the issue itself, saying the same thing
+        │   a ledger entry (when the ledger is on) goes to the BOARD owner (the unit owner where
+        │   there is no board owner); one flag comment lands on the issue itself, saying the same
+        │   thing, beside the park comment that carries the machine line
         │
         ├── the owner authorizes the author and runs /sigma-unpark, OR
         └── the owner sets `repos.<repo>.authorized = true` once, and every issue under that
@@ -416,11 +418,11 @@ comment. It is run through a strict, 4-tier classification chain instead
    own `sdlc:needs-unit` set-aside, the suggested name threaded into the flag comment;
 4. genuinely unknown → the new `sdlc:needs-triage` overlay, §2b-v below.
 
-**Honest limitation, stated where an adopter configuring `core` will read it: tiers 1 and 3 are not
-reachable via any real invocation today.** Both places this chain runs default to a judge that never
-guesses — it abstains, every time, because nothing in the kit supplies a real one yet. Abstaining
-routes every undeclared goal through tier 2, so *in practice*, configuring `core` today still means
-every undeclared goal lands on the configured catch-all — the same outcome the original sentinel
+**Honest limitation, stated where an adopter configuring `core` will read it: tiers 1 and 3 are reachable
+only when `discovery.no_dangling_goal.live_judge.enabled` is `true` (#2380; off by default; a metered
+model call).** Without it both places this chain runs use a judge that never guesses — it abstains,
+every time. Abstaining routes every undeclared goal through tier 2, so *in practice*, with the live judge
+off, configuring `core` still means every undeclared goal lands on the configured catch-all — the same outcome the original sentinel
 produced, now via a real, reversible label attach that other tooling (the board, the registry) can
 actually see, rather than a comment nothing checks. `docs/branching-model.md` §18 is the full
 statement of that gap and what would close it.
@@ -559,7 +561,7 @@ separate calls, each independently able to fail, each failure silently swallowed
    every search is "find label X".
 ```
 
-Measured on our own backlog: **126 of 605 issues (about 1 in 5)** were sitting in a state the system
+Measured once on our own backlog, before 2026-09-29 (a point-in-time count, not re-derivable now): **126 of 605 issues (about 1 in 5)** were sitting in a state the system
 cannot name. That is where they came from.
 
 The new version also **retries** (label writes previously got zero retries, while drawing on exactly
@@ -965,7 +967,7 @@ labels. This is the mapping the loop writes:
 | **Backlog** | filed, not yet in the sprint | `sdlc:goal` | a human, by dragging it to Ready |
 | **Ready** | queued for the loop to pick | `sdlc:goal` | the loop, when it picks it |
 | **In progress** | actively being worked | `sdlc:goal` + `sdlc:in-progress` | the loop |
-| **In review** | PR open, review/verification running | `sdlc:goal` + `sdlc:in-progress` | the loop, on merge |
+| **QC** (configurable via `project.columns.qc`) | PR open, review/verification running | `sdlc:goal` + `sdlc:in-progress` | the loop, on merge |
 | **Done** | merged and recorded | *no* `sdlc:*` label | nobody — terminal |
 | **Blocked** | a real dependency was found | `sdlc:goal` + `sdlc:blocked` | **the loop, by itself**, as soon as the blocker closes |
 | **Blocked** | declares a `feature:` unit whose label does not exist | `sdlc:goal` + `sdlc:needs-label` | **the loop, by itself**, as soon as a human creates that label |
@@ -1103,12 +1105,10 @@ does so via the sibling resolver `resolve_open_unit` cannot serve for this — `
 resolve_any_unit`, which matches a unit regardless of `open` state — never by loosening
 `resolve_open_unit` itself. Nothing about issue-level `sdlc:goal` reopening changes.
 
-**Shipped and tested, but not yet reachable by a real pick.** Both places tier 1 could fire default
-to a judge that never guesses a confident match — it abstains, unconditionally, because nothing in
-the kit supplies a real one yet (§2b-iv above has the full statement of that gap). So today this
-carve-out is exercised by this repository's own tests, not by production traffic: no issue is
-actually reopened this way until a live judge is wired in. The exception stated above is the
-contract once one is; it is not yet a claim about what happens on a real board.
+**Reachable only with the opt-in live judge.** Both places tier 1 could fire use a judge that
+abstains unless `discovery.no_dangling_goal.live_judge.enabled` is `true` (off by default; §2b-iv
+above has the full statement). With it off, no issue is reopened this way; the exception stated above
+applies only when the live judge is on.
 
 ### The one-line summary
 
@@ -1141,10 +1141,10 @@ is *invisible* to it — the census exists specifically to hunt those down.
 ## 12. Labels outside the `sdlc:` prefix — `priority:*`, `model:*`, and yours
 
 Everything above is about the `sdlc:*` lifecycle labels. Those are the only labels Sigma
-**defines**: `_ensure_labels` seeds exactly nine — the three membership labels and the six
-overlays in §2 (`sdlc:designed` joined the table in #1826, `sdlc:needs-unit` in #2263,
+**defines**: `_ensure_labels` seeds exactly nine — `sdlc:goal`, `sdlc:parked` and seven
+overlays (in-progress, blocked, blocking, needs-label, designed, needs-unit, needs-triage; `sdlc:designed` joined the table in #1826, `sdlc:needs-unit` in #2263,
 `sdlc:needs-triage` in #2364) — and
-nothing else. Any other label on your board is yours.
+nothing else (the legacy `sdlc:needs-confirmation` is created only on demand). Any other label on your board is yours.
 
 Two non-`sdlc:` prefixes appear in Sigma's own output, and they are **not** the same kind of
 thing as each other:

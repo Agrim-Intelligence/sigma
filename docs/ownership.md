@@ -51,7 +51,9 @@ one.
 
 ## 3. It is ADVISORY, and that is a choice
 
-CODEOWNERS here auto-assigns reviewers. **No branch protection rule requires those approvals.** With
+CODEOWNERS here auto-assigns reviewers. **No branch protection rule requires those approvals.** (Read over
+REST on 2026-10-13: this repository's `main` rulesets require one approving review and the `test` status
+check, and `require_code_owner_review` is `false`.) With
 more than one owner, a binding rule means either can be blocked waiting on the other, and Sigma's own
 merge handler can stall on a pull request it opened itself.
 

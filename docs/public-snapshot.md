@@ -187,8 +187,8 @@ check, not a rewrite, rule `issue-template-slug-mismatch`/`-unverifiable`; a bar
 `leak_refs` (the private patterns over every exported path and file), `exposure` (the exposure
 scanner over the export) and `leak_scan` (the export's own commit-time scan).
 
-Every build is REJECTED until the owner fills the two owner-name placeholders in `SECURITY.md` and
-`CODE_OF_CONDUCT.md`: the placeholder is a finding, not a pre-materialisation refusal, so one run
+A build is REJECTED while an owner-name placeholder (the builder's `owner-placeholder` rule) remains in `SECURITY.md` or
+`CODE_OF_CONDUCT.md` (none remains today, so this no longer rejects a current build): the placeholder is a finding, not a pre-materialisation refusal, so one run
 still reports every other scan.
 
 ## What the skip pin does not cover
@@ -332,8 +332,7 @@ no row at all; the checker's only rows are its create-once `--json` output.
 Owner-only. A rehearsal is the first push of an export, to a throwaway PRIVATE repository, so a
 failure costs nothing public. Each step is the owner's, and none runs in a loop.
 
-1. Build the export (above). Expect REJECTED until the two placeholders are filled; fill them, merge,
-   and build again for `VERIFIED`. Measured on 2026-10-02 in a scratch clone of the #397 branch
+1. Build the export (above). Expect REJECTED only if a placeholder remains (none does today). Historical record, measured on 2026-10-02 in a scratch clone of the #397 branch
    (`--review-level clean`, the real patterns file): unfilled, REJECTED with
    `scans: builder=2 leak_refs=0/0 exposure=0/0+0 leak_scan=0` (the two placeholders only); filled
    in a scratch commit with a synthetic address, `VERIFIED`. A later merge that brings a new exposure
@@ -346,7 +345,7 @@ failure costs nothing public. Each step is the owner's, and none runs in a loop.
    ```
 
 4. Owner: wait for CI on all legs. One CI run is about 129 runner-minutes (34 minutes wall,
-   measured on run `36952374676`).
+   measured on run `36952374676`; re-read over REST on 2026-10-13: five jobs summing to 128.6 job-minutes over 34.1 minutes wall).
 5. Verify the pushed repository:
 
    ```sh
@@ -383,11 +382,10 @@ Owner-only, after the rehearsal above is satisfactory. Nothing here runs in a lo
 
 1. Build the export from the commit to publish (above) and read a `VERIFIED` report.
 2. The ORDER matters. `public_repo` in `docs/launch/definition.json` (and the doctor's
-   `_MARKETPLACE_REPO` constant, which the builder's doctor-slug scan requires to equal it) still
-   names THIS repository today. A normal pull request on this repository (the #524 change; this
-   repository itself is not renamed) updates both to the new repository's name
-   (`Agrim-Intelligence/sigmaloop`), and it lands BEFORE step 1's build, so the exported tree carries the right name. The builder prints a NOTE in
-   the report when `public_repo` still equals the `--repo` source repository. Then, after the build,
+   `_MARKETPLACE_REPO` constant, which the builder's doctor-slug scan requires to equal it) both
+   already name the new repository (`Agrim-Intelligence/sigmaloop`; the rename change has landed), so this
+   ordering is satisfied and the exported tree carries the right name. The builder prints a NOTE in
+   the report when `public_repo` still equals the `--repo` source repository (it does not today). Then, after the build,
    the owner creates the new repository, EMPTY (no README, licence or `.gitignore`: a pre-existing
    commit would make the push a non-fast-forward and the verifier's `single-commit` check fail),
    named exactly as `public_repo` says.
@@ -425,9 +423,13 @@ There is nothing to repoint: this repository keeps its name, so no clone of it c
 - A crash leaves `OUT.partial-<pid>` and possibly a report reading NOT-VERIFIED or REJECTED. Delete
   the partial and `OUT` if it exists, re-run. The builder never overwrites `OUT` or a report.
 - A failed `update-ref -d` is a refusal that removes the rejected export directory.
-- Scale, measured on this repository at roughly 800 files and 17 MB: a build takes about 18 to 26
-  seconds, bound by the exposure scanner (11 to 19 seconds under load); the builder's own passes are
-  about 2 seconds with memory bounded by the 2 MiB per-file cap. At 10x the exposure scanner is
-  extrapolated at about 2 minutes holding every blob in memory, and at 100x about 20 minutes and
-  1.7 GB: the ceiling is `tools/readiness/exposure_scan.py`, not measured, filed as a follow-up.
-  `--scan-timeout` (default 900 seconds) turns a hung scanner into NOT-VERIFIED.
+- Scale, measured on this repository at 1282 files and 26.6 MiB (the export at commit `793a1ed6`, run
+  once, alone, with 55% of memory free beforehand, `--review-level clean`): a build took 37.3 seconds in
+  total, of which the scans were 25.9 s (the exposure scanner is the bulk), materialising the tree 10.1 s
+  and every other pass under 1 s; peak resident memory was 97 MB (peak footprint 42 MB). That run ended
+  REJECTED, not VERIFIED, because three `source-slug` findings in launch evidence records
+  stopped it after all scans had run, so the cost is the full cost. Linear extrapolation, not measured:
+  at 10x about 6 minutes and about 1 GB resident, and at 100x about 1 hour and about 10 GB, which is
+  past the default `--scan-timeout`; the ceiling is `tools/readiness/exposure_scan.py`, which holds every
+  blob in memory, filed as a follow-up. The earlier figures in this bullet (roughly 800 files and 17 MB,
+  18 to 26 s) were from a smaller tree. `--scan-timeout` (default 900 seconds) turns a hung scanner into NOT-VERIFIED.

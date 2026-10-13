@@ -13,17 +13,17 @@ From the repository root, run the documented gesture exactly:
 python3 tools/readiness/growth_audit.py . --measure-sdlc --b6-issue 419 --json docs/launch/growth-audit.json
 ```
 
-The committed snapshot was generated on 2026-10-01 at revision
-`64709b3971a5ef0f3e59b004c1b5237af8c27e6d`. It measured this checkout's
-`.sdlc` at **566,609 bytes**. The SHA is part of the JSON result, so a later
+The committed snapshot was regenerated on 2026-10-13 at revision
+`1b8ad514d51f9208b816c83e93f10b07e1e15108` (the first one, 2026-10-01 at `64709b39`, is superseded). It
+measured a clean checkout's tracked `.sdlc` at **4,130,541 bytes**. The SHA is part of the JSON result, so a later
 checkout cannot present this byte count as current. `--measure-host ROOT`
 remains a separate named-root opt-in; it never walks a home directory.
 
 | Scanner source | Full rows | Unique path patterns | Measurement / dedup decision |
 | --- | ---: | ---: | --- |
-| Python durable-writer calls | 521 | 124 | Every statically resolvable direct destination and helper-return destination is recorded with source line. Before a B6 issue is filed, its exact row must be re-measured at the current SHA and deduplicated against an open B6 issue. |
-| Skill prose write gestures | 222 | 77 | The documented paths are retained as host-agnostic procedural evidence, not treated as proof a filesystem write occurred. Their rows use the same `(pattern, writer, source)` dedup key. |
-| Combined scan | 743 | 177 | `growth-audit.json` is sorted by path, writer, source; it is the reviewable source of truth for the table counts. |
+| Python durable-writer calls | 589 | 135 | Every statically resolvable direct destination and helper-return destination is recorded with source line. Before a B6 issue is filed, its exact row must be re-measured at the current SHA and deduplicated against an open B6 issue. |
+| Skill prose write gestures | 227 | 76 | The documented paths are retained as host-agnostic procedural evidence, not treated as proof a filesystem write occurred. Their rows use the same `(pattern, writer, source)` dedup key. |
+| Combined scan | 816 | 187 | `growth-audit.json` is sorted by path, writer, source; it is the reviewable source of truth for the table counts. |
 
 The scanner follows source-discovered helper returns and writer-helper call
 chains rather than a hard-coded writer allowlist. Its current rows include
@@ -37,14 +37,22 @@ policy.
 
 The audit records every unique path pattern without a source-proven retention
 mapping in the committed JSON's `b6_disposition.unresolved_patterns` array.
-Its 177 rows are measured at the SHA above and are all carried by
-B6 issue #419 (in the source repository), not
-silently exempted or given a fabricated pruner. Before filing, the local
-dedup control found no candidate and a direct GitHub title/body search found
-no open B6 retention/cap issue (the only related hit was closed #150, which is
-limited to abandoned phase markers). The issue has `readiness` and
-`launch:blocker` labels and requires a narrower, measured ownership decision
-before any deletion. It does not authorize pruning host configuration roots.
+At the snapshot's revision no pattern is unresolved. The first pass carried all 177 under B6 issue
+#419, which is closed; the 11 patterns that pass had left open were read from their writer code and decided
+in `dispositions/1261.json`, with the evidence in [b6-late-stores.md](b6-late-stores.md): six patterns bounded or
+capped (one of them capped by that change), two unresolvable placeholder patterns, and three patterns with
+no pruner or cap that have since been capped too (#1262 two patterns, #1263). Two further stores the scan cannot
+see (#1264 unit approvals, #1267 reconcile proposals) were also given a prune, and are recorded as `unscanned`
+rows in the same file. The JSON's `b6_disposition.issue`
+still reads `#419` because the documented gesture passes it; it is a label, not a claim that #419 is open.
+The disposition files do not authorize pruning host configuration roots.
+
+**Zero unresolved is not full coverage.** The scanner does not follow constant-built paths (`*_REL`
+constants such as `STORE_REL`), so stores written through them never reach the table. Known ones, listed
+with their status in [b6-late-stores.md](b6-late-stores.md): the reconcile proposals
+(`.sdlc/plans/reconcile/`, now capped, #1267), `state/unit-approvals/` (now pruned, #1264), `state/upkeep/level2/<unit>.json`
+(intentionally unbounded per unit), and several apparently bounded ones (board mirror, AI-filed counter,
+`gh-fallback.json`, `gh-rest-breaker.json`, `upkeep/acks.json`, `upkeep/last_start.json`).
 
 ## Per-slice dispositions
 

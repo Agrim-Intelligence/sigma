@@ -178,6 +178,10 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/feature_land_approval_prune.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/feature_land_merge.py",
       "role": "library"
     },

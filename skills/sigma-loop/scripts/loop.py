@@ -6035,6 +6035,9 @@ def _lane_tier(sdlc_dir, goal, lane, current):
     return 0
 
 
+_RECORD_STATUSES = ("done", "review", "parked", "failed")     # `record`'s usage line, #1245
+
+
 def main(argv, *, _merge_lock_held=False):
     """Thin wrapper around `_dispatch` — the ONE place a never-`/sigma-init`'d `.sdlc` dir (no
     config.json at all) turns into a clear one-line stderr message instead of a raw traceback
@@ -6423,6 +6426,17 @@ def _dispatch(argv):
     if len(argv) >= 5 and argv[1] == "record":
         _coexist_notice(argv[2], "loop.py record", once=True)   # #251/#314: once per run
         config = state.load_config(argv[2])
+        # #1245: an unrecognised status used to fall through `_record` as "park" -- exit 0, a goal
+        # silently parked by a typo for `done`. Refuse BEFORE any side effect (the daemons below).
+        if argv[4] not in _RECORD_STATUSES:
+            print(f"loop.py record: unknown status {argv[4]!r} (expected one of "
+                  f"{'|'.join(_RECORD_STATUSES)}) -- nothing was recorded", file=sys.stderr)
+            return 2
+        # #1247: say the goal is not there rather than let the phase-record gate misreport it.
+        missing = sources.local_goal_missing(argv[2], config, argv[3])
+        if missing:
+            print(f"loop.py record: {missing}", file=sys.stderr)
+            return 2
         # #2041: finishing a goal is the moment a stalled watcher most needs restarting -- it is
         # precisely when there is new activity to publish. `next`/`next-batch`/`verify`/`run_loop`
         # already arm these; `record` did not, so a session that drove goals without the picker

@@ -23,7 +23,8 @@ CLI, which produced Story **#1**, Epic **#2**, and children **#3–#6**. A secon
 on the maintainers' own board,
 ended in **no tickets at all** and is walked separately at the end — because that outcome is the
 contract holding, and it is the one that looks like a failure. Nothing here is illustrative; where a
-shape looks odd it is because that is what the run actually did.
+shape looks odd it is because that is what the run actually did. (The throwaway repository is not
+readable any more: a REST read of it on 2026-10-13 answers 404, so its issue numbers cannot be re-checked.)
 
 Three words recur. A **Dossier** is the ticket holding business intent. A **design pass** is the
 codebase mapping written to a file, not a ticket. A **slice** is one of the tech goals the loop
@@ -75,7 +76,7 @@ enforces it for you —
 [§4](dossier-pipeline.md#4-stage-0--the-dossier-sigma-dossier) says why the rule lives in prose
 everywhere, and what the frontmatter's omission does and does not buy.
 
-### The three extra questions the bank could not have asked
+### The extra questions the bank could not have asked (up to three)
 
 After the seven and before the decision, the skill re-reads the answers **as a set** and may ask up
 to a few targeted follow-ups. The run asked two, and both were the kind of thing no fixed slot
@@ -182,7 +183,7 @@ Note the count in the parentheses. It is written even when it is zero, and
 [§7c](dossier-pipeline.md#7c-two-verdicts-and-why-there-is-no-third) says what its absence would be
 indistinguishable from.
 
-**The other verdict stops here instead**, writes no label and creates nothing, and that is the
+**The other verdict stops here instead**, writes no label and creates no ticket (it also closes the open design PR), and that is the
 contract working rather than breaking — [when Stage 2 says no](#when-stage-2-says-no--and-why-zero-tickets-is-the-answer)
 walks a real one below.
 

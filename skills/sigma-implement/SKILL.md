@@ -43,7 +43,7 @@ it tests the right thing. Wrote code before the test? Delete it and re-derive fr
    implementation (PR #1838), to a fixture totaling exactly the 200-item `_BACKLOG_FETCH_CAP` —
    true but vacuous, its widening-query assertion holding without the widening query ever running.
    The corrected test's own docstring records an independent post-implementation review catching
-   it; the fix added a standing assertion so it can't silently drift back.
+   it; the fix added a standing assertion.
 2. **GREEN** — write the *minimal* code to pass. Run it. All green.
 3. **REFACTOR** — clean up while staying green. "Clean up" is not a feeling; it is this list, and it
    is the same list `sigma-review` axis 6 will judge by. Long Method, Large Class, Long Parameter List,
@@ -51,7 +51,7 @@ it tests the right thing. Wrote code before the test? Delete it and re-derive fr
    Middle Man (units too entangled) · Duplicate Code, Dead Code, Speculative Generality (code that
    should not exist). Fix it now, while the context is in your head and the diff is yours.
 
-After writing the plan's `## Tests` entries, record both stages through Sigma:
+After writing the plan's `## Tests` entries, record both stages through Sigma (a companion TDD skill never replaces this):
 
 ```sh
 python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" verify .sdlc "$goal"
@@ -60,7 +60,7 @@ python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" verify .sdlc "$goal"
 Record assertion-red then green. Plain commands do not; changed tests need red again.
 Refactors: break, red, restore, green.
 
-Skip TDD for prototypes, generated code, or config; say so. With
+Skip TDD only for throwaway prototypes, generated code, or config; name which. With
 `verify.enforce`, `work.py pr --no-tests <reason>` is a PR-body exception;
 it bypasses only test-first proof, never other gates.
 
@@ -86,7 +86,7 @@ Cheapest at write time, expensive at review, and the one thing a passing test ca
 
 ## Execute the plan, step by step
 1. **Load** the plan and **review it critically** — raise any concern *before* starting (last cheap
-   moment to catch a bad plan; it should already have passed `sigma-plan-review`).
+   moment to catch a bad plan; it must already carry an approving `sigma-plan-review` verdict, else stop and run it).
 2. For **each step**: announce it (`## Announce each step` below), do exactly what it says (steps
    are bite-sized), **verify** it (run the check — see `sigma-verify`), then move on. Track progress
    as you go.
@@ -108,15 +108,15 @@ marked `(step)`. `--phase-model` asserts that this phase agent itself executes t
 requested host ID can be read from the phase start marker. For a separately dispatched step,
 replace that flag with both `--model <step-tier>` and `--host-model <exact-host-model-id>` from the
 step's dispatch call. Both are required so the banner cannot borrow the phase's tier either.
-Without either, the step prints `unrecorded` rather than guessing from a matching tier. This is
+Without either it prints `unrecorded`, never a guess. This is
 the requested model. `phase_report.py end` checks the phase agent's observed model, not a separately
 dispatched step's model. It writes nothing — no marker, no
 ledger event — so it cannot disturb the elapsed
 time and cost `end` measures. `--total` is optional; `--title` is the goal's title, as on
 `start`/`end`. `.sdlc` means the main checkout's: from a goal worktree use the absolute path your
 dispatch prompt gave you, or the tier reads `unrecorded` (and in github mode the title is lost too).
-The brief is capped at 88 characters. Best-effort like every banner — skip it with no goal id (a
-standalone `/sigma-implement`), and never let it block a step.
+The brief is capped at 88 characters. Best-effort: skip it with no goal id (a
+standalone `/sigma-implement`); never let it block a step.
 
 ## Mutation testing (prove the guard, don't assert it)
 A green suite says a guard exists; only reverting it and watching the right test fail proves it
@@ -146,8 +146,8 @@ the mutant, and looked like coverage until it was retargeted.
 
 The pattern is "Revert fix → Run (MUST FAIL) → Restore → Run (pass)": a live revert against the
 running suite, never a mental exercise ("mentally mutate the production code").
-It applies to any non-trivial guard, not only regression tests, and it is a standing, expected
-step rather than one option in a list.
+It applies to any non-trivial guard, not only regression tests, and it is a required
+step, not one option in a list.
 
 ## Security defaults (fail-closed, untrusted input)
 This repo already has standing rules for this — they stay undiscovered until Review unless you read

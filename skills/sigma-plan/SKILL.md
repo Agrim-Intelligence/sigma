@@ -16,7 +16,7 @@ For bulky tests or diagnostics, save full output to a scratch file, then inspect
 its exit status and focused matches or a bounded tail. Do not hide failures, and
 keep secrets out of the scratch file. This is guidance, not a measured savings claim.
 
-Write plans before code: concrete, testable steps; `sigma-plan-review`.
+Write plans before code: concrete, testable steps; then `sigma-plan-review` (never skipped).
 
 ## 1. Scope check
 If the spec spans multiple independent subsystems, split it into **separate plans** — one per
