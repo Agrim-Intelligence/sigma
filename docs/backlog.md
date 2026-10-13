@@ -10,7 +10,7 @@ The loop runs the **same** way for both; only the source of goals and how status
 ### Local goal files — default, zero-dep
 
 Goals are markdown files under `.sdlc/goals/NNNN-slug.md`; the loop advances each file's frontmatter
-`status: pending → in_progress → done | parked`, in filename order.
+`status: pending → in_progress → done | parked`, in priority order and then filename (`discovery.order: "created"` for strict filename order).
 
 - **Add a goal:** copy `0001-example.md`, bump the number, fill `done_when` (a *checkable* condition).
 - **Commit** `.sdlc/goals/`, `.sdlc/project.md`, `.sdlc/config.json`; **gitignore** `.sdlc/state/`
@@ -45,7 +45,7 @@ backlog mirrors reality:
 | Review (the quality cycle) | issue stays open | card set to **QC** |
 | done | **closes** the issue with a completion comment | card set to **Done** |
 | blocked (waiting on another issue) | adds `sdlc:blocked` and drops `sdlc:in-progress` — **keeps `sdlc:goal`**, so sweeps still see it while nothing picks it | card set to **Blocked** |
-| parked (needs you) | comments the reason, adds `sdlc:parked`, and removes `sdlc:goal` so it leaves the queue | card set to **Blocked** |
+| parked (needs you) | comments the reason, adds `sdlc:parked`, and removes `sdlc:goal` so it leaves the queue | card set to **Parked** (**Blocked** if the board has no Parked option) |
 
 So your **review queue = open issues labelled `sdlc:parked`**, and **done = closed issues**;
 **re-queue** a parked issue with `/sigma-unpark` (which answers *why* it was parked before flipping
@@ -267,10 +267,10 @@ open `sdlc:goal` issue in scope.
 
 #### Projects v2 board
 
-With `discovery.github.project.enabled` (on by default for new repos), the loop also drives a **GitHub
+With `discovery.github.project.enabled` (off after `/sigma-init` until `--board yes` pins a board), the loop also drives a **GitHub
 Projects v2 board**: on first run it finds-or-creates a board titled `<repo> — SDLC`, adds every
 `sdlc:goal` issue as a card, and keeps GitHub's **built-in Status field** in sync
-(**Backlog → In Progress → QC → Done**, **Blocked** for parked) as goals move — the table above. The
+(**Backlog → In Progress → QC → Done**, **Parked** for parked, falling back to **Blocked** when the board has no Parked option) as goals move — the table above. The
 **QC** card move happens at the Review phase. It needs the `gh` token's **`project`** scope and is
 **fail-open**: no scope, or any API error, and the loop simply continues on issues + labels (nothing
 breaks). Tune it under `discovery.github.project` — `owner`/`title` (default `<repo> — SDLC`), `number`
@@ -342,7 +342,7 @@ mode. Recording is **fail-open** (never breaks a run).
 
 **Priority: the field decides, the label follows.** The board's built-in **Priority** column (P0–P4,
 auto-provisioned as a single-select alongside Status) is what the picker actually ranks by — set it
-**there**, not just as a label, for it to take effect. The queue orders by priority tier, then a
+**there**, not just as a label, for it to take effect. The queue orders by priority tier, then the unit (feature) rank, then a
 `bug` label, then oldest first: priority leads, a `bug`-labelled issue beats a same-tier non-bug, and
 issue age breaks any remaining tie.
 
@@ -549,8 +549,7 @@ guessed at.
 ```
 
 `mode` is `"off"` by default; `ttl_minutes` throttles the survey (it costs ~13 `gh` calls, and a
-backlog does not drift between two picks minutes apart). When on, the sweep runs **once per batch**,
-never once per pick. `/sigma-doctor` reports the census as a check row either way, so drift is visible
+backlog does not drift between two picks minutes apart). When on, the sweep runs at most once per `ttl_minutes`, at each pick or batch (a not-due call costs one file read). `/sigma-doctor` reports the census as a check row either way, so drift is visible
 without turning any writing on.
 
 **Which to pick?** **Local** for a self-contained, zero-dependency repo where the backlog ships with

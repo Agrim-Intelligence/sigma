@@ -19,13 +19,13 @@ risk has been eliminated.
 
 | boundary | crossing and entry points |
 | --- | --- |
-| T1 | Issue, PR, and comment prose enters goal prompts and parsers: `skills/sigma-loop/scripts/blocker_scan.py:130`, `skills/sigma-loop/scripts/comment_watch.py:88`, `skills/sigma-loop/scripts/features.py:356`, `skills/sigma-loop/scripts/review_context.py:49`, and `skills/sigma-loop/scripts/slack_commands_listen.py:524`. |
-| T2 | Repository content enters commands through configured checks: `skills/sigma-loop/scripts/pipeline.py:68`, `skills/sigma-loop/scripts/backlog_check.py:791`, `skills/sigma-loop/scripts/loop.py:5222`, `skills/sigma-rebase/scripts/verify_merge.py:122`, and `skills/sigma-loop/scripts/reviewer.py:239`. |
-| T3 | Host hooks execute at prompts and tool calls: `hooks/hooks.json:3`, repo adoption is checked by `hooks/sigma_gate.sh:20`, and session-start's watcher/doctor diagnostic layer begins at `hooks/session_start.sh:131`. |
-| T4 | Network destinations are GitHub, Slack, a configured webhook, SMTP, and the host's model process, enumerated in `docs/privacy.md:9`. |
-| T5 | Background boundaries include detached watcher startup `skills/sigma-loop/scripts/loop.py:75`, the watcher loop `skills/sigma-loop/scripts/watch_daemon.py:906`, Slack listener lifecycle `skills/sigma-loop/scripts/slack_commands_listen.py:757`, and model subprocesses `skills/sigma-loop/scripts/autowatch.py:915`. |
-| T6 | Local policy comes from managed settings `skills/sigma-loop/scripts/managed_settings.py:237` and the direct-edit sentinel is described in `docs/enforcement.md:54`. |
-| T7 | Model-spawned sessions include `skills/sigma-loop/scripts/feature_judge.py:155`, `skills/sigma-loop/scripts/autowatch.py:915`, and `skills/sigma-loop/scripts/supervise_daemon.py:1`. |
+| T1 | Issue, PR, and comment prose enters goal prompts and parsers: `skills/sigma-loop/scripts/blocker_scan.py:139`, `skills/sigma-loop/scripts/comment_watch.py:88`, `skills/sigma-loop/scripts/features.py:356`, `skills/sigma-loop/scripts/review_context.py:50`, and `skills/sigma-loop/scripts/slack_commands_listen.py:524`. |
+| T2 | Repository content enters commands through configured checks: `skills/sigma-loop/scripts/pipeline.py:68`, `skills/sigma-loop/scripts/backlog_check.py:810`, `skills/sigma-loop/scripts/loop.py:5222`, `skills/sigma-rebase/scripts/verify_merge.py:122`, and `skills/sigma-loop/scripts/reviewer.py:243`. |
+| T3 | Host hooks execute at prompts and tool calls: `hooks/hooks.json:3`, repo adoption is checked by `hooks/sigma_gate.sh:20`, and session-start's watcher/doctor diagnostic layer begins at `hooks/session_start.sh:173`. |
+| T4 | Network destinations are GitHub, Slack, a configured webhook, SMTP, and the host's model process, enumerated in `docs/privacy.md:7-15`. |
+| T5 | Background boundaries include detached watcher startup `skills/sigma-loop/scripts/loop.py:85`, the watcher loop `skills/sigma-loop/scripts/watch_daemon.py:906`, Slack listener lifecycle `skills/sigma-loop/scripts/slack_commands_listen.py:757`, and model subprocesses `skills/sigma-loop/scripts/autowatch.py:923`. |
+| T6 | Local policy comes from managed settings `skills/sigma-loop/scripts/managed_settings.py:237` and the direct-edit sentinel is described in `docs/enforcement.md:59`. |
+| T7 | Model-spawned sessions include `skills/sigma-loop/scripts/feature_judge.py:155`, `skills/sigma-loop/scripts/autowatch.py:923`, and `skills/sigma-loop/scripts/supervise_daemon.py:1`. |
 
 ## Threats and current mitigations
 
@@ -44,11 +44,11 @@ and E (elevation of privilege).
 | TM-05 | T3 | Hook-triggered command execution (E) | A host invokes a configured hook on a prompt or tool call. | `hooks/sigma_gate.sh:20` | med | — |
 | TM-06 | T4 | Credential exposure in logs (I) | A token-shaped value reaches a command or comment diagnostic. Coverage of every `gh` comment site is unverified. | `skills/sigma-loop/scripts/scrub.py:150` | med | — |
 | TM-07 | T4 | Remote webhook egress (I) | `channel_webhook_url` names an Internet host instead of the documented local adapter. | none | high | #358 |
-| TM-08 | T5 | Stale watcher appears idle (D) | A dead watcher reports no errors and is mistaken for an idle one. | `hooks/session_start.sh:131` | med | — |
+| TM-08 | T5 | Stale watcher appears idle (D) | A dead watcher reports no errors and is mistaken for an idle one. | `hooks/session_start.sh:173` | med | — |
 | TM-09 | T5 | Listener cleanup omission (D) | SIGTERM or SIGHUP leaves Slack pid, heartbeat, and lock markers, preventing restart. | `skills/sigma-loop/scripts/slack_commands_listen.py:806` | low | — |
-| TM-10 | T5 | Orphaned model descendant (D) | A timed-out, signalled, or SIGKILLed autowatch tick leaves a model descendant running. Residual: a descendant that calls `setsid` itself escapes the group, and a SIGKILL of the lifeline sentinel removes the backstop for a later SIGKILL of the tick. | `skills/sigma-loop/scripts/autowatch.py:772` terminates the driven session's whole process group (SIGTERM, grace, SIGKILL), a lifeline sentinel repeats that if the tick dies, and hosts without process groups refuse | low | #425 |
+| TM-10 | T5 | Orphaned model descendant (D) | A timed-out, signalled, or SIGKILLed autowatch tick leaves a model descendant running. Residual: a descendant that calls `setsid` itself escapes the group, and a SIGKILL of the lifeline sentinel removes the backstop for a later SIGKILL of the tick. | `skills/sigma-loop/scripts/autowatch.py:773` terminates the driven session's whole process group (SIGTERM, grace, SIGKILL), a lifeline sentinel repeats that if the tick dies, and hosts without process groups refuse | low | #425 |
 | TM-11 | T6 | Managed-policy deletion (T) | Removing the file makes an enrolled checkout read as unadopted. | `skills/sigma-loop/scripts/managed_settings.py:237` refuses an enrolled checkout whose file is gone, via markers outside the file. Residual: a checkout writer who also deletes the markers or runs `unenroll` is not bound (README, Managed settings) | med | — |
-| TM-12 | T6 | Direct-edit bypass (T) | A local sentinel bypasses a hard plan gate when the key is not organization-locked. | `docs/enforcement.md:54` | med | — |
+| TM-12 | T6 | Direct-edit bypass (T) | A local sentinel bypasses a hard plan gate when the key is not organization-locked. | `docs/enforcement.md:59` | med | — |
 | TM-13 | T7 | Unbounded model spend (D) | A spawned model process spends beyond a sensible per-invocation budget. | `skills/sigma-loop/scripts/feature_judge.py:167` | low | — |
 | TM-14 | T7 | Unsafe Slack merge (E) | `--unsafe-merge` removes interactive confirmation from a merge request. With unit upkeep off, a non-bot message in the authorized channel lands the unit with no approval; with it on, chat landing goes through the landing engine and needs the same local single-use unit approval, bound to the verified head, and the requester id is recorded. Residual: authority is channel membership alone, and an approval made locally cannot be tied to the person who then types the command. | `skills/sigma-loop/scripts/slack_commands_listen.py:1564` | med | — |
 

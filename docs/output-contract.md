@@ -155,7 +155,7 @@ Rules:
   its own because that separator is a Block A rule and this block does not use it. **Omitted
   entirely when nothing knows it** — the bold ref alone, never a blank and never a placeholder.
 - The **right** side of the `→` may be `unknown` when the emitter genuinely cannot name the phase
-  that follows, or `last` on `P7 RETRO`, which has none — they read `next phase unknown (no verdict
+  that follows, or `last` on `P7 RETRO`, which has none (`render.py` accepts `last` after any phase; use it only after `P7 RETRO`) — they read `next phase unknown (no verdict
   at this boundary)` and `last phase`. Two named exits, not licence to skip the axis: any other
   unrecognised value is refused, and the **left** side takes neither, because whoever is at a
   boundary knows the phase it just left.

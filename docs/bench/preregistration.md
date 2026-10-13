@@ -12,7 +12,7 @@ edit this document in review; after the first full run, changes are recorded in
 | --- | --- | --- | --- |
 | A1 Sigma | Claude Code | Sigma at a pinned commit, loaded from a clean `git archive` export | Never load the full repository as a plugin directory. |
 | A2 plain agent | Claude Code | none | The agent alone. |
-| A3 matched-spend | Claude Code | none | Retry the plain agent in fresh workdirs until visible tests pass or token spend reaches A1's token spend for that task (tokens from the host's own usage records: input, output, cache read and cache write); score the first visible-test-passing attempt. |
+| A3 matched-spend | Claude Code | none | Retry the plain agent in fresh workdirs until visible tests pass or token spend reaches A1's token spend for that task, or the attempt bound (`--max-attempts`, default 10) is reached (tokens from the host's own usage records: input, output, cache read and cache write); score the first visible-test-passing attempt. |
 
 ## Held constant
 
@@ -334,7 +334,7 @@ a pair that completed, passing or failing, is never re-run. Every other failure 
 the wall-clock limit included); nothing is dropped. The run stops
 when the host reports a rate limit (exit 75), when a run exits non-zero with no recorded cause (exit 77: not
 scored, a person looks first), and at the token ceiling of 210,000,000 tokens (exit 76; see
-Deviations, 2026-10-06, and [`token-budget.md`](token-budget.md)). Only a results file in which every pair
+Deviations, 2026-10-06, and [`token-budget.md`](token-budget.md)), and when it ends with not-run pairs that no other stop explains (exit 78). Only a results file in which every pair
 completed is evidence: a file with a not-run pair is never analysed or committed as the result.
 
 ## Deviations

@@ -78,6 +78,8 @@ the `verify.json` argv are the harness's), and a second plain run of the same co
 Result: **15 verified, 0 failed** (8 external, 4 internal, 3 agent-authored traps; the traps' hidden tests also fail on their trap-falling implementation), every hidden run under 4 seconds (the longest, 3.2 s, `ext-more-itertools-1304`) and every visible suite under 11 seconds (the longest, 10.8 s, `ext-more-itertools-1304`), on this machine. The full output (interpreter, per-run timings, check result) is committed as
 `docs/launch/evidence/355-bench-task-verification.json`, which names the base commit and the sha256 of the tool, manifest and lock it measured.
 
+The pytest timings below are from one run; the committed JSON records the first run and the second plain run, which differ by hundredths of a second (counts and pass/fail agree).
+
 | Task | Visible tests on the starting tree | Hidden on the starting tree | Hidden on the reference fix |
 |---|---|---|---|
 | `ext-bottle-1539` | pass | 2 failed, 25 passed in 0.06s | 27 passed in 0.04s |
@@ -103,7 +105,7 @@ discriminate between the arms.
 
 ## Environment, visible tests and selection effects
 
-- **One scoring environment.** The harness resolves every task's `visible_command` and hidden `verify.json` argv on one PATH, so all 12 tasks are scored in one
+- **One scoring environment.** The harness resolves every task's `visible_command` and hidden `verify.json` argv on one PATH, so all 15 tasks are scored in one
   virtualenv: `bench_tasks.py lock` resolved pytest plus every external task's test dependencies once, under CPython 3.12 on macOS arm64, from binary wheels only,
   into `evals/bench/tasks/environment.lock`, whose hash and interpreter are in the manifest. `verify --external` builds the environment from that lock; the run must
   do the same (the harness does not enforce it). Wheels-only biases the pool toward projects whose test dependencies publish wheels. The project under test is never installed:

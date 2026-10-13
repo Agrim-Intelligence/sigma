@@ -826,7 +826,7 @@ between repos and is therefore genuinely untrusted input:
 | `open` | is the unit live? | **only a real boolean `false` closes it.** `"false"` the string does not |
 | `parent` | the unit this one is a sub-child of | kept **verbatim**, even a value that is not a legal unit name — it is never turned into a path, and the registry is a record, not a cache |
 | `tracking_issue` | the issue that owns a cross-repo pair | free text |
-| `priority` | the **unit's own** tier — intended as a tie-break among issues that are already eligible, never a rank written onto any member issue. **Nothing reads it for ordering yet**: the field is recorded, and the queue comparator that will consult it is separate, later work | free text, kept **verbatim** and never validated here — ranking is `discovery.priority_rank`'s single job wherever a reader eventually asks, and that function accepts `P0`–`P4` in any case, tolerates the `priority:` prefix, honours an adopter's configured aliases, and ranks anything else as *unprioritised* rather than guessing. **Absent is not P4** — it means the unit is unranked. One value per unit, not per repo. Set it through the locked whole-entry write (`feature_sync.amend`), never by writing a one-field entry — that replaces rather than merges |
+| `priority` | the **unit's own** tier — intended as a tie-break among issues that are already eligible, never a rank written onto any member issue. **Read by the queue** as a tie-break among eligible issues (`sources._unit_priority_rank`, on by default since #2284; turn it off with `discovery.feature_priority.enabled: false`); absent means unranked | free text, kept **verbatim** and never validated here — ranking is `discovery.priority_rank`'s single job wherever a reader eventually asks, and that function accepts `P0`–`P4` in any case, tolerates the `priority:` prefix, honours an adopter's configured aliases, and ranks anything else as *unprioritised* rather than guessing. **Absent is not P4** — it means the unit is unranked. One value per unit, not per repo. Set it through the locked whole-entry write (`feature_sync.amend`), never by writing a one-field entry — that replaces rather than merges |
 | `repos.<owner/name>.branch` | the branch recorded for this unit **in that repo** | |
 | `repos.<owner/name>.owner` | the **repo's** owner | see §12 |
 | `repos.<owner/name>.authorized` | the per-unit grant | **absent means false. Only a real boolean `true` grants** |
@@ -1331,8 +1331,8 @@ name themselves in the returned reason — which is why the reason is a sentence
 
 ### 11b. **"Then they merge back to back" deliberately has no owner**
 
-Said plainly, because it is a gap and not an oversight: **nothing in this tree merges a feature
-branch**, so nothing performs the back-to-back landing the design's third acceptance criterion
+Said plainly, because it is a gap and not an oversight: **the loop never initiates a feature-branch
+merge** (only attended landing, `feature_land*` and the Slack `--unsafe-merge` command, can merge one, and `work.unit_sibling_guard` checks the sibling half), so nothing performs the back-to-back landing the design's third acceptance criterion
 describes. Giving it one is a decision for a human to take explicitly. Do not read a `True` from the
 readiness check as licence to reintroduce an automatic merge.
 
@@ -1524,8 +1524,8 @@ confirmed `MERGED` — never before, never speculatively. That happens in exactl
 `skills/sigma-loop/scripts/work.py`: `merge()`'s eager remote delete right after a direct landing,
 and `finish()`'s backstop (local `git branch -D` + a redundant remote delete) for a PR that armed
 and landed asynchronously instead. Both operate on the goal's own branch (`rec["branch"]`)
-exclusively — neither reads, nor could structurally reach, `rec["base"]`, which is the field that
-holds `feature/<name>` for a unit-based goal. `feature_rebase.py`'s rebase upkeep (the other place
+exclusively — neither deletes `rec["base"]`, the field that holds `feature/<name>` for a unit-based goal: both
+pass it to `_delete_remote_branch` only as a refusal guard (a branch equal to the base is refused). `feature_rebase.py`'s rebase upkeep (the other place
 a `feature/<name>` branch is touched at all) only ever **force-pushes** it — rewriting history to
 replay goal branches forward — which is never a delete.
 
@@ -1754,7 +1754,7 @@ the directory a declared unit does not move a goal's base at all, and the goal i
 the ownership gate, rebase upkeep, unit completion and the cross-repo access check: each opens with
 the same `feature_registry.registry_dir(sdlc_dir).is_dir()` test and returns `not-adopted` before
 spending anything — no `ls-remote`, no reconcile, no access check. Measured end to end in §6e: one
-goal declaring a unit costs **3 calls** without the directory and **15 with it**.
+goal declaring a unit costs **4 calls** without the directory and **17 with it**.
 
 **What it does not gate: the label half.** `attach_at_pick` runs for every goal a GitHub source
 **considers** (§6e), and the needs-label sweep once per `_next()`, both gated only on that source
@@ -2090,7 +2090,7 @@ Two things about it that are easy to get wrong:
   environment and raw samples. These measurements do not establish production or fleet latency:
   merge-heavy histories, many refs, cold disks and additional path chunks remain unmeasured.
 
-- **The back-to-back cross-repo landing has no owner** (§11b). Nothing merges a feature branch.
+- **The back-to-back cross-repo landing has no owner** (§11b). The loop never merges a feature branch; only attended landing (`feature_land*`, Slack `--unsafe-merge`) does.
 - **`authorized` is enforced on the FILING of work, never on the working of it** (§12). A goal that
   is already on the board and legitimately filed is picked by whoever picks it; ownership is a
   question about who may create the work, not about who may do it.
@@ -2284,7 +2284,7 @@ at the moment a unit is opened (`/sigma-define`'s own `declare` step) or promote
 (`sigma-goal-review`'s §5 feature-ification, same `declare` step), whoever is driving that pass is
 asked one more question: *"Give `feature:<name>` a priority? (P0–P4, or skip)"*.
 
-- **Answered** — `define.py set-priority --unit <name> --priority <P>` records `P` on `<name>`'s
+- **Answered** — `define.py set-priority <sdlc_dir> --unit <name> --priority <P>` records `P` on `<name>`'s
   own registry entry, through `feature_sync.amend`'s locked read-modify-write (§8e/§8d — the whole
   entry goes back, so a concurrent pick recording a goal on the same unit cannot clobber it, and
   nothing else about the unit's title, owner, repos or goals is disturbed). Idempotent: re-stating
@@ -2311,7 +2311,7 @@ own: a unit that has never had a priority *recorded* (`set-priority` above) reso
 own `_pick_key`/`_feature_rank`/`_unit_priority_rank`.
 
 **A DIFFERENT, still-legitimate verb exists for genuinely levelling a unit's members by hand:**
-`define.py bump-priority --unit <name> --priority <P>` sets **every** open `feature:<name>` member
+`define.py bump-priority <sdlc_dir> --unit <name> --priority <P>` sets **every** open `feature:<name>` member
 issue's own `priority:` label to exactly `P`, unconditionally — even downgrading one a human had
 set individually higher. It is idempotent and human-invoked, and neither setup flow above calls it
 by default any more: once a unit's priority is data the comparator reads, unconditionally
@@ -2406,22 +2406,17 @@ independent checks: `sources._swap_labels` resolves every name to a real label f
 rather than minting one, and `GitHubSource._run` separately refuses any `gh label create` carrying
 a `feature:*` name.
 
-**Honest limitation: tiers 1 and 3 — the actual AI-judgment matching this feature is for — are not
-reachable via any real invocation today.** Both integration points (`classify_at_pick`, called from
+**Honest limitation: tiers 1 and 3 — the actual AI-judgment matching this feature is for — are reachable
+only with an opt-in.** Both integration points (`classify_at_pick`, called from
 `_handle_no_unit_at_pick` at pick time, and `classify_for_filing`, called from
 `handoff.create_tracked_issue` when the loop opens an issue on its own behalf) accept an optional
-real judge and default to `_default_judge` when none is supplied. That default never guesses a unit
-or invents evidence — it unconditionally **abstains**, which routes every goal through tier 2, the
-configured catch-all. No caller anywhere in the kit supplies a real judge yet, so every
-auto-classified issue today lands on `core` (or the configured catch-all) exactly as tier 2
-describes — a genuine improvement over the old sentinel (a real, reversible label attach that other
-tooling can see, rather than a comment nothing checks), but not yet the intra/inter-feature
-judgment call the classifier exists to make. Wiring a live judge in is separate, undecided future
-work — a prompt-level CLI channel at filing time (cheapest, but does not reach the pick-time path),
-an in-process model call from inside `feature_classify.py` itself (reaches both integration points,
-at the cost of real latency/reliability surface on what is today a deterministic pick path), or
-shipping the honest-abstain default as this feature's behaviour for the foreseeable term — and this
-document will say so once one is chosen, rather than implying tiers 1/3 already work end to end.
+judge. A live judge (`feature_judge.live_judge`, #2380) is passed to them only when
+`discovery.no_dangling_goal.live_judge.enabled` is the literal `true`; it is off by default and is a
+metered model call (`rounds` defaults to 3, with a daily spend ceiling). Otherwise `_default_judge`
+applies. It never guesses a unit or invents evidence — it unconditionally **abstains**, which
+routes every goal through tier 2, the configured catch-all, so every auto-classified issue lands on
+`core` (or the configured catch-all) exactly as tier 2 describes — a real, reversible label attach
+that other tooling can see, rather than a comment nothing checks.
 
 Full design record: design #2253 D-6 (the sentinel this reverses) and issue #2260's own
 comment history (the 2026-09-10 call that reversed it, and the plan-review that verified the

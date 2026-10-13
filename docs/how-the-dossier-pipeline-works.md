@@ -75,7 +75,7 @@ enforces it for you —
 [§4](dossier-pipeline.md#4-stage-0--the-dossier-sigma-dossier) says why the rule lives in prose
 everywhere, and what the frontmatter's omission does and does not buy.
 
-### The three extra questions the bank could not have asked
+### The extra questions the bank could not have asked (up to three)
 
 After the seven and before the decision, the skill re-reads the answers **as a set** and may ask up
 to a few targeted follow-ups. The run asked two, and both were the kind of thing no fixed slot
@@ -182,7 +182,7 @@ Note the count in the parentheses. It is written even when it is zero, and
 [§7c](dossier-pipeline.md#7c-two-verdicts-and-why-there-is-no-third) says what its absence would be
 indistinguishable from.
 
-**The other verdict stops here instead**, writes no label and creates nothing, and that is the
+**The other verdict stops here instead**, writes no label and creates no ticket (it also closes the open design PR), and that is the
 contract working rather than breaking — [when Stage 2 says no](#when-stage-2-says-no--and-why-zero-tickets-is-the-answer)
 walks a real one below.
 

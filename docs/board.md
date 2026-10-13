@@ -7,7 +7,7 @@ page is the design, the runbook that builds it, and the acceptance checks.
 
 The design lives in code, in one place: `skills/sigma-init/scripts/board_spec.py`. It is built from
 the kit's own vocabulary at run time: the configured Status columns, `discovery.PRIORITIES`,
-`phase_report.PHASE_TOKENS`, and the configured parked / blocked labels and the legacy needs-confirmation label. If you
+`phase_report.PHASE_TOKENS`, and the configured parked / blocked labels. If you
 rename a column in `project.columns`, the filters follow it. `board_layout.py spec <.sdlc>` prints
 the spec as JSON.
 
@@ -43,9 +43,8 @@ every P4 goal blank on the board. #235 made the same ruling.
    operator's live view, the board's version of Block A: what is being worked on, reviewed or stuck,
    most recently touched first.
 4. **Needs a human**. A table filtered to
-   `is:open label:sdlc:parked,sdlc:blocked,sdlc:needs-confirmation`, with Title, Priority, Status,
-   Labels and Updated. It is the inbox for `/sigma-unpark`. The legacy needs-confirmation value stays
-   in the filter only so leftovers on an older board still show until `/sigma-promote` migrates them.
+   `is:open label:sdlc:parked,sdlc:blocked`, with Title, Priority, Status,
+   Labels and Updated. It is the inbox for `/sigma-unpark`. The legacy needs-confirmation label is no longer in the filter (`board_spec.py`).
    **This differs from the issue on purpose.** The issue asked for "Status in (Parked, Blocked) OR
    the legacy needs-confirmation label". A project filter ANDs its qualifiers and ORs only the values inside one
    qualifier, so an OR across two fields cannot be written. The labels are the source of truth that
