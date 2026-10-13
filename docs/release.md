@@ -36,7 +36,7 @@ manifest drift and an undated published CHANGELOG heading.
 ## Pin and rollback
 
 **Pinning is not supported for the currently unreleased source.** At the time of the probes below (2026-10-02) the
-public repository and `v1.0.0` tag did not exist; this page has not re-probed them since, and the source repository now carries release tags. The isolated probes in
+public repository and `v1.0.0` tag did not exist; this page has not re-probed installation since. A REST read on 2026-10-13 shows the repository named below now exists but is private and lists no tags, while this repository lists six release tags, the oldest `v1.0.0`. The isolated probes in
 [`pin-rollback-2026-10-02.md`](launch/evidence/pin-rollback-2026-10-02.md)
 did not produce an installed tagged plugin: the two marketplace source forms
 could not authenticate over SSH, and cloning the public HTTPS source at

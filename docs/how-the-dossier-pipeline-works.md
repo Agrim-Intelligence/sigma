@@ -23,7 +23,8 @@ CLI, which produced Story **#1**, Epic **#2**, and children **#3–#6**. A secon
 on the maintainers' own board,
 ended in **no tickets at all** and is walked separately at the end — because that outcome is the
 contract holding, and it is the one that looks like a failure. Nothing here is illustrative; where a
-shape looks odd it is because that is what the run actually did.
+shape looks odd it is because that is what the run actually did. (The throwaway repository is not
+readable any more: a REST read of it on 2026-10-13 answers 404, so its issue numbers cannot be re-checked.)
 
 Three words recur. A **Dossier** is the ticket holding business intent. A **design pass** is the
 codebase mapping written to a file, not a ticket. A **slice** is one of the tech goals the loop

@@ -214,7 +214,8 @@ the injected runner every other git call here uses.
 **One carve-out (#1146, PROVISIONAL, owner to ratify).** A path the replay deletes that the branch
 carries **byte-identical to the fork point** (`git merge-base <tip> <replayed head>`) only
 *inherited* it, so a base deletion of it loses none of the branch's own work and is not a finding.
-Applies to the upkeep pass only; the attended `sigma-rebase` push comparisons (below) keep refusing every deletion. Two extra guarded reads, made only when the replay deletes something: the merge-base, then one
+Applies to the upkeep pass only; the attended `sigma-rebase` push comparisons (below) keep refusing every deletion. Up to three extra guarded reads, made only when the replay deletes something: the merge-base, a
+`rev-parse` of the tip (a tip that IS the fork point has no base deletion to excuse), then one
 `git diff --raw` fork..tip; any deleted path that diff lists (added, edited, mode-changed, or either
 end of a rename) is the branch's own and is still refused. No single fork point (read fails, empty,
 several) keeps the old behaviour: every deletion is refused. Cost: the diff output is linear in the
@@ -284,7 +285,10 @@ rebase's own landing on that branch — `rebase (finish): <its full ref> onto <s
 `--apply`, `-i`, or `--continue`/`--skip`-concluded rebase, and a `pull --rebase` that stopped and
 was continued), `pull <argv> (finish): …` (a `pull --rebase` that landed in one go), or `rebase
 (continue) (finish): …`, all measured against real git 2.55; older gits' `rebase finished: …` is
-accepted but not measured — and takes `<branch>@{1}`. The base is the walker's own brief (`walk`
+accepted but not measured — and takes `<branch>@{1}`. The reader (`rebase_brief.pre_rebase_head`)
+recognises all those shapes, but the manual-recovery push is entered only when HEAD's newest reflog
+entry begins `rebase (finish):` (`conflict_walk._rebase_just_concluded_locally`), so a `pull --rebase`
+that landed in one go, or a `rebase (continue) (finish)` entry, is never recovered by it. The base is the walker's own brief (`walk`
 resolves `work.base` for the recovery push too). When the pre-rebase head or the base is not known —
 reflogs off, something newer on the branch, a caller that passes no base — no remote → pre-rebase-head
 loss is exempt: that can refuse a healthy local deletion, and does not pass a loss the attribution
@@ -334,8 +338,8 @@ base **renamed** to a name the branch never used (rename detection pairs them), 
 produces a version the branch never had (the ordinary upstream edit). What it flags that is not a
 revert of the branch — each identical to one as trees, so each is refused the same way, costing an
 upkeep pass and a human decision, never data: a base that deleted a file the branch itself added
-or changed since its fork point (a file it only inherited unchanged is excused, #1146); a base move that rewrites the file past git's rename similarity (it reads as a deletion);
-and a base that reverts its *own* older change to a file the branch carries unchanged. What it
+or changed since its fork point (a file it only inherited unchanged is excused, #1146); a base move that rewrites a file the branch itself changed past git's rename similarity (it reads
+as a deletion; for an inherited file it is excused, #1146); and a base that reverts its *own* older change to a file the branch carries unchanged. What it
 does not see is any replay result that is a version which **never existed** — a *partial* revert
 merged with other changes, or a full base revert of a file the branch has **kept editing** since;
 §15 names both.
@@ -614,7 +618,7 @@ Some are paid per goal the loop **considers**, one per goal it **claims**, most 
 | a second read of the same declaration, over REST, when the first one failed | REST | goal **considered**, and only on a failed first read | **yes** |
 | the scope gate's own repo resolution — `git remote get-url <remote>`, **local** | git | goal **considered**, and only while `discovery.github.repo` is unset | **yes** |
 | the ownership gate's repo resolution — the same local read again | git | goal **considered**, same condition | **yes** |
-| `gh issue view <n> --json author` | **GraphQL** | goal **considered**, and only where the unit has an owner and no grant (§12) | **yes** |
+| `gh issue view <n> --json author` | **GraphQL** | goal **considered**, and only where the unit has an entry, the repo resolves, there is no grant, and the backlog source can hold a goal (§12) — read once to compare with the owner, and for a unit with no owner yet, to name one | **yes** |
 | the cross-repo access check — one issue read, then one access probe per repo the unit names | `gh` | goal **claimed** — after the claim is durable, before anything has been built | **yes** |
 | `gh api repos/<slug>/issues/<n>` | REST | goal **started**, in github mode with a numeric stem | no — gated on §6a instead |
 | `git ls-remote --heads <remote> 'feature/*'` — **twice, not once** | git | goal **started**: once for the registry reconcile (§8f), once for rebase upkeep (§3) | **yes** |
@@ -1313,7 +1317,7 @@ So what ships is a **pure, queryable check**. It answers a question; it enforces
 |---|---|
 | `(True, "")` | **not applicable** — no registry, not cross-repo, no declared unit, or tier 2. **Zero API calls.** This is every ordinary goal. |
 | `(True, "<reason>")` | **checked and ready** — every sibling repo has exactly one open PR on its recorded branch, and it is green (and approved, if this project requires approval) |
-| `(False, "<reason>")` | **not ready**, and the reason names which of eight causes it is |
+| `(False, "<reason>")` | **not ready**, and the reason names which cause it is: no recorded landing decision, a decision that selects no tier, no work record or checkout for the goal, this repo not resolvable, a decision that does not name this repo or names no sibling or has no unit name, no branch recorded for a sibling, no open PR (or several) on that branch, a sibling PR that is draft / red / conflicting / unapproved, one still building or unreadable after the wait, or the check itself failing to run |
 
 It **fails closed** — the deliberate opposite of the review gate's fail-open. That gate can shrug at
 an unreadable state because three others stand behind it; here an unreadable answer is the only
@@ -1380,8 +1384,8 @@ recording the field first made possible — no data migration, no schema bump. A
 `feature:<name>` may be created **directly** only by the unit owner or by the owner of the repo it is
 created in; **where those two disagree the board owner wins**, and the more restrictive gate applies.
 Anyone else is never blocked from raising it — it is parked with the declared kind `owner_hold` (the legacy `sdlc:needs-confirmation`
-label only when triage is off), inert until the owner acts, plus a ledger entry addressed to the owner. Two gates, reached by different callers:
-`handoff.create_tracked_issue` for every issue Sigma opens (follow-ups included), and
+label only when triage is off), inert until the owner acts, plus a ledger entry addressed to the owner (at the pick, written only once the hold landed and its flag comment posted). Nothing is refused when the unit has no registry entry yet, when neither owner is recorded, when the repo holds the per-unit grant, or when the creator cannot be named. Two gates, reached by different callers:
+`handoff.create_tracked_issue` for every issue Sigma opens for a goal (follow-ups included; a goal-less upkeep finding declares no unit and is not asked), and
 `feature_owner.gate_at_pick` for an issue anyone else opened, which reads the issue's **author**
 rather than its picker. The filing gate is asked about the unit the issue **will declare** — a
 caller-supplied `feature:<name>` label counts, not just an inherited one — so `handoff track --label
@@ -1419,7 +1423,7 @@ fully reachable and ungranted, or granted and unreachable.
 PR. The loop's own merges are `sdlc/<goal-id>` → `feature/<name>`, inside one repo. Landing
 through `verify_merge.py` (attended confirmation) and the Slack `--unsafe-merge` path may merge `feature/<name>` onto
 `work.base`; the loop does not initiate those feature-branch landings. The chat path has no confirmation of its
-own: with unit upkeep off, a non-bot message in the authorized channel is the whole request; with it on, chat landing
+own: with unit upkeep off, a non-bot message in the authorized channel is the whole request (only the "merge now?" prompt is skipped; `verify.command` still runs first and gates the merge); with it on, chat landing
 runs through the landing engine and needs the same single-use unit approval made locally, and the requester is recorded.
 
 Marking a unit finished is a registry edit, not a branch deletion: **`open: false` is how a finished
@@ -1937,7 +1941,7 @@ git push <remote> <base>:refs/heads/feature/<name>
 # 2. the LABEL — a human, once per unit. Sigma never creates one (§7).
 gh label create "feature:<name>" --description "unit of work: <name>" --color 1d76db
 
-# 3. the REGISTRY — once per REPOSITORY, not per unit. Nothing in the kit creates it (#1576).
+# 3. the REGISTRY — once per REPOSITORY, not per unit. Nothing in the kit creates it on its own; `/sigma-define` does, as its last step (#1576, now #18 on the public backlog).
 mkdir -p .sdlc/features
 
 # 4. only NOW declare it, as the bare two-line marker in each issue body:
@@ -1967,8 +1971,8 @@ Two things about it that are easy to get wrong:
   unadopted again, and its picks will say so. Until you commit later picks' writes too, the next
   `work.py start` tolerates that dirt only where it can prove the bytes are Sigma's own (§15).
 - **Creating it is what makes the registry half live**, and the registry half is not yet ready for
-  first adoption — the composition defects tracked in **#1564** are inert only for as long as this
-  directory is absent, which is why nothing in the kit creates it and why **#1576** is deliberately
+  first adoption — the composition defects tracked in **#1564** (now epic #9 on the public backlog, still open when read on 2026-10-13) are inert only for as long as this
+  directory is absent, which is why nothing in the kit creates it outside `/sigma-define` and why **#1576** is deliberately
   the last item in that epic. Until then, run step 3 on a repository you are prepared to be the first
   adopter of, and not otherwise.
 
@@ -2031,13 +2035,14 @@ Two things about it that are easy to get wrong:
   What IS caught around it: the same revert when the branch did not edit that file again, a revert
   to a version created by a merge or in the root commit, and every push the `sigma-rebase` skill
   makes (all behind `push_branch`, §3b). It errs the other way on purpose: a plain upstream
-  deletion of a file the branch added or changed, a move-and-rewrite past rename similarity, and a base reverting its own older change to
+  deletion of a file the branch added or changed, a move-and-rewrite past rename similarity of a file the branch changed (an inherited one is excused, #1146), and a base reverting its own older change to
   a file the branch carries are all refused like a revert, because as trees they are the same. Its
   cost grows with history: one `git log -m` over the branch tip's whole history per 200
   modified-or-renamed paths, each bounded by `SIGMA_REBASE_GUARD_TIMEOUT` and failing closed.
   **Remaining limit of the #1146 carve-out (PROVISIONAL, owner to ratify):** a base revert of work
   that was already on the base at the fork point now reads as *inherited* (the branch carries it
-  byte-identical to the fork point) and is NOT refused; the branch loses the content on the replay.
+  byte-identical to the fork point) and is NOT refused when the revert DELETES the path (a revert that rolls an
+  inherited file back to an older version is still refused as a restored version); the branch loses the content on the replay.
   Before #1146 this was refused.
   **The conservative refusal is paid fleet-wide, per branch.** Upkeep runs per feature branch, so
   one base change the guard reads as a revert blocks upkeep on EVERY feature branch that carries

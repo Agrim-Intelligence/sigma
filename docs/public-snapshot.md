@@ -345,7 +345,7 @@ failure costs nothing public. Each step is the owner's, and none runs in a loop.
    ```
 
 4. Owner: wait for CI on all legs. One CI run is about 129 runner-minutes (34 minutes wall,
-   measured on run `36952374676`).
+   measured on run `36952374676`; re-read over REST on 2026-10-13: five jobs summing to 128.6 job-minutes over 34.1 minutes wall).
 5. Verify the pushed repository:
 
    ```sh

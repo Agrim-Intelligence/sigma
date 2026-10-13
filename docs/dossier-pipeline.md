@@ -917,7 +917,7 @@ is a human's one-gesture edit afterwards.
 
 **And this one is enforced (#2027).** Everything above was already on this page during the
 2026-09-01 validation run, which wrote `"priority": "P2"` into all six children of story #2017's
-plan anyway — a rule nothing measures is a rule a pass walks past in silence, and the number lands
+plan anyway (re-read over REST on 2026-10-13 in the source repository: all six children of the epic filed from that story carry a `priority:P2` labelling event within 12 seconds of each other) — a rule nothing measures is a rule a pass walks past in silence, and the number lands
 as a real `priority:P<n>` label and a real board field that nobody can distinguish from one a human
 set. §7d-iii's invocation therefore carries **`--forbid-priority`**, and `compile_plan.py`
 **refuses** a plan whose epic or any child carries the key. The refusal names every offender in one

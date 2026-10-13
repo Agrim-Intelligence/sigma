@@ -45,9 +45,12 @@ posted — on a repository with no registry at all.
 measurement and explicitly rejects "inert" as a description of the state, so do not repeat it as
 one. Take the ordering requirement §14 gives as a requirement, not as advice.
 
-The registry's own adoption-readiness work is tracked on Sigma's board in **#1564**. The one
-item there that is *not* gated behind a missing `.sdlc/features/` is **#1571** — a repository that
-never adopted the model yet already carries a `feature:*` label from somewhere.
+The registry's own adoption-readiness work was filed as **#1564**, now the epic **#9** on the public
+backlog. The one item there that is *not* gated behind a missing `.sdlc/features/` is **#1571**, now
+**#13** — a repository that never adopted the model yet already carries a `feature:*` label from
+somewhere. The code half of #13 is fixed: `work.py` `_declaration_moves_the_base` lets a declaration
+decide the base only where `.sdlc/features/` exists. Both issues were still open on the public backlog
+when read on 2026-10-13 (REST), so the tracker has not caught up with the code.
 
 ---
 
