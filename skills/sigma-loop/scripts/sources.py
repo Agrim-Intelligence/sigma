@@ -3876,7 +3876,9 @@ class GitHubSource:
             except Exception as exc:
                 # .hint (see _run_gh) is the short reason alone; str(exc) is the fallback for an
                 # exception that never went through _run_gh (e.g. a test double) and so has no .hint.
-                hint = getattr(exc, "hint", None) or str(exc)
+                # `_plain`, not `str`: this text is posted as a PUBLIC issue comment, and the fix line
+                # a GhApiError appends to str() is for the local message only.
+                hint = getattr(exc, "hint", None) or gh_api._plain(exc)
                 note = (f"Could not assign @{assignee} to this hand-off ({hint}) — left unassigned. "
                         "GitHub issues can't be assigned to a team; if that's not the cause here, the "
                         "account may not be a repo collaborator. Needs manual routing to the right owner.")

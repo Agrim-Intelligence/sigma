@@ -344,6 +344,29 @@ def test_hooks_install_text_for_an_existing_foreign_path_pinned(tmp_path):
     assert "that tool's own hook" in msg or "hook manager" in msg
 
 
+def _classified_401(*a, **k):
+    exc = RuntimeError("gh api failed: " + BAD)
+    exc.hint = BAD
+    raise exc
+
+
+def test_declare_failed_row_for_a_classified_failure_has_one_fix_not_two():
+    class S(_Src):
+        attach_label = staticmethod(_classified_401)
+    row = define.declare(S({1: "Feature: vox"}, labels={"feature:vox"}), "vox", [1])["issues"][0]
+    assert row["outcome"] == define.FAILED
+    assert row["why"].count("fix: ") == 1 and "gh auth login" in row["why"]
+    assert "gh label create" not in row["why"]
+
+
+def test_declare_unreadable_row_for_a_classified_failure_has_one_fix_not_two():
+    class S(_Src):
+        fetch_body_labels = staticmethod(_classified_401)
+    row = define.declare(S({1: ""}, labels={"feature:vox"}), "vox", [1])["issues"][0]
+    assert row["outcome"] == define.UNREADABLE
+    assert row["why"].count("fix: ") == 1 and "gh auth login" in row["why"]
+
+
 def test_git_missing_is_the_install_fix_through_a_real_oserror(tmp_path, monkeypatch):
     def boom(*a, **k):
         raise FileNotFoundError(2, "No such file", "git")
