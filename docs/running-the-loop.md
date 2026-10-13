@@ -27,7 +27,7 @@ it does not force. It parks on:
 
 - a hard checkpoint / a decision only you can make,
 - an **irreversible or expensive action** (deploy, delete, overwrite, spend, migrate) — its
-  instructions ask the agent to park it rather than run it unattended (advice: no code reads `gates.irreversible_actions` unless `decision_rubric.hard_stops.enabled` is true, default false, where it is the legacy alias for the class toggles;
+  instructions ask the agent to park it rather than run it unattended (advice: no code reads `gates.irreversible_actions` unless `rulebook.hard_stops.enabled` is true, default false, where it is the legacy alias for the class toggles;
   that advice is about the agent, and two things Sigma's own code does are outside it because each is bounded by
   construction: the lease-protected force-push of a unit branch, and, only once you enable upkeep, the removal of old
   backup refs under Sigma's own backup namespace; see `docs/branching-model.md` section 13b),
@@ -78,7 +78,7 @@ review queue needs attention.
 | Approval | every gate | only what it parks |
 | Stops on | goal complete / you stop | backlog empty, per-run budget, or a context hand-off (then resumes fresh) |
 | Context bounded across goals | not yet — see issue tracker for the follow-up | goal count capped at 20 per session by default (`handoff.after_goals`); post-change token measurement pending |
-| Irreversible action | asks you | asks the agent to park it (advice; a code check only when `decision_rubric.hard_stops.enabled` is true) |
+| Irreversible action | asks you | asks the agent to park it (advice; a code check only when `rulebook.hard_stops.enabled` is true) |
 
 `/sigma-goal` claims its own named goal directly and is not driven by `loop.py next`/`next-batch`,
 so the hand-off ceiling above does not reach it — a human re-running `/sigma-goal` many times in one
