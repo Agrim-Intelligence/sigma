@@ -106,11 +106,23 @@ commits.
    and step 6 deletes the plugin's own copy. Exit 2 in the adopted repository (measured above). FIXED in
    `docs/uninstall.md`, in two rounds. Round one named a checkout by path and told the copy-out AFTER step 10,
    which a reviewer showed cannot work for a reader following in order (step 6 had already deleted the cache copy;
-   verified: no checker file left on the profile). Round two puts a guarded `cp` of the cached checker to
-   `${TMPDIR:-/tmp}/sigmaloop-check/leftovers.py` in step 6, before the cache removal, and the final command runs that
-   copy. Guards: `test_guide_final_check_runs_from_the_adopted_repository`,
-   `test_guide_copies_the_checker_out_before_the_cache_is_removed` (red when the copy block is moved after the
-   removal) and `test_documented_copy_out_then_cache_removal_then_final_check_is_green` (runs the three in order).
+   verified: no checker file left on the profile). Round two put a `cp` in step 6 before the cache removal, to a
+   fixed path under the temporary directory. A delta review then showed that path is an exploit: someone else can
+   pre-create it read-only with a planted script, `cp` fails (its failure was inside the `if`, so no fallback line
+   printed) and the final command ran the planted file; a pre-made symlink made `cp` overwrite its target. Round
+   three (current): the copy lives in the repository's own git directory (`sigmaloop-check`, made `mkdir -m 700`
+   after any existing entry is replaced, a symlink removed and never followed, checked to be owned by the user),
+   any failure prints the fallback line and removes the directory, the final command runs the copy only if it is a
+   non-symlink file owned by the user and otherwise prints a fallback and exits non-zero, and a last block removes
+   the copy. The cached version is the highest by number (the earlier `ls | tail` picked the lower of two versions whose texts sort the other way round), found
+   with `find`, which stays quiet in zsh when nothing is cached (the earlier `2>/dev/null` did not hide
+   zsh's "no matches found"). Guards, each seen red against the previous text and green after:
+   `test_copy_out_never_runs_planted_code_in_a_shared_or_predictable_place` (planted code ran),
+   `test_copy_out_does_not_follow_a_symlinked_directory_or_file` (target overwritten),
+   `test_failed_copy_prints_the_fallback_and_leaves_nothing_runnable` (no fallback),
+   `test_copy_out_picks_the_highest_cached_version_numerically` (picked the lower version),
+   `test_copy_out_with_nothing_cached_is_quiet_and_prints_the_fallback` (zsh stderr), the order test and the
+   green end-to-end test, each under sh, bash and zsh.
 2. **The marketplace registration survived the whole guide and the checker exited 0.** After step 10 the
    profile still held an `extraKnownMarketplaces` entry in `settings.json` and a row in
    `plugins/known_marketplaces.json`. `claude plugin marketplace remove sigmaloop` removed both
@@ -126,8 +138,10 @@ commits.
    issue (number 1348) records it.
 3. **Empty files adoption created stayed behind, unreported.** On a repository that had no `AGENTS.md` and
    no `.cursor`, the guide left a zero-byte `AGENTS.md` and an empty `.cursor/rules` directory; the
-   checker looks for markers and the two rule files, so it exited 0. FIXED in step 7 with a block:
-   `[ -s AGENTS.md ] || rm -f AGENTS.md` (zero bytes only; a non-empty file is left) and `rmdir` of the empty
+   checker looks for markers and the two rule files, so it exited 0. FIXED in step 7 with a block. Round one tested for zero bytes; a delta review showed that cutting the Codex block can
+   leave a single newline, which that test keeps. Now `[ ! -f AGENTS.md ] || [ -n "$(tr -d ' \t\r\n' < AGENTS.md)" ] || rm -f AGENTS.md`
+   deletes a file with only whitespace and leaves any file with content (tested with empty, newline, mixed
+   whitespace, a comment line and one character, under three shells), and `rmdir` of the empty
    directories. Guards: `test_guide_step7_says_what_to_do_with_files_adoption_created` and
    `test_guide_step7_deletes_agents_md_only_when_empty`, red before the edit.
 4. **Step 9 silently deleted nothing under zsh (reviewer finding).** The blocks passed three ref patterns
@@ -227,8 +241,8 @@ commit per tree), so `git archive` of that prefix was not run against the predec
 
 The whole flow was re-run twice from a clean profile (install, adoption, state, then every fenced block of the
 edited guide extracted and run unedited): once with the blocks under bash and once under zsh (macOS default),
-the real `claude` commands in between. Both: copy-out wrote the checker to the scratch temporary directory
-(7332 bytes), cache removal, step 9 listed and deleted all three remote branches, and the final command
-`python3 "${TMPDIR:-/tmp}/sigmaloop-check/leftovers.py" .` exited 0 with no output; only `main` remained, the
-marketplace maps in `settings.json` and `known_marketplaces.json` were empty. Shells: bash and zsh as shipped
-on this machine; plain `sh` ran in the test suite only.
+the real `claude` commands in between. Both: the copy landed in the repository's git directory, cache removal worked,
+step 9 listed and deleted all three remote branches, the final command ran that copy and exited 0 with no output,
+the cleanup block left no `sigmaloop-check` entry in the git directory, and only `main` remained; the marketplace
+maps in `settings.json` and `known_marketplaces.json` were empty. The only non-zero exit was the step 8 read when no
+`core.hooksPath` is set. Shells: bash and zsh as shipped on this machine; plain `sh` ran in the test suite only.

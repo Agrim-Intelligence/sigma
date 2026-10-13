@@ -60,11 +60,24 @@ residue and exits 1 until nothing remains.
    another repository still needs it; `leftovers.py` keeps listing the rows until you do. If you set
    `CLAUDE_CONFIG_DIR`, the profile is that directory, not `~/.claude`. First copy the final check out of
    the cache, because the removal below deletes it and the repository you are cleaning has no copy of its
-   own (if this prints the fallback line, use `tools/readiness/leftovers.py` from a Sigma checkout in the
-   final command instead):
+   own. The copy goes inside this repository's own git directory, never into `/tmp` or any other shared
+   directory: a predictable path there can be pre-made by another user, and the final command would run
+   whatever they put in it. The block picks the highest cached version by number, replaces anything already
+   at the target (a symlink is removed, never followed), creates the directory private to you, and prints
+   the fallback line, leaving nothing behind to run, if any of that fails. If you see the fallback line, run
+   `tools/readiness/leftovers.py` from a Sigma checkout in the final command instead:
    ```sh
-   src=$(ls -d "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/sigmaloop/sigmaloop/*/tools/readiness/leftovers.py 2>/dev/null | tail -n 1)
-   if [ -n "$src" ]; then mkdir -p "${TMPDIR:-/tmp}/sigmaloop-check" && cp "$src" "${TMPDIR:-/tmp}/sigmaloop-check/leftovers.py"; else echo "no cached copy: use a Sigma checkout"; fi
+   base="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins/cache/sigmaloop/sigmaloop"
+   src=$(find "$base" -mindepth 4 -maxdepth 4 -type f -path '*/tools/readiness/leftovers.py' 2>/dev/null |
+     while read -r f; do v=${f#"$base"/}; printf '%s %s\n' "${v%%/*}" "$f"; done |
+     sort -t. -k1,1n -k2,2n -k3,3n | tail -n 1 | cut -d' ' -f2-)
+   chk="$(git rev-parse --absolute-git-dir)/sigmaloop-check"
+   ok=
+   if [ -n "$src" ]; then
+     if [ -L "$chk" ]; then rm -f "$chk"; elif [ -e "$chk" ]; then chmod -R u+w "$chk" 2>/dev/null; rm -rf "$chk"; fi
+     mkdir -m 700 "$chk" && [ -O "$chk" ] && [ ! -L "$chk" ] && cp "$src" "$chk/leftovers.py" && ok=1
+   fi
+   [ -n "$ok" ] || { rm -rf "$chk"; echo "no usable copy: run <checkout>/tools/readiness/leftovers.py in the final command instead"; }
    ```
    Then remove the cache:
    ```sh
@@ -79,12 +92,12 @@ residue and exits 1 until nothing remains.
    ```sh
    rm -f .cursor/rules/sdlc.mdc .cursor/rules/output-contract.mdc
    ```
-   If adoption created `AGENTS.md` (the repository had none before) it is now empty. Delete it only if it
-   is zero bytes; a non-empty file is yours, so leave it. If adoption created `.cursor`, `rmdir` removes the
-   now-empty directories and refuses while they hold anything of yours. The final check does not report
-   either one:
+   If adoption created `AGENTS.md` (the repository had none before) it is now empty or holds only a stray
+   newline. The block below deletes it only when it has no content other than whitespace; a non-empty file
+   is yours, so it stays. If adoption created `.cursor`, `rmdir` removes the now-empty directories and
+   refuses while they hold anything of yours. The final check does not report either one:
    ```sh
-   [ -s AGENTS.md ] || rm -f AGENTS.md
+   [ ! -f AGENTS.md ] || [ -n "$(tr -d ' \t\r\n' < AGENTS.md)" ] || rm -f AGENTS.md
    rmdir .cursor/rules .cursor 2>/dev/null || true
    ```
 8. Check the repository's git hook setting. Sigma releases before #614 set a local `core.hooksPath`
@@ -123,11 +136,22 @@ residue and exits 1 until nothing remains.
    git fetch --prune "$remote"
    ```
 
-Finally run the checker from the repository, using the copy step 6 made (a repository you are cleaning has no
-`tools/` directory of its own):
+Finally run the checker from the repository. It runs only the copy step 6 made, and only if that copy is a real
+file owned by you (the repository you are cleaning has no `tools/` directory of its own):
 
 ```sh
-python3 "${TMPDIR:-/tmp}/sigmaloop-check/leftovers.py" .
+chk="$(git rev-parse --absolute-git-dir)/sigmaloop-check"
+if [ -f "$chk/leftovers.py" ] && [ ! -L "$chk" ] && [ ! -L "$chk/leftovers.py" ] && [ -O "$chk/leftovers.py" ]; then
+  python3 "$chk/leftovers.py" .
+else
+  echo "no verified copy: run <checkout>/tools/readiness/leftovers.py instead"; false
+fi
+```
+
+When you are done, remove the copy:
+
+```sh
+rm -rf "$(git rev-parse --absolute-git-dir)/sigmaloop-check"
 ```
 
 It exits 0 only when the checked local residue is gone. `--json` prints the rows as JSON, and

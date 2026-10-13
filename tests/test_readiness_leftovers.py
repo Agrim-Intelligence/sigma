@@ -201,7 +201,7 @@ def test_guide_final_check_runs_from_the_adopted_repository():
     so a final check spelled `python3 tools/readiness/leftovers.py .` exited 2 (file not found) there. The
     last block must name the checker by a path that is not relative to the repository being cleaned, and the
     prose must say where the file is once step 6 has removed the plugin's copy of it."""
-    block = _doc_blocks()[-1]
+    block = _final_block()
     assert "leftovers.py" in block
     program = re.search(r"python3\s+(\S*leftovers\.py)", block).group(1)
     assert program.startswith(('"', "<", "/", "$", "~")), (
@@ -243,48 +243,200 @@ def test_guide_warns_before_the_marketplace_removal_command():
     assert "skip the removal while another plugin you use comes from that" in " ".join(step2.lower().split())
 
 
+def _final_block():
+    """The guide's final check: the block that runs the checker (the last block removes its copy)."""
+    found = [b for b in _doc_blocks() if "python3" in b and "leftovers.py" in b]
+    assert len(found) == 1, found
+    return found[0]
+
+
+def _copy_block():
+    found = [b for b in _doc_blocks() if "sigmaloop-check" in b and "cp " in b]
+    assert len(found) == 1, found
+    return found[0]
+
+
+def _removal_block():
+    found = [b for b in _doc_blocks() if "rm -rf" in b and "plugins/cache" in b and "cp " not in b]
+    assert len(found) == 1, found
+    return found[0]
+
+
+def _cleanup_block():
+    found = [b for b in _doc_blocks() if "sigmaloop-check" in b and "rm -rf" in b and "cp " not in b]
+    assert len(found) == 1, found
+    return found[0]
+
+
 def test_guide_copies_the_checker_out_before_the_cache_is_removed():
     """Reviewer finding: the copy-out was told after step 10 but step 6 deletes the cache copy. In document
-    order a block that creates the final command's program must come before the block that removes the
-    cache, and the final command must run that copy."""
+    order the block that creates the final command's program must come before the block that removes the
+    cache, the final command must run that copy, and a later block must remove it again."""
     blocks = _doc_blocks()
-    program = re.search(r"python3\s+\"?(\S*sigmaloop-check/leftovers\.py)", blocks[-1]).group(1)
-    created = [i for i, b in enumerate(blocks[:-1]) if "cp " in b and "sigmaloop-check/leftovers.py" in b]
-    removal = [i for i, b in enumerate(blocks) if "rm -rf" in b and "plugins/cache" in b]
-    assert program and created and removal, (program, created, removal)
-    assert max(created) < min(removal), "the copy-out must come before the cache removal"
-    assert "[ -n " in blocks[created[0]], "the copy-out needs a guard"
+    created = blocks.index(_copy_block())
+    removal = blocks.index(_removal_block())
+    assert created < removal, "the copy-out must come before the cache removal"
+    assert blocks.index(_final_block()) > removal
+    assert blocks.index(_cleanup_block()) > blocks.index(_final_block())
+    assert "[ -n " in _copy_block(), "the copy-out needs a guard"
+    text = _guide()
+    assert "shared" in text and "/tmp" in text, "the guide must say why the checker is not copied to a shared directory"
 
 
-def test_documented_copy_out_then_cache_removal_then_final_check_is_green(tmp_path):
-    """Run the copy-out block, the cache removal and the final command exactly as the guide orders them,
-    with a fake cache holding the real checker, and see the final check exit 0 after the cache is gone."""
-    repo, run = _scratch(tmp_path)
-    profile, tmpdir = tmp_path / "profile", tmp_path / "tmp"
-    tmpdir.mkdir()
-    cache = profile / "plugins" / "cache" / "sigmaloop" / "sigmaloop" / "9.9.9" / "tools" / "readiness"
-    cache.mkdir(parents=True)
-    shutil.copy(SCRIPT, cache / "leftovers.py")
-    blocks = _doc_blocks()
-    copy_block = [b for b in blocks if "sigmaloop-check/leftovers.py" in b and "cp " in b][0]
-    removal = _block_with("rm -rf")
-    final = blocks[-1]
-    env = {**os.environ, "CLAUDE_CONFIG_DIR": str(profile), "CODEX_HOME": str(tmp_path / "codex"),
-           "TMPDIR": str(tmpdir), "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull}
-    go = lambda block: subprocess.run(["sh", "-c", block], cwd=repo, env=env, text=True, capture_output=True)
-    assert go(copy_block).returncode == 0
-    assert go(removal).returncode == 0 and not (profile / "plugins" / "cache" / "sigmaloop").exists()
-    done = go(final)
-    assert done.returncode == 0 and done.stdout == "", done.stdout + done.stderr
+class _Flow:
+    """A scratch repository, a fake profile and a runner for the guide's copy-out, cache-removal, final-check
+    and cleanup blocks under a chosen shell. Nothing here touches a real repository or profile."""
+
+    def __init__(self, tmp_path, shell):
+        self.exe = shutil.which(shell)
+        if self.exe is None:
+            pytest.skip(f"{shell} is not installed on this machine")
+        self.repo, self.run = _scratch(tmp_path)
+        self.tmp = tmp_path / "tmp"
+        self.tmp.mkdir()
+        self.profile = tmp_path / "profile"
+        self.marker = tmp_path / "PLANTED-CODE-RAN"
+        self.gitdir = Path(self.run(["git", "rev-parse", "--absolute-git-dir"]).stdout.strip())
+        self.env = {**os.environ, "CLAUDE_CONFIG_DIR": str(self.profile), "CODEX_HOME": str(tmp_path / "codex"),
+                    "TMPDIR": str(self.tmp), "HOME": str(tmp_path / "home"),
+                    "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull}
+
+    def cache(self, version, body=None):
+        d = self.profile / "plugins" / "cache" / "sigmaloop" / "sigmaloop" / version / "tools" / "readiness"
+        d.mkdir(parents=True, exist_ok=True)
+        if body is None:
+            shutil.copy(SCRIPT, d / "leftovers.py")
+        else:
+            (d / "leftovers.py").write_text(body, encoding="utf-8")
+
+    def plant(self, directory):
+        """A directory at `directory` holding a script that records that it ran."""
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "leftovers.py").write_text(f"open({str(self.marker)!r}, 'w').write('x')\n", encoding="utf-8")
+
+    def go(self, block):
+        return subprocess.run([self.exe, "-c", block], cwd=self.repo, env=self.env, text=True,
+                              capture_output=True, timeout=60)
+
+    def guide(self):
+        """copy-out, cache removal, final check, in the guide's order -> (copy, final)."""
+        copy = self.go(_copy_block())
+        assert self.go(_removal_block()).returncode == 0
+        return copy, self.go(_final_block())
 
 
-def test_guide_step7_deletes_agents_md_only_when_empty():
-    """Reviewer finding: 'delete the file' had no command and no guard. The block deletes only a zero-byte
-    file, and the prose says to leave a non-empty one."""
-    block = _block_with("[ -s AGENTS.md ]")
-    assert "||" in block and "rm" in block
+SHELLS = ["sh", "bash", "zsh"]
+
+
+@pytest.mark.parametrize("shell", SHELLS)
+def test_documented_copy_out_then_cache_removal_then_final_check_is_green(tmp_path, shell):
+    """The three blocks in the guide's order, with a fake cache holding the real checker: the final check
+    exits 0 after the cache is gone, and the cleanup block removes the copy."""
+    flow = _Flow(tmp_path, shell)
+    flow.cache("9.9.9")
+    copy, final = flow.guide()
+    assert copy.returncode == 0 and "no usable copy" not in copy.stdout, copy.stdout + copy.stderr
+    assert not (flow.profile / "plugins" / "cache" / "sigmaloop").exists()
+    assert final.returncode == 0 and final.stdout == "", final.stdout + final.stderr
+    assert flow.go(_cleanup_block()).returncode == 0
+    assert not (flow.gitdir / "sigmaloop-check").exists()
+
+
+@pytest.mark.parametrize("shell", SHELLS)
+def test_copy_out_never_runs_planted_code_in_a_shared_or_predictable_place(tmp_path, shell):
+    """Reviewer exploit: a predictable directory under the temporary directory, made read-only by someone
+    else with a planted script, made `cp` fail and the final command ran the planted file. Plant at the
+    old location, at the new one, read-only and as symlinks, and let the cached checker be unreadable
+    in one case: the planted code must never run and a failed copy must print the fallback line."""
+    flow = _Flow(tmp_path, shell)
+    flow.cache("1.0.0")
+    for where in (flow.tmp / "sigmaloop-check", flow.gitdir / "sigmaloop-check"):
+        flow.plant(where)
+        where.chmod(0o555)                                  # read-only planted directory
+        (where / "leftovers.py").chmod(0o444)
+    copy, final = flow.guide()
+    assert not flow.marker.exists(), "planted code ran"
+    assert final.returncode == 0 or "no usable copy" in final.stdout + copy.stdout, (copy.stdout, final.stdout)
+
+
+@pytest.mark.parametrize("shell", SHELLS)
+def test_copy_out_does_not_follow_a_symlinked_directory_or_file(tmp_path, shell):
+    flow = _Flow(tmp_path, shell)
+    flow.cache("1.0.0")
+    victim = tmp_path / "victim"
+    flow.plant(victim)
+    before = (victim / "leftovers.py").read_text()
+    for where in (flow.tmp / "sigmaloop-check", flow.gitdir / "sigmaloop-check"):
+        where.symlink_to(victim, target_is_directory=True)  # a symlinked directory
+    copy, final = flow.guide()
+    assert (victim / "leftovers.py").read_text() == before, "cp followed the symlink and overwrote its target"
+    assert not flow.marker.exists(), "planted code ran"
+    # a symlinked FILE at the target path inside a real directory
+    shutil.rmtree(flow.gitdir / "sigmaloop-check")
+    (flow.gitdir / "sigmaloop-check").mkdir()
+    (flow.gitdir / "sigmaloop-check" / "leftovers.py").symlink_to(victim / "leftovers.py")
+    flow.guide()
+    assert (victim / "leftovers.py").read_text() == before and not flow.marker.exists()
+
+
+@pytest.mark.parametrize("shell", SHELLS)
+def test_failed_copy_prints_the_fallback_and_leaves_nothing_runnable(tmp_path, shell):
+    flow = _Flow(tmp_path, shell)
+    flow.cache("1.0.0")
+    cached = next((flow.profile / "plugins" / "cache").rglob("leftovers.py"))
+    cached.chmod(0o000)                                     # cp cannot read it
+    try:
+        copy, final = flow.guide()
+    finally:
+        if cached.exists():
+            cached.chmod(0o644)
+    assert "no usable copy" in copy.stdout, copy.stdout + copy.stderr
+    assert not (flow.gitdir / "sigmaloop-check" / "leftovers.py").exists(), "a stale file is left to run"
+    assert final.returncode != 0 and "no verified copy" in final.stdout, final.stdout + final.stderr
+    assert not flow.marker.exists()
+
+
+@pytest.mark.parametrize("shell", SHELLS)
+def test_copy_out_picks_the_highest_cached_version_numerically(tmp_path, shell):
+    """`ls | tail -n 1` sorts as text: 1.2.0, 1.9.0, 1.10.0 picked 1.9.0."""
+    flow = _Flow(tmp_path, shell)
+    for version in ("1.2.0", "1.9.0", "1.10.0"):
+        flow.cache(version, body=f"print('from {version}')\n")
+    assert flow.go(_copy_block()).returncode == 0
+    copies = [d / "sigmaloop-check" / "leftovers.py" for d in (flow.gitdir, flow.tmp)]
+    assert [c.read_text() for c in copies if c.is_file()] == ["print('from 1.10.0')\n"]
+
+
+@pytest.mark.parametrize("shell", SHELLS)
+def test_copy_out_with_nothing_cached_is_quiet_and_prints_the_fallback(tmp_path, shell):
+    """zsh prints 'no matches found' for an unmatched glob and `2>/dev/null` did not hide it."""
+    flow = _Flow(tmp_path, shell)
+    copy = flow.go(_copy_block())
+    assert copy.stderr == "", copy.stderr
+    assert "no usable copy" in copy.stdout
+    final = flow.go(_final_block())
+    assert final.returncode != 0 and "no verified copy" in final.stdout and final.stderr == ""
+
+
+@pytest.mark.parametrize("shell", SHELLS)
+@pytest.mark.parametrize("content,kept", [("", False), ("\n", False), (" \r\n\t\n", False),
+                                           ("# mine\n", True), ("x", True)])
+def test_step7_deletes_agents_md_only_when_it_has_no_content(tmp_path, shell, content, kept):
+    """After the Codex block is cut a single newline can remain; that is empty. Real content stays."""
+    exe = shutil.which(shell)
+    if exe is None:
+        pytest.skip(f"{shell} is not installed on this machine")
+    block = [b for b in _doc_blocks() if "AGENTS.md" in b and "rm" in b][0]
+    (tmp_path / "AGENTS.md").write_bytes(content.encode())
+    done = subprocess.run([exe, "-c", block], cwd=tmp_path, text=True, capture_output=True)
+    assert done.returncode == 0, done.stderr
+    assert (tmp_path / "AGENTS.md").exists() is kept
+    assert subprocess.run([exe, "-c", block], cwd=tmp_path, text=True, capture_output=True).returncode == 0
+
+
+def test_guide_step7_says_a_non_empty_agents_md_stays():
     step7 = _guide().split("\n7. ")[1].split("\n8. ")[0]
-    assert "non-empty" in step7
+    assert "non-empty" in step7 and "whitespace" in step7
 
 
 @pytest.mark.parametrize("shell", ["sh", "bash", "zsh"])
