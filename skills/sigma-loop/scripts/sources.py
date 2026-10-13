@@ -1323,7 +1323,7 @@ class GitHubSource:
 
     @classmethod
     def _is_transient(cls, exc):
-        msg = str(exc).lower()
+        msg = gh_api._plain(exc).lower()
         return any(m in msg for m in cls._TRANSIENT)
 
     def _repo_args(self):
@@ -3869,7 +3869,9 @@ class GitHubSource:
             except Exception as exc:
                 # .hint (see _run_gh) is the short reason alone; str(exc) is the fallback for an
                 # exception that never went through _run_gh (e.g. a test double) and so has no .hint.
-                hint = getattr(exc, "hint", None) or str(exc)
+                # `_plain`, not `str`: this text is posted as a PUBLIC issue comment, and the fix line
+                # a GhApiError appends to str() is for the local message only.
+                hint = getattr(exc, "hint", None) or gh_api._plain(exc)
                 note = (f"Could not assign @{assignee} to this hand-off ({hint}) — left unassigned. "
                         "GitHub issues can't be assigned to a team; if that's not the cause here, the "
                         "account may not be a repo collaborator. Needs manual routing to the right owner.")
@@ -4112,7 +4114,7 @@ class GitHubSource:
         `_note_board_write_failed` (#1733) knows whether to fall back to a generic report instead.
         The other 8 call sites of this method predate that return value and all ignore it, exactly
         as before -- adding it changes nothing for them."""
-        msg = str(exc).lower()
+        msg = gh_api._plain(exc).lower()          # never the appended fix line
         if "project" in msg and ("scope" in msg or "auth refresh" in msg or "required scopes" in msg):
             if not self._scope_warned:
                 self._scope_warned = True

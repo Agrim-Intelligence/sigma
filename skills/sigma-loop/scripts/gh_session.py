@@ -105,17 +105,20 @@ def graphql_unavailable(text):
 #: first-run user to a search engine; these are appended AFTER the raw reason, never in place of it
 #: (callers and classifiers read the reason's prefix and `.hint`). The scopes named under
 #: "permission" are what the first-run preflight (`skills/sigma-init/scripts/preflight.py`) demands:
-#: repo + workflow, and project only when the board is on.
+#: repo + workflow. The words 'project', 'scope' and the organisation sign-on terms are left out on
+#: purpose: callers scan error text for them (sources._note_scope, cross_repo), and a fix line must
+#: never satisfy such a scan (tests/test_d7_gh_api_sites.py checks every marker tuple).
 REMEDIES = {
     "auth": "fix: run `gh auth login` (check with `gh auth status`); a GH_TOKEN or GITHUB_TOKEN in the "
             "environment overrides gh's login, so unset or replace it if it is wrong",
     "not_found": "fix: Not Found means the resource does not exist or this token cannot see it; "
                  "check the repository, issue number or label named above (discovery.github.repo in "
                  ".sdlc/config.json is the repository), and that `gh auth status` is an account with "
-                 "access to it (a private repository needs the repo scope)",
-    "permission": "fix: the token needs the repo and workflow scopes (plus project when the board is "
-                  "on): `gh auth refresh -s repo,workflow`; a fine-grained token needs Issues and "
-                  "Pull requests read and write; an SSO organisation must authorize the token",
+                 "access to it (a private repository needs repo access)",
+    "permission": "fix: the token needs the repo and workflow permissions: run "
+                  "`gh auth refresh -s repo,workflow` (`gh auth status` shows what it has); a "
+                  "fine-grained token needs Issues and Pull requests read and write; an organisation "
+                  "that requires it must authorize the token on GitHub's token settings page",
     "rate_limit": "fix: wait for the quota to reset; `gh api rate_limit` shows when",
     "transport": "fix: check your network connection and retry",
     "server": "fix: GitHub returned a server error; retry in a minute (https://www.githubstatus.com)",
