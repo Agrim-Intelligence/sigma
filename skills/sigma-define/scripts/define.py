@@ -524,25 +524,42 @@ def declare(source, unit, issues):
     return report
 
 
+def _row_why(exc, generic_fix):
+    """A declare row's reason. A failure gh itself reported and the shared table can classify (bad
+    token, 404, 403, network) carries ITS fix, alone; any other failure gets `generic_fix`."""
+    classified = sources._fx(exc)
+    if classified != str(exc):
+        return _flat(classified)
+    return _flat(exc) + " -- fix: " + generic_fix
+
+
 def _declare_one(source, unit, label, issue):
     row = {"issue": issue, "attached": False, "state": None, "unit": None,
            "outcome": None, "why": None}
     try:
         row["attached"] = bool(source.attach_label(issue, label))
     except Exception as exc:              # noqa: BLE001 - one issue's failure is one issue's
-        row["outcome"], row["why"] = FAILED, _flat(exc)
+        row["outcome"], row["why"] = FAILED, _row_why(exc, (
+            "if the label does not exist, create it by hand (`gh label create %s`; Sigma never creates "
+            "the first label of a unit), then re-run define.py declare for this issue" % label))
         return row
     try:
         verdict = features.read(source.fetch_body_labels(issue))
     except features.AmbiguousUnit as exc:
-        row["outcome"], row["why"] = AMBIGUOUS, _flat(exc)
+        row["outcome"], row["why"] = AMBIGUOUS, _flat(exc) + (
+            " -- fix: edit the issue so its body marker and label name one unit, then re-run "
+            "define.py declare")
         return row
-    except Exception as exc:              # noqa: BLE001 - a read we could not make is evidence of
-        row["outcome"], row["why"] = UNREADABLE, _flat(exc)   # nothing, and must not stop the rest
+    except Exception as exc:              # noqa: BLE001 - a read we could not make is evidence of nothing, and must not stop the rest
+        row["outcome"], row["why"] = UNREADABLE, _row_why(exc, (
+            "re-run define.py declare for this issue once gh can read it (`gh auth status`)"))
         return row
     row["state"], row["unit"] = verdict.state, verdict.unit
     if verdict.state != features.AGREE:
         row["outcome"] = NOT_DECLARED
+        row["why"] = ("the issue does not declare the unit on both halves (state %s) -- fix: put "
+                      "`Feature: %s` on its own line in the issue body and make sure it carries the "
+                      "label %s, then re-run define.py declare" % (verdict.state, unit, label))
     elif verdict.unit != unit:
         row["outcome"] = CASE_DRIFT
         row["why"] = ("the body declares %r where the unit was opened as %r -- one unit, two "

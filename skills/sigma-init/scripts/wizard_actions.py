@@ -32,6 +32,11 @@ def _real_run(cmd):
     return subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
 
+_PIP_FIX = ("run `python3 -m pip install graphifyy` yourself to see pip's own output (check python3 and "
+            "pip are installed and the network is up), then re-run /sigma-doctor; graphify is optional, "
+            "so nothing else is waiting on it")
+
+
 def run_graphify_install(run=None):
     """`python3 -m pip install graphifyy` with consent already given by the caller -- this function
     performs the install, it does not ask. PEP 668 (externally-managed environments:
@@ -51,7 +56,7 @@ def run_graphify_install(run=None):
     try:
         result = run(["python3", "-m", "pip", "install", "graphifyy"])
     except Exception as exc:                # noqa: BLE001 - report, never crash the wizard
-        return {"ok": False, "detail": f"could not run pip: {exc}"}
+        return {"ok": False, "detail": f"could not run pip: {exc} -- fix: " + _PIP_FIX}
     if result.returncode == 0:
         return {"ok": True, "detail": "graphifyy installed"}
     stderr = result.stderr or ""
@@ -61,4 +66,5 @@ def run_graphify_install(run=None):
             "Python -- common on Debian/Ubuntu/Homebrew). Either add --break-system-packages "
             "to the pip command, or install inside a virtual environment instead."
         )}
-    return {"ok": False, "detail": stderr.strip() or "pip install failed with no output"}
+    return {"ok": False, "detail": (stderr.strip() or "pip install failed with no output")
+            + " -- fix: " + _PIP_FIX}

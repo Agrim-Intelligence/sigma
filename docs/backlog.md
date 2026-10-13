@@ -16,6 +16,9 @@ Goals are markdown files under `.sdlc/goals/NNNN-slug.md`; the loop advances eac
 - **Commit** `.sdlc/goals/`, `.sdlc/project.md`, `.sdlc/config.json`; **gitignore** `.sdlc/state/`
   (machine-written loop state — `/sigma-init` prints this tip).
 - **Parked** goals collect in `.sdlc/state/review-queue.md` — your "needs a human" list.
+  To resume one, edit its file under `.sdlc/goals/`: change `status: parked` to `status: pending` and the next
+  pick offers it again (measured). There is no `/sigma-unpark` for local goals, and nothing removes the goal's
+  entry from `review-queue.md`: delete it by hand once the question it records is answered.
 
 Everything stays in your repo; nothing leaves your machine. This is the zero-dependency path.
 
