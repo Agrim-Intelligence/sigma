@@ -2,7 +2,7 @@
 """Recorded dead-vs-idle control for the ledger watcher (D5, #265).
 
 Usage:
-    dead_vs_idle.py --workdir DIR --json OUT [--break]
+    dead_vs_idle.py --workdir DIR --json OUT [--break | --break-hook]
 
 Starts the REAL ``watch_daemon.py`` in a scratch repository, then stops it with a signal sent to that
 exact pid (``Popen.pid``; never a pattern kill, never SIGSTOP) and asks the two real readers -- the
@@ -11,7 +11,10 @@ doctor's ``_ledger_watcher_state`` and ``hooks/session_start.sh`` -- what they s
 Legs: (A) alive and between ticks, (B) SIGTERM, (C) SIGKILL of a second daemon, read immediately and
 again once its heartbeat is older than ``stale_after`` (a real wait of ~190 s).  ``--break`` replaces
 the doctor's age rule with "never stale" (an existence-style check) and the same assertions must go
-red (exit 1).  Interval 60 s -> stale_after = max(3 x 60, 180) = 180 s.
+red (exit 1).  ``--break-hook`` is the same control for the OTHER copy of the rule: it runs a scratch copy
+of ``hooks/session_start.sh`` whose own ``age >= stale_after`` comparison is replaced by "never stale",
+leaving the doctor untouched, so only the session-start stale check (``C1_session_start_warns``) may go red.
+Interval 60 s -> stale_after = max(3 x 60, 180) = 180 s.
 """
 from __future__ import annotations
 
@@ -84,10 +87,38 @@ class Watcher:
             self.proc.wait(timeout=20)
 
 
-def observe(repo, doctor, broken):
+HOOK_AGE_CLAUSE = '    if age >= stale_after:\n        reason = "looks stale"'
+HOOK_AGE_CLAUSE_BROKEN = '    if age >= 10 ** 12:\n        reason = "looks stale"'
+
+
+def broken_hook(workdir):
+    """A scratch plugin root whose hooks/session_start.sh has ONLY its own age comparison removed.
+
+    The hook finds its siblings from its own location (PLUGIN_ROOT = dirname of its dir), so the scratch
+    root symlinks every other top-level entry of the real checkout.  The mutation must match exactly once:
+    a mutant that changes nothing would leave every check green and prove nothing.
+    """
+    root = workdir / "broken_plugin"
+    (root / "hooks").mkdir(parents=True)
+    for entry in ROOT.iterdir():
+        if entry.name != "hooks" and not entry.name.startswith(".git"):
+            (root / entry.name).symlink_to(entry)
+    for entry in (ROOT / "hooks").iterdir():
+        (root / "hooks" / entry.name).symlink_to(entry)
+    real = ROOT / "hooks" / "session_start.sh"
+    text = real.read_text()
+    if text.count(HOOK_AGE_CLAUSE) != 1:
+        raise RuntimeError("hook age clause not found exactly once; the mutation would be a no-op")
+    target = root / "hooks" / "session_start.sh"
+    target.unlink()
+    target.write_text(text.replace(HOOK_AGE_CLAUSE, HOOK_AGE_CLAUSE_BROKEN))
+    return target
+
+
+def observe(repo, doctor, broken, hook=None):
     state = repo / ".sdlc" / "state"
     cfg = json.loads((repo / ".sdlc" / "config.json").read_text())
-    if broken:
+    if broken == "doctor":
         real_load = doctor._load_loop_script
 
         def load(name):                       # doctor re-loads sync on every call, so patch the loader
@@ -99,7 +130,7 @@ def observe(repo, doctor, broken):
     row = doctor._ledger_watcher_state(repo / ".sdlc", cfg)
     env = {k: v for k, v in os.environ.items() if k != "SIGMA_RUN_ID"}
     env["CLAUDE_PROJECT_DIR"] = str(repo)
-    hook = subprocess.run(["bash", str(ROOT / "hooks" / "session_start.sh")], input="{}", capture_output=True,
+    hook = subprocess.run(["bash", str(hook or ROOT / "hooks" / "session_start.sh")], input="{}", capture_output=True,
                           text=True, env=env, timeout=60).stdout.strip()
     ctx = json.loads(hook)["hookSpecificOutput"]["additionalContext"] if hook else ""
     pid_text = (state / "watch.pid").read_text().strip() if (state / "watch.pid").exists() else None
@@ -114,6 +145,7 @@ def observe(repo, doctor, broken):
 
 
 def run(workdir, broken):
+    """``broken`` is None, "doctor" (age clause of the doctor) or "hook" (age clause of session_start.sh)."""
     repo = workdir / "repo"
     (repo / ".sdlc").mkdir(parents=True)
     (repo / ".sdlc" / "config.json").write_text(json.dumps({"ledger": {"enabled": True, "watch": {"interval_seconds": INTERVAL}}}))
@@ -125,11 +157,12 @@ def run(workdir, broken):
     doctor = _doctor()
     global STALE_AFTER
     STALE_AFTER = doctor._load_loop_script("sync").stale_after_seconds(INTERVAL)
+    hook = broken_hook(workdir) if broken == "hook" else None
     log = open(workdir / "daemon.log", "ab")
     stages, checks = [], []
 
     def stage(name, **extra):
-        o = observe(repo, doctor, broken)
+        o = observe(repo, doctor, broken, hook)
         o.update(name=name, **extra)
         stages.append(o)
         return o
@@ -172,7 +205,8 @@ def run(workdir, broken):
         log.close()
     return {
         "schema": SCHEMA,
-        "broken": broken,
+        "broken": bool(broken),
+        "break": broken,
         "platform": sys.platform,
         "interval_seconds": INTERVAL,
         "stale_after_seconds": STALE_AFTER,
@@ -186,7 +220,11 @@ def main(argv):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--workdir", type=Path, required=True)
     ap.add_argument("--json", type=Path, required=True)
-    ap.add_argument("--break", dest="broken", action="store_true")
+    grp = ap.add_mutually_exclusive_group()
+    grp.add_argument("--break", dest="broken", action="store_const", const="doctor",
+                     help="remove the doctor's age clause")
+    grp.add_argument("--break-hook", dest="broken", action="store_const", const="hook",
+                     help="remove session_start.sh's own copy of the age clause")
     args = ap.parse_args(argv[1:])
     if args.workdir.exists() and any(args.workdir.iterdir()):
         print("dead_vs_idle: workdir exists and is not empty", file=sys.stderr)

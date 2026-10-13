@@ -3570,6 +3570,22 @@
     },
     {
       "path": "tools/readiness/dead_vs_idle.py",
+      "function": "broken_hook",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "only with --break-hook; unlinks the symlink it just made to the one hook file inside the empty scratch workdir, never the real hook",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/dead_vs_idle.py",
+      "function": "broken_hook",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "only with --break-hook; writes one mutated copy of the hook and symlinks into the empty scratch workdir it is given, never the real hook",
+      "risk": "medium"
+    },
+    {
+      "path": "tools/readiness/dead_vs_idle.py",
       "function": "main",
       "rule": "fs-write",
       "count": 3,
