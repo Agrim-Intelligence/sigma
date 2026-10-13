@@ -22,7 +22,9 @@ def _bindir(tmp_path, name, python3="real"):
     interpreter; 'broken' installs a shim that exits non-zero; None leaves it absent."""
     d = tmp_path / name
     d.mkdir()
-    (d / "bash").symlink_to(shutil.which("bash"))
+    # /bin/bash first: on macOS that is the 3.2.57 the host's `bash hooks/_py.sh` really gets, and the
+    # place the quadratic stdin read bites; a Homebrew bash 5 would hide it.
+    (d / "bash").symlink_to("/bin/bash" if os.path.exists("/bin/bash") else shutil.which("bash"))
     (d / "mkdir").symlink_to(shutil.which("mkdir"))      # the only external the notice marker needs
     if python3 == "real":
         (d / "python3").symlink_to(REAL_PY)
@@ -33,9 +35,29 @@ def _bindir(tmp_path, name, python3="real"):
     return str(d)
 
 
+def _group_run(cmd, stdin="", timeout=20, **kw):
+    """subprocess.run that cannot hang the suite: the child gets its OWN process group and on timeout the
+    WHOLE group is SIGKILLed before the pipes are drained (`subprocess.run(timeout=)` kills only the direct
+    child, and a surviving grandchild keeps the pipes open so the suite hangs instead of failing)."""
+    import signal
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            text=True, start_new_session=True, **kw)
+    try:
+        out, err = proc.communicate(stdin, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.communicate()
+        raise
+    finally:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)       # leave no straggler behind a passing run either
+        except ProcessLookupError:
+            pass
+    return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+
+
 def _run(cmd, pathdir, stdin="", **env_extra):
-    return subprocess.run(cmd, capture_output=True, text=True, input=stdin,
-                          env={"PATH": pathdir, **env_extra})
+    return _group_run(cmd, stdin, env={"PATH": pathdir, **env_extra})
 
 
 # ------------------------------------------------------------------ _py.sh
@@ -105,8 +127,7 @@ def _host_run(tmp_path, command, pathdir, adopted=True, name="proj", stdin="{}",
     env = {"PATH": pathdir, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parent), "TMPDIR": str(tmpdir)}
     env.update(env_extra or {})
     # timeout: a regression that hangs must FAIL (TimeoutExpired), never hang the suite (#1282 review)
-    return subprocess.run(shell or ["bash", "-c", command], capture_output=True, text=True,
-                          cwd=cwd or proj, input=stdin, env=env, timeout=20)
+    return _group_run(shell or ["bash", "-c", command], stdin, cwd=cwd or proj, env=env)
 
 
 def test_there_are_python_backed_hooks_to_cover():
@@ -290,3 +311,39 @@ def test_a_slashed_session_id_cannot_place_a_marker_outside_the_marker_dir(tmp_p
                   stdin='{"session_id": "foo/bar"}')
     assert _noticed(r)
     assert list((d / "py-notice-sfoo").iterdir()) == []      # the unsanitised key would have landed here
+
+
+def test_a_huge_stdin_payload_is_read_in_bounded_time(tmp_path):
+    """The session_id probe once read ALL of stdin with `read -d ''`, which is quadratic on bash 3.2 (300 KB
+    = 33 s, 5 MB = minutes): a fail-open hook freezing a tool call. It now reads a 4 KB prefix."""
+    import time
+    big = '{"session_id": "big-1", "tool_response": "' + "x" * (5 * 1024 * 1024) + '"}'
+    t = time.time()
+    r = _host_run(tmp_path, _decision_cmd(), _bindir(tmp_path, "b", "broken"), stdin=big)
+    assert _noticed(r) and time.time() - t < 10
+    # and the session_id inside the prefix was still honoured
+    assert (_markers(tmp_path, "proj") / "py-notice-sbig-1-decision_gate.py").is_dir()
+
+
+def test_a_never_closing_stdin_does_not_wedge_the_hook(tmp_path):
+    import signal
+    import time
+    bindir = _bindir(tmp_path, "b", "broken")
+    proj = tmp_path / "proj"
+    (proj / ".sdlc").mkdir(parents=True)
+    (proj / ".sdlc" / "config.json").write_text("{}")
+    (tmp_path / "t").mkdir()
+    env = {"PATH": bindir, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parent), "TMPDIR": str(tmp_path / "t")}
+    p = subprocess.Popen(["bash", "-c", _decision_cmd()], cwd=proj, env=env, stdin=subprocess.PIPE,
+                         stdout=subprocess.PIPE, text=True, start_new_session=True)
+    t = time.time()
+    try:
+        p.stdin.write('{"session_id": "open-1"')       # never closed, never finished
+        p.stdin.flush()
+        out = p.stdout.read()
+        assert p.wait(timeout=10) == 0 and "systemMessage" in out and time.time() - t < 10
+    finally:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass

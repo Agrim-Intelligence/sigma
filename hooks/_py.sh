@@ -58,7 +58,7 @@ esac
 # Session key: stdin `session_id` if it is a short safe token, else the parent pid.
 key="p$PPID"
 input=
-IFS= read -r -d '' -t 1 input 2>/dev/null
+IFS= read -r -n 4096 -d '' -t 1 input 2>/dev/null   # BOUNDED prefix: an unbounded read is quadratic on bash 3.2
 case "$input" in
   *'"session_id"'*)
     rest=${input#*\"session_id\"}
