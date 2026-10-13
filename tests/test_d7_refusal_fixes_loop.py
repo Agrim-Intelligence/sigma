@@ -29,7 +29,10 @@ def test_unverified_flake_says_why_it_blocks_done_and_how_to_clear_it(monkeypatc
         assert lp.verify_goal(base, "42") == 5
         err = capsys.readouterr().err
     assert "UNVERIFIED exit=5 -- runs disagreed on: tests/test_x.py::test_y" in err
-    assert "not deterministic" in err and f"`loop.py verify {base} 42`" in err
+    assert "the suite passed but is not deterministic: fix or remove the listed test(s)" in err
+    assert f"`loop.py verify {base} 42`" in err
+    # exit 5 does not block `record done` (evidence is still written pass/exit 0): never claim it does
+    assert "stays blocked" not in err and "earns no credit" not in err
 
 
 def test_failed_verify_points_at_the_evidence_tail_on_stderr_and_keeps_stdout(monkeypatch, capsys):

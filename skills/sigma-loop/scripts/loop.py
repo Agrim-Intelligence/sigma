@@ -5395,8 +5395,8 @@ def verify_goal(sdlc_dir, goal):
         # #1933: the suite PASSED but is not deterministic, so it has not earned a credit. Exit 5 --
         # its own code, not 1, which means "the tests failed" and would misreport what happened.
         print(f"UNVERIFIED exit=5 -- {flake['disagreement']} evidence={ev}; the suite passed but is "
-              "not deterministic, so it earns no credit and `record done` stays blocked. Fix or remove "
-              f"the listed test(s), then re-run `loop.py verify {sdlc_dir} {goal}`", file=sys.stderr)
+              "not deterministic: fix or remove the listed test(s), then re-run "
+              f"`loop.py verify {sdlc_dir} {goal}`", file=sys.stderr)
         return 5
     print(f"{'VERIFIED' if proc.returncode == 0 else 'FAILED'} exit={proc.returncode} evidence={ev}")
     if proc.returncode != 0:
