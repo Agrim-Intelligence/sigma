@@ -29,6 +29,7 @@ All notable changes to Sigma are recorded here, newest first.
 - **`define.py open` commits the unit record; doctor flags records other machines cannot see (#1312).** Open writes the unit's record when it has none, then commits just that path on the current branch (never a push); if it cannot write or commit, it prints the exact command. A new doctor row warns on an untracked record or a remote `feature/*` branch with no record, and appears only where `.sdlc/features/` exists.
 - **A park whose label write fails no longer exits 0 and leaves the issue pickable (#1303).** `loop.py record <N> parked` now falls back to REST label writes when the GraphQL swap fails, and exits non-zero with one clear message if the label still cannot be applied; other transitions are unchanged.
 - **Unpark records a decision only for a gesture that landed (#1304).** A failed label write no longer writes the decision record, and `keep-parked` or `unpark` on an issue that is not parked is refused with nothing recorded.
+- **A verb about one issue no longer back-fills the whole board (#1305).** It cards only its own issue; the watcher tick back-fills up to `project.backfill_cap` (default 20) cards per tick and skips when GraphQL remaining is under `project.backfill_min_graphql` (default 1000).
 
 ## 1.0.12 — 2026-10-13 — rulebook categories file, cold-start visibility, past-decision import, upkeep trigger and session report, drift judge in shadow, hard-stop net, and the confirmation-queue migration
 
