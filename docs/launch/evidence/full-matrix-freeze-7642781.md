@@ -33,11 +33,15 @@ were `test_overrun_stops_the_whole_group` and `test_term_comes_before_kill` (bot
 
 ## What was and was not fixed
 
-- `test_term_comes_before_kill` (issue 1242): the cause was reproduced deterministically (an unreaped zombie kept a stopped
-  process group looking alive) and fixed in the merged `bounded_run.py` change. It was never caught live on a runner, so it is
-  not shown that this mechanism is what failed there. Issue 1242 stays open until the nightly is green over several runs.
-- The other two tests that failed on 2026-10-11 (`test_overrun_stops_the_whole_group` and the peak-memory flood test) have not
-  been triaged. `measured-results.md` says whether those failures were fixed, flaky or environmental was not investigated.
+- The three 2026-10-11 failures and the 2026-10-12 failure are triaged in `d1-nightly-failure-triage-3a303bee2cea.md`.
+  `test_term_comes_before_kill` and `test_overrun_stops_the_whole_group` failed because the tests' injected clock was
+  read before the deadline was computed (a far-future deadline); reproduced with the order forced, fixed by #1153.
+  `test_split_mode_peak_memory_under_a_flood_is_bounded` read a peak inherited from the pytest worker's own high-water
+  mark; reproduced with a 900 MiB direct parent, fixed by reading `VmHWM` (#1153). The 2026-10-12 `test_invocation`
+  failure on Python 3.10 and 3.11 was fixed by #1213 and was not reproduced in that triage.
+- Issue 1242 stays open. The unreaped-zombie mechanism (reproduced deterministically, change #1273) is a second, separate
+  mechanism that can fail `test_term_comes_before_kill`; the 2026-10-11 logs show the clock race, not the zombie. The natural
+  trigger on a runner was never reproduced, so it is not shown which mechanism produced any given red run.
 - Two green runs after fixes are evidence, not proof. The flake census (`flake-c82e3dfa7420.json`) is older than all of this and
   was not re-run.
 
