@@ -93,4 +93,102 @@ def test_add_assignees_unassignable_user_says_what_to_do():
         api.add_assignees(run, 5, ["someone"], "OWNER/NAME", env={})
     s = str(ei.value)
     assert s.startswith("GitHub did not assign @someone to #5 (not assignable, or not a collaborator)")
-    assert "discovery.github.assignee" in s and "collaborator" in s.split("fix:")[-1]
+    fix = s.split("fix:")[-1]
+    assert "discovery.github.assignee" not in s          # callers pass an arbitrary user: not the lever
+    assert "collaborator" in fix and "assignable" in fix
+
+
+# ---------------------------------------------------------------- review of #1351
+
+def _two_faced(rest_text, fallback_text):
+    def run(args):
+        text = rest_text if args and args[0] == "api" else fallback_text
+        exc = RuntimeError("gh failed: " + text)
+        exc.hint = text
+        raise exc
+    return run
+
+
+def test_a_fix_colon_title_in_argv_does_not_hide_the_remedy_and_nothing_doubles():
+    api = _mod("gh_api")
+    with pytest.raises(api.GhApiError) as ei:
+        api.comment_issue(_raiser(BAD), 5, "fix: crash", "OWNER/NAME", env={})
+    e = ei.value
+    s = str(e)
+    assert "fix: crash" in s and "run `gh auth login`" in s
+    assert s.count("run `gh auth login`") == 1
+    assert api.with_remedy(e).count("run `gh auth login`") == 1          # re-wrapping does not double
+    assert api.with_remedy(e, str(e)).count("run `gh auth login`") == 1
+
+
+def test_an_error_with_no_gh_stderr_gets_no_remedy_even_if_argv_has_a_marker_word():
+    """The class of a hint-less error comes from str(exc), which embeds argv: never print a fix for it."""
+    api = _mod("gh_api")
+
+    def run(args):
+        raise RuntimeError("unknown label(s) on this repo: sdlc:timeout")
+    with pytest.raises(api.GhApiError) as ei:
+        api.add_labels(run, 5, ["sdlc:timeout"], "OWNER/NAME", env={})
+    assert "fix: " not in str(ei.value)
+
+
+def test_a_permission_403_does_not_trip_the_board_scope_note(capsys):
+    """The permission fix used to contain the words _note_scope matches on."""
+    src = _mod("sources")
+    api = _mod("gh_api")
+    gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "OWNER/NAME"}}}, run=lambda a: "")
+    with pytest.raises(api.GhApiError) as ei:
+        api.add_labels(_raiser("gh: Resource not accessible by integration (HTTP 403)"), 5, ["x"], "OWNER/NAME", env={})
+    assert gh._note_scope(ei.value) is False
+    assert "board updates OFF" not in capsys.readouterr().err
+    assert gh._note_scope(RuntimeError("missing required scopes [project]")) is True
+
+
+def test_no_marker_a_caller_scans_error_text_for_appears_in_any_remedy():
+    """Callers match markers in the error text (sources._TRANSIENT, cross_repo, promote, the board scope
+    note, the proxy-block markers): none of them may be satisfied by a remedy line alone."""
+    sess = _mod("gh_session")
+    src = _mod("sources")
+    xr = _mod("cross_repo")
+    pr = _mod("promote")
+    markers = set(src.GitHubSource._TRANSIENT) | set(pr._RATE_LIMIT_MARKERS) | set(sess._SESSION_BLOCK_MARKERS)
+    markers |= set(sess._GRAPHQL_UNAVAILABLE_MARKERS)
+    for name in dir(xr):
+        if name.endswith("_MARKERS") and isinstance(getattr(xr, name), tuple):
+            markers |= set(getattr(xr, name))
+    markers |= {"project", "scope", "rate limit", "abuse"}   # "auth refresh" only counts with "project"
+    for kind, fix in sess.REMEDIES.items():
+        low = fix.lower()
+        hit = sorted(m for m in markers if m in low)
+        assert not hit, (kind, hit)
+
+
+@pytest.mark.parametrize("call", [
+    lambda api, run: api.read_issue(run, 5, ["title"], "OWNER/NAME", gql_run=run, env={}),
+    lambda api, run: api.list_issues_gh(run, ["title"], repo="OWNER/NAME", gql_run=run, env={}),
+    lambda api, run: api.view_pr_gh(run, 5, ["title"], "OWNER/NAME", gql_run=run, env={}),
+    lambda api, run: api.open_pr_for_branch_gh(run, "br", ["number"], "OWNER/NAME", gql_run=run, env={}),
+    lambda api, run: api.open_prs_for_head_gh(run, "br", 5, "OWNER/NAME", gql_run=run, env={}),
+], ids=["read_issue", "list_issues_gh", "view_pr_gh", "open_pr_for_branch_gh", "open_prs_for_head_gh"])
+def test_every_fallback_failure_quotes_gh_text_and_ends_with_one_fix(call):
+    api = _mod("gh_api")
+    run = _two_faced("gh: Bad Gateway (HTTP 502)", "gh: Bad Gateway (HTTP 502)")
+    with pytest.raises(api.GhApiError) as ei:
+        call(api, run)
+    s = str(ei.value)
+    assert "also failed" in s, s
+    assert s.count("fix: ") == 1 and s.index("also failed") < s.index("fix: ")
+
+
+def test_note_scope_and_is_transient_read_gh_text_not_the_appended_fix(monkeypatch):
+    """Second layer: even if a fix line DID contain marker words, the scans read the plain text."""
+    src = _mod("sources")
+    api = _mod("gh_api")
+    sess = _mod("gh_session")
+    api = src.gh_api                       # the very module sources.py uses (isinstance must match)
+    monkeypatch.setitem(api.gh_session.REMEDIES, "permission", "fix: project scope, try again, timeout, rate limit")
+    gh = src.GitHubSource({"discovery": {"source": "github", "github": {"repo": "OWNER/NAME"}}}, run=lambda a: "")
+    e = api.GhApiError("gh api x failed: gh: nope (HTTP 403)", "gh: nope (HTTP 403)", 403, "permission")
+    assert "project scope" in str(e)
+    assert gh._note_scope(e) is False
+    assert gh._is_transient(e) is False

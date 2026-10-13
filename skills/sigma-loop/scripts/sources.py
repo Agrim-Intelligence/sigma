@@ -1323,7 +1323,7 @@ class GitHubSource:
 
     @classmethod
     def _is_transient(cls, exc):
-        msg = str(exc).lower()
+        msg = gh_api._plain(exc).lower()
         return any(m in msg for m in cls._TRANSIENT)
 
     def _repo_args(self):
@@ -4112,7 +4112,7 @@ class GitHubSource:
         `_note_board_write_failed` (#1733) knows whether to fall back to a generic report instead.
         The other 8 call sites of this method predate that return value and all ignore it, exactly
         as before -- adding it changes nothing for them."""
-        msg = str(exc).lower()
+        msg = gh_api._plain(exc).lower()          # never the appended fix line
         if "project" in msg and ("scope" in msg or "auth refresh" in msg or "required scopes" in msg):
             if not self._scope_warned:
                 self._scope_warned = True
