@@ -56,8 +56,8 @@ class _Out(dict):
     why = ""
 
 
-def _run(project_dir):
-    p = subprocess.run(["bash", str(SCRIPT)], capture_output=True, text=True,
+def _run(project_dir, *args):
+    p = subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True,
                        env={**os.environ, "CLAUDE_PROJECT_DIR": str(project_dir)})
     views = []
     for args in (("status", "--porcelain=v1", "--untracked-files=all"),
@@ -424,3 +424,117 @@ def test_review_and_research_skills_wire_the_detector():
         assert skill_ref in review, "sigma-review must surface %s" % skill_ref
     # research anticipates the same risks so the plan budgets for them
     assert "risk-detect" in research and "/sigma-security-review" in research
+
+
+# --- --base <ref>: a COMMITTED branch gets a real answer (D2 gap, review-s5 rerun) ------------------
+
+def _commit(repo, msg):
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "-c", "commit.gpgsign=false",
+         "commit", "-q", "-m", msg)
+
+
+def _committed_branch(tmp_path):
+    """Base commit on main, then a feature commit carrying a path-only risk (migration) and a
+    content-only risk (a secret-shaped line in notes.txt). Working tree is clean afterwards."""
+    repo = _repo(tmp_path)
+    (repo / "README.txt").write_text("base\n")
+    _commit(repo, "base")
+    _git(repo, "branch", "-M", "main")
+    _git(repo, "checkout", "-q", "-b", "feature")
+    (repo / "db").mkdir()
+    (repo / "db" / "001_migration.sql").write_text("select 1;\n")
+    (repo / "notes.txt").write_text('api_key = "TR' 'IGGER9SECRETVALUE"\n')
+    _commit(repo, "risky")
+    assert _git(repo, "status", "--porcelain").strip() == ""
+    return repo
+
+
+def test_default_mode_is_blind_to_a_committed_branch(tmp_path):
+    # documents the gap --base closes; the default invocation stays unchanged
+    out = _run(_committed_branch(tmp_path))
+    assert out["matched"] == [], out.why
+
+
+def test_base_mode_sees_a_committed_branch(tmp_path):
+    out = _run(_committed_branch(tmp_path), "--base", "main")
+    assert set(out["matched"]) == {"migration", "sensitive"}, out.why
+    files = {(h["category"], h["file"]) for h in out["hits"]}
+    assert ("migration", "db/001_migration.sql") in files, out.why   # name scan
+    assert ("sensitive", "notes.txt") in files, out.why              # content scan
+    assert "TR" "IGGER9SECRETVALUE" not in json.dumps(out), out.why  # still location-only
+
+
+def test_base_mode_still_includes_the_working_tree(tmp_path):
+    repo = _committed_branch(tmp_path)
+    (repo / "src").mkdir()
+    (repo / "src" / "routes.js").write_text('app.post("/pay", handler)\n')
+    out = _run(repo, "--base", "main")
+    assert set(out["matched"]) == {"migration", "sensitive", "contract"}, out.why
+
+
+def test_base_uses_merge_base_not_the_base_tip(tmp_path):
+    # a risky commit that landed on main AFTER the branch point is not this branch's change
+    repo = _committed_branch(tmp_path)
+    _git(repo, "checkout", "-q", "main")
+    (repo / "billing.py").write_text("x = 1\n")
+    _commit(repo, "main moves on")
+    _git(repo, "checkout", "-q", "feature")
+    out = _run(repo, "--base", "main")
+    assert set(out["matched"]) == {"migration", "sensitive"}, out.why
+    assert all(h["file"] != "billing.py" for h in out["hits"]), out.why
+
+
+def test_base_equals_form_is_accepted(tmp_path):
+    assert "migration" in _run(_committed_branch(tmp_path), "--base=main")["matched"]
+
+
+def test_base_mode_unknown_ref_is_fail_open_but_loud(tmp_path):
+    repo = _committed_branch(tmp_path)
+    p = subprocess.run(["bash", str(SCRIPT), "--base", "no-such-ref"], capture_output=True, text=True,
+                       env={**os.environ, "CLAUDE_PROJECT_DIR": str(repo)})
+    assert p.returncode == 0 and json.loads(p.stdout)["schema"] == "risk-detect/v1", p
+    assert "no-such-ref" in p.stderr and "NOT a clearance" in p.stderr, \
+        "an unresolvable base must be named on stderr, not read as clean"
+
+
+def test_base_without_a_value_is_refused(tmp_path):
+    p = subprocess.run(["bash", str(SCRIPT), "--base"], capture_output=True, text=True,
+                       env={**os.environ, "CLAUDE_PROJECT_DIR": str(_repo(tmp_path))})
+    assert p.returncode == 2 and p.stdout == "" and "--base" in p.stderr, p
+
+
+def _raw(repo, *args):
+    return subprocess.run(["bash", str(SCRIPT), *args], capture_output=True, text=True,
+                          env={**os.environ, "CLAUDE_PROJECT_DIR": str(repo)})
+
+
+def test_base_with_an_empty_value_is_refused(tmp_path):
+    # an unset variable (`--base "$BASE"`) must not silently become an uncommitted-only scan
+    repo = _committed_branch(tmp_path)
+    for args in (("--base", ""), ("--base=",)):
+        p = _raw(repo, *args)
+        assert p.returncode == 2 and p.stdout == "" and "non-empty" in p.stderr, (args, p)
+
+
+def test_base_ref_with_unrelated_history_warns_not_silent(tmp_path):
+    # the merge-base clause: an orphan branch resolves as a commit but shares no history with HEAD
+    repo = _committed_branch(tmp_path)
+    _git(repo, "checkout", "-q", "--orphan", "island")
+    (repo / "other.txt").write_text("x\n")
+    _commit(repo, "unrelated root")
+    _git(repo, "checkout", "-q", "feature")
+    p = _raw(repo, "--base", "island")
+    assert p.returncode == 0 and json.loads(p.stdout)["schema"] == "risk-detect/v1", p
+    assert "NOT a clearance" in p.stderr, p.stderr
+
+
+def test_dash_ref_is_refused_before_any_git_call(tmp_path):
+    repo = _committed_branch(tmp_path)
+    p = _raw(repo, "--base", "--stat")
+    assert p.returncode == 2 and p.stdout == "" and "may not start with" in p.stderr, p
+
+
+def test_review_skill_names_the_base_flag():
+    review = (SCRIPT.parent.parent.parent / "sigma-review" / "SKILL.md").read_text(encoding="utf-8")
+    assert "risk-detect.sh" in review and "--base" in review

@@ -143,9 +143,9 @@ Two gates run alongside the axes:
   `/sigma-migration-check`, `contract` → `/sigma-contract-check`, `sensitive` → `/sigma-security-review`.
   The detector is a bash trigger (zero LLM cost); it names the risk, the skill judges it. A code-quality
   pass alone will not catch a broken public contract or an unsafe migration.
-  **An empty `matched` is NOT a clearance on a committed branch or PR**: it reads only uncommitted, staged
-  and untracked files. There, decide each category from `git diff --name-only <base>...HEAD` and run the
-  matching review; the verdict says which way.
+  **On a committed branch or PR add `--base <base-ref>`**: without it only uncommitted, staged and
+  untracked files are read, so an empty `matched` clears nothing. If stderr says the base failed,
+  decide each category from `git diff --name-only <base>...HEAD`. The verdict says which way.
 
 ## 3. Verdict + findings
 Open with **how this review was run** — `Reviewed by: dispatched subagent | fresh process (<host>) |
