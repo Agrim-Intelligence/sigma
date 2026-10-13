@@ -178,7 +178,10 @@ class GhApiError(Exception):
         rate_limit, transport, server). A malformed-reply or caller-contract error has no such kind
         and prints as it always did. `_plain` is the text WITHOUT the fix, for the places that quote
         one error inside another."""
-        return gh_session.with_remedy(Exception.__str__(self), self.kind)
+        text = Exception.__str__(self)
+        if not self.hint:                 # no gh stderr: the kind came from str(), which embeds argv
+            return text
+        return gh_session.with_remedy(text, self.kind)
 
 
 def _plain(exc):
@@ -1053,8 +1056,8 @@ def add_assignees(run, number, assignees, repo=None, *, fallback_run=None, env=N
         missing = [n for n in logins if n.lower() not in got]
         if missing:
             raise GhApiError("GitHub did not assign %s to #%d (not assignable, or not a collaborator)"
-                             " -- fix: add them as a collaborator on the repository, or change "
-                             "discovery.github.assignee in .sdlc/config.json to a user who is one"
+                             " -- fix: the user must be a collaborator on the repository (or a member of "
+                             "its organisation) and assignable there: add them, or assign someone who is"
                              % (", ".join("@" + m for m in missing), number), kind="invalid")
         return resp
 
