@@ -286,3 +286,132 @@ GitHub state could settle was confirmed, corrected or restated as a dated figure
 The bar can be read as met only "for claims checkable from the repository and GitHub", with the remaining claims
 unverifiable by nature (a host CLI, a live model session, a deleted or private object, a one-off measurement). Whether that
 reading satisfies the threshold is left to the owner.
+
+## Third pass (2026-10-14)
+
+Goal: for every claim still listed UNVERIFIABLE, decide whether it can be settled now with what exists on this machine.
+Docs and two skill files only. No model call was made, no network write, and no GraphQL. `OWNER/NAME` is this repository.
+
+### What exists here, and how it was used
+
+| Tool | On this machine | Use |
+|------|-----------------|-----|
+| `claude` | on PATH | `--help`, `plugin ... --help`, and local `plugin` verbs run with `CLAUDE_CONFIG_DIR` pointed at a scratch directory under the session's scratchpad, from a scratch project directory. The marketplaces added were this checkout and a two-plugin fixture, both by directory path, so nothing was fetched. The real profile was not written: its marketplace record and settings file hold no reference to the scratch paths |
+| `graphify` | on PATH (installed as a `uv` tool; the sweep recorded it as not installed) | `graphify --help`, one `graphify --mcp` call in an empty scratch directory (it only printed an error), and a read of the installed package source. No build, no extraction, no backend key |
+| `gh` | on PATH | no new read was needed: every claim a REST GET could answer was settled in the second pass |
+| `codex` | NOT installed: not on PATH, and not at the ChatGPT app-bundle path `tools/onboarding_control.py` looks in | tool not installed here; every Codex claim stays as it was |
+
+Real help text, quoted from `claude plugin --help` and its verbs (read-only, 2026-10-14):
+
+```
+Commands:
+  disable [options] [plugin]           Disable an enabled plugin
+  enable [options] <plugin>            Enable a disabled plugin
+  install|i [options] <plugin>         Install a plugin from available
+                                       marketplaces (use plugin@marketplace for
+                                       specific marketplace)
+  list [options]                       List installed plugins
+  marketplace                          Manage Claude Code marketplaces
+  uninstall|remove [options] <plugin>  Uninstall an installed plugin
+  update [options] <plugin>            Update a plugin to the latest version
+                                       (restart required to apply)
+
+install:  -s, --scope <scope>  Installation scope: user, project, or local
+                               (default: "user")
+disable:  -s, --scope <scope>  Installation scope: user, project, local (default:
+                               auto-detect)
+list:     --json               Output as JSON
+marketplace:
+  add [options] <source>      Add a marketplace from a URL, path, or GitHub repo
+  remove|rm [options] <name>  Remove a configured marketplace
+  update [options] [name]     Update marketplace(s) from their source - updates
+                              all if no name specified
+```
+
+and from `claude --help` (the flags `docs/running-unattended.md` lists as unprobed):
+
+```
+--max-budget-usd <amount>   Maximum dollar amount to spend on API calls (only works with --print)
+--permission-mode <mode>    Permission mode to use for the session (choices: "acceptEdits", "auto",
+                            "bypassPermissions", "manual", "dontAsk", "plan")
+--plugin-dir <path>         Load a plugin from a directory or .zip for this session only; ...
+--settings <file-or-json>   Path to a settings JSON file or a JSON string to load additional settings from
+--setting-sources <sources> Comma-separated list of setting sources to load (user, project, local).
+--allowedTools, --allowed-tools <tools...>      --disallowedTools, --disallowed-tools <tools...>
+--tools <tools...>   --strict-mcp-config   --no-session-persistence   --add-dir <directories...>
+--bare   --append-system-prompt <prompt>   -p, --print   --output-format <format>   --model <model>
+```
+
+### Disposition, claim group by claim group
+
+"Settled TRUE", "settled FALSE (fixed)" and "still unverifiable" are this pass's outcomes. The group names are those of the
+table above.
+
+| Group | Claim | Outcome and the evidence |
+|-------|-------|--------------------------|
+| `agent-rules-detail.md` | the host release resolves the bare plugin id | settled TRUE: `claude plugin update <name>` without `@marketplace` resolved and answered "already at the latest version" (and, against the fixture after its listing moved, "updated"). That older releases failed is history and stays untested |
+| `agent-rules-detail.md` | `marketplace update` does not upgrade an installed plugin; `install` on an installed plugin is a no-op | settled TRUE, both: against the fixture, after its listing moved ahead, `marketplace update` left the installed version where it was, `install` answered "already installed" and printed the `update` command to run, and only `update` moved it. Directory marketplace only; a GitHub-fetched marketplace was not tried |
+| `agent-rules-detail.md` | the live-board validator run of 2026-09-11 | still unverifiable: a live board and a model call |
+| `upgrading.md` | the `claude plugin` verbs of the pre-launch sequence on a marketplace shared with other plugins | settled TRUE for uninstall and marketplace removal, and the result added a fact to the page: `marketplace remove` also uninstalls every other plugin installed from that marketplace, so the page's "only if no other plugin comes from it" guard is load-bearing. Run against a stand-in fixture, not a real pre-launch install (stated in the page) |
+| `upgrading.md`, `sigma-doctor` | `disable --scope local` writes `"<id>": false` under `enabledPlugins` in the project's `.claude/settings.local.json` | settled TRUE: the file held exactly that entry; `enable --scope local` set it to true. Whether that entry wins over project and user settings at session load needs a session, so that clause stays unverified |
+| `sigma-doctor` | a project-scope install carries a `projectPath` and `uninstall --scope project` removes it | settled TRUE at the `plugin list --json` level (a second record with `scope` `project` and `projectPath`; gone after the uninstall). Shadowing at session load is not testable without a session |
+| `uninstall.md` | `claude plugin uninstall` leaves the plugin directory under the profile; `leftovers.py` reports two rows; `CLAUDE_CONFIG_DIR` is the profile | settled TRUE, three claims: after user-scope and project-scope uninstalls the cache directory stayed, `leftovers.py` printed exactly the cache directory and its child, and both lived under the scratch `CLAUDE_CONFIG_DIR`. Also found and added to the page: the marketplace declaration stays too |
+| `running-unattended.md` | the design flags are UNVERIFIED; the variable that moves the configuration directory | settled for existence, TRUE: all twelve flags, plus `-p`, `--output-format` and `--model`, are in `claude --help`. Settled TRUE: `CLAUDE_CONFIG_DIR` moved plugin installs, marketplace records and the settings file. Behaviour of the flags, and the transcript's place and shape, stay unverified (a model call). The launcher is code and was not changed |
+| host help text, `onboarding-control.md`, README | the verb grammar of `claude plugin` | settled TRUE: the pinned grammar in `tests/test_readme_first_run.py` was compared with the live help and `test_the_plugin_grammar_matches_the_cli_where_it_is_installed` ran for the claude parameter (it is skipped on CI) and passed. The Codex parameter skipped: tool not installed here |
+| `onboarding-control.md` | `claude plugin details` lists 42 skills and 5 hooks | settled: 5 hook events TRUE; the skill count is now 43, so the 42 is a dated figure. STALE as a current figure, fixed by adding the current reading beside the dated one |
+| `onboarding-control.md` | the dated install timings of 2026-09-29 and 2026-10-05 | still unverifiable as re-measurements; they stay dated historical figures (one-off past measurements) |
+| `branching-model.md` | the 4-call to 17-call count | settled TRUE: `tests/test_docs.py::test_section_6e_still_counts_the_whole_pick_and_not_just_the_part_that_was_cheap` drives `work.start()` with a recording runner and passed (one test of that file, run alone) |
+| `branching-model.md` | lost-goal counts, 40-of-40, incident file count, reflog patterns; the per-row transport and cost columns | still unverifiable: one-off past measurements, and the per-row trace was not redone |
+| `branching-model.md` | hosted-run results, branch-protection bypass behaviour, host refusal of `refs/` names | still unverifiable: observing a refusal needs a write to a hosted repository; a REST read cannot show it |
+| `threat-model.md` | the refusal rates for an unbroken run placed as a getenv default | settled TRUE: re-derived with `scrub.commit_secret_hits` on 2,000 draws per length with a fresh generator seeded 961 per length, one letter or digit at a time, key name `api_key`: 64.0, 74.2, 91.4, 96.8, 100, 100, 100 percent at 6, 8, 14, 20, 24, 32, 64. Exact match. (A key named `key` is never judged, which the page's wording does not say: the figure depends on the key name.) |
+| `threat-model.md` | the passphrase, symbol-value and 500-run figures; whether `watch_daemon.py:906` is "the watcher loop" | still unverifiable: the word list and the exact generators are not recorded; the second is a judgement |
+| `knowledge-graph.md`, `sigma-kg`, `sigma-context` | graphify installs with `pip install graphifyy` | settled TRUE: the installed distribution is named `graphifyy` (a `uv` tool environment) |
+| `knowledge-graph.md`, `sigma-kg` | the backend environment variables | settled TRUE: the package's own "no LLM backend configured" text names the same six (and Azure's), and its backend table reads those keys |
+| `knowledge-graph.md`, `sigma-kg` | graphify keeps a per-file cache and `extract <path> --out DIR` writes `DIR/graphify-out/` | settled TRUE: `graphify --help` ("default: <path>; writes <DIR>/graphify-out/") and the package's cache module |
+| `knowledge-graph.md`, `sigma-context` | "run `graphify --mcp`" | settled FALSE, fixed: `graphify --mcp` prints `unknown command '--mcp'`. The server is `python -m graphify.serve <graph.json>`, or the `/graphify <path> --mcp` skill flag. Pages corrected; `tests/test_packaging_slice4.py` only asserts the text `--mcp` is present, which it still is |
+| `knowledge-graph.md`, `sigma-kg` | "querying via graphify saves the answer back into the graph" | settled STALE, fixed: `graphify query` only prints; the saving is `graphify save-result` into `graphify-out/memory/`, which the `/graphify` skill's query flow calls and the next build reads |
+| `sigma-kg` | "graphify's cache keys on content, so a rename is not re-billed" | settled FALSE, fixed: the cache key is a hash of the content plus the path relative to the root, so a moved file is a new key and is re-billed once |
+| `codex-autonomy.md`, `platform-support.md`, `output-contract-detail.md`, `upgrading.md` | everything that needs the `codex` CLI: the Codex runs, the 2026-10-08 marketplace test, `codex plugin remove`, the host model mapping at runtime | still unverifiable: tool not installed here |
+| `companions.md` | `skillOverrides` does not affect plugin skills | still unverifiable: needs a session, which means a model call |
+| `output-contract-detail.md` | the subagent banner is "not verified end to end" | still unverifiable: a live host session |
+| `label-model.md`, `board.md`, `board-fields.md`, `publish-runbook.md` | aliased-mutation atomicity, `copyProjectV2` survival, board timings, live `--apply` behaviour | still unverifiable: GraphQL or a write, both excluded |
+| `cloud-sessions.md`, `upkeep-part-b.md`, `running-unattended.md` | the GraphQL versus REST parity run, the hosted validation of 2026-10-10, the drill record | still unverifiable: live cloud session, a private throwaway repository, a past run |
+| `how-the-dossier-pipeline-works.md`, `dossier-pipeline.md` | the throwaway repository's issue numbers and counts | still unverifiable: the repository is gone or not visible |
+| `upgrading.md`, `public-snapshot.md`, `bench/token-budget.md`, `bench/task-sourcing.md`, `label-model.md`, `onboarding-control.md` | per-pass token figures, 2026-10-02 scan counts, session totals and rate-window readings, backlog counts, search counts | still unverifiable: one-off past measurements or logs of another repository. Kept as dated historical figures |
+| `platform-support.md`, `ownership.md`, `parallelism.md`, `invocation-adapter.md`, `release.md` | the coverage figure, the entry-file audit, per-authorize timing, the S1 response policy | still unverifiable: a heavy measurement the serial-run rule excludes, a measurement with no record, and a policy call |
+
+### Counts
+
+Same unit as the second pass (a checkable sentence or table cell), approximate. All 21 settled claims were drawn from the 62
+that were unverifiable, so the total does not change. The unit here is this pass's own: the three claims under one
+`uninstall.md` row are counted as three, the flag list as one.
+
+| | Claims | TRUE | FALSE or STALE | UNVERIFIABLE |
+|---|-------:|-----:|---------------:|-------------:|
+| After the second pass | 1,926 | 1,760 | 104 | 62 |
+| Settled by this pass | 0 | +17 | +4 (2 FALSE, 2 STALE) | -21 |
+| After the third pass | 1,926 | 1,777 | 108 | 41 |
+
+The four FALSE or STALE sites are corrected in this change: `graphify --mcp` (two pages), the save-back wording (two pages),
+the rename claim, and the dated skill count. One further page gap was found and fixed that is not counted as a claim: the
+uninstall page said nothing about the marketplace declaration surviving the uninstall.
+
+### What still cannot be verified, and why (about 41)
+
+By cause, re-estimated rather than subtracted, approximate:
+
+- Codex CLI not installed here: about 4.
+- Needs a live host session, a model call or a cloud session: about 8 (the flags' behaviour and the transcript shape,
+  `skillOverrides`, the subagent banner, the hosted validations, the board validator run).
+- Private or deleted objects: about 6.
+- One-off past measurements, kept as dated historical figures: about 13.
+- Not checkable without GraphQL or a write: about 6.
+- Judgement or policy: about 4.
+
+### Result against the D8 threshold
+
+"0 unresolvable claims" is NOT met as a plain count: about 41 claims remain unverifiable, down from about 62, for the causes
+above. Every claim about the Claude Code CLI or graphify that this machine could settle was settled, and the four that were
+false or stale in the pages are corrected. No FALSE or STALE site is known to be open. The reading "met for claims checkable
+from the repository and GitHub" remains the owner's call; this pass does not move it. No code defect was found, so no
+`launch:next` issue was filed.
