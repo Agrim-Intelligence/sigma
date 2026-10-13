@@ -1,7 +1,7 @@
 # D7 evidence: GitHub-mode refusals print their fix (#1290, #1291, #1289)
 
-Code state measured: the pull request heads `da8f1378418e` (#1350, remedy helper and surfaces), `80960701ead1`
-(#1351, `gh_api.py` sites) and `8330b56c8118` (#1352, opt-in refusals, local-park wording; contains the other two).
+Code state measured: the pull request heads `da8f1378418e` (#1350, remedy helper and surfaces; since squash-merged to main), `00b57fbaa03b`
+(#1351, `gh_api.py` sites) and `2c293f407ef2` (#1352, opt-in refusals, local-park wording; contains the other two).
 Squash merges change these shas: after they land, the measured code is whatever main holds for those three changes.
 
 An independent scoring review found D7 "every refusal prints its fix" not met for GitHub mode. This record is what was
