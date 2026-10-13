@@ -596,40 +596,34 @@ def _value(tail, name):
 
 
 
-def _needs_github(config, what, code, run, source):
-    """D7: unparking reads GitHub labels. In the scaffold-default local-goals mode the old
-    path built a GitHubSource anyway and printed `unable to expand placeholder in path: no git
-    remotes found`, which reads as a broken repo. Say what is true and what resolves it. An injected
-    `run`/`source` (tests, in-process callers) skips the check: they bring their own transport."""
-    if run is not None or source is not None or triage._is_github(config):
-        return None
-    print(f"{what} needs github discovery mode (discovery.source is "
-          f"{((config.get('discovery') or {}).get('source') or 'local-goals')!r}; local goals have no "
-          "labels to cross). To use it run `/sigma-init --mode github` (or set discovery.source to "
-          '"github" in .sdlc/config.json), then re-run this command.', file=sys.stderr)
-    return code
-
-
 def main(argv, run=None):
+    try:
+        return _main(argv, run)
+    except triage.state.ConfigInvalid as exc:      # D7: the file, the line and the fix
+        print(f"unpark.py: {exc}", file=sys.stderr)
+        return 2
+
+
+def _main(argv, run=None):
     if argv[1:] in (["-h"], ["--help"]):
         print(_USAGE)
         return 0
     if len(argv) >= 3 and argv[1] == "list":
         sdlc_dir, tail = argv[2], argv[3:]
-        blocked = _needs_github(triage._config(sdlc_dir), "unparking", 1, run, None)
+        blocked = triage.needs_github(triage.config_strict(sdlc_dir), "unparking", 1, run, None)
         if blocked is not None:
             return blocked
-        result = list_parked(sdlc_dir, triage._config(sdlc_dir), run=run,
+        result = list_parked(sdlc_dir, triage.config_strict(sdlc_dir), run=run,
                              assignee=_value(tail, "--assignee"))
         print(json.dumps(result, indent=2) if "--json" in tail else render_list(result))
         return 0 if result["complete"] else 1
     if len(argv) >= 4 and argv[1] == "brief":
         sdlc_dir, number, tail = argv[2], argv[3], argv[4:]
-        blocked = _needs_github(triage._config(sdlc_dir), "unparking", 1, run, None)
+        blocked = triage.needs_github(triage.config_strict(sdlc_dir), "unparking", 1, run, None)
         if blocked is not None:
             return blocked
         try:
-            b = brief(sdlc_dir, triage._config(sdlc_dir), number, run=run)
+            b = brief(sdlc_dir, triage.config_strict(sdlc_dir), number, run=run)
         except Exception as exc:                        # noqa: BLE001 - a usable refusal, not a trace
             # Names the ISSUE, not just the transport error: "simulated gh failure: issue view 5"
             # tells a human nothing they can act on, and a bare traceback tells them less.
@@ -654,10 +648,10 @@ def main(argv, run=None):
             print("unpark.py resolve: --answers must be a JSON object with an \"answers\" object",
                   file=sys.stderr)
             return 2
-        blocked = _needs_github(triage._config(sdlc_dir), "unparking", 1, run, None)
+        blocked = triage.needs_github(triage.config_strict(sdlc_dir), "unparking", 1, run, None)
         if blocked is not None:
             return blocked
-        result = resolve(sdlc_dir, triage._config(sdlc_dir), number, answers, decision, run=run,
+        result = resolve(sdlc_dir, triage.config_strict(sdlc_dir), number, answers, decision, run=run,
                          apply="--dry-run" not in tail,
                          questions_asked=(payload.get("questions") or []))
         print("[%s] #%s: %s" % (result["outcome"], result["number"], result["detail"]))

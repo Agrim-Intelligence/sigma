@@ -1042,21 +1042,15 @@ def _migrate_flags(tail):
 
 
 
-def _needs_github(config, what, code, run, source):
-    """D7: promotion/unparking read GitHub labels. In the scaffold-default local-goals mode the old
-    path built a GitHubSource anyway and printed `unable to expand placeholder in path: no git
-    remotes found`, which reads as a broken repo. Say what is true and what resolves it. An injected
-    `run`/`source` (tests, in-process callers) skips the check: they bring their own transport."""
-    if run is not None or source is not None or triage._is_github(config):
-        return None
-    print(f"{what} needs github discovery mode (discovery.source is "
-          f"{((config.get('discovery') or {}).get('source') or 'local-goals')!r}; local goals have no "
-          "labels to cross). To use it run `/sigma-init --mode github` (or set discovery.source to "
-          '"github" in .sdlc/config.json), then re-run this command.', file=sys.stderr)
-    return code
-
-
 def main(argv, run=None, source=None):
+    try:
+        return _main(argv, run, source)
+    except triage.state.ConfigInvalid as exc:      # D7: the file, the line and the fix
+        print(f"promote.py: {exc}", file=sys.stderr)
+        return 2
+
+
+def _main(argv, run=None, source=None):
     if argv[1:] in (["-h"], ["--help"]):
         print(_USAGE)
         return 0
@@ -1066,8 +1060,8 @@ def main(argv, run=None, source=None):
             print(_USAGE, file=sys.stderr)
             return 2
         flags, unit, only, limit = parsed
-        config = triage._config(argv[2])
-        blocked = _needs_github(config, "promotion", 2, run, source)
+        config = triage.config_strict(argv[2])
+        blocked = triage.needs_github(config, "promotion", 2, run, source)
         if blocked is not None:
             return blocked
         rep = migrate(source or sources.GitHubSource(config, run=run), config, apply="--apply" in flags,
@@ -1082,10 +1076,10 @@ def main(argv, run=None, source=None):
         if "--assignee" in tail:
             i = tail.index("--assignee")
             assignee = tail[i + 1] if i + 1 < len(tail) else None
-        blocked = _needs_github(triage._config(sdlc_dir), "promotion", 1, run, None)
+        blocked = triage.needs_github(triage.config_strict(sdlc_dir), "promotion", 1, run, None)
         if blocked is not None:
             return blocked
-        result = survey(sdlc_dir, triage._config(sdlc_dir), run=run, assignee=assignee)
+        result = survey(sdlc_dir, triage.config_strict(sdlc_dir), run=run, assignee=assignee)
         print(json.dumps(result, indent=2) if flags.get("json") else render_survey(result))
         return 0 if result["complete"] else 1
     if len(argv) >= 4 and argv[1] in ("apply", "demote"):
@@ -1094,10 +1088,10 @@ def main(argv, run=None, source=None):
         if not numbers:
             print(_USAGE, file=sys.stderr)
             return 2
-        blocked = _needs_github(triage._config(sdlc_dir), "promotion", 1, run, None)
+        blocked = triage.needs_github(triage.config_strict(sdlc_dir), "promotion", 1, run, None)
         if blocked is not None:
             return blocked
-        result = promote(sdlc_dir, triage._config(sdlc_dir), numbers, run=run,
+        result = promote(sdlc_dir, triage.config_strict(sdlc_dir), numbers, run=run,
                          apply="--dry-run" not in argv[3:], demote=(argv[1] == "demote"))
         print(render_promote(result))
         return 1 if any(r["outcome"] in ("failed", "rate-limited") for r in result["results"]) else 0

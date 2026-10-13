@@ -35,7 +35,8 @@ def test_auto_merge_off_names_the_setting_and_keeps_the_routing_ending(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
     out = work.merge(d, ON, goal, run=_runner(_view() + _perm() + _protected()), sleep=NOSLEEP)
-    assert "auto_merge is off" in out and '"auto_merge"' in out and ".sdlc/config.json" in out
+    assert "auto_merge is off" in out and ".sdlc/config.json" in out
+    assert 'set work.auto_merge to "protected" or "always"' in out    # the key AND both real values
     assert out.endswith(f"leaving PR #7 for a human")        # SKILL.md / landing.md route on the ending
 
 

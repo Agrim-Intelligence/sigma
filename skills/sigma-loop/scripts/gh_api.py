@@ -1117,7 +1117,9 @@ def bounded_runner(cwd=None, timeout=120, *, popen=None):
             raise GhApiError("gh timed out after %ss" % timeout, "gh timed out after %ss" % timeout,
                              None, "transport") from exc
         except OSError as exc:
-            hint = (GH_MISSING_HINT if isinstance(exc, FileNotFoundError)
+            # Only a missing PROGRAM is "install gh": a vanished `cwd` (deleted worktree) raises the
+            # same FileNotFoundError with the directory as its filename and keeps the old text.
+            hint = (GH_MISSING_HINT if isinstance(exc, FileNotFoundError) and str(exc.filename) == "gh"
                     else "could not run gh (%s); is it installed?" % exc.__class__.__name__)
             raise GhApiError(hint, hint, None, "other") from exc
         if proc.returncode != 0:

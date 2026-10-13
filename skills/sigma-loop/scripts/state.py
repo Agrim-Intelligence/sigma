@@ -43,6 +43,7 @@ class ConfigInvalid(json.JSONDecodeError):
 
     def __init__(self, sdlc_dir, err):
         super().__init__(err.msg, err.doc, err.pos)
+        self.sdlc_dir = str(sdlc_dir)
         path = pathlib.Path(sdlc_dir) / "config.json"
         self.advice = (f"{path} is not valid JSON ({err.msg}, line {err.lineno} column {err.colno}) -- "
                        f"fix that line (a trailing comma is the usual cause; `python3 -m json.tool {path}` "
@@ -52,7 +53,11 @@ class ConfigInvalid(json.JSONDecodeError):
         return self.advice
 
     def __reduce__(self):
-        return (Exception, (self.advice,))
+        return (_rebuild_config_invalid, (self.sdlc_dir, self.msg, self.doc, self.pos))
+
+
+def _rebuild_config_invalid(sdlc_dir, msg, doc, pos):
+    return ConfigInvalid(sdlc_dir, json.JSONDecodeError(msg, doc, pos))
 
 
 def load_config(sdlc_dir):

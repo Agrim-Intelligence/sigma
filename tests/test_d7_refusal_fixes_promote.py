@@ -113,3 +113,59 @@ def test_gh_api_bounded_runner_without_gh_names_the_install_and_login():
     with pytest.raises(Exception) as exc:
         run(["issue", "list"])
     assert "`gh` is not on PATH" in str(exc.value) and "`gh auth login`" in str(exc.value)
+
+
+# --- review of #1286: the missing-program check must not swallow a vanished cwd -------------------
+
+def _raise_missing_cwd(*a, **k):
+    raise FileNotFoundError(2, "No such file or directory", "/some/vanished/worktree")
+
+
+def test_a_vanished_cwd_is_not_reported_as_a_missing_gh_in_bounded_runner():
+    gh_api = _mod("gh_api")
+    run = gh_api.bounded_runner(cwd="/some/vanished/worktree", popen=_raise_missing_cwd)
+    with pytest.raises(Exception) as exc:
+        run(["issue", "list"])
+    text = str(exc.value)
+    assert "not on PATH" not in text and "gh auth login" not in text
+    assert "could not run gh (FileNotFoundError)" in text           # the old, honest text
+
+
+def test_a_vanished_cwd_is_not_reported_as_a_missing_gh_in_default_run(monkeypatch):
+    gh_api = _mod("gh_api")
+    monkeypatch.setattr(subprocess, "run", _raise_missing_cwd)
+    with pytest.raises(FileNotFoundError):
+        gh_api._default_run(["issue", "list"])                       # the raw error propagates
+
+
+def test_a_vanished_cwd_is_not_reported_as_a_missing_gh_in_sources_run_gh(monkeypatch):
+    sources = _mod("sources")
+    monkeypatch.setattr(subprocess, "run", _raise_missing_cwd)
+    with pytest.raises(FileNotFoundError):
+        sources._run_gh(["issue", "list"])
+
+
+# --- review of #1286: malformed config.json is named, not mistaken for local-goals ----------------
+
+@pytest.mark.parametrize("mod,argv", [("promote", ["list"]), ("unpark", ["list"])])
+def test_promote_and_unpark_on_a_malformed_config_name_the_json_error(tmp_path, capsys, mod, argv):
+    d = tmp_path / ".sdlc"
+    d.mkdir()
+    (d / "config.json").write_text('{"discovery": {"source": "github",}}')
+    m = _mod(mod)
+    rc = m.main([f"{mod}.py", *argv, str(d)])
+    err = capsys.readouterr().err
+    assert rc == 2 and "config.json is not valid JSON" in err and "local-goals" not in err
+
+
+def test_config_invalid_survives_a_pickle_round_trip(tmp_path, monkeypatch):
+    import pickle, sys
+    state = _mod("state")
+    monkeypatch.setitem(sys.modules, "state", state)        # modules here load by path; pickle needs the name
+    d = tmp_path / ".sdlc"
+    d.mkdir()
+    (d / "config.json").write_text("{nope")
+    with pytest.raises(state.ConfigInvalid) as exc:
+        state.load_config(str(d))
+    copy = pickle.loads(pickle.dumps(exc.value))
+    assert type(copy).__name__ == "ConfigInvalid" and str(copy) == str(exc.value)

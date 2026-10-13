@@ -391,7 +391,7 @@ _PARK_BEHIND_RACE_EXHAUSTED = "BEHIND race did not settle after"
 #: re-typed here. In the tuple for the same reason the six above are: fed to `_record` as a park
 #: detail it classifies `unknown` -- which IS in `_DECISION_TIER_REASON_CLASSES` -- and a git
 #: mechanics failure must never be handed a fabricated "this needs human judgment" tier (#1185/
-#: #1240). Reachable via `rebase()`'s third return, "not started — nothing to rebase", which unlike
+#: #1240). Reachable via `rebase()`'s third return, "not started — run `work.py start ...` first (nothing to rebase)", which unlike
 #: its two conflict returns carries no `_REASON_CLASS_RULES` needle of its own.
 _PARK_STALE_RESUME_CONFLICT = "the automatic rebase could not apply cleanly"
 
@@ -6722,8 +6722,8 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
         # the middle clause makes the review gate's run visible on the line itself.
         reviewed = (f"review gate passed (require_review: {effective_mode})"
                     if effective_mode != REVIEW_OFF else "review gate off (require_review: off)")
-        return (f"{verdict} — {reviewed} — auto_merge is off (to let Sigma merge, set "
-                f"\"work\": {{\"auto_merge\": \"protected\"}} or \"always\" in .sdlc/config.json), "
+        return (f"{verdict} — {reviewed} — auto_merge is off (to let Sigma merge, set work.auto_merge "
+                f"to \"protected\" or \"always\" in .sdlc/config.json), "
                 f"leaving PR #{rec['pr']} for a human")
     # #1474's both-green check is DELIBERATELY NOT CALLED HERE. See `sibling_gate`'s own docstring
     # for the full reasoning; the short form is that every merge this function can perform is a
