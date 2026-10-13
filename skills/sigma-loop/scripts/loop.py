@@ -5394,9 +5394,15 @@ def verify_goal(sdlc_dir, goal):
     if flake["verdict"] == "unverified":
         # #1933: the suite PASSED but is not deterministic, so it has not earned a credit. Exit 5 --
         # its own code, not 1, which means "the tests failed" and would misreport what happened.
-        print(f"UNVERIFIED exit=5 -- {flake['disagreement']} evidence={ev}", file=sys.stderr)
+        print(f"UNVERIFIED exit=5 -- {flake['disagreement']} evidence={ev}; the suite passed but is "
+              "not deterministic, so it earns no credit and `record done` stays blocked. Fix or remove "
+              f"the listed test(s), then re-run `loop.py verify {sdlc_dir} {goal}`", file=sys.stderr)
         return 5
     print(f"{'VERIFIED' if proc.returncode == 0 else 'FAILED'} exit={proc.returncode} evidence={ev}")
+    if proc.returncode != 0:
+        # D7: stdout above is a contract (`FAILED exit=N evidence=...`); the way forward rides stderr.
+        print(f"loop.py verify: failed -- the last output lines are in {ev} under \"tail\"; fix the "
+              f"failing check, then re-run `loop.py verify {sdlc_dir} {goal}`", file=sys.stderr)
     return 0 if proc.returncode == 0 else 1
 
 
@@ -6086,6 +6092,12 @@ def _note_unlabelled_backlog(source):
     REST read of one item, spent once per drained run -- never per pick."""
     census = getattr(source, "goal_label_census", None)
     if census is None:
+        # D7: local-goals has no label census, so a bare `DONE` on a repo with NO goal files read as
+        # "finished". Only a MEASURED zero (no *.md at all) is reported; done files stay quiet.
+        goals_dir = getattr(source, "goals_dir", None)
+        if goals_dir and not any(pathlib.Path(goals_dir).glob("*.md")):
+            print("loop.py: DONE — no goal files under %s — add .sdlc/goals/NNNN-slug.md, or run "
+                  "`/sigma-scope` to turn an idea into goals" % goals_dir, file=sys.stderr)
         return
     try:
         count = census()
@@ -6259,7 +6271,10 @@ def _dispatch(argv):
             return 2
         if agent_start(argv[2], argv[3], pid, config, thread=thread) is False:
             print("loop.py agent-start: cannot register agent identity; a live different task "
-                  "may own this goal/thread, or its marker is unreadable", file=sys.stderr)
+                  "may own this goal/thread, or its marker is unreadable. If that task is dead, run "
+                  f"`loop.py agent-reclaim {argv[2]} {argv[3]}` (add `--thread T` for a non-default "
+                  "thread); otherwise pass a different `--thread`. Under Codex, check that "
+                  "CODEX_THREAD_ID is set", file=sys.stderr)
             return 2
         return 0
     if len(argv) >= 4 and argv[1] == "agent-reclaim":         # #2015: identity-checked manual escape
