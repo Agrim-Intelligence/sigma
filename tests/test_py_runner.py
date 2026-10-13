@@ -314,15 +314,26 @@ def test_a_slashed_session_id_cannot_place_a_marker_outside_the_marker_dir(tmp_p
 
 
 def test_a_huge_stdin_payload_is_read_in_bounded_time(tmp_path):
-    """The session_id probe once read ALL of stdin with `read -d ''`, which is quadratic on bash 3.2 (300 KB
-    = 33 s, 5 MB = minutes): a fail-open hook freezing a tool call. It now reads a 4 KB prefix."""
+    """bash 3.2 takes ~30 s to match `*"session_id"*` / `${input#*...}` over a 300 KB line when session_id
+    sits near the END (0.12 s when absent, 1.5 s for 5 MB with it first): a fail-open hook freezing a tool
+    call. The probe now reads a 4 KB prefix, so the long string never exists. session_id LAST is the shape
+    that trips it; session_id FIRST passes the old code too."""
     import time
-    big = '{"session_id": "big-1", "tool_response": "' + "x" * (5 * 1024 * 1024) + '"}'
+    big = '{"x":"' + "a" * 300000 + '","session_id":"big"}\n'
     t = time.time()
     r = _host_run(tmp_path, _decision_cmd(), _bindir(tmp_path, "b", "broken"), stdin=big)
     assert _noticed(r) and time.time() - t < 10
-    # and the session_id inside the prefix was still honoured
-    assert (_markers(tmp_path, "proj") / "py-notice-sbig-1-decision_gate.py").is_dir()
+    # past the 4 KB prefix the id is not seen: the key falls back to the parent pid, never to anything
+    # derived from the unread tail
+    names = [p.name for p in _markers(tmp_path, "proj").iterdir()]
+    assert names and all(n.startswith("py-notice-p") and "big" not in n for n in names), names
+
+
+def test_session_id_inside_the_prefix_is_honoured_even_with_a_huge_tail(tmp_path):
+    big = '{"session_id":"early-1","x":"' + "a" * 300000 + '"}\n'
+    r = _host_run(tmp_path, _decision_cmd(), _bindir(tmp_path, "b", "broken"), stdin=big)
+    assert _noticed(r)
+    assert (_markers(tmp_path, "proj") / "py-notice-searly-1-decision_gate.py").is_dir()
 
 
 def test_a_never_closing_stdin_does_not_wedge_the_hook(tmp_path):
