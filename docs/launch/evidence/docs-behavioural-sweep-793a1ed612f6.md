@@ -221,7 +221,7 @@ Each row: the doc, the claim, the read and its result on 2026-10-13. All reads a
 | `onboarding-control.md` | five CI wall times 58.6 to 95.1 s, mean 74.3 s, run ids in `budget.json` | `actions/jobs/<id>` for all five jobs: each exists, success, onboarding step 95, 82, 58, 76, 61 s (second resolution) and planted-test step 263, 279, 181, 254, 228 s, equal to the file | TRUE |
 | `onboarding-control.md` | the file "has since grown to 76 tests" | `pytest --collect-only -q tests/test_onboarding_control.py`: 76 collected | TRUE |
 | `public-snapshot.md` | one CI run is about 129 runner-minutes, 34 minutes wall, run 36952374676 | `actions/runs/36952374676` and its jobs: five jobs summing to 128.6 minutes, 34.1 minutes wall, success | TRUE |
-| `platform-support.md` | "9+ merged PRs showing the `sigma:approve` comment then same-account merge, as of 2026-08-06" | search for PRs merged by 2026-08-06 in the source repository (223), comments read on each: 97 carry an independent-review comment headed APPROVE and all 97 were merged by an account that posted it. None contains the literal string `sigma:approve` | count TRUE (97 is at least 9); marker wording STALE, corrected |
+| `platform-support.md` | "9+ merged PRs showing the `sigma:approve` comment then same-account merge, as of 2026-08-06" | search for PRs merged by 2026-08-06 in the source repository (223), comments read on each: 97 carry an approving independent-review comment and all 97 were merged by an account that posted it. 78 carry the approve marker under its pre-rename prefix and 19 a bare `**APPROVE**` heading (second count by the independent review); none contains the current `sigma:approve` spelling | count TRUE (97 is at least 9); marker wording STALE, corrected |
 | `ownership.md` | no branch protection rule requires CODEOWNERS approval | `rulesets` and `rules/branches/main`: one approving review and the `test` status check are required; `require_code_owner_review` is false; classic protection is a 404. Page clarified | TRUE for code-owner review; clarified (STALE as worded) |
 | `cloud-sessions.md` | classic protection is a 404 here, rulesets enforce | `branches/main/protection` answers 404 "Branch not protected"; `rules/branches/main` lists the pull-request and required-check rules | TRUE |
 | `cloud-sessions.md` | `issues/928` is closed, `state_reason` null, `merged_at` 2026-10-09T17:46:12Z | read again: identical | TRUE |
@@ -249,6 +249,8 @@ Each row: the doc, the claim, the read and its result on 2026-10-13. All reads a
 | New claims, GitHub reads (10 pages) | 21 | 20 | 1 | 0 |
 | First-pass UNVERIFIABLE claims resolved by the GitHub reads | 0 | +16 | +4 | -20 |
 | After the second pass | 1,926 | 1,760 | 104 | 62 |
+
+The Part 2 table has six STALE or FALSE rows (how-branching-works, branching-model, platform-support, ownership, board-fields, release). The counts credit them as follows: how-branching-works was already counted in the first pass's 73 (the held item); branching-model is the one new site; the other four were first-pass UNVERIFIABLE claims, hence the +4. So the six rows reconcile as 1 + 1 + 4.
 
 The 104 FALSE or STALE sites are all corrected in the tree or on main: the 72 corrected in the first pass (2 of them by #1260),
 the held `how-branching-works.md` item (corrected in this pass), and the 31 found in this pass. The first pass's "1 left open"
