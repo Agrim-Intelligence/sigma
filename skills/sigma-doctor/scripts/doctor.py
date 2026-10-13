@@ -1240,6 +1240,30 @@ def _stale_hook_path_row(repo_root):
                 f"hooks. Fix: `{setup.UNSET_HOOKS_PATH}` (or re-run /sigma-init, which removes it).")
 
 
+#: The #1282 row's name, one spelling shared with its tests.
+_HOOK_PYTHON_ROW = "python3 on PATH can run Sigma's python hooks"
+
+
+def _hook_python_row():
+    """#1282: Sigma's python-backed hooks run a bare `python3` from PATH (hooks/_py.sh) and fail OPEN when it
+    cannot run, so a broken one leaves the gates (new-issue priority, decision registry) silently off. A row
+    only when that interpreter is missing or cannot execute a program, so a healthy check list is unchanged.
+    Probes PATH's `python3`, not the interpreter running doctor -- the hooks never use the latter."""
+    found = shutil.which("python3")
+    if found:
+        try:
+            if subprocess.run([found, "-c", ""], capture_output=True, timeout=20).returncode == 0:
+                return None
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return _chk(_HOOK_PYTHON_ROW, False,
+                "`python3` on PATH is " + ("broken (it cannot run a program)" if found else "missing") +
+                ", so hooks/issue_field_gate.py and hooks/decision_gate.py -- and the time and research "
+                "hooks -- do not run (tool calls are still allowed; each session gets one notice). Fix: "
+                "install a working python3 (or repair the pyenv/conda shim that `python3` resolves to), "
+                "then re-run /sigma-doctor.")
+
+
 def _preflight_fix(check):
     """A failing preflight check as doctor's one-line fix: the command(s) THAT check prints (so a
     missing `gh` says install it, never `gh auth login`), then what Sigma does meanwhile."""
@@ -2561,6 +2585,9 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     hooks_row = _stale_hook_path_row(base.parent)            # #614
     if hooks_row:
         out.append(hooks_row)
+    py_row = _hook_python_row()                              # #1282
+    if py_row:
+        out.append(py_row)
     # #144: a feature branch whose rebase upkeep is REFUSING a replay that would delete its content.
     # Emitted only when such a refusal is on record, so a healthy project's check list is unchanged.
     for branch, count, names, at in _rebase_blocks(base, _block(cfg, "work")):

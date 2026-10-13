@@ -74,3 +74,75 @@ def test_prompt_gate_survives_a_broken_interpreter(tmp_path):
     r = _run(["bash", str(GATE)], _bindir(tmp_path, "b", "broken"),
              stdin='{"prompt": "implement the parser"}', SIGMA_GATE_GLOBAL="1")
     assert r.returncode == 0 and "GOAL-BASED SDLC" in r.stdout
+
+
+# ------------------------------------------------------------------ the failure is LOUD (#1282)
+# Policy: allow-with-notice. docs/enforcement.md documents issue_field_gate and decision_gate as
+# "fails open", so a broken python3 must not block tool calls -- but it must never be silent either.
+
+import json
+import re
+
+HOOKS_JSON = HOOKS / "hooks.json"
+
+
+def _commands():
+    """Every hooks.json command that goes through _py.sh -- the exact string the HOST runs."""
+    data = json.loads(HOOKS_JSON.read_text(encoding="utf-8"))
+    return [h["command"] for groups in data["hooks"].values() for g in groups for h in g["hooks"]
+            if "_py.sh" in h["command"]]
+
+
+def _host_run(tmp_path, command, pathdir, adopted=True, name="proj", stdin="{}"):
+    proj = tmp_path / name
+    (proj / ".sdlc").mkdir(parents=True, exist_ok=True)
+    if adopted:
+        (proj / ".sdlc" / "config.json").write_text("{}")
+    tmpdir = tmp_path / f"tmp-{name}"          # one notice marker dir per simulated session
+    tmpdir.mkdir(exist_ok=True)
+    return subprocess.run(["bash", "-c", command], capture_output=True, text=True, cwd=proj,
+                          input=stdin, env={"PATH": pathdir, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parent),
+                                            "TMPDIR": str(tmpdir)})
+
+
+def test_there_are_python_backed_hooks_to_cover():
+    assert len(_commands()) >= 5
+
+
+def test_every_py_hook_is_loud_when_python_is_broken_or_absent(tmp_path):
+    for i, command in enumerate(_commands()):
+        for kind in ("broken", None):
+            r = _host_run(tmp_path, command, _bindir(tmp_path, f"b{i}{kind}", kind),
+                          name=f"p{i}{kind}")
+            script = re.search(r"hooks/(\w+)\.py", command).group(1)
+            assert r.returncode == 0, (command, kind, r.stderr)        # allow: never wedge the host
+            msg = json.loads(r.stdout)["systemMessage"]                # a form the host surfaces
+            assert script in msg and "python3" in msg and "/sigma-doctor" in msg, msg
+
+
+def test_notice_names_the_missing_guarantee(tmp_path):
+    cmd = next(c for c in _commands() if "issue_field_gate" in c)
+    r = _host_run(tmp_path, cmd, _bindir(tmp_path, "b", "broken"))
+    assert "priority" in json.loads(r.stdout)["systemMessage"]
+    cmd = next(c for c in _commands() if "decision_gate" in c)
+    r = _host_run(tmp_path, cmd, _bindir(tmp_path, "b2", "broken"), name="p2")
+    assert "decision" in json.loads(r.stdout)["systemMessage"]
+
+
+def test_notice_is_once_per_session_not_per_call(tmp_path):
+    cmd = _commands()[0]
+    bindir = _bindir(tmp_path, "b", "broken")
+    assert _host_run(tmp_path, cmd, bindir).stdout
+    second = _host_run(tmp_path, cmd, bindir)
+    assert second.returncode == 0 and second.stdout == ""     # marker keys on the parent pid
+
+
+def test_no_notice_outside_an_adopted_repo(tmp_path):
+    r = _host_run(tmp_path, _commands()[0], _bindir(tmp_path, "b", "broken"), adopted=False)
+    assert r.returncode == 0 and r.stdout == ""
+
+
+def test_working_python_prints_no_notice(tmp_path):
+    cmd = next(c for c in _commands() if "time_track" in c)
+    r = _host_run(tmp_path, cmd, _bindir(tmp_path, "b", "real"))
+    assert "systemMessage" not in r.stdout
