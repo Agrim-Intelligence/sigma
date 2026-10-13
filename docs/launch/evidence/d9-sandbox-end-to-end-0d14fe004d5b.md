@@ -139,11 +139,24 @@ commits.
 3. **Empty files adoption created stayed behind, unreported.** On a repository that had no `AGENTS.md` and
    no `.cursor`, the guide left a zero-byte `AGENTS.md` and an empty `.cursor/rules` directory; the
    checker looks for markers and the two rule files, so it exited 0. FIXED in step 7 with a block. Round one tested for zero bytes; a delta review showed that cutting the Codex block can
-   leave a single newline, which that test keeps. Now `[ ! -f AGENTS.md ] || [ -n "$(tr -d ' \t\r\n' < AGENTS.md)" ] || rm -f AGENTS.md`
-   deletes a file with only whitespace and leaves any file with content (tested with empty, newline, mixed
-   whitespace, a comment line and one character, under three shells), and `rmdir` of the empty
-   directories. Guards: `test_guide_step7_says_what_to_do_with_files_adoption_created` and
-   `test_guide_step7_deletes_agents_md_only_when_empty`, red before the edit.
+   leave a single newline, which that test keeps. Round two used `tr -d` and a non-empty test; a round-three review
+   measured DATA LOSS: on macOS in a UTF-8 locale `tr` prints "Illegal byte sequence" and nothing else when the file starts
+   with a byte that is not valid UTF-8, so the command substitution was empty and `rm -f` ran (a Latin-1 file, a file of
+   three high bytes, both deleted; kept under the `C` locale). Now the block deletes only when `LC_ALL=C grep -q
+   '[^[:space:]]'` ran and exited exactly 1 (read fine, no non-whitespace byte); exit 0 (content, including a
+   byte-order mark alone or NUL bytes) and exit 2 (read error, tested with a mode-000 file) both KEEP the file. A symlink
+   is removed as a link only and a directory is left alone. Tested over eleven contents, UTF-8 and `C` locales, three
+   shells; the Latin-1, high-byte cases were red against the previous text. `rmdir` of the empty directories is
+   unchanged. Guards: `test_step7_deletes_agents_md_only_when_it_has_no_content`,
+   `test_step7_agents_md_link_and_directory_cases`, `test_step7_unreadable_agents_md_is_kept`.
+   The same review found that the copy-out, final and cleanup blocks built the path from an empty `git rev-parse`
+   result outside a repository (or with a failing `GIT_DIR`), turning into `mkdir -m 700 /sigmaloop-check` and
+   `rm -rf /sigmaloop-check`; all three blocks now refuse unless the git directory is an absolute path, and
+   `test_blocks_refuse_to_act_outside_the_adopted_repository` runs each from a non-repository (and with a failing
+   `GIT_DIR`) with `rm`, `mkdir`, `chmod`, `cp`, `mv` and `rmdir` shimmed to record calls: none may occur (red before).
+   It also found that a pre-release beat its release in the version pick; the pick now ranks a name without a suffix
+   above the same numbers with one (`test_copy_out_prefers_the_release_over_its_prerelease`, red before). A bash 3.2
+   parsing bug in `case` inside `$(...)` (macOS `sh`) was found by those tests and avoided with parenthesised patterns.
 4. **Step 9 silently deleted nothing under zsh (reviewer finding).** The blocks passed three ref patterns
    through an unquoted `$branches`, which zsh (the macOS default) does not word-split; the loop ran on one
    nonsense pattern, printed nothing and exited 0. FIXED: the patterns are spelled on the `git for-each-ref`

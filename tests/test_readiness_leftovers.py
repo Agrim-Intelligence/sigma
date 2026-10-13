@@ -418,20 +418,110 @@ def test_copy_out_with_nothing_cached_is_quiet_and_prints_the_fallback(tmp_path,
     assert final.returncode != 0 and "no verified copy" in final.stdout and final.stderr == ""
 
 
+LOCALES = ["en_US.UTF-8", "C"]
+#: (file bytes, kept). The first four are the macOS UTF-8 cases that deleted real content: `tr` printed
+#: "Illegal byte sequence" and nothing else, so the "has content" test saw an empty string.
+AGENTS_CASES = [
+    (b"\xe9cole rules", True), (b"\xff rules rules", True), (b"\xff\xfe\xfd", True), (b"text then \xff", True),
+    (b"\xef\xbb\xbf", True), (b"# mine\n", True), (b"x", True), (b"\x00\x01", True),
+    (b"", False), (b"\n", False), (b" \r\n\t\n", False),
+]
+
+
+def _agents_block():
+    found = [b for b in _doc_blocks() if "AGENTS.md" in b and "rm" in b]
+    assert len(found) == 1, found
+    return found[0]
+
+
 @pytest.mark.parametrize("shell", SHELLS)
-@pytest.mark.parametrize("content,kept", [("", False), ("\n", False), (" \r\n\t\n", False),
-                                           ("# mine\n", True), ("x", True)])
-def test_step7_deletes_agents_md_only_when_it_has_no_content(tmp_path, shell, content, kept):
-    """After the Codex block is cut a single newline can remain; that is empty. Real content stays."""
+@pytest.mark.parametrize("locale", LOCALES)
+@pytest.mark.parametrize("content,kept", AGENTS_CASES)
+def test_step7_deletes_agents_md_only_when_it_has_no_content(tmp_path, shell, locale, content, kept):
+    """Only a file whose read succeeded and showed no non-whitespace byte is deleted. Anything else (real
+    text, bytes that are not valid in the locale, a read error) is kept: the check fails closed."""
     exe = shutil.which(shell)
     if exe is None:
         pytest.skip(f"{shell} is not installed on this machine")
-    block = [b for b in _doc_blocks() if "AGENTS.md" in b and "rm" in b][0]
-    (tmp_path / "AGENTS.md").write_bytes(content.encode())
-    done = subprocess.run([exe, "-c", block], cwd=tmp_path, text=True, capture_output=True)
-    assert done.returncode == 0, done.stderr
-    assert (tmp_path / "AGENTS.md").exists() is kept
-    assert subprocess.run([exe, "-c", block], cwd=tmp_path, text=True, capture_output=True).returncode == 0
+    (tmp_path / "AGENTS.md").write_bytes(content)
+    env = {**os.environ, "LC_ALL": locale, "LANG": locale}
+    for _ in range(2):          # second run: the file is gone or kept, the block must still exit 0
+        done = subprocess.run([exe, "-c", _agents_block()], cwd=tmp_path, env=env, text=True, capture_output=True)
+        assert done.returncode == 0, done.stderr
+    assert (tmp_path / "AGENTS.md").exists() is kept, (content, locale)
+
+
+@pytest.mark.parametrize("shell", SHELLS)
+def test_step7_agents_md_link_and_directory_cases(tmp_path, shell):
+    exe = shutil.which(shell)
+    if exe is None:
+        pytest.skip(f"{shell} is not installed on this machine")
+    go = lambda: subprocess.run([exe, "-c", _agents_block()], cwd=tmp_path, text=True, capture_output=True)
+    (tmp_path / "real.md").write_text("\n")
+    (tmp_path / "AGENTS.md").symlink_to("real.md")
+    assert go().returncode == 0
+    assert not (tmp_path / "AGENTS.md").is_symlink() and (tmp_path / "real.md").exists(), "the target must stay"
+    (tmp_path / "real.md").write_text("mine\n")
+    (tmp_path / "AGENTS.md").symlink_to("real.md")
+    assert go().returncode == 0 and (tmp_path / "AGENTS.md").is_symlink(), "a link to real content stays"
+    (tmp_path / "AGENTS.md").unlink()
+    (tmp_path / "AGENTS.md").mkdir()
+    assert go().returncode == 0 and (tmp_path / "AGENTS.md").is_dir(), "a directory is left alone"
+
+
+def _shims(tmp_path):
+    """rm, mkdir, chmod, cp, mv that only record that they were called."""
+    bindir, log = tmp_path / "shims", tmp_path / "shim.log"
+    bindir.mkdir()
+    for name in ("rm", "mkdir", "chmod", "cp", "mv", "rmdir"):
+        (bindir / name).write_text(f'#!/bin/sh\necho "{name} $*" >> "{log}"\nexit 0\n')
+        (bindir / name).chmod(0o755)
+    return bindir, log
+
+
+@pytest.mark.parametrize("shell", SHELLS)
+@pytest.mark.parametrize("hostile", [False, True])
+@pytest.mark.parametrize("which", ["copy", "final", "cleanup"])
+def test_blocks_refuse_to_act_outside_the_adopted_repository(tmp_path, shell, hostile, which):
+    """With no repository (or a GIT_DIR that makes git fail) the git directory is empty; the old blocks then
+    built `/sigmaloop-check` and ran `mkdir -m 700` / `rm -rf` on it. No destructive command may be called."""
+    exe = shutil.which(shell)
+    if exe is None:
+        pytest.skip(f"{shell} is not installed on this machine")
+    bindir, log = _shims(tmp_path)
+    profile = tmp_path / "profile"
+    d = profile / "plugins" / "cache" / "sigmaloop" / "sigmaloop" / "1.0.0" / "tools" / "readiness"
+    d.mkdir(parents=True)
+    shutil.copy(SCRIPT, d / "leftovers.py")
+    elsewhere = tmp_path / "norepo"
+    elsewhere.mkdir()
+    env = {**os.environ, "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}", "CLAUDE_CONFIG_DIR": str(profile),
+           "GIT_CEILING_DIRECTORIES": str(tmp_path), "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull}
+    if hostile:
+        env["GIT_DIR"] = str(tmp_path / "does" / "not" / "exist")
+    block = {"copy": _copy_block, "final": _final_block, "cleanup": _cleanup_block}[which]()
+    done = subprocess.run([exe, "-c", block], cwd=elsewhere, env=env, text=True, capture_output=True, timeout=60)
+    calls = log.read_text() if log.exists() else ""
+    assert calls == "", f"destructive command ran with no repository: {calls}"
+    assert "not inside the adopted repository" in done.stdout, done.stdout + done.stderr
+    if which == "final":
+        assert done.returncode != 0
+
+
+@pytest.mark.parametrize("shell", SHELLS)
+def test_copy_out_prefers_the_release_over_its_prerelease(tmp_path, shell):
+    """`sort -k3,3n` read `0-rc1` as 0 and the line tiebreak put the release candidate last."""
+    flow = _Flow(tmp_path, shell)
+    for version in ("1.10.0-rc1", "1.10.0", "1.9.0"):
+        flow.cache(version, body=f"print('from {version}')\n")
+    assert flow.go(_copy_block()).returncode == 0
+    assert (flow.gitdir / "sigmaloop-check" / "leftovers.py").read_text() == "print('from 1.10.0')\n"
+    # a prerelease alone is still better than nothing
+    (tmp_path / "second").mkdir()
+    only = _Flow(tmp_path / "second", shell)
+    only.cache("2.0.0-rc1", body="print('rc only')\n")
+    assert only.go(_copy_block()).returncode == 0
+    assert (only.gitdir / "sigmaloop-check" / "leftovers.py").read_text() == "print('rc only')\n"
 
 
 def test_guide_step7_says_a_non_empty_agents_md_stays():
@@ -679,3 +769,17 @@ def test_documented_remote_blocks_follow_the_one_remote_variable(tmp_path):
     assert run(["sh", "-c", push]).returncode == 0
     assert "sdlc/goal-1" not in run(["git", "ls-remote", "--heads", "up"]).stdout
     assert run(["sh", "-c", prune]).returncode == 0
+
+
+@pytest.mark.parametrize("shell", SHELLS)
+def test_step7_unreadable_agents_md_is_kept(tmp_path, shell):
+    """A read error (grep exits 2) is not 'no content': the file stays."""
+    exe = shutil.which(shell)
+    if exe is None or os.geteuid() == 0:
+        pytest.skip("shell missing, or root can read a mode-000 file")
+    target = tmp_path / "AGENTS.md"
+    target.write_text("")
+    target.chmod(0o000)
+    done = subprocess.run([exe, "-c", _agents_block()], cwd=tmp_path, text=True, capture_output=True)
+    target.chmod(0o644)
+    assert done.returncode == 0 and target.exists()
