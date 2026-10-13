@@ -6073,7 +6073,7 @@ def main(argv, *, _merge_lock_held=False):
     except state.UnsafeStatePath as exc:
         print(f"loop.py: {exc}", file=sys.stderr)
         return 2
-    except state.ConfigMissing as exc:
+    except (state.ConfigMissing, state.ConfigInvalid) as exc:
         print(f"loop.py: {exc}", file=sys.stderr)
         return 2
 
