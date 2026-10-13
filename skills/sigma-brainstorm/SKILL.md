@@ -23,7 +23,7 @@ output to a scratch file and inspect a bounded excerpt rather than loading it
 into the conversation.
 
 > **Hard gate:** do NOT write code, scaffold, or invoke an implementation skill until you've presented a
-> design and the user has approved it — **every** project, however simple. "Too simple to need a design"
+> design and the user has explicitly approved it — **every** project, however simple. "Too simple to need a design"
 > is where unexamined assumptions waste the most work. The design can be a few sentences; present it and
 > get approval anyway.
 
