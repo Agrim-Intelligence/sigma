@@ -432,7 +432,9 @@ def _read_command(sdlc_args):
         try:
             raw = pathlib.Path(sdlc_args[1]).read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
-            return None, f"cannot read {printable(sdlc_args[1])}: {printable(exc)}"
+            return None, (f"cannot read {printable(sdlc_args[1])}: {printable(exc)}; check the path (it "
+                          "is read relative to the current directory), or pass the command itself: "
+                          "verify_detect.py set <sdlc_dir> '<command>'")
     elif sdlc_args == ["-"]:
         raw = sys.stdin.read()
     elif len(sdlc_args) == 1:
@@ -512,8 +514,11 @@ def main(argv):
             # advertise an executable command which this checkout cannot run.
             trusted, reason = trust_confirmed_repository_shell_commands(sdlc)
             if not trusted:
-                return _refuse("cannot enable a repository verify command because " + reason
-                               + "; use `decline` until this is a Git worktree")
+                tail = ("; use `decline` until this is a Git worktree"
+                        if "not inside a Git worktree" in reason else
+                        "; check that .git/config is writable (`git config --local --list` reads it), "
+                        "then re-run this command, or use `decline` to leave enforce off")
+                return _refuse("cannot enable a repository verify command because " + reason + tail)
             write_verify(sdlc, cmd, f"set by /sigma-init: `{cmd}` ({origin}) confirmed by the user")
             # json.dumps: exactly the stored string, every character visible, safe to print.
             print(f"verify: command = {json.dumps(cmd)}, enforce ON "

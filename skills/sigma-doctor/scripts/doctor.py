@@ -97,6 +97,22 @@ def _cfg(sdlc_dir):
     return data if isinstance(data, dict) else {}   # a non-dict config.json reads as empty, never crashes
 
 
+def _config_json_problem(base):
+    """-> the fix text when config.json exists but does not parse as a JSON object, else None."""
+    path = pathlib.Path(base) / "config.json"
+    try:
+        data = json.loads(path.read_text())
+    except OSError:
+        return None
+    except ValueError as exc:
+        return ("%s is not valid JSON (%s): every setting below is being read as its default. Repair "
+                "it by hand, or back it up (`cp config.json config.json.bak`) and re-run /sigma-init" % (path, exc))
+    if not isinstance(data, dict):
+        return ("%s is valid JSON but not an object: every setting below is being read as its default. "
+                "Repair it, or back it up (`cp config.json config.json.bak`) and re-run /sigma-init" % path)
+    return None
+
+
 def _block(cfg, name):
     """A config BLOCK read that can't crash on a shape typo. `cfg.get(name)` alone is not enough: a
     truthy NON-dict value (e.g. `{"verify": "pytest"}`) sails past `or {}` unchanged, and every
@@ -1099,7 +1115,8 @@ def _landing_rows(base, cfg, run, which):
         except Exception:                    # noqa: BLE001
             slug = None
         if not slug:
-            reason = "the work remote has no readable owner/name"
+            reason = ("the work remote has no readable owner/name -- expected for a non-GitHub remote "
+                      "(nothing to fix); for a GitHub remote, check `git remote get-url origin`")
             blockers, unknown = [], False
         else:
             blockers, unknown = lp.ruleset_blockers(_raising_gh(run), slug, prefix)
@@ -2501,6 +2518,11 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     kg = _block(cfg, "knowledge_graph")
     bchk = _block(cfg, "backlog_check")
     out = [_chk("project layer", (base / "config.json").exists(), "run /sigma-init to scaffold .sdlc/")]
+    # D7: `_cfg` reads a config.json that does not parse as {} (so every setting reads as its default),
+    # and the row above passes on mere existence. Say so, only when it is actually broken.
+    bad_json = _config_json_problem(base)
+    if bad_json:
+        out.append(_chk("config.json is valid JSON", False, bad_json))
 
     # #1200 gap 2: informational, always ok=True -- same "state embedded in the name, no fix"
     # idiom the "companions" rows below already use (a plugin being present/absent is neither a

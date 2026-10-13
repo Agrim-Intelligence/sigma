@@ -704,7 +704,12 @@ def main(argv):
     extras = {"--" + k for k in ("demo", "vision", "codex", "cursor") if opts.get(k)}
     if source == "github":
         extras.add("--github")                           # only for the demo's gh-issue hint
-    _si.scaffold_extras(target, extras)
+    try:
+        _si.scaffold_extras(target, extras)
+    except (ValueError, OSError) as exc:
+        for line in _si.extras_refusal_lines(exc):
+            print(line, file=sys.stderr)
+        return 2
     if opts.get("github-templates"):
         gcreated, _ = _si.scaffold_github(target)
         print(f"\nsigma-init: .github/ scaffolding - {len(gcreated)} created")

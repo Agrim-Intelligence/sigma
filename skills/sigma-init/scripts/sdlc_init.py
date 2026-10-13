@@ -628,6 +628,23 @@ def _demo_board_hint(target):
             "Backlog -> ... -> Done.")
 
 
+def extras_refusal_lines(exc):
+    """D7: `scaffold_codex` (and the other opt-in scaffolds) RAISE on a symlinked or malformed
+    AGENTS.md -- right for a library, but at the CLI it surfaced as a Python traceback with no
+    remedy, and a symlinked AGENTS.md (many repos point it at CLAUDE.md) is common. -> the lines to
+    print (stderr) before exiting 2; the .sdlc scaffold already written is kept."""
+    text = str(exc)
+    if "AGENTS.md" in text or "Codex" in text:
+        fix = ("  Fix: if AGENTS.md is a symlink, replace it with a regular file "
+               "(`rm AGENTS.md && cp <the file it pointed at> AGENTS.md`); if the Sigma markers are "
+               "malformed, repair or delete the lines from <!-- sigma:codex:start --> to "
+               "<!-- sigma:codex:end -->; then re-run /sigma-init --codex")
+        return [f"sigma-init: REFUSED - {text}. AGENTS.md was not changed; the rest of the scaffold "
+                "is written and kept.", fix]
+    return [f"sigma-init: REFUSED - {text}. Fix the cause above, then re-run /sigma-init with the same "
+            "flags (what was already written is kept)."]
+
+
 def scaffold_extras(target, flags):
     """The opt-in scaffolds (`--demo`, `--vision`, `--cursor`, `--codex`), each skip-if-exists and
     each reporting one line. Shared by `main()` and `init_flow.py` (#236), so the one entry point
@@ -754,7 +771,12 @@ def main(argv):
         print("sigma-init: note - this low-level `--github` gesture does NOT switch the backlog to "
               "GitHub (discovery.source is unchanged). The one entry point does: "
               "`init_flow.py --mode github` (`/sigma-init`, #236).")
-    scaffold_extras(target, flags)
+    try:
+        scaffold_extras(target, flags)
+    except (ValueError, OSError) as exc:
+        for line in extras_refusal_lines(exc):
+            print(line, file=sys.stderr)
+        return 2
     # #246 review 2: the verify report comes LAST, after every step above that writes files
     # (--github adds workflows, --codex AGENTS.md, --cursor .cursor/), so the candidates and ids it
     # prints are detected from the repository exactly as `confirm` will see it. The config's
