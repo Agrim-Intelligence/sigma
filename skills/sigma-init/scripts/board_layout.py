@@ -174,7 +174,8 @@ def _open(sdlc_dir, owner, number, runner, out, need_ours):
     try:
         pinned = int(pinned) if pinned not in (None, "") else None
     except (TypeError, ValueError):
-        out(f"board_layout: REFUSED -- project.number {pf.printable(pinned)} is not a number.")
+        out(f"board_layout: REFUSED -- project.number {pf.printable(pinned)} is not a number. "
+            + bs.NUMBER_FIX + ".")
         raise Refused() from None
     if pinned is None:
         out("board_layout: REFUSED -- no board is pinned. Create and pin one first "
@@ -185,7 +186,7 @@ def _open(sdlc_dir, owner, number, runner, out, need_ours):
         try:
             owner = b.gh("api", "user", "--jq", ".login").strip()
         except bs.Failed as exc:
-            out(f"board_layout: REFUSED -- could not resolve {owner}: {exc.detail}")
+            out(f"board_layout: REFUSED -- could not resolve {owner}: {bs._fix(exc.detail)}")
             raise Refused() from None
     if need_ours and not explicit and not bs._ours(proj.get(bs.CREATED_KEY), pinned, owner):
         out(f"board_layout: REFUSED -- board #{pinned} is pinned, but board_setup.py did not create "
@@ -196,7 +197,7 @@ def _open(sdlc_dir, owner, number, runner, out, need_ours):
         who = b.rest(f"users/{owner}")
     except (bs.Failed, ValueError) as exc:
         out(f"board_layout: REFUSED -- could not read owner '{pf.printable(owner)}': "
-            f"{getattr(exc, 'detail', exc)}")
+            f"{bs._fix(str(getattr(exc, 'detail', exc)))} -- fix: {bs.OWNER_FIX}")
         raise Refused() from None
     kind = "orgs" if who.get("type") == "Organization" else "users"
     return Layout(b, spec, pinned, owner, kind, sdlc, explicit), spec
@@ -556,7 +557,7 @@ def main(argv, runner=None, out=print):
         lay.read()
     except (bs.Failed, ValueError, KeyError, TypeError) as exc:
         out(f"board_layout: REFUSED -- could not read board #{lay.number} of "
-            f"{pf.printable(lay.owner)}: {getattr(exc, 'detail', exc)}")
+            f"{pf.printable(lay.owner)}: {bs._fix(str(getattr(exc, 'detail', exc)))}")
         return 2
     if verb == "verify":
         out(f"board_layout verify: {pf.printable(lay.owner)} board #{lay.number} "

@@ -65,6 +65,10 @@ HOOKS_PATH = "." + "git" + "hooks"
 UNSET_HOOKS_PATH = "git config --local --unset core.hooksPath"
 
 
+_GIT_MISSING = ("could not start git -- fix: install git (https://git-scm.com/downloads) and put it "
+                "on PATH, then re-run")
+
+
 class HookPathRefused(Exception):
     """A hook-path read or write that could not be made safely; nothing was changed."""
 
@@ -81,7 +85,7 @@ def _hook_git(repo_root, *args):
         return subprocess.run(["git", "-C", str(repo_root), *args], capture_output=True, text=True,
                               env=_hook_git_env())
     except OSError as exc:
-        raise HookPathRefused("could not start git") from exc
+        raise HookPathRefused(_GIT_MISSING) from exc
 
 
 def _local_hook_path(repo_root):
@@ -90,7 +94,9 @@ def _local_hook_path(repo_root):
     if current.returncode == 1:
         return None
     if current.returncode != 0:
-        raise HookPathRefused("could not read the repository-local core.hooksPath")
+        raise HookPathRefused("could not read the repository-local core.hooksPath -- fix: check the "
+                              "path is a git repository (`git -C <dir> rev-parse --git-dir`) and that "
+                              "its .git/config is readable, then re-run")
     return current.stdout.strip()
 
 
@@ -130,7 +136,9 @@ def clear_stale_hook_path(repo_root):
     if not stale_hook_path(repo_root):
         return "absent"
     if _hook_git(repo_root, "config", "--local", "--unset", "core.hooksPath").returncode != 0:
-        raise HookPathRefused("could not unset the repository-local core.hooksPath")
+        raise HookPathRefused("could not unset the repository-local core.hooksPath -- fix: check "
+                              ".git/config is writable, or run `" + UNSET_HOOKS_PATH + "` yourself to see "
+                              "git's own error")
     return "cleared"
 
 
@@ -141,14 +149,20 @@ def ensure_hook_path(repo_root):
     `installed` or `already configured`; errors never reveal the existing value."""
     if not any((root / HOOKS_PATH).is_dir() for root in _worktree_roots(repo_root)):
         raise HookPathRefused("the hook directory does not exist in this repository; pointing "
-                              "core.hooksPath at it would make git run no hooks")
+                              "core.hooksPath at it would make git run no hooks -- fix: create "
+                              + HOOKS_PATH + " with your hook scripts and re-run, or skip this verb "
+                              "(git then keeps running its default hooks)")
     current = _local_hook_path(repo_root)
     if current == HOOKS_PATH:
         return "already configured"
     if current is not None:
-        raise HookPathRefused("repository has a different core.hooksPath; refusing to overwrite it")
+        raise HookPathRefused("repository has a different core.hooksPath; refusing to overwrite it -- "
+                              "fix: leave it (its own hooks keep running), or unset it first with `"
+                              + UNSET_HOOKS_PATH + "` and re-run")
     if _hook_git(repo_root, "config", "--local", "core.hooksPath", HOOKS_PATH).returncode != 0:
-        raise HookPathRefused("could not install the repository-local core.hooksPath")
+        raise HookPathRefused("could not install the repository-local core.hooksPath -- fix: check "
+                              ".git/config is writable, or run `git config --local core.hooksPath "
+                              + HOOKS_PATH + "` yourself to see git's own error")
     return "installed"
 
 

@@ -126,6 +126,13 @@ def render_label_report(repo, results):
                      "makes the pick query return nothing; create it by hand or grant the token "
                      "label-write (Issues: write) and rerun" % (where, len(failed), len(results),
                                                                  ", ".join(failed)))
+        # D7: when gh's reason has a classified fix (a bad token says log in, not 'grant Issues: write')
+        first = next(r["reason"] for r in results if r["outcome"] == "failed")
+        probe = RuntimeError(first)
+        probe.hint = first
+        fixed = gh_api.with_remedy(probe, "")
+        if fixed.strip(" -"):
+            lines.append(fixed.strip(" -"))
     else:
         created = sum(1 for r in results if r["outcome"] == "created")
         lines.append("labels ensured on %s: %d created, %d existed" % (where, created,

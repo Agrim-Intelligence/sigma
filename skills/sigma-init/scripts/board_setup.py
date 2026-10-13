@@ -192,6 +192,8 @@ class Board:
         if self.host != "github.com" and args and args[0] == "api":
             argv[2:2] = ["--hostname", self.host]
         rc, out, err = self.runner(argv)
+        if rc == 127:           # D7: the program is missing; say so instead of the runner's bare note
+            raise Failed(_gh_api().GH_MISSING_HINT)
         if rc != 0:
             raise Failed(_clean(err or out or f"gh exited {rc}"))
         return out
@@ -211,6 +213,25 @@ class Board:
         if tag == "REFUSED":
             self.refused = True
         self.out(f"  [{tag}] {what}" + (f": {detail}" if detail else ""))
+
+
+def _fix(detail):
+    """D7: `detail` (gh's redacted reason) with the fix for its classified kind appended; unchanged
+    when the failure has no single fix. Never raises."""
+    try:
+        api = _gh_api()
+        probe = RuntimeError(detail)
+        probe.hint = detail
+        return api.with_remedy(probe, detail)
+    except Exception:           # noqa: BLE001 - a remedy must never mask the failure
+        return detail
+
+
+NUMBER_FIX = ("set discovery.github.project.number to the number in the board's URL "
+              "(github.com/orgs/OWNER/projects/N or github.com/users/OWNER/projects/N), pass --number N, "
+              "or remove the key to create a new board")
+OWNER_FIX = ("check the owner's spelling (`gh api users/OWNER`), or set discovery.github.project.owner "
+             "in .sdlc/config.json (or pass --owner)")
 
 
 def _config(sdlc):
@@ -381,7 +402,8 @@ def create(sdlc_dir, owner=None, title=None, template=None, number=None, yes=Fal
     try:
         pinned = int(pinned) if pinned not in (None, "") else None
     except (TypeError, ValueError):
-        out(f"board_setup: REFUSED -- project.number {pf.printable(pinned)!s} is not a number.")
+        out(f"board_setup: REFUSED -- project.number {pf.printable(pinned)!s} is not a number. "
+            + NUMBER_FIX + ".")
         return 2
     b = Board(sdlc, runner, out, host)
 
@@ -397,13 +419,13 @@ def create(sdlc_dir, owner=None, title=None, template=None, number=None, yes=Fal
         try:
             owner = b.gh("api", "user", "--jq", ".login").strip()
         except Failed as exc:
-            out(f"board_setup: REFUSED -- could not resolve {owner}: {exc.detail}")
+            out(f"board_setup: REFUSED -- could not resolve {owner}: {_fix(exc.detail)}")
             return 2
     try:
         who = b.rest(f"users/{owner}")
     except (Failed, ValueError) as exc:
         out(f"board_setup: REFUSED -- could not read owner '{pf.printable(owner)}': "
-            f"{getattr(exc, 'detail', exc)}")
+            f"{_fix(str(getattr(exc, 'detail', exc)))} -- fix: {OWNER_FIX}")
         return 2
     org = who.get("type")
     kind = "orgs" if org == "Organization" else "users"
@@ -425,7 +447,8 @@ def create(sdlc_dir, owner=None, title=None, template=None, number=None, yes=Fal
         boards = [json.loads(ln) for ln in listing.splitlines() if ln.strip()]
     except (Failed, ValueError) as exc:
         out(f"board_setup: REFUSED -- could not list {pf.printable(owner)}'s boards, so a duplicate "
-            f"cannot be ruled out: {getattr(exc, 'detail', exc)}")
+            f"cannot be ruled out: {_fix(str(getattr(exc, 'detail', exc)))}. Nothing was created; "
+            "re-run once that is fixed (`gh auth refresh -s project` if the token lacks the project scope).")
         return 2
     mine = next((x for x in boards if pinned is not None and x.get("number") == pinned), None)
     if pinned is not None and not mine:
