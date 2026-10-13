@@ -1259,7 +1259,7 @@ def _hook_python_row():
     return _chk(_HOOK_PYTHON_ROW, False,
                 "`python3` on PATH is " + ("broken (it cannot run a program)" if found else "missing") +
                 ", so hooks/issue_field_gate.py and hooks/decision_gate.py -- and the time and research "
-                "hooks -- do not run (tool calls are still allowed; each session gets one notice). Fix: "
+                "hooks -- do not run (tool calls are still allowed; each hook prints a notice instead). Fix: "
                 "install a working python3 (or repair the pyenv/conda shim that `python3` resolves to), "
                 "then re-run /sigma-doctor.")
 

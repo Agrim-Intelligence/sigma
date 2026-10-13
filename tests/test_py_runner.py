@@ -23,6 +23,7 @@ def _bindir(tmp_path, name, python3="real"):
     d = tmp_path / name
     d.mkdir()
     (d / "bash").symlink_to(shutil.which("bash"))
+    (d / "mkdir").symlink_to(shutil.which("mkdir"))      # the only external the notice marker needs
     if python3 == "real":
         (d / "python3").symlink_to(REAL_PY)
     elif python3 == "broken":
@@ -93,16 +94,19 @@ def _commands():
             if "_py.sh" in h["command"]]
 
 
-def _host_run(tmp_path, command, pathdir, adopted=True, name="proj", stdin="{}"):
+def _host_run(tmp_path, command, pathdir, adopted=True, name="proj", stdin="{}", shell=None,
+              env_extra=None, cwd=None, tmpname=None):
     proj = tmp_path / name
     (proj / ".sdlc").mkdir(parents=True, exist_ok=True)
     if adopted:
         (proj / ".sdlc" / "config.json").write_text("{}")
-    tmpdir = tmp_path / f"tmp-{name}"          # one notice marker dir per simulated session
+    tmpdir = tmp_path / f"tmp-{tmpname or name}"   # one notice marker dir per simulated session
     tmpdir.mkdir(exist_ok=True)
-    return subprocess.run(["bash", "-c", command], capture_output=True, text=True, cwd=proj,
-                          input=stdin, env={"PATH": pathdir, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parent),
-                                            "TMPDIR": str(tmpdir)})
+    env = {"PATH": pathdir, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parent), "TMPDIR": str(tmpdir)}
+    env.update(env_extra or {})
+    # timeout: a regression that hangs must FAIL (TimeoutExpired), never hang the suite (#1282 review)
+    return subprocess.run(shell or ["bash", "-c", command], capture_output=True, text=True,
+                          cwd=cwd or proj, input=stdin, env=env, timeout=20)
 
 
 def test_there_are_python_backed_hooks_to_cover():
@@ -146,3 +150,143 @@ def test_working_python_prints_no_notice(tmp_path):
     cmd = next(c for c in _commands() if "time_track" in c)
     r = _host_run(tmp_path, cmd, _bindir(tmp_path, "b", "real"))
     assert "systemMessage" not in r.stdout
+
+
+# ------------------------------------------------------------------ review fixes on #1322
+
+
+def _decision_cmd():
+    return next(c for c in _commands() if "decision_gate" in c)
+
+
+def _noticed(r):
+    return r.returncode == 0 and "systemMessage" in r.stdout
+
+
+def test_relative_empty_and_odd_project_dirs_terminate(tmp_path):
+    """The adoption walk-up used to spin forever on a relative CLAUDE_PROJECT_DIR."""
+    cmd, bindir = _decision_cmd(), _bindir(tmp_path, "b", "broken")
+    proj = tmp_path / "proj"
+    adopted_values = ["proj", ".", "", "proj/", str(proj) + "///", "./proj/."]
+    for i, value in enumerate(adopted_values + ["nope/deeper"]):
+        # relative values resolve against the hook's cwd, so run from tmp_path for the `proj`-relative ones
+        cwd = proj if value in (".", "") or value.startswith("/") else tmp_path
+        r = _host_run(tmp_path, cmd, bindir, cwd=cwd, env_extra={"CLAUDE_PROJECT_DIR": value},
+                      tmpname=f"rel{i}")
+        assert r.returncode == 0, (value, r.stderr)
+        if value in adopted_values:
+            assert _noticed(r), value
+        else:
+            assert r.stdout == "", value                # not adopted: silent, and it ended
+
+
+def test_adoption_is_found_at_an_ancestor_and_deep_paths_terminate(tmp_path):
+    deep = tmp_path / "proj" / "a" / "b" / "c" / "d" / "e"
+    deep.mkdir(parents=True)
+    r = _host_run(tmp_path, _decision_cmd(), _bindir(tmp_path, "b", "broken"), cwd=deep,
+                  env_extra={"CLAUDE_PROJECT_DIR": str(deep)})
+    assert _noticed(r)                                  # .sdlc/config.json five levels up
+    r = _host_run(tmp_path, _decision_cmd(), _bindir(tmp_path, "b2", "broken"), adopted=False,
+                  name="bare", cwd=tmp_path, env_extra={"CLAUDE_PROJECT_DIR": "/"})
+    assert r.returncode == 0 and r.stdout == ""         # the root itself terminates too
+
+
+def test_gate_state_is_exempt_from_the_notice(tmp_path):
+    cmd = 'bash "${CLAUDE_PLUGIN_ROOT}/hooks/_py.sh" "${CLAUDE_PLUGIN_ROOT}/hooks/gate_state.py" --adopted .'
+    r = _host_run(tmp_path, cmd, _bindir(tmp_path, "b", "broken"))
+    assert r.returncode == 0 and r.stdout == ""
+
+
+def _markers(tmp_path, name):
+    return tmp_path / f"tmp-{name}" / f"sigma-hooks-{os.getuid()}"
+
+
+def test_marker_never_follows_a_symlink_and_never_suppresses_the_notice(tmp_path):
+    cmd, bindir = _decision_cmd(), _bindir(tmp_path, "b", "broken")
+    sid = '{"session_id": "abc123"}'
+    # the per-user dir itself is a symlink to an attacker-chosen directory: not used, notice shown,
+    # nothing created inside the target
+    target = tmp_path / "target"
+    target.mkdir()
+    tmpdir = tmp_path / "tmp-sym"
+    tmpdir.mkdir()
+    (tmpdir / f"sigma-hooks-{os.getuid()}").symlink_to(target)
+    r = _host_run(tmp_path, cmd, bindir, name="sym", stdin=sid)
+    assert _noticed(r) and list(target.iterdir()) == []
+    # a dangling symlink at the marker path and a symlink to an existing file
+    for kind in ("dangling", "existing", "dirlink"):
+        n = f"m{kind}"
+        d = _markers(tmp_path, n)
+        d.mkdir(parents=True, mode=0o700)
+        link = d / "py-notice-sabc123-decision_gate.py"
+        dest = tmp_path / f"{kind}-dest"
+        if kind == "existing":
+            dest.write_text("keep")
+        if kind == "dirlink":
+            dest.mkdir()                                # a symlink to a real directory must not count as a marker
+        link.symlink_to(dest)
+        r = _host_run(tmp_path, cmd, bindir, name=n, stdin=sid)
+        assert _noticed(r), kind                        # repeat, never skip
+        assert dest.exists() == (kind != "dangling")  # a dangling target was not created
+        if kind == "existing":
+            assert dest.read_text() == "keep"
+
+
+def test_a_file_at_the_marker_path_does_not_suppress(tmp_path):
+    d = _markers(tmp_path, "f")
+    d.mkdir(parents=True, mode=0o700)
+    (d / "py-notice-sabc123-decision_gate.py").write_text("stale")
+    r = _host_run(tmp_path, _decision_cmd(), _bindir(tmp_path, "b", "broken"), name="f",
+                  stdin='{"session_id": "abc123"}')
+    assert _noticed(r)
+
+
+def test_marker_dir_is_private_and_a_second_event_is_quiet(tmp_path):
+    cmd, bindir = _decision_cmd(), _bindir(tmp_path, "b", "broken")
+    assert _noticed(_host_run(tmp_path, cmd, bindir, stdin='{"session_id": "abc123"}'))
+    assert stat.S_IMODE(_markers(tmp_path, "proj").stat().st_mode) == 0o700
+    again = _host_run(tmp_path, cmd, bindir, stdin='{"session_id": "abc123"}')
+    assert again.returncode == 0 and again.stdout == ""
+
+
+def test_no_mkdir_means_the_notice_repeats_not_skips(tmp_path):
+    bindir = _bindir(tmp_path, "b", "broken")
+    os.unlink(os.path.join(bindir, "mkdir"))
+    for _ in range(2):
+        assert _noticed(_host_run(tmp_path, _decision_cmd(), bindir, stdin='{"session_id": "abc123"}'))
+
+
+def test_session_id_keys_the_marker_even_through_a_fresh_non_exec_shell(tmp_path):
+    """The host may put a shell between itself and the hook; `sh -c '...; true'` does not exec, so the
+    hook's PPID differs on every event. With a session_id on stdin the notice is still once per session."""
+    cmd, bindir = _decision_cmd(), _bindir(tmp_path, "b", "broken")
+    shell = ["/bin/sh", "-c", cmd + "; true"]
+    sid = '{"session_id": "sess-1"}'
+    assert _noticed(_host_run(tmp_path, cmd, bindir, stdin=sid, shell=shell))
+    assert _host_run(tmp_path, cmd, bindir, stdin=sid, shell=shell).stdout == ""
+    other = _host_run(tmp_path, cmd, bindir, stdin='{"session_id": "sess-2"}', shell=shell)
+    assert _noticed(other)                                   # a different session is told again
+
+
+def test_without_a_session_id_a_fresh_shell_per_event_repeats_the_notice(tmp_path):
+    """The honest fallback: no session_id -> keyed on PPID, which a non-exec wrapper changes per event."""
+    cmd, bindir = _decision_cmd(), _bindir(tmp_path, "b", "broken")
+    shell = ["/bin/sh", "-c", cmd + "; true"]
+    assert _noticed(_host_run(tmp_path, cmd, bindir, shell=shell))
+    assert _noticed(_host_run(tmp_path, cmd, bindir, shell=shell))
+
+
+def test_an_unsafe_session_id_falls_back_rather_than_naming_a_path(tmp_path):
+    cmd, bindir = _decision_cmd(), _bindir(tmp_path, "b", "broken")
+    r = _host_run(tmp_path, cmd, bindir, stdin='{"session_id": "../../etc/x"}')
+    assert _noticed(r)
+    assert all(".." not in p.name for p in _markers(tmp_path, "proj").iterdir())
+
+
+def test_a_slashed_session_id_cannot_place_a_marker_outside_the_marker_dir(tmp_path):
+    d = _markers(tmp_path, "proj")
+    (d / "py-notice-sfoo").mkdir(parents=True, mode=0o700)
+    r = _host_run(tmp_path, _decision_cmd(), _bindir(tmp_path, "b", "broken"),
+                  stdin='{"session_id": "foo/bar"}')
+    assert _noticed(r)
+    assert list((d / "py-notice-sfoo").iterdir()) == []      # the unsanitised key would have landed here
