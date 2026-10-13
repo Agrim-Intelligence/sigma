@@ -478,8 +478,8 @@ def main(argv):
                 raise ValueError("top level is not a JSON object")
         except (OSError, ValueError) as exc:             # #625: refuse, never a traceback or a rewrite
             print(f"setup.py configure: REFUSED - {sdlc / 'config.json'} is unreadable ({exc}). Nothing "
-                  f"written, file untouched. Repair the JSON by hand, or back it up "
-                  f"(`cp config.json config.json.bak`) and delete it on purpose, then re-run.",
+                  f"written, file untouched. Repair the JSON by hand, or move it aside "
+                  f"(`mv config.json config.json.bak`, in .sdlc/) on purpose, then re-run.",
                   file=sys.stderr)
             return 2
         source = f.get("source", "github")

@@ -635,14 +635,16 @@ def extras_refusal_lines(exc):
     print (stderr) before exiting 2; the .sdlc scaffold already written is kept."""
     text = str(exc)
     if "AGENTS.md" in text or "Codex" in text:
-        fix = ("  Fix: if AGENTS.md is a symlink, replace it with a regular file "
-               "(`rm AGENTS.md && cp <the file it pointed at> AGENTS.md`); if the Sigma markers are "
-               "malformed, repair or delete the lines from <!-- sigma:codex:start --> to "
-               "<!-- sigma:codex:end -->; then re-run /sigma-init --codex")
-        return [f"sigma-init: REFUSED - {text}. AGENTS.md was not changed; the rest of the scaffold "
-                "is written and kept.", fix]
+        fix = ("  Fix: if AGENTS.md is a symlink (often a deliberate alias of CLAUDE.md), either run "
+               "/sigma-init again without --codex (the alias stays as it is), or replace the link with a "
+               "regular file (`rm AGENTS.md && cp <the file it pointed at> AGENTS.md`; the two files then "
+               "diverge) and re-run /sigma-init --codex; if the Sigma markers are malformed, repair or "
+               "delete the lines from <!-- sigma:codex:start --> to <!-- sigma:codex:end -->, then "
+               "re-run /sigma-init --codex")
+        return [f"sigma-init: REFUSED - {text}. AGENTS.md was not changed; every other step ran (the "
+                "scaffold, verify detection, preflight) and the exit status is 2 because of this one.", fix]
     return [f"sigma-init: REFUSED - {text}. Fix the cause above, then re-run /sigma-init with the same "
-            "flags (what was already written is kept)."]
+            "flags (every other step ran; what was already written is kept)."]
 
 
 def scaffold_extras(target, flags):
@@ -771,12 +773,11 @@ def main(argv):
         print("sigma-init: note - this low-level `--github` gesture does NOT switch the backlog to "
               "GitHub (discovery.source is unchanged). The one entry point does: "
               "`init_flow.py --mode github` (`/sigma-init`, #236).")
+    extras_refusal = None
     try:
         scaffold_extras(target, flags)
     except (ValueError, OSError) as exc:
-        for line in extras_refusal_lines(exc):
-            print(line, file=sys.stderr)
-        return 2
+        extras_refusal = extras_refusal_lines(exc)       # recorded; exit 2 at the END, after every step
     # #246 review 2: the verify report comes LAST, after every step above that writes files
     # (--github adds workflows, --codex AGENTS.md, --cursor .cursor/), so the candidates and ids it
     # prints are detected from the repository exactly as `confirm` will see it. The config's
@@ -798,6 +799,10 @@ def main(argv):
         print()
         for line in report:
             print(line)
+    if extras_refusal:
+        for line in extras_refusal:
+            print(line, file=sys.stderr)
+        return 2
     return 0
 
 

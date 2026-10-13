@@ -106,10 +106,10 @@ def _config_json_problem(base):
         return None
     except ValueError as exc:
         return ("%s is not valid JSON (%s): every setting below is being read as its default. Repair "
-                "it by hand, or back it up (`cp config.json config.json.bak`) and re-run /sigma-init" % (path, exc))
+                "it by hand, or move it aside (`mv config.json config.json.bak`, in .sdlc/) and re-run /sigma-init" % (path, exc))
     if not isinstance(data, dict):
         return ("%s is valid JSON but not an object: every setting below is being read as its default. "
-                "Repair it, or back it up (`cp config.json config.json.bak`) and re-run /sigma-init" % path)
+                "Repair it, or move it aside (`mv config.json config.json.bak`, in .sdlc/) and re-run /sigma-init" % path)
     return None
 
 

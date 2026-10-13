@@ -838,8 +838,8 @@ def _read_config(path):
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError(f"{printable(path)} is not valid JSON ({printable(exc.msg)}, line {exc.lineno} "
-                         f"column {exc.colno}) -- repair it by hand, or back it up (`cp config.json "
-                         "config.json.bak`) and re-run /sigma-init") from None
+                         f"column {exc.colno}) -- repair it by hand, or move it aside (`mv config.json "
+                         "config.json.bak`, in .sdlc/) and re-run /sigma-init to scaffold a fresh one") from None
 
 
 def set_local_only(sdlc_arg):

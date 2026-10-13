@@ -513,8 +513,8 @@ def declare(source, unit, issues):
         report["outcome"] = NOT_SUPPORTED
         report["why"] = ("this backlog source has no label surface (missing %s), so the unit's label "
                          "half cannot be written; the body marker in each issue still declares the "
-                         "unit. Nothing to do in local-goals mode (the exit stays 1 so callers see "
-                         "the label half was skipped)" % ", ".join(missing))
+                         "unit. Nothing to do for a source without a label surface (the exit stays 1 so "
+                         "callers see the label half was skipped)" % ", ".join(missing))
         return report
     for issue in issues:
         report["issues"].append(_declare_one(source, unit, label, issue))
