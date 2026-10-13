@@ -541,10 +541,9 @@ def _declare_one(source, unit, label, issue):
             " -- fix: edit the issue so its body marker and label name one unit, then re-run "
             "define.py declare")
         return row
-    except Exception as exc:              # noqa: BLE001 - a read we could not make is evidence of
+    except Exception as exc:              # noqa: BLE001 - a read we could not make is evidence of nothing, and must not stop the rest
         row["outcome"], row["why"] = UNREADABLE, _flat(exc) + (
             " -- fix: re-run define.py declare for this issue once gh can read it (`gh auth status`)")
-        # nothing, and must not stop the rest
         return row
     row["state"], row["unit"] = verdict.state, verdict.unit
     if verdict.state != features.AGREE:

@@ -508,9 +508,9 @@ def check_gh_auth(host, runner, timeout):
         return _chk("gh-auth", "gh auth", True, f"logged in to {printable(host)}"), \
             parse_auth_status(out)
     if rc == 127:           # D7: a missing program is not a login problem
-        return _chk("gh-auth", "gh auth", False, "gh is not installed (not found on PATH)",
-                    ["install the GitHub CLI from https://cli.github.com, then run "
-                     f"`gh auth login -h {host} -s repo,workflow,read:org`"], interactive=True,
+        cmds, url = _install_hint("gh")
+        return _chk("gh-auth", "gh auth", False, f"gh is not installed (not found on PATH); install it "
+                    f"from {url}, then run `gh auth login -h {host} -s repo,workflow,read:org`", cmds,
                     meanwhile="Sigma runs nothing that needs gh: no pull request, no issue discovery "
                               "(pushing works without gh)."), None
     proxy = _proxy_block(out)

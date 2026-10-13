@@ -81,7 +81,8 @@ def test_board_setup_with_no_gh_says_install_it(tmp_path):
 
 def test_board_setup_non_numeric_project_number_says_where_to_find_it(tmp_path):
     rc, text = _run_setup(tmp_path, [], project={"number": "abc"})
-    assert rc == 2 and "REFUSED -- project.number abc is not a number." in text
+    assert rc == 2 and "REFUSED -- project.number abc is not a number -- fix: " in text
+    assert "remove the key to create a new board" in text
     assert "discovery.github.project.number" in text and "/projects/" in text
 
 
@@ -115,7 +116,8 @@ def test_board_layout_refusals_print_their_fix(tmp_path):
     lines = []
     rc = bl.main(["board_layout.py", "verify", str(sdlc)], runner=_runner([]), out=lines.append)
     text = "\n".join(lines)
-    assert rc == 2 and "is not a number." in text and "/projects/" in text
+    assert rc == 2 and "is not a number -- fix: " in text and "/projects/" in text
+    assert "create a new board" not in text            # board_layout never creates a board
 
     sdlc2 = tmp_path / "b" / ".sdlc"
     sdlc2.parent.mkdir()
@@ -150,7 +152,8 @@ def test_hooks_different_value_names_how_to_hand_over_without_revealing_it(tmp_p
     subprocess.run(["git", "-C", str(tmp_path), "config", "--local", "core.hooksPath", "secretdir"], check=True)
     msg = _hook_exc(setup.ensure_hook_path, tmp_path)
     assert msg.startswith("repository has a different core.hooksPath; refusing to overwrite it")
-    assert setup.UNSET_HOOKS_PATH in msg and "secretdir" not in msg
+    assert "secretdir" not in msg and "--unset" not in msg      # never invite clearing a foreign value
+    assert "leave" in msg and "keep running" in msg and "-- fix: " in msg
 
 
 def test_hooks_git_failures_name_what_to_check(tmp_path, monkeypatch):
@@ -278,3 +281,73 @@ def test_local_goals_promote_says_how_a_proposed_goal_is_approved(capsys):
     triage.needs_github({"discovery": {"source": "local-goals"}}, "promotion", 1, None, None)
     err = capsys.readouterr().err
     assert "status: proposed" in err and "status: pending" in err
+
+
+# ---------------------------------------------------------------- review of #1352
+
+def test_install_text_for_a_missing_gh_is_prose_not_a_pasteable_command():
+    chk, _ = pf.check_gh_auth("github.com", lambda argv, cwd, t: (127, "gh: not found on PATH"), 5)
+    text = "\n".join(pf.failure_lines(chk))
+    assert "cli.github.com" in text
+    assert "``" not in text and "interactive" not in text.lower()
+    for c in chk["commands"]:
+        assert not c.startswith("install ") and " then " not in c       # only real commands
+
+
+def _owner_lines(tmp_path, owner_answer):
+    return _run_setup(tmp_path, [("auth status", (0, SCOPES, "")), ("users/acme", owner_answer)],
+                      "--owner", "acme")[1]
+
+
+def test_owner_read_404_has_exactly_one_fix_and_it_is_about_the_owner(tmp_path):
+    text = _owner_lines(tmp_path, (1, "", "gh: Not Found (HTTP 404)"))
+    assert text.count("fix: ") == 1 and "spelling" in text
+    assert "discovery.github.repo" not in text
+
+
+def test_owner_read_401_has_one_fix_and_no_spelling_advice(tmp_path):
+    text = _owner_lines(tmp_path, (1, "", BAD))
+    assert text.count("fix: ") == 1 and "gh auth login" in text and "spelling" not in text
+
+
+def test_owner_read_with_gh_gone_has_one_fix_and_no_spelling_advice(tmp_path):
+    text = _owner_lines(tmp_path, (127, "", "gh: not found on PATH"))
+    assert text.count("fix: ") <= 1 and "cli.github.com" in text and "spelling" not in text
+
+
+def test_board_layout_owner_read_has_one_fix(tmp_path):
+    sdlc = tmp_path / ".sdlc"
+    sdlc.mkdir()
+    (sdlc / "config.json").write_text(json.dumps(
+        {"discovery": {"source": "github", "github": {"repo": "acme/widget", "project": {"number": 3}}}}))
+    for answer, spelling in (((1, "", "gh: Not Found (HTTP 404)"), True), ((1, "", BAD), False)):
+        lines = []
+        bl.main(["board_layout.py", "verify", str(sdlc), "--owner", "acme"],
+                runner=_runner([("users/acme", answer)]), out=lines.append)
+        text = "\n".join(lines)
+        assert text.count("fix: ") == 1 and (("spelling" in text) is spelling), text
+
+
+def test_board_gh_rc_127_raises_the_install_hint():
+    board = bs.Board(".", _runner([("gh", (127, "", "gh: not found on PATH"))]), lambda l: None)
+    with pytest.raises(bs.Failed) as ei:
+        board.gh("api", "user")
+    assert "cli.github.com" in ei.value.detail and "not found on PATH" not in ei.value.detail
+
+
+def test_hooks_install_text_for_an_existing_foreign_path_pinned(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / setup.HOOKS_PATH).mkdir()
+    subprocess.run(["git", "-C", str(tmp_path), "config", "--local", "core.hooksPath", ".husky/_"], check=True)
+    msg = _hook_exc(setup.ensure_hook_path, tmp_path)
+    assert ".husky" not in msg and "unset" not in msg.lower()
+    assert "that tool's own hook" in msg or "hook manager" in msg
+
+
+def test_git_missing_is_the_install_fix_through_a_real_oserror(tmp_path, monkeypatch):
+    def boom(*a, **k):
+        raise FileNotFoundError(2, "No such file", "git")
+    monkeypatch.setattr(setup.subprocess, "run", boom)
+    msg = _hook_exc(setup.ensure_hook_path, tmp_path)
+    assert msg == setup._GIT_MISSING or "git-scm.com" in msg
+    assert "install git" in msg and "PATH" in msg

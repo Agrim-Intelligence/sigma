@@ -174,8 +174,8 @@ def _open(sdlc_dir, owner, number, runner, out, need_ours):
     try:
         pinned = int(pinned) if pinned not in (None, "") else None
     except (TypeError, ValueError):
-        out(f"board_layout: REFUSED -- project.number {pf.printable(pinned)} is not a number. "
-            + bs.NUMBER_FIX + ".")
+        out(f"board_layout: REFUSED -- project.number {pf.printable(pinned)} is not a number -- fix: "
+            + bs.NUMBER_FIX_LAYOUT + ".")
         raise Refused() from None
     if pinned is None:
         out("board_layout: REFUSED -- no board is pinned. Create and pin one first "
@@ -197,7 +197,7 @@ def _open(sdlc_dir, owner, number, runner, out, need_ours):
         who = b.rest(f"users/{owner}")
     except (bs.Failed, ValueError) as exc:
         out(f"board_layout: REFUSED -- could not read owner '{pf.printable(owner)}': "
-            f"{bs._fix(str(getattr(exc, 'detail', exc)))} -- fix: {bs.OWNER_FIX}")
+            f"{bs._owner_fix(str(getattr(exc, 'detail', exc)))}")
         raise Refused() from None
     kind = "orgs" if who.get("type") == "Organization" else "users"
     return Layout(b, spec, pinned, owner, kind, sdlc, explicit), spec

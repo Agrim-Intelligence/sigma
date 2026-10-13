@@ -215,6 +215,15 @@ class Board:
         self.out(f"  [{tag}] {what}" + (f": {detail}" if detail else ""))
 
 
+def _kind(detail):
+    try:
+        probe = RuntimeError(detail)
+        probe.hint = detail
+        return _gh_api().classify(probe)[1]
+    except Exception:           # noqa: BLE001
+        return "other"
+
+
 def _fix(detail):
     """D7: `detail` (gh's redacted reason) with the fix for its classified kind appended; unchanged
     when the failure has no single fix. Never raises."""
@@ -227,9 +236,20 @@ def _fix(detail):
         return detail
 
 
-NUMBER_FIX = ("set discovery.github.project.number to the number in the board's URL "
-              "(github.com/orgs/OWNER/projects/N or github.com/users/OWNER/projects/N), pass --number N, "
-              "or remove the key to create a new board")
+def _owner_fix(detail):
+    """The owner lookup: a Not Found there means the OWNER is wrong, so that is the one fix line;
+    every other kind (no login, no network, no permission) keeps its own classified fix, alone."""
+    if _kind(detail) == "not_found":
+        return f"{detail} -- fix: {OWNER_FIX}"
+    return _fix(detail)
+
+
+NUMBER_FIX_SETUP = ("set discovery.github.project.number to the number in the board's URL "
+                    "(github.com/orgs/OWNER/projects/N or github.com/users/OWNER/projects/N), pass "
+                    "--number N, or remove the key to create a new board")
+NUMBER_FIX_LAYOUT = ("set discovery.github.project.number to the number in the board's URL "
+                     "(github.com/orgs/OWNER/projects/N or github.com/users/OWNER/projects/N), or pass "
+                     "--number N (board_layout never creates a board; board_setup.py does)")
 OWNER_FIX = ("check the owner's spelling (`gh api users/OWNER`), or set discovery.github.project.owner "
              "in .sdlc/config.json (or pass --owner)")
 
@@ -402,8 +422,8 @@ def create(sdlc_dir, owner=None, title=None, template=None, number=None, yes=Fal
     try:
         pinned = int(pinned) if pinned not in (None, "") else None
     except (TypeError, ValueError):
-        out(f"board_setup: REFUSED -- project.number {pf.printable(pinned)!s} is not a number. "
-            + NUMBER_FIX + ".")
+        out(f"board_setup: REFUSED -- project.number {pf.printable(pinned)!s} is not a number -- fix: "
+            + NUMBER_FIX_SETUP + ".")
         return 2
     b = Board(sdlc, runner, out, host)
 
@@ -425,7 +445,7 @@ def create(sdlc_dir, owner=None, title=None, template=None, number=None, yes=Fal
         who = b.rest(f"users/{owner}")
     except (Failed, ValueError) as exc:
         out(f"board_setup: REFUSED -- could not read owner '{pf.printable(owner)}': "
-            f"{_fix(str(getattr(exc, 'detail', exc)))} -- fix: {OWNER_FIX}")
+            f"{_owner_fix(str(getattr(exc, 'detail', exc)))}")
         return 2
     org = who.get("type")
     kind = "orgs" if org == "Organization" else "users"
@@ -448,7 +468,7 @@ def create(sdlc_dir, owner=None, title=None, template=None, number=None, yes=Fal
     except (Failed, ValueError) as exc:
         out(f"board_setup: REFUSED -- could not list {pf.printable(owner)}'s boards, so a duplicate "
             f"cannot be ruled out: {_fix(str(getattr(exc, 'detail', exc)))}. Nothing was created; "
-            "re-run once that is fixed (`gh auth refresh -s project` if the token lacks the project scope).")
+            "re-run once that is fixed.")
         return 2
     mine = next((x for x in boards if pinned is not None and x.get("number") == pinned), None)
     if pinned is not None and not mine:

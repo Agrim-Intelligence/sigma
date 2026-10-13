@@ -157,8 +157,9 @@ def ensure_hook_path(repo_root):
         return "already configured"
     if current is not None:
         raise HookPathRefused("repository has a different core.hooksPath; refusing to overwrite it -- "
-                              "fix: leave it (its own hooks keep running), or unset it first with `"
-                              + UNSET_HOOKS_PATH + "` and re-run")
+                              "fix: leave it in place (its own hooks keep running); to use this "
+                              "repository's " + HOOKS_PATH + " hooks as well, call them from that hook "
+                              "manager's own hook files, or skip this optional step")
     if _hook_git(repo_root, "config", "--local", "core.hooksPath", HOOKS_PATH).returncode != 0:
         raise HookPathRefused("could not install the repository-local core.hooksPath -- fix: check "
                               ".git/config is writable, or run `git config --local core.hooksPath "
