@@ -99,7 +99,7 @@ Pull request A (work.py, state, promote/unpark, gh transports):
   URL and `gh auth login`. A vanished working directory is not reported as a missing `gh`.
 
 Pull request B (loop.py): `agent-start` collision names `agent-reclaim` and `--thread`; verify exit 5
-(UNVERIFIED) says why `record done` stays blocked and the re-run; a failed verify points at the evidence tail on
+(UNVERIFIED) says the suite passed but is not deterministic, to fix or remove the listed tests, and the re-run (it makes no claim about `record done`: exit 5 still writes pass evidence); a failed verify points at the evidence tail on
 stderr (stdout contract unchanged); `loop.py next` on a local backlog with no goal files says so and names
 `.sdlc/goals/` and `/sigma-scope` (a backlog of finished goal files stays quiet).
 
@@ -145,8 +145,8 @@ of each message is still the system of record for "prints its fix", as in the fi
   The review pass added 8 mutations (the three `gh`-missing checks, the setting hint, the pickle form, the strict
   config read, the shared guard twice), all red, and the last commit added 3 (plan-sync, refused direct merge,
   closed PR), all red. No survivors at the end.
-- Part B: 5 mutations, all red.
-- Part C: 20 mutations, all red.
+- Part B: 5 mutations, all red; the review round removed a false claim from the UNVERIFIED hint and added 2 mutations of the corrected text, both red.
+- Part C: 20 mutations, all red; the review round added 10 (move-not-copy remedies in five places, the deferred Codex exit, the alias tradeoff, the declare note), all red.
 - Part D: 7 mutations were run, all red. One clause changed in that PR, the `OFF` line in `handoff.py`, was NOT
   covered by any mutation and no test asserted it (reverting it left every test green); a reviewer found that.
   A `handoff.py ack` test was added afterwards and 2 mutations of that clause were run, both red. So the 9
