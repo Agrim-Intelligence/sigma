@@ -1477,7 +1477,8 @@ def main(argv):
         config = ledger._config(sdlc_dir)
         entry = acknowledge(sdlc_dir, config, issue, state, flags.get("why", ""),
                             goal=goal, area=area)
-        print(entry["id"] if entry else "OFF (config: \"ledger\": {\"enabled\": true})")
+        print(entry["id"] if entry else "OFF (config: \"ledger\": {\"enabled\": true}) -- nothing written; "
+              "run `/sigma-init --ledger yes` or set that key in .sdlc/config.json")
         # #1599: the ledger is an ack's ONLY delivery channel -- unlike `open`/`track` it writes no
         # issue, so an unpublished ack answers nobody at all. It is also the verb most often typed
         # on a machine that is not looping, since answering a hand-off is exactly the thing you do

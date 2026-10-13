@@ -548,7 +548,8 @@ def init(root):
         with open(target, "x", encoding="utf-8") as fh:
             fh.write(json.dumps({"version": 1, "decisions": []}, indent=2) + "\n")
     except FileExistsError:
-        print(f"decision_gate.py: {target} already exists; not overwriting it", file=sys.stderr)
+        print(f"decision_gate.py: {target} already exists; not overwriting it -- edit it, then run "
+              "`decision_gate.py validate`", file=sys.stderr)
         return 1
     except OSError as e:
         print(f"decision_gate.py: could not write {target}: {e}", file=sys.stderr)
