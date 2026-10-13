@@ -1,7 +1,8 @@
 # D7 evidence: GitHub-mode refusals print their fix (#1290, #1291, #1289)
 
-Code state measured: `13cd46996461` (the head of the opt-in refusals pull request, which contains the other two).
-Pull requests: #1350 (remedy helper and surfaces), #1351 (`gh_api.py` sites), #1352 (opt-in refusals, local-park wording).
+Code state measured: the pull request heads `da8f1378418e` (#1350, remedy helper and surfaces), `80960701ead1`
+(#1351, `gh_api.py` sites) and `8330b56c8118` (#1352, opt-in refusals, local-park wording; contains the other two).
+Squash merges change these shas: after they land, the measured code is whatever main holds for those three changes.
 
 An independent scoring review found D7 "every refusal prints its fix" not met for GitHub mode. This record is what was
 reproduced, read, fixed, and what is left.
@@ -13,7 +14,8 @@ reproduced, read, fixed, and what is left.
 
 - exit status 1
 - stderr: `gh: Bad credentials (HTTP 401)`
-- stdout: `{"message": "Bad credentials", "documentation_url": "https://docs.github.com/rest", "status": "401"}`
+- stdout (content of; the real output is pretty-printed over several lines): a JSON object with `message` set to
+  `Bad credentials`, `documentation_url` set to `https://docs.github.com/rest`, and `status` set to `401`
 
 The same text came back for a repository read, so a bad token hides a missing repository behind a 401. Before the fix,
 `loop.py next` against a GitHub-mode config printed those lines inside the sweep and backlog messages, then
@@ -41,6 +43,10 @@ DONE                                               <- stdout, unchanged
 wording is unchanged. Surfaces wired: `sources.py` (backlog read, signed-in user, needs-label and needs-unit sweeps, board
 queue, label lookups), `promote.py`, `unpark.py`, `work.py`'s gh runner, and `GhApiError.__str__` for everything that
 prints a `gh_api` error. The final failure line of the backlog read carries the remedy; the "retrying" line does not.
+A `GhApiError` with no gh stderr (a hint-less test double, say) gets no remedy: its class would come from `str()`,
+which embeds argv. The permission and Not Found lines avoid the words callers scan error text for (`project`, `scope`,
+the single-sign-on terms, "try again"); a test checks every marker tuple against every remedy, and the scans themselves
+read the text without the appended line.
 
 Opt-in refusals (#1291): a missing `gh` is reported as missing (it read "not logged in"); `board_setup` and
 `board_layout` number, owner and board-list errors; the five `setup.py hooks` causes; the label-summary line for a bad
@@ -64,7 +70,9 @@ list and is superseded by this table.
 | Truncation or scale ceiling (cap pages, 100-row lookup limit) | 8 | no, only at scale | names its cap; no first-run fix |
 
 The class counts come from a rule-based classifier over the AST list and a read of each group; the boundaries between
-"malformed" and "scale" are judgment calls (a few sites could sit on either side). The totals sum to 121.
+"malformed" and "scale" are judgment calls (a few sites could sit on either side). The totals sum to 121. The re-raise
+class is the loosest: an independent reading got 18 to 20 against 16 here, depending on whether the two missing-`gh`
+re-raises in `_default_run` count as re-raises or as "already printed a fix".
 
 Found while reading: `gh_api.list_issues` wrapped a gh failure with kind `other`, dropping its class; fixed.
 
