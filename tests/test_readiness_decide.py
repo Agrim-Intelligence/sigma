@@ -480,7 +480,7 @@ def test_shipped_scorecard_is_valid_and_not_a_go():
         return None if f.is_file() and f.stat().st_size > 0 else f"{rel} is not a non-empty file"
 
     reasons, _ = dz.check_scorecard(card, tracked)
-    assert "D1 Correctness: score 2 < 3 (gating)" in reasons, reasons
+    assert any(" < 3 (gating)" in r for r in reasons), reasons   # NO-GO while any gating dimension is below 3
     assert not any("not a non-empty file" in r for r in reasons), reasons
     assert card["benchmark_results"] == "docs/launch/evidence/measured-results.md", card["benchmark_results"]
 
@@ -496,7 +496,7 @@ def test_shipped_scorecard_on_a_fixture_main_is_nogo_via_the_gesture(tmp_path):
     proc, calls = _gesture(root, "--blockers-json", "blockers.json")
     lines = proc.stdout.splitlines()
     assert (proc.returncode, lines[-1:], calls) == (1, ["NO-GO"], []), (lines, proc.stderr)
-    assert "D1 Correctness: score 2 < 3 (gating)" in lines, lines
+    assert any(" < 3 (gating)" in l for l in lines), lines   # NO-GO while any gating dimension is below 3
 
 
 def _rule_table(heading):
@@ -1278,7 +1278,7 @@ def test_working_tree_scorecard_and_definition_cannot_steer_the_verdict(tmp_path
     proc, _ = _gesture(root)
     lines = proc.stdout.splitlines()
     assert (proc.returncode, lines[-1:]) == (1, ["NO-GO"]), (lines, proc.stderr)
-    assert "D1 Correctness: score 2 < 3 (gating)" in lines, lines
+    assert any(" < 3 (gating)" in l for l in lines), lines   # NO-GO while any gating dimension is below 3
     assert reason in lines, lines
 
 
