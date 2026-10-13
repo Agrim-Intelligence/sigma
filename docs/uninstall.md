@@ -18,7 +18,9 @@ residue and exits 1 until nothing remains.
    take that long to finish. Do not kill the processes to hurry it; press Ctrl-C to stop waiting and
    come back to it. It looks in subdirectories of `.sdlc/state` too, as the final check does.
 2. Uninstall the plugin: `claude plugin uninstall sigmaloop@sigmaloop`; add `--scope project` for a
-   project installation. An install made before the plugin was renamed sits under the previous id: follow
+   project installation. The marketplace declaration stays after the plugin is uninstalled (checked on 2026-10-14);
+   `claude plugin marketplace remove sigmaloop` removes it, and also uninstalls every plugin installed from that
+   marketplace. An install made before the plugin was renamed sits under the previous id: follow
    [From the pre-launch name](upgrading.md#from-the-pre-launch-name) instead. Codex's plugin removal command must be verified with `codex plugin --help`
    on the target host before use.
 3. Remove each Sigma worktree with `git worktree remove .sdlc/ledger` and
@@ -43,7 +45,9 @@ residue and exits 1 until nothing remains.
    ```
    If one is yours, run `git branch -D <name>` for each of the others instead. The remote copies are step 9's.
 6. Remove the plugin cache. `claude plugin uninstall` leaves the plugin's directory under the Claude
-   profile (`leftovers.py` reports it as two `installed-plugin` rows, the directory and its child). The
+   profile (`leftovers.py` reports it as two `installed-plugin` rows, the directory and its child; checked
+   on 2026-10-14 in a scratch profile after a user-scope and a project-scope uninstall: the cache directory stayed, as did the
+   marketplace record). The
    cache is shared by every repository on this machine that uses the plugin, so skip this step while
    another repository still needs it; `leftovers.py` keeps listing the rows until you do. If you set
    `CLAUDE_CONFIG_DIR`, the profile is that directory, not `~/.claude`:
