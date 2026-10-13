@@ -1750,10 +1750,13 @@ def main(argv):
         if channel == KNOWLEDGE:
             if not knowledge_enabled(config):
                 print('knowledge sync is off (config: "knowledge_graph": {"enabled": true, '
-                      '"sync": {"enabled": true}})', file=sys.stderr)
+                      '"sync": {"enabled": true}}) -- set both in .sdlc/config.json, then re-run '
+                      f'`sync.py {argv[1]} {sdlc_dir} --channel knowledge`', file=sys.stderr)
                 return 1
         elif not ledger.enabled(config):
-            print('ledger is off (config: "ledger": {"enabled": true})', file=sys.stderr)
+            print('ledger is off (config: "ledger": {"enabled": true}) -- run `/sigma-init --ledger yes` '
+                  f'(github mode) or set that key in .sdlc/config.json, then re-run `sync.py {argv[1]} '
+                  f'{sdlc_dir}`', file=sys.stderr)
             return 1
         try:
             print(_VERBS[argv[1]](sdlc_dir, config, channel=channel))

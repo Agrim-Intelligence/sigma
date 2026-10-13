@@ -2481,7 +2481,8 @@ def main(argv):
         except ValueError as exc:
             print(f"ledger: {exc}", file=sys.stderr)
             return 2
-        print(entry["id"] if entry else "OFF (config: \"ledger\": {\"enabled\": true})")
+        print(entry["id"] if entry else "OFF (config: \"ledger\": {\"enabled\": true}) -- nothing written; "
+              "run `/sigma-init --ledger yes` or set that key in .sdlc/config.json")
         report_publish_state(sdlc_dir, config)
         return 0
     if len(argv) >= 3 and argv[1] == "render":

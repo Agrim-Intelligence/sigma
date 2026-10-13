@@ -625,8 +625,9 @@ def main(argv, run=None):
         try:
             payload = json.loads(pathlib.Path(answers_path).read_text(encoding="utf-8"))
         except Exception as exc:                        # noqa: BLE001
-            print("unpark.py resolve: could not read --answers %r: %s" % (answers_path, exc),
-                  file=sys.stderr)
+            print("unpark.py resolve: could not read --answers %r: %s -- write the interview answers as "
+                  '{"answers": {...}} to that file (`unpark.py brief` prints the questions), then '
+                  "re-run" % (answers_path, exc), file=sys.stderr)
             return 2
         answers = payload.get("answers") if isinstance(payload, dict) else None
         if not isinstance(answers, dict):
