@@ -26,6 +26,9 @@ define = _mod("define", DEFINE)
 doctor = _mod("doctor", DOCTOR)
 
 
+REMEDY = "mv .sdlc/config.json .sdlc/config.json.broken-$(date +%s)"
+
+
 def _repo(tmp_path):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     return tmp_path
@@ -87,7 +90,7 @@ def test_preflight_on_a_corrupt_config_names_the_file_and_the_fix(tmp_path, caps
     d = _sdlc_with(tmp_path, '{"work": ')
     assert pf.main(["preflight.py", verb, str(d), *extra]) == 2
     err = capsys.readouterr().err
-    assert "config.json is not valid JSON" in err and "/sigma-init" in err and "config.json.bak" in err
+    assert "config.json is not valid JSON" in err and "/sigma-init" in err and REMEDY in err
 
 
 # --- verify_detect -----------------------------------------------------------------------------
@@ -172,7 +175,7 @@ def test_doctor_flags_a_config_json_that_does_not_parse_and_names_the_fix(tmp_pa
     d = _sdlc_with(tmp_path, '{"verify": {"enforce": true,}}')
     rows = {c["name"]: c for c in doctor.check(str(d), run=lambda *a, **k: "")}
     row = rows["config.json is valid JSON"]
-    assert row["ok"] is False and "config.json.bak" in row["fix"] and "/sigma-init" in row["fix"]
+    assert row["ok"] is False and REMEDY in row["fix"] and "/sigma-init" in row["fix"]
 
 
 def test_doctor_adds_no_row_for_a_healthy_config(tmp_path):
@@ -230,20 +233,46 @@ def test_the_config_json_remedy_actually_gets_init_past_the_refusal(tmp_path):
     first = run()
     assert first.returncode == 2 and "not valid JSON" in first.stdout + first.stderr
     text = first.stdout + first.stderr
-    assert "mv config.json config.json.bak" in text and "cp config.json" not in text
-    (sdlc / "config.json").rename(sdlc / "config.json.bak")        # the sequence the message states
+    assert REMEDY in text and "copy your settings back" in text and "cp config.json" not in text
+    # run the PRINTED command through the shell, from the repository root
+    shell = lambda: subprocess.run(["sh", "-c", REMEDY], cwd=repo, check=True)                # noqa: E731
+    shell()
     second = run()
     assert second.returncode != 2 and "REFUSED" not in second.stdout + second.stderr, second.stdout
+    # a SECOND corruption: the first backup must survive (a fixed .bak name would overwrite it)
+    first_backups = sorted(p.name for p in sdlc.glob("config.json.broken-*"))
+    assert len(first_backups) == 1
+    import time
+    time.sleep(1.1)                                                # `date +%s` has one-second resolution
+    (sdlc / "config.json").write_text('{"again": ,}')
+    shell()
+    backups = sorted(p.name for p in sdlc.glob("config.json.broken-*"))
+    assert len(backups) == 2 and first_backups[0] in backups
+    assert (sdlc / first_backups[0]).read_text() == '{"work": {"enabled": true,}}'      # first backup intact
+
+
+def test_a_refused_codex_adapter_is_visible_in_the_stdout_summary_too(tmp_path):
+    """A host that relays only stdout must not show a clean-looking finish."""
+    repo = _symlinked_agents_repo(tmp_path)
+    r = subprocess.run([sys.executable, str(INIT / "init_flow.py"), str(repo), "--codex"],
+                       capture_output=True, text=True, timeout=120)
+    assert "result: REFUSED at codex adapter - everything else done" in r.stdout
+
+
+def test_the_generic_extras_refusal_says_later_opt_in_scaffolds_were_skipped():
+    sdlc_init = _mod("sdlc_init", INIT)
+    text = " ".join(sdlc_init.extras_refusal_lines(OSError("disk full")))
+    assert "later opt-in scaffolds in this run were skipped" in text and "every other step ran" not in text
 
 
 def test_doctor_and_preflight_remedies_say_move_not_copy(tmp_path, capsys):
     d = _sdlc_with(tmp_path, "{nope")
     row = doctor._config_json_problem(d)
-    assert "mv config.json config.json.bak" in row and "cp config.json" not in row
+    assert REMEDY in row and "copy your settings back" in row and "cp config.json" not in row
     _repo(tmp_path)
     assert pf.main(["preflight.py", "local-only", str(d)]) == 2
     err = capsys.readouterr().err
-    assert "mv config.json config.json.bak" in err and "cp config.json" not in err
+    assert REMEDY in err and "copy your settings back" in err and "cp config.json" not in err
 
 
 def test_define_declare_note_is_scoped_to_a_source_without_a_label_surface(tmp_path, capsys):
@@ -279,4 +308,10 @@ def test_setup_configure_on_a_corrupt_config_says_move_not_copy(tmp_path):
     d = _sdlc_with(tmp_path, "{nope")
     r = subprocess.run([sys.executable, str(ROOT / "skills" / "sigma-setup" / "scripts" / "setup.py"),
                         "configure", str(d)], capture_output=True, text=True)
-    assert r.returncode == 2 and "mv config.json config.json.bak" in r.stderr and "cp config.json" not in r.stderr
+    assert r.returncode == 2 and REMEDY in r.stderr and "copy your settings back" in r.stderr
+
+
+def test_doctor_flags_a_config_that_is_valid_json_but_not_an_object(tmp_path):
+    d = _sdlc_with(tmp_path, "[1, 2]")
+    row = {c["name"]: c for c in doctor.check(str(d), run=lambda *a, **k: "")}["config.json is valid JSON"]
+    assert row["ok"] is False and "not an object" in row["fix"] and REMEDY in row["fix"]

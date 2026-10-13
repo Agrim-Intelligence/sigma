@@ -644,7 +644,8 @@ def extras_refusal_lines(exc):
         return [f"sigma-init: REFUSED - {text}. AGENTS.md was not changed; every other step ran (the "
                 "scaffold, verify detection, preflight) and the exit status is 2 because of this one.", fix]
     return [f"sigma-init: REFUSED - {text}. Fix the cause above, then re-run /sigma-init with the same "
-            "flags (every other step ran; what was already written is kept)."]
+            "flags. What was already written is kept; later opt-in scaffolds in this run were skipped "
+            "(the opt-in scaffolds stop at the first failure), the scaffold, verify and preflight steps ran."]
 
 
 def scaffold_extras(target, flags):

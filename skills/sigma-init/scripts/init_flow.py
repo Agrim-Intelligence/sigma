@@ -300,8 +300,9 @@ def read_config_strict(path):
             problem = "is JSON but not an object (top level is %s)" % type(data).__name__
     raise ConfigUnreadable(
         f"{path} {problem}. Nothing was written and the file is untouched. Fix it: repair the JSON "
-        f"by hand (your keys are still in the file), or move it aside (`mv {path.name} {path.name}.bak`, "
-        f"in {path.parent.name}/) so /sigma-init writes a fresh one.")
+        f"by hand (your keys are still in the file), or move it aside under a new name (so an earlier "
+        f"backup is never overwritten): `mv .sdlc/config.json .sdlc/config.json.broken-$(date +%s)`, "
+        f"re-run /sigma-init to write a fresh one, then copy your settings back from the moved file.")
 
 
 def _write_json(path, data):
@@ -828,6 +829,9 @@ def main(argv):
     if extras_refusal:
         for line in extras_refusal:
             print(line, file=sys.stderr)
+        # stdout too: a host that relays only stdout must not show a clean-looking finish
+        print("  result: REFUSED at codex adapter - everything else done (see the REFUSED lines on stderr; "
+              "exit status 2)")
     if failed:
         print(f"  result: FAILED at {', '.join(failed)} - everything written so far is kept")
         _say_resume(target, args)

@@ -478,8 +478,10 @@ def main(argv):
                 raise ValueError("top level is not a JSON object")
         except (OSError, ValueError) as exc:             # #625: refuse, never a traceback or a rewrite
             print(f"setup.py configure: REFUSED - {sdlc / 'config.json'} is unreadable ({exc}). Nothing "
-                  f"written, file untouched. Repair the JSON by hand, or move it aside "
-                  f"(`mv config.json config.json.bak`, in .sdlc/) on purpose, then re-run.",
+                  f"written, file untouched. Repair the JSON by hand, or move it aside under a new name "
+                  f"(so an earlier backup is never overwritten): "
+                  f"`mv .sdlc/config.json .sdlc/config.json.broken-$(date +%s)`, re-run /sigma-init to "
+                  f"scaffold a fresh one, then copy your settings back from the moved file.",
                   file=sys.stderr)
             return 2
         source = f.get("source", "github")
