@@ -36,8 +36,9 @@ At `scope: full` the **code** is graphed too; at `scope: research` the code is s
      skill on those paths, or the `graphify` CLI directly.
    - If the builder isn't installed, say so (for graphify: `pip install graphifyy`) and stop — the
      SDLC keeps working without it (graceful degradation).
-4. **Query** the graph to retrieve learnings: e.g. `graphify query "<question>"`. graphify saves the
-   answer back into the graph — that closes the enhancement loop, so each query makes the next better.
+4. **Query** the graph to retrieve learnings: e.g. `graphify query "<question>"`. The `/graphify` skill's query flow files
+   the answer with `graphify save-result` (into `graphify-out/memory/`, read by the next build); the bare
+   `graphify query` only prints — that closes the enhancement loop, so each saved answer makes the next better.
    A query that comes up empty is logged as a **gap** (`kg.py gap log "<q>"`, done automatically by
    `/sigma-context`); review the backlog of what the graph doesn't know yet with
    `python3 "${CLAUDE_SKILL_DIR}/scripts/kg.py" gap list .sdlc`.
@@ -72,7 +73,7 @@ refuses and moves nothing. Undo is `mv` back. Hand run:
 `python3 "${CLAUDE_SKILL_DIR}/scripts/kg.py" retain .sdlc` — typing the verb is the opt-in.
 
 Two limits, stated: the archive stays inside `.sdlc/knowledge/` (the gitignored tree), so a **cold**
-build still reads it once — graphify's cache keys on content, so a rename is not re-billed — and if
+build still reads it once — graphify's cache key is the content plus the path relative to the root (a Markdown file's front matter is left out), so a file moved into the archive is read, and billed, once more — and if
 you want it out of the graph, deleting it is your gesture, not Sigma's. And occupancy bounds the
 count too: at 4 KiB per file the default share keeps ~12k live captures on a 494 GB disk; a 100k-file
 directory needs a ≥ 4 TB disk at that share, so lower `web_retention_disk_share` there.

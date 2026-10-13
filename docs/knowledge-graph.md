@@ -31,7 +31,9 @@ Turn it on in `.sdlc/config.json`:
 `scope` is **`full`** (code + external research + internal analysis) or **`research`** (skip code —
 internal analysis + external research only). Then **`/sigma-kg`** builds, refreshes, and queries it;
 querying via graphify **saves the answer back into the graph**, so each query makes the next one
-better. The builder is a **soft dependency**: if it isn't installed, `/sigma-kg` says so and the rest
+better. (The saving is its own verb: the `/graphify` skill's query flow files each answer with
+`graphify save-result` into `graphify-out/memory/`, which the next build reads; the bare `graphify query`
+command only prints. Checked against the installed graphify's help and source on 2026-10-14.) The builder is a **soft dependency**: if it isn't installed, `/sigma-kg` says so and the rest
 of the SDLC runs unaffected.
 
 `auto_refresh: true` rebuilds the graph at the end of each Retrospective **without being asked** —
@@ -74,8 +76,11 @@ assembles a short, **cited** brief from the **north-star** (vision-first) + the 
 (`graphify query`) + **past issues / 🔒 Critical Insights** + the **conventions** (`.sdlc/project.md` +
 governing `CLAUDE.md`).
 
-For on-demand pull *during* a run, expose the graph as a live tool — run **`graphify --mcp`** (or add
-the graphify MCP server to your Claude Code config, pointed at `graphify-out/graph.json`) — so the
+For on-demand pull *during* a run, expose the graph as a live tool: run **`python -m graphify.serve
+graphify-out/graph.json`** from graphify's own Python environment (its source defines that entry point and its
+own setup text installs the `mcp` package for it; the server was read, not started), or use the `/graphify <path> --mcp`
+skill flag, or add that server to your Claude Code config. There is no `graphify --mcp` command: the installed graphify
+answers `unknown command '--mcp'` (checked 2026-10-14). With the server up, the
 agent can query it whenever it hits unfamiliar code, keeping the working window small while the full
 history stays a query away. The full closed loop: **record** (issues / journey) → **ingest**
 (`/sigma-kg`) → **recall** (`/sigma-context` + MCP) → run.
