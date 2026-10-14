@@ -127,8 +127,7 @@ in the same breath: "it does what it claims, and its claims are measured."
 **After GREEN, for any non-trivial guard or check** — a validation, a concurrency check, a
 pagination boundary, anything whose whole job is to reject or correct something — revert the
 specific line the fix depends on, re-run the relevant test, confirm it now fails, then restore and
-confirm green again. Two real examples, each verified against its own PR record before being cited
-here:
+confirm green again. For a guard with several clauses, break each clause on its own; for an ordering check, weaken the order to plain membership. Two real examples, each verified against its PR record:
 - **#1764's compare-and-swap version check (PR #1879):** reverting the version-check clause made
   4 of 8 new tests fail, and the real on-disk `config_version` silently reached 2 while both
   concurrent callers were told "success" — exactly the bug the guard exists to prevent. Restoring
@@ -145,9 +144,8 @@ guard. This repo has shipped exactly that mistake before: north-star Standing ru
 the mutant, and looked like coverage until it was retargeted.
 
 The pattern is "Revert fix → Run (MUST FAIL) → Restore → Run (pass)": a live revert against the
-running suite, never a mental exercise ("mentally mutate the production code").
-It applies to any non-trivial guard, not only regression tests, and it is a required
-step, not one option in a list.
+running suite, never a mental exercise.
+It applies to any non-trivial guard and is required, not optional.
 
 ## Security defaults (fail-closed, untrusted input)
 This repo already has standing rules for this — they stay undiscovered until Review unless you read
