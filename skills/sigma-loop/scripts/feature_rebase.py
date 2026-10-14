@@ -2993,8 +2993,8 @@ def main(argv):
         return 0
     state = _load("state")
     if len(argv) >= 4 and argv[1] == "upkeep":
-        report = upkeep(argv[2], state.load_config(argv[2]), argv[4] if len(argv) >= 5 else "-",
-                        argv[3])
+        goal = argv[4] if len(argv) >= 5 and argv[4] != "-" else None    # #1427: no goal means None, never a "-" issue
+        report = upkeep(argv[2], state.load_config(argv[2]), goal, argv[3])
         print(json.dumps(report, indent=2, sort_keys=True))
         # #144: a refused replay is a BLOCKED pass, not a clean one, and a script must see that.
         return 1 if report["outcome"] in (FAILED, WOULD_DROP) else 0
