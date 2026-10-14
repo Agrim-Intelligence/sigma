@@ -450,3 +450,22 @@ def test_kg_tier_does_not_double_fire_with_the_watcher_tier(tmp_path):
     ctx = _context(_run(project, PATH=_stub_builder_path(tmp_path)))
     assert "looks stale" in ctx
     assert "never been built" not in ctx
+
+
+# --- D2 F03: the hook announces an UNREACHABLE north-star (accelerator; the rule is north_star.py) ----
+
+def _ns_project(tmp_path, *, broken):
+    (tmp_path / ".sdlc").mkdir()
+    (tmp_path / ".sdlc" / "config.json").write_text("{}")          # session_start NOT enabled
+    if broken:
+        (tmp_path / ".git").write_text("gitdir: /nonexistent/sigma-f03\n")
+    return tmp_path
+
+
+def test_unreachable_north_star_is_announced_even_without_the_policy_brief(tmp_path):
+    ctx = _context(_run(_ns_project(tmp_path, broken=True)))
+    assert "NOT judging strategic alignment" in ctx
+
+
+def test_absent_north_star_adds_no_session_notice(tmp_path):
+    assert "north-star could not be located" not in _run(_ns_project(tmp_path, broken=False))

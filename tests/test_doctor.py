@@ -7638,3 +7638,33 @@ def test_pick_path_gate_state_board_skipped_when_graphql_unavailable(monkeypatch
     assert state.startswith("board skipped: GraphQL unavailable")
     assert "board_migrate" not in state
     assert called == []
+
+
+# --- D2 F03: "north-star reachable" - a failing row only when the north-star cannot be located/read ---
+
+def _ns_reachable_rows(project):
+    return _by_name(_doc().check(str(project / ".sdlc"), run=_runner()))
+
+
+def test_doctor_flags_an_unreachable_north_star(tmp_path):
+    (tmp_path / ".git").write_text("gitdir: /nonexistent/sigma-f03\n")     # linked worktree, git blind
+    _sdlc(tmp_path, {})
+    row = _ns_reachable_rows(tmp_path)["north-star reachable"]
+    assert row["ok"] is False and "NOT judging strategic alignment" in row["fix"]
+
+
+def test_doctor_is_silent_for_an_absent_north_star(tmp_path):
+    _sdlc(tmp_path, {})
+    assert "north-star reachable" not in _ns_reachable_rows(tmp_path)
+
+
+def test_doctor_does_not_crash_on_an_unreadable_north_star(tmp_path, monkeypatch):
+    _sdlc(tmp_path, {})
+    (tmp_path / ".sdlc" / "context").mkdir()
+    (tmp_path / ".sdlc" / "context" / "north-star.md").write_text("x")
+    monkeypatch.setattr(os, "access", lambda p, m, **kw: False if str(p).endswith("north-star.md") else True)
+    real = pathlib.Path.read_text
+    monkeypatch.setattr(pathlib.Path, "read_text", lambda self, *a, **k: (_ for _ in ()).throw(
+        PermissionError("denied")) if self.name == "north-star.md" else real(self, *a, **k))
+    rows = _ns_reachable_rows(tmp_path)
+    assert rows["north-star reachable"]["ok"] is False and "north-star filled" not in rows
