@@ -23,14 +23,19 @@ Fail-open: every failure resolves `inline` WITH A STATED REASON and exit 0 -- a 
 not stop a review. `check` is the opposite and fails CLOSED, because a leak guard that passes on
 error is decoration. Zero deps.
 """
+import hashlib
 import importlib.util
 import json
 import os
 import pathlib
+import re
 import signal
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
+import time
 
 #: What the SKILL prose branches on.
 MECHANISMS = ("subagent", "process", "command", "inline")
@@ -210,12 +215,641 @@ def _stop_review_process(proc):
         proc.wait(timeout=2)
 
 
-def run_review(sdlc_dir, brief_path, scratch_paths):
+#: A review verdict is a line that is NOTHING but the verdict. Prose such as "Verdict: approve would be
+#: premature" ahead of a final `VERDICT: block` must not count (the checker could flip its own block).
+_VERDICT_LINE = re.compile(
+    r"(?im)^[\s*_`]*verdict[\s*_`]*:[\s*_`]*(approve|approved|block|blocked|unblock|unblocked)[\s*_`.]*$")
+_PLAN_SHA_LINE = re.compile(r"(?m)^Plan sha256: ([0-9a-f]{64})\s*$")
+
+#: Phases whose approving verdict needs a run receipt (the names `phase_gate.record_verdict` uses).
+RECEIPT_PHASES = ("plan_review", "review")
+
+
+def parse_verdicts(output):
+    """-> the set of normalised standalone verdicts (approve|block|unblock) found in `output`."""
+    return {"approve" if m.startswith("approv") else "unblock" if m.startswith("unblock") else "block"
+            for m in (x.group(1).lower() for x in _VERDICT_LINE.finditer(output))}
+
+
+def lone_verdict(output):
+    """The ONE verdict `output` prints, or None for none or for conflicting ones. Never picks among
+    several: a reviewer that prints both `approve` and `block` has not approved."""
+    found = parse_verdicts(output)
+    return next(iter(found)) if len(found) == 1 else None
+
+
+#: Phase -> the `# Independent review brief - <name>` header a brief for it carries.
+_BRIEF_NAME = {"plan_review": "plan-review", "review": "code-review"}
+_BRIEF_HEADER = re.compile(r"(?m)\A# Independent review brief - (\S+)")
+#: Ceilings for the code-review key. Past either, the checkout cannot be bound cheaply, so the run
+#: FAILS (`content_unbound`, naming which) rather than approving something unbound.
+_MAX_UNTRACKED = 5000
+_KEY_SECONDS = 120.0
+
+#: git for a READ of a repository we do not trust: no fsmonitor hook, no hooks path, no external diff,
+#: no optional index-refresh lock. Argv list only, never a shell; paths always follow `--`.
+_GIT = ["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
+        "-c", "diff.external="]
+
+
+class _Unbound(Exception):
+    """The checkout cannot be covered by the key; the message is the cause shown to a person."""
+
+
+def _frame(kind, name, inner):
+    """One typed, length-prefixed record: kind byte, 8-byte name length, name, 32-byte inner digest.
+    Inner digests are fixed size, so no content can imitate the next record (a file whose bytes look
+    like a record header, an empty file vs a missing one, a name containing any separator)."""
+    return kind + len(name).to_bytes(8, "big") + name + inner
+
+
+def _over_budget(deadline):
+    """ONE overall budget, checked on every record -- regular files, symlinks and absent paths alike."""
+    if time.monotonic() > deadline:
+        raise _Unbound("diff too large or slow to hash within %ds: commit or stash the large "
+                       "change, or split it" % _KEY_SECONDS)
+
+
+def _open_checked(path, st):
+    """Open `path` O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC and require the opened file to be the one `st` (an lstat
+    taken first) described: same device and inode, regular. A path swapped for a link (bytes from outside
+    the checkout) or a FIFO (a blocking read) in between is refused, never read."""
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise _Unbound("%r changed while it was being hashed or is a link (%s)" % (path, exc.strerror))
+    opened = os.fstat(fd)
+    if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (st.st_dev, st.st_ino):
+        os.close(fd)
+        raise _Unbound("%r changed while it was being hashed or is not a regular file (a FIFO, link or "
+                       "device); remove it or git-ignore it" % path)
+    return fd
+
+
+def _read_head(path, deadline):
+    """The first 4 KB of a nested repository's `.git/HEAD`, read with the same checks as `_file_record`:
+    never followed through a link, never opened if it is a FIFO or other non-regular file."""
+    _over_budget(deadline)
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        return b""
+    except OSError as exc:
+        raise _Unbound("a nested repository's HEAD cannot be read (%r: %s)" % (path, exc.strerror))
+    if not stat.S_ISREG(st.st_mode):
+        raise _Unbound("%r is not a regular file (a link, FIFO or device): a nested repository's HEAD must "
+                       "be a plain file; remove or git-ignore that repository" % path)
+    fd = _open_checked(path, st)
+    try:
+        return os.read(fd, 4096)
+    except OSError as exc:
+        raise _Unbound("a nested repository's HEAD cannot be read (%r: %s)" % (path, exc.strerror))
+    finally:
+        os.close(fd)
+
+
+def _ref_path_is_clean(gitdir, ref):
+    """Validate the ref name a nested HEAD names and refuse any symlink among its parent directories
+    under `.git`, so reading it cannot reach a file OUTSIDE the checkout."""
+    text = ref.decode("utf-8", "replace")
+    if (not text.startswith("refs/") or ".." in text or text.startswith("/") or "\\" in text
+            or "\0" in text or not all(text.split("/"))):
+        raise _Unbound("a nested repository's HEAD names an unusable ref (%r)" % text[:80])
+    current = gitdir
+    for part in text.split("/")[:-1]:
+        current = os.path.join(current, part)
+        try:
+            st = os.lstat(current)
+        except FileNotFoundError:
+            return
+        if stat.S_ISLNK(st.st_mode):
+            raise _Unbound("%r is a symlink inside a nested repository's .git, so its ref would be read from "
+                           "outside the checkout: restore the directory" % current)
+
+
+def _file_record(path, deadline):
+    """-> (kind, inner32) for one path WITHOUT following links or running git: a regular file's bytes
+    (kind F, or X when executable), a symlink's target (L), absent (G). The file is opened
+    O_NOFOLLOW|O_NONBLOCK and its fstat must match the lstat taken first (same device, inode, regular),
+    so a path swapped for a symlink (bytes from outside the checkout) or a FIFO (a blocking read) between
+    the two is refused, never read. Anything that is not a regular file, symlink or directory is
+    refused with a named cause."""
+    _over_budget(deadline)
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        return b"G", hashlib.sha256(b"").digest()
+    except OSError as exc:
+        raise _Unbound("a path cannot be read (%r: %s)" % (path, exc.strerror))
+    if stat.S_ISLNK(st.st_mode):
+        return b"L", hashlib.sha256(os.fsencode(os.readlink(path))).digest()
+    if not stat.S_ISREG(st.st_mode):
+        raise _Unbound("%r is not a regular file, directory or symlink (a FIFO, socket or device) and "
+                       "cannot be covered: remove it or git-ignore it" % path)
+    fd = _open_checked(path, st)
+    inner = hashlib.sha256()
+    try:
+        while True:
+            _over_budget(deadline)
+            try:
+                chunk = os.read(fd, 1 << 20)
+            except OSError as exc:
+                raise _Unbound("a path cannot be read (%r: %s)" % (path, exc.strerror))
+            if not chunk:
+                break
+            inner.update(chunk)
+    finally:
+        os.close(fd)
+    return (b"X" if st.st_mode & 0o111 else b"F"), inner.digest()
+
+
+def _parents_are_real(cwd, name, seen):
+    """Refuse a listed path whose parent directory is a symlink: files under it would be read from
+    OUTSIDE the checkout (a tracked directory replaced by a link to ../elsewhere)."""
+    current = cwd
+    for part in name.split(b"/")[:-1]:
+        if not part:
+            continue
+        current = os.path.join(current, os.fsdecode(part))
+        if current in seen:
+            continue
+        try:
+            st = os.lstat(current)
+        except FileNotFoundError:
+            return
+        if stat.S_ISLNK(st.st_mode):
+            raise _Unbound("%r is a symlink, so files under it would be read from outside the checkout: "
+                           "restore the directory" % current)
+        seen.add(current)
+
+
+def _nested_digest(path, deadline, budget):
+    """Digest of a nested repository or submodule checkout WITHOUT running git in it (its own config
+    could name an fsmonitor or hook command): every working file, plus its HEAD, packed-refs and the
+    ref HEAD names, read as plain files. Not covered: its object store."""
+    out = hashlib.sha256()
+
+    def one(rel, full):
+        _over_budget(deadline)
+        budget[0] += 1
+        if budget[0] > _MAX_UNTRACKED:
+            raise _Unbound("a nested repository has more than %d files: commit, remove or git-ignore it"
+                           % _MAX_UNTRACKED)
+        kind, inner = _file_record(full, deadline)
+        out.update(_frame(kind, rel, inner))
+
+    def walk(directory, prefix):
+        for entry in sorted(os.scandir(directory), key=lambda e: e.name):
+            rel = prefix + os.fsencode(entry.name)
+            if prefix == b"" and entry.name == ".git":
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                walk(entry.path, rel + b"/")
+            else:
+                one(rel, entry.path)
+    try:
+        walk(path, b"")
+    except OSError as exc:
+        raise _Unbound("a nested repository cannot be read (%r: %s)" % (path, exc.strerror))
+    gitdir = os.path.join(path, ".git")
+    if os.path.isdir(gitdir) and not os.path.islink(gitdir):
+        names = [b".git/HEAD", b".git/packed-refs"]
+        text = _read_head(os.path.join(gitdir, "HEAD"), deadline)
+        if text.startswith(b"ref: "):
+            ref = text[5:].strip()
+            _ref_path_is_clean(gitdir, ref)
+            names.append(b".git/" + ref)
+        for rel in names:
+            kind, inner = _file_record(os.path.join(path, os.fsdecode(rel)), deadline)
+            out.update(_frame(kind, rel, inner))
+    else:                               # a gitfile (submodule / linked worktree): its pointer text
+        kind, inner = _file_record(gitdir, deadline)
+        out.update(_frame(kind, b".git", inner))
+    return out.digest()
+
+
+def _content_key(sdlc_dir, goal):
+    """-> (key, cause). `key` is a sha256 over typed, length-prefixed records (see `_frame`) of the goal's
+    checkout as a code reviewer sees it: HEAD (or "unborn"); every tracked path
+    (every one hashed from its working bytes by Python, never by git: exec bit, symlink target, deletion); every untracked non-ignored path; nested
+    repositories by their working files and refs, read WITHOUT running git there. Only
+    `<sdlc>/state` (the loop's own records, this receipt included) and `<sdlc>/work` (the maker's
+    scratch) are left out; plans, research and config under `.sdlc` ARE covered. `key` is None, with
+    `cause` naming why in words a person can act on, when something cannot be covered; both callers
+    FAIL CLOSED on that. Not covered: ignored files, a nested repository's object store."""
+    try:
+        stem = pathlib.Path(str(goal)).stem if str(goal).endswith(".md") else str(goal)
+        if _load("state").unsafe_goal_reason(stem):
+            return None, "the goal name %r is not usable" % (goal,)
+        p = pathlib.Path(sdlc_dir) / "state" / "work" / ("%s.json" % stem)
+        try:                       # the work record, read directly: importing work.py per call costs ~16 MB
+            rec = json.loads(p.read_text())
+            rec = rec if isinstance(rec, dict) else {}
+        except (OSError, ValueError):               # no record means the project root, below
+            rec = {}
+        cwd = str(rec.get("worktree") or pathlib.Path(sdlc_dir).resolve().parent)
+        if not os.path.isdir(cwd):
+            return None, "the checkout %r does not exist" % cwd
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        root, sd = os.path.realpath(cwd), os.path.realpath(str(sdlc_dir))
+        rel = os.path.relpath(sd, root) if sd.startswith(root + os.sep) else None
+        spec = ["--", "."] + ([":(exclude,literal)%s/%s" % (rel, x) for x in ("state", "work")] if rel else [])
+        deadline = time.monotonic() + _KEY_SECONDS
+
+        def git(*args):
+            got = subprocess.run([*_GIT, "-C", cwd, *args], capture_output=True,
+                                 timeout=max(1.0, _KEY_SECONDS), env=env)
+            return got.returncode, got.stdout
+        if git("rev-parse", "--is-inside-work-tree")[0]:
+            return None, "this directory is not a git checkout"
+        code, head = git("rev-parse", "--verify", "-q", "HEAD")
+        digest = hashlib.sha256()
+        digest.update(_frame(b"H", b"HEAD", hashlib.sha256(head.strip() if code == 0 else b"unborn").digest()))
+        # Tracked paths: git only LISTS them (reading the index runs no filter); Python hashes the working
+        # bytes itself. `git diff-index`/`diff-files` would hash stat-dirty files and run the repository's
+        # clean/process filters (code named by .gitattributes + config) -- measured, and refused here.
+        code, listing = git("ls-files", "-z", *spec)
+        if code:
+            return None, "git could not list this checkout's tracked files"
+        changed = sorted(n for n in listing.split(b"\0") if n)
+        code, listing = git("ls-files", "--others", "--exclude-standard", "-z", *spec)
+        if code:
+            return None, "git could not list this checkout's untracked files"
+        names = sorted(n for n in listing.split(b"\0") if n)
+        if len(names) > _MAX_UNTRACKED:
+            return None, ("there are %d untracked files (limit %d): commit, remove or git-ignore build "
+                          "output" % (len(names), _MAX_UNTRACKED))
+        budget = [len(names)]
+        seen = set()
+        for section, group in ((b"t", changed), (b"u", names)):
+            for name in group:
+                _parents_are_real(cwd, name, seen)
+                full = os.path.join(cwd, os.fsdecode(name))
+                if os.path.isdir(full) and not os.path.islink(full):    # nested repo / submodule
+                    digest.update(_frame(section + b"R", name, _nested_digest(full, deadline, budget)))
+                else:
+                    kind, inner = _file_record(full, deadline)
+                    digest.update(_frame(section + kind, name, inner))
+    except _Unbound as exc:
+        return None, str(exc)
+    except subprocess.TimeoutExpired:
+        return None, "git took longer than %ds on this checkout" % _KEY_SECONDS
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, "git could not be run here (%s)" % type(exc).__name__
+    return digest.hexdigest(), None
+
+
+def _receipt_path(sdlc_dir, goal, phase):
+    if phase not in RECEIPT_PHASES:
+        raise ValueError("phase must be one of %s" % ", ".join(RECEIPT_PHASES))
+    p = pathlib.Path(str(goal))
+    goal_stem = p.stem if p.suffix == ".md" else str(goal)
+    bad = _load("state").unsafe_goal_reason(goal_stem)
+    if bad:
+        raise ValueError("unsafe goal %r for the reviewer run receipt: %s" % (goal, bad))
+    return pathlib.Path(sdlc_dir) / "state" / "reviewer-runs" / ("%s.%s.json" % (goal_stem, phase))
+
+
+def _write_receipt(sdlc_dir, goal, phase, **fields):
+    """ONE file per goal+phase, atomically replaced: the LATEST run's outcome is the only one that
+    counts, so a later success clears a failure and a later failure overwrites a success. Bounded by
+    construction (no log to prune); `work.py finish` removes a goal's receipts with its record."""
+    path = _receipt_path(sdlc_dir, goal, phase)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields.update(at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), goal=str(goal), phase=phase)
+    fd, tmp = tempfile.mkstemp(prefix=".run-", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(fields, handle, sort_keys=True); handle.write("\n"); handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+def clear_receipts(sdlc_dir, goal):
+    for phase in RECEIPT_PHASES:
+        try:
+            _receipt_path(sdlc_dir, goal, phase).unlink(missing_ok=True)
+        except (ValueError, OSError):
+            pass
+
+
+def _config_state(sdlc_dir):
+    """-> (cfg_dict_or_None, unreadable). A missing config is the defaults; a damaged one is not."""
+    try:
+        cfg = json.loads((pathlib.Path(sdlc_dir) / "config.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}, False
+    except (OSError, ValueError):
+        return None, True
+    return (cfg, False) if isinstance(cfg, dict) else (None, True)
+
+
+def _independent_on(cfg):
+    review = cfg.get("review") if isinstance(cfg, dict) else None
+    return not (isinstance(review, dict) and review.get("independent") is False)
+
+
+def configured_reviewer_unavailable(cfg, route):
+    """True when `route` is inline although the operator CONFIGURED a reviewer (any `review.host` other
+    than `auto`/`inline`, or `review.command` under `auto`) -- the host's binary is missing, the command
+    empty, the host unknown, no session marker. Decided from CONFIG, not from a flag `resolve` could
+    forget to set. `host: inline` (the operator's explicit choice) and a machine with nothing configured
+    are not this."""
+    if route.get("mechanism") in ("process", "command", "subagent"):
+        return False
+    review = cfg.get("review") if isinstance(cfg, dict) else None
+    review = review if isinstance(review, dict) else {}
+    host = str(review.get("host") or "auto").strip()
+    env = os.environ
+    codex_here = (env.get("SIGMA_HOST") == "codex" or
+                  (env.get("SIGMA_HOST") != "claude" and
+                   (env.get("CODEX_SESSION_ID") or env.get("CODEX_THREAD_ID")) and
+                   not (env.get("CLAUDECODE") or env.get("CLAUDE_CODE_SESSION_ID"))))
+    overrides = review.get("host_overrides")
+    if codex_here and isinstance(overrides, dict) and "codex" in overrides:   # as resolve() reads it
+        host = str(overrides["codex"]).strip()
+    return host != "inline" and (host != "auto" or bool(str(review.get("command") or "").strip()))
+
+
+def _read_receipt(sdlc_dir, goal, phase):
+    """-> ("missing", None) | ("unreadable", why) | ("ok", dict) -- `ok` meaning a readable object,
+    whatever its outcome."""
+    try:
+        got = json.loads(_receipt_path(sdlc_dir, goal, phase).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return "missing", None
+    except (OSError, ValueError) as exc:
+        return "unreadable", str(exc)
+    return ("ok", got) if isinstance(got, dict) else ("unreadable", "not a JSON object")
+
+
+def _route_tag(route):
+    return {"mechanism": route.get("mechanism"), "host": route.get("host")}
+
+
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]+")
+_MAX_REASON = 500
+
+
+def _waiver_valid(sdlc_dir, goal, phase, receipt, plan_sha256=""):
+    """An accept-inline waiver covers ONLY the bytes the owner saw: the checkout's content key (code
+    review) or the plan hash (plan-review). Anything edited since needs a fresh choice."""
+    if phase == "review":
+        key = receipt.get("content_key")
+        return bool(key) and key == _content_key(sdlc_dir, goal)[0]
+    return not plan_sha256 or receipt.get("plan_sha256") == plan_sha256
+
+
+def waiver_reason(sdlc_dir, goal, phase, plan_sha256=""):
+    """The bounded reason of a VALID accept-inline waiver that covers the inline route now, else None
+    (stamped on the verdict row so it survives `work.py finish`, which deletes receipts)."""
+    try:
+        state, got = _read_receipt(sdlc_dir, goal, phase)
+    except ValueError:
+        return None
+    if (state == "ok" and got.get("outcome") == "waived_inline" and resolve(sdlc_dir).get("mechanism") == "inline"
+            and _waiver_valid(sdlc_dir, goal, phase, got, plan_sha256)):
+        return got.get("reason")
+    return None
+
+
+def _failure_applies(receipt, route, stale_waiver=False):
+    """Whether a failed receipt still bars an approval on the CURRENT route. A failure belongs to the route
+    it was made under: another process/command host starts clean (its own run overwrites the receipt); the
+    subagent route has its own proof (an agent id); INLINE needs the owner's recorded choice
+    (`accept-inline`), never just a config edit. A receipt with no route (older) applies: fail closed."""
+    tag = receipt.get("route")
+    mech = route.get("mechanism")
+    if receipt.get("outcome") == "waived_inline":
+        return stale_waiver and mech == "inline"      # a waiver for other bytes no longer covers these
+    if receipt.get("outcome") == "ok":
+        return False
+    if mech == "subagent":
+        return False
+    if mech == "inline" or not isinstance(tag, dict):
+        return True
+    return tag.get("mechanism") == mech and tag.get("host") == route.get("host")
+
+
+#: Failure kinds that are NOT the reviewer failing: the checkout could not be bound to the review, or
+#: moved under it. The lever is to fix that and re-run, not to park.
+_CHECKOUT_KINDS = ("content_unbound", "content_changed_during_run")
+
+
+def failed_receipt(sdlc_dir, goal, phase):
+    """-> (kind, detail) of a recorded run that did not finish OK AND still applies to the current route
+    (see `_failure_applies`), else None. Ignored when the operator opted out (`review.independent:
+    false`). An unreadable receipt counts as failed: fail closed."""
+    cfg, unreadable = _config_state(sdlc_dir)
+    if not unreadable and not _independent_on(cfg):
+        return None
+    try:
+        state, got = _read_receipt(sdlc_dir, goal, phase)
+    except ValueError:
+        return None
+    route = resolve(sdlc_dir)
+    if state == "unreadable":
+        return None if route.get("mechanism") == "subagent" else ("unreadable", got)
+    stale = (state == "ok" and got.get("outcome") == "waived_inline"
+             and not _waiver_valid(sdlc_dir, goal, phase, got))
+    if state == "ok" and _failure_applies(got, route, stale_waiver=stale):
+        return got.get("failure") or "unknown", got.get("detail") or ""
+    return None
+
+
+def subagent_transcript_refusal(sdlc_dir, goal, phase, verified):
+    """After ANY recorded failed run for this goal+phase, a subagent-route approval must carry a
+    transcript-backed agent id (`verified == "transcript"`): an id nothing could check (`unverified`: no
+    readable session store) must not clear a failure by a config-and-env flip. No prior failure: None,
+    so ordinary flows are not stricter."""
+    if verified == "transcript":
+        return None
+    cfg, unreadable = _config_state(sdlc_dir)
+    if not unreadable and not _independent_on(cfg):
+        return None
+    try:
+        state, got = _read_receipt(sdlc_dir, goal, phase)
+    except ValueError:
+        return None
+    if state == "unreadable":
+        kind = "unreadable receipt"
+    elif state == "ok" and got.get("outcome") not in ("ok", "waived_inline"):
+        kind = got.get("failure") or "unknown"
+    else:
+        return None
+    return ("an independent reviewer FAILED earlier for %s %s (%s), so a subagent approval needs an agent id "
+            "backed by a real transcript, and this one could not be verified: dispatch the review from a real "
+            "subagent so its transcript exists in this session's store, or have the owner record `reviewer.py "
+            "accept-inline %s --goal %s --phase %s --reason \"<the owner's choice>\"` (an audit trail the "
+            "OWNER runs, not an authority check; not the maker)" % (goal, phase, kind, sdlc_dir, goal, phase))
+
+
+def accept_inline(sdlc_dir, goal, phase, reason):
+    """The OWNER's explicit, recorded choice to review inline after an independent reviewer failed (the
+    `choose inline review` answer in /sigma-unpark). AN AUDIT TRAIL THE OWNER RUNS, NOT AN AUTHORITY
+    CHECK: anyone with a shell can call it, so the maker must not. Not a config edit: config must already
+    say inline, the failure stays on the receipt, the reason (bounded, control characters stripped) is
+    stored with it AND stamped on the verdict row, and the waiver covers only the checkout (code review) or
+    plan (plan-review) as it is NOW. Refuses to launder: a route that is not inline, a configured reviewer
+    that is merely missing, nothing to accept, or a second call for the same bytes."""
+    reason = " ".join(_CONTROL.sub(" ", str(reason or "")).split())
+    if not reason:
+        raise ValueError("--reason is required: the owner's choice is recorded, never silent")
+    if len(reason) > _MAX_REASON:
+        raise ValueError("--reason is %d characters; the limit is %d" % (len(reason), _MAX_REASON))
+    if phase not in RECEIPT_PHASES:
+        raise ValueError("phase must be one of %s" % ", ".join(RECEIPT_PHASES))
+    cfg, unreadable = _config_state(sdlc_dir)
+    if unreadable:
+        raise ValueError("%s/config.json is unreadable" % sdlc_dir)
+    route = resolve(sdlc_dir)
+    if configured_reviewer_unavailable(cfg, route):
+        raise ValueError("the configured reviewer is missing here (%s): set review.host to `inline` in "
+                         "config first if self-review is the owner's choice" % route.get("reason"))
+    if route.get("mechanism") != "inline":
+        raise ValueError("the resolved route is %s, not inline: set review.host to `inline` first, or "
+                         "re-run the reviewer" % route.get("mechanism"))
+    state, got = _read_receipt(sdlc_dir, goal, phase)
+    if state != "ok" or got.get("outcome") == "ok":
+        raise ValueError("nothing to accept: no failed independent run is on record for %s %s" % (goal, phase))
+    binding = {}
+    if phase == "review":
+        key, cause = _content_key(sdlc_dir, goal)
+        if key is None:
+            raise ValueError("this checkout cannot be bound to the owner's choice: %s" % cause)
+        binding["content_key"] = key
+    else:
+        if not got.get("plan_sha256"):
+            raise ValueError("no plan hash is on record for this failed run: re-run reviewer.py run first")
+        binding["plan_sha256"] = got["plan_sha256"]
+    if got.get("outcome") == "waived_inline" and _waiver_valid(sdlc_dir, goal, phase, got):
+        raise ValueError("already recorded for these bytes (reason: %s): the first reason stands"
+                         % got.get("reason"))
+    _write_receipt(sdlc_dir, goal, phase, outcome="waived_inline", failure=got.get("failure"),
+                   reason=reason, route=_route_tag(route), **binding)
+    return _read_receipt(sdlc_dir, goal, phase)[1]
+
+
+def inline_review_refusal(sdlc_dir, goal, route):
+    """For the PR-review generation path's inline branch: refuse an inline route the operator configured away from, or one after
+    a failed code-review run for this goal, whatever the live route says. None otherwise."""
+    failed = failed_receipt(sdlc_dir, goal, "review")
+    if failed:
+        return ("the independent reviewer FAILED for %s (%s): an inline self-review does not replace it. "
+                "Park the goal (`--qkind reviewer_down`), fix the reviewer and re-run it; or, if the owner "
+                "chose inline review, record that with `reviewer.py accept-inline %s --goal %s --phase review "
+                "--reason \"<why>\"` (an audit trail the owner runs, not an authority check; not the maker)"
+                % (goal, failed[0], sdlc_dir, goal))
+    cfg, unreadable = _config_state(sdlc_dir)
+    if unreadable:
+        return "%s/config.json is unreadable: no inline approval until it parses" % sdlc_dir
+    if _independent_on(cfg) and configured_reviewer_unavailable(cfg, route):
+        return ("the configured reviewer is not installed or not usable here (%s): install or log in to it, "
+                "or set review.host to `inline` explicitly" % route.get("reason"))
+    return None
+
+
+def _failed_message(sdlc_dir, goal, phase, kind, detail, gesture):
+    if kind in _CHECKOUT_KINDS:
+        return ("the independent review could not be bound to this checkout for %s %s (%s%s): this is not "
+                "the reviewer failing, so do not park. Fix that, then re-run `%s`"
+                % (goal, phase, kind, ": " + detail if detail else "", gesture))
+    return ("the independent reviewer FAILED for %s %s (%s): no approving verdict can be recorded, "
+            "and an inline self-review does not replace it, whatever route resolves now. Park the goal "
+            "(`loop.py record %s %s parked \"independent reviewer failed: %s\" --qkind reviewer_down`); "
+            "to resume, fix the reviewer (login, command, timeout) and re-run `%s`, or point review.host at "
+            "another reviewer and run that"
+            % (goal, phase, kind, sdlc_dir, goal, kind, gesture))
+
+
+def independent_run_refusal(sdlc_dir, goal, phase, plan_sha256=""):
+    """None, or why an APPROVING `phase` verdict may not be recorded for `goal` (AGENTS.md: a failed
+    independent reviewer is never an approval).
+
+    Order matters. (1) A damaged config refuses: `resolve()` fails open to `inline` and a verdict gate
+    must not inherit that. (2) With `review.independent` on, a recorded run that did not finish OK
+    refuses WHATEVER route resolves now -- the reviewer binary may have vanished since, turning the
+    route inline, and that must not launder the failure. (3) An inline answer caused by something the
+    operator configured being unavailable refuses, loudly (decided from config, not a flag); an inline answer the operator
+    chose, or that nothing was configured for, stays allowed. (4) On a process/command route the
+    approval must match a receipt the runner wrote -- never the agent restating a verdict -- bound to
+    the brief's phase, the plan bytes (plan-review) or the checkout (code review). Proves the process
+    ran and approved these bytes; a maker can still call the CLI by hand or write the file."""
+    cfg, unreadable = _config_state(sdlc_dir)
+    if unreadable:
+        return ("%s/config.json is unreadable, so whether review.independent is on cannot be told: no "
+                "approving verdict is recorded until it parses" % sdlc_dir)
+    if not _independent_on(cfg):
+        return None
+    gesture = ("reviewer.py run %s <brief> --scratch <dir> --goal %s --phase %s" % (sdlc_dir, goal, phase))
+    try:
+        state, receipt = _read_receipt(sdlc_dir, goal, phase)
+    except ValueError as exc:
+        return "no approval for an unusable goal or phase (%s)" % exc
+    route = resolve(sdlc_dir)
+    mechanism = route.get("mechanism")
+    if mechanism == "subagent":
+        return None                      # bound by its own proof (an agent id), not by a process receipt
+    if state == "unreadable":
+        return "the reviewer run receipt for %s %s is unreadable (%s): re-run `%s`" % (goal, phase, receipt, gesture)
+    stale = (state == "ok" and receipt.get("outcome") == "waived_inline" and mechanism == "inline"
+             and not _waiver_valid(sdlc_dir, goal, phase, receipt, plan_sha256))
+    applies = state == "ok" and _failure_applies(receipt, route, stale_waiver=stale)
+    accept = ("`reviewer.py accept-inline %s --goal %s --phase %s --reason \"<the owner's choice>\"` (an audit "
+              "trail the OWNER runs, not an authority check: not the maker)" % (sdlc_dir, goal, phase))
+    if mechanism not in ("process", "command"):
+        if configured_reviewer_unavailable(cfg, route):
+            earlier = (" (an earlier run FAILED: %s)" % (receipt.get("failure") or "unknown")) if applies else ""
+            return ("the configured reviewer is not installed or not usable here (%s)%s, so no approving "
+                    "verdict is recorded: install or log in to it; or, if self-review is the owner's choice, set "
+                    "review.host to `inline`%s" % (route.get("reason"), earlier,
+                                                     " and then run " + accept if applies else ""))
+        if applies:
+            return ("the independent reviewer FAILED for %s %s (%s) and this machine now reviews inline: an "
+                    "inline self-review does not replace it unless the owner chooses it. Record that choice with "
+                    "%s, or fix the reviewer and re-run it" % (goal, phase, receipt.get("failure") or "unknown", accept))
+        return None
+    if applies:
+        return _failed_message(sdlc_dir, goal, phase, receipt.get("failure") or "unknown",
+                               receipt.get("detail") or "", gesture)
+    if state == "missing" or receipt.get("outcome") != "ok":
+        return ("the resolved reviewer route is `%s` but no run of it is on record for %s %s, so no "
+                "approving verdict can be recorded (a self-review is not independent and is not counted): "
+                "run `%s` and record what it printed" % (mechanism, goal, phase, gesture))
+    if receipt.get("verdict") != "approve":
+        return ("the independent reviewer's last run for %s %s did not print a lone `VERDICT: approve` "
+                "(got %r): an approval cannot be recorded; address its findings and re-run `%s`"
+                % (goal, phase, receipt.get("verdict"), gesture))
+    if receipt.get("brief_phase") != _BRIEF_NAME.get(phase):
+        return ("the reviewer's last run for %s %s was given a %r brief, not a %s one: re-run `%s`"
+                % (goal, phase, receipt.get("brief_phase"), _BRIEF_NAME.get(phase), gesture))
+    if phase == "review":
+        key = receipt.get("content_key")
+        if not key or key != _content_key(sdlc_dir, goal)[0]:
+            return ("the checkout changed since the independent reviewer last ran for %s (or could not be "
+                    "bound to it): re-run `%s` and record that verdict" % (goal, gesture))
+    if phase == "plan_review" and (not plan_sha256 or receipt.get("plan_sha256") != plan_sha256):
+        return ("the independent reviewer approved a different plan than sha256 %s…: re-run `%s` on "
+                "the current plan" % (plan_sha256[:12], gesture))
+    return None
+
+
+def run_review(sdlc_dir, brief_path, scratch_paths, goal=None, phase=None):
     """Execute a resolved process/command review with a real timeout and fresh process group.
 
     The operator-owned `review.command` retains its shell semantics. `process` commands remain
     argv lists. Unsupported platforms refuse before spawning: killing only a shell while its
     children keep consuming quota would be a silent half-guarantee.
+
+    With `goal` and `phase` it leaves the run receipt. The receipt is written PESSIMISTICALLY (failed)
+    only once the reviewer is about to LAUNCH, so a run refused beforehand (leak guard, shell policy,
+    a bad timeout) -- a maker's typo, not a reviewer failure -- never overwrites an earlier good one,
+    while a launched run that is killed or fails leaves a failure. The reviewer keeps the repo cwd: it
+    must read the repository.
     """
     if os.name != "posix" or not hasattr(os, "killpg"):
         print("reviewer run: process-tree timeout is unsupported on this platform", file=sys.stderr)
@@ -226,10 +860,20 @@ def run_review(sdlc_dir, brief_path, scratch_paths):
         return 2
     route = resolve(sdlc_dir)
     mechanism = route["mechanism"]
+    receipt = bool(goal and phase)
+    if (goal or phase) and not receipt:
+        print("reviewer run: --goal and --phase go together", file=sys.stderr)
+        return 2
     if mechanism not in ("process", "command"):
         print(f"reviewer run: resolved {mechanism}; use that route instead ({route['reason']})",
               file=sys.stderr)
         return 2
+    if receipt:
+        try:
+            _receipt_path(sdlc_dir, goal, phase)
+        except ValueError as exc:
+            print(f"reviewer run: cannot record the run receipt ({exc})", file=sys.stderr)
+            return 2
     try:
         brief = pathlib.Path(brief_path).read_text(encoding="utf-8")
     except OSError as exc:
@@ -251,37 +895,68 @@ def run_review(sdlc_dir, brief_path, scratch_paths):
         print("reviewer run: review.timeout_seconds must be positive", file=sys.stderr)
         return 2
     command = route["command"]
+
+    plan = _PLAN_SHA_LINE.search(brief)
+    plan_sha = plan.group(1) if plan else None
+
+    def failed(kind, code, message, detail=""):
+        print(message, file=sys.stderr)
+        if receipt:
+            _write_receipt(sdlc_dir, goal, phase, outcome="failed", failure=kind, detail=detail,
+                           route=_route_tag(route), plan_sha256=plan_sha, content_key=key)
+        return code
+    key = None
+    if receipt and phase == "review":
+        key, cause = _content_key(sdlc_dir, goal)
+        if key is None:
+            return failed("content_unbound", 1, "reviewer run: this checkout cannot be bound to the review: "
+                          "%s. Fix that and re-run (nothing was sent to the reviewer)" % cause, cause)
+    if receipt:
+        _write_receipt(sdlc_dir, goal, phase, outcome="failed", failure="not_completed",
+                       route=_route_tag(route), plan_sha256=plan_sha, content_key=key)
     try:
         proc = subprocess.Popen(command, shell=mechanism == "command", stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                 start_new_session=True)
     except OSError as exc:
-        print(f"reviewer run: could not start reviewer process ({type(exc).__name__})",
-              file=sys.stderr)
-        return 1
+        return failed("start_failed", 1,
+                      f"reviewer run: could not start reviewer process ({type(exc).__name__})")
     try:
         output, _errors = proc.communicate(input=brief, timeout=timeout)
     except subprocess.TimeoutExpired:
         _stop_review_process(proc)
-        print(f"reviewer run: timed out after {timeout}s; reviewer process group stopped",
-              file=sys.stderr)
-        return 124
+        return failed("timeout", 124,
+                      f"reviewer run: timed out after {timeout}s; reviewer process group stopped")
     except BaseException:
         _stop_review_process(proc)
         raise
     if proc.returncode != 0:
-        print(f"reviewer run: reviewer exited with exit {proc.returncode}; no verdict accepted",
-              file=sys.stderr)
-        return 1
+        return failed("nonzero_exit", 1,
+                      f"reviewer run: reviewer exited with exit {proc.returncode}; no verdict accepted")
     if not output.strip():
-        print("reviewer run: reviewer returned empty output; no verdict accepted", file=sys.stderr)
-        return 1
+        return failed("empty_output", 1, "reviewer run: reviewer returned empty output; no verdict accepted")
+    if key is not None:
+        after, cause = _content_key(sdlc_dir, goal)
+        if after != key:
+            return failed("content_changed_during_run", 1,
+                          "reviewer run: the checkout changed while the reviewer ran (%s); no verdict accepted. "
+                          "If the reviewer writes caches into the checkout, a re-run usually passes once those "
+                          "files exist (or git-ignore them)" % (cause or "files differ"), cause or "")
+    if receipt:
+        named = _BRIEF_HEADER.match(brief)
+        _write_receipt(sdlc_dir, goal, phase, outcome="ok", verdict=lone_verdict(output),
+                       brief_sha256=hashlib.sha256(brief.encode("utf-8")).hexdigest(),
+                       output_sha256=hashlib.sha256(output.encode("utf-8")).hexdigest(),
+                       plan_sha256=plan_sha,
+                       brief_phase=named.group(1) if named else None, content_key=key, route=_route_tag(route))
     sys.stdout.write(output)
     return 0
 
 
 USAGE = ("usage: reviewer.py resolve <sdlc_dir> | check <brief_path> [--scratch <path>]... | "
-         "run <sdlc_dir> <brief_path> --scratch <path> [--scratch <path>]...")
+         "run <sdlc_dir> <brief_path> --scratch <path> [--scratch <path>]... "
+         "[--goal <goal> --phase plan_review|review] | "
+         "accept-inline <sdlc_dir> --goal <goal> --phase plan_review|review --reason <text>")
 
 
 def main(argv):
@@ -297,14 +972,30 @@ def main(argv):
         for f in findings:
             print("LEAK: %s" % f, file=sys.stderr)
         return 0 if ok else 1
+    if len(argv) >= 2 and argv[0] == "accept-inline":
+        opts = argv[2:]
+        if len(opts) % 2 or any(opts[i] not in ("--goal", "--phase", "--reason") for i in range(0, len(opts), 2)):
+            print(USAGE, file=sys.stderr)
+            return 2
+        flags = {opts[i]: opts[i + 1] for i in range(0, len(opts), 2)}
+        try:
+            got = accept_inline(argv[1], flags.get("--goal"), flags.get("--phase"), flags.get("--reason"))
+        except (ValueError, OSError) as exc:
+            print("reviewer accept-inline: %s" % exc, file=sys.stderr)
+            return 2
+        print("reviewer accept-inline: recorded for %s %s (the earlier failure, %s, stays on record)"
+              % (flags["--goal"], flags["--phase"], got.get("failure")), file=sys.stderr)
+        return 0
     if len(argv) >= 3 and argv[0] == "run":
         options = argv[3:]
-        if len(options) < 2 or len(options) % 2 or any(options[i] != "--scratch"
-                                                       for i in range(0, len(options), 2)):
-            print("usage: reviewer.py run <sdlc_dir> <brief_path> --scratch <path> "
-                  "[--scratch <path>]...", file=sys.stderr)
+        if len(options) < 2 or len(options) % 2 or any(
+                options[i] not in ("--scratch", "--goal", "--phase") for i in range(0, len(options), 2)):
+            print(USAGE, file=sys.stderr)
             return 2
-        return run_review(argv[1], argv[2], options[1::2])
+        pairs = [(options[i], options[i + 1]) for i in range(0, len(options), 2)]
+        one = lambda flag: next((v for f, v in reversed(pairs) if f == flag), None)
+        return run_review(argv[1], argv[2], [v for f, v in pairs if f == "--scratch"],
+                          goal=one("--goal"), phase=one("--phase"))
     print(USAGE, file=sys.stderr)
     return 2
 

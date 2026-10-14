@@ -3671,6 +3671,30 @@
       "count": 3,
       "gate": "removes only intake plans and their resume records beyond the newest 50 finished ones, and plans with no resume record older than 90 days, in the intake directory; called by plan; never touches a mid-filing plan",
       "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/reviewer.py",
+      "function": "_write_receipt",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "a receipt of the one reviewer run for this goal and phase, under .sdlc/state/reviewer-runs/; replaced atomically (temp file in the same directory), removed when the goal finishes; a failed run still leaves its failure receipt",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/reviewer.py",
+      "function": "_write_receipt",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "a receipt of the one reviewer run for this goal and phase, under .sdlc/state/reviewer-runs/; replaced atomically (temp file in the same directory), removed when the goal finishes; a failed run still leaves its failure receipt",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/reviewer.py",
+      "function": "clear_receipts",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "removes only the two receipt files of the goal being finished, named by the receipt path; called by work.py finish",
+      "risk": "high"
     }
   ]
 }

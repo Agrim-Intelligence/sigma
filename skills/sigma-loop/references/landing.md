@@ -98,11 +98,10 @@ verification, acceptance, or plan review.
 
 **Put the plan on the branch before that first `commit`** — copy `.sdlc/plans/<goal-stem>.md` from
 the main checkout to the SAME relative path inside the worktree (`commit`'s `git add -A` runs in
-the worktree and cannot see the main checkout's copy, which is why plans were silently missing
-from PRs — #1548). Both copies are wanted, not one: the reviewer BRIEF reads the main checkout's,
+the worktree and cannot see the main checkout's copy). Both copies are wanted: the reviewer BRIEF reads the main checkout's,
 the PR's reviewer reads the branch's. `pr` refuses to push without it, naming the file and the
 branch — unless the repo's own `.gitignore` covers the plan path, in which case that repo has
-decided plans are not committed there and nothing is asked (never force-add past an ignore rule).
+decided plans are not committed there and nothing is asked.
 **With `gates.plan_review.enabled`, `pr` also refuses (nothing pushed) unless `work.py
 record-plan-review` recorded an approving verdict (SOUND or SOUND-WITH-REFINEMENTS) for the exact
 bytes of the plan it hashes** — the branch's copy, or the main checkout's only when the branch
@@ -111,14 +110,12 @@ It is checked at `pr` only, not at a later `work.py rebase` force-push, and cove
 only: not `<stem>.slices.json`, not a design PR.
 **`commit` REFUSES when `git add -A` staged a secret-shaped file** (#1555). It names every
 offending path, takes those paths back out of the index, and leaves every file on disk untouched.
-**Do exactly what the refusal prints, character for character** — it gives you a
+**Do exactly what the refusal prints** — it gives you a
 ready-made `.gitignore` line (already escaped and anchored; the raw path often is NOT a valid
 pattern), and for a file already tracked here, the `git rm --cached` that must come with it.
-Then re-run `commit`. Never `git add -f` past it, and never delete the operator's file to get
-moving. For a fixture, a certificate, or a file this repo commits ON PURPOSE (a Symfony-style
-non-secret `.env`), the answer is the EXACT path in `work.allow_secret_paths` in
-`.sdlc/config.json` — not untracking a file the project means to keep. **Deleting a secret is
-never refused**: the goal that removes a leaked credential is the one this exists to enable.
+Then re-run `commit`. Never `git add -f` past it. For a fixture, a certificate, or a file this repo commits ON PURPOSE, the answer is the EXACT path in `work.allow_secret_paths` in
+`.sdlc/config.json`. **Deleting a secret is
+never refused.**
 
 **A content hit** (`credential-assignment`): Remove the literal or read it from the environment, then
 re-run `commit`; else `record parked "<why>"`. **Never write a `work.allow_secret_content` entry
@@ -129,7 +126,7 @@ the PR. Self-review before the PR is never enough; this is a **fresh, adversaria
 real, mergeable diff** (post-commit, post-CI). **Resolve the mechanism, never assert it** — `python3
 "${CLAUDE_SKILL_DIR}/scripts/reviewer.py" resolve .sdlc` and use what it names (`subagent` /
 `process` / `command`; only a machine where it returns `inline` reviews inline, and that verdict
-must say so). The skills ask that the maker not clear its own PR; code cannot stop it. Fed the reviewer brief for this gate:
+must say so; a failed reviewer parks, and only the owner's `reviewer.py accept-inline` allows inline). The skills ask that the maker not clear its own PR. Fed the reviewer brief for this gate:
 `python3 "${CLAUDE_SKILL_DIR}/scripts/review_context.py" brief .sdlc "$goal" --for pr-review
 --artifact <PR#>` (see the maker≠checker rule, step 3), running `/sigma-review` in diff mode (`/code-review` may add
 a pass, never replaces it). That subagent decides the verdict below. **Create a generation and
@@ -144,7 +141,7 @@ brief .sdlc "$goal" --for pr-review --artifact "PR#$pr" --output
 at execution time and refuses if it changed. For a resolved `subagent`, hand only `$REVIEW_BRIEF` to
 a fresh host subagent, then run `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" record-subagent-review
 .sdlc "$goal" --manifest "$REVIEW_MANIFEST" --resolution "$REVIEW_RESOLUTION" --verdict
-approve|block|unblock --reason "<reviewer result>"`. Finally run `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py"
+approve|block|unblock --reason "<reviewer result>" --agent-id <its id>`. Finally run `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py"
 review-evidence .sdlc "$goal" --manifest "$REVIEW_MANIFEST" --review-result "$REVIEW_RESULT"`.
 **No human approves — the loop reviews and clears its own PR:**
 - **No blocking issues** → `work.py post-review .sdlc "$goal" --evidence "$REVIEW_EVIDENCE" --verdict approve` (posts `sigma:approve`).
@@ -177,7 +174,7 @@ On an **inline** route (`review.independent: false`, or a host with no session m
 reviewer to run, so the verdict is passed explicitly: `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" run-resolved-review .sdlc "$goal"
 --manifest "$REVIEW_MANIFEST" --resolution "$REVIEW_RESOLUTION" --verdict approve|block|unblock
 --reason "<result>"`. The route is re-resolved first, those flags are refused on every other route,
-and a verdict written into `resolution.json` is refused everywhere.
+and a verdict written into `resolution.json` is refused everywhere. A failed reviewer refuses this route until the owner records `accept-inline` (an audit trail, not an authority check).
 
 If `post-review` returns `PARK: remote comment outcome ambiguous`, or asks you to reconcile before a
 retry, GitHub may already have accepted the comment. Never post again. Run `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py"

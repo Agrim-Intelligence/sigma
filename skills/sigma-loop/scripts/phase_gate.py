@@ -146,6 +146,11 @@ def status(sdlc_dir, config, goal):
             elif v.get("verdict") not in approving:
                 ok, detail = False, f"last verdict is {v.get('verdict')!r}, not approving"
                 fix = "fix what the reviewer found, then run a fresh independent review and record it"
+            elif _load("reviewer").failed_receipt(sdlc_dir, goal, ph):
+                kind = _load("reviewer").failed_receipt(sdlc_dir, goal, ph)[0]
+                ok, detail = False, f"the independent reviewer failed after the approving verdict ({kind})"
+                fix = (f"park the goal (`--qkind reviewer_down`), fix the reviewer, and re-run `reviewer.py run` "
+                       f"for {ph}; an earlier approval is not restored by a failed re-run")
             else:
                 detail = f"verdict {v.get('verdict')} via {v.get('route') or 'unknown'} route" + (
                     f", agent {v['agent_id']} ({v.get('verified') or 'unverified'})" if v.get("agent_id") else "")
@@ -159,7 +164,9 @@ def status(sdlc_dir, config, goal):
                             "(the maker is the checker)", "dispatch a FRESH subagent for the review"
                     if v.get("verified") == "unverified":
                         notes.append(f"{ph}: reviewer id could not be checked against the host's transcript store")
-                if v.get("route") == "inline":
+                if v.get("route") == "inline" and v.get("waiver"):
+                    notes.append(f"{ph}: INLINE by owner decision: {v.get('waiver_reason') or 'no reason recorded'}")
+                elif v.get("route") == "inline":
                     notes.append(f"{ph}: INLINE route (the host cannot spawn an independent reviewer)")
                 if ok and ph == "plan_review":
                     plan = rc.phase_doc_file(sdlc_dir, goal, "plans")
@@ -267,7 +274,13 @@ def record_verdict(sdlc_dir, config, goal, phase, verdict, agent_id="", plan_has
     actionlog = _load("actionlog")
     if not actionlog.enabled(config):
         raise ValueError("action_log.enabled is not true: the verdict cannot be recorded in the action log")
-    route = _load("reviewer").resolve(sdlc_dir).get("mechanism") or "inline"
+    reviewer = _load("reviewer")
+    route = reviewer.resolve(sdlc_dir).get("mechanism") or "inline"
+    if verdict in (PLAN_REVIEW_APPROVING if phase == "plan_review" else REVIEW_APPROVING):
+        # F02: a process/command route needs the runner's own receipt; a failed reviewer is no approval.
+        refusal = reviewer.independent_run_refusal(sdlc_dir, goal, phase, plan_hash)
+        if refusal:
+            raise ValueError(refusal)
     verified = ""
     if agent_id:
         verified, bad = verify_agent(agent_id)
@@ -275,7 +288,13 @@ def record_verdict(sdlc_dir, config, goal, phase, verdict, agent_id="", plan_has
             raise ValueError(bad)
     if route == "subagent" and not agent_id:
         raise ValueError("the reviewer route here is `subagent`: pass --agent-id <the reviewer subagent's id>")
+    if route == "subagent" and verdict in (PLAN_REVIEW_APPROVING if phase == "plan_review" else REVIEW_APPROVING):
+        refusal = reviewer.subagent_transcript_refusal(sdlc_dir, goal, phase, verified)
+        if refusal:
+            raise ValueError(refusal)
+    why = reviewer.waiver_reason(sdlc_dir, goal, phase, plan_hash) if route == "inline" else None
     row = actionlog.append(sdlc_dir, goal, "verdict", "loop", phase=phase, verdict=verdict, route=route,
+                           waiver="accept-inline" if why else None, waiver_reason=why or None,
                            agent_id=agent_id or None, plan_hash=plan_hash or None,
                            verified=verified or None)
     return row

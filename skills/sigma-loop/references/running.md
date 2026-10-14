@@ -131,16 +131,16 @@ this dispatch too: your very next action depends on its verdict, so dispatch it 
 blocking rather than inventing a separate "wait" step. Give it the PROJECT, not the author:
 `python3 "${CLAUDE_SKILL_DIR}/scripts/review_context.py" brief .sdlc "$goal" --for
 plan-review|code-review|pr-review [--artifact <path|PR#>] > "/tmp/brief-$(basename "$goal" .md).md"`
-assembles the pack into that file (`basename`: `$goal` is a path in local mode) — north-star +
+assembles the pack into that file — north-star +
 conventions + contracts + the goal + a pointer to the artifact — and you hand the subagent **only
 that**. So it re-derives blast radius from the whole repo and can *disagree*, instead of
-rubber-stamping the plan/diff it just wrote (a lower-tier maker does). A diff-only reviewer cannot see what a small change breaks two files
-away; the brief's whole-repo grounding is the point. Where the host has no subagents this is **not**
+rubber-stamping the plan/diff it just wrote. A diff-only reviewer cannot see what a small change breaks two files
+away. No subagents is **not**
 a degradation — run `python3 "${CLAUDE_SKILL_DIR}/scripts/reviewer.py" resolve .sdlc` and use the
-mechanism it names (a fresh `process`, or the operator's `command`); every host asks for an
-author-blind reviewer by its own route. Only a machine where the resolver returns `inline` reviews
-inline, and that verdict must say so. With
-`review.independent: false` reviews run inline as before (the maker reviews its own work — only for a
+mechanism it names (a fresh `process`, or the operator's `command`, run as `reviewer.py run .sdlc
+<brief> --scratch <dir> --goal "$goal" --phase plan_review|review`). Only a machine where the resolver returns `inline` reviews
+inline, and that verdict must say so; after a failure only the owner's `reviewer.py accept-inline` (an audit trail) allows it. With
+`review.independent: false` reviews run inline (the maker reviews its own work, for a
 trivial solo repo).
 
 **Record the plan-review verdict before Implement** (`gates.plan_review`). The dispatching site —
@@ -172,7 +172,7 @@ paths using `source <(python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" review-paths
 `subagent`, hand only `$REVIEW_BRIEF` to a fresh host subagent, then run `python3
 "${CLAUDE_SKILL_DIR}/scripts/work.py" record-subagent-review .sdlc "$goal" --manifest
 "$REVIEW_MANIFEST" --resolution "$REVIEW_RESOLUTION" --verdict approve|block|unblock --reason
-"<reviewer result>"`. Then run `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" review-evidence .sdlc "$goal" --manifest
+"<reviewer result>" --agent-id <its id>`. Then run `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" review-evidence .sdlc "$goal" --manifest
 "$REVIEW_MANIFEST" --review-result "$REVIEW_RESULT"`. Only then post `work.py post-review .sdlc
 "$goal" --evidence "$REVIEW_EVIDENCE" --verdict approve`, or the same evidence argument with
 `--verdict block --reason "<the issues>"`. To clear a prior loop block on the same revision, publish

@@ -143,6 +143,13 @@ QUESTIONS = {
                                "Authorize it in the registry, correct the recorded owner, or drop "
                                "the goal?", "options": ["authorize it", "correct the owner", "drop this"]},
     ],
+    "reviewer_down": [
+        {"id": "route", "ask": "The independent reviewer did not work, so no review was recorded: {reason} "
+                               "Fix the reviewer and re-run it (reviewer.py run), review with a different "
+                               "host, or choose inline review, which you record with reviewer.py "
+                               "accept-inline after setting review.host to inline?",
+         "options": ["fix and re-run the reviewer", "choose inline review"]},
+    ],
     "unknown": [
         {"id": "next", "ask": "Here is what it stopped on: {reason} What should happen next?"},
     ],

@@ -1432,7 +1432,7 @@ def run_github_process(sigma, readme_text, root, qs=None):
         phase("review", "onb-reviewer")()
         script("work", "record-subagent-review", ".sdlc", goal, "--manifest", str(manifest), "--resolution",
                str(resolution), "--verdict", "approve", "--reason", "scripted review of the fixture diff",
-               step="record subagent review")
+               "--agent-id", "onb-reviewer", step="record subagent review")
         script("work", "record-review", ".sdlc", goal, "--verdict", "APPROVE", "--agent-id", "onb-reviewer",
                step="record review")
         evidence = json.loads(script("work", "review-evidence", ".sdlc", goal, "--manifest", str(manifest),

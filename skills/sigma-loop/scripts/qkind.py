@@ -11,9 +11,10 @@ list by a test, so the two cannot drift silently)."""
 import re
 
 #: The closed list of declarable kinds. The first nine are the park-reachable reason classes;
-#: `scope_hold` and `owner_hold` are the gate-hold kinds (written by the two pick gates through `gate_hold`).
+#: `scope_hold` and `owner_hold` are the gate-hold kinds (written by the two pick gates through `gate_hold`);
+#: `reviewer_down` is a park, not a label: the independent reviewer failed (docs/label-model.md §2c).
 QKINDS = ("irreversible", "needs_decision", "merge_conflict", "failing_check", "no_evidence",
-          "dependency", "review_cap", "quota", "unknown", "scope_hold", "owner_hold")
+          "dependency", "review_cap", "quota", "unknown", "scope_hold", "owner_hold", "reviewer_down")
 
 LINE_PREFIX = "sigma-qkind: "
 # The source may append a suffix on the same line (a decision-tier tag), so the kind token ends at
