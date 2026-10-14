@@ -321,6 +321,8 @@ class GitHub:
                                       repo_args=("--repo", "%s/%s" % (self.owner, self.repo)),
                                       me=self.viewer or "someone")
         per = int(re.search(r"per_page=(\d+)", query).group(1)) if "per_page=" in query else 30
+        if path == "rate_limit":      # #1305: the watcher back-fill's budget probe
+            return json.dumps({"resources": {"graphql": {"remaining": 5000, "limit": 5000}}})
         if path == "user":
             if self.viewer is None:
                 raise LookupError(path)

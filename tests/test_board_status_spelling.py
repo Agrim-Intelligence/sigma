@@ -177,7 +177,9 @@ def test_adopted_board_without_backlog_warns_that_goals_are_not_carded(tmp_path,
     every goal uncarded, silently."""
     gh, board = _board(["Todo", "In progress", "Done"])
     _goals(gh, 11, 12)
-    _src(gh, tmp_path, {"number": 1}).mark_in_progress("11")
+    src = _src(gh, tmp_path, {"number": 1})
+    src.mark_in_progress("11")
+    src.backfill_board()                       # #1305: the full-board back-fill is the watcher's step
     err = capsys.readouterr().err
     assert err.count(WARN) == 1 and "'Backlog'" in err
     assert _status(gh, board, 11) == "In progress" and _status(gh, board, 12) is None
@@ -247,6 +249,7 @@ def test_case_variant_ready_is_never_adopted_by_a_write_path_first(tmp_path, cap
     gh.issues.append({"number": 13, "labels": [{"name": "sdlc:goal"}], "title": "t", "body": ""})
     src = _src(gh, tmp_path, {"number": 1})
     src.mark_in_progress("11")
+    src.backfill_board()                       # #1305: the back-fill is the watcher's step now
     assert src.col["ready"] == "Ready"
     assert _status(gh, board, 13) == "Backlog"                 # seeded into Backlog, not READY
     assert src._ready_lane() is None
@@ -283,7 +286,9 @@ def test_new_goal_is_seeded_into_a_case_variant_backlog(tmp_path, capsys):
     """`_sync_backlog` looks its seed up by `self.col["backlog"]` -- exact, after adoption."""
     gh, board = _board(["backlog", "In progress", "Done"])
     _goals(gh, 11, 12)
-    _src(gh, tmp_path, {"number": 1}).mark_in_progress("11")
+    src = _src(gh, tmp_path, {"number": 1})
+    src.mark_in_progress("11")
+    src.backfill_board()                       # #1305: the back-fill is the watcher's step now
     assert _status(gh, board, 12) == "backlog"
     assert WARN not in capsys.readouterr().err
 
@@ -293,7 +298,9 @@ def test_goal_in_a_case_variant_backlog_is_promoted_to_ready(tmp_path):
     gh, board = _board(["backlog", "Ready", "In Progress", "Done"])
     _goals(gh, 11, 12)
     gh.add_item(board, 12, Status="backlog")["labels"] = ["sdlc:goal"]
-    _src(gh, tmp_path, {"number": 1}).mark_in_progress("11")
+    src = _src(gh, tmp_path, {"number": 1})
+    src.mark_in_progress("11")
+    src.backfill_board()                       # #1305: the back-fill is the watcher's step now
     assert _status(gh, board, 12) == "Ready"
 
 
@@ -338,7 +345,9 @@ def test_open_goal_stuck_in_a_case_variant_done_is_reported(tmp_path, capsys):
     gh, board = _prio_board("done")
     gh.add_item(board, 11, Status="done")["labels"] = ["sdlc:goal", "priority:P1"]
     gh.issues.append({"number": 12, "labels": [{"name": "sdlc:goal"}], "title": "u", "body": ""})
-    _src(gh, tmp_path, {"number": 1}).mark_in_progress("12")      # the sync visits #11
+    src = _src(gh, tmp_path, {"number": 1})
+    src.mark_in_progress("12")
+    src.backfill_board()                                          # #1305: the watcher's sync visits #11
     assert "stuck at done" in capsys.readouterr().err
     assert not [c for c in _prio_writes(gh) if "PVTI_11" in c]
 

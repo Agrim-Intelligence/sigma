@@ -5118,6 +5118,11 @@ class GitHubSource:
                 # 'priority': 'P3'}. Caching it here is what makes the mirror diff-only, so a board
                 # already in agreement costs zero writes.
                 self._item_priority[int(n)] = it.get((self.priority_field or "").lower())
+                # #1305: a single-issue verb no longer runs the full-board sync that used to fill
+                # `_issue_labels`, so the moved goal's own card is the zero-extra-call source of its
+                # labels for `_set_board_status`'s Priority mirror (item-list carries an issue card's).
+                if isinstance(it.get("labels"), list):
+                    self._issue_labels.setdefault(int(n), it["labels"])
 
     #: #308 review: how long a FAILED resolve of the repo's current name is trusted before the next
     #: need reads again. A long-lived source (the watch daemon's) must not keep one blip forever;
