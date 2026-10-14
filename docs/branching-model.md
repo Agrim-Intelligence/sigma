@@ -1646,10 +1646,10 @@ files and output are byte for byte what they were.
 
 Two things can open the window, and both ask the same cheap question first: the first session start on a machine
 (`upkeep_session.py start`, run by the session-start hook, which never waits for it) and the watcher's normal tick. The
-question reads one per-machine stamp, `upkeep/window.json` (when the last sweep was attempted, the units it did not reach,
-how it ended) and does arithmetic. A closed window costs that one file read: no unit listing, no git, no GitHub call. A
-missing, unreadable or future-dated stamp reads as open. The stamp is written when the window opens, before the work, and
-rewritten when the sweep ends.
+question reads one per-machine stamp, `upkeep/window.json` (when the last sweep completed, when one was last attempted, the units
+it did not reach, how it ended) and does arithmetic. A closed window costs that one file read: no unit listing, no git, no GitHub call. A
+missing, unreadable or future-dated stamp reads as open. Only a completed sweep closes the window. An attempt stamp is written when the sweep is started, and it holds off a new start for
+`upkeep.retry_minutes` only; the completed stamp is written when the sweep ends. The plain-language guide is [upkeep.md](upkeep.md).
 
 What the sweep does, in order: it takes the job lock (when another sweep or job holds it, this one backs off and the stamp
 records `busy`, a refusal and not a failure); it lists the units in the registry that `upkeep.units` admits (an exclude
