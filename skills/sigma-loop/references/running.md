@@ -21,21 +21,20 @@ informed by history instead of a flushed window (no-op when the KG is off).
 **Match the model to the goal.** **The goal-level `model_choice` ledger event is now written
 automatically, in code, at pick time (#1627)** — `loop.py`'s own `_next()` (the one chokepoint
 every picker already passes through) reads the goal's real title+body and calls `predict.py why`
-+ records the result itself, with no agent involvement. **Read the tier IT resolved from the
++ records the result itself. **Read the tier IT resolved from the
 pick's own stderr** — a line shaped `sigma: model tier for <goal> resolved to <tier>
 (signal=<signal>)` — rather than recomputing it yourself, **especially in github mode**: `"$goal"`
 there is the bare issue number, and a manual `predict.py resolve "$goal" .sdlc` classifies that
 literal digit string, not the issue's real text, landing the unsignalled `sonnet` default no
-matter what the goal actually says. That is the exact bug #1627 fixed for the automatic call;
-recomputing by hand reintroduces it. In LOCAL mode `"$goal"` genuinely is the goal's own file
+matter what the goal actually says. That is the bug #1627 fixed for the automatic call. In LOCAL mode `"$goal"` genuinely is the goal's own file
 path, so `predict.py resolve "$goal" .sdlc` there still resolves correctly — but reading the
 already-printed stderr line works in EITHER mode and needs no branching. If the stderr line is
 missing (`model_selection` isn't `"auto"`, or the pick predates this line reaching stdout in your
 log), fall back to running `resolve` yourself: in local mode `resolve "$goal" .sdlc` as before; in
 github mode, fetch the issue's real text FIRST, title on the first line
 (`gh api repos/{owner}/{repo}/issues/"$goal" --jq '.title + "\n\n" + (.body // "")'`,
-POSIX shell — a haiku signal counts only in the title, #2827) and pass that text as the argument, never
-the bare `"$goal"`. Whatever tier you end up with
+POSIX shell — a haiku signal counts only in the title, #2827) and pipe that text to
+`predict.py resolve - .sdlc "$goal"` (stdin), never the bare `"$goal"` or a shell string. Whatever tier you end up with
 (`haiku`/`sonnet`/`opus`/`fable`) is the GOAL's ceiling; `signal` (from either the stderr line or
 your own fallback `why`/`resolve` call) is the literal text the regex matched (`migrat`, `secur`)
 — WHY it's that tier, which no reader can check without it (#880). You do not need to separately

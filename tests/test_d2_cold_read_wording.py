@@ -44,3 +44,29 @@ def test_verify_prefers_the_projects_verify_command_over_a_weaker_check():
 
 def test_plan_review_fix_first_blocks_implement():
     assert "Implement waits for a fresh approving verdict" in _skill("sigma-plan-review")
+
+
+# --- independent Codex read, docs/launch/evidence/review-s5-codex-read-45626aa65b73.md ---
+
+def test_brainstorm_hands_off_to_research_not_straight_to_plan():          # F01
+    text = _skill("sigma-brainstorm")
+    assert "The terminal step is **`sigma-research`**" in text
+    assert "recorded\nwaiver" in text or "recorded waiver" in text.replace("\n", " ")
+    assert "The terminal step is **`sigma-plan`**" not in text
+
+
+def test_verify_names_the_source_of_done_when():                           # F05
+    assert "the P1 acceptance record; if the issue changed since, the recorded criteria" in _skill("sigma-verify")
+    assert "The grade never substitutes for verified `done_when`" in _skill("sigma-loop")
+
+
+def test_implement_mutation_control_separates_clauses_and_orders():        # F06
+    text = " ".join(_skill("sigma-implement").split())
+    assert "break each clause on its own" in text
+    assert "weaken the order to plain membership" in text
+
+
+def test_loop_model_fallback_pipes_issue_text_via_stdin():                 # F07
+    text = " ".join((SKILLS / "sigma-loop" / "references" / "running.md").read_text(encoding="utf-8").split())
+    assert 'pipe that text to `predict.py resolve - .sdlc "$goal"`' in text
+    assert "pass that text as the argument" not in text
