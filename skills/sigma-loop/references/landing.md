@@ -144,7 +144,7 @@ brief .sdlc "$goal" --for pr-review --artifact "PR#$pr" --output
 at execution time and refuses if it changed. For a resolved `subagent`, hand only `$REVIEW_BRIEF` to
 a fresh host subagent, then run `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" record-subagent-review
 .sdlc "$goal" --manifest "$REVIEW_MANIFEST" --resolution "$REVIEW_RESOLUTION" --verdict
-approve|block|unblock --reason "<reviewer result>"`. Finally run `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py"
+approve|block|unblock --reason "<reviewer result>" --agent-id <its id>`. Finally run `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py"
 review-evidence .sdlc "$goal" --manifest "$REVIEW_MANIFEST" --review-result "$REVIEW_RESULT"`.
 **No human approves — the loop reviews and clears its own PR:**
 - **No blocking issues** → `work.py post-review .sdlc "$goal" --evidence "$REVIEW_EVIDENCE" --verdict approve` (posts `sigma:approve`).

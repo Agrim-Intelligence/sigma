@@ -37,8 +37,8 @@ It prints one JSON object; branch on `mechanism`:
   you are not independent, and asserting otherwise does not make you so.
 
 **If a resolved `process`/`command` FAILS** — unauthenticated, non-zero exit, timeout, empty output —
-it is never an approval: park the goal (`loop.py record … parked --qkind reviewer_down`); the gate
-refuses approval without the run's receipt. Inline review counts only when `inline` resolved.
+it is never an approval: park the goal (`--qkind reviewer_down`). Only the owner's `reviewer.py accept-inline`
+(an audit trail, not an authority check; not the maker) then allows inline.
 
 **If this brief already reached you, you ARE the resolved reviewer — do not re-resolve and do not
 dispatch again.**

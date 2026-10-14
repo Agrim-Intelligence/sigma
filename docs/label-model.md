@@ -475,7 +475,10 @@ non-zero exit, timeout, empty output), no approving review or plan-review verdic
 with `sigma-qkind: reviewer_down`. It is a **kind, not a new `sdlc:*` label**: a park stands alone
 (§2), so an overlay on it would put an overlay on a non-member, and the ask lists by kind already.
 **Who clears it:** a human via `/sigma-unpark`, after fixing the reviewer and re-running
-`reviewer.py run`; the later successful run replaces the failure receipt. No sweep resumes it.
+`reviewer.py run`; the later successful run replaces the failure receipt. Choosing inline review instead is the owner's
+`reviewer.py accept-inline --goal --phase --reason` after setting `review.host: inline`: an audit trail the owner runs,
+not an authority check (the maker must not run it); it is stamped on the verdict row and covers only the bytes it was
+given for. No sweep resumes it.
 
 ## 2c. "Do we still need `sdlc:followup`?"
 

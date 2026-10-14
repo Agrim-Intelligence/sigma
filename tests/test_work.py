@@ -330,7 +330,7 @@ def test_run_resolved_process_review_captures_a_fresh_structured_verdict(tmp_pat
     }))
     fake = types.SimpleNamespace(
         resolve=lambda _sdlc: {"mechanism": "process", "host": "codex", "command": ["codex", "exec"]},
-        run_review=lambda *_args: (print("Verdict: **APPROVE**\nReason: clean diff") or 0),
+        run_review=lambda *_args, **_k: (print("Verdict: **APPROVE**\nReason: clean diff") or 0),
     )
     original = work._load
     monkeypatch.setattr(work, "_load", lambda name: fake if name == "reviewer" else original(name))
@@ -355,10 +355,12 @@ def test_documented_subagent_handoff_writes_generation_bound_review_result(tmp_p
         "mechanism": "subagent", "host": "claude", "reason": "host dispatches subagents",
     })
     original = work._load
+    for _k in ("CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID"):    # the agent id is checked against a live transcript store
+        monkeypatch.delenv(_k, raising=False)
     monkeypatch.setattr(work, "_load", lambda name: fake if name == "reviewer" else original(name))
     assert work.main(["work.py", "record-subagent-review", str(tmp_path / ".sdlc"), "2577",
                       "--manifest", str(manifest), "--resolution", str(resolution),
-                      "--verdict", "block", "--reason", "found a defect"]) == 0
+                      "--verdict", "block", "--reason", "found a defect", "--agent-id", "sub1"]) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["verdict"] == "block" and result["generation_id"] == "gen"
     assert pathlib.Path(result["path"]).exists()
@@ -6018,11 +6020,14 @@ def _gesture_up_to_result(d, goal, monkeypatch, capsys, verdict="approve"):
     route = {"mechanism": "subagent", "host": "claude", "reason": "host dispatches subagents"}
     pathlib.Path(paths["REVIEW_RESOLUTION"]).write_text(json.dumps(route))
     original = work._load
-    monkeypatch.setattr(work, "_load", lambda name: types.SimpleNamespace(resolve=lambda _d: route)
+    for _k in ("CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID"):
+        monkeypatch.delenv(_k, raising=False)
+    monkeypatch.setattr(work, "_load", lambda name: types.SimpleNamespace(
+        resolve=lambda _d: route, independent_run_refusal=lambda *_a, **_k: None)
                         if name == "reviewer" else original(name))
     assert work.main(["work.py", "record-subagent-review", d, goal, "--manifest", str(manifest),
                       "--resolution", paths["REVIEW_RESOLUTION"], "--verdict", verdict,
-                      "--reason", "review returned " + verdict]) == 0
+                      "--reason", "review returned " + verdict, "--agent-id", "sub1"]) == 0
     capsys.readouterr()
     return rec["worktree"], str(manifest), paths
 
@@ -6185,7 +6190,7 @@ def _process_review_output(tmp_path, monkeypatch, output):
         "brief_sha256": hashlib.sha256(b"brief").hexdigest()}))
     route = {"mechanism": "process", "host": "codex", "command": ["codex", "exec"]}
     resolution = gen / "resolution.json"; resolution.write_text(json.dumps(dict(route, reason="resolved")))
-    fake = types.SimpleNamespace(resolve=lambda _sdlc: route, run_review=lambda *_a: (print(output) or 0))
+    fake = types.SimpleNamespace(resolve=lambda _sdlc: route, run_review=lambda *_a, **_k: (print(output) or 0))
     original = work._load
     monkeypatch.setattr(work, "_load", lambda name: fake if name == "reviewer" else original(name))
     work._save(tmp_path / ".sdlc", "2577", {"worktree": str(worktree), "pr": 7})
@@ -10408,7 +10413,7 @@ def test_documented_run_resolved_review_cli_gesture_succeeds_on_the_command_rout
     resolution.write_text(json.dumps(_load("reviewer").resolve(d)))
     assert json.loads(resolution.read_text())["mechanism"] == "command"   # the real, unmocked resolver
     fake_reviewer = types.SimpleNamespace(resolve=_load("reviewer").resolve,
-                                          run_review=lambda *_a: (print("VERDICT: approve") or 0))
+                                          run_review=lambda *_a, **_k: (print("VERDICT: approve") or 0))
     original = work._load
     monkeypatch.setattr(work, "_load", lambda name: fake_reviewer if name == "reviewer" else original(name))
     work._save(d, goal, {"worktree": str(worktree), "pr": 7})
