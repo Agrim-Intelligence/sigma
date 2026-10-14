@@ -23,14 +23,18 @@ Fail-open: every failure resolves `inline` WITH A STATED REASON and exit 0 -- a 
 not stop a review. `check` is the opposite and fails CLOSED, because a leak guard that passes on
 error is decoration. Zero deps.
 """
+import hashlib
 import importlib.util
 import json
 import os
 import pathlib
+import re
 import signal
 import shutil
 import subprocess
 import sys
+import tempfile
+import time
 
 #: What the SKILL prose branches on.
 MECHANISMS = ("subagent", "process", "command", "inline")
@@ -210,7 +214,98 @@ def _stop_review_process(proc):
         proc.wait(timeout=2)
 
 
-def run_review(sdlc_dir, brief_path, scratch_paths):
+#: A review verdict is a line that is NOTHING but the verdict. Prose such as "Verdict: approve would be
+#: premature" ahead of a final `VERDICT: block` must not count (the checker could flip its own block).
+_VERDICT_LINE = re.compile(
+    r"(?im)^[\s*_`]*verdict[\s*_`]*:[\s*_`]*(approve|approved|block|blocked|unblock|unblocked)[\s*_`.]*$")
+_PLAN_SHA_LINE = re.compile(r"(?m)^Plan sha256: ([0-9a-f]{64})\s*$")
+
+#: Phases whose approving verdict needs a run receipt (the names `phase_gate.record_verdict` uses).
+RECEIPT_PHASES = ("plan_review", "review")
+
+
+def parse_verdicts(output):
+    """-> the set of normalised standalone verdicts (approve|block|unblock) found in `output`."""
+    return {"approve" if m.startswith("approv") else "unblock" if m.startswith("unblock") else "block"
+            for m in (x.group(1).lower() for x in _VERDICT_LINE.finditer(output))}
+
+
+def _receipt_path(sdlc_dir, goal, phase):
+    if phase not in RECEIPT_PHASES:
+        raise ValueError("phase must be one of %s" % ", ".join(RECEIPT_PHASES))
+    p = pathlib.Path(str(goal))
+    goal_stem = p.stem if p.suffix == ".md" else str(goal)
+    bad = _load("state").unsafe_goal_reason(goal_stem)
+    if bad:
+        raise ValueError("unsafe goal %r for the reviewer run receipt: %s" % (goal, bad))
+    return pathlib.Path(sdlc_dir) / "state" / "reviewer-runs" / ("%s.%s.json" % (goal_stem, phase))
+
+
+def _write_receipt(sdlc_dir, goal, phase, **fields):
+    """ONE file per goal+phase, atomically replaced: the LATEST run's outcome is the only one that
+    counts, so a later success clears a failure and a later failure overwrites a success. Bounded by
+    construction (no log to prune); `work.py finish` removes a goal's receipts with its record."""
+    path = _receipt_path(sdlc_dir, goal, phase)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields.update(at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), goal=str(goal), phase=phase)
+    fd, tmp = tempfile.mkstemp(prefix=".run-", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(fields, handle, sort_keys=True); handle.write("\n"); handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+
+
+def clear_receipts(sdlc_dir, goal):
+    for phase in RECEIPT_PHASES:
+        try:
+            _receipt_path(sdlc_dir, goal, phase).unlink(missing_ok=True)
+        except (ValueError, OSError):
+            pass
+
+
+def independent_run_refusal(sdlc_dir, goal, phase, plan_sha256=""):
+    """None, or why an APPROVING `phase` verdict may not be recorded for `goal` (AGENTS.md: a failed
+    independent reviewer is never an approval).
+
+    Only binds when the resolved route is `process`/`command` (`review.independent` on, a mechanism
+    available): `subagent` is bound by its agent id, `inline` is the operator's explicit choice and
+    stays as it was. The record is written by `run_review`, never by the agent restating a verdict,
+    and the approval must match what the reviewer PRINTED. Proves the process ran and approved these
+    bytes; does not prove the agent relayed nothing else (a maker can still call the CLI by hand)."""
+    mechanism = resolve(sdlc_dir).get("mechanism")
+    if mechanism not in ("process", "command"):
+        return None
+    gesture = ("reviewer.py run %s <brief> --scratch <dir> --goal %s --phase %s" % (sdlc_dir, goal, phase))
+    try:
+        receipt = json.loads(_receipt_path(sdlc_dir, goal, phase).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return ("the resolved reviewer route is `%s` but no run of it is on record for %s %s, so no "
+                "approving verdict can be recorded (a self-review is not independent and is not counted): "
+                "run `%s` and record what it printed" % (mechanism, goal, phase, gesture))
+    except (OSError, ValueError) as exc:
+        return "the reviewer run receipt for %s %s is unreadable (%s): re-run `%s`" % (goal, phase, exc, gesture)
+    if not isinstance(receipt, dict) or receipt.get("outcome") != "ok":
+        kind = receipt.get("failure") if isinstance(receipt, dict) else "unreadable"
+        return ("the independent reviewer FAILED for %s %s (%s): no approving verdict can be recorded, "
+                "and an inline self-review does not replace it. Park the goal (`loop.py record %s %s "
+                "parked \"independent reviewer failed: %s\" --qkind reviewer_down`); to resume, fix the "
+                "reviewer (login, command, timeout) and re-run `%s`"
+                % (goal, phase, kind, sdlc_dir, goal, kind, gesture))
+    if receipt.get("verdict") != "approve":
+        return ("the independent reviewer's last run for %s %s did not print a lone `VERDICT: approve` "
+                "(got %r): an approval cannot be recorded; address its findings and re-run `%s`"
+                % (goal, phase, receipt.get("verdict"), gesture))
+    if phase == "plan_review" and plan_sha256 and receipt.get("plan_sha256") != plan_sha256:
+        return ("the independent reviewer approved a different plan than sha256 %s…: re-run `%s` on "
+                "the current plan" % (plan_sha256[:12], gesture))
+    return None
+
+
+def run_review(sdlc_dir, brief_path, scratch_paths, goal=None, phase=None):
     """Execute a resolved process/command review with a real timeout and fresh process group.
 
     The operator-owned `review.command` retains its shell semantics. `process` commands remain
@@ -226,10 +321,28 @@ def run_review(sdlc_dir, brief_path, scratch_paths):
         return 2
     route = resolve(sdlc_dir)
     mechanism = route["mechanism"]
+    receipt = bool(goal and phase)
+    if (goal or phase) and not receipt:
+        print("reviewer run: --goal and --phase go together", file=sys.stderr)
+        return 2
     if mechanism not in ("process", "command"):
         print(f"reviewer run: resolved {mechanism}; use that route instead ({route['reason']})",
               file=sys.stderr)
         return 2
+    if receipt:
+        # Pessimistic first: a run that is killed, refused or leaked before it finishes is a FAILED
+        # run, so a stale earlier success can never stand in for it. Only the success below clears it.
+        try:
+            _write_receipt(sdlc_dir, goal, phase, outcome="failed", failure="not_completed")
+        except (ValueError, OSError) as exc:
+            print(f"reviewer run: cannot record the run receipt ({exc})", file=sys.stderr)
+            return 2
+
+    def failed(kind, code, message):
+        print(message, file=sys.stderr)
+        if receipt:
+            _write_receipt(sdlc_dir, goal, phase, outcome="failed", failure=kind)
+        return code
     try:
         brief = pathlib.Path(brief_path).read_text(encoding="utf-8")
     except OSError as exc:
@@ -256,32 +369,37 @@ def run_review(sdlc_dir, brief_path, scratch_paths):
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                 start_new_session=True)
     except OSError as exc:
-        print(f"reviewer run: could not start reviewer process ({type(exc).__name__})",
-              file=sys.stderr)
-        return 1
+        return failed("start_failed", 1,
+                      f"reviewer run: could not start reviewer process ({type(exc).__name__})")
     try:
         output, _errors = proc.communicate(input=brief, timeout=timeout)
     except subprocess.TimeoutExpired:
         _stop_review_process(proc)
-        print(f"reviewer run: timed out after {timeout}s; reviewer process group stopped",
-              file=sys.stderr)
-        return 124
+        return failed("timeout", 124,
+                      f"reviewer run: timed out after {timeout}s; reviewer process group stopped")
     except BaseException:
         _stop_review_process(proc)
         raise
     if proc.returncode != 0:
-        print(f"reviewer run: reviewer exited with exit {proc.returncode}; no verdict accepted",
-              file=sys.stderr)
-        return 1
+        return failed("nonzero_exit", 1,
+                      f"reviewer run: reviewer exited with exit {proc.returncode}; no verdict accepted")
     if not output.strip():
-        print("reviewer run: reviewer returned empty output; no verdict accepted", file=sys.stderr)
-        return 1
+        return failed("empty_output", 1, "reviewer run: reviewer returned empty output; no verdict accepted")
+    if receipt:
+        found = parse_verdicts(output)
+        plan = _PLAN_SHA_LINE.search(brief)
+        _write_receipt(sdlc_dir, goal, phase, outcome="ok",
+                       verdict=next(iter(found)) if len(found) == 1 else None,
+                       brief_sha256=hashlib.sha256(brief.encode("utf-8")).hexdigest(),
+                       output_sha256=hashlib.sha256(output.encode("utf-8")).hexdigest(),
+                       plan_sha256=plan.group(1) if plan else None)
     sys.stdout.write(output)
     return 0
 
 
 USAGE = ("usage: reviewer.py resolve <sdlc_dir> | check <brief_path> [--scratch <path>]... | "
-         "run <sdlc_dir> <brief_path> --scratch <path> [--scratch <path>]...")
+         "run <sdlc_dir> <brief_path> --scratch <path> [--scratch <path>]... "
+         "[--goal <goal> --phase plan_review|review]")
 
 
 def main(argv):
@@ -299,12 +417,14 @@ def main(argv):
         return 0 if ok else 1
     if len(argv) >= 3 and argv[0] == "run":
         options = argv[3:]
-        if len(options) < 2 or len(options) % 2 or any(options[i] != "--scratch"
-                                                       for i in range(0, len(options), 2)):
-            print("usage: reviewer.py run <sdlc_dir> <brief_path> --scratch <path> "
-                  "[--scratch <path>]...", file=sys.stderr)
+        if len(options) < 2 or len(options) % 2 or any(
+                options[i] not in ("--scratch", "--goal", "--phase") for i in range(0, len(options), 2)):
+            print(USAGE, file=sys.stderr)
             return 2
-        return run_review(argv[1], argv[2], options[1::2])
+        pairs = [(options[i], options[i + 1]) for i in range(0, len(options), 2)]
+        one = lambda flag: next((v for f, v in reversed(pairs) if f == flag), None)
+        return run_review(argv[1], argv[2], [v for f, v in pairs if f == "--scratch"],
+                          goal=one("--goal"), phase=one("--phase"))
     print(USAGE, file=sys.stderr)
     return 2
 

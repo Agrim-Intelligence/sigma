@@ -467,6 +467,16 @@ because it is corruption, but because it names something a human still owes the 
 
 ---
 
+## 2b-iv. Reviewer down — a park with the kind `reviewer_down`
+
+When `review.independent` is on and the resolved `process`/`command` reviewer FAILS (unauthenticated,
+non-zero exit, timeout, empty output), no approving review or plan-review verdict can be recorded
+(`reviewer.py run --goal --phase` leaves the receipt the record verbs read) and the goal is parked
+with `sigma-qkind: reviewer_down`. It is a **kind, not a new `sdlc:*` label**: a park stands alone
+(§2), so an overlay on it would put an overlay on a non-member, and the ask lists by kind already.
+**Who clears it:** a human via `/sigma-unpark`, after fixing the reviewer and re-running
+`reviewer.py run`; the later successful run replaces the failure receipt. No sweep resumes it.
+
 ## 2c. "Do we still need `sdlc:followup`?"
 
 Yes, though it is the least load-bearing of the three annotations. The three answer different

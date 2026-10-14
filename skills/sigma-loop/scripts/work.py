@@ -1352,6 +1352,10 @@ def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", 
                          f"copy {main.as_posix()}: copy the reviewed plan over {branch.as_posix()} and "
                          "leave it uncommitted (step 6 commits it), or copy the branch's version back to "
                          f"{main.as_posix()} and review that; then record")
+    if mapped in _PLAN_REVIEW_APPROVING:     # F02: also with the action log off, where record_verdict is skipped
+        refusal = _load("reviewer").independent_run_refusal(sdlc_dir, goal, "plan_review", sha)
+        if refusal:
+            raise ValueError(refusal)
     route = _load("reviewer").resolve(sdlc_dir)
     plan_rel = (_relative_posix(main, project_root(sdlc_dir)) if main
                 else _relative_posix(branch, rec["worktree"]))
@@ -7195,6 +7199,7 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
     run(project_root(sdlc_dir), ["git", "worktree", "prune"])
     record_path(sdlc_dir, goal).unlink(missing_ok=True)
     plan_review_record_path(sdlc_dir, goal).unlink(missing_ok=True)   # #258: the work record's lifetime
+    _load("reviewer").clear_receipts(sdlc_dir, goal)                  # F02: same lifetime
     _clear_completed_merge_deliveries(sdlc_dir, goal)
     branch = rec.get("branch")
     # `force` skips the PR read entirely (same contract `_open_pr_refusal` already has above) --

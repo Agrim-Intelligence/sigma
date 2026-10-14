@@ -267,7 +267,13 @@ def record_verdict(sdlc_dir, config, goal, phase, verdict, agent_id="", plan_has
     actionlog = _load("actionlog")
     if not actionlog.enabled(config):
         raise ValueError("action_log.enabled is not true: the verdict cannot be recorded in the action log")
-    route = _load("reviewer").resolve(sdlc_dir).get("mechanism") or "inline"
+    reviewer = _load("reviewer")
+    route = reviewer.resolve(sdlc_dir).get("mechanism") or "inline"
+    if verdict in (PLAN_REVIEW_APPROVING if phase == "plan_review" else REVIEW_APPROVING):
+        # F02: a process/command route needs the runner's own receipt; a failed reviewer is no approval.
+        refusal = reviewer.independent_run_refusal(sdlc_dir, goal, phase, plan_hash)
+        if refusal:
+            raise ValueError(refusal)
     verified = ""
     if agent_id:
         verified, bad = verify_agent(agent_id)
