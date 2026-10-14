@@ -4,6 +4,7 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Opening a unit on a fresh clone works (#1397).** When no local branch has the base's name, the unit branch is cut from the remote-tracking ref instead of failing with a missing source ref; a present local base pushes exactly as before.
 - **The applier builds its board source once per tick (#1392).** Each ask in a tick built its own source, so a board that refused the project read was retried per ask; the tick now builds one and shares it, and a refused build still fails each ask as before. A closed gate is unchanged.
 
 - Fix: with hard stops on, the rebase and landing pass no longer refuses to push a unit branch whose record exists only on the default branch; the pass declares its own branch, and undeclared force-pushes still stop (#1393).
