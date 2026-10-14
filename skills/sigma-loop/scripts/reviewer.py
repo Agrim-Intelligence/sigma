@@ -31,6 +31,7 @@ import pathlib
 import re
 import signal
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -245,62 +246,137 @@ _BRIEF_HEADER = re.compile(r"(?m)\A# Independent review brief - (\S+)")
 _MAX_UNTRACKED = 5000
 _KEY_SECONDS = 120.0
 
+#: git for a READ of a repository we do not trust: no fsmonitor hook, no hooks path, no external diff,
+#: no optional index-refresh lock. Argv list only, never a shell; paths always follow `--`.
+_GIT = ["git", "--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
+        "-c", "diff.external="]
+
+
+class _Unbound(Exception):
+    """The checkout cannot be covered by the key; the message is the cause shown to a person."""
+
+
+def _frame(kind, name, inner):
+    """One typed, length-prefixed record: kind byte, 8-byte name length, name, 32-byte inner digest.
+    Inner digests are fixed size, so no content can imitate the next record (a file whose bytes look
+    like a record header, an empty file vs a missing one, a name containing any separator)."""
+    return kind + len(name).to_bytes(8, "big") + name + inner
+
+
+def _file_record(path, deadline):
+    """-> (kind, inner32) for one path WITHOUT following links or running git: a regular file's bytes
+    (kind F, or X when executable), a symlink's target (L), absent (G). Anything else (a FIFO, socket,
+    device) cannot be covered and is refused rather than opened (a FIFO would block forever)."""
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        return b"G", hashlib.sha256(b"").digest()
+    except OSError as exc:
+        raise _Unbound("a path cannot be read (%r: %s)" % (path, exc.strerror))
+    if stat.S_ISLNK(st.st_mode):
+        return b"L", hashlib.sha256(os.fsencode(os.readlink(path))).digest()
+    if not stat.S_ISREG(st.st_mode):
+        raise _Unbound("%r is not a regular file, directory or symlink (a FIFO, socket or device) and "
+                       "cannot be covered: remove it or git-ignore it" % path)
+    inner = hashlib.sha256()
+    try:
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                if time.monotonic() > deadline:
+                    raise _Unbound("diff too large or slow to hash within %ds: commit or stash the large "
+                                   "change, or split it" % _KEY_SECONDS)
+                inner.update(chunk)
+    except OSError as exc:
+        raise _Unbound("a path cannot be read (%r: %s)" % (path, exc.strerror))
+    return (b"X" if st.st_mode & 0o111 else b"F"), inner.digest()
+
+
+def _nested_digest(path, deadline, budget):
+    """Digest of a nested repository or submodule checkout WITHOUT running git in it (its own config
+    could name an fsmonitor or hook command): every working file, plus its HEAD, packed-refs and the
+    ref HEAD names, read as plain files. Not covered: its object store."""
+    out = hashlib.sha256()
+
+    def one(rel, full):
+        budget[0] += 1
+        if budget[0] > _MAX_UNTRACKED:
+            raise _Unbound("a nested repository has more than %d files: commit, remove or git-ignore it"
+                           % _MAX_UNTRACKED)
+        kind, inner = _file_record(full, deadline)
+        out.update(_frame(kind, rel, inner))
+
+    def walk(directory, prefix):
+        for entry in sorted(os.scandir(directory), key=lambda e: e.name):
+            rel = prefix + os.fsencode(entry.name)
+            if prefix == b"" and entry.name == ".git":
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                walk(entry.path, rel + b"/")
+            else:
+                one(rel, entry.path)
+    try:
+        walk(path, b"")
+    except OSError as exc:
+        raise _Unbound("a nested repository cannot be read (%r: %s)" % (path, exc.strerror))
+    gitdir = os.path.join(path, ".git")
+    if os.path.isdir(gitdir) and not os.path.islink(gitdir):
+        head = os.path.join(gitdir, "HEAD")
+        names = [b".git/HEAD", b".git/packed-refs"]
+        try:
+            with open(head, "rb") as handle:
+                text = handle.read(4096)
+            if text.startswith(b"ref: ") and b".." not in text:
+                names.append(b".git/" + text[5:].strip())
+        except OSError:
+            pass
+        for rel in names:
+            kind, inner = _file_record(os.path.join(path, os.fsdecode(rel)), deadline)
+            out.update(_frame(kind, rel, inner))
+    else:                               # a gitfile (submodule / linked worktree): its pointer text
+        kind, inner = _file_record(gitdir, deadline)
+        out.update(_frame(kind, b".git", inner))
+    return out.digest()
+
 
 def _content_key(sdlc_dir, goal):
-    """-> (key, cause). `key` is the sha256 of the goal's checkout as a code reviewer sees it -- HEAD
-    (or "unborn"), the content of every tracked path that differs from it, STREAMED into the hash (never held in memory), and every
-    untracked non-ignored path: a file's bytes, a symlink's target string, a nested repo's HEAD --
-    `.sdlc` excluded (the loop's own state, including this receipt, must not invalidate itself).
-    `key` is None, with `cause` naming why in words a person can act on, when it cannot be computed;
-    both callers FAIL CLOSED on that. Not covered: ignored files, anything under `.sdlc`."""
-    try:                       # the work record, read directly: importing work.py per call costs ~16 MB
-        p = pathlib.Path(str(goal))
-        rec = json.loads((pathlib.Path(sdlc_dir) / "state" / "work" /
-                          ("%s.json" % (p.stem if p.suffix == ".md" else str(goal)))).read_text()) or {}
-        rec = rec if isinstance(rec, dict) else {}
-    except (OSError, ValueError):               # no record means the project root, below
-        rec = {}
-    cwd = str(rec.get("worktree") or pathlib.Path(sdlc_dir).resolve().parent)
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-    spec = ["--", ".", ":(exclude).sdlc"]
-    deadline = time.monotonic() + _KEY_SECONDS
-
-    def git(*args):
-        got = subprocess.run(["git", "-C", cwd, *args], capture_output=True, timeout=max(1.0, _KEY_SECONDS), env=env)
-        return got.returncode, got.stdout
-
-    def hash_path(digest, name):
-        """Fold one path's CONTENT into the digest, streaming: a file's bytes (plus its exec bit), a
-        symlink's target string, a nested repository's HEAD and dirty state, or `gone` if absent."""
-        path = os.path.join(cwd, os.fsdecode(name))
-        digest.update(b"\0" + name + b"\0")
-        try:
-            if os.path.islink(path):
-                digest.update(b"L" + os.fsencode(os.readlink(path)))
-            elif os.path.isdir(path):           # a nested repository / submodule
-                code, nested = git("-C", path, "rev-parse", "--verify", "-q", "HEAD")
-                digest.update(b"R" + (nested.strip() if code == 0 else b"unborn"))
-                digest.update(hashlib.sha256(git("-C", path, "status", "--porcelain=v1", "-z")[1]).digest())
-            elif os.path.exists(path):
-                digest.update(b"X" if os.stat(path).st_mode & 0o111 else b"F")
-                with open(path, "rb") as handle:
-                    for chunk in iter(lambda: handle.read(1 << 20), b""):
-                        if time.monotonic() > deadline:
-                            raise TimeoutError
-                        digest.update(chunk)
-            else:
-                digest.update(b"gone")
-        except TimeoutError:
-            raise
-        except OSError as exc:
-            raise OSError("an untracked or changed path cannot be read (%r: %s)" % (os.fsdecode(name), exc.strerror))
+    """-> (key, cause). `key` is a sha256 over typed, length-prefixed records (see `_frame`) of the goal's
+    checkout as a code reviewer sees it: HEAD (or "unborn"); every tracked path that differs from it
+    (content streamed, exec bit, symlink target, deletion); every untracked non-ignored path; nested
+    repositories by their working files and refs, read WITHOUT running git there. Only
+    `<sdlc>/state` (the loop's own records, this receipt included) and `<sdlc>/work` (the maker's
+    scratch) are left out; plans, research and config under `.sdlc` ARE covered. `key` is None, with
+    `cause` naming why in words a person can act on, when something cannot be covered; both callers
+    FAIL CLOSED on that. Not covered: ignored files, a nested repository's object store."""
     try:
+        stem = pathlib.Path(str(goal)).stem if str(goal).endswith(".md") else str(goal)
+        if _load("state").unsafe_goal_reason(stem):
+            return None, "the goal name %r is not usable" % (goal,)
+        p = pathlib.Path(sdlc_dir) / "state" / "work" / ("%s.json" % stem)
+        try:                       # the work record, read directly: importing work.py per call costs ~16 MB
+            rec = json.loads(p.read_text())
+            rec = rec if isinstance(rec, dict) else {}
+        except (OSError, ValueError):               # no record means the project root, below
+            rec = {}
+        cwd = str(rec.get("worktree") or pathlib.Path(sdlc_dir).resolve().parent)
+        if not os.path.isdir(cwd):
+            return None, "the checkout %r does not exist" % cwd
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        root, sd = os.path.realpath(cwd), os.path.realpath(str(sdlc_dir))
+        rel = os.path.relpath(sd, root) if sd.startswith(root + os.sep) else None
+        spec = ["--", "."] + ([":(exclude,literal)%s/%s" % (rel, x) for x in ("state", "work")] if rel else [])
+        deadline = time.monotonic() + _KEY_SECONDS
+
+        def git(*args):
+            got = subprocess.run([*_GIT, "-C", cwd, *args], capture_output=True,
+                                 timeout=max(1.0, _KEY_SECONDS), env=env)
+            return got.returncode, got.stdout
         if git("rev-parse", "--is-inside-work-tree")[0]:
             return None, "this directory is not a git checkout"
         code, head = git("rev-parse", "--verify", "-q", "HEAD")
-        digest = hashlib.sha256((head.strip() if code == 0 else b"unborn") + b"\0")
-        # Tracked changes: git names them (cheap, no blob held in memory -- `git diff --binary` of a
-        # rewritten 100 MB file held ~800 MB in git itself), and Python streams each file's bytes.
+        digest = hashlib.sha256()
+        digest.update(_frame(b"H", b"HEAD", hashlib.sha256(head.strip() if code == 0 else b"unborn").digest()))
+        # Tracked changes: git only NAMES them (`git diff --binary` of a rewritten 100 MB file held ~800 MB
+        # in git itself); Python streams each file's bytes.
         if code == 0:
             code, listing = git("diff-index", "-z", "--name-only", "--no-renames", "HEAD", *spec)
         else:
@@ -315,16 +391,21 @@ def _content_key(sdlc_dir, goal):
         if len(names) > _MAX_UNTRACKED:
             return None, ("there are %d untracked files (limit %d): commit, remove or git-ignore build "
                           "output" % (len(names), _MAX_UNTRACKED))
-        digest.update(b"T")
-        for name in changed:
-            hash_path(digest, name)
-        digest.update(b"U")
-        for name in names:
-            hash_path(digest, name)
-    except TimeoutError:
-        return None, "diff too large or slow to hash within %ds: commit or stash the large change, or split it" % _KEY_SECONDS
+        budget = [len(names)]
+        for section, group in ((b"t", changed), (b"u", names)):
+            for name in group:
+                full = os.path.join(cwd, os.fsdecode(name))
+                if os.path.isdir(full) and not os.path.islink(full):    # nested repo / submodule
+                    digest.update(_frame(section + b"R", name, _nested_digest(full, deadline, budget)))
+                else:
+                    kind, inner = _file_record(full, deadline)
+                    digest.update(_frame(section + kind, name, inner))
+    except _Unbound as exc:
+        return None, str(exc)
+    except subprocess.TimeoutExpired:
+        return None, "git took longer than %ds on this checkout" % _KEY_SECONDS
     except (OSError, subprocess.SubprocessError) as exc:
-        return None, str(exc) if isinstance(exc, OSError) and exc.args else "git could not be run here (%s)" % type(exc).__name__
+        return None, "git could not be run here (%s)" % type(exc).__name__
     return digest.hexdigest(), None
 
 

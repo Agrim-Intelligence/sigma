@@ -372,9 +372,19 @@ def test_sdlc_state_changes_do_not_kill_the_receipt(tmp_path):
     """The receipt and the loop's own state live in .sdlc; they must not invalidate themselves."""
     p = _project(tmp_path)
     reviewer_script(p, APPROVE); run_reviewer(p)
-    (p / ".sdlc/research/0001-x.md").parent.mkdir(exist_ok=True)
-    (p / ".sdlc/research/0001-x.md").write_text("notes\n")
+    (p / ".sdlc/state/log").mkdir(parents=True, exist_ok=True)
+    (p / ".sdlc/state/log/other.jsonl").write_text("{}\n")
+    (p / ".sdlc/work/0001-x").mkdir(parents=True, exist_ok=True)
+    (p / ".sdlc/work/0001-x/scratch.txt").write_text("maker scratch\n")
     assert record_review(p).returncode == 0
+
+
+def test_plans_research_and_config_under_sdlc_ARE_covered(tmp_path):
+    """The carve-out is `<sdlc>/state` and `<sdlc>/work` only; the rest of .sdlc is reviewed content."""
+    p = _project(tmp_path)
+    reviewer_script(p, APPROVE); run_reviewer(p)
+    (p / ".sdlc/plans/0001-x.md").write_text(PLAN + "- edited after review\n")
+    assert record_review(p).returncode == 2
 
 
 def test_content_changing_while_the_reviewer_runs_is_a_failed_run(tmp_path):
@@ -632,3 +642,160 @@ def test_the_decision_is_made_from_config_not_from_a_flag(tmp_path):
         assert rv.configured_reviewer_unavailable({"review": review}, inline) is expect, review
     assert rv.configured_reviewer_unavailable({"review": {"host": "codex"}}, {"mechanism": "process"}) is False
     assert rv.configured_reviewer_unavailable({"review": {"host": "codex"}}, {"mechanism": "subagent"}) is False
+
+
+# ---- security review: untrusted git config, coverage gaps, framing ------------------------------------
+
+def _key(p, goal=GOAL):
+    return _rv()._content_key(str(p / ".sdlc"), goal)
+
+
+def _marker_script(tmp_path):
+    marker = tmp_path.parent / ("ran-%s" % tmp_path.name)
+    script = tmp_path.parent / ("hook-%s.sh" % tmp_path.name)
+    script.write_text("#!/bin/sh\ntouch %s\n" % marker); script.chmod(0o755)
+    return marker, script
+
+
+def test_a_repo_fsmonitor_hook_is_not_executed_while_hashing(tmp_path):
+    marker, script = _marker_script(tmp_path)
+    p = _project(tmp_path)
+    subprocess.run(["git", "-C", str(p), "config", "core.fsmonitor", str(script)], check=True)
+    (p / "code.py").write_text("changed\n")
+    marker.unlink(missing_ok=True)
+    key, cause = _key(p)
+    assert key, cause
+    assert not marker.exists(), "git ran the repository's fsmonitor command while computing the key"
+
+
+def test_git_is_never_run_inside_a_nested_repository(tmp_path):
+    marker, script = _marker_script(tmp_path)
+    p = _project(tmp_path)
+    n = p / "vendor"; n.mkdir()
+    subprocess.run(["git", "init", "-q", str(n)], check=True)
+    subprocess.run(["git", "-C", str(n), "config", "core.fsmonitor", str(script)], check=True)
+    (n / "f").write_text("1")
+    marker.unlink(missing_ok=True)
+    key, cause = _key(p)
+    assert key, cause
+    assert not marker.exists(), "git ran inside an untracked nested repository"
+
+
+def test_a_nested_repos_working_files_and_head_are_covered(tmp_path):
+    p = _project(tmp_path)
+    n = p / "vendor"; n.mkdir()
+    subprocess.run(["git", "init", "-q", str(n)], check=True)
+    (n / "f").write_text("1")
+    k1 = _key(p)[0]
+    (n / "f").write_text("2")
+    k2 = _key(p)[0]
+    (n / ".git" / "HEAD").write_text("1" * 40 + "\n")            # detached: only HEAD itself differs
+    k3 = _key(p)[0]
+    (n / ".git" / "HEAD").write_text("2" * 40 + "\n")
+    k4 = _key(p)[0]
+    assert len({k1, k2, k3, k4}) == 4
+
+
+def _tracked_variant(p, how):
+    if how == "chmod":
+        (p / "code.py").chmod(0o755)
+    elif how == "delete":
+        (p / "code.py").unlink()
+    elif how == "empty":
+        (p / "code.py").write_text("")
+    elif how == "rename":
+        (p / "code.py").rename(p / "moved.py")
+
+
+def test_tracked_mode_deletion_emptying_and_rename_each_change_the_key(tmp_path):
+    seen = set()
+    for how in ("none", "chmod", "delete", "empty", "rename"):
+        d = tmp_path / how; d.mkdir()
+        p = _project(d)
+        subprocess.run(["git", "-C", str(p), "rev-parse", "HEAD"], check=True, capture_output=True)
+        _tracked_variant(p, how)
+        key, cause = _key(p)
+        assert key, cause
+        seen.add((how, key))
+    # HEAD differs per repo (commit time), so compare WITHIN one repo instead:
+    p = _project(tmp_path)
+    keys = []
+    for how in ("none", "chmod", "delete", "empty"):
+        keys.append(_key(p)[0]) if how == "none" else None
+        _tracked_variant(p, how)
+        if how != "none":
+            keys.append(_key(p)[0])
+        subprocess.run(["git", "-C", str(p), "checkout", "-q", "--", "code.py"], check=True)
+    assert len(set(keys)) == len(keys), keys
+
+
+def test_a_tracked_symlink_retarget_changes_the_key(tmp_path):
+    p = _project(tmp_path)
+    (p / "ln").symlink_to("a")
+    subprocess.run(["git", "-C", str(p), "add", "ln"], check=True)
+    subprocess.run(["git", "-C", str(p), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "ln"], check=True)
+    k1 = _key(p)[0]
+    (p / "ln").unlink(); (p / "ln").symlink_to("b")
+    assert _key(p)[0] != k1
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="posix only")
+def test_a_fifo_is_never_opened(tmp_path):
+    p = _project(tmp_path)
+    os.mkfifo(p / "pipe")                     # git does not list it, so the key never touches it
+    assert _key(p)[0]
+    n = p / "vendor"; n.mkdir()
+    subprocess.run(["git", "init", "-q", str(n)], check=True)
+    os.mkfifo(n / "pipe")                     # inside a nested repo WE walk it: it must be refused, not opened
+    import signal
+
+    def alarm(*_):
+        raise AssertionError("the key blocked on a FIFO: it was opened")
+    signal.signal(signal.SIGALRM, alarm); signal.alarm(10)
+    try:
+        key, cause = _key(p)
+    finally:
+        signal.alarm(0)
+    assert key is None and "FIFO" in cause
+
+
+def test_framing_two_trees_that_collide_under_naive_concatenation_differ(tmp_path):
+    """Naive framing: NUL + name + NUL + kind + content. Tree 1 = files a:'1' and b:'2'; tree 2 = ONE file
+    a whose content is '1' + the bytes that would introduce b."""
+    p = _project(tmp_path)
+    (p / "a").write_bytes(b"1"); (p / "b").write_bytes(b"2")
+    k1 = _key(p)[0]
+    (p / "b").unlink()
+    (p / "a").write_bytes(b"1\0b\0F2")
+    assert _key(p)[0] != k1
+
+
+def test_framing_empty_file_and_missing_file_differ(tmp_path):
+    p = _project(tmp_path)
+    (p / "e").write_bytes(b"")
+    empty = _key(p)[0]
+    (p / "e").unlink()
+    assert _key(p)[0] != empty
+
+
+def test_a_goal_name_that_is_not_a_safe_path_component_is_unbound(tmp_path):
+    p = _project(tmp_path)
+    key, cause = _key(p, goal="../../etc")
+    assert key is None and "not usable" in cause
+
+
+def test_a_mode_change_on_an_already_modified_file_changes_the_key(tmp_path):
+    p = _project(tmp_path)
+    (p / "code.py").write_text("edited\n")
+    k1 = _key(p)[0]
+    (p / "code.py").chmod(0o755)
+    assert _key(p)[0] != k1
+
+
+def test_frames_are_length_prefixed_so_a_name_cannot_swallow_the_next_record():
+    rv = _rv()
+    i, j = b"I" * 32, b"J" * 32
+    two = rv._frame(b"u", b"a", i) + rv._frame(b"u", b"b", j)
+    one = rv._frame(b"u", b"a" + i + b"u" + b"b", j)       # one record whose NAME imitates the first
+    assert two != one
+    assert rv._frame(b"uF", b"e", __import__("hashlib").sha256(b"").digest()) != rv._frame(b"uG", b"e", __import__("hashlib").sha256(b"").digest())
