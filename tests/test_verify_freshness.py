@@ -833,6 +833,12 @@ def test_committing_the_verified_content_still_records_done(capsys, tmp_path):
     assert state.done_refusal(sdlc_dir, goal) is None
     # And on the documented gesture, not just the function: exit 4 is the verify-evidence refusal
     # specifically (loop.py's dispatch), so `!= 4` is what proves this gate did not fire.
+    # `work.enabled` goes off first (D2 round 2 F05): with it on, a committed branch with NO PR is
+    # refused by `work.done_refusal` (also exit 4) -- the real flow runs `work.py pr` next. This test
+    # isolates the verify-evidence gate, so it must not ride on the no-PR path.
+    cfg_path = pathlib.Path(sdlc_dir) / "config.json"
+    cfg = json.loads(cfg_path.read_text()); cfg["work"] = {**cfg.get("work", {}), "enabled": False}
+    cfg_path.write_text(json.dumps(cfg))
     assert loop.main(["loop.py", "record", sdlc_dir, goal, "done"]) != 4, capsys.readouterr().err
 
 

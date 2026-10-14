@@ -216,7 +216,7 @@ Then repeat until the helper says stop:
    - **Blocking issues** → `--verdict block --reason "<the issues>"`, then **fix them in the
      worktree — fresh, never resumed** (back to Implement), re-run `loop.py verify`, then
      `work.py commit` **AND `work.py
-     pr`**, and **re-review, fresh** (own verdict;
+     pr`**, and **re-review, also fresh** (own verdict;
      `references/running.md`), until clean.
      **`commit` is LOCAL; only `pr` pushes.** **The cycle is hard-capped:** at
      `work.max_review_cycles` (default **3**) `post-review` returns `PARK: …` instead of asking for

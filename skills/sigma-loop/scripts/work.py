@@ -172,7 +172,8 @@ ENFORCEMENT_GATES = (
                   "by one REST read, whatever `work.auto_merge` says; an open or unreadable PR is "
                   "recorded `review` instead (issue stays open, board QC) and `loop.py "
                   "reconcile-merges` records `done` and closes the issue once the PR merges; a goal "
-                  "with no PR is unaffected",
+                  "with no PR is refused too when its branch is ahead of base or has uncommitted "
+                  "edits (lever: `record parked`), and unaffected only if it changed nothing",
      "readme": "Done means merged"},
     {"control": "Secret-shaped paths and added content refused at work.py commit", "function": "_secret_refusal",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",),
@@ -309,6 +310,7 @@ ENFORCEMENT_EXEMPT = (
     ("effective_hard_plan_gate", "resolver for the gate's value; `_hard_plan_gate_refusal` refuses"),
     ("sibling_gate", "unwired: a pure, queryable check that its own docstring says nothing calls"),
     ("_sibling_gate", "body of `sibling_gate`, same"),
+    ("_diff_without_pr_refusal", "the no-PR branch of `done_refusal`, which carries the gate row"),
 )
 UNKNOWN_ATTEMPTS = 4        # GitHub computes mergeability lazily — the first read is usually UNKNOWN
 UNKNOWN_BACKOFF = 3         # seconds before the first retry, doubled each time
