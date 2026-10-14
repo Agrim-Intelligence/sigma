@@ -830,7 +830,8 @@ def run_resolved_review(sdlc_dir, goal, manifest_path, resolution_path, verdict=
         scratch = str(rec.get("worktree") or project_root(sdlc_dir))
         captured, errors = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(errors):
-            code = reviewer.run_review(sdlc_dir, str(pathlib.Path(sdlc_dir) / "state" / manifest["brief"]), [scratch])
+            code = reviewer.run_review(sdlc_dir, str(pathlib.Path(sdlc_dir) / "state" / manifest["brief"]), [scratch],
+                                       goal=goal, phase="review")
         if code:
             raise ValueError("resolved reviewer failed: " + (errors.getvalue().strip() or "no verdict"))
         output = captured.getvalue().strip()
@@ -850,15 +851,18 @@ def run_resolved_review(sdlc_dir, goal, manifest_path, resolution_path, verdict=
         reason = output
     else:
         raise ValueError("reviewer resolution has an unsupported mechanism")
-    return _write_review_result(sdlc_dir, manifest, resolution_path, verdict, reason)
+    waiver = (_load("reviewer").waiver_reason(sdlc_dir, goal, "review") if mechanism == "inline" else None)
+    return _write_review_result(sdlc_dir, manifest, resolution_path, verdict, reason, waiver=waiver)
 
 
-def _write_review_result(sdlc_dir, manifest, resolution_path, verdict, reason):
+def _write_review_result(sdlc_dir, manifest, resolution_path, verdict, reason, waiver=None):
     """Persist the common immutable-generation binding for every host review handoff."""
     result = {"generation_id": manifest["generation_id"], "brief_sha256": manifest["brief_sha256"],
               "pr": manifest.get("pr"), "head_sha": manifest.get("head_sha"),
               "resolution_sha256": hashlib.sha256(pathlib.Path(resolution_path).read_bytes()).hexdigest(),
               "verdict": verdict, "reason": reason}
+    if waiver:          # the owner's recorded accept-inline choice, same fields as the local verdict row
+        result["waiver"], result["waiver_reason"] = "accept-inline", waiver
     target = pathlib.Path(sdlc_dir) / "state" / "review-results" / (manifest["generation_id"] + ".json")
     data = (json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     # CREATE-ONCE.  The realistic forgery is not inventing a review -- it is the reviewer returning
@@ -879,7 +883,7 @@ def _write_missing_resolution(sdlc_dir, resolution_path, route):
         return
 
 
-def record_subagent_review(sdlc_dir, goal, manifest_path, resolution_path, verdict, reason):
+def record_subagent_review(sdlc_dir, goal, manifest_path, resolution_path, verdict, reason, agent_id=""):
     """Bind the resolver-selected Claude subagent's returned verdict to this generation.
 
     A host dispatch is outside Python's process tree, so this command does not claim it can prove
@@ -901,6 +905,20 @@ def record_subagent_review(sdlc_dir, goal, manifest_path, resolution_path, verdi
         raise ValueError("reviewer route changed; resolve a fresh review generation")
     if verdict not in ("approve", "block", "unblock") or not isinstance(reason, str) or not reason.strip():
         raise ValueError("subagent handoff requires a structured verdict and reason")
+    # Parity with `record-review`: the same agent-id proof, and the same failed-receipt rules.
+    if not agent_id:
+        raise ValueError("the reviewer route here is `subagent`: pass --agent-id <the reviewer subagent's id>")
+    verified, bad = _load("phase_gate").verify_agent(agent_id)
+    if bad:
+        raise ValueError(bad)
+    if verdict in ("approve", "unblock"):
+        refusal = reviewer.subagent_transcript_refusal(sdlc_dir, goal, "review", verified)
+        if refusal:
+            raise ValueError(refusal)
+    if verdict in ("approve", "unblock"):
+        refusal = reviewer.independent_run_refusal(sdlc_dir, goal, "review")
+        if refusal:
+            raise ValueError(refusal)
     return _write_review_result(sdlc_dir, manifest, resolution_path, verdict, reason)
 
 
@@ -7800,7 +7818,7 @@ def main(argv):
             "review-paths": "usage: work.py review-paths <sdlc_dir> <goal> --manifest <path> --format sh",
             "review-evidence": "usage: work.py review-evidence <sdlc_dir> <goal> --manifest <path> --review-result <path>",
             "run-resolved-review": "usage: work.py run-resolved-review <sdlc_dir> <goal> --manifest <path> --resolution <path> [--verdict approve|block|unblock --reason <text>]  (the verdict flags are for the inline route only)",
-            "record-subagent-review": "usage: work.py record-subagent-review <sdlc_dir> <goal> --manifest <path> --resolution <path> --verdict approve|block|unblock --reason <text>",
+            "record-subagent-review": "usage: work.py record-subagent-review <sdlc_dir> <goal> --manifest <path> --resolution <path> --verdict approve|block|unblock --reason <text> --agent-id <reviewer agentId>",
             "reconcile-review-post": "usage: work.py reconcile-review-post <sdlc_dir> <goal> --evidence <path>",
             "post-review": "usage: work.py post-review <sdlc_dir> <goal> --verdict approve|block|unblock --evidence <path> [--reason <text>]",
             "record-plan-review": _RECORD_PLAN_REVIEW_USAGE,
@@ -7870,11 +7888,12 @@ def main(argv):
         manifest, resolution = _flag(argv, "--manifest"), _flag(argv, "--resolution")
         verdict, reason = _flag(argv, "--verdict"), _flag(argv, "--reason")
         if not manifest or not resolution or not verdict or reason is None:
-            print("usage: work.py record-subagent-review <sdlc_dir> <goal> --manifest <path> --resolution <path> --verdict approve|block|unblock --reason <text>", file=sys.stderr)
+            print("usage: work.py record-subagent-review <sdlc_dir> <goal> --manifest <path> --resolution <path> --verdict approve|block|unblock --reason <text> --agent-id <reviewer agentId>", file=sys.stderr)
             return 2
         try:
             print(json.dumps(record_subagent_review(argv[2], argv[3], manifest, resolution,
-                                                    verdict, reason), sort_keys=True))
+                                                    verdict, reason, agent_id=_flag(argv, "--agent-id") or ""),
+                             sort_keys=True))
             return 0
         except ValueError as exc:
             print(f"work: {exc}", file=sys.stderr)

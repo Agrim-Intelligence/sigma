@@ -263,10 +263,79 @@ def _frame(kind, name, inner):
     return kind + len(name).to_bytes(8, "big") + name + inner
 
 
+def _over_budget(deadline):
+    """ONE overall budget, checked on every record -- regular files, symlinks and absent paths alike."""
+    if time.monotonic() > deadline:
+        raise _Unbound("diff too large or slow to hash within %ds: commit or stash the large "
+                       "change, or split it" % _KEY_SECONDS)
+
+
+def _open_checked(path, st):
+    """Open `path` O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC and require the opened file to be the one `st` (an lstat
+    taken first) described: same device and inode, regular. A path swapped for a link (bytes from outside
+    the checkout) or a FIFO (a blocking read) in between is refused, never read."""
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise _Unbound("%r changed while it was being hashed or is a link (%s)" % (path, exc.strerror))
+    opened = os.fstat(fd)
+    if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (st.st_dev, st.st_ino):
+        os.close(fd)
+        raise _Unbound("%r changed while it was being hashed or is not a regular file (a FIFO, link or "
+                       "device); remove it or git-ignore it" % path)
+    return fd
+
+
+def _read_head(path, deadline):
+    """The first 4 KB of a nested repository's `.git/HEAD`, read with the same checks as `_file_record`:
+    never followed through a link, never opened if it is a FIFO or other non-regular file."""
+    _over_budget(deadline)
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        return b""
+    except OSError as exc:
+        raise _Unbound("a nested repository's HEAD cannot be read (%r: %s)" % (path, exc.strerror))
+    if not stat.S_ISREG(st.st_mode):
+        raise _Unbound("%r is not a regular file (a link, FIFO or device): a nested repository's HEAD must "
+                       "be a plain file; remove or git-ignore that repository" % path)
+    fd = _open_checked(path, st)
+    try:
+        return os.read(fd, 4096)
+    except OSError as exc:
+        raise _Unbound("a nested repository's HEAD cannot be read (%r: %s)" % (path, exc.strerror))
+    finally:
+        os.close(fd)
+
+
+def _ref_path_is_clean(gitdir, ref):
+    """Validate the ref name a nested HEAD names and refuse any symlink among its parent directories
+    under `.git`, so reading it cannot reach a file OUTSIDE the checkout."""
+    text = ref.decode("utf-8", "replace")
+    if (not text.startswith("refs/") or ".." in text or text.startswith("/") or "\\" in text
+            or "\0" in text or not all(text.split("/"))):
+        raise _Unbound("a nested repository's HEAD names an unusable ref (%r)" % text[:80])
+    current = gitdir
+    for part in text.split("/")[:-1]:
+        current = os.path.join(current, part)
+        try:
+            st = os.lstat(current)
+        except FileNotFoundError:
+            return
+        if stat.S_ISLNK(st.st_mode):
+            raise _Unbound("%r is a symlink inside a nested repository's .git, so its ref would be read from "
+                           "outside the checkout: restore the directory" % current)
+
+
 def _file_record(path, deadline):
     """-> (kind, inner32) for one path WITHOUT following links or running git: a regular file's bytes
-    (kind F, or X when executable), a symlink's target (L), absent (G). Anything else (a FIFO, socket,
-    device) cannot be covered and is refused rather than opened (a FIFO would block forever)."""
+    (kind F, or X when executable), a symlink's target (L), absent (G). The file is opened
+    O_NOFOLLOW|O_NONBLOCK and its fstat must match the lstat taken first (same device, inode, regular),
+    so a path swapped for a symlink (bytes from outside the checkout) or a FIFO (a blocking read) between
+    the two is refused, never read. Anything that is not a regular file, symlink or directory is
+    refused with a named cause."""
+    _over_budget(deadline)
     try:
         st = os.lstat(path)
     except FileNotFoundError:
@@ -278,17 +347,41 @@ def _file_record(path, deadline):
     if not stat.S_ISREG(st.st_mode):
         raise _Unbound("%r is not a regular file, directory or symlink (a FIFO, socket or device) and "
                        "cannot be covered: remove it or git-ignore it" % path)
+    fd = _open_checked(path, st)
     inner = hashlib.sha256()
     try:
-        with open(path, "rb") as handle:
-            for chunk in iter(lambda: handle.read(1 << 20), b""):
-                if time.monotonic() > deadline:
-                    raise _Unbound("diff too large or slow to hash within %ds: commit or stash the large "
-                                   "change, or split it" % _KEY_SECONDS)
-                inner.update(chunk)
-    except OSError as exc:
-        raise _Unbound("a path cannot be read (%r: %s)" % (path, exc.strerror))
+        while True:
+            _over_budget(deadline)
+            try:
+                chunk = os.read(fd, 1 << 20)
+            except OSError as exc:
+                raise _Unbound("a path cannot be read (%r: %s)" % (path, exc.strerror))
+            if not chunk:
+                break
+            inner.update(chunk)
+    finally:
+        os.close(fd)
     return (b"X" if st.st_mode & 0o111 else b"F"), inner.digest()
+
+
+def _parents_are_real(cwd, name, seen):
+    """Refuse a listed path whose parent directory is a symlink: files under it would be read from
+    OUTSIDE the checkout (a tracked directory replaced by a link to ../elsewhere)."""
+    current = cwd
+    for part in name.split(b"/")[:-1]:
+        if not part:
+            continue
+        current = os.path.join(current, os.fsdecode(part))
+        if current in seen:
+            continue
+        try:
+            st = os.lstat(current)
+        except FileNotFoundError:
+            return
+        if stat.S_ISLNK(st.st_mode):
+            raise _Unbound("%r is a symlink, so files under it would be read from outside the checkout: "
+                           "restore the directory" % current)
+        seen.add(current)
 
 
 def _nested_digest(path, deadline, budget):
@@ -298,6 +391,7 @@ def _nested_digest(path, deadline, budget):
     out = hashlib.sha256()
 
     def one(rel, full):
+        _over_budget(deadline)
         budget[0] += 1
         if budget[0] > _MAX_UNTRACKED:
             raise _Unbound("a nested repository has more than %d files: commit, remove or git-ignore it"
@@ -320,15 +414,12 @@ def _nested_digest(path, deadline, budget):
         raise _Unbound("a nested repository cannot be read (%r: %s)" % (path, exc.strerror))
     gitdir = os.path.join(path, ".git")
     if os.path.isdir(gitdir) and not os.path.islink(gitdir):
-        head = os.path.join(gitdir, "HEAD")
         names = [b".git/HEAD", b".git/packed-refs"]
-        try:
-            with open(head, "rb") as handle:
-                text = handle.read(4096)
-            if text.startswith(b"ref: ") and b".." not in text:
-                names.append(b".git/" + text[5:].strip())
-        except OSError:
-            pass
+        text = _read_head(os.path.join(gitdir, "HEAD"), deadline)
+        if text.startswith(b"ref: "):
+            ref = text[5:].strip()
+            _ref_path_is_clean(gitdir, ref)
+            names.append(b".git/" + ref)
         for rel in names:
             kind, inner = _file_record(os.path.join(path, os.fsdecode(rel)), deadline)
             out.update(_frame(kind, rel, inner))
@@ -390,8 +481,10 @@ def _content_key(sdlc_dir, goal):
             return None, ("there are %d untracked files (limit %d): commit, remove or git-ignore build "
                           "output" % (len(names), _MAX_UNTRACKED))
         budget = [len(names)]
+        seen = set()
         for section, group in ((b"t", changed), (b"u", names)):
             for name in group:
+                _parents_are_real(cwd, name, seen)
                 full = os.path.join(cwd, os.fsdecode(name))
                 if os.path.isdir(full) and not os.path.islink(full):    # nested repo / submodule
                     digest.update(_frame(section + b"R", name, _nested_digest(full, deadline, budget)))
@@ -498,14 +591,42 @@ def _route_tag(route):
     return {"mechanism": route.get("mechanism"), "host": route.get("host")}
 
 
-def _failure_applies(receipt, route):
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]+")
+_MAX_REASON = 500
+
+
+def _waiver_valid(sdlc_dir, goal, phase, receipt, plan_sha256=""):
+    """An accept-inline waiver covers ONLY the bytes the owner saw: the checkout's content key (code
+    review) or the plan hash (plan-review). Anything edited since needs a fresh choice."""
+    if phase == "review":
+        key = receipt.get("content_key")
+        return bool(key) and key == _content_key(sdlc_dir, goal)[0]
+    return not plan_sha256 or receipt.get("plan_sha256") == plan_sha256
+
+
+def waiver_reason(sdlc_dir, goal, phase, plan_sha256=""):
+    """The bounded reason of a VALID accept-inline waiver that covers the inline route now, else None
+    (stamped on the verdict row so it survives `work.py finish`, which deletes receipts)."""
+    try:
+        state, got = _read_receipt(sdlc_dir, goal, phase)
+    except ValueError:
+        return None
+    if (state == "ok" and got.get("outcome") == "waived_inline" and resolve(sdlc_dir).get("mechanism") == "inline"
+            and _waiver_valid(sdlc_dir, goal, phase, got, plan_sha256)):
+        return got.get("reason")
+    return None
+
+
+def _failure_applies(receipt, route, stale_waiver=False):
     """Whether a failed receipt still bars an approval on the CURRENT route. A failure belongs to the route
     it was made under: another process/command host starts clean (its own run overwrites the receipt); the
     subagent route has its own proof (an agent id); INLINE needs the owner's recorded choice
     (`accept-inline`), never just a config edit. A receipt with no route (older) applies: fail closed."""
     tag = receipt.get("route")
     mech = route.get("mechanism")
-    if receipt.get("outcome") in ("ok", "waived_inline"):
+    if receipt.get("outcome") == "waived_inline":
+        return stale_waiver and mech == "inline"      # a waiver for other bytes no longer covers these
+    if receipt.get("outcome") == "ok":
         return False
     if mech == "subagent":
         return False
@@ -533,18 +654,53 @@ def failed_receipt(sdlc_dir, goal, phase):
     route = resolve(sdlc_dir)
     if state == "unreadable":
         return None if route.get("mechanism") == "subagent" else ("unreadable", got)
-    if state == "ok" and _failure_applies(got, route):
+    stale = (state == "ok" and got.get("outcome") == "waived_inline"
+             and not _waiver_valid(sdlc_dir, goal, phase, got))
+    if state == "ok" and _failure_applies(got, route, stale_waiver=stale):
         return got.get("failure") or "unknown", got.get("detail") or ""
     return None
 
 
+def subagent_transcript_refusal(sdlc_dir, goal, phase, verified):
+    """After ANY recorded failed run for this goal+phase, a subagent-route approval must carry a
+    transcript-backed agent id (`verified == "transcript"`): an id nothing could check (`unverified`: no
+    readable session store) must not clear a failure by a config-and-env flip. No prior failure: None,
+    so ordinary flows are not stricter."""
+    if verified == "transcript":
+        return None
+    cfg, unreadable = _config_state(sdlc_dir)
+    if not unreadable and not _independent_on(cfg):
+        return None
+    try:
+        state, got = _read_receipt(sdlc_dir, goal, phase)
+    except ValueError:
+        return None
+    if state == "unreadable":
+        kind = "unreadable receipt"
+    elif state == "ok" and got.get("outcome") not in ("ok", "waived_inline"):
+        kind = got.get("failure") or "unknown"
+    else:
+        return None
+    return ("an independent reviewer FAILED earlier for %s %s (%s), so a subagent approval needs an agent id "
+            "backed by a real transcript, and this one could not be verified: dispatch the review from a real "
+            "subagent so its transcript exists in this session's store, or have the owner record `reviewer.py "
+            "accept-inline %s --goal %s --phase %s --reason \"<the owner's choice>\"` (an audit trail the "
+            "OWNER runs, not an authority check; not the maker)" % (goal, phase, kind, sdlc_dir, goal, phase))
+
+
 def accept_inline(sdlc_dir, goal, phase, reason):
     """The OWNER's explicit, recorded choice to review inline after an independent reviewer failed (the
-    `choose inline review` answer in /sigma-unpark). Not a config edit: config must already say inline,
-    the failure stays on record in the receipt, and the reason is stored with it. Refuses where it would
-    launder a failure: a route that is not inline, or a configured reviewer that is merely missing."""
-    if not str(reason or "").strip():
+    `choose inline review` answer in /sigma-unpark). AN AUDIT TRAIL THE OWNER RUNS, NOT AN AUTHORITY
+    CHECK: anyone with a shell can call it, so the maker must not. Not a config edit: config must already
+    say inline, the failure stays on the receipt, the reason (bounded, control characters stripped) is
+    stored with it AND stamped on the verdict row, and the waiver covers only the checkout (code review) or
+    plan (plan-review) as it is NOW. Refuses to launder: a route that is not inline, a configured reviewer
+    that is merely missing, nothing to accept, or a second call for the same bytes."""
+    reason = " ".join(_CONTROL.sub(" ", str(reason or "")).split())
+    if not reason:
         raise ValueError("--reason is required: the owner's choice is recorded, never silent")
+    if len(reason) > _MAX_REASON:
+        raise ValueError("--reason is %d characters; the limit is %d" % (len(reason), _MAX_REASON))
     if phase not in RECEIPT_PHASES:
         raise ValueError("phase must be one of %s" % ", ".join(RECEIPT_PHASES))
     cfg, unreadable = _config_state(sdlc_dir)
@@ -558,12 +714,23 @@ def accept_inline(sdlc_dir, goal, phase, reason):
         raise ValueError("the resolved route is %s, not inline: set review.host to `inline` first, or "
                          "re-run the reviewer" % route.get("mechanism"))
     state, got = _read_receipt(sdlc_dir, goal, phase)
-    if state == "ok" and got.get("outcome") == "waived_inline":
-        return got
     if state != "ok" or got.get("outcome") == "ok":
         raise ValueError("nothing to accept: no failed independent run is on record for %s %s" % (goal, phase))
+    binding = {}
+    if phase == "review":
+        key, cause = _content_key(sdlc_dir, goal)
+        if key is None:
+            raise ValueError("this checkout cannot be bound to the owner's choice: %s" % cause)
+        binding["content_key"] = key
+    else:
+        if not got.get("plan_sha256"):
+            raise ValueError("no plan hash is on record for this failed run: re-run reviewer.py run first")
+        binding["plan_sha256"] = got["plan_sha256"]
+    if got.get("outcome") == "waived_inline" and _waiver_valid(sdlc_dir, goal, phase, got):
+        raise ValueError("already recorded for these bytes (reason: %s): the first reason stands"
+                         % got.get("reason"))
     _write_receipt(sdlc_dir, goal, phase, outcome="waived_inline", failure=got.get("failure"),
-                   reason=str(reason).strip(), route=_route_tag(route))
+                   reason=reason, route=_route_tag(route), **binding)
     return _read_receipt(sdlc_dir, goal, phase)[1]
 
 
@@ -575,7 +742,8 @@ def inline_review_refusal(sdlc_dir, goal, route):
         return ("the independent reviewer FAILED for %s (%s): an inline self-review does not replace it. "
                 "Park the goal (`--qkind reviewer_down`), fix the reviewer and re-run it; or, if the owner "
                 "chose inline review, record that with `reviewer.py accept-inline %s --goal %s --phase review "
-                "--reason \"<why>\"`" % (goal, failed[0], sdlc_dir, goal))
+                "--reason \"<why>\"` (an audit trail the owner runs, not an authority check; not the maker)"
+                % (goal, failed[0], sdlc_dir, goal))
     cfg, unreadable = _config_state(sdlc_dir)
     if unreadable:
         return "%s/config.json is unreadable: no inline approval until it parses" % sdlc_dir
@@ -628,9 +796,11 @@ def independent_run_refusal(sdlc_dir, goal, phase, plan_sha256=""):
         return None                      # bound by its own proof (an agent id), not by a process receipt
     if state == "unreadable":
         return "the reviewer run receipt for %s %s is unreadable (%s): re-run `%s`" % (goal, phase, receipt, gesture)
-    applies = state == "ok" and _failure_applies(receipt, route)
-    accept = ("`reviewer.py accept-inline %s --goal %s --phase %s --reason \"<the owner's choice>\"`"
-              % (sdlc_dir, goal, phase))
+    stale = (state == "ok" and receipt.get("outcome") == "waived_inline" and mechanism == "inline"
+             and not _waiver_valid(sdlc_dir, goal, phase, receipt, plan_sha256))
+    applies = state == "ok" and _failure_applies(receipt, route, stale_waiver=stale)
+    accept = ("`reviewer.py accept-inline %s --goal %s --phase %s --reason \"<the owner's choice>\"` (an audit "
+              "trail the OWNER runs, not an authority check: not the maker)" % (sdlc_dir, goal, phase))
     if mechanism not in ("process", "command"):
         if configured_reviewer_unavailable(cfg, route):
             earlier = (" (an earlier run FAILED: %s)" % (receipt.get("failure") or "unknown")) if applies else ""
@@ -726,10 +896,14 @@ def run_review(sdlc_dir, brief_path, scratch_paths, goal=None, phase=None):
         return 2
     command = route["command"]
 
+    plan = _PLAN_SHA_LINE.search(brief)
+    plan_sha = plan.group(1) if plan else None
+
     def failed(kind, code, message, detail=""):
         print(message, file=sys.stderr)
         if receipt:
-            _write_receipt(sdlc_dir, goal, phase, outcome="failed", failure=kind, detail=detail, route=_route_tag(route))
+            _write_receipt(sdlc_dir, goal, phase, outcome="failed", failure=kind, detail=detail,
+                           route=_route_tag(route), plan_sha256=plan_sha, content_key=key)
         return code
     key = None
     if receipt and phase == "review":
@@ -738,7 +912,8 @@ def run_review(sdlc_dir, brief_path, scratch_paths, goal=None, phase=None):
             return failed("content_unbound", 1, "reviewer run: this checkout cannot be bound to the review: "
                           "%s. Fix that and re-run (nothing was sent to the reviewer)" % cause, cause)
     if receipt:
-        _write_receipt(sdlc_dir, goal, phase, outcome="failed", failure="not_completed", route=_route_tag(route))
+        _write_receipt(sdlc_dir, goal, phase, outcome="failed", failure="not_completed",
+                       route=_route_tag(route), plan_sha256=plan_sha, content_key=key)
     try:
         proc = subprocess.Popen(command, shell=mechanism == "command", stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -769,11 +944,10 @@ def run_review(sdlc_dir, brief_path, scratch_paths, goal=None, phase=None):
                           "files exist (or git-ignore them)" % (cause or "files differ"), cause or "")
     if receipt:
         named = _BRIEF_HEADER.match(brief)
-        plan = _PLAN_SHA_LINE.search(brief)
         _write_receipt(sdlc_dir, goal, phase, outcome="ok", verdict=lone_verdict(output),
                        brief_sha256=hashlib.sha256(brief.encode("utf-8")).hexdigest(),
                        output_sha256=hashlib.sha256(output.encode("utf-8")).hexdigest(),
-                       plan_sha256=plan.group(1) if plan else None,
+                       plan_sha256=plan_sha,
                        brief_phase=named.group(1) if named else None, content_key=key, route=_route_tag(route))
     sys.stdout.write(output)
     return 0
