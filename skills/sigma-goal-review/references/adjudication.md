@@ -22,8 +22,8 @@ python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/reviewer.py" resolve .sdlc
 
 Branch on its `mechanism` exactly as `sigma-review` does (`subagent` → hand a FRESH subagent only the
 brief; `process`/`command` → use `reviewer.py run` below; `inline` → no mechanism on this machine,
-so say so in the verdict). If the resolved process fails, review inline and name the failed route
-and cause in the verdict. Generate:
+so say so in the verdict). If the resolved process fails, that is never a confirmation: confirm
+nothing and park the goal (`--qkind reviewer_down`), naming the failure. Generate:
 
 ```
 python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/review_context.py" brief .sdlc <n> --for goal-review --artifact <n> > /tmp/brief-<n>.md

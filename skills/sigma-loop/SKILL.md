@@ -89,18 +89,17 @@ Then repeat until the helper says stop:
 
    Then run **each phase as its own subagent** with that host's model override (see
    `references/running.md`). One subagent PER PHASE on a host with subagents, **tier `off` included** (with `gates.phase_record` on and `action_log.enabled`, `record done` and `work.py merge` REFUSE a goal missing any phase; `/sigma-init` ships it on, an absent key is off and then only this rule remains).
-   Artifacts pass between phases through the filesystem, not shared context. Run the goal through the
-   full SDLC (research → plan → plan-review → implement → review), each phase via its **executor**.
+   Artifacts pass between phases through the filesystem. Run the goal through the
+   SDLC (research → plan → plan-review → implement → review), each phase via its **executor**.
    `$goal` is a **file path** (local) or a **GitHub issue number** in github mode (`gh api repos/{owner}/{repo}/issues/"$goal"`).
 
    **The maker must not be the checker (`config.review.independent`, default on); asked, not proved.**
-   Every review gate (plan-review, pre-PR code review, post-PR review at step 6) is asked to run as a
-   **fresh subagent that never saw the maker's context**, given the PROJECT, not the author: `review_context.py brief .sdlc
+   Every review gate (plan-review, pre-PR review, post-PR review at step 6) is asked to run as a
+   **fresh subagent that never saw the maker's context**, given the PROJECT: `review_context.py brief .sdlc
    "$goal" --for plan-review|code-review|pr-review [--artifact <path|PR#>] >
    "/tmp/brief-$(basename "$goal" .md).md"` writes the pack to that file; hand over **only that**.
-   No subagents is **not** a degradation: use the mechanism `reviewer.py resolve .sdlc` names. Only
-   an `inline` answer reviews inline, and says so. `work.py record-plan-review` records a
-   plan-review verdict against the file's `Plan sha256:`.
+   No subagents is **not** a degradation: use what `reviewer.py resolve .sdlc` names. Only `inline` reviews inline, and says so. A failed `process`/`command` reviewer never approves: park (`reviewer_down`).
+   `work.py record-plan-review` records a plan-review verdict against the file's `Plan sha256:`.
 
    **No phase subagent commits — only `work.py commit` does, once, at step 6.** This binds every
    dispatched phase subagent (research, plan, plan-review, implement, review, retro, and each

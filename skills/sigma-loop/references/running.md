@@ -135,12 +135,12 @@ assembles the pack into that file (`basename`: `$goal` is a path in local mode) 
 conventions + contracts + the goal + a pointer to the artifact — and you hand the subagent **only
 that**. So it re-derives blast radius from the whole repo and can *disagree*, instead of
 rubber-stamping the plan/diff it just wrote (a lower-tier maker does). A diff-only reviewer cannot see what a small change breaks two files
-away; the brief's whole-repo grounding is the point. Where the host has no subagents this is **not**
+away; the brief's whole-repo grounding is the point. No subagents is **not**
 a degradation — run `python3 "${CLAUDE_SKILL_DIR}/scripts/reviewer.py" resolve .sdlc` and use the
-mechanism it names (a fresh `process`, or the operator's `command`); every host asks for an
-author-blind reviewer by its own route. Only a machine where the resolver returns `inline` reviews
+mechanism it names (a fresh `process`, or the operator's `command`, run as `reviewer.py run .sdlc
+<brief> --scratch <dir> --goal "$goal" --phase plan_review|review`). Only a machine where the resolver returns `inline` reviews
 inline, and that verdict must say so. With
-`review.independent: false` reviews run inline as before (the maker reviews its own work — only for a
+`review.independent: false` reviews run inline (the maker reviews its own work — only for a
 trivial solo repo).
 
 **Record the plan-review verdict before Implement** (`gates.plan_review`). The dispatching site —

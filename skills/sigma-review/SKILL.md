@@ -37,8 +37,8 @@ It prints one JSON object; branch on `mechanism`:
   you are not independent, and asserting otherwise does not make you so.
 
 **If a resolved `process`/`command` FAILS** — unauthenticated, non-zero exit, timeout, empty output —
-it does **not** silently become an inline self-review. Fall back to inline, stamp the provenance
-accordingly, and name the failure in the verdict.
+it is never an approval: park the goal (`loop.py record … parked --qkind reviewer_down`); the gate
+refuses approval without the run's receipt. Inline review counts only when `inline` resolved.
 
 **If this brief already reached you, you ARE the resolved reviewer — do not re-resolve and do not
 dispatch again.**
@@ -58,7 +58,7 @@ the exact text it sends, stops the process group on timeout, and rejects non-zer
 
 ```
 python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/reviewer.py" run .sdlc /tmp/brief-<goal>.md \
-  --scratch "$(pwd)/.sdlc/work/<goal>"
+  --scratch "$(pwd)/.sdlc/work/<goal>" --goal "<goal>" --phase review
 ```
 
 `check` and `run` exit non-zero if the brief NAMES a shared scratch path (`check` also if it cannot be read) — a file the maker can write and the
