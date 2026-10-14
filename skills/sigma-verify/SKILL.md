@@ -39,7 +39,7 @@ run it just now, you can't claim it. (Different words don't exempt you: spirit o
 | Build works | build: exit 0 | "the linter passed" |
 | **Bug fixed** | reproduce it (**red**) → fix → it's gone (**green**) | "changed the code, assume fixed" |
 | A subagent finished | check the diff yourself | the agent's "success" report |
-| Goal done | its `done_when` met, with evidence | "tests pass, close enough" |
+| Goal done | its `done_when` (the P1 acceptance record; if the issue changed since, the recorded criteria) met, with evidence | "tests pass, close enough" |
 
 ## Red flags — stop and verify
 "should" / "probably" / "seems to" · premature "Great! / Perfect! / Done!" · about to commit/PR without

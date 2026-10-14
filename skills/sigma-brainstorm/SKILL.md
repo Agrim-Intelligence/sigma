@@ -41,8 +41,8 @@ into the conversation.
    the artifact the rest of the SDLC runs on.
 
 ## Hand off
-The terminal step is **`sigma-plan`** (write the implementation plan). Do not jump to any other
-implementation action from here.
+The terminal step is **`sigma-research`** (blast radius), then `sigma-plan`; Plan directly only under Research's
+recorded waiver. Do not jump to any other implementation action from here.
 
 ### Record P1 acceptance before handing off
 

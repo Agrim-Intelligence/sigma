@@ -164,12 +164,31 @@ def resolve_doc(root, rel):
     return PRESENT, str(rel)
 
 
-USAGE = "usage: north_star.py [start_dir]"
+def notice(start="."):
+    """One loud line when the north-star is UNREACHABLE, else "" (D2 F03, owner ruling 2026-10-14).
+
+    Plan-review keeps judging correctness alone when it cannot look, so the fact that alignment was
+    NOT judged must reach a human. `absent` (a genuinely unconfigured project) and `present` stay
+    silent: a nag on a drop-in project stops being read. Never raises."""
+    state, detail = check(start)
+    if state != UNREACHABLE:
+        return ""
+    return ("Sigma: the north-star could not be located or read (%s). Plan-review is NOT judging "
+            "strategic alignment until it can - it checks correctness alone. Fix the path or "
+            "permissions on .sdlc/context/north-star.md, then run /sigma-doctor." % detail)
+
+
+USAGE = "usage: north_star.py [start_dir] | north_star.py notice [start_dir]"
 
 
 def main(argv):
     if argv[1:] in (["-h"], ["--help"]):
         print(USAGE)
+        return 0
+    if argv[1:2] == ["notice"]:             # session-start hook + doctor: silent unless unreachable
+        line = notice(argv[2] if len(argv) > 2 else ".")
+        if line:
+            print(line)
         return 0
     start = argv[1] if len(argv) > 1 else "."
     state, detail = check(start)

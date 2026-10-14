@@ -10656,6 +10656,26 @@ def test_record_plan_review_refuses_a_sha_that_is_not_the_current_plan(tmp_path)
     assert not _gate_record(d).exists()
 
 
+def test_record_plan_review_records_that_alignment_was_not_judged_when_the_north_star_is_unreachable(
+        tmp_path, capsys):
+    """D2 F03: an `unreachable` north-star is RECORDED (record, return value, stderr), not only said."""
+    d = _sdlc(tmp_path); goal = _started(d); sha = _plan_bytes(d)
+    (pathlib.Path(work._record(d, goal)["worktree"]) / ".git").write_text("gitdir: /nonexistent/f03\n")
+    out = work.record_plan_review(d, ON, goal, "SOUND", sha, run=_runner([]))
+    on_disk = json.loads(_gate_record(d).read_text())
+    for got in (out, on_disk):
+        assert got["alignment"].startswith("not-judged (") and "linked worktree" in got["alignment"]
+    assert "strategic alignment was NOT judged" in capsys.readouterr().err
+
+
+def test_record_plan_review_carries_no_alignment_field_when_the_north_star_is_absent_or_present(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d); sha = _plan_bytes(d)
+    assert "alignment" not in work.record_plan_review(d, ON, goal, "SOUND", sha, run=_runner([]))   # absent
+    (pathlib.Path(d) / "context").mkdir(exist_ok=True)
+    (pathlib.Path(d) / "context" / "north-star.md").write_text("## Architecture\n1. a rule\n")
+    assert "alignment" not in work.record_plan_review(d, ON, goal, "SOUND", sha, run=_runner([]))   # present
+
+
 @pytest.mark.parametrize("value", ["", "abc"])
 def test_record_plan_review_refuses_a_malformed_sha(tmp_path, value):
     d = _sdlc(tmp_path); goal = _started(d); _plan_bytes(d)

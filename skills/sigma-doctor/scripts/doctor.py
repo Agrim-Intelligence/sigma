@@ -3055,7 +3055,12 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
                     f"builder reports; last auto-refresh attempt on this machine: {attempt}"))
 
     ns = base / "context" / "north-star.md"
-    if ns.exists():
+    # D2 F03: a north-star that exists but cannot be read (or whose project root git cannot place) is
+    # NOT "absent" - plan-review then judges correctness alone. Failing row only; absent stays silent.
+    ns_notice = _load_loop_script("north_star").notice(base.parent)
+    if ns_notice:
+        out.append(_chk("north-star reachable", False, ns_notice))
+    if ns.exists() and os.access(ns, os.R_OK):
         text = ns.read_text(encoding="utf-8")
         # issue #1484: TWO failure modes, not one. The original check asked only "does any scaffold
         # placeholder survive?" -- correct for a file /sigma-init scaffolded and someone then edited,
