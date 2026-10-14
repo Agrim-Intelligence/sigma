@@ -17,7 +17,7 @@ Defaults below are what `/sigma-init` scaffolds (`config.json.tmpl`). Not everyt
 | `ledger: {"enabled": true}` | unset (`null`, reads as off; `/sigma-setup` writes `true`) | the committed team ledger — claims and outcomes recorded per author, plus cross-area hand-off |
 | `ledger.watch.interval_seconds` | 900 | how often `watch_daemon.py` pulls the ledger ops branch and refreshes the inbox |
 | `ledger.publish_on_write` | on | a ledger write you TYPE (`ledger.py append`, `handoff.py open`/`track`/`ack`) publishes itself, and says on stderr whether the team can see it — set `false` to keep the push local and leave it to the watcher |
-| `upkeep: {"enabled": true}` | off (the block is scaffolded with `enabled` false; an existing adopter copies it in) | keeps the old tip of a rewritten unit branch as a backup ref, adds the restore and prune commands, and with `ledger.enabled` and `SIGMA_UPKEEP_JOB=1` on one machine lets the first session start or the ledger watcher tick start one bounded sweep of every unit behind its base once `upkeep.window_hours` (default 12) have passed since that machine's last sweep. The old `triggers.*` and `auto.*` keys stay readable for one release but no longer schedule; the doctor and `docs/branching-model.md` section 13d say so. Run once end to end on a private throwaway repository, without a real model, a chat service or branch rulesets; see `docs/launch/evidence/upkeep-hosted-run.md` and `docs/branching-model.md` |
+| `upkeep: {"enabled": true}` | off (the block is scaffolded with `enabled` false; an existing adopter copies it in) | keeps the old tip of a rewritten unit branch as a backup ref, adds the restore and prune commands, and with `ledger.enabled` and `SIGMA_UPKEEP_JOB=1` on one machine lets the first session start or the ledger watcher tick start one bounded sweep of every unit behind its base once `upkeep.window_hours` (default 12) have passed since that machine's last sweep. The old `triggers.*` and `auto.*` keys stay readable for one release but no longer schedule; the doctor and `docs/branching-model.md` section 13d say so. Run once end to end on a private throwaway repository, without a real model, a chat service or branch rulesets; see [docs/upkeep.md](upkeep.md), `docs/launch/evidence/upkeep-hosted-run.md` and `docs/branching-model.md` |
 | `action_log: {"enabled": true}` | on | a full local, gitignored trace of loop activity per goal (`.sdlc/state/log/<goal>.jsonl`) — read via the `sigma-log` skill; never touches the shared ledger either direction |
 | `agent_watch: {"enabled": true}` | off | background-agent-death watch — a claimed goal's registered pid confirmed dead notifies (email if `notify.email` is also configured, else always a ledger note); needs `ledger.enabled` too, since `watch_daemon.py` is what runs the check |
 | `comment_watch: {"enabled": true}` | off | in-flight comment watch — a new comment on a claimed issue notifies the claimant via a ledger note (self-comments suppressed); needs `ledger.enabled` too, since `watch_daemon.py` is what runs the check, and github discovery (comments aren't a concept for local goal files) |
@@ -36,6 +36,14 @@ Defaults below are what `/sigma-init` scaffolds (`config.json.tmpl`). Not everyt
 > For any zero-touch / unattended multi-issue run, turn `backlog_check.enabled: true` on — it is
 > what makes a human-authored, comment-only dependency marker (bypassing `hand_off()`) actually
 > honored, not just silently ignored.
+
+## Where the optional features are documented
+
+The `rulebook` block (records, hard stops, autonomy levels, the applier, rules, the drift judge, the past-decision
+import) is described key by key in [the Decision Rulebook guide](decision-rulebook.md#configuration-reference). The
+`upkeep` block (the 12-hour window, backups, conflicts) is described in
+[the Upkeep guide](upkeep.md#configuration-reference). Both ship off. The priority rule for blockers
+(`discovery.blocker_promotion.mode`, on by default) is in [backlog.md](backlog.md).
 
 ## Rulebook rollout notes
 

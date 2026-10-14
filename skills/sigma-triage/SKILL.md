@@ -165,13 +165,13 @@ hits it* — not a UI nicety, not a missing feature.
   in the *same* tier, which sorts first." They compose, they don't substitute — a production-breaking
   bug is a `P0`/`P1` tier call on its own facts, never "leave it at `P2` and let the `bug` label do
   the work," because tier dominates every other signal (a `P2` bug never outranks a `P1` non-bug).
-- **`discovery.blocker_promotion` (#900)** is a *runtime* safety net, and it is **off by default** —
-  unset, what an issue blocks never touches its priority automatically. Don't lean on it at filing
-  time, even on a repo that has it configured: if you can already see an issue blocks something
+- **`discovery.blocker_promotion` (#900)** is a *runtime* safety net, and it is **on by default** (`mode: "always"`; only an explicit
+  `"off"` disables it) — a blocker's priority is raised to what it blocks, never lowered. Don't lean on it at filing
+  time: it repairs after the fact, so if you can already see an issue blocks something
   urgent, set ITS tier accordingly now. #900 itself is the concrete case — merged at `P0`
   specifically because a real blocked-`P0` sat behind an unrelated lower-priority issue in production
   use, with nothing in the picker (at the time) reflecting that. Filing-time judgment is what
-  actually catches this on the common repo that never turns `blocker_promotion` on.
+  keeps the queue right before the rule has to repair it.
 
 ## Caveats & report-only notices
 

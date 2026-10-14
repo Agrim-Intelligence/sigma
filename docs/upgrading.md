@@ -9,6 +9,16 @@ When you want the files themselves to stop carrying the old name, run the one-sh
 The old name is not spelled out in this document. `migrate.py` prints it at the top of every run,
 and the table below uses `<old>` for the name and `<OLD>_` for its environment-variable prefix.
 
+## Updating the plugin between releases
+
+An ordinary plugin update replaces skills, docs, hooks and scripts. It never rewrites your `.sdlc/config.json`, so a
+block added in a later release (`rulebook`, `upkeep`) does not appear in a repository adopted earlier. Copy the block
+from `skills/sigma-init/templates/config.json.tmpl` in the installed plugin, with every `enabled` left `false`, and
+open one gate at a time. Restart the session after updating, and stop any running watcher so the next trigger starts it
+on the new build (`touch .sdlc/state/watch.stop`). What each release changes by default is listed in the
+[CHANGELOG](../CHANGELOG.md); for 1.0.14 see [what's new in 1.0.14](whats-new-1.0.14.md). The two optional features are
+documented in [the Decision Rulebook](decision-rulebook.md) and [Upkeep](upkeep.md).
+
 ## From the pre-launch name
 
 Before launch the plugin and its marketplace were both named `sigma`, so the install id was `sigma@sigma`.
