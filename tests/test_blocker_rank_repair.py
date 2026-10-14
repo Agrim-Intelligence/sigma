@@ -174,6 +174,7 @@ def test_the_board_field_is_written_only_when_graphql_budget_allows():
         if board:
             src.project_enabled = True
         looked = []
+        src._ensure_board = lambda **kw: True          # the field write resolves the board first
         src._item_id = lambda n, _l=looked: _l.append(n)
         src.repair_blocker_ranks()
         assert len(looked) == expect, (kw, board)
