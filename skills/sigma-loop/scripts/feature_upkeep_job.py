@@ -245,7 +245,7 @@ def _unit_pass(config, sdlc_dir, root, unit, unit_pass=None):
     try:
         rebase = _sibling("feature_rebase")
         remote = rebase._remote(config)
-        base = rebase._safe_ref("work.base", rebase._settings(config).get("base")) or ""
+        base = rebase.base_of(config)
         branch = rebase.features.BRANCH_PREFIX + unit
         if not base:
             return {}
@@ -268,7 +268,7 @@ def run_engine(config, sdlc_dir, root, unit, *, environ=None, upkeep=None, unit_
     """The pass itself, inside the child: the engine's own entry point, called in-process, handed NO goal. Prints one JSON
     line (`outcome`, `unit_tip`) as its last line of output. -> the report."""
     rebase = _sibling("feature_rebase")
-    if rebase.is_unit_base(rebase._safe_ref("work.base", rebase._settings(config).get("base")) or "", rebase._remote(config), config):
+    if rebase.is_unit_base(rebase.base_of(config), rebase._remote(config), config):
         line = {"outcome": rebase.NO_BASE, "unit_tip": None, "unit_pass": "skipped", "reason": rebase.UNIT_BASE_WHY}   # #1311
         print(json.dumps(line, sort_keys=True), flush=True)
         return line

@@ -455,6 +455,17 @@ def _remote(config):
     return remote if isinstance(remote, str) and remote.strip() else DEFAULT_REMOTE
 
 
+def base_of(config):
+    """`work.base` as a bare branch name, '' when unset. The same rule `work.settings()` applies: a base written
+    with the remote's name (`origin/main`) means `main` (#1425), so the pass, landing and the job child fetch
+    `<remote> main`, not the missing remote ref `origin/main`."""
+    base = _safe_ref("work.base", _settings(config).get("base")) or ""
+    lead = "%s/" % _remote(config)
+    if base.startswith(lead) and len(base) > len(lead):
+        return base[len(lead):]
+    return base
+
+
 def merge_method(config):
     got = _settings(config).get("merge_method")
     return (got.strip().lower() if isinstance(got, str) and got.strip() else DEFAULT_MERGE_METHOD)
@@ -658,7 +669,7 @@ def ack(sdlc_dir, config, unit, shas, all_=False, run=None, cwd=None, remote=Non
     run = run or _run
     cwd = str(cwd or pathlib.Path(sdlc_dir).parent)
     remote = remote or _remote(config)
-    base = _safe_ref("work.base", _settings(config).get("base")) or ""
+    base = base_of(config)
     branch = features.BRANCH_PREFIX + unit
     result = {"ok": False, "unit": unit, "acked": [], "why": "", "path": ""}
     try:
@@ -2609,7 +2620,7 @@ def _upkeep(sdlc_dir, config, goal, unit, run, cwd, remote, report):
     cwd = str(cwd or pathlib.Path(sdlc_dir).parent)
     remote = remote or _remote(config)
     branch = features.BRANCH_PREFIX + unit
-    base = _safe_ref("work.base", _settings(config).get("base")) or ""
+    base = base_of(config)
     report["branch"], report["base"] = branch, base
 
     # THE LOCK IS TAKEN BEFORE ANY OTHER DECISION, and the reordering is the fix for a strand that
@@ -2991,7 +3002,7 @@ def main(argv):
         config = state.load_config(argv[2])
         remote, branch = _remote(config), features.BRANCH_PREFIX + argv[3]
         cwd = str(pathlib.Path(argv[2]).parent)
-        base = _safe_ref("work.base", _settings(config).get("base")) or ""
+        base = base_of(config)
         print(json.dumps({
             "unit": argv[3], "branch": branch, "base": base,
             "verifiable": _verifiable(config), "merge_method": merge_method(config),

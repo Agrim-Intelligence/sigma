@@ -224,7 +224,7 @@ def land(config, sdlc_dir, unit, *, argv=(), environ=None, run=None, gh_run=None
         if left is not None and left.get("outcome") not in (landing.REFUSED, landing.MERGED_WARNING):
             return refuse("pending-landing", "an earlier landing of this unit is still unsettled after a read-back")
     landing.prune(sdlc_dir, config, now=now)
-    base = env.rebase._safe_ref("work.base", env.rebase._settings(config).get("base")) or ""
+    base = env.rebase.base_of(config)
     if not base:
         return refuse("no-base", "no integration branch is configured")
     branch = env.rebase.features.BRANCH_PREFIX + unit

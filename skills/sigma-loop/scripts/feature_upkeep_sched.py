@@ -153,7 +153,7 @@ def refs_of(config, unit):
     """-> (base_ref, unit_ref) as the remote's names, or (None, None) when no base is configured."""
     rebase = _sibling("feature_rebase")
     remote = rebase._remote(config)
-    base = (rebase._settings(config).get("base") or "").strip() if isinstance(rebase._settings(config), dict) else ""
+    base = rebase.base_of(config).strip()                                     # #1425: `origin/main` means `main`
     if not base or rebase.is_unit_base(base, remote, config):             # #1311: a unit branch is no base; nothing is offered
         return None, None
     return "%s/%s" % (remote, base), "%s/%s%s" % (remote, _sibling("features").BRANCH_PREFIX, unit)
