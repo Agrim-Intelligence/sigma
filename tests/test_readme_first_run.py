@@ -501,6 +501,7 @@ VERSION_ALLOW = {
     ("docs/launch/evidence/export-verify-de188d1fb5dd.md", "499.82"): "a measured pytest duration in seconds, not a Sigma release",
     ("docs/launch/evidence/export-verify-de188d1fb5dd.md", "604.73"): "a measured pytest duration in seconds, not a Sigma release",
     ("README.md", "1.0.14"): "the release whose notes page the README links (docs/whats-new-1.0.14.md), named before the version bump ships",
+    ("docs/whats-new-1.0.14.md", "1.0.13"): "the previous release, named as the baseline this page describes changes from",
     ("docs/whats-new-1.0.14.md", "1.0.14"): "the release this page documents, named before the version bump ships",
     ("docs/upgrading.md", "1.0.14"): "the release whose notes page this section links, named before the version bump ships",
     ("contract/README.md", "1.0.0"): "the first plugin release the event contract was frozen in: a historical fact, not the current version",

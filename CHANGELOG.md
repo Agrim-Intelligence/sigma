@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+## 1.0.14 — 2026-10-15 — the Decision Rulebook and upkeep documented, a 12-hour upkeep window, the blocker priority rule, and the fixes from the third validation pass
+
 - **A person's free-text answer stays out of the applier ask file on a public repository (#1429).** The ask file kept the answer verbatim and the autonomy folder is published with the records; with `repo_visibility` public it now stores `recorded privately`, a private repository is unchanged.
 - **A raised blocker's board Priority field is written on the block-recording path too (#1431).** The card lookup ran before the board was resolved (`project item-list None`), so the label was raised and the field never; the board is now resolved first (`sync=False`, one card), and a board that cannot be resolved still leaves label and comment.
 - **`work.base` written with the remote's name works in the upkeep pass, the job child, the scheduler and landing (#1425).** `origin/main` already meant `main` in `work.py`; the pass now strips the configured remote the same way, through one `feature_rebase.base_of` helper, instead of fetching the missing ref `origin/origin/main`.
