@@ -6023,7 +6023,8 @@ def _gesture_up_to_result(d, goal, monkeypatch, capsys, verdict="approve"):
     for _k in ("CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID"):
         monkeypatch.delenv(_k, raising=False)
     monkeypatch.setattr(work, "_load", lambda name: types.SimpleNamespace(
-        resolve=lambda _d: route, independent_run_refusal=lambda *_a, **_k: None)
+        resolve=lambda _d: route, independent_run_refusal=lambda *_a, **_k: None,
+        subagent_transcript_refusal=lambda *_a, **_k: None)
                         if name == "reviewer" else original(name))
     assert work.main(["work.py", "record-subagent-review", d, goal, "--manifest", str(manifest),
                       "--resolution", paths["REVIEW_RESOLUTION"], "--verdict", verdict,

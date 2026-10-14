@@ -288,6 +288,10 @@ def record_verdict(sdlc_dir, config, goal, phase, verdict, agent_id="", plan_has
             raise ValueError(bad)
     if route == "subagent" and not agent_id:
         raise ValueError("the reviewer route here is `subagent`: pass --agent-id <the reviewer subagent's id>")
+    if route == "subagent" and verdict in (PLAN_REVIEW_APPROVING if phase == "plan_review" else REVIEW_APPROVING):
+        refusal = reviewer.subagent_transcript_refusal(sdlc_dir, goal, phase, verified)
+        if refusal:
+            raise ValueError(refusal)
     why = reviewer.waiver_reason(sdlc_dir, goal, phase, plan_hash) if route == "inline" else None
     row = actionlog.append(sdlc_dir, goal, "verdict", "loop", phase=phase, verdict=verdict, route=route,
                            waiver="accept-inline" if why else None, waiver_reason=why or None,

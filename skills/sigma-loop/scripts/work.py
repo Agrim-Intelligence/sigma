@@ -851,15 +851,18 @@ def run_resolved_review(sdlc_dir, goal, manifest_path, resolution_path, verdict=
         reason = output
     else:
         raise ValueError("reviewer resolution has an unsupported mechanism")
-    return _write_review_result(sdlc_dir, manifest, resolution_path, verdict, reason)
+    waiver = (_load("reviewer").waiver_reason(sdlc_dir, goal, "review") if mechanism == "inline" else None)
+    return _write_review_result(sdlc_dir, manifest, resolution_path, verdict, reason, waiver=waiver)
 
 
-def _write_review_result(sdlc_dir, manifest, resolution_path, verdict, reason):
+def _write_review_result(sdlc_dir, manifest, resolution_path, verdict, reason, waiver=None):
     """Persist the common immutable-generation binding for every host review handoff."""
     result = {"generation_id": manifest["generation_id"], "brief_sha256": manifest["brief_sha256"],
               "pr": manifest.get("pr"), "head_sha": manifest.get("head_sha"),
               "resolution_sha256": hashlib.sha256(pathlib.Path(resolution_path).read_bytes()).hexdigest(),
               "verdict": verdict, "reason": reason}
+    if waiver:          # the owner's recorded accept-inline choice, same fields as the local verdict row
+        result["waiver"], result["waiver_reason"] = "accept-inline", waiver
     target = pathlib.Path(sdlc_dir) / "state" / "review-results" / (manifest["generation_id"] + ".json")
     data = (json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
     # CREATE-ONCE.  The realistic forgery is not inventing a review -- it is the reviewer returning
@@ -894,9 +897,13 @@ def record_subagent_review(sdlc_dir, goal, manifest_path, resolution_path, verdi
     # Parity with `record-review`: the same agent-id proof, and the same failed-receipt rules.
     if not agent_id:
         raise ValueError("the reviewer route here is `subagent`: pass --agent-id <the reviewer subagent's id>")
-    _verified, bad = _load("phase_gate").verify_agent(agent_id)
+    verified, bad = _load("phase_gate").verify_agent(agent_id)
     if bad:
         raise ValueError(bad)
+    if verdict in ("approve", "unblock"):
+        refusal = reviewer.subagent_transcript_refusal(sdlc_dir, goal, "review", verified)
+        if refusal:
+            raise ValueError(refusal)
     if verdict in ("approve", "unblock"):
         refusal = reviewer.independent_run_refusal(sdlc_dir, goal, "review")
         if refusal:

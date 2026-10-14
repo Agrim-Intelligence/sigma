@@ -270,6 +270,64 @@ def _over_budget(deadline):
                        "change, or split it" % _KEY_SECONDS)
 
 
+def _open_checked(path, st):
+    """Open `path` O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC and require the opened file to be the one `st` (an lstat
+    taken first) described: same device and inode, regular. A path swapped for a link (bytes from outside
+    the checkout) or a FIFO (a blocking read) in between is refused, never read."""
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise _Unbound("%r changed while it was being hashed or is a link (%s)" % (path, exc.strerror))
+    opened = os.fstat(fd)
+    if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (st.st_dev, st.st_ino):
+        os.close(fd)
+        raise _Unbound("%r changed while it was being hashed or is not a regular file (a FIFO, link or "
+                       "device); remove it or git-ignore it" % path)
+    return fd
+
+
+def _read_head(path, deadline):
+    """The first 4 KB of a nested repository's `.git/HEAD`, read with the same checks as `_file_record`:
+    never followed through a link, never opened if it is a FIFO or other non-regular file."""
+    _over_budget(deadline)
+    try:
+        st = os.lstat(path)
+    except FileNotFoundError:
+        return b""
+    except OSError as exc:
+        raise _Unbound("a nested repository's HEAD cannot be read (%r: %s)" % (path, exc.strerror))
+    if not stat.S_ISREG(st.st_mode):
+        raise _Unbound("%r is not a regular file (a link, FIFO or device): a nested repository's HEAD must "
+                       "be a plain file; remove or git-ignore that repository" % path)
+    fd = _open_checked(path, st)
+    try:
+        return os.read(fd, 4096)
+    except OSError as exc:
+        raise _Unbound("a nested repository's HEAD cannot be read (%r: %s)" % (path, exc.strerror))
+    finally:
+        os.close(fd)
+
+
+def _ref_path_is_clean(gitdir, ref):
+    """Validate the ref name a nested HEAD names and refuse any symlink among its parent directories
+    under `.git`, so reading it cannot reach a file OUTSIDE the checkout."""
+    text = ref.decode("utf-8", "replace")
+    if (not text.startswith("refs/") or ".." in text or text.startswith("/") or "\\" in text
+            or "\0" in text or not all(text.split("/"))):
+        raise _Unbound("a nested repository's HEAD names an unusable ref (%r)" % text[:80])
+    current = gitdir
+    for part in text.split("/")[:-1]:
+        current = os.path.join(current, part)
+        try:
+            st = os.lstat(current)
+        except FileNotFoundError:
+            return
+        if stat.S_ISLNK(st.st_mode):
+            raise _Unbound("%r is a symlink inside a nested repository's .git, so its ref would be read from "
+                           "outside the checkout: restore the directory" % current)
+
+
 def _file_record(path, deadline):
     """-> (kind, inner32) for one path WITHOUT following links or running git: a regular file's bytes
     (kind F, or X when executable), a symlink's target (L), absent (G). The file is opened
@@ -289,17 +347,9 @@ def _file_record(path, deadline):
     if not stat.S_ISREG(st.st_mode):
         raise _Unbound("%r is not a regular file, directory or symlink (a FIFO, socket or device) and "
                        "cannot be covered: remove it or git-ignore it" % path)
-    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)
-    try:
-        fd = os.open(path, flags)
-    except OSError as exc:
-        raise _Unbound("%r changed while it was being hashed or is a link (%s)" % (path, exc.strerror))
+    fd = _open_checked(path, st)
     inner = hashlib.sha256()
     try:
-        opened = os.fstat(fd)
-        if not stat.S_ISREG(opened.st_mode) or (opened.st_dev, opened.st_ino) != (st.st_dev, st.st_ino):
-            raise _Unbound("%r changed while it was being hashed or is not a regular file (a FIFO, link or "
-                           "device); remove it or git-ignore it" % path)
         while True:
             _over_budget(deadline)
             try:
@@ -364,15 +414,12 @@ def _nested_digest(path, deadline, budget):
         raise _Unbound("a nested repository cannot be read (%r: %s)" % (path, exc.strerror))
     gitdir = os.path.join(path, ".git")
     if os.path.isdir(gitdir) and not os.path.islink(gitdir):
-        head = os.path.join(gitdir, "HEAD")
         names = [b".git/HEAD", b".git/packed-refs"]
-        try:
-            with open(head, "rb") as handle:
-                text = handle.read(4096)
-            if text.startswith(b"ref: ") and b".." not in text:
-                names.append(b".git/" + text[5:].strip())
-        except OSError:
-            pass
+        text = _read_head(os.path.join(gitdir, "HEAD"), deadline)
+        if text.startswith(b"ref: "):
+            ref = text[5:].strip()
+            _ref_path_is_clean(gitdir, ref)
+            names.append(b".git/" + ref)
         for rel in names:
             kind, inner = _file_record(os.path.join(path, os.fsdecode(rel)), deadline)
             out.update(_frame(kind, rel, inner))
@@ -437,7 +484,6 @@ def _content_key(sdlc_dir, goal):
         seen = set()
         for section, group in ((b"t", changed), (b"u", names)):
             for name in group:
-                _over_budget(deadline)
                 _parents_are_real(cwd, name, seen)
                 full = os.path.join(cwd, os.fsdecode(name))
                 if os.path.isdir(full) and not os.path.islink(full):    # nested repo / submodule
@@ -613,6 +659,33 @@ def failed_receipt(sdlc_dir, goal, phase):
     if state == "ok" and _failure_applies(got, route, stale_waiver=stale):
         return got.get("failure") or "unknown", got.get("detail") or ""
     return None
+
+
+def subagent_transcript_refusal(sdlc_dir, goal, phase, verified):
+    """After ANY recorded failed run for this goal+phase, a subagent-route approval must carry a
+    transcript-backed agent id (`verified == "transcript"`): an id nothing could check (`unverified`: no
+    readable session store) must not clear a failure by a config-and-env flip. No prior failure: None,
+    so ordinary flows are not stricter."""
+    if verified == "transcript":
+        return None
+    cfg, unreadable = _config_state(sdlc_dir)
+    if not unreadable and not _independent_on(cfg):
+        return None
+    try:
+        state, got = _read_receipt(sdlc_dir, goal, phase)
+    except ValueError:
+        return None
+    if state == "unreadable":
+        kind = "unreadable receipt"
+    elif state == "ok" and got.get("outcome") not in ("ok", "waived_inline"):
+        kind = got.get("failure") or "unknown"
+    else:
+        return None
+    return ("an independent reviewer FAILED earlier for %s %s (%s), so a subagent approval needs an agent id "
+            "backed by a real transcript, and this one could not be verified: dispatch the review from a real "
+            "subagent so its transcript exists in this session's store, or have the owner record `reviewer.py "
+            "accept-inline %s --goal %s --phase %s --reason \"<the owner's choice>\"` (an audit trail the "
+            "OWNER runs, not an authority check; not the maker)" % (goal, phase, kind, sdlc_dir, goal, phase))
 
 
 def accept_inline(sdlc_dir, goal, phase, reason):
