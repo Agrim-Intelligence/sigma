@@ -80,16 +80,17 @@ def run_reviewer(p, goal=GOAL, phase="review", write_brief=True):
                           cwd=p, capture_output=True, text=True)
 
 
-def work(p, *args):
-    return subprocess.run([sys.executable, str(S / "work.py"), *args], cwd=p, capture_output=True, text=True)
+def work(p, *args, env=None):
+    return subprocess.run([sys.executable, str(S / "work.py"), *args], cwd=p, capture_output=True, text=True,
+                          env=env)
 
 
-def record_review(p, verdict="APPROVE"):
-    return work(p, "record-review", ".sdlc", GOAL, "--verdict", verdict)
+def record_review(p, verdict="APPROVE", env=None):
+    return work(p, "record-review", ".sdlc", GOAL, "--verdict", verdict, env=env)
 
 
-def record_plan(p, verdict="SOUND", sha=SHA):
-    return work(p, "record-plan-review", ".sdlc", GOAL, "--verdict", verdict, "--plan-sha256", sha)
+def record_plan(p, verdict="SOUND", sha=SHA, env=None):
+    return work(p, "record-plan-review", ".sdlc", GOAL, "--verdict", verdict, "--plan-sha256", sha, env=env)
 
 
 def verdict_rows(p):
@@ -139,13 +140,48 @@ def test_a_failure_leaves_the_named_kind_in_the_receipt(tmp_path):
     assert got["outcome"] == "failed" and got["failure"] == "empty_output"
 
 
-def test_an_unfinished_run_counts_as_failed_not_as_the_earlier_success(tmp_path):
-    """Pessimistic receipt: a run refused/killed before it finishes overwrites a prior success."""
+def test_a_run_refused_before_the_reviewer_starts_keeps_an_earlier_good_receipt(tmp_path):
+    """S5: a leak-guard refusal is a maker typo, not a reviewer failure; it must not strand a good receipt."""
     p = _project(tmp_path)
     reviewer_script(p, APPROVE)
-    assert run_reviewer(p).returncode == 0 and record_review(p).returncode == 0
-    (p / "brief.md").write_text("# b\nsee %s/scratch/x\n" % p)           # names a shared scratch path
-    assert run_reviewer(p, write_brief=False).returncode == 1             # leak check refuses before spawn
+    assert run_reviewer(p).returncode == 0
+    leak = tmp_path.parent / ("leak-%s.md" % tmp_path.name)               # outside the checkout, like /tmp
+    leak.write_text("# b\nsee %s/scratch/x\n" % p)                       # names a shared scratch path
+    got = subprocess.run([sys.executable, str(S / "reviewer.py"), "run", ".sdlc", str(leak), "--scratch",
+                          "scratch", "--goal", GOAL, "--phase", "review"], cwd=p, capture_output=True, text=True)
+    assert got.returncode == 1                                            # leak check refuses before spawn
+    assert record_review(p).returncode == 0
+
+
+def test_a_run_refused_by_shell_policy_keeps_an_earlier_good_receipt(tmp_path):
+    p = _project(tmp_path)
+    reviewer_script(p, APPROVE)
+    assert run_reviewer(p).returncode == 0
+    subprocess.run(["git", "-C", str(p), "config", "--local", "--unset", "sigma.allowRepositoryShellCommands"],
+                   check=True)
+    assert run_reviewer(p).returncode == 2
+    subprocess.run(["git", "-C", str(p), "config", "--local", "sigma.allowRepositoryShellCommands", "true"],
+                   check=True)
+    assert record_review(p).returncode == 0
+
+
+def test_a_killed_run_counts_as_failed_not_as_the_earlier_success(tmp_path, monkeypatch):
+    """Once the reviewer is LAUNCHED the receipt is pessimistic: an interrupted run leaves not_completed."""
+    p = _project(tmp_path)
+    reviewer_script(p, APPROVE)
+    assert run_reviewer(p).returncode == 0
+    rv = _rv()
+    real = subprocess.Popen
+    class Boom:
+        def __init__(self, *a, **k): self.pid = 0
+        def communicate(self, *a, **k): raise KeyboardInterrupt
+        def kill(self): pass
+        def wait(self, *a, **k): pass
+    monkeypatch.setattr(rv.subprocess, "Popen", lambda cmd, *a, **k: real(cmd, *a, **k) if cmd[0] == "git" else Boom())
+    monkeypatch.setattr(rv, "_stop_review_process", lambda proc: None)
+    with pytest.raises(KeyboardInterrupt):
+        rv.run_review(str(p / ".sdlc"), str(p / "brief.md"), [str(p / "scratch")], goal=GOAL, phase="review")
+    monkeypatch.undo()
     r = record_review(p)
     assert r.returncode == 2 and "not_completed" in r.stderr
 
@@ -349,17 +385,102 @@ def test_content_changing_while_the_reviewer_runs_is_a_failed_run(tmp_path):
     assert r.returncode == 2 and "content_changed_during_run" in r.stderr
 
 
-def test_unbindable_content_fails_closed(tmp_path):
-    p = _project(tmp_path)
+def _stub_host(tmp_path, monkeypatch, name, body):
+    bindir = tmp_path / "bin"; bindir.mkdir(exist_ok=True)
+    (bindir / name).write_text("#!/bin/sh\n" + body); (bindir / name).chmod(0o755)
+    monkeypatch.setenv("PATH", "%s%s%s" % (bindir, os.pathsep, os.environ["PATH"]))
+    return bindir
+
+
+def _without(bindir):
+    return {**os.environ, "PATH": os.pathsep.join(x for x in os.environ["PATH"].split(os.pathsep) if x != str(bindir))}
+
+
+def test_a_directory_that_is_not_a_git_checkout_fails_closed_and_names_why(tmp_path, monkeypatch):
+    _stub_host(tmp_path, monkeypatch, "cursor-agent", "echo 'ok'\necho 'VERDICT: approve'\n")
+    p = _project(tmp_path, review={"host": "cursor"})
     import shutil
-    shutil.rmtree(p / ".git")                      # a checkout with no commit cannot be bound
-    subprocess.run(["git", "init", "-q", str(p)], check=True)
-    subprocess.run(["git", "-C", str(p), "config", "--local", "sigma.allowRepositoryShellCommands", "true"],
-                   check=True)
-    reviewer_script(p, APPROVE)
+    shutil.rmtree(p / ".git")
     assert run_reviewer(p).returncode == 1
     r = record_review(p)
-    assert r.returncode == 2 and "content_unbound" in r.stderr
+    assert r.returncode == 2 and "content_unbound" in r.stderr and "not a git checkout" in r.stderr
+
+
+@pytest.mark.parametrize("case", ["nested_repo", "broken_symlink", "newline_name", "no_commit"])
+def test_ordinary_checkouts_bind_instead_of_stranding(tmp_path, case):
+    p = _project(tmp_path)
+    if case == "nested_repo":
+        n = p / "vendor"; n.mkdir()
+        subprocess.run(["git", "init", "-q", str(n)], check=True)
+        (n / "f").write_text("1"); subprocess.run(["git", "-C", str(n), "add", "f"], check=True)
+        subprocess.run(["git", "-C", str(n), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x"], check=True)
+    elif case == "broken_symlink":
+        (p / "dangling").symlink_to("/nonexistent/target")
+    elif case == "newline_name":
+        (p / "a\nb.txt").write_text("x")
+    else:
+        import shutil
+        shutil.rmtree(p / ".git")
+        subprocess.run(["git", "init", "-q", str(p)], check=True)
+        subprocess.run(["git", "-C", str(p), "config", "--local", "sigma.allowRepositoryShellCommands", "true"], check=True)
+    reviewer_script(p, APPROVE)
+    r = run_reviewer(p)
+    assert r.returncode == 0, (case, r.stderr)
+    assert record_review(p).returncode == 0
+    # and the binding still bites on a change to the thing that used to strand
+    if case == "nested_repo":
+        subprocess.run(["git", "-C", str(p / "vendor"), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                        "--allow-empty", "-m", "y"], check=True)
+    elif case == "broken_symlink":
+        (p / "dangling").unlink(); (p / "dangling").symlink_to("/other")
+    elif case == "newline_name":
+        (p / "a\nb.txt").write_text("changed")
+    else:
+        (p / "code.py").write_text("changed\n")
+    assert record_review(p).returncode == 2
+
+
+def test_too_many_untracked_files_fails_closed_naming_that_cause(tmp_path, monkeypatch):
+    p = _project(tmp_path)
+    for i in range(4):
+        (p / ("u%d" % i)).write_text("x")
+    rv = _rv()
+    monkeypatch.setattr(rv, "_MAX_UNTRACKED", 3)
+    reviewer_script(p, APPROVE)
+    assert rv.run_review(str(p / ".sdlc"), str(p / "brief.md"), [str(p / "scratch")], goal=GOAL, phase="review") == 1
+    r = record_review(p)
+    assert r.returncode == 2 and "untracked" in r.stderr and "content_unbound" in r.stderr
+    assert "Park the goal" not in r.stderr          # a checkout problem is not a reviewer failure
+
+
+def test_the_diff_is_streamed_not_buffered(tmp_path):
+    import tracemalloc
+    p = _project(tmp_path)
+    (p / "code.py").write_bytes(os.urandom(30 * 1024 * 1024))
+    rv = _rv()
+    tracemalloc.start()
+    key, cause = rv._content_key(str(p / ".sdlc"), GOAL)
+    peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    assert key and cause is None
+    assert peak < 12 * 1024 * 1024, peak
+
+
+def test_a_slow_or_huge_diff_fails_closed_naming_the_diff(tmp_path, monkeypatch):
+    p = _project(tmp_path)
+    (p / "code.py").write_bytes(os.urandom(8 * 1024 * 1024))
+    rv = _rv()
+    monkeypatch.setattr(rv, "_KEY_SECONDS", 0.0001)
+    key, cause = rv._content_key(str(p / ".sdlc"), GOAL)
+    assert key is None and "diff too large or slow" in cause
+
+
+def test_a_reviewer_that_writes_into_the_checkout_says_a_rerun_usually_passes(tmp_path):
+    p = _project(tmp_path)
+    reviewer_script(p, "echo cache > %s/.reviewer-cache\n%s" % (p, APPROVE))
+    r = run_reviewer(p)
+    assert r.returncode == 1 and "re-run usually passes" in r.stderr
+    assert run_reviewer(p).returncode == 0                                # the file now exists in the pre-run key
 
 
 def test_a_plan_review_brief_cannot_stand_in_for_a_code_review(tmp_path):
@@ -378,3 +499,136 @@ def test_a_review_receipt_with_no_content_key_cannot_approve(tmp_path):
     got = json.loads(f.read_text()); got["content_key"] = None
     f.write_text(json.dumps(got))
     assert record_review(p).returncode == 2
+
+
+# ---- attack review of #1384 @9d7c29c --------------------------------------------------------------
+
+def test_a_failed_receipt_blocks_approval_even_when_the_route_later_resolves_inline(tmp_path, monkeypatch):
+    """D1: the owner ruling. The codex binary vanishes after the failed run, so resolve() says inline."""
+    bindir = _stub_host(tmp_path, monkeypatch, "codex", "exit 1\n")
+    p = _project(tmp_path, review={"host": "codex"})
+    assert run_reviewer(p).returncode == 1
+    bare = _without(bindir)
+    r = record_review(p, env=bare)
+    assert r.returncode == 2 and "FAILED" in r.stderr, (r.stdout, r.stderr)
+    (p / "brief.md").write_text(brief_text("plan-review"))
+    assert run_reviewer(p, phase="plan_review", write_brief=False).returncode == 1
+    r = record_plan(p, env=bare)
+    assert r.returncode == 2 and "FAILED" in r.stderr, (r.stdout, r.stderr)
+
+
+def test_a_configured_host_that_is_not_installed_refuses_approval(tmp_path):
+    p = _project(tmp_path, review={"host": "codex"})
+    r = record_review(p, env={**os.environ, "PATH": "/usr/bin:/bin"})
+    assert r.returncode == 2 and "configured" in r.stderr and "not installed" in r.stderr
+    r = record_plan(p, env={**os.environ, "PATH": "/usr/bin:/bin"})
+    assert r.returncode == 2 and "not installed" in r.stderr
+
+
+def test_a_machine_with_no_mechanism_and_nothing_configured_still_reviews_inline(tmp_path):
+    p = _project(tmp_path, review={})
+    r = record_review(p)
+    assert r.returncode == 0, r.stderr
+
+
+def test_independent_off_ignores_a_failed_receipt(tmp_path):
+    p = _project(tmp_path)
+    reviewer_script(p, FAILURES["nonzero_exit"]); run_reviewer(p)
+    cfg = json.loads((p / ".sdlc/config.json").read_text()); cfg["review"] = {"independent": False}
+    (p / ".sdlc/config.json").write_text(json.dumps(cfg))
+    assert record_review(p).returncode == 0
+
+
+def _generation(d, goal="2577"):
+    root = pathlib.Path(d) / "state"; gen = root / "review-generations" / "gen"; gen.mkdir(parents=True)
+    (gen / "brief.md").write_text("brief")
+    manifest = root / "manifest.json"
+    manifest.write_text(json.dumps({"generation_id": "gen", "goal": goal, "brief": "review-generations/gen/brief.md",
+                                    "brief_sha256": hashlib.sha256(b"brief").hexdigest()}))
+    resolution = gen / "resolution.json"
+    resolution.write_text(json.dumps(_rv().resolve(d)))
+    return manifest, resolution
+
+
+def _work():
+    spec = importlib.util.spec_from_file_location("work_f02", S / "work.py")
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+
+
+def test_the_pr_review_inline_branch_refuses_a_degraded_route_and_a_failed_receipt(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    p = _project(tmp_path, review={"host": "codex"})
+    d = str(p / ".sdlc")
+    manifest, resolution = _generation(d)
+    w = _work()
+    assert json.loads(resolution.read_text())["mechanism"] == "inline"
+    with pytest.raises(ValueError, match="not installed"):
+        w.run_resolved_review(d, "2577", str(manifest), str(resolution), verdict="approve", reason="self")
+    # a plain machine with a FAILED receipt for the goal
+    q = tmp_path / "q"; q.mkdir()
+    p2 = _project(q, review={})
+    d2 = str(p2 / ".sdlc")
+    _rv()._write_receipt(d2, "2577", "review", outcome="failed", failure="nonzero_exit")
+    manifest, resolution = _generation(d2)
+    with pytest.raises(ValueError, match="FAILED"):
+        w.run_resolved_review(d2, "2577", str(manifest), str(resolution), verdict="approve", reason="self")
+
+
+def test_lone_verdict_is_none_unless_exactly_one_verdict_is_printed():
+    rv = _rv()
+    assert rv.lone_verdict("x\nVERDICT: approve\n") == "approve"
+    for out in ("VERDICT: approve\nVERDICT: block\n", "VERDICT: block\nVERDICT: approve\n", "no verdict here"):
+        assert rv.lone_verdict(out) is None, out
+
+
+@pytest.mark.parametrize("order", ["approve_first", "block_first"])
+def test_a_reviewer_printing_both_verdicts_cannot_be_approved(tmp_path, order):
+    p = _project(tmp_path)
+    lines = ["VERDICT: approve", "VERDICT: block"]
+    reviewer_script(p, "".join("echo '%s'\n" % x for x in (lines if order == "approve_first" else lines[::-1])))
+    assert run_reviewer(p).returncode == 0
+    got = json.loads((p / ".sdlc/state/reviewer-runs/0001-x.review.json").read_text())
+    assert got["verdict"] is None
+    assert record_review(p).returncode == 2
+
+
+def test_a_later_failed_run_retracts_the_earlier_approving_row_in_the_phase_record(tmp_path):
+    p = _project(tmp_path)
+    reviewer_script(p, APPROVE); run_reviewer(p)
+    assert record_review(p).returncode == 0
+    for verb, extra in (("start", ["--model", "sonnet"]), ("end", [])):
+        subprocess.run([sys.executable, str(S / "phase_report.py"), verb, ".sdlc", GOAL, "review", *extra],
+                       cwd=p, capture_output=True, text=True, check=True)
+    spec = importlib.util.spec_from_file_location("pg_f02", S / "phase_gate.py")
+    pg = importlib.util.module_from_spec(spec); spec.loader.exec_module(pg)
+    cfg = json.loads((p / ".sdlc/config.json").read_text())
+    def row():
+        return next(r for r in pg.status(str(p / ".sdlc"), cfg, GOAL)["rows"] if r[0] == "review")
+    assert "reviewer failed" not in row()[2]
+    reviewer_script(p, FAILURES["nonzero_exit"]); run_reviewer(p)
+    name, ok, detail, fix = row()
+    assert ok is False and "independent reviewer failed" in detail and "reviewer_down" in fix
+
+
+def test_the_repro_host_codex_missing_from_path_refuses_with_and_without_a_receipt(tmp_path, monkeypatch):
+    """Coordinator's exact repro: review.host=codex, codex gone from PATH, (a) failed receipt, (b) no receipt."""
+    bindir = _stub_host(tmp_path, monkeypatch, "codex", "exit 1\n")
+    p = _project(tmp_path, review={"host": "codex"})
+    bare = _without(bindir)
+    r = record_review(p, env=bare)                                   # (b) no receipt at all
+    assert r.returncode == 2 and "not installed" in r.stderr, (r.stdout, r.stderr)
+    assert run_reviewer(p).returncode == 1                           # (a) a failed receipt
+    r = record_review(p, env=bare)
+    assert r.returncode == 2 and "FAILED" in r.stderr
+
+
+def test_the_decision_is_made_from_config_not_from_a_flag(tmp_path):
+    rv = _rv()
+    inline = {"mechanism": "inline"}
+    for review, expect in (({"host": "codex"}, True), ({"host": "cursor"}, True), ({"host": "claude"}, True),
+                           ({"host": "command"}, True), ({"host": "bogus"}, True),
+                           ({"command": "sh x"}, True),                       # auto + a command configured
+                           ({"host": "inline"}, False), ({}, False), ({"host": "auto"}, False)):
+        assert rv.configured_reviewer_unavailable({"review": review}, inline) is expect, review
+    assert rv.configured_reviewer_unavailable({"review": {"host": "codex"}}, {"mechanism": "process"}) is False
+    assert rv.configured_reviewer_unavailable({"review": {"host": "codex"}}, {"mechanism": "subagent"}) is False

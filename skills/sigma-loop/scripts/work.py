@@ -814,6 +814,9 @@ def run_resolved_review(sdlc_dir, goal, manifest_path, resolution_path, verdict=
         route = _load("reviewer").resolve(sdlc_dir)
         if route.get("mechanism") != "inline" or resolution.get("host") != route.get("host"):
             raise ValueError("reviewer route is not inline; resolve a fresh review generation")
+        refusal = _load("reviewer").inline_review_refusal(sdlc_dir, goal, route)
+        if refusal:
+            raise ValueError(refusal)
         if verdict not in ("approve", "block", "unblock") or not isinstance(reason, str) or not reason.strip():
             raise ValueError("the inline route needs --verdict approve|block|unblock and a --reason")
     elif mechanism in ("process", "command"):
