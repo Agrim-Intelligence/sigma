@@ -97,8 +97,8 @@ Then repeat until the helper says stop:
    Every review gate (plan-review, pre-PR review, post-PR review at step 6) is asked to run as a
    **fresh subagent that never saw the maker's context**, given the PROJECT: `review_context.py brief .sdlc
    "$goal" --for plan-review|code-review|pr-review [--artifact <path|PR#>] >
-   "/tmp/brief-$(basename "$goal" .md).md"` writes the pack to that file; hand over **only that**.
-   No subagents is **not** a degradation: use what `reviewer.py resolve .sdlc` names. Only `inline` reviews inline, and says so. A failed `process`/`command` reviewer never approves: park (`reviewer_down`).
+   "/tmp/brief-$(basename "$goal" .md).md"` writes the pack there; hand over **only that**.
+   No subagents is **not** a degradation: use what `reviewer.py resolve` names. Only `inline` reviews inline. A failed `process`/`command` reviewer never approves: park (`reviewer_down`), or the owner's `accept-inline` (audit trail).
    `work.py record-plan-review` records a plan-review verdict against the file's `Plan sha256:`.
 
    **No phase subagent commits — only `work.py commit` does, once, at step 6.** This binds every

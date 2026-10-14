@@ -550,11 +550,11 @@ def test_independent_off_ignores_a_failed_receipt(tmp_path):
     assert record_review(p).returncode == 0
 
 
-def _generation(d, goal="2577"):
-    root = pathlib.Path(d) / "state"; gen = root / "review-generations" / "gen"; gen.mkdir(parents=True)
+def _generation(d, goal="2577", name="gen"):
+    root = pathlib.Path(d) / "state"; gen = root / "review-generations" / name; gen.mkdir(parents=True)
     (gen / "brief.md").write_text("brief")
-    manifest = root / "manifest.json"
-    manifest.write_text(json.dumps({"generation_id": "gen", "goal": goal, "brief": "review-generations/gen/brief.md",
+    manifest = root / ("manifest-%s.json" % name)
+    manifest.write_text(json.dumps({"generation_id": name, "goal": goal, "brief": "review-generations/%s/brief.md" % name,
                                     "brief_sha256": hashlib.sha256(b"brief").hexdigest()}))
     resolution = gen / "resolution.json"
     resolution.write_text(json.dumps(_rv().resolve(d)))
@@ -862,6 +862,8 @@ def _failed_codex(tmp_path, monkeypatch):
 
 
 def test_lever_subagent_route_is_not_blocked_by_an_old_process_failure(tmp_path, monkeypatch):
+    """The old process failure does not apply to the subagent route; its own proof does: after a failure that
+    proof must be a transcript-backed agent id (an unverifiable one is refused)."""
     p, bindir = _failed_codex(tmp_path, monkeypatch)
     _config_host(p, "claude")
     env = {**_without(bindir), "CLAUDECODE": "1"}
@@ -869,6 +871,10 @@ def test_lever_subagent_route_is_not_blocked_by_an_old_process_failure(tmp_path,
     r = work(p, "record-review", ".sdlc", GOAL, "--verdict", "APPROVE", env=env)
     assert r.returncode == 2 and "--agent-id" in r.stderr and "FAILED" not in r.stderr      # its own proof applies
     r = work(p, "record-review", ".sdlc", GOAL, "--verdict", "APPROVE", "--agent-id", "rev9", env=env)
+    assert r.returncode == 2 and "transcript" in r.stderr                                   # unverifiable after a failure
+    home = _transcript_home(tmp_path)
+    env["HOME"] = str(home); env["CLAUDE_CODE_SESSION_ID"] = "sess1"
+    r = work(p, "record-review", ".sdlc", GOAL, "--verdict", "APPROVE", "--agent-id", "real", env=env)
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout)["route"] == "subagent"
 
@@ -947,3 +953,431 @@ def test_a_receipt_with_no_route_still_applies_except_on_the_subagent_route(tmp_
     monkeypatch.setenv("CLAUDECODE", "1")
     _config_host(p, "claude")
     assert rv.failed_receipt(str(p / ".sdlc"), GOAL, "review") is None
+
+
+# ---- third attack on #1384 @947b0c4 ----------------------------------------------------------------
+
+ACCEPT = lambda p, phase="review", reason="owner chose inline review": subprocess.run(
+    [sys.executable, str(S / "reviewer.py"), "accept-inline", ".sdlc", "--goal", GOAL, "--phase", phase,
+     "--reason", reason], cwd=p, capture_output=True, text=True)
+
+
+def test_pr_review_path_leaves_a_receipt_and_its_inline_branch_refuses_after_a_failure(tmp_path, monkeypatch):
+    """Exact sequence: failing codex stub -> the PR path is refused AND leaves a receipt; codex removed and
+    host set inline -> the PR path's inline branch still refuses; accept-inline lets it through."""
+    bindir = _stub_host(tmp_path, monkeypatch, "codex", "exit 1\n")
+    p = _project(tmp_path, review={"host": "codex"})
+    d = str(p / ".sdlc")
+    w = _work()
+    manifest, resolution = _generation(d, name="g1")
+    with pytest.raises(ValueError, match="resolved reviewer failed"):
+        w.run_resolved_review(d, "2577", str(manifest), str(resolution))
+    assert (p / ".sdlc/state/reviewer-runs/2577.review.json").exists()
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    _config_host(p, "inline")
+    manifest, resolution = _generation(d, name="g2")
+    with pytest.raises(ValueError, match="accept-inline"):
+        w.run_resolved_review(d, "2577", str(manifest), str(resolution), verdict="approve", reason="self")
+    got = subprocess.run([sys.executable, str(S / "reviewer.py"), "accept-inline", ".sdlc", "--goal", "2577",
+                          "--phase", "review", "--reason", "owner chose inline"], cwd=p, capture_output=True, text=True)
+    assert got.returncode == 0, got.stderr
+    manifest, resolution = _generation(d, name="g3")
+    assert w.run_resolved_review(d, "2577", str(manifest), str(resolution), verdict="approve",
+                                 reason="self")["verdict"] == "approve"
+
+
+def test_record_subagent_review_needs_the_same_agent_id_proof_as_record_review(tmp_path, monkeypatch):
+    p = _project(tmp_path, review={"host": "claude"})
+    monkeypatch.setenv("CLAUDECODE", "1")
+    d = str(p / ".sdlc")
+    manifest, resolution = _generation(d, goal=GOAL, name="s1")
+    args = ["record-subagent-review", ".sdlc", GOAL, "--manifest", str(manifest), "--resolution", str(resolution),
+            "--verdict", "approve", "--reason", "clean"]
+    env = {**os.environ}
+    env.pop("CLAUDE_CODE_SESSION_ID", None)
+    r = work(p, *args, env=env)
+    assert r.returncode == 2 and "--agent-id" in r.stderr
+    r = work(p, *args, "--agent-id", "rev9", env=env)
+    assert r.returncode == 0, r.stderr
+
+
+@pytest.mark.parametrize("sibling", ["record-review", "record-plan-review", "record-subagent-review", "pr-inline"])
+def test_every_sibling_refuses_the_same_laundering_attack_alike(tmp_path, monkeypatch, sibling):
+    """SAME attack for every sibling: a failed independent run, then the route flips to inline by a config
+    edit. Each refuses; accept-inline then clears exactly the phase it was run for."""
+    bindir = _stub_host(tmp_path, monkeypatch, "codex", "exit 1\n")
+    p = _project(tmp_path, review={"host": "codex"})
+    goal = "2577" if sibling == "pr-inline" else GOAL
+    phase = "plan_review" if sibling == "record-plan-review" else "review"
+    if phase == "plan_review":
+        (p / "brief.md").write_text(brief_text("plan-review"))
+    got = subprocess.run([sys.executable, str(S / "reviewer.py"), "run", ".sdlc", "brief.md", "--scratch", "scratch",
+                          "--goal", goal, "--phase", phase], cwd=p, capture_output=True, text=True)
+    assert got.returncode == 1
+    _config_host(p, "inline")
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    d = str(p / ".sdlc")
+
+    def attempt():
+        if sibling == "record-review":
+            r = record_review(p, env=os.environ.copy()); return r.returncode, r.stderr
+        if sibling == "record-plan-review":
+            r = record_plan(p, env=os.environ.copy()); return r.returncode, r.stderr
+        if sibling == "record-subagent-review":
+            manifest, resolution = _generation(d, goal=goal, name="x%d" % attempt.n); attempt.n += 1
+            r = work(p, "record-subagent-review", ".sdlc", goal, "--manifest", str(manifest), "--resolution",
+                     str(resolution), "--verdict", "approve", "--reason", "r", "--agent-id", "a1", env=os.environ.copy())
+            return r.returncode, r.stderr
+        manifest, resolution = _generation(d, goal=goal, name="x%d" % attempt.n); attempt.n += 1
+        try:
+            _work().run_resolved_review(d, goal, str(manifest), str(resolution), verdict="approve", reason="r")
+            return 0, ""
+        except ValueError as exc:
+            return 2, str(exc)
+    attempt.n = 0
+    code, err = attempt()
+    assert code == 2, (sibling, err)
+    if sibling != "record-subagent-review":              # that verb needs the subagent route outright
+        assert "accept-inline" in err, (sibling, err)
+        assert ACCEPT(p, phase).returncode == 0 if goal == GOAL else subprocess.run(
+            [sys.executable, str(S / "reviewer.py"), "accept-inline", ".sdlc", "--goal", goal, "--phase", phase,
+             "--reason", "owner"], cwd=p, capture_output=True, text=True).returncode == 0
+        code, err = attempt()
+        assert code == 0, (sibling, err)
+
+
+def test_accept_inline_is_stamped_on_the_verdict_row_and_survives_finish(tmp_path, monkeypatch):
+    p, bindir = _failed_codex(tmp_path, monkeypatch)
+    _config_host(p, "inline")
+    assert ACCEPT(p, reason="owner  chose\x07 inline\nreview").returncode == 0
+    r = record_review(p)
+    assert r.returncode == 0, r.stderr
+    row = json.loads(r.stdout)
+    assert row["waiver"] == "accept-inline" and row["waiver_reason"] == "owner chose inline review"
+    _rv().clear_receipts(str(p / ".sdlc"), GOAL)                       # what work.py finish does
+    assert "waiver" in json.loads([x for x in (p / ".sdlc/state/log/0001-x.jsonl").read_text().splitlines()
+                                   if '"verdict"' in x][-1])
+    for verb, extra in (("start", ["--model", "sonnet"]), ("end", [])):
+        subprocess.run([sys.executable, str(S / "phase_report.py"), verb, ".sdlc", GOAL, "review", *extra],
+                       cwd=p, capture_output=True, text=True, check=True)
+    spec = importlib.util.spec_from_file_location("pg_f02b", S / "phase_gate.py")
+    pg = importlib.util.module_from_spec(spec); spec.loader.exec_module(pg)
+    cfg = json.loads((p / ".sdlc/config.json").read_text())
+    notes = " ".join(pg.status(str(p / ".sdlc"), cfg, GOAL)["notes"])
+    assert "INLINE by owner decision: owner chose inline review" in notes and "cannot spawn" not in notes
+
+
+def test_accept_inline_reason_is_bounded_and_a_repeat_is_refused(tmp_path, monkeypatch):
+    p, bindir = _failed_codex(tmp_path, monkeypatch)
+    _config_host(p, "inline")
+    r = ACCEPT(p, reason="x" * 501)
+    assert r.returncode == 2 and "500" in r.stderr
+    assert ACCEPT(p).returncode == 0
+    r = ACCEPT(p, reason="a different reason")
+    assert r.returncode == 2 and "already" in r.stderr
+    receipt = json.loads((p / ".sdlc/state/reviewer-runs/0001-x.review.json").read_text())
+    assert receipt["reason"] == "owner chose inline review"
+
+
+def test_a_waiver_is_bound_to_the_bytes_it_was_given_for(tmp_path, monkeypatch):
+    p, bindir = _failed_codex(tmp_path, monkeypatch)
+    _config_host(p, "inline")
+    assert ACCEPT(p).returncode == 0
+    (p / "code.py").write_text("edited after the owner's choice\n")
+    r = record_review(p)
+    assert r.returncode == 2 and "accept-inline" in r.stderr
+
+
+def test_a_plan_review_waiver_is_bound_to_the_plan_it_was_given_for(tmp_path, monkeypatch):
+    bindir = _stub_host(tmp_path, monkeypatch, "codex", "exit 1\n")
+    p = _project(tmp_path, review={"host": "codex"})
+    (p / "brief.md").write_text(brief_text("plan-review"))
+    got = subprocess.run([sys.executable, str(S / "reviewer.py"), "run", ".sdlc", "brief.md", "--scratch", "scratch",
+                          "--goal", GOAL, "--phase", "plan_review"], cwd=p, capture_output=True, text=True)
+    assert got.returncode == 1
+    _config_host(p, "inline")
+    assert ACCEPT(p, "plan_review").returncode == 0
+    rv = _rv()
+    assert rv.independent_run_refusal(str(p / ".sdlc"), GOAL, "plan_review", SHA) is None
+    assert "accept-inline" in rv.independent_run_refusal(str(p / ".sdlc"), GOAL, "plan_review", "f" * 64)
+
+
+def test_docs_and_skills_name_accept_inline_as_an_owner_audit_trail():
+    root = pathlib.Path(__file__).resolve().parent.parent
+    for rel in ("skills/sigma-review/SKILL.md", "skills/sigma-plan-review/SKILL.md",
+                "skills/sigma-loop/references/running.md", "skills/sigma-goal-review/references/adjudication.md",
+                "skills/sigma-loop/SKILL.md", "skills/sigma-loop/references/landing.md", "docs/label-model.md"):
+        text = (root / rel).read_text()
+        assert "accept-inline" in text, rel
+        assert "audit trail" in text or "not an authority check" in text, rel
+
+
+def test_the_refusal_says_accept_inline_is_an_audit_trail_the_owner_runs(tmp_path, monkeypatch):
+    p, bindir = _failed_codex(tmp_path, monkeypatch)
+    _config_host(p, "inline")
+    r = record_review(p)
+    assert "audit trail" in r.stderr and "owner" in r.stderr and "not the maker" in r.stderr
+
+
+# ---- the key must not read through symlinks, nor block on a FIFO ------------------------------------
+
+def _outside(tmp_path, name="canary"):
+    d = tmp_path.parent / ("out-%s-%s" % (name, tmp_path.name)); d.mkdir(exist_ok=True)
+    (d / "code.py").write_text("OUTSIDE BYTES\n")
+    return d
+
+
+def test_a_tracked_directory_replaced_by_a_symlink_is_refused_not_read_through(tmp_path):
+    p = _project(tmp_path)
+    (p / "pkg").mkdir(); (p / "pkg" / "code.py").write_text("in\n")
+    subprocess.run(["git", "-C", str(p), "add", "pkg"], check=True)
+    subprocess.run(["git", "-C", str(p), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "pkg"], check=True)
+    import shutil
+    shutil.rmtree(p / "pkg"); (p / "pkg").symlink_to(_outside(tmp_path))
+    key, cause = _key(p)
+    assert key is None and "symlink" in cause
+
+
+def test_a_regular_file_swapped_for_a_symlink_after_lstat_is_not_followed(tmp_path, monkeypatch):
+    p = _project(tmp_path)
+    out = _outside(tmp_path) / "code.py"
+    rv = _rv()
+    real = rv.os.lstat
+    swapped = []
+    def lstat(path, *a, **k):
+        got = real(path, *a, **k)
+        if str(path).endswith("/code.py") and not swapped and str(p) in str(path):
+            swapped.append(1); os.unlink(path); os.symlink(out, path)
+        return got
+    monkeypatch.setattr(rv.os, "lstat", lstat)
+    key, cause = rv._content_key(str(p / ".sdlc"), GOAL)
+    assert swapped and key is None, (key, cause)
+
+
+def test_a_regular_file_swapped_for_a_fifo_after_lstat_does_not_hang(tmp_path, monkeypatch):
+    import signal
+    p = _project(tmp_path)
+    rv = _rv()
+    real = rv.os.lstat
+    swapped = []
+    def lstat(path, *a, **k):
+        got = real(path, *a, **k)
+        if str(path).endswith("/code.py") and not swapped and str(p) in str(path):
+            swapped.append(1); os.unlink(path); os.mkfifo(path)
+        return got
+    monkeypatch.setattr(rv.os, "lstat", lstat)
+    def alarm(*_):
+        raise AssertionError("the key blocked on a FIFO")
+    signal.signal(signal.SIGALRM, alarm); signal.alarm(10)
+    try:
+        key, cause = rv._content_key(str(p / ".sdlc"), GOAL)
+    finally:
+        signal.alarm(0)
+    assert swapped and key is None
+
+
+def test_the_deadline_is_one_overall_budget_even_for_symlinks_and_absent_paths(tmp_path, monkeypatch):
+    p = _project(tmp_path)
+    (p / "code.py").unlink(); (p / "brief.md").unlink()          # only symlinks and an absent tracked file remain
+    import shutil
+    shutil.rmtree(p / ".sdlc")                                   # the key needs no config; leave no regular file
+    for i in range(30):
+        (p / ("ln%d" % i)).symlink_to("target")
+    rv = _rv()
+    monkeypatch.setattr(rv, "_KEY_SECONDS", -1.0)
+    key, cause = rv._content_key(str(p / ".sdlc"), GOAL)
+    assert key is None and "too large or slow" in cause
+
+
+# ---- final verification round ----------------------------------------------------------------------
+
+def _nested_git(p, name="nested"):
+    n = p / name; n.mkdir()
+    subprocess.run(["git", "init", "-q", str(n)], check=True)
+    (n / "f").write_text("x")
+    subprocess.run(["git", "-C", str(n), "-c", "user.name=t", "-c", "user.email=t@t", "add", "f"], check=True)
+    subprocess.run(["git", "-C", str(n), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "m"], check=True)
+    return n
+
+
+def test_a_symlinked_ref_directory_inside_a_nested_dot_git_is_refused_not_read(tmp_path):
+    import shutil
+    p = _project(tmp_path)
+    n = _nested_git(p)
+    out = tmp_path.parent / ("ref-out-%s" % tmp_path.name); out.mkdir()
+    (out / "canary").write_text("OUTSIDE\n")
+    shutil.rmtree(n / ".git/refs/heads"); (n / ".git/refs/heads").symlink_to(out)
+    (n / ".git/HEAD").write_text("ref: refs/heads/canary\n")
+    key, cause = _key(p)
+    assert key is None and "symlink" in cause
+
+
+@pytest.mark.parametrize("ref", [b"refs/../../x", b"/etc/passwd", b"heads/x", b"refs//x", b"refs/heads/..", b"refs\\x", b"refs/a\0b"])
+def test_an_unusable_ref_name_is_refused_before_it_is_read(tmp_path, ref):
+    """git itself rejects most of these HEADs (it then lists the files individually), so the guard is
+    exercised directly: it is the second wall behind git's own."""
+    rv = _rv()
+    gitdir = tmp_path / "g"; gitdir.mkdir()
+    with pytest.raises(rv._Unbound, match="unusable ref"):
+        rv._ref_path_is_clean(str(gitdir), ref)
+
+
+def test_a_nested_head_that_is_a_fifo_or_a_link_is_refused_without_blocking(tmp_path):
+    import signal
+    rv = _rv()
+    fifo = tmp_path / "HEAD-fifo"; os.mkfifo(fifo)
+    link = tmp_path / "HEAD-link"; link.symlink_to(tmp_path / "elsewhere")
+    deadline = time.monotonic() + 60
+
+    def alarm(*_):
+        raise AssertionError("_read_head blocked or followed a link")
+    signal.signal(signal.SIGALRM, alarm); signal.alarm(10)
+    try:
+        for path in (fifo, link):
+            with pytest.raises(rv._Unbound, match="regular file"):
+                rv._read_head(str(path), deadline)
+    finally:
+        signal.alarm(0)
+
+
+def test_a_fifo_at_a_nested_head_is_bounded_end_to_end(tmp_path, monkeypatch):
+    """Here git itself blocks reading the FIFO; the subprocess timeout bounds it and the key fails closed."""
+    import signal
+    p = _project(tmp_path)
+    n = _nested_git(p)
+    os.unlink(n / ".git/HEAD"); os.mkfifo(n / ".git/HEAD")
+    rv = _rv()
+    monkeypatch.setattr(rv, "_KEY_SECONDS", 2.0)
+
+    def alarm(*_):
+        raise AssertionError("the key blocked on a FIFO at .git/HEAD")
+    signal.signal(signal.SIGALRM, alarm); signal.alarm(30)
+    try:
+        key, cause = rv._content_key(str(p / ".sdlc"), GOAL)
+    finally:
+        signal.alarm(0)
+    assert key is None and cause
+
+
+def _fail_codex_then_claude(tmp_path, monkeypatch, phase):
+    bindir = _stub_host(tmp_path, monkeypatch, "codex", "exit 1\n")
+    p = _project(tmp_path, review={"host": "codex"})
+    if phase == "plan_review":
+        (p / "brief.md").write_text(brief_text("plan-review"))
+    got = subprocess.run([sys.executable, str(S / "reviewer.py"), "run", ".sdlc", "brief.md", "--scratch", "scratch",
+                          "--goal", GOAL, "--phase", phase], cwd=p, capture_output=True, text=True)
+    assert got.returncode == 1
+    _config_host(p, "claude")
+    return p, bindir
+
+
+def _claude_env(bindir, home=None, session=None):
+    env = {**_without(bindir), "CLAUDECODE": "1"}
+    env.pop("CLAUDE_CODE_SESSION_ID", None); env.pop("CLAUDE_SESSION_ID", None)
+    if home:
+        env["HOME"] = str(home); env["CLAUDE_CODE_SESSION_ID"] = session
+    return env
+
+
+def _transcript_home(tmp_path):
+    home = tmp_path / "home"
+    (home / ".claude/projects/proj/sess1/subagents").mkdir(parents=True)
+    (home / ".claude/projects/proj/sess1/subagents/agent-real.jsonl").write_text("{}\n")
+    return home
+
+
+@pytest.mark.parametrize("verb", ["record-review", "record-plan-review", "record-subagent-review"])
+def test_after_a_failed_run_a_subagent_approval_needs_a_transcript_backed_agent_id(tmp_path, monkeypatch, verb):
+    phase = "plan_review" if verb == "record-plan-review" else "review"
+    p, bindir = _fail_codex_then_claude(tmp_path, monkeypatch, phase)
+    d = str(p / ".sdlc")
+
+    def attempt(agent, env, n):
+        if verb == "record-review":
+            return work(p, verb, ".sdlc", GOAL, "--verdict", "APPROVE", "--agent-id", agent, env=env)
+        if verb == "record-plan-review":
+            return work(p, verb, ".sdlc", GOAL, "--verdict", "SOUND", "--plan-sha256", SHA, "--agent-id", agent, env=env)
+        monkeypatch.setenv("CLAUDECODE", "1")                       # so the resolution says `subagent`
+        manifest, resolution = _generation(d, goal=GOAL, name="m%d" % n)
+        return work(p, verb, ".sdlc", GOAL, "--manifest", str(manifest), "--resolution", str(resolution),
+                    "--verdict", "approve", "--reason", "r", "--agent-id", agent, env=env)
+    r = attempt("fake1", _claude_env(bindir), 1)                       # no readable store: only "unverified"
+    assert r.returncode == 2 and "transcript" in r.stderr and "accept-inline" in r.stderr, (verb, r.stderr)
+    home = _transcript_home(tmp_path)
+    r = attempt("ghost", _claude_env(bindir, home, "sess1"), 2)         # a readable store with no such agent
+    assert r.returncode == 2
+    r = attempt("real", _claude_env(bindir, home, "sess1"), 3)          # a real transcript-backed id
+    assert r.returncode == 0, (verb, r.stderr)
+
+
+def test_with_no_prior_failure_an_unverified_subagent_id_is_still_accepted(tmp_path):
+    p = _project(tmp_path, review={"host": "claude"})
+    env = _claude_env(tmp_path / "nobin")
+    r = work(p, "record-review", ".sdlc", GOAL, "--verdict", "APPROVE", "--agent-id", "fake1", env=env)
+    assert r.returncode == 0, r.stderr
+
+
+def test_the_read_loop_budget_check_stops_a_file_that_becomes_too_slow_mid_read(tmp_path, monkeypatch):
+    import shutil
+    p = _project(tmp_path)
+    shutil.rmtree(p / ".sdlc"); (p / "brief.md").unlink(missing_ok=True)
+    (p / "code.py").write_bytes(os.urandom(3 * 1024 * 1024))             # the only record, three 1 MB chunks
+    rv = _rv()
+    clock = [0.0]
+    real_read = rv.os.read
+    monkeypatch.setattr(rv.time, "monotonic", lambda: clock[0])
+    def read(fd, n):
+        got = real_read(fd, n)
+        if n == 1 << 20:                                                # only the key's own file reads (not git's pipes)
+            clock[0] += 1000.0                                          # time passes while reading
+        return got
+    monkeypatch.setattr(rv.os, "read", read)
+    key, cause = rv._content_key(str(p / ".sdlc"), GOAL)
+    assert key is None and "too large or slow" in cause
+
+
+def test_the_pr_review_result_carries_the_waiver_and_its_reason(tmp_path, monkeypatch):
+    bindir = _stub_host(tmp_path, monkeypatch, "codex", "exit 1\n")
+    p = _project(tmp_path, review={"host": "codex"})
+    d = str(p / ".sdlc")
+    w = _work()
+    manifest, resolution = _generation(d, name="w1")
+    with pytest.raises(ValueError):
+        w.run_resolved_review(d, "2577", str(manifest), str(resolution))
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    _config_host(p, "inline")
+    got = subprocess.run([sys.executable, str(S / "reviewer.py"), "accept-inline", ".sdlc", "--goal", "2577",
+                          "--phase", "review", "--reason", "owner chose inline"], cwd=p, capture_output=True, text=True)
+    assert got.returncode == 0, got.stderr
+    manifest, resolution = _generation(d, name="w2")
+    out = w.run_resolved_review(d, "2577", str(manifest), str(resolution), verdict="approve", reason="self")
+    saved = json.loads(pathlib.Path(out["path"]).read_text())
+    assert saved["waiver"] == "accept-inline" and saved["waiver_reason"] == "owner chose inline"
+
+
+@pytest.mark.parametrize("swap", ["symlink", "fifo"])
+def test_a_nested_head_swapped_after_lstat_is_refused_not_followed_or_blocked_on(tmp_path, monkeypatch, swap):
+    import signal
+    rv = _rv()
+    head = tmp_path / "HEAD"; head.write_text("ref: refs/heads/main\n")
+    outside = tmp_path / "outside"; outside.write_text("OUTSIDE\n")
+    real = rv.os.lstat
+    done = []
+
+    def lstat(path, *a, **k):
+        got = real(path, *a, **k)
+        if str(path) == str(head) and not done:
+            done.append(1); os.unlink(path)
+            os.symlink(outside, path) if swap == "symlink" else os.mkfifo(path)
+        return got
+    monkeypatch.setattr(rv.os, "lstat", lstat)
+
+    def alarm(*_):
+        raise AssertionError("_read_head blocked on a FIFO")
+    signal.signal(signal.SIGALRM, alarm); signal.alarm(10)
+    try:
+        with pytest.raises(rv._Unbound):
+            rv._read_head(str(head), time.monotonic() + 60)
+    finally:
+        signal.alarm(0)
+    assert done
