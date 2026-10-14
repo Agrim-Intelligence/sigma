@@ -281,11 +281,11 @@ def test_filing_park_scope_exempts_only_that_issue():
 def test_filing_park_keeps_triage_reason_on_a_label_less_issue():
     """Real GitHubSource.park on an issue with no Sigma label: the triage text is kept, not replaced."""
     s = Stub()
-    s._offboard = lambda goal, comment: s.parks.append((goal, comment))
+    s._offboard = lambda goal, comment, **kw: s.parks.append((goal, comment))
     with sources.hsg.filing_park("7"):
         sources.GitHubSource.park(s, "7", "Parked at filing: cap\nsigma-qkind: needs_decision")
     assert len(s.parks) == 1 and "sigma-qkind: needs_decision" in s.parks[0][1] and "hard stop" not in s.parks[0][1]
     s2 = Stub()
-    s2._offboard = lambda goal, comment: s2.parks.append((goal, comment))
+    s2._offboard = lambda goal, comment, **kw: s2.parks.append((goal, comment))
     sources.GitHubSource.park(s2, "7", "x")
     assert "hard stop" in s2.parks[0][1]
