@@ -12,7 +12,7 @@ What changes by default after you update the plugin:
 
 - **The blocker priority rule is on.** `discovery.blocker_promotion.mode` now reads `always` when it is absent. In
   GitHub discovery mode a blocker's priority is never below the priority of what it blocks. The first reconcile tick
-  after the update prints one stderr line with the number of blockers it would raise, then raises them (raise-only,
+  after the update prints one stderr line with the number of blockers it found (it can read 0 when the board pass has already raised them), then raises them (raise-only,
   one comment each). Writes per tick are bounded to 10, so a repository with many violations is repaired over several
   ticks. Set `discovery.blocker_promotion.mode` to `off` to keep the old behaviour exactly. See
   [backlog.md](backlog.md) and [label-model.md](label-model.md).

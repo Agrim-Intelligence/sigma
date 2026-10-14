@@ -154,7 +154,7 @@ Housekeeping:
 - `records.pointer` (off by default; needs the ledger) writes one short pointer per decision to the team ledger,
   batched to `max_writes_per_day` (default 1) with `compact_after_days` (default 14) folding old pointers. A pointer
   carries only `id|kind|how`, never the record, so a lost pointer loses nothing.
-- `records.publish` (default `true` once records are on): a person-run unpark or rule approval **commits, never
+- `records.publish` (the config template sets it to `true`; a config that omits the key leaves it off): a person-run unpark or rule approval **commits, never
   pushes,** the records folder, the `autonomy` folder and the rulebook file, and nothing else. It skips goal
   worktrees, unit branches and a detached HEAD.
 

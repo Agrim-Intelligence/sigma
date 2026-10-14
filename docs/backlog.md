@@ -444,7 +444,7 @@ is byte-identical to a release without the feature: no read, no write, no state 
 shows no row. The older `"smart"` value is still accepted for the board pass only and is not the rule above.
 
 **Rollout.** On the first reconcile tick after an upgrade, the reconciler prints one stderr line saying how
-many blockers it would raise, then raises them; later ticks print nothing. The count is kept in a small
+many blockers it found (the count can read 0 when the board pass has already raised them in the same tick), then raises them; later ticks print nothing. The count is kept in a small
 state file under the state directory, and `/sigma-doctor` shows one row, flagged when violations persist
 for two reconcile intervals.
 
