@@ -76,7 +76,7 @@ HOOK_FACTS = (
      "mechanism": "denies a `gh issue create` (PreToolUse on Bash) that carries no `priority:P<n>` "
                   "label, so an issue is born ranked",
      "condition": "always on (no key) inside an adopted repo -- `.sdlc/config.json` at or above "
-                  "the project dir (#2737); inert elsewhere; fails open"},
+                  "the project dir (#2737); inert elsewhere; fails open (a broken `python3` prints a notice, repeated per event on a host that gives no session_id, #1282)"},
     {"id": "plan_gate.sh", "control": "Hard plan gate at edit", "blocks": True,
      "kind": "claude-hook", "hosts": "claude-code",
      "enabled_by": ("gates.hard_plan_gate.enabled",), "settings": (),
@@ -89,7 +89,7 @@ HOOK_FACTS = (
     {"id": "decision_gate.py", "control": "Decision registry invariants", "blocks": True,
      "kind": "claude-hook", "hosts": "claude-code", "enabled_by": (), "settings": (),
      "mechanism": "denies an edit (PreToolUse) that assigns a registered invariant a violating "
-                  "value; fails open on its own errors",
+                  "value; fails open on its own errors and, when `python3` is broken, with a notice (#1282; per session when the host passes a session_id, otherwise it can repeat per event)",
      "condition": "on once `/sigma-decide` writes `.sdlc/decisions.json` in an adopted repo -- "
                   "`.sdlc/config.json` present (#2737), so a repo holding only `decisions.json` is "
                   "not gated; `gates.decision_gate.enabled: false` turns it off. On every host, "

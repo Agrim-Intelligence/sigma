@@ -1370,6 +1370,15 @@ def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", 
               "plan": plan_rel, "plan_hash": sha,
               "reviewer_route": {key: route.get(key) for key in ("host", "mechanism", "verified")},
               "verdict": mapped}
+    # D2 F03 (owner ruling 2026-10-14): plan-review judges correctness alone when the north-star is
+    # `unreachable`, and that fact is RECORDED here, not only said in the reviewer's prose. Resolved
+    # from the goal's worktree when there is one (the reviewer's own vantage), else the project root.
+    # `present` / `absent` add nothing: the field exists only to carry the gap.
+    ns_state, ns_detail = _load("north_star").check(rec["worktree"] if rec and rec.get("worktree")
+                                                    else project_root(sdlc_dir))
+    if ns_state == "unreachable":
+        record["alignment"] = f"not-judged ({ns_detail})"
+        print(f"work: strategic alignment was NOT judged for {goal}: {ns_detail}", file=sys.stderr)
     # #684: the action-log row `phase_gate.py` reads (the one that works with `work.enabled` off), written
     # BEFORE any other record so a refusal (an unverifiable reviewer id, a missing id on the subagent
     # route) leaves nothing behind: `gates.plan_review` must never see a verdict the gate refused.
@@ -1391,7 +1400,8 @@ def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", 
             note += (" gates.plan_review is on, so `work.py pr` will refuse this goal unless the "
                      "verdict is recorded from the main checkout that ran `work.py start`.")
         print(note, file=sys.stderr)
-    mirror = {"why": reason} if reason else {}
+    why = "; ".join(x for x in (reason, record.get("alignment")) if x)
+    mirror = {"why": why} if why else {}
     ledger.safe_append(sdlc_dir, "gate", goal, config=config, stream=ledger.EVENTS,
                        gate="plan_review", verdict=mapped, **mirror)
     return {**record, "path": path}
@@ -1461,6 +1471,12 @@ def _run(cwd, argv):
         block = gh_session.proxy_session_block(detail)
         if block:
             detail = f"{block}\n(raw: {detail})" if detail else block
+        elif str(argv[0]) == _GH and detail:
+            # D7: a classified gh failure (auth, 404, 403 scope, rate limit, network) gains its fix
+            # AFTER gh's own text, so the raw reason, the argv prefix and `classify` are unchanged.
+            probe = RuntimeError(detail)
+            probe.hint = detail
+            detail = gh_api.with_remedy(probe, detail)
         raise RuntimeError(f"{' '.join(str(a) for a in argv)}: {detail}")
     return proc.stdout.strip()
 

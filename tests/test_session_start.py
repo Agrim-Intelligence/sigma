@@ -261,6 +261,55 @@ def test_fresh_watcher_is_silent(tmp_path):
     assert _run(_ledger(tmp_path / "fresh", heartbeat_age=60)) == ""
 
 
+# The hook keeps its OWN copy of the doctor's age rule (AGENTS.md, "Watch-loop timeouts and
+# session-start staleness").  Each clause of that copy -- the comparison, the 3-interval multiple,
+# the 180 s floor, the 900 s fallback for an unusable interval -- has its own boundary test below so
+# a break of ONE clause (and only the hook's copy) goes red.  tools/readiness/dead_vs_idle.py
+# --break-hook runs the same mutation against the real hook and the real watcher.
+
+def _warns(root, **kw):
+    out = _run(_ledger(root, **kw))
+    return bool(out) and "looks stale" in _context(out)
+
+
+def test_age_clause_stale_only_at_three_intervals(tmp_path):
+    """interval 900 -> stale_after 2700: 2000 s old is silent (a `1 x interval` multiple would warn),
+    3000 s old warns (a never-stale comparison or a `100 x interval` multiple would stay silent)."""
+    assert not _warns(tmp_path / "young", interval=900, heartbeat_age=2000)
+    assert _warns(tmp_path / "old", interval=900, heartbeat_age=3000)
+
+
+def test_age_clause_floor_of_180_seconds(tmp_path):
+    """interval 10 -> max(30, 180) = 180: 100 s old is silent (without the floor the bound is 30 s
+    and it would warn), 300 s old warns."""
+    assert not _warns(tmp_path / "young", interval=10, heartbeat_age=100)
+    assert _warns(tmp_path / "old", interval=10, heartbeat_age=300)
+
+
+def test_age_clause_unusable_interval_falls_back_to_900(tmp_path):
+    """A zero/negative interval uses 900 (stale_after 2700), not max(3 x -5, 180) = 180: 1000 s old
+    is silent, 3000 s old warns."""
+    for bad in (0, -5):
+        assert not _warns(tmp_path / f"young{bad}", interval=bad, heartbeat_age=1000), bad
+        assert _warns(tmp_path / f"old{bad}", interval=bad, heartbeat_age=3000), bad
+
+
+def test_hook_agrees_with_doctor_age_rule(tmp_path):
+    """Drift guard between the two copies: for a grid clear of every boundary, the hook warns
+    exactly when the doctor's ledger-watcher row says STALE."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "doctor_hook_parity", HOOK.parent.parent / "skills" / "sigma-doctor" / "scripts" / "doctor.py")
+    doctor = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor)
+    for n, (interval, age) in enumerate([(900, 2000), (900, 3000), (10, 100), (10, 300), (60, 100), (60, 300),
+                                         (300, 800), (300, 1000), (-5, 1000), (-5, 3000)]):
+        root = _ledger(tmp_path / f"c{n}", interval=interval, heartbeat_age=age)
+        cfg = json.loads((pathlib.Path(root) / ".sdlc" / "config.json").read_text())
+        row = doctor._ledger_watcher_state(pathlib.Path(root) / ".sdlc", cfg)
+        assert _warns(root, interval=interval, heartbeat_age=age) == row.startswith("STALE"), (interval, age, row)
+
+
 def test_ledger_disabled_is_silent(tmp_path):
     """Same control pattern: enabled=True with this heartbeat age warns (red today);
     enabled=False with the SAME stale heartbeat does not -- proving the gate, not an absent code
@@ -401,3 +450,22 @@ def test_kg_tier_does_not_double_fire_with_the_watcher_tier(tmp_path):
     ctx = _context(_run(project, PATH=_stub_builder_path(tmp_path)))
     assert "looks stale" in ctx
     assert "never been built" not in ctx
+
+
+# --- D2 F03: the hook announces an UNREACHABLE north-star (accelerator; the rule is north_star.py) ----
+
+def _ns_project(tmp_path, *, broken):
+    (tmp_path / ".sdlc").mkdir()
+    (tmp_path / ".sdlc" / "config.json").write_text("{}")          # session_start NOT enabled
+    if broken:
+        (tmp_path / ".git").write_text("gitdir: /nonexistent/sigma-f03\n")
+    return tmp_path
+
+
+def test_unreachable_north_star_is_announced_even_without_the_policy_brief(tmp_path):
+    ctx = _context(_run(_ns_project(tmp_path, broken=True)))
+    assert "NOT judging strategic alignment" in ctx
+
+
+def test_absent_north_star_adds_no_session_notice(tmp_path):
+    assert "north-star could not be located" not in _run(_ns_project(tmp_path, broken=False))

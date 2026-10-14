@@ -168,6 +168,29 @@ class GhApiError(Exception):
         self.kind = kind
         self.returncode = returncode      # the gh exit code when one was observed (#931), else None
 
+    @property
+    def remedy(self):
+        """D7: the one-line fix for `.kind` (None when the kind has no single fix)."""
+        return gh_session.remedy_for_kind(self.kind)
+
+    def __str__(self):
+        """D7: gh's own text, then the fix for the classified kind (auth, not_found, permission,
+        rate_limit, transport, server). A malformed-reply or caller-contract error has no such kind
+        and prints as it always did. `_plain` is the text WITHOUT the fix, for the places that quote
+        one error inside another."""
+        text = Exception.__str__(self)
+        own = getattr(self, "fix", None)  # a fix this error carries itself (set where it is raised)
+        if own and "fix: " + own not in text:
+            return "%s -- fix: %s" % (text, own)
+        if not self.hint:                 # no gh stderr: the kind came from str(), which embeds argv
+            return text
+        return gh_session.with_remedy(text, self.kind)
+
+
+def _plain(exc):
+    """`str(exc)` without a GhApiError's appended fix (any other exception: its own text)."""
+    return Exception.__str__(exc) if isinstance(exc, GhApiError) else str(exc)
+
 
 # ---------------------------------------------------------------- failure classification (#895)
 
@@ -209,6 +232,25 @@ def classify(exc):
     if _RATE_RE.search(text):
         return None, "rate_limit"
     return None, "other"
+
+
+def with_remedy(exc, text=None):
+    """D7: `text` (default `str(exc)`) with the fix for `exc`'s classified kind APPENDED, the raw
+    reason first and untouched. Works for a GhApiError and for an exception carrying gh's stderr as
+    `.hint` (a `sources._run_gh` RuntimeError); any other exception is returned unchanged, because
+    its `str()` embeds argv and `classify` must not read that. Never raises."""
+    try:
+        if isinstance(exc, GhApiError):
+            if not exc.hint:                          # no gh stderr: its kind was read off str(), argv included
+                return str(exc) if text is None else text
+            kind = exc.kind
+        elif isinstance(getattr(exc, "hint", None), str) and exc.hint:
+            kind = classify(exc)[1]                   # gh's own stderr, never the argv in str(exc)
+        else:
+            return str(exc) if text is None else text     # no stderr to read: leave it as it is
+        return gh_session.with_remedy(str(exc) if text is None else text, kind)
+    except Exception:                                 # noqa: BLE001 - a remedy must never mask the failure
+        return str(exc) if text is None else text
 
 
 GH_MISSING_HINT = ('`gh` is not on PATH -- install the GitHub CLI from https://cli.github.com and run `gh auth login`, then re-run this command')
@@ -344,7 +386,8 @@ def list_issues(run=None, repo=None, labels=(), cap=200, state="open", fetch=Non
     except GhApiError:
         raise
     except Exception as exc:                          # noqa: BLE001
-        raise GhApiError(str(exc), getattr(exc, "hint", None)) from exc
+        status, kind = classify(exc)                  # D7: keep the class, or the fix line cannot be chosen
+        raise GhApiError(str(exc), getattr(exc, "hint", None), status, kind) from exc
 
 
 def _malformed(what, number, got):
@@ -618,7 +661,7 @@ def _fallback(gql_run, number, fields, repo, rest_err):
         if rest_err is None:
             raise
         raise GhApiError("gh REST read of issue #%d failed (%s); fallback gh issue view also failed: %s"
-                         % (number, rest_err, fb.hint or fb), fb.hint or rest_err.hint, rest_err.status,
+                         % (number, _plain(rest_err), fb.hint or _plain(fb)), fb.hint or rest_err.hint, rest_err.status,
                          rest_err.kind) from fb
     try:
         data = json.loads(raw or "{}")
@@ -700,7 +743,7 @@ def _list_fallback(gql_run, fields, repo, labels, state, cap, sort, rest_err):
         if rest_err is None:
             raise
         raise GhApiError("gh REST issue list failed (%s); fallback gh issue list also failed: %s"
-                         % (rest_err, fb.hint or fb), fb.hint or rest_err.hint, rest_err.status,
+                         % (_plain(rest_err), fb.hint or _plain(fb)), fb.hint or rest_err.hint, rest_err.status,
                          rest_err.kind) from fb
     try:
         data = json.loads(raw) if str(raw or "").strip() else None
@@ -1017,8 +1060,11 @@ def add_assignees(run, number, assignees, repo=None, *, fallback_run=None, env=N
             if isinstance(resp, dict) else set()
         missing = [n for n in logins if n.lower() not in got]
         if missing:
-            raise GhApiError("GitHub did not assign %s to #%d (not assignable, or not a collaborator)"
+            err = GhApiError("GitHub did not assign %s to #%d (not assignable, or not a collaborator)"
                              % (", ".join("@" + m for m in missing), number), kind="invalid")
+            err.fix = ("the user must be a collaborator on the repository (or a member of its "
+                       "organisation) and assignable there: add them, or assign someone who is")
+            raise err
         return resp
 
     fb = ["issue", "edit", str(number), *_repo_flag(repo)]
@@ -1583,7 +1629,7 @@ def _pr_fallback(gql_run, ref, fields, repo, rest_err):
         if rest_err is None:
             raise
         raise GhApiError("gh REST read of PR %s failed (%s); fallback gh pr view also failed: %s"
-                         % (ref, rest_err, fb.hint or fb), fb.hint or rest_err.hint, rest_err.status,
+                         % (ref, _plain(rest_err), fb.hint or _plain(fb)), fb.hint or rest_err.hint, rest_err.status,
                          rest_err.kind) from fb
     try:
         data = json.loads(raw) if raw and raw.strip() else None
@@ -1720,7 +1766,7 @@ def open_pr_for_branch_gh(run, branch, fields, repo, *, gql_run=None, env=None, 
             if rest_err is None:
                 raise
             raise GhApiError("gh REST read of the open PR for %s failed (%s); fallback gh pr list also failed: %s"
-                             % (branch, rest_err, fb.hint or fb), fb.hint or rest_err.hint, rest_err.status,
+                             % (branch, _plain(rest_err), fb.hint or _plain(fb)), fb.hint or rest_err.hint, rest_err.status,
                              rest_err.kind) from fb
         try:
             rows = json.loads(raw) if raw and raw.strip() else None
@@ -1932,7 +1978,7 @@ def open_prs_for_head_gh(run, branch, limit, repo=None, *, gql_run=None, env=Non
             if rest_err is None:
                 raise
             raise GhApiError("gh REST read of the open PRs for %s failed (%s); fallback gh pr list also failed: %s"
-                             % (branch, rest_err, fb.hint or fb), fb.hint or rest_err.hint, rest_err.status,
+                             % (branch, _plain(rest_err), fb.hint or _plain(fb)), fb.hint or rest_err.hint, rest_err.status,
                              rest_err.kind) from fb
         try:
             rows = json.loads(raw) if raw and raw.strip() else None

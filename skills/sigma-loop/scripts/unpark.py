@@ -423,7 +423,7 @@ def resolve(sdlc_dir, config, number, answers, decision, source=None, run=None, 
         data = _fetch_issue(source, n)
     except Exception as exc:                            # noqa: BLE001 - unreadable == refuse
         return {"number": n, "decision": decision, "outcome": "failed",
-                "detail": "could not read the current state of #%s: %s" % (n, exc)}
+                "detail": "could not read the current state of #%s: %s" % (n, sources._fx(exc))}
     if str(data.get("state") or "").upper() == "CLOSED":
         return {"number": n, "decision": decision, "outcome": "failed",
                 "detail": "#%s is closed — reopen it first if it should be worked" % n}
@@ -490,7 +490,7 @@ def resolve(sdlc_dir, config, number, answers, decision, source=None, run=None, 
         _append_block(source, n, data.get("body") or "", block)
         return {"number": n, "decision": decision, "outcome": "failed",
                 "detail": "label write did not land: %s — the answers were recorded, so re-running "
-                          "this will not ask them again" % exc}
+                          "this will not ask them again" % sources._fx(exc)}
     detail = triage._swap_detail(add, remove)
     if not source._set_board_status(n, source.col["ready"]) and source.board_active:
         detail += ("; the label landed but the board card did not move to %r — move it by hand if "
@@ -556,7 +556,7 @@ def _append_block(source, number, body, block):
         try:
             sys.stderr.write("sigma: recorded the unpark answers as a comment on #%s but could "
                              "not write them into the body (%s) — the next agent to pick this goal "
-                             "will not see them inline\n" % (number, exc))
+                             "will not see them inline\n" % (number, sources._fx(exc)))
         except Exception:
             pass
         return False
@@ -641,7 +641,7 @@ def _main(argv, run=None):
         except Exception as exc:                        # noqa: BLE001 - a usable refusal, not a trace
             # Names the ISSUE, not just the transport error: "simulated gh failure: issue view 5"
             # tells a human nothing they can act on, and a bare traceback tells them less.
-            print("unpark.py brief: could not read #%s — %s" % (number, exc), file=sys.stderr)
+            print("unpark.py brief: could not read #%s — %s" % (number, sources._fx(exc)), file=sys.stderr)
             return 1
         print(json.dumps(b, indent=2) if "--json" in tail else render_brief(b))
         return 0

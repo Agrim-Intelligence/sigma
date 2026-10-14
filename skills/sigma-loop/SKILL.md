@@ -181,7 +181,7 @@ Then repeat until the helper says stop:
 6. Record the outcome, including the retro grade from step 5 if Retrospective ran:
    `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" record .sdlc "$goal" done --retro-grade
    achieved|partial|diverged` (or `parked "reason" --qkind <kind>` / `failed "reason" ...`; omit the flag on a
-   goal that never reached Retrospective). Passing it is also what refreshes the knowledge graph
+   goal that never reached Retrospective). The grade never substitutes for verified `done_when`. Passing it is also what refreshes the knowledge graph
    when `knowledge_graph.auto_refresh` is `true`. **Do not run a graph build by hand as well.**
 
    **REQUIRED PATTERN** — any blocking call (`loop.py verify`, `work.py merge`, a dispatched

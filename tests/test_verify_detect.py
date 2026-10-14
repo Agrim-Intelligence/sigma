@@ -254,6 +254,19 @@ def _loop(sdlc, *args):
     return _run(LOOP, *args, cwd=sdlc.parent)
 
 
+ACCEPTANCE = ROOT / "skills" / "sigma-loop" / "scripts" / "acceptance.py"
+
+
+def _record_acceptance(sdlc, goal):
+    """#1338: verify now refuses (exit 4) without an acceptance record when enforce is on, so record
+    one first, by the documented gesture `acceptance.py record .sdlc <goal> --draft <file>`."""
+    draft = sdlc.parent / "draft-acceptance.md"
+    draft.write_text(("## Done when\n- [ ] the goal's own check passes\n- [ ] the check can fail\n"
+                                "- [ ] the result is recorded\n"), encoding="utf-8")
+    r = _run(ACCEPTANCE, "record", ".sdlc", goal, "--draft", draft, cwd=sdlc.parent)
+    assert r.returncode == 0, r.stderr
+
+
 def test_confirmed_pytest_candidate_makes_verify_and_record_done_pass(tmp_path):
     repo = _git_repo(tmp_path / "r")
     (repo / "tests").mkdir()
@@ -267,6 +280,7 @@ def test_confirmed_pytest_candidate_makes_verify_and_record_done_pass(tmp_path):
     assert _shell_commands_are_trusted(repo)
     goal = ".sdlc/goals/0001-example.md"
     assert _loop(sdlc, "start", ".sdlc").returncode == 0
+    _record_acceptance(sdlc, goal)
     v = _loop(sdlc, "verify", ".sdlc", goal)
     assert v.returncode == 0, v.stderr
     d = _loop(sdlc, "record", ".sdlc", goal, "done")
@@ -298,6 +312,7 @@ def test_demo_goal_reaches_done_with_enforce_on_and_no_config_command(tmp_path):
     repo, sdlc = _demo_repo(tmp_path)
     goal = ".sdlc/goals/0000-demo.md"
     (repo / "sigma-demo.md").write_text("Sigma ran this goal.\n")
+    _record_acceptance(sdlc, goal)
     v = _loop(sdlc, "verify", ".sdlc", goal)
     assert v.returncode == 0, v.stderr
     d = _loop(sdlc, "record", ".sdlc", goal, "done")
@@ -308,6 +323,7 @@ def test_demo_verify_command_really_checks_done_when(tmp_path):
     """Not a rubber stamp: without sigma-demo.md the demo's own check fails and done is refused."""
     repo, sdlc = _demo_repo(tmp_path)
     goal = ".sdlc/goals/0000-demo.md"
+    _record_acceptance(sdlc, goal)
     assert _loop(sdlc, "verify", ".sdlc", goal).returncode == 1
     d = _loop(sdlc, "record", ".sdlc", goal, "done")
     assert d.returncode == 4 and "last verify FAILED" in d.stderr

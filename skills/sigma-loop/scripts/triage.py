@@ -100,6 +100,16 @@ def needs_github(config, what, code, run, source):
           f"{((config.get('discovery') or {}).get('source') or 'local-goals')!r}; local goals have no "
           "labels to cross). To use it run `/sigma-init --mode github` (or set discovery.source to "
           '"github" in .sdlc/config.json), then re-run this command.', file=sys.stderr)
+    # #1289: what a LOCAL goal does instead. The picker reads only the `status:` field of each goal
+    # file (measured), so a hand edit is the whole mechanism; Sigma has no gesture for it.
+    if what == "unparking":
+        print("In local-goals mode a parked goal is resumed by hand: in its file under .sdlc/goals/ change "
+              "`status: parked` to `status: pending` and the next pick offers it again. Its entry in "
+              ".sdlc/state/review-queue.md is not removed for you; delete it yourself once the "
+              "question it records is answered.", file=sys.stderr)
+    elif what == "promotion":
+        print("In local-goals mode a proposed goal is approved by hand: in its file under .sdlc/goals/ "
+              "change `status: proposed` to `status: pending`.", file=sys.stderr)
     return code
 
 

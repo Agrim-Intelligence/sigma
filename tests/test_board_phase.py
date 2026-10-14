@@ -979,6 +979,7 @@ def test_a_renamed_repo_with_a_stale_config_keeps_mirroring_the_board(tmp_path):
     does not resolve, so treating every card as uncarded made `item-add` fail and the sync stop."""
     gh, board, stranger, src = _renamed(tmp_path, old_urls_resolve=False)
     src.mark_qc("11")
+    src.backfill_board()          # #1305: carding the uncarded goal is the watcher's capped step now
     _check_renamed(gh, board, stranger)
 
 
@@ -987,6 +988,7 @@ def test_a_renamed_repo_never_resets_in_flight_cards_to_ready(tmp_path):
     the EXISTING card, `was_new` is True, and the sync reset In Progress/Blocked cards to Ready."""
     gh, board, stranger, src = _renamed(tmp_path, old_urls_resolve=True)
     src.mark_qc("11")
+    src.backfill_board()          # #1305: carding the uncarded goal is the watcher's capped step now
     _check_renamed(gh, board, stranger)
 
 

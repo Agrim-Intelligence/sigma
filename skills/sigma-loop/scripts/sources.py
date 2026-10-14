@@ -126,6 +126,13 @@ def render_label_report(repo, results):
                      "makes the pick query return nothing; create it by hand or grant the token "
                      "label-write (Issues: write) and rerun" % (where, len(failed), len(results),
                                                                  ", ".join(failed)))
+        # D7: when gh's reason has a classified fix (a bad token says log in, not 'grant Issues: write')
+        first = next(r["reason"] for r in results if r["outcome"] == "failed")
+        probe = RuntimeError(first)
+        probe.hint = first
+        fixed = gh_api.with_remedy(probe, "")
+        if fixed.strip(" -"):
+            lines.append(fixed.strip(" -"))
     else:
         created = sum(1 for r in results if r["outcome"] == "created")
         lines.append("labels ensured on %s: %d created, %d existed" % (where, created,
@@ -133,7 +140,7 @@ def render_label_report(repo, results):
     return lines, bool(failed)
 
 
-def resolve_assignee_login(run, raw):
+def resolve_assignee_login(run, raw, failure=None):
     """The LOGIN to pass into REST's `assignee=` query param, or None to skip assignee scoping
     entirely — for standalone callers (`mirror.py`, `triage.py`, `status.py`) that have no
     `GitHubSource` instance to hang caching off. Mirrors `GitHubSource._assignee_login`'s exact
@@ -153,7 +160,11 @@ def resolve_assignee_login(run, raw):
     there is no repeated call within one run for a cache to save, and no state to go stale across
     calls that never happen. Fails OPEN on a resolution failure (offline, expired auth): returns
     None rather than raising, so a caller degrades to an unscoped read/count instead of crashing
-    outright — the same trade `_assignee_login` makes, for the same reason."""
+    outright — the same trade `_assignee_login` makes, for the same reason.
+
+    D7: `failure`, when a list, receives the exception that made the `gh api user` call fail, so a
+    caller that REFUSES on an unresolved login (promote.py) can say why instead of blaming the
+    assignee; nothing else about the contract changes."""
     raw = (raw or "").strip()
     if not raw:
         return None
@@ -161,7 +172,9 @@ def resolve_assignee_login(run, raw):
         return raw.lstrip("@").casefold()
     try:
         login = ((run(["api", "user", "--jq", ".login"]) or "").strip() or "").casefold()
-    except Exception:
+    except Exception as exc:
+        if isinstance(failure, list):
+            failure.append(exc)
         return None
     return login or None
 
@@ -191,6 +204,7 @@ gh_session = _load("gh_session")     # #78: tell a Claude Code Remote session's 
                                       # from a real auth failure -- see that module's own docstring.
 post_guard = _load("post_guard")      # #375: opt-in refusal of private-reference text (SIGMA_LEAK_PATTERNS)
 gh_api = _load("gh_api")             # #895: issue READS go REST first (gh_api.read_issue)
+_fx = gh_api.with_remedy             # D7: a failure shown to a human carries its fix (raw reason first)
 feature_labels = _load("feature_labels")   # #1468: the never-create rule for `feature:*` labels.
                                       # Safe at module level: it loads `features` + `ledger`, and
                                       # neither has any reference back to this module.
@@ -1244,7 +1258,7 @@ class GitHubSource:
             return self.next_pending(skip=skip)
         except Exception as exc:              # noqa: BLE001 - a diagnostic must never break a stop
             print("sources.py: could not check whether the board has work outside %r (%s)"
-                  % (saved_unit, exc), file=sys.stderr)
+                  % (saved_unit, _fx(exc)), file=sys.stderr)
             return None
         finally:
             self.feature, self.feature_label = saved_unit, saved_label
@@ -1336,7 +1350,7 @@ class GitHubSource:
 
     @classmethod
     def _is_transient(cls, exc):
-        msg = str(exc).lower()
+        msg = gh_api._plain(exc).lower()
         return any(m in msg for m in cls._TRANSIENT)
 
     def _repo_args(self):
@@ -1633,7 +1647,9 @@ class GitHubSource:
             login = None
             if not self._assignee_login_warned:
                 self._assignee_login_warned = True
-                print(f"sources.py: could not resolve `@me` to a login ({exc}) — the client-side "
+                lead = ("gh could not read the signed-in user" if gh_api.classify(exc)[1] == "auth"
+                        else "could not resolve `@me` to a login")
+                print(f"sources.py: {lead} ({_fx(exc)}) — the client-side "
                       "assignee check is skipped this pick; a caller with an independent "
                       "server-side scope (the board query) is unaffected, but a caller that must "
                       "pass this value into its own query (the REST backlog fetch, #1829) runs "
@@ -1747,7 +1763,7 @@ class GitHubSource:
         except Exception as exc:                 # noqa: BLE001 - see docstring; must never propagate
             try:
                 sys.stderr.write("sigma: %s label write failed for #%s (%s) — continuing; the "
-                                 "reconciler will pick this up\n" % (what, goal, exc))
+                                 "reconciler will pick this up\n" % (what, goal, _fx(exc)))
             except Exception:
                 pass
             return False
@@ -2137,7 +2153,7 @@ class GitHubSource:
         except Exception as exc:
             self._note_scope(exc)
             print("sources.py: could not read the board queue (%s) — falling back to the label "
-                  "queue for this pick" % exc, file=sys.stderr)
+                  "queue for this pick" % _fx(exc), file=sys.stderr)
             return None
         items = (data.get("items") if isinstance(data, dict) else data) or []
         self._warn_truncated("open board items", len(items))
@@ -2458,7 +2474,7 @@ class GitHubSource:
                 # non-transient error (bad repo, no auth) still fails on the first try, same as
                 # before this retry existed.
                 if last_attempt or not self._is_transient(exc):
-                    print(f"sources.py: could not read the backlog ({exc}) — stopping", file=sys.stderr)
+                    print(f"sources.py: could not read the backlog ({_fx(exc)}) — stopping", file=sys.stderr)
                     self._last_read_degraded = True    # #905: a give-up, not a genuine empty read
                     return 0, None
                 print(f"sources.py: could not read the backlog ({exc}) — retrying (attempt "
@@ -3379,7 +3395,7 @@ class GitHubSource:
         except Exception as exc:                 # noqa: BLE001 - must never propagate from park
             try:
                 sys.stderr.write("sigma: park repair failed for #%s (%s) — goal+parked may remain "
-                                 "until triage hygiene / a reconcile sweep corrects it\n" % (goal, exc))
+                                 "until triage hygiene / a reconcile sweep corrects it\n" % (goal, _fx(exc)))
             except Exception:
                 pass
 
@@ -3577,7 +3593,7 @@ class GitHubSource:
             return name in self._label_node_ids([name])
         except Exception as exc:          # noqa: BLE001 - "could not tell" is a real answer here
             try:
-                sys.stderr.write("sigma: could not look up the label %r (%s)\n" % (name, exc))
+                sys.stderr.write("sigma: could not look up the label %r (%s)\n" % (name, _fx(exc)))
             except Exception:
                 pass
             return None
@@ -3751,7 +3767,7 @@ class GitHubSource:
         except Exception as exc:          # noqa: BLE001 - a sweep must never break the pick
             try:
                 sys.stderr.write("sigma: could not list %s issues (%s) — skipping the "
-                                 "needs-label sweep this pass\n" % (self.needs_label_label, exc))
+                                 "needs-label sweep this pass\n" % (self.needs_label_label, _fx(exc)))
             except Exception:
                 pass
             return []
@@ -3777,7 +3793,7 @@ class GitHubSource:
         except Exception as exc:          # noqa: BLE001 - a sweep must never break the pick
             try:
                 sys.stderr.write("sigma: could not list %s issues (%s) — skipping the "
-                                 "needs-unit sweep this pass\n" % (self.needs_unit_label, exc))
+                                 "needs-unit sweep this pass\n" % (self.needs_unit_label, _fx(exc)))
             except Exception:
                 pass
             return []
@@ -3899,7 +3915,9 @@ class GitHubSource:
             except Exception as exc:
                 # .hint (see _run_gh) is the short reason alone; str(exc) is the fallback for an
                 # exception that never went through _run_gh (e.g. a test double) and so has no .hint.
-                hint = getattr(exc, "hint", None) or str(exc)
+                # `_plain`, not `str`: this text is posted as a PUBLIC issue comment, and the fix line
+                # a GhApiError appends to str() is for the local message only.
+                hint = getattr(exc, "hint", None) or gh_api._plain(exc)
                 note = (f"Could not assign @{assignee} to this hand-off ({hint}) — left unassigned. "
                         "GitHub issues can't be assigned to a team; if that's not the cause here, the "
                         "account may not be a repo collaborator. Needs manual routing to the right owner.")
@@ -4142,7 +4160,7 @@ class GitHubSource:
         `_note_board_write_failed` (#1733) knows whether to fall back to a generic report instead.
         The other 8 call sites of this method predate that return value and all ignore it, exactly
         as before -- adding it changes nothing for them."""
-        msg = str(exc).lower()
+        msg = gh_api._plain(exc).lower()          # never the appended fix line
         if "project" in msg and ("scope" in msg or "auth refresh" in msg or "required scopes" in msg):
             if not self._scope_warned:
                 self._scope_warned = True
@@ -5109,6 +5127,11 @@ class GitHubSource:
                 # 'priority': 'P3'}. Caching it here is what makes the mirror diff-only, so a board
                 # already in agreement costs zero writes.
                 self._item_priority[int(n)] = it.get((self.priority_field or "").lower())
+                # #1305: a single-issue verb no longer runs the full-board sync that used to fill
+                # `_issue_labels`, so the moved goal's own card is the zero-extra-call source of its
+                # labels for `_set_board_status`'s Priority mirror (item-list carries an issue card's).
+                if isinstance(it.get("labels"), list):
+                    self._issue_labels.setdefault(int(n), it["labels"])
 
     #: #308 review: how long a FAILED resolve of the repo's current name is trusted before the next
     #: need reads again. A long-lived source (the watch daemon's) must not keep one blip forever;

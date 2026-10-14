@@ -7314,6 +7314,36 @@ def test_no_hook_path_row_unless_the_key_is_stale(tmp_path, value, make_dir):
     assert _HOOKS_ROW not in _by_name(_doc().check(base, run=_runner()))
 
 
+_PY_ROW = "python3 on PATH can run Sigma's python hooks"
+
+
+def _path_with_python3(tmp_path, monkeypatch, python3):
+    """PATH holding only a `python3` shim (or nothing), so doctor probes exactly what the hooks would."""
+    d = tmp_path / "pybin"
+    d.mkdir()
+    if python3 is not None:
+        shim = d / "python3"
+        shim.write_text("#!/bin/sh\n" + python3 + "\n")
+        shim.chmod(0o755)
+    monkeypatch.setenv("PATH", str(d))
+
+
+@pytest.mark.parametrize("shim", ["exit 1", None])
+def test_a_broken_or_missing_python3_is_a_failing_row_with_the_fix(tmp_path, monkeypatch, shim):
+    """#1282: the python hooks fail open, so doctor is where a broken python3 shows as a failure."""
+    d = _doc()
+    base = _sdlc(tmp_path, {})
+    _path_with_python3(tmp_path, monkeypatch, shim)
+    row = d._hook_python_row()
+    assert row["name"] == _PY_ROW and row["ok"] is False
+    assert "install a working python3" in row["fix"] and "issue_field_gate" in row["fix"]
+
+
+def test_a_working_python3_adds_no_row(tmp_path, monkeypatch):
+    _path_with_python3(tmp_path, monkeypatch, 'exec "%s" "$@"' % sys.executable)
+    assert _doc()._hook_python_row() is None
+
+
 # --- #801 slice 1: advisory GraphQL-capability row (detection and reporting only) ----------------
 
 GQL_ROW = "GitHub GraphQL unavailable (cloud proxy)"
@@ -7753,3 +7783,32 @@ def test_ledger_rows_keep_exact_wording_when_the_branch_is_unknown():
             assert c["fix"] == _OLD_INIT_FIX
             rows = {n: s for n, s, _ in d.features(base, run=run)}
             assert rows["team ledger"] == _OLD_STATE
+
+# --- D2 F03: "north-star reachable" - a failing row only when the north-star cannot be located/read ---
+
+def _ns_reachable_rows(project):
+    return _by_name(_doc().check(str(project / ".sdlc"), run=_runner()))
+
+
+def test_doctor_flags_an_unreachable_north_star(tmp_path):
+    (tmp_path / ".git").write_text("gitdir: /nonexistent/sigma-f03\n")     # linked worktree, git blind
+    _sdlc(tmp_path, {})
+    row = _ns_reachable_rows(tmp_path)["north-star reachable"]
+    assert row["ok"] is False and "NOT judging strategic alignment" in row["fix"]
+
+
+def test_doctor_is_silent_for_an_absent_north_star(tmp_path):
+    _sdlc(tmp_path, {})
+    assert "north-star reachable" not in _ns_reachable_rows(tmp_path)
+
+
+def test_doctor_does_not_crash_on_an_unreadable_north_star(tmp_path, monkeypatch):
+    _sdlc(tmp_path, {})
+    (tmp_path / ".sdlc" / "context").mkdir()
+    (tmp_path / ".sdlc" / "context" / "north-star.md").write_text("x")
+    monkeypatch.setattr(os, "access", lambda p, m, **kw: False if str(p).endswith("north-star.md") else True)
+    real = pathlib.Path.read_text
+    monkeypatch.setattr(pathlib.Path, "read_text", lambda self, *a, **k: (_ for _ in ()).throw(
+        PermissionError("denied")) if self.name == "north-star.md" else real(self, *a, **k))
+    rows = _ns_reachable_rows(tmp_path)
+    assert rows["north-star reachable"]["ok"] is False and "north-star filled" not in rows

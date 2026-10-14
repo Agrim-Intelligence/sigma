@@ -103,7 +103,7 @@
     },
     {
       "path": "skills/sigma-loop/scripts/decision_store.py",
-      "role": "library"
+      "role": "gesture"
     },
     {
       "path": "skills/sigma-loop/scripts/decision_tier.py",
