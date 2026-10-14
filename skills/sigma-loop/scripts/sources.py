@@ -4559,6 +4559,8 @@ class GitHubSource:
             mx = 1
         if self._project_refusals >= mx:
             return 0
+        if self._backfill_paused():            # #1426: a refusal on an earlier tick (another process) still holds
+            return 0
         floor = self._project_cfg.get("backfill_min_graphql", 1000)
         try:
             remaining = json.loads(self._run(["api", "rate_limit"]))["resources"]["graphql"]["remaining"]
@@ -4566,11 +4568,60 @@ class GitHubSource:
                 return 0
         except Exception:
             return 0
-        if not self._ensure_board(sync=False):
-            return 0
-        self._backfilled = 0
-        self._sync_backlog(self._proj_owner(), self._project_number, None, cap=cap)
+        try:
+            if not self._ensure_board(sync=False):
+                return 0
+            self._backfilled = 0
+            self._sync_backlog(self._proj_owner(), self._project_number, None, cap=cap)
+        except Exception:
+            if self._project_refusals:         # the project API refused: the next ticks stay away for a while
+                self._backfill_note_refusal()
+            raise
+        self._backfill_clear_refusal()         # a project call was answered: the pause ends
         return self._backfilled
+
+    _BACKFILL_PAUSE_REL = ("state", "backfill-refused.json")
+    _BACKFILL_PAUSE_DEFAULT_MINUTES = 30
+
+    def _backfill_pause_path(self):
+        return pathlib.Path(self.sdlc_dir).joinpath(*self._BACKFILL_PAUSE_REL) if self.sdlc_dir else None
+
+    def _backfill_paused(self):
+        """#1426: True while the last refused back-fill is younger than `project.backfill_pause_minutes` (default 30). The
+        refusal counter lives on one source object and every watcher tick builds a new one, so a refusal has to be
+        remembered on disk to hold off the next tick. Missing, unreadable or future-dated state reads as not paused."""
+        path = self._backfill_pause_path()
+        if path is None:
+            return False
+        try:
+            at = json.loads(path.read_text(encoding="utf-8")).get("at")
+            if type(at) is not int:
+                return False
+            minutes = self._project_cfg.get("backfill_pause_minutes", self._BACKFILL_PAUSE_DEFAULT_MINUTES)
+            if isinstance(minutes, bool) or not isinstance(minutes, int) or minutes <= 0:
+                minutes = self._BACKFILL_PAUSE_DEFAULT_MINUTES
+            return 0 <= int(time.time()) - at < minutes * 60
+        except Exception:
+            return False
+
+    def _backfill_note_refusal(self):
+        path = self._backfill_pause_path()
+        if path is None:
+            return
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            state.atomic_write_text(path, json.dumps({"at": int(time.time())}))
+        except Exception:
+            pass
+
+    def _backfill_clear_refusal(self):
+        path = self._backfill_pause_path()
+        if path is None:
+            return
+        try:
+            path.unlink()
+        except OSError:
+            pass
 
     def _sync_backlog(self, owner, number, exclude, cap=None):
         """Seed the board with any open goal issue not yet carded (as Todo), except the one being
