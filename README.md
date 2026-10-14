@@ -311,6 +311,26 @@ To leave the loop running overnight with automatic restarts, see
 [Running the loop unattended](docs/running-unattended.md). How the loop picks goals, the budgets that
 stop it and what makes it park are in [Running the loop](docs/running-the-loop.md).
 
+## Decision Rulebook and Upkeep
+
+Two optional features ship off and open one gate at a time. With every gate closed, Sigma behaves exactly as it
+did before they existed.
+
+**Decision Rulebook.** When the loop parks a goal because it needs a decision, your answer through `/sigma-unpark`
+can be kept as a decision record in the repository. Enough agreeing answers of one kind in one area earn a higher
+autonomy level. At low levels the loop only records and recommends; at the top two levels, and only if you open the
+applier, it may answer a question nobody answered within a window, using a rule an owner approved, tell you on the
+issue, and take your `no` as a veto. A hard-stop net can also park dangerous actions, a drift judge can compare a
+question to your reference documents (shadow only), and past decisions can be imported. Public repositories keep
+free text out of records. Full guide, including how to turn it on step by step and what it will never do:
+[docs/decision-rulebook.md](docs/decision-rulebook.md).
+
+**Upkeep.** Keeps long-lived unit branches (`feature/<name>`) rebased onto their base. On a 12-hour window, the first
+session start (or the watcher tick) starts one bounded background sweep of every unit that is behind; each rewrite
+keeps the old tip as a backup ref you can restore or prune; commits made directly on a unit branch are refused rather
+than overwritten. It needs three opt-ins (`upkeep.enabled`, `ledger.enabled`, and `SIGMA_UPKEEP_JOB=1` on one machine).
+Full guide: [docs/upkeep.md](docs/upkeep.md).
+
 ## Configuration
 
 Settings live in `.sdlc/config.json`, which `/sigma-init` writes for you. The ones most people change:
@@ -345,6 +365,8 @@ see which features are live for your config.
 | [Companion plugins](docs/companions.md) | the optional `code-review` plugin |
 | [Managed settings](docs/managed-settings.md) | enforce settings across an organisation |
 | [Zero-touch routines](docs/routines.md) | trigger the loop on a schedule |
+| [Decision Rulebook](docs/decision-rulebook.md) | record decisions, earn autonomy levels, add hard stops, import past decisions |
+| [Upkeep](docs/upkeep.md) | keep unit branches rebased on a 12-hour window, with backups |
 | [Configuration reference](docs/configuration.md) | see every flag and default |
 | [Features](docs/features.md) | see everything Sigma provides |
 | [Invocation adapter](docs/invocation-adapter.md) | let a host you trust approve the loop's review post and relay phase ends (opt-in) |
