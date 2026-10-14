@@ -114,6 +114,27 @@ def test_registered_unit_branch_is_skipped(repo):
     assert _count(repo) == 1
 
 
+def test_feature_branch_of_a_just_opened_unit_is_skipped_before_its_branch_is_bound(repo):
+    """`define open` writes the unit record with empty `repos`, so no branch is recorded yet; a decision
+    made on `feature/<unit>` in that window must still not be committed onto the unit branch."""
+    units = repo / ".sdlc" / "features" / "units"
+    units.mkdir(parents=True)
+    (units / "u.json").write_text(json.dumps(
+        {"features": {"u": {"open": True, "repos": {}}}, "schema": "sigma/features@1"}))
+    _git(repo, "checkout", "-q", "-b", "feature/u")
+    config = _cfg()
+    _write_record(repo, config)
+    assert store.publish(str(repo / ".sdlc"), config) == {"committed": False, "reason": "unit-branch"}
+    assert _count(repo) == 1
+
+
+def test_feature_branch_is_skipped_even_when_no_unit_record_exists_on_it(repo):
+    _git(repo, "checkout", "-q", "-b", "feature/never-recorded")
+    config = _cfg()
+    _write_record(repo, config)
+    assert store.publish(str(repo / ".sdlc"), config)["reason"] == "unit-branch"
+
+
 def test_detached_head_is_skipped(repo):
     _git(repo, "checkout", "-q", "--detach")
     config = _cfg()
