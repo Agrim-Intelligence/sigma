@@ -153,24 +153,23 @@ category, most-severe first:
 **Bug** (will misbehave) · **Concern** (design risk) · **Coverage** (untested behavior) · **Missing**
 (a required piece absent) · **Good** (worth keeping) · **Minor / Nit** (style). Each: what, where
 (`file:line`), why it matters, and the fix. Don't pad with praise; if you didn't try to break it, you
-didn't review it. Rules are lessons, not laws — a finding can be waived with a stated reason.
+didn't review it. Only the owners named in the repository's CODEOWNERS may waive a finding, of any class; you report it and never waive it. A waiver is their decision, recorded with their stated reason. Unattended, a finding that would need one parks for a human.
 
 ### Before you report it
-**A finding is a claim in prose, and a claim in prose is not evidence** — the north-star's own
-Standing Rule 1, binding the reviewer exactly as it binds the code. Before reporting one, state its
+**A finding is a claim in prose, and a claim in prose is not evidence** (north-star Standing Rule 1). Before reporting one, state its
 **failing case**: the inputs or the sequence, and the wrong behaviour they produce. If you cannot
 write that case you do not have a **Bug**, you have a question — ask it as a **Concern**, or drop it.
 
-**Never report these.** Each costs a fix cycle and buys nothing:
+**Never report these.** Each costs a fix cycle for nothing:
 - A problem that pre-dates the change and stays dormant — *unless this change puts it on a live path*.
   A latent bug the diff just made reachable is this review's finding, not the last one's.
 - Anything a linter, type-checker or the test run already catches — those gates run separately.
 - A style preference not written down in `CLAUDE.md` or the north-star. Quote the rule, or drop it.
-- A behaviour change that is plainly the point of the change.
+- A behaviour change that is the change's point.
 - Something deliberately silenced in the code (a `noqa`, a documented waiver) — argue the waiver, not the line.
 
 ### Blocking, or follow-up
-Not every real finding should stop the change, and in the loop that is not a matter of taste: a
+Not every real finding should stop the change: a
 blocking finding costs a full fix -> push -> re-review round, and `work.max_review_cycles` (default 3)
 **parks the goal** once they run out. Spend them deliberately:
 - **Blocking** — you wrote the failing case, and it is a **Bug** or **Missing**; or a risk review
