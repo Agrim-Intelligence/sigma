@@ -44,9 +44,17 @@ def _project(tmp_path, review=None, action_log=True):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "config", "--local",
                     "sigma.allowRepositoryShellCommands", "true"], check=True)
-    (tmp_path / "brief.md").write_text("# Independent review brief\nPlan sha256: %s\nreview it\n" % SHA)
+    (tmp_path / "code.py").write_text("x = 1\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "code.py"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                    "-m", "init"], check=True)
+    (tmp_path / "brief.md").write_text(brief_text("code-review"))
     (tmp_path / "scratch").mkdir()
     return tmp_path
+
+
+def brief_text(kind):
+    return "# Independent review brief - %s\nPlan sha256: %s\nreview it\n" % (kind, SHA)
 
 
 def reviewer_script(p, body):
@@ -63,8 +71,10 @@ FAILURES = {
 }
 
 
-def run_reviewer(p, goal=GOAL, phase="review"):
+def run_reviewer(p, goal=GOAL, phase="review", write_brief=True):
     """The documented gesture: reviewer.py run .sdlc <brief> --scratch <dir> --goal --phase."""
+    if write_brief:
+        (p / "brief.md").write_text(brief_text("plan-review" if phase == "plan_review" else "code-review"))
     return subprocess.run([sys.executable, str(S / "reviewer.py"), "run", ".sdlc", "brief.md",
                            "--scratch", "scratch", "--goal", goal, "--phase", phase],
                           cwd=p, capture_output=True, text=True)
@@ -135,7 +145,7 @@ def test_an_unfinished_run_counts_as_failed_not_as_the_earlier_success(tmp_path)
     reviewer_script(p, APPROVE)
     assert run_reviewer(p).returncode == 0 and record_review(p).returncode == 0
     (p / "brief.md").write_text("# b\nsee %s/scratch/x\n" % p)           # names a shared scratch path
-    assert run_reviewer(p).returncode == 1                                # leak check refuses before spawn
+    assert run_reviewer(p, write_brief=False).returncode == 1             # leak check refuses before spawn
     r = record_review(p)
     assert r.returncode == 2 and "not_completed" in r.stderr
 
@@ -238,3 +248,133 @@ def test_documented_gesture_end_to_end_then_park_with_the_stated_qkind(tmp_path)
                           cwd=p, capture_output=True, text=True)
     assert park.returncode == 0, park.stderr
     assert "status: parked" in (p / GOAL).read_text() or "parked" in (p / GOAL).read_text()
+
+
+# ---- security review of #1384: fail closed, and bind the code-review receipt to the reviewed bytes ----
+
+def _approved_review(p):
+    reviewer_script(p, APPROVE)
+    assert run_reviewer(p).returncode == 0
+    assert record_review(p).returncode == 0          # control: approvable while nothing has changed
+    (p / ".sdlc/state/log/0001-x.jsonl").unlink()    # forget that row, keep the receipt
+
+
+def test_a_corrupt_config_is_refused_in_process_too(tmp_path):
+    p = _project(tmp_path)
+    reviewer_script(p, APPROVE); run_reviewer(p)
+    (p / ".sdlc/config.json").write_text("{not json")
+    assert "config" in _rv().independent_run_refusal(str(p / ".sdlc"), GOAL, "review")
+
+
+def test_a_corrupt_config_cannot_turn_a_failed_route_into_an_inline_approval(tmp_path):
+    p = _project(tmp_path)
+    reviewer_script(p, FAILURES["nonzero_exit"]); run_reviewer(p)
+    (p / ".sdlc/config.json").write_text("{not json")
+    r = record_review(p)
+    assert r.returncode == 2, r.stdout
+
+
+@pytest.mark.parametrize("damage", ["garbage", "list", "directory", "unreadable"])
+def test_a_damaged_receipt_refuses(tmp_path, damage):
+    p = _project(tmp_path)
+    reviewer_script(p, APPROVE); run_reviewer(p)
+    f = p / ".sdlc/state/reviewer-runs/0001-x.review.json"
+    if damage == "garbage":
+        f.write_text("\x00{")
+    elif damage == "list":
+        f.write_text("[]")
+    elif damage == "directory":
+        f.unlink(); f.mkdir()
+    else:
+        f.chmod(0)
+    r = record_review(p)
+    f.chmod(0o600) if damage == "unreadable" else None
+    assert r.returncode == 2, damage
+
+
+def test_unknown_phase_and_unsafe_goal_are_refused_not_allowed(tmp_path):
+    p = _project(tmp_path)
+    rv = _rv()
+    assert rv.independent_run_refusal(str(p / ".sdlc"), GOAL, "pr_review")
+    assert rv.independent_run_refusal(str(p / ".sdlc"), "../../etc/passwd", "review")
+
+
+def test_plan_review_needs_a_plan_hash_to_be_approved(tmp_path):
+    p = _project(tmp_path)
+    reviewer_script(p, APPROVE); run_reviewer(p, phase="plan_review")
+    assert _rv().independent_run_refusal(str(p / ".sdlc"), GOAL, "plan_review", "")
+
+
+def test_a_review_receipt_is_dead_once_a_tracked_file_changes(tmp_path):
+    p = _project(tmp_path)
+    reviewer_script(p, APPROVE); run_reviewer(p)
+    (p / "code.py").write_text("x = 2\n")
+    r = record_review(p)
+    assert r.returncode == 2 and "changed since" in r.stderr
+
+
+def test_a_review_receipt_is_dead_once_an_untracked_file_appears_or_changes(tmp_path):
+    p = _project(tmp_path)
+    reviewer_script(p, APPROVE); run_reviewer(p)
+    (p / "new.py").write_text("a\n")
+    assert record_review(p).returncode == 2
+    reviewer_script(p, APPROVE); run_reviewer(p)
+    assert record_review(p).returncode == 0
+    (p / "new.py").write_text("b\n")
+    assert record_review(p).returncode == 2
+
+
+def test_a_review_receipt_is_dead_once_head_moves(tmp_path):
+    p = _project(tmp_path)
+    reviewer_script(p, APPROVE); run_reviewer(p)
+    subprocess.run(["git", "-C", str(p), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
+                    "--allow-empty", "-m", "moved"], check=True)
+    assert record_review(p).returncode == 2
+
+
+def test_sdlc_state_changes_do_not_kill_the_receipt(tmp_path):
+    """The receipt and the loop's own state live in .sdlc; they must not invalidate themselves."""
+    p = _project(tmp_path)
+    reviewer_script(p, APPROVE); run_reviewer(p)
+    (p / ".sdlc/research/0001-x.md").parent.mkdir(exist_ok=True)
+    (p / ".sdlc/research/0001-x.md").write_text("notes\n")
+    assert record_review(p).returncode == 0
+
+
+def test_content_changing_while_the_reviewer_runs_is_a_failed_run(tmp_path):
+    p = _project(tmp_path)
+    reviewer_script(p, "echo changed > %s/code.py\n%s" % (p, APPROVE))
+    assert run_reviewer(p).returncode == 1
+    r = record_review(p)
+    assert r.returncode == 2 and "content_changed_during_run" in r.stderr
+
+
+def test_unbindable_content_fails_closed(tmp_path):
+    p = _project(tmp_path)
+    import shutil
+    shutil.rmtree(p / ".git")                      # a checkout with no commit cannot be bound
+    subprocess.run(["git", "init", "-q", str(p)], check=True)
+    subprocess.run(["git", "-C", str(p), "config", "--local", "sigma.allowRepositoryShellCommands", "true"],
+                   check=True)
+    reviewer_script(p, APPROVE)
+    assert run_reviewer(p).returncode == 1
+    r = record_review(p)
+    assert r.returncode == 2 and "content_unbound" in r.stderr
+
+
+def test_a_plan_review_brief_cannot_stand_in_for_a_code_review(tmp_path):
+    p = _project(tmp_path)
+    reviewer_script(p, APPROVE)
+    (p / "brief.md").write_text(brief_text("plan-review"))
+    assert run_reviewer(p, phase="review", write_brief=False).returncode == 0
+    r = record_review(p)
+    assert r.returncode == 2 and "plan-review" in r.stderr
+
+
+def test_a_review_receipt_with_no_content_key_cannot_approve(tmp_path):
+    p = _project(tmp_path)
+    reviewer_script(p, APPROVE); run_reviewer(p)
+    f = p / ".sdlc/state/reviewer-runs/0001-x.review.json"
+    got = json.loads(f.read_text()); got["content_key"] = None
+    f.write_text(json.dumps(got))
+    assert record_review(p).returncode == 2

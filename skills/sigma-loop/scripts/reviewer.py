@@ -230,6 +230,47 @@ def parse_verdicts(output):
             for m in (x.group(1).lower() for x in _VERDICT_LINE.finditer(output))}
 
 
+#: Phase -> the `# Independent review brief - <name>` header a brief for it carries.
+_BRIEF_NAME = {"plan_review": "plan-review", "review": "code-review"}
+_BRIEF_HEADER = re.compile(r"(?m)\A# Independent review brief - (\S+)")
+#: Untracked files hashed into the code-review key. Past this the checkout cannot be bound cheaply, so
+#: the run FAILS (`content_unbound`) rather than approving something unbound: a stated ceiling.
+_MAX_UNTRACKED = 5000
+
+
+def _content_key(sdlc_dir, goal):
+    """sha256 of the goal's checkout as a code reviewer sees it -- HEAD, the tracked diff against it
+    and every untracked non-ignored file's content, `.sdlc` excluded (the loop's own state, including
+    this receipt, must not invalidate itself) -- or None when it cannot be computed. None is FAILED
+    CLOSED by both callers. Not covered: ignored files and anything under `.sdlc`."""
+    try:
+        rec = _load("work")._record(sdlc_dir, goal) or {}
+    except Exception:                       # noqa: BLE001 - no record means the project root, below
+        rec = {}
+    cwd = str(rec.get("worktree") or pathlib.Path(sdlc_dir).resolve().parent)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    spec = ["--", ".", ":(exclude).sdlc"]
+
+    def git(*args, data=None):
+        got = subprocess.run(["git", "-C", cwd, *args], capture_output=True, input=data, timeout=120, env=env)
+        if got.returncode:
+            raise OSError("git %s failed" % args[0])
+        return got.stdout
+    try:
+        head = git("rev-parse", "HEAD")
+        diff = git("diff", "HEAD", "--binary", *spec)
+        names = [n for n in git("ls-files", "--others", "--exclude-standard", "-z", *spec).split(b"\0") if n]
+        if len(names) > _MAX_UNTRACKED:
+            return None
+        blobs = git("hash-object", "--stdin-paths", data=b"\n".join(names) + b"\n").split() if names else []
+    except (OSError, subprocess.SubprocessError):
+        return None
+    digest = hashlib.sha256(head + b"\0" + hashlib.sha256(diff).digest())
+    for name, blob in sorted(zip(names, blobs)):
+        digest.update(b"\0" + name + b"\0" + blob)
+    return digest.hexdigest()
+
+
 def _receipt_path(sdlc_dir, goal, phase):
     if phase not in RECEIPT_PHASES:
         raise ValueError("phase must be one of %s" % ", ".join(RECEIPT_PHASES))
@@ -276,6 +317,16 @@ def independent_run_refusal(sdlc_dir, goal, phase, plan_sha256=""):
     stays as it was. The record is written by `run_review`, never by the agent restating a verdict,
     and the approval must match what the reviewer PRINTED. Proves the process ran and approved these
     bytes; does not prove the agent relayed nothing else (a maker can still call the CLI by hand)."""
+    try:
+        cfg = json.loads((pathlib.Path(sdlc_dir) / "config.json").read_text(encoding="utf-8"))
+        unreadable = not isinstance(cfg, dict)
+    except FileNotFoundError:
+        unreadable = False
+    except (OSError, ValueError):
+        unreadable = True
+    if unreadable:      # resolve() fails open to `inline`; a verdict gate must not inherit that
+        return ("%s/config.json is unreadable, so whether review.independent is on cannot be told: no "
+                "approving verdict is recorded until it parses" % sdlc_dir)
     mechanism = resolve(sdlc_dir).get("mechanism")
     if mechanism not in ("process", "command"):
         return None
@@ -299,7 +350,15 @@ def independent_run_refusal(sdlc_dir, goal, phase, plan_sha256=""):
         return ("the independent reviewer's last run for %s %s did not print a lone `VERDICT: approve` "
                 "(got %r): an approval cannot be recorded; address its findings and re-run `%s`"
                 % (goal, phase, receipt.get("verdict"), gesture))
-    if phase == "plan_review" and plan_sha256 and receipt.get("plan_sha256") != plan_sha256:
+    if receipt.get("brief_phase") != _BRIEF_NAME.get(phase):
+        return ("the reviewer's last run for %s %s was given a %r brief, not a %s one: re-run `%s`"
+                % (goal, phase, receipt.get("brief_phase"), _BRIEF_NAME.get(phase), gesture))
+    if phase == "review":
+        key = receipt.get("content_key")
+        if not key or key != _content_key(sdlc_dir, goal):
+            return ("the checkout changed since the independent reviewer last ran for %s (or could not be "
+                    "bound to it): re-run `%s` and record that verdict" % (goal, gesture))
+    if phase == "plan_review" and (not plan_sha256 or receipt.get("plan_sha256") != plan_sha256):
         return ("the independent reviewer approved a different plan than sha256 %s…: re-run `%s` on "
                 "the current plan" % (plan_sha256[:12], gesture))
     return None
@@ -337,6 +396,8 @@ def run_review(sdlc_dir, brief_path, scratch_paths, goal=None, phase=None):
         except (ValueError, OSError) as exc:
             print(f"reviewer run: cannot record the run receipt ({exc})", file=sys.stderr)
             return 2
+
+    key = _content_key(sdlc_dir, goal) if receipt and phase == "review" else None
 
     def failed(kind, code, message):
         print(message, file=sys.stderr)
@@ -385,14 +446,23 @@ def run_review(sdlc_dir, brief_path, scratch_paths, goal=None, phase=None):
                       f"reviewer run: reviewer exited with exit {proc.returncode}; no verdict accepted")
     if not output.strip():
         return failed("empty_output", 1, "reviewer run: reviewer returned empty output; no verdict accepted")
+    if receipt and phase == "review":
+        if key is None:
+            return failed("content_unbound", 1, "reviewer run: the checkout cannot be bound to the review "
+                                                "(not a git checkout with a commit, or too many untracked files)")
+        if _content_key(sdlc_dir, goal) != key:
+            return failed("content_changed_during_run", 1,
+                          "reviewer run: the checkout changed while the reviewer ran; no verdict accepted")
     if receipt:
         found = parse_verdicts(output)
+        named = _BRIEF_HEADER.match(brief)
         plan = _PLAN_SHA_LINE.search(brief)
         _write_receipt(sdlc_dir, goal, phase, outcome="ok",
                        verdict=next(iter(found)) if len(found) == 1 else None,
                        brief_sha256=hashlib.sha256(brief.encode("utf-8")).hexdigest(),
                        output_sha256=hashlib.sha256(output.encode("utf-8")).hexdigest(),
-                       plan_sha256=plan.group(1) if plan else None)
+                       plan_sha256=plan.group(1) if plan else None,
+                       brief_phase=named.group(1) if named else None, content_key=key)
     sys.stdout.write(output)
     return 0
 
