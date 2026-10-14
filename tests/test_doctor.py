@@ -3073,7 +3073,7 @@ def test_check_never_flags_queue_source_label_as_a_pass_fail_gap(tmp_path):
 def _hyg(d, project_md=None, north_star=None):
     base = pathlib.Path(d) / ".sdlc"
     (base / "context").mkdir(parents=True)
-    (base / "config.json").write_text("{}")
+    (base / "config.json").write_text('{"gates": {"phase_record": {"enabled": true}}}')  # #1343: keep the row green
     if project_md is not None:
         (base / "project.md").write_text(project_md)
     if north_star is not None:
@@ -7639,6 +7639,150 @@ def test_pick_path_gate_state_board_skipped_when_graphql_unavailable(monkeypatch
     assert "board_migrate" not in state
     assert called == []
 
+
+_SSH = "git" + "@github.com:"
+_SSH_ALIAS = "git" + "@github.com-alias:"
+
+
+# #1314: a configured repo / project owner that differs from the origin remote.
+def _origin_runner(url):
+    def run(args):
+        if args[:1] == ["git"] and "get-url" in args:
+            return url
+        return ""
+    return run
+
+
+def _mismatch_rows(cfg, url, tmp_path):
+    d = _doc()
+    base = _sdlc(tmp_path, cfg)
+    checks = d.check(base, run=_origin_runner(url), cheap_only=True)
+    return [c for c in checks if c["name"].startswith("configured repo matches origin")]
+
+
+def _gh_cfg(repo=None, owner=None):
+    gh = {}
+    if repo is not None:
+        gh["repo"] = repo
+    if owner is not None:
+        gh["project"] = {"owner": owner}
+    return {"discovery": {"source": "github", "github": gh}}
+
+
+def test_repo_differing_from_origin_warns_naming_both(tmp_path):
+    rows = _mismatch_rows(_gh_cfg(repo="acme/widgets"), _SSH + "other/gadgets.git", tmp_path)
+    assert len(rows) == 1 and rows[0]["ok"] is False
+    assert "acme/widgets" in rows[0]["fix"] and "other/gadgets" in rows[0]["fix"]
+    assert "discovery.github.repo" in rows[0]["fix"]
+
+
+def test_project_owner_differing_from_origin_owner_warns(tmp_path):
+    rows = _mismatch_rows(_gh_cfg(repo="acme/widgets", owner="elsewhere"),
+                          "https://github.com/acme/widgets.git", tmp_path)
+    assert len(rows) == 1 and rows[0]["ok"] is False
+    assert "elsewhere" in rows[0]["fix"] and "acme" in rows[0]["fix"]
+    assert "project.owner" in rows[0]["fix"]
+
+
+@pytest.mark.parametrize("url", [_SSH + "acme/widgets.git", "https://github.com/acme/widgets.git",
+                                 "https://github.com/Acme/Widgets", _SSH_ALIAS + "acme/widgets.git"])
+def test_matching_origin_forms_add_no_warning(url, tmp_path):
+    assert _mismatch_rows(_gh_cfg(repo="acme/widgets", owner="acme"), url, tmp_path) == []
+
+
+def test_unset_repo_or_unparsable_origin_adds_no_warning(tmp_path):
+    assert _mismatch_rows(_gh_cfg(), _SSH + "other/gadgets.git", tmp_path) == []
+    assert _mismatch_rows(_gh_cfg(repo="acme/widgets"), "", tmp_path / "a") == []
+    assert _mismatch_rows(_gh_cfg(repo="acme/widgets", owner="@me"), "not a url", tmp_path / "b") == []
+
+
+def test_matching_config_leaves_other_rows_unchanged(tmp_path):
+    d = _doc()
+    cfg = _gh_cfg(repo="acme/widgets")
+    on = [c["name"] for c in d.check(_sdlc(tmp_path / "a", cfg), run=_origin_runner(_SSH + "acme/widgets.git"), cheap_only=True)]
+    off = [c["name"] for c in d.check(_sdlc(tmp_path / "b", cfg), run=_origin_runner(""), cheap_only=True)]
+    assert on == off
+
+
+# #1315: a live watcher started from an older build than the installed plugin.
+def _plugin_version(d):
+    m = json.loads((D.parents[3] / ".claude-plugin" / "plugin.json").read_text())
+    return m["version"]
+
+
+def _watcher_state(tmp_path, build=None, pid=None, fresh=True):
+    base = pathlib.Path(_sdlc(tmp_path, {}))
+    st = base / "state"; st.mkdir()
+    (st / "watch.pid").write_text("%d\n" % (os.getpid() if pid is None else pid))
+    if fresh:
+        (st / "watch.heartbeat").write_text("")
+    if build is not None:
+        (st / "watch.build").write_text(build)
+    return base
+
+
+def _stale_build_rows(base):
+    checks = _doc().check(str(base), cheap_only=True)
+    return [c for c in checks if c["name"].startswith("running watcher matches installed build")]
+
+
+def test_live_watcher_with_older_build_warns_naming_both(tmp_path):
+    rows = _stale_build_rows(_watcher_state(tmp_path, build="0.0.1\n"))
+    assert len(rows) == 1 and rows[0]["ok"] is False
+    assert "0.0.1" in rows[0]["fix"] and _plugin_version(_doc()) in rows[0]["fix"]
+    assert "stop" in rows[0]["fix"].lower()
+
+
+def test_live_watcher_with_no_recorded_build_reads_as_older(tmp_path):
+    rows = _stale_build_rows(_watcher_state(tmp_path))
+    assert len(rows) == 1 and rows[0]["ok"] is False
+
+
+def test_matching_build_dead_pid_stale_heartbeat_or_no_state_add_no_row(tmp_path):
+    cur = _plugin_version(_doc())
+    assert _stale_build_rows(_watcher_state(tmp_path / "a", build=cur + "\n")) == []
+    assert _stale_build_rows(_watcher_state(tmp_path / "b", build="0.0.1", pid=2 ** 22 + 12345)) == []
+    assert _stale_build_rows(_watcher_state(tmp_path / "c", build="0.0.1", fresh=False)) == []
+    assert _stale_build_rows(pathlib.Path(_sdlc(tmp_path / "d", {}))) == []
+
+
+# --- ledger wording: "join" when the remote ledger branch is already known (#1318) -------------
+
+_OLD_INIT_FIX = ("run /sigma-ledger — one command creates the ops branch, seeds your file + TEAM.md, "
+                 "and pushes")
+_OLD_STATE = "ON but NOT set up — run /sigma-ledger to create + push the ops branch"
+
+
+def _probe_runner(known):
+    """Fake runner answering the local remote-tracking-ref probe: `known` = the ref exists."""
+    def run(args):
+        if "rev-parse" in args and "refs/remotes/origin/sdlc-ledger" in args:
+            return "abc123\n" if known else ""
+        return ""
+    return run
+
+
+def test_ledger_rows_say_join_when_the_remote_branch_exists():
+    d = _doc()
+    with tempfile.TemporaryDirectory() as t:
+        base = _sdlc(t, {"ledger": {"enabled": True}})
+        c = _by_name(d.check(base, run=_probe_runner(True)))["team ledger initialized"]
+        assert c["ok"] is False and "joins the existing ops branch" in c["fix"]
+        assert "creates the ops branch" not in c["fix"]
+        rows = {n: s for n, s, _ in d.features(base, run=_probe_runner(True))}
+        assert "join the existing ops branch" in rows["team ledger"]
+        assert "create + push" not in rows["team ledger"]
+
+
+def test_ledger_rows_keep_exact_wording_when_the_branch_is_unknown():
+    d = _doc()
+    with tempfile.TemporaryDirectory() as t:
+        base = _sdlc(t, {"ledger": {"enabled": True}})
+        for run in (_probe_runner(False), _runner()):
+            c = _by_name(d.check(base, run=run))["team ledger initialized"]
+            assert c["fix"] == _OLD_INIT_FIX
+            rows = {n: s for n, s, _ in d.features(base, run=run)}
+            assert rows["team ledger"] == _OLD_STATE
 
 # --- D2 F03: "north-star reachable" - a failing row only when the north-star cannot be located/read ---
 

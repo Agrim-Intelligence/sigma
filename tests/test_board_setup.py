@@ -655,6 +655,7 @@ def test_a_resume_after_a_loop_tick_does_not_strand_the_cards_the_tick_made(tmp_
     s = _src(sdlc, gh)
     p = s.next_pending()
     s.mark_in_progress(p)
+    s.backfill_board()      # #1305: the other card is made by the watcher's back-fill, not the verb
     assert len(board["items"]) == 2
     rc, text = _run(sdlc, gh, "--number", str(board["number"]), "--yes")
     assert rc == 0, text

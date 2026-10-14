@@ -782,6 +782,44 @@ def test_create_tracked_issue_weak_match_still_files_and_records_candidate_refs(
     assert any("#88" in w and "0.3" in w for w in report["warnings"])
 
 
+def _closed_pack(score):
+    return {"schema": "brainstorm-dedup/v1",
+            "candidates": [{"ref": "90", "score": score, "state": "closed", "strength": "duplicate",
+                            "source": "mirror", "evidence": ["pool"]}],
+            "degraded": []}
+
+
+def test_create_tracked_issue_mid_score_closed_match_still_files_and_names_it_related(
+        tmp_path, monkeypatch):
+    """#1217: a 0.51 match against a CLOSED issue is a weak signal; the follow-up is filed."""
+    sdlc = _project(tmp_path)
+    monkeypatch.setattr(handoff, "_duplicate_search", lambda *a, **k: _closed_pack(0.51))
+    src = FakeSource(number="61")
+    report = handoff.create_tracked_issue(
+        sdlc, ON, "0010-x.md", "engine", "new helper wanted", same_area=True,
+        immediately_actionable=True, blocks_goal=False, source=src)
+    assert report["issue"] == "61" and report["duplicate_of"] is None
+    assert src.created is not None
+    assert any("#90" in w and "0.51" in w for w in report["warnings"])
+
+
+def test_create_tracked_issue_near_exact_closed_match_is_still_folded(tmp_path, monkeypatch):
+    sdlc = _project(tmp_path)
+    monkeypatch.setattr(handoff, "_duplicate_search", lambda *a, **k: _closed_pack(0.93))
+    src = FakeSource(number="61")
+    report = handoff.create_tracked_issue(
+        sdlc, ON, "0010-x.md", "engine", "already done", same_area=True,
+        immediately_actionable=True, blocks_goal=False, source=src)
+    assert report["duplicate_of"] == "90" and src.created is None
+
+
+def test_closed_duplicate_threshold_is_configurable_and_open_matches_are_unaffected():
+    closed = {"state": "closed", "score": 0.6}
+    assert not handoff._closed_match_is_exact(closed, {})
+    assert handoff._closed_match_is_exact(closed, {"dedup": {"closed_duplicate_threshold": 0.5}})
+    assert handoff._closed_match_is_exact({"state": "open", "score": 0.46}, {})
+
+
 def test_create_tracked_issue_no_match_files_normally_with_no_extra_warnings(tmp_path, monkeypatch):
     sdlc = _project(tmp_path)
     monkeypatch.setattr(handoff, "_duplicate_search", lambda *a, **k: {
@@ -2644,3 +2682,21 @@ def test_filing_park_is_scoped_own_with_priority_label_first(tmp_path):
         _file(tmp_path)
     r, src = _file(tmp_path, src=GuardedSource())
     assert src.scoped is True and "cap" in src.parked[0][1]
+
+
+# #1331: an upkeep finding is a report for a person, never a pickable goal, even with triage on.
+
+def test_upkeep_finding_with_triage_on_carries_no_goal_label_and_is_queued(tmp_path):
+    report, src = _file(tmp_path, upkeep_finding=True)
+    assert src.created["goal_label"] is False
+    assert handoff.PROPOSED_LABEL in src.created["labels"]
+    assert "triage" not in report and src.parked == []
+
+
+def test_upkeep_finding_keyword_off_is_byte_identical_for_every_other_caller(tmp_path):
+    for cfg in ({}, _off()):
+        _r, default = _file(tmp_path, cfg)
+        _r, explicit = _file(tmp_path, cfg, upkeep_finding=False)
+        assert default.created == explicit.created
+    _r, on = _file(tmp_path)
+    assert on.created["goal_label"] is True and handoff.PROPOSED_LABEL not in on.created["labels"]

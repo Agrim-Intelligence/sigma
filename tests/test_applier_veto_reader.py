@@ -45,7 +45,20 @@ class Src:
         self.notes.append((issue, text))
 
 
-def _applied_world(tmp_path):
+class BoardSrc(Src):
+    board_active = True
+    col = {"ready": "Ready", "parked": "Parked"}
+
+    def __init__(self):
+        super().__init__()
+        self.cards = []
+
+    def _set_board_status(self, issue, status, warn=True):
+        self.cards.append((issue, status))
+        return True
+
+
+def _applied_world(tmp_path, src=None):
     cfg, sd = _cfg(), str(tmp_path / ".sdlc")
     for _ in range(8):
         DS.append(sd, {"how": "human", "qkind": "needs_decision", "area": "docs", "choice": "merge"}, cfg)
@@ -53,9 +66,10 @@ def _applied_world(tmp_path):
     RB.propose(sd, {"qkind": "needs_decision", "area": "docs", "option": "merge", "reason": "low risk"}, cfg, now=T0)
     RB.approve(sd, RB.load(sd, cfg)[-1]["id"], "boss", cfg, now=T0)
     AP.open_ask(sd, 7, "needs_decision", "docs", ["merge", "wait"], cfg, T0)
-    src = Src()
+    src = src or Src()
     assert [a["result"] for a in AP.tick(sd, cfg, T0 + 61 * MIN, source=src)] == ["done"]
     src.swaps.clear(), src.notes.clear()
+    getattr(src, "cards", []).clear()
     return sd, cfg, src
 
 
@@ -83,6 +97,23 @@ def test_owner_no_vetoes_and_reparks(tmp_path):
     assert _tick(sd, cfg, src, [_comment("boss", "no", 65)], minutes=80) == []  # once only
 
 
+def test_veto_on_a_board_active_source_moves_the_card_back_to_parked(tmp_path):
+    sd, cfg, src = _applied_world(tmp_path, BoardSrc())
+    acts = _tick(sd, cfg, src, [_comment("boss", "no", 65)])
+    assert [(a["kind"], a["result"]) for a in acts] == [("veto", "done")]
+    assert src.cards == [(7, "Parked")]
+
+
+def test_a_failed_card_move_does_not_fail_the_veto(tmp_path):
+    class Stuck(BoardSrc):
+        def _set_board_status(self, issue, status, warn=True):
+            return status != "Parked"
+    sd, cfg, src = _applied_world(tmp_path, Stuck())
+    acts = _tick(sd, cfg, src, [_comment("boss", "no", 65)])
+    assert [(a["kind"], a["result"]) for a in acts] == [("veto", "done")]
+    assert _state(sd).get("reparked")
+
+
 def test_other_text_non_owner_or_old_comment_change_nothing(tmp_path):
     sd, cfg, src = _applied_world(tmp_path)
     for c in ([_comment("boss", "no thanks", 65)], [_comment("boss", "yes", 65)],
@@ -97,12 +128,11 @@ def test_no_after_the_veto_period_changes_nothing(tmp_path):
     assert _state(sd).get("vetoed_at") is None
 
 
-def test_ask_not_applied_changes_nothing(tmp_path):
+def test_ask_not_applied_is_not_vetoed(tmp_path):
     cfg, sd = _cfg(), str(tmp_path / ".sdlc")
     AP.open_ask(sd, 7, "needs_decision", "docs", ["merge"], cfg, T0)
-    called = []
-    AP.tick(sd, cfg, T0 + 5 * MIN, source=Src(), comments_fn=lambda i: called.append(i) or [])
-    assert called == [] and _state(sd)["state"] == "pending"
+    AP.tick(sd, cfg, T0 + 5 * MIN, source=Src(), comments_fn=lambda i: [_comment("boss", "yes", 2)])
+    assert _state(sd)["state"] == "pending" and _state(sd).get("vetoed_at") is None
 
 
 def test_closed_gate_reads_nothing(tmp_path):

@@ -1934,6 +1934,10 @@ def _set_filing(report, status):
     report["filing"] = min((report.get("filing", NO_FILING), status), key=_rank)
 
 
+DIRECT_SLOT = "direct:"
+DIRECT_ISSUE_SLOT = "directissue:"
+
+
 def _file_issue(sdlc_dir, config, goal, report, title, why, body, slot="", key=""):
     """File the finding as tracked work. Never raises, and never blocks the goal that found it.
 
@@ -1966,7 +1970,9 @@ def _file_issue(sdlc_dir, config, goal, report, title, why, body, slot="", key="
         result = _handoff().create_tracked_issue(
             sdlc_dir, config, goal, AREA, why,
             same_area=True, immediately_actionable=False, blocks_goal=False,
-            title=title, body=body)
+            title=title, body=body, upkeep_finding=True,
+            # No goal to inherit a unit from: name the unit explicitly (`target_unit`), never read issue "None".
+            **({"target_unit": report["unit"]} if goal is None else {}))
     except Exception as exc:              # noqa: BLE001 - a filing must never break a pick
         _set_filing(report, FILING_FAILED)
         _note("sigma: rebase upkeep: %s was not filed as an issue (%s); the finding is above "
@@ -1987,6 +1993,11 @@ def _file_issue(sdlc_dir, config, goal, report, title, why, body, slot="", key="
     _set_filing(report, FILED)
     if key and slot:
         _remember(sdlc_dir, report["unit"], slot, key)
+        if slot.startswith(DIRECT_SLOT):
+            duplicate = (result or {}).get("duplicate_of")
+            _remember(sdlc_dir, report["unit"], DIRECT_ISSUE_SLOT + slot[len(DIRECT_SLOT):],
+                      park.record(key, int(issue) if str(issue).isdigit() else None,
+                                  bool(duplicate) and str(duplicate) == str(issue)))
 
 
 def _aftermath(left, branch, tip, before):
@@ -2051,7 +2062,7 @@ def _direct_body(unit, branch, base, found):
         "- **The commits really are direct:** move the work onto an `sdlc/*` branch, land it "
         "through a pull request, and drop them from `%s`.\n"
         "- **They did arrive through a pull request** but lost its trace (for example a "
-        "merge-commit landing that an older, plain-rebase upkeep flattened -- #2756): confirm "
+        "merge-commit landing that an older, plain-rebase upkeep flattened): confirm "
         "that against the pull request, then ack them. From the repository root:\n\n"
         "  ```\n"
         "  python3 <sigma>/skills/sigma-loop/scripts/feature_rebase.py ack .sdlc %s <sha>...\n"
@@ -2229,6 +2240,7 @@ def _file_park(sdlc_dir, config, report, branch, base, run=None, cwd=None, remot
         result = _handoff().create_tracked_issue(
             sdlc_dir, config, None, AREA, "%s could not be replayed onto %s (parked)" % (branch, base),
             same_area=True, immediately_actionable=False, blocks_goal=False, title=title,
+            upkeep_finding=True,
             body=_park_body(report["unit"], branch, base, info, report["leftovers"], report["tip"])
             + ("\nThis supersedes the earlier finding #%d, which named a different conflict for this unit; that one is "
                "left open for a person to close.\n" % supersedes["number"] if supersedes else ""),
@@ -2301,6 +2313,39 @@ def _settle_parks(sdlc_dir, config, run, cwd, remote, report):
         _forget(sdlc_dir, unit, gone)
     except Exception as exc:              # noqa: BLE001 - settling must never cost the pass
         _note("sigma: rebase upkeep: parked findings were not settled (%s).\n" % _flat(exc))
+
+
+def _settle_direct(sdlc_dir, config, run, cwd, remote, report, branch):
+    """#1331: a pass that finds no unacknowledged direct commits has resolved the direct-commit finding it filed.
+
+    Same rules as `_settle_parks`: under the gate only, a REUSED duplicate is never closed, a failed close keeps its
+    slot for the next pass, never raises."""
+    if not gate.enabled(config):
+        return
+    unit = report["unit"]
+    try:
+        store = _read_filed(sdlc_dir, unit)
+        slot = DIRECT_ISSUE_SLOT + branch
+        value = store.get(slot)
+        issue = park.issue_of(value)
+        gone = [slot] if slot in store else []
+        if issue is not None and isinstance(value, dict) and not value.get("reused"):
+            gone = []
+            repo = sync.repo_slug(config, run, cwd, remote)
+            try:
+                _load("gh_api").comment_issue(
+                    lambda args: run(cwd, [_GH, *args]), issue,
+                    "A later upkeep pass found no unacknowledged direct commits on this branch, so the finding is "
+                    "resolved. Closing it.", repo=repo)
+                _load("gh_api").close_issue(lambda args: run(cwd, [_GH, *args]), issue, repo=repo, reason="completed")
+                gone = [slot]
+            except Exception as exc:      # noqa: BLE001 - keep the slot; the next pass retries
+                _note("sigma: rebase upkeep: could not close finding #%s (%s); it is retried on the next pass.\n"
+                      % (issue, _flat(exc)))
+        if gone:
+            _forget(sdlc_dir, unit, gone + ["direct:" + branch])
+    except Exception as exc:              # noqa: BLE001 - settling must never cost the pass
+        _note("sigma: rebase upkeep: the direct-commit finding was not settled (%s).\n" % _flat(exc))
 
 
 BLOCKED_SUFFIX = ".rebase-blocked.json"
@@ -2434,11 +2479,34 @@ def clause(report):
 
 
 def _report(goal, unit, config):
-    return {"outcome": FAILED, "goal": str(goal), "unit": unit, "branch": None, "base": None,
+    return {"outcome": FAILED, "goal": None if goal is None else str(goal), "unit": unit, "branch": None, "base": None,
             "before": None, "after": None, "tip": None, "replayed": [], "conflicts": [],
             "skipped": [], "direct": [], "acked": [], "issues": [], "leftovers": [], "filing": NO_FILING,
             "dropped": [], "dropped_count": 0, "would_be": None,
             "serialised": True, "merge_method": merge_method(config), "why": "", "note": ""}
+
+
+UNIT_BASE_WHY = "base is a unit branch; upkeep needs the default branch"
+UNIT_BASE_NOTE = "base is a unit branch"
+
+
+def is_unit_base(base, remote=None):
+    """#1311: a `work.base` that is itself a unit branch is no integration branch; upkeep refuses it (default branch only).
+    #1327: also when written with the remote's name or as a full ref (`origin/feature/x`, `refs/heads/feature/x`)."""
+    if not isinstance(base, str):
+        return False
+    name, remote = base.strip(), (remote or DEFAULT_REMOTE)
+    for lead in ("refs/heads/", "refs/remotes/" + remote + "/", remote + "/"):
+        if name.startswith(lead):
+            name = name[len(lead):]
+            break
+    return name.startswith(features.BRANCH_PREFIX)
+
+
+def _sibling_selected(unit, settings):
+    """True when the include/exclude lists admit `unit` (same matcher the scheduler uses)."""
+    sched = _load("feature_upkeep_sched")
+    return bool(sched.selected([unit], settings["units.include"], settings["units.exclude"]))
 
 
 def upkeep(sdlc_dir, config, goal, unit, run=None, cwd=None, remote=None):
@@ -2486,6 +2554,14 @@ def _upkeep(sdlc_dir, config, goal, unit, run, cwd, remote, report):
     features_dir = registry.registry_dir(sdlc_dir)
     if not features_dir.is_dir():
         report["outcome"] = NOT_ADOPTED
+        return report
+    # #1335: the scheduler's `upkeep.units.include/exclude` filter holds at the pick too. An unadmitted
+    # unit is left alone (no fetch, no backup ref, no push); `disabled` is the neutral word for that.
+    # Defaults admit every unit, and an invalid `upkeep` block reads as defaults, so nothing changes there.
+    upkeep_settings = gate.read(config).settings
+    if not _sibling_selected(unit, upkeep_settings):
+        report["outcome"] = DISABLED
+        report["why"] = "excluded by upkeep.units.include/exclude"
         return report
 
     run = run or _run
@@ -2543,6 +2619,10 @@ def _upkeep(sdlc_dir, config, goal, unit, run, cwd, remote, report):
             if not base:
                 report["why"] = ("work.base is empty, so upkeep has no integration branch and did nothing; "
                                  "set it in .sdlc/config.json (for example to your default branch)")
+            return report
+        if is_unit_base(base, remote or _remote(config)):
+            report["outcome"] = NO_BASE
+            report["why"] = UNIT_BASE_WHY
             return report
         live, why = sync.live_branches(run, cwd, remote)
         if live is None:
@@ -2663,6 +2743,8 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
                             direct_commits(run, cwd, base_ref, feature_ref), config)
     report["direct"] = found
     report["acked"] = acked
+    if not found:
+        _settle_direct(sdlc_dir, config, run, cwd, remote, report, branch)
     if found:
         report["outcome"] = DIRECT_COMMITS
         _file_issue(sdlc_dir, config, goal, report,

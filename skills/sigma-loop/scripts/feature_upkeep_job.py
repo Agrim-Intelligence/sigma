@@ -85,6 +85,16 @@ def _record(sdlc_dir, doc):
     return sched.write_json(sdlc_dir, sched.RECORD_REL, doc)
 
 
+def _reason_of(result, bounded):
+    """#1327: the child's `reason` text, kept next to the outcome in the job record; None when it said none. Never raises."""
+    try:
+        doc = json.loads((result.out or "").strip().splitlines()[-1]) if result.outcome == bounded.OK else None
+    except (ValueError, IndexError):
+        return None
+    reason = doc.get("reason") if isinstance(doc, dict) else None
+    return reason[:200] if isinstance(reason, str) and reason else None
+
+
 def _outcome_of(result, bounded):
     """-> (outcome word, unit_tip or None) from the child's Result. Words in the state vocabulary pass through; anything else
     the engine did not say is `failed`; a stop or timeout keeps its own word for the note."""
@@ -125,7 +135,7 @@ def run_job(config, sdlc_dir, root, unit, run_id, cap, *, environ=None, command=
         _record(sdlc_dir, dict(head, state="running", started_at=int(time.time())))
         beat_path = sched.path_of(sdlc_dir, sched.BEAT_REL)
         _touch(beat_path)
-        outcome, tip = "failed", None                     # what a crash inside this block leaves behind
+        outcome, tip, reason = "failed", None, None       # what a crash inside this block leaves behind
         try:
             argv = command or [sys.executable, "-I", str(pathlib.Path(__file__).resolve()), "--engine", "--sdlc", str(sdlc_dir),
                                "--root", str(root), "--unit", unit,
@@ -136,8 +146,10 @@ def run_job(config, sdlc_dir, root, unit, run_id, cap, *, environ=None, command=
                                        stop_path=stop, merge=False,
                                        clock=beat or BeatingClock(lambda: _touch(beat_path), base=clock))
             outcome, tip = _outcome_of(result, bounded)
+            reason = _reason_of(result, bounded)
         finally:
-            _record(sdlc_dir, dict(head, state="done", outcome=outcome, unit_tip=tip, finished_at=int(time.time())))
+            _record(sdlc_dir, dict(head, state="done", outcome=outcome, unit_tip=tip, finished_at=int(time.time()),
+                                   **({"reason": reason} if reason else {})))
             if outcome in state.OUTCOMES:
                 state.record_outcome(sdlc_dir, unit, int(time.time()), outcome, tip if tip and len(tip) in (40, 64) else None)
             elif outcome == "timeout":
@@ -161,24 +173,39 @@ def _unit_pass(config, sdlc_dir, root, unit, unit_pass=None):
         call = unit_pass or _sibling("feature_upkeep_pass").run_unit_pass
         got = call(config, str(sdlc_dir), unit, "refs/remotes/%s/%s" % (remote, branch), "refs/remotes/%s/%s" % (remote, base),
                    base, int(time.time()), remote=remote, branch=branch, cwd=str(root))
-        return {"unit_pass": got.get("result") if isinstance(got, dict) else "failed"}
+        got = got if isinstance(got, dict) else {}
+        return dict({"unit_pass": got.get("result") or "failed"}, **({"lease": True} if got.get("reason") == "lease-refused" else {}))
     except Exception:                                     # noqa: BLE001 - maintenance never costs the line
         return {"unit_pass": "failed"}
+
+
+# #1330: the only outcomes after which the unit pass may run; every other word (a failure, or an engine that refused or did not look:
+# disabled, busy, remote-unreadable, no-base, no-unit, not-adopted) leaves the unit alone, since the pass force-pushes with no backup.
+UNIT_PASS_OUTCOMES = frozenset({"current", "no-branch"})
 
 
 @feature_upkeep.gated("machine")
 def run_engine(config, sdlc_dir, root, unit, *, environ=None, upkeep=None, unit_pass=None):
     """The pass itself, inside the child: the engine's own entry point, called in-process, handed NO goal. Prints one JSON
     line (`outcome`, `unit_tip`) as its last line of output. -> the report."""
-    upkeep = upkeep or _sibling("feature_rebase").upkeep
+    rebase = _sibling("feature_rebase")
+    if rebase.is_unit_base(rebase._safe_ref("work.base", rebase._settings(config).get("base")) or "", rebase._remote(config)):
+        line = {"outcome": rebase.NO_BASE, "unit_tip": None, "unit_pass": "skipped", "reason": rebase.UNIT_BASE_WHY}   # #1311
+        print(json.dumps(line, sort_keys=True), flush=True)
+        return line
+    upkeep = upkeep or rebase.upkeep
     report = upkeep(sdlc_dir, config, None, unit, cwd=str(root))
     report = report if isinstance(report, dict) else {}
     tip = report.get("tip") or report.get("after") or report.get("unit_tip")
     line = {"outcome": report.get("outcome") or "failed", "unit_tip": tip if isinstance(tip, str) else None}
     if line["outcome"] == SKIPPED_AFTER:                  # the older pass already rewrote this unit in this run: ONE path owns it
         line["unit_pass"] = "skipped"
+    elif line["outcome"] not in UNIT_PASS_OUTCOMES:       # #1330: only an engine that looked and found nothing to do hands over to the unit pass
+        line["unit_pass"] = "skipped"
     else:
         line.update(_unit_pass(config, sdlc_dir, root, unit, unit_pass))
+        if line.pop("lease", False):                      # #1344: a correct refusal is recorded as one, not as a failure
+            line["outcome"] = "lease-refused"
     print(json.dumps(line, sort_keys=True), flush=True)
     return line
 
@@ -195,8 +222,15 @@ def build_parser():
     return parser
 
 
+def _windows():
+    return sys.platform == "win32"
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    if _windows():                                        # #1344: the scheduler and the doctor refuse; so does a direct run
+        print("feature_upkeep_job.py: refused: background upkeep is not supported on Windows", file=sys.stderr)
+        return 2
     try:
         config = json.loads(pathlib.Path(args.sdlc).joinpath("config.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):

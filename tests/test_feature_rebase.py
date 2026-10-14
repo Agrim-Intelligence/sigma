@@ -35,6 +35,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -443,6 +444,21 @@ def test_a_feature_carrying_a_direct_commit_is_detected_rather_than_rebased_over
     assert [d["subject"] for d in report["direct"]] == ["quick fix, straight onto the branch"]
     assert len(filed) == 1
     assert FEATURE in filed[0]["title"] + filed[0]["body"]
+
+
+def test_upkeep_with_no_goal_files_a_direct_commit_finding_with_goal_none(tmp_path):
+    """#1340. Landing has no goal; it must pass None, and the filing path must take that without an
+    int() error, without reading an issue named after the unit, and without a 'None' goal string."""
+    m = _mod()
+    world = World(tmp_path).build(feature_commits=(
+        ("f.txt", "f", "feat: land a goal (#11)"),
+        ("h.txt", "h", "quick fix, straight onto the branch")))
+    world.move_integration()
+    filed = _filer(m)
+    report = m.upkeep(str(world.sdlc), _cfg(), None, UNIT)
+    assert report["outcome"] == m.DIRECT_COMMITS, report
+    assert report["goal"] is None, report
+    assert len(filed) == 1 and filed[0]["goal"] is None, filed
 
 
 def test_a_squash_landing_and_a_merge_landing_both_read_as_arriving_through_a_pull_request(tmp_path):
@@ -2788,3 +2804,141 @@ def test_161_an_ack_landed_on_the_integration_branch_frees_a_checkout_that_lacks
     path.unlink()
     assert not path.exists()
     assert _upkeep(m, world)["outcome"] == m.REBASED
+
+
+# --------------------------------------------------------------------------- #1331: upkeep findings are not goals
+
+
+def test_direct_commit_finding_is_filed_as_an_upkeep_finding_without_a_predecessor_reference(tmp_path):
+    m = _mod()
+    world = World(tmp_path).build(feature_commits=(
+        ("f.txt", "f", "feat: land a goal (#11)"),
+        ("h.txt", "h", "quick fix, straight onto the branch")))
+    world.move_integration()
+    filed = _filer(m)
+    _upkeep(m, world)
+    assert filed[0]["upkeep_finding"] is True
+    assert "#2756" not in filed[0]["body"]
+    assert not re.search(r"#\d", filed[0]["body"])
+
+
+def _settle_world(tmp_path, m, reused=False):
+    sdlc = tmp_path / ".sdlc"
+    (sdlc / "state" / "features").mkdir(parents=True)
+    m._remember(str(sdlc), UNIT, "direct:" + FEATURE, "tip1")
+    m._remember(str(sdlc), UNIT, "directissue:" + FEATURE, m.park.record("tip1", 77, reused))
+    calls = []
+
+    def run(cwd, argv):
+        calls.append(argv)
+        return "{}"
+    return str(sdlc), run, calls
+
+
+def test_a_later_clean_pass_closes_the_direct_commit_finding(tmp_path):
+    m = _mod()
+    sdlc, run, calls = _settle_world(tmp_path, m)
+    report = {"unit": UNIT, "base": "main"}
+    m._settle_direct(sdlc, {"upkeep": {"enabled": True}}, run, str(tmp_path), "origin", report, FEATURE)
+    assert any("issues/77" in " ".join(a) and "state=closed" in " ".join(a) for a in calls), calls
+    assert m._read_filed(sdlc, UNIT) == {}
+
+
+def test_a_reused_or_gate_closed_direct_commit_finding_is_never_closed(tmp_path):
+    m = _mod()
+    sdlc, run, calls = _settle_world(tmp_path, m, reused=True)
+    m._settle_direct(sdlc, {"upkeep": {"enabled": True}}, run, str(tmp_path), "origin",
+                     {"unit": UNIT, "base": "main"}, FEATURE)
+    assert not any("state=closed" in " ".join(a) for a in calls)
+    sdlc, run, calls = _settle_world(tmp_path / "b", m)
+    m._settle_direct(sdlc, {}, run, str(tmp_path), "origin", {"unit": UNIT, "base": "main"}, FEATURE)
+    assert calls == []
+
+
+def test_a_goalless_filing_through_the_real_filer_reads_no_issue_and_still_stamps_the_unit(tmp_path, capsys):
+    """`_file_issue` with `goal=None` goes through the REAL `handoff.create_tracked_issue`: no read of an issue
+    called 'None', no int() warning on stderr, and the unit still reaches the issue as its label."""
+    m = _mod()
+    handoff = _load("handoff")
+    reads = []
+
+    class Src:
+        def fetch_body_labels(self, goal):
+            reads.append(goal)
+            raise ValueError("invalid literal for int() with base 10: %r" % (goal,))
+
+        def create_dependency(self, title, body, assignee, labels=(), goal_label=True):
+            self.created = {"title": title, "body": body, "labels": list(labels)}
+            return "55"
+
+        def attach_label(self, issue, label):
+            self.attached = (issue, label)
+            return True
+
+    src = Src()
+    real = handoff.create_tracked_issue
+    m._HANDOFF = types.SimpleNamespace(
+        create_tracked_issue=lambda *a, **k: real(*a, source=src, run=lambda *x, **y: "", **k),
+        DEFAULT_PRIORITY="P1")
+    registry = handoff._feature_registry()
+    registry.resolve_open_unit = lambda sdlc_dir, name: name
+    sdlc = tmp_path / ".sdlc"
+    (sdlc / "state").mkdir(parents=True)
+    report = {"unit": UNIT, "issues": [], "filing": None}
+    m._file_issue(str(sdlc), {}, None, report, "Some finding", "one line", "body text")
+    err = capsys.readouterr().err
+    assert reads == [] and "invalid literal" not in err and "None" not in err.replace("None of", ""), (reads, err)
+    assert "Feature: " + UNIT in src.created["body"], src.created
+    assert src.attached == ("55", "feature:" + UNIT), src.attached
+    assert "None" not in src.created["body"].replace("None of", "")
+
+
+# --------------------------------------------------------------------------- units.include / units.exclude at the pick (#1335)
+
+
+def _with_units(**units):
+    cfg = _cfg()
+    cfg["upkeep"] = {"enabled": True, "units": units}
+    return cfg
+
+
+def test_an_excluded_unit_is_not_brought_forward_at_the_pick(tmp_path):
+    m = _mod()
+    world = World(tmp_path).build()
+    world.move_integration()
+    old = world.tip(FEATURE)
+    report = _upkeep(m, world, config=_with_units(exclude=[UNIT]))
+    assert report["outcome"] == m.DISABLED, report
+    assert world.tip(FEATURE) == old, "an excluded unit was moved"
+
+
+def test_an_unlisted_unit_is_not_brought_forward_when_include_names_others(tmp_path):
+    m = _mod()
+    world = World(tmp_path).build()
+    world.move_integration()
+    old = world.tip(FEATURE)
+    report = _upkeep(m, world, config=_with_units(include=["other-*"]))
+    assert report["outcome"] == m.DISABLED, report
+    assert world.tip(FEATURE) == old
+
+
+def test_an_included_unit_still_moves_at_the_pick(tmp_path):
+    m = _mod()
+    world = World(tmp_path).build()
+    world.move_integration()
+    old = world.tip(FEATURE)
+    report = _upkeep(m, world, config=_with_units(include=[UNIT], exclude=["zzz"]))
+    assert report["outcome"] == m.REBASED, report
+    assert world.tip(FEATURE) != old
+
+
+def test_no_include_or_exclude_is_the_same_as_no_upkeep_block(tmp_path):
+    m = _mod()
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    a, b = World(tmp_path / "a").build(), World(tmp_path / "b").build()
+    a.move_integration()
+    b.move_integration()
+    plain = _upkeep(m, a)
+    blank = _upkeep(m, b, config=_with_units())
+    assert plain["outcome"] == blank["outcome"] == m.REBASED

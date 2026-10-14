@@ -26,7 +26,6 @@ than a day are pruned by embedded time. The apply loop is serial and bounded by 
 No model call, no network except the two gestures through the injected source.
 """
 import datetime
-import hashlib
 import importlib.util
 import json
 import os
@@ -45,7 +44,22 @@ _DAY = datetime.timedelta(days=1)
 DEFAULTS = {"allow_silent": [], "window_minutes": 1440, "spot_check_one_in": 5,
             "max_auto_applied_per_day": 3, "stale_after_intervals": 3, "prune_after_days": 30}
 DEFAULT_INTERVAL_SECONDS = 900
-GESTURES = ("unpark", "promote")
+GESTURES = ("unpark", "promote", "keep-parked")
+
+
+def option_gesture(option):
+    """The gesture a rule's option text means: `keep-parked` when it reads as leaving the issue
+    parked (a leading no/don't, or keep/leave/stay/remain/hold with 'park'), else `unpark`
+    (unknown text keeps the old meaning)."""
+    t = option.lower().replace("'", "").strip() if isinstance(option, str) else ""
+    words = t.split()
+    if not words:
+        return "unpark"
+    if words[0] in ("no", "dont", "do") and (words[0] != "do" or words[1:2] == ["not"]):
+        return "keep-parked"
+    if "park" in t and "unpark" not in t and any(w in words for w in ("keep", "leave", "stay", "remain", "hold")):
+        return "keep-parked"
+    return "unpark"
 #: Set (process-wide, so a separately loaded copy of this module sees it) while `apply` runs its own
 #: gesture, so that gesture does not close the ask it is applying.
 _APPLYING_ENV = "SIGMA_APPLIER_APPLYING"
@@ -223,22 +237,32 @@ def open_for_park(sdlc_dir, config, issue, qkind_, source=None, now=None):
         m = rb.match(qkind_, area, None, rb.load(sdlc_dir, config), config)
         if m is None:
             return None
-        return open_ask(sdlc_dir, issue, qkind_, area, [m.option], config, now, gesture="unpark")
+        return open_ask(sdlc_dir, issue, qkind_, area, [m.option], config, now,
+                        gesture=option_gesture(m.option))
     except Exception:
         return None
 
 
-def close_for_issue(sdlc_dir, config, issue, text, now=None):
+def close_for_issue(sdlc_dir, config, issue, text, now=None, refuse=False):
     """A person answered (unpark, keep-parked, promote): answer every pending ask of the issue with
     their text, so the person wins and the tick skips it. Skipped while the applier is applying its
-    own gesture. Never raises; closed gate: nothing read."""
+    own gesture. `refuse` (#1189): the gesture is a person's no (keep parked, demote), so an ask
+    already applied and still inside its veto window is routed to the veto. Never raises; closed
+    gate: nothing read."""
     try:
         if not enabled(config) or os.environ.get(_APPLYING_ENV) or not isinstance(text, str):
             return None
         now = now or datetime.datetime.now(datetime.timezone.utc)
         for a in _asks(sdlc_dir):
-            if a.get("state") == "pending" and _issue_key(a.get("issue")) == _issue_key(issue):
+            if _issue_key(a.get("issue")) != _issue_key(issue):
+                continue
+            if a.get("state") == "pending":
                 answer(sdlc_dir, a["id"], text, config, now)
+            elif refuse and a.get("state") == "applied" and not a.get("vetoed_at"):
+                applied = _parse(a.get("applied_at"))
+                period = datetime.timedelta(minutes=settings(config)["window_minutes"])
+                if applied is not None and now <= applied + period:
+                    answer(sdlc_dir, a["id"], "no", config, now)
     except Exception:
         return None
     return None
@@ -299,9 +323,26 @@ def _level(sdlc_dir, qkind, area, config):
     return fn(sdlc_dir, qkind, area, config) if fn else _load("autonomy").level(sdlc_dir, qkind, area, config)
 
 
-def _spot_check(aid, config):
-    n = settings(config)["spot_check_one_in"]
-    return int(hashlib.sha256(aid.encode("utf-8")).hexdigest()[:8], 16) % n == 0
+_SPOT = "spot-counter.json"
+
+
+def _spot_read(sdlc_dir):
+    """Silent-eligible applies so far per `qkind|area`; missing or unreadable reads as empty."""
+    try:
+        with open(os.path.join(_folder(sdlc_dir), _SPOT), encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {k: v for k, v in raw.items()
+            if isinstance(k, str) and isinstance(v, int) and not isinstance(v, bool) and v >= 0}
+
+
+def _spot_check(counts, key, config):
+    """Count one more silent-eligible apply under `key` (in `counts`); True when it must comment."""
+    counts[key] = counts.get(key, 0) + 1
+    return counts[key] % settings(config)["spot_check_one_in"] == 0
 
 
 def _applied_in_last_day(asks, now):
@@ -309,27 +350,64 @@ def _applied_in_last_day(asks, now):
                and (_parse(a.get("applied_at")) or now - 2 * _DAY) > now - _DAY)
 
 
+def _owner_no(comments, since, until, config, strict):
+    """True when an owner's exact `no` was created after `since` (at or after when not `strict`) and,
+    when `until` is given, by `until`. Judged by the comment's own time."""
+    for c in comments or []:
+        made = _parse(c.get("created_at"))
+        if made is None or str(c.get("body", "")).strip().lower() != "no":
+            continue
+        if (made <= since if strict else made < since) or (until is not None and made > until):
+            continue
+        if _load("autonomy").is_owner(c.get("author"), config):
+            return True
+    return False
+
+
 def read_vetoes(sdlc_dir, config, asks, now, comments_fn):
-    """An owner's `no` comment, posted after an ask was applied and inside its window, is passed to
-    `answer` (which records the veto the next planning pass turns into an action). Any other text, a
-    non-owner or an older comment changes nothing. Never raises. PROVISIONAL: the veto period is the
-    ask's own `window_minutes` after `applied_at`."""
-    period = datetime.timedelta(minutes=settings(config)["window_minutes"])
+    """An owner's `no` comment is passed to `answer`. On a pending ask (created at or after it opened)
+    it cancels the ask; on an applied ask (posted after `applied_at` and by `applied_at` + window) it
+    records the veto the next planning pass turns into an action. The veto is judged by the comment's
+    time, so a late tick still counts it; reading stops `stale_after_intervals` watch intervals past the
+    period. Any other text, a non-owner or an older comment changes nothing. Never raises. PROVISIONAL:
+    the veto period is the ask's own `window_minutes` after `applied_at`."""
+    cfg = settings(config)
+    period = datetime.timedelta(minutes=cfg["window_minutes"])
+    grace = datetime.timedelta(seconds=_interval(config) * cfg["stale_after_intervals"])
     for ask in asks:
         try:
-            applied = _parse(ask.get("applied_at"))
-            if ask.get("state") != "applied" or ask.get("vetoed_at") or applied is None or now > applied + period:
+            if ask.get("state") == "pending" and ask.get("answer") is None:
+                opened = _parse(ask.get("opened"))
+                if opened is not None and _owner_no(comments_fn(ask.get("issue")), opened, None, config, False):
+                    if answer(sdlc_dir, ask["id"], "no", config, now) == "answered":
+                        ask.update(answer="no", answered_at=now.isoformat(), state="answered")
                 continue
-            for c in comments_fn(ask.get("issue")) or []:
-                made = _parse(c.get("created_at"))
-                if made is None or made <= applied or str(c.get("body", "")).strip().lower() != "no":
-                    continue
-                if _load("autonomy").is_owner(c.get("author"), config):
-                    if answer(sdlc_dir, ask["id"], "no", config, now) == "veto-pending":
-                        ask["vetoed_at"] = now.isoformat()
-                    break
+            applied = _parse(ask.get("applied_at"))
+            if ask.get("state") != "applied" or ask.get("vetoed_at") or applied is None \
+                    or now > applied + period + grace:
+                continue
+            if _owner_no(comments_fn(ask.get("issue")), applied, applied + period, config, True):
+                if answer(sdlc_dir, ask["id"], "no", config, now) == "veto-pending":
+                    ask["vetoed_at"] = now.isoformat()
         except Exception:
             continue
+
+
+def _keys_only(config):
+    """#1342: records part open AND repo declared public; any other state is today's text."""
+    try:
+        rc = _load("rulebook_cfg")
+        return rc.load(config).part_enabled("records") and rc.visibility(config) == "public"
+    except Exception:
+        return False
+
+
+def _loud_text(m, qkind, config):
+    if _keys_only(config):   # #1342: public repo, records on: the option is free text
+        return ("Applied automatically by rule %s (%s). No answer arrived within "
+                "the window. Reply no to veto." % (m.rule_id, qkind))
+    return ("Applied automatically by rule %s (%s): %s. No answer arrived within "
+            "the window. Reply no to veto." % (m.rule_id, qkind, m.option))
 
 
 def tick(sdlc_dir, config, now, source=None, run=None, apply_actions=True, comments_fn=None):
@@ -340,7 +418,8 @@ def tick(sdlc_dir, config, now, source=None, run=None, apply_actions=True, comme
     actions = []
     try:
         asks = _asks(sdlc_dir)
-        if apply_actions and any(a.get("state") == "applied" and not a.get("vetoed_at") for a in asks):
+        if apply_actions and any((a.get("state") == "applied" and not a.get("vetoed_at"))
+                                 or (a.get("state") == "pending" and a.get("answer") is None) for a in asks):
             if comments_fn is None and (source is None or run is not None):
                 comments_fn = lambda issue: _load("sources").fetch_comments(config, issue, run=run)  # noqa: E731
             if comments_fn is not None:
@@ -349,10 +428,16 @@ def tick(sdlc_dir, config, now, source=None, run=None, apply_actions=True, comme
         used = _applied_in_last_day(asks, now)
         rules = _load("rulebook").load(sdlc_dir, config)
         hs = _load("hard_stop")
+        stored = _spot_read(sdlc_dir)
+        counts = dict(stored)
+        eligible = []
+        loud = []   # #1361: the comment text each action would carry if its slot turns out to be a comment
         for ask in asks:
             if ask.get("state") == "applied" and ask.get("vetoed_at") and not ask.get("veto_logged"):
                 actions.append({"kind": "veto", "ask": ask["id"], "issue": ask.get("issue"),
                                 "qkind": ask.get("qkind"), "area": ask.get("area", ""), "rid": ask.get("rid")})
+                eligible.append(None)
+                loud.append("")
                 continue
             if ask.get("state") != "pending" or ask.get("answer") is not None:
                 continue  # a person's answer wins; nothing else is pending
@@ -368,17 +453,32 @@ def tick(sdlc_dir, config, now, source=None, run=None, apply_actions=True, comme
                 continue
             rule = next((r for r in rules if r.get("id") == m.rule_id), None)
             level = _level(sdlc_dir, qkind, area, config)
-            silent = level >= 4 and silent_allowed(qkind, config, rule) and not _spot_check(ask["id"], config)
-            text = "" if silent else ("Applied automatically by rule %s (%s): %s. No answer arrived within "
-                                      "the window. Reply no to veto." % (m.rule_id, qkind, m.option))
+            silent = False
+            key = None
+            if level >= 4 and silent_allowed(qkind, config, rule):
+                key = "%s|%s" % (qkind, area)
+                silent = not _spot_check(counts, key, config)
+            text = "" if silent else _loud_text(m, qkind, config)
             actions.append({"kind": ask.get("gesture") if ask.get("gesture") in GESTURES else "unpark",
                             "ask": ask["id"], "issue": ask.get("issue"), "qkind": qkind, "area": area,
                             "option": m.option, "rule_id": m.rule_id, "level": level, "silent": silent,
                             "text": text})
+            eligible.append(key)
+            loud.append(text if not silent else _loud_text(m, qkind, config))
             used += 1
         if apply_actions:
-            for a in actions:
+            done = dict(stored)   # only applies that landed advance the counter
+            moved = False
+            for a, key, text in zip(actions, eligible, loud):
+                if key is not None:   # #1361: the slot is decided now, from the landed count
+                    a["silent"] = (done.get(key, 0) + 1) % settings(config)["spot_check_one_in"] != 0
+                    a["text"] = "" if a["silent"] else text
                 a["result"] = apply(a, sdlc_dir, config, now, source=source, run=run)
+                if key is not None and a["result"] == "done":
+                    done[key] = done.get(key, 0) + 1
+                    moved = True
+            if moved:
+                _write_atomic(os.path.join(_folder(sdlc_dir), _SPOT), done)
         else:
             for a in actions:
                 a["result"] = "would"
@@ -418,13 +518,20 @@ def apply(action, sdlc_dir, config, now, source=None, run=None):
         if action["kind"] == "veto":
             if source is None:
                 source = _load("sources").GitHubSource(config, run=run)
-            if not ask.get("reparked"):
+            if not ask.get("reparked") and ask.get("gesture") != "keep-parked":
                 # An applied unpark that is vetoed must not leave the work running: park it again.
                 add, remove = [source.parked_label], [source.goal_label, source.in_progress_label]
                 swap = {"action": "swap-label", "issue": ask.get("issue"), "result": None, "error": None,
                         "detail": _load("triage")._swap_detail(add, remove), "add": add, "remove": remove}
-                if _load("triage").apply_actions(source, [swap], True)[0]["result"] != "done":
-                    return "failed"
+                steps = [swap]
+                if getattr(source, "board_active", False):      # #1201: the apply moved the card to Ready
+                    steps.append({"action": "set-status", "issue": ask.get("issue"),
+                                  "detail": source.col["parked"], "result": None, "error": None})
+                res = _load("triage").apply_actions(source, steps, True)
+                if not res or res[0]["result"] != "done":
+                    return "failed"                 # the label swap gates; the card move is best effort (#1302)
+                if not all(r["result"] == "done" for r in res):
+                    ask.update(board_failed=True)
                 ask.update(reparked=True)
                 _write_atomic(_ask_path(sdlc_dir, ask["id"]), ask)
                 try:
@@ -441,6 +548,7 @@ def apply(action, sdlc_dir, config, now, source=None, run=None):
         if source is None:
             source = _load("sources").GitHubSource(config, run=run)
         issue = action["issue"]
+        board_failed = False
         if action["kind"] == "promote":
             os.environ[_APPLYING_ENV] = "1"      # its own gesture must not close the ask it applies
             try:
@@ -449,7 +557,7 @@ def apply(action, sdlc_dir, config, now, source=None, run=None):
                 os.environ.pop(_APPLYING_ENV, None)
             if not all(r.get("outcome") == "promoted" for r in res.get("results", [])) or not res.get("results"):
                 return "failed"
-        else:
+        elif action["kind"] != "keep-parked":      # #1301: keep-parked touches no label and no card
             triage = _load("triage")
             add = [source.goal_label]
             remove = [source.parked_label, source.goal_blocked_label, source.in_progress_label]
@@ -459,12 +567,16 @@ def apply(action, sdlc_dir, config, now, source=None, run=None):
             if getattr(source, "board_active", False):
                 steps.append({"action": "set-status", "issue": issue, "detail": source.col["ready"],
                               "result": None, "error": None})
-            if not all(s["result"] == "done" for s in triage.apply_actions(source, steps, True)):
-                return "failed"
+            res = triage.apply_actions(source, steps, True)
+            if not res or res[0]["result"] != "done":
+                return "failed"                     # the label swap gates; the card move is best effort (#1302)
+            board_failed = not all(s["result"] == "done" for s in res)
         # Status first (#1106): a failed write returns failed before any record or comment, so the
         # retry repeats only the idempotent gesture and never a duplicate record or comment.
         ask.update(state="applied", applied_at=now.isoformat(), rid=None, rule_id=action["rule_id"],
                    silent=bool(action["silent"]))
+        if action["kind"] != "promote" and board_failed:
+            ask.update(board_failed=True)       # visible, never retried: the swap already landed
         _write_atomic(_ask_path(sdlc_dir, ask["id"]), ask)
         try:
             rec = {"how": "autonomous", "qkind": action["qkind"], "area": action.get("area", ""),

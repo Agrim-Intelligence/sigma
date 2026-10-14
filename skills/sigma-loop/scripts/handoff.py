@@ -331,6 +331,24 @@ def _duplicate_search(sdlc_dir, config, title, text, exclude_refs=None, run=None
         return {"schema": dedup.SCHEMA, "candidates": [], "degraded": ["error"]}
 
 
+#: #1217: a match against a CLOSED issue folds a follow-up away only when it is near-exact; nobody
+#: rereads a closed issue, so a mid-score closed match is reported as related and the follow-up files.
+_DEFAULT_CLOSED_DUPLICATE_THRESHOLD = 0.8
+
+
+def _closed_match_is_exact(candidate, config):
+    """True unless `candidate` is a closed issue scoring under `dedup.closed_duplicate_threshold`
+    (default 0.8). Open matches always pass, so the open-issue threshold is unchanged."""
+    if candidate.get("state") != "closed":
+        return True
+    try:
+        floor = float(((config or {}).get("dedup") or {}).get(
+            "closed_duplicate_threshold", _DEFAULT_CLOSED_DUPLICATE_THRESHOLD))
+    except (TypeError, ValueError):
+        floor = _DEFAULT_CLOSED_DUPLICATE_THRESHOLD
+    return float(candidate.get("score") or 0) >= floor
+
+
 def _issue_id_from_ref(ref):
     """dedup's local-mode candidate `ref` is the goal file's full PATH (it mirrors
     `backlog_check._build_corpus`'s own local-mode doc shape) -- every local-mode call this module
@@ -502,7 +520,8 @@ def create_tracked_issue(sdlc_dir, config, goal, area, why, *,
                           same_area, immediately_actionable, blocks_goal,
                           priority=DEFAULT_PRIORITY, title=None, body=None,
                           extra_labels=(), source=None, run=None, dedup=True,
-                          upstream_run=None, target_unit=None, idempotency_key=None):
+                          upstream_run=None, target_unit=None, idempotency_key=None,
+                          upkeep_finding=False):
     """Open a tracked issue, address it, record it. The one real place the kit ever opens an issue on
     its own behalf — `hand_off()` below is a thin wrapper around this. Generalizes what used to be
     hand-off-only discipline (owner resolution, labels, the `gh` call, the ledger write, the dual
@@ -792,8 +811,10 @@ def create_tracked_issue(sdlc_dir, config, goal, area, why, *,
                     "targeted (discovery.no_dangling_goal.core, #2363)" % classified)
         # #1003: triage decides arm or park at THIS chokepoint (the follow-up and upkeep-finding writers
         # all pass through here). None = switched off: everything below is the legacy behaviour.
-        triage = _triage_plan(sdlc_dir, config, goal, key_goal, nogoal, source, heading, text, priority,
-                              immediately_actionable)
+        # #1331: an upkeep finding (default off) is a report for a person, never work: it skips triage so it
+        # cannot be armed as `sdlc:goal`, and files in the queue bucket exactly as triage-off does.
+        triage = None if upkeep_finding else _triage_plan(
+            sdlc_dir, config, goal, key_goal, nogoal, source, heading, text, priority, immediately_actionable)
         if triage is not None:
             text = triage["text"]
         labels = [f"priority:{priority}", f"area:{area}", *extra_labels]
@@ -930,7 +951,8 @@ def create_tracked_issue(sdlc_dir, config, goal, area, why, *,
             dup_pack = _duplicate_search(sdlc_dir, config, heading, text, exclude_refs=[str(goal)],
                                          run=run)
             candidates = dup_pack.get("candidates") or []
-            duplicate = next((c for c in candidates if c.get("strength") == "duplicate"), None)
+            duplicate = next((c for c in candidates if c.get("strength") == "duplicate"
+                              and _closed_match_is_exact(c, config)), None)
 
         if duplicate is not None:
             # a confident match: reuse the existing issue instead of filing a second one. The

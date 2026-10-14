@@ -408,6 +408,12 @@ def test_github_flow_makes_only_label_writes_offers_the_board_and_reaches_done(t
     w["state"].write_text(json.dumps(s))
     nxt = _run(w, [LOOP, "next", ".sdlc"])
     assert nxt.stdout.strip() == "1", nxt.stdout + nxt.stderr
+    # init turns verify.enforce on, so verify refuses until the goal has an acceptance record
+    s = _gh_state(w)
+    s["issues"]["1"]["body"] = "## Done when\n- [ ] It works.\n- [ ] It refuses bad input.\n- [ ] It recovers.\n"
+    w["state"].write_text(json.dumps(s))
+    rec = _run(w, [LOOP_DIR / "acceptance.py", "record", ".sdlc", "1"])
+    assert rec.returncode == 0, rec.stdout + rec.stderr
     v = _run(w, [LOOP, "verify", ".sdlc", "1"])
     assert v.returncode == 0, v.stdout + v.stderr
     _phase_record_off(w["sdlc"])
