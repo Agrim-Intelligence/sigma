@@ -9,7 +9,7 @@ When you want the files themselves to stop carrying the old name, run the one-sh
 The old name is not spelled out in this document. `migrate.py` prints it at the top of every run,
 and the table below uses `<old>` for the name and `<OLD>_` for its environment-variable prefix.
 
-## Updating the plugin within 1.0.x
+## Updating the plugin between releases
 
 An ordinary plugin update replaces skills, docs, hooks and scripts. It never rewrites your `.sdlc/config.json`, so a
 block added in a later release (`rulebook`, `upkeep`) does not appear in a repository adopted earlier. Copy the block
