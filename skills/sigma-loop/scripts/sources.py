@@ -4823,10 +4823,18 @@ class GitHubSource:
             # reported; it is never silently treated as unprioritised.
             ext = {}
             unreadable = []
+            known_closed = self._closed_refs_known()
+            for ref in [r for r in outside if r in known_closed]:
+                directly_blocks.pop(ref, None)       # seen closed by a recent pass: no read, no report
+            outside = sorted((r for r in outside if r not in known_closed),
+                             key=lambda r: (-int(r), r) if str(r).isdigit() else (0, r))
+            newly_closed = []
             for ref in outside[:self._BLOCKER_READ_CAP]:
                 try:
                     data = self._read_issue(ref, ["number", "state", "labels"])
                     names = [(l.get("name") if isinstance(l, dict) else str(l or "")) for l in (data.get("labels") or [])]
+                    if str(data.get("state") or "open").lower() == "closed":
+                        newly_closed.append(ref)
                     if str(data.get("state") or "open").lower() == "closed" or self.proposed_label in names:
                         directly_blocks.pop(ref, None)
                         continue
@@ -4834,6 +4842,7 @@ class GitHubSource:
                 except Exception as exc:
                     directly_blocks.pop(ref, None)
                     unreadable.append("#%s could not be read (%s)" % (ref, exc))
+            self._remember_closed_refs(known_closed, newly_closed)
             for ref in outside[self._BLOCKER_READ_CAP:]:
                 directly_blocks.pop(ref, None)
                 unreadable.append("#%s not read (more than %d outside blockers this pass)" % (ref, self._BLOCKER_READ_CAP))
@@ -5124,7 +5133,14 @@ class GitHubSource:
             edges, cross_repo, blocker_refs = self._repair_edges(corpus, out)
             edges = edges[:self._REPAIR_EDGE_CAP]
             ext, proposed = {}, {}
-            for ref in sorted({b for b, _ in edges} - set(corpus))[:self._BLOCKER_READ_CAP]:
+            known_closed = self._closed_refs_known()
+            newly_closed = []
+            # Newest ref first, and never a read for a ref already seen closed: the cap must not spend
+            # every pass on the same ten old closed issues (string order did, so a newer blocker outside
+            # the corpus was never reached).
+            outside = sorted(({b for b, _ in edges} - set(corpus)) - set(known_closed),
+                             key=lambda r: (-int(r), r) if str(r).isdigit() else (0, r))
+            for ref in outside[:self._BLOCKER_READ_CAP]:
                 try:
                     data = self._read_issue(ref, ["number", "state", "labels"])
                 except Exception as exc:
@@ -5132,6 +5148,7 @@ class GitHubSource:
                     continue
                 names = self._label_names(data.get("labels"))
                 if str(data.get("state") or "open").lower() == "closed":
+                    newly_closed.append(ref)
                     continue
                 if self.proposed_label in names:
                     proposed[ref] = data
@@ -5140,6 +5157,7 @@ class GitHubSource:
             for ref, it in corpus.items():
                 if ref in blocker_refs and self.proposed_label in self._label_names(it.get("labels")):
                     proposed[ref] = it
+            self._remember_closed_refs(known_closed, newly_closed)
             edges = [(b, d) for b, d in edges if b in ext or (b in corpus and b not in proposed)]
             item_of = lambda r: corpus[r] if r in corpus else ext[r]            # noqa: E731
             ranks = {r: discovery.priority_rank(self._priority_name(item_of(r).get("labels")), self.priority_aliases)
@@ -5179,6 +5197,42 @@ class GitHubSource:
             self._note_scope(exc)
             out["skipped"] = out["skipped"] or "failed"
         return out
+
+    _CLOSED_CACHE = "blocker-closed.json"
+    _CLOSED_TTL = 7 * 86400
+    _CLOSED_MAX = 2000
+
+    def _closed_cache_path(self):
+        return pathlib.Path(self.sdlc_dir) / "state" / self._CLOSED_CACHE if self.sdlc_dir else None
+
+    def _closed_refs_known(self):
+        """{ref: epoch} of outside blockers a recent repair pass saw closed (state file, 7-day expiry).
+        Empty without a state folder or on any read problem: the pass then reads as it always did."""
+        try:
+            data = json.loads(self._closed_cache_path().read_text(encoding="utf-8"))
+            now = time.time()
+            return {str(r): t for r, t in data.items()
+                    if isinstance(t, (int, float)) and not isinstance(t, bool) and 0 <= now - t < self._CLOSED_TTL}
+        except Exception:                       # noqa: BLE001
+            return {}
+
+    def _remember_closed_refs(self, known, new):
+        """Record refs just seen closed. Bounded (newest kept); a write failure costs one extra read later."""
+        path = self._closed_cache_path()
+        if path is None or not new:
+            return
+        try:
+            now = time.time()
+            merged = dict(known)
+            merged.update({str(r): now for r in new})
+            if len(merged) > self._CLOSED_MAX:
+                merged = dict(sorted(merged.items(), key=lambda kv: kv[1])[-self._CLOSED_MAX:])
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(path.name + ".%d.tmp" % __import__("os").getpid())
+            tmp.write_text(json.dumps(merged, sort_keys=True), encoding="utf-8")
+            __import__("os").replace(str(tmp), str(path))
+        except Exception:                       # noqa: BLE001
+            pass
 
     @staticmethod
     def _label_names(labels):
