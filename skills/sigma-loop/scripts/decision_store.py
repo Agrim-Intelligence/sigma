@@ -396,7 +396,9 @@ def publish(sdlc_dir, config):
         if not gd or gd != cd:
             return skip("goal-worktree")
         branch = _git(root, "symbolic-ref", "--short", "-q", "HEAD").stdout.strip()
-        if not branch or branch in _unit_branches(root):
+        # A `feature/` branch is a unit branch even before its record names it (a unit just opened has
+        # empty `repos`): nobody commits directly to a unit branch, so never publish onto one.
+        if not branch or branch.startswith("feature/") or branch in _unit_branches(root):
             return skip("unit-branch")
         rel = os.path.relpath(sdlc, root)
         paths = [os.path.join(rel, settings(config)["store_dir"]), os.path.join(rel, "autonomy"),
