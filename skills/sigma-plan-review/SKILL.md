@@ -105,9 +105,9 @@ One line, first token the verdict. Branch on it — the three are **not** interc
   A plan that fights the north-star — its strategy, a non-goal, or an architecture rule — is
   **FIX-FIRST**; quote the line it violates.
 - **`absent <path>`** — a genuine drop-in project: skip this check, it really is a no-op.
-- **`unreachable <why>`** — neither of the above, and never a silent skip. The north-star could not
-  be located, so **say in the verdict that strategic alignment was not judged, and why**, then judge
-  correctness alone. A check that could not look reads ABSENT, never PASS.
+- **`unreachable <why>`** — never a silent skip. **Say in the verdict that strategic alignment was
+  not judged, and why**, then judge correctness alone. `work.py record-plan-review` records
+  `alignment: not-judged (<why>)`; doctor and session start flag it. A check that could not look reads ABSENT, never PASS.
 
 
 ## Verdict
