@@ -82,3 +82,53 @@ def test_only_owners_waive_a_review_finding():
     assert "you report it and never waive it" in flat
     assert "recorded with their stated reason" in flat
     assert "Unattended, a finding that would need one parks for a human" in flat
+
+
+# --- second independent Codex read, docs/launch/evidence/review-s5-codex-read-round2-f47c0a57f689.md ---
+
+def _ref(name):
+    return " ".join((SKILLS / "sigma-loop" / "references" / name).read_text(encoding="utf-8").split())
+
+
+def test_retro_required_unless_the_recorded_waiver():                       # F04
+    import phase_gate
+    assert "retro" in phase_gate.WAIVABLE
+    loop = " ".join(_skill("sigma-loop").split())
+    assert "the phase is required unless the owner's recorded trivial-goal `waive-phases` call waived it" in loop
+    assert "the phase is required)" not in loop
+
+
+def test_no_pr_done_is_for_a_goal_that_changed_nothing():                   # F05 (code: work.done_refusal)
+    landing = _ref("landing.md")
+    assert "a docs-only / no-diff goal" not in landing
+    assert "only if `work.enabled` is off or it changed nothing" in landing
+    assert "(docs-only too)" in landing and "is REFUSED" in landing
+
+
+def test_goal_concurrency_needs_work_enabled():                             # F06 (code: loop.next_batch)
+    assert "and `work.enabled` is on (else `next-batch` clamps to one)" in _ref("picking.md")
+    assert "(goals then run one at a time)" in _ref("running.md")
+
+
+def test_start_run_is_the_users_call():                                     # F07
+    picking = _ref("picking.md")
+    assert "only when the user says so this session, never to continue past a stop" in picking
+    assert "for a deliberate fresh push" not in picking
+
+
+def test_pr_repair_that_changes_behaviour_reruns_retro():                   # F08
+    assert "re-run `sigma-retro` on the final diff and pass that grade" in _ref("landing.md")
+    assert "again on the final diff if a PR repair" in _skill("sigma-retro")
+
+
+def test_record_plan_review_gestures_carry_agent_id():                      # F09
+    for text in (_skill("sigma-plan-review"), _ref("running.md")):
+        text = " ".join(text.split())
+        assert "[--agent-id <id>]" in text
+        assert "required on the `subagent` route only" in text
+
+
+def test_followup_is_never_a_project_rule_violation():                      # F10
+    review = " ".join(_skill("sigma-review").split())
+    assert "except for a project-rule violation: that blocks unless the owners waive it" in review
+    assert "or a project-rule violation (quote the rule)" in review

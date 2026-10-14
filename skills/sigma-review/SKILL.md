@@ -172,15 +172,13 @@ write that case you do not have a **Bug**, you have a question — ask it as a *
 Not every real finding should stop the change: a
 blocking finding costs a full fix -> push -> re-review round, and `work.max_review_cycles` (default 3)
 **parks the goal** once they run out. Spend them deliberately:
-- **Blocking** — you wrote the failing case, and it is a **Bug** or **Missing**; or a risk review
-  returned `critical`/`high`. The reasons you give ARE the fix instructions: write them so the next
-  pass can act without re-deriving the problem.
+- **Blocking** — you wrote the failing case, and it is a **Bug** or **Missing**; a risk review
+  returned `critical`/`high`; or a project-rule violation (quote the rule). Your reasons ARE the fix instructions: write them so the next pass can act.
 - **Follow-up** — real, but the change is better landed than held: **Concern**, **Coverage**, **Nit**
   — or a **Missing** you could not write a failing case for (an absent piece, like missing
-  observability, that resists "the inputs and the wrong behaviour they produce" rather than a
-  probeable check). File it with `--label sdlc:followup` instead of blocking.
+  observability, that resists a probeable check). File it with `--label sdlc:followup` instead of blocking.
 
-Reporting a real finding as follow-up is a judgement you are allowed to make. Reporting one you could
+Reporting a real finding as follow-up is a judgement you may make, except for a project-rule violation: that blocks unless the owners waive it. Reporting one you could
 not write a failing case for, as blocking, is the failure this section exists to prevent. A
 **Missing** with no constructible failing case is Follow-up per the bullet above, never dropped.
 

@@ -81,7 +81,7 @@ Turn it on:
 it off, or only one goal available, it's byte-identical to `next`. That one-goal case is
 no longer run inline on hosts with subagents — every returned goal, batch of one included, is
 dispatched to its own subagent; `parallel.goals.enabled` controls only how many can run
-*concurrently* in one pass. Each returned goal is dispatched as
+*concurrently* in one pass, and only with `work.enabled` on (one worktree per goal; off, `next-batch` clamps to one). Each returned goal is dispatched as
 its own subagent running the full loop for that one goal; as each finishes, refill the freed slot with
 `loop.py next --skip <the other still-live goals>`. **`--skip` is not optional on a refill** — the
 existing writer-identity claim check can only tell whether the specific short-lived `loop.py` process
