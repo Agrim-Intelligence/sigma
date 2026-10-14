@@ -801,7 +801,7 @@ when that work lands:
         │                                        │       │       │
         │   #42:  sdlc:goal + sdlc:blocked        │  each: sdlc:goal + sdlc:blocking
         │   still visible to every sweep,         │  and each SORTS AHEAD of
-        │   just not pickable                     │  everything else in the queue
+        │   just not pickable                     │  its tier peers in the queue
         │                                         ▼       ▼       ▼
         │                                      worked · worked · worked
         │                                        │       │       │
@@ -854,7 +854,7 @@ Both halves are independent, and both are on unless you say otherwise:
 ```json
 "discovery": {
   "auto_unpark": { "mode": "off" },        // stop resuming blocked goals automatically
-  "blocking_priority_override": false      // stop blockers sorting first
+  "blocking_priority_override": false      // stop blockers sorting ahead of their tier peers
 }
 ```
 

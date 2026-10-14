@@ -105,7 +105,7 @@ Three things worth knowing, because each of them surprises somebody:
 - **`sdlc:blocking` carries membership with it.** It marks an issue that other work is waiting on —
   and something other work waits on is, by definition, waiting to be *picked*. So wherever
   `sdlc:blocking` is applied, `sdlc:goal` is applied with it. (When
-  `blocking_priority_override` is on, that issue also sorts ahead of the rest.) The three exceptions
+  `blocking_priority_override` is on, that issue also sorts ahead of its tier peers; see "A blocker is never ranked below what it blocks" below.) The three exceptions
   are the ones where membership is not Sigma's to grant — a **parked** blocker, a proposal a
   **human** filed, and a plain **third-party** issue: those get the blocking label as information
   and are surfaced for a person, never adopted.
@@ -146,7 +146,7 @@ each named blocker is classified and acted on:
 
 | The blocker is… | What happens |
 |---|---|
-| already `sdlc:goal` | nothing — it is in the queue, and `blocking_priority_override` sorts it first |
+| already `sdlc:goal` | nothing — it is in the queue, `blocking_priority_override` sorts it ahead of its tier peers, and the priority rule keeps it at least as urgent as the goal it blocks |
 | **Sigma's own** legacy-held follow-up (`sdlc:followup` + the legacy `sdlc:needs-confirmation`) | **promoted** — it gets `sdlc:goal` and a comment naming the goal it unblocks |
 | assigned to someone else | **routed** — granted membership and recorded in the ledger for its owner |
 | a proposal a **human** filed | left alone — that is a real decision; `/sigma-promote` is the route |
@@ -173,7 +173,7 @@ Filing a blocking follow-up does not stop a goal — it starts a chain, and the 
    goal #42  ──files 3 blocking follow-ups──►  #7   #8   #9
         │                                       │
         │  #42 becomes sdlc:goal + sdlc:blocked │  each gets sdlc:goal + sdlc:blocking
-        │  (still visible, not pickable)        │  and SORTS AHEAD of everything else
+        │  (still visible, not pickable)        │  and SORTS AHEAD of its tier peers
         │                                       ▼
         │                                  worked, closed
         │                                       │
@@ -202,7 +202,7 @@ Both halves are on by default and each can be turned off independently:
 ```json
 "discovery": {
   "auto_unpark": { "mode": "off" },        // stop resuming blocked goals automatically
-  "blocking_priority_override": false      // stop blockers sorting first
+  "blocking_priority_override": false      // stop blockers sorting ahead of their tier peers
 }
 ```
 
@@ -415,6 +415,25 @@ Worked cases:
 Every raise writes one comment on the blocker naming the old and new priority and the issue it blocks.
 An unknown priority counts as the lowest. Writes per reconcile tick are bounded (10 writes, 200 edges),
 and the board field write is skipped when the GraphQL budget is low; the label write still lands.
+
+**Where the rule is applied.** Four places share one function, so they cannot disagree:
+
+1. When a blocked mark and a blocking mark are written together (the auto-unpark sweep, blocker resolution
+   including the precheck park path, and hand-off filing), the blocker is raised in the same batch.
+2. When Sigma files a blocking follow-up, it is filed at the blocked goal's priority (never lower than that;
+   an unreadable goal files as before). Filing a blocker, and recording a block, also strip a leftover legacy
+   confirmation label from the open blocker.
+3. The board pass re-evaluates every open `sdlc:goal` issue on each board touch.
+4. The reconcile tick repairs what the first three missed, for example a blocker typed by hand as
+   `Blocked by #N`. It also removes the blocking mark from a closed blocker or one that blocks nothing.
+   Cycles are handled: every member of a blocking cycle that transitively blocks something more urgent is
+   raised, whichever member the walk enters through, and the cycle is reported once.
+
+**Picker order.** With `discovery.order` at `"priority"` and `discovery.blocking_priority_override` on (the
+default), the picker orders by priority tier first, then a goal that also carries `sdlc:blocking` ahead of
+its tier peers, then the existing order. Because a blocker is raised to the tier of what it blocks, it never
+jumps a higher tier. This holds on the label queue and on the board queue alike. With
+`blocking_priority_override` off the order is unchanged from before.
 
 **One-way ratchet, deliberately.** A raise is never automatically undone. Once a blocker's priority is
 raised it stays there, even after the issue it was blocking closes or is unblocked another way. There is
