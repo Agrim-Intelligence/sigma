@@ -114,6 +114,7 @@
     "skills/sigma-init/scripts/sdlc_init.py::scaffold_extras",
     "skills/sigma-init/scripts/verify_detect.py::write_verify",
     "skills/sigma-loop/scripts/applier.py::_read_config",
+    "skills/sigma-loop/scripts/decision_store.py::main",
     "skills/sigma-setup/scripts/setup.py::write_cfg"
    ]
   },
