@@ -1,7 +1,7 @@
 # D7: the refusal sites that were not triaged, now triaged (cc3b97a3980a)
 
-Source tree: origin/main at cc3b97a3980a, plus the four fix pull requests listed below (open, not merged
-when this was written). The first D7 record (`d7-onboarding-refusals-f627d06a.md`) triggered 45 first-run
+Source tree: origin/main at cc3b97a3980a, plus the four fix pull requests listed below (open when this was written;
+all four have since been merged: #1286, #1287, #1294 and #1293). The first D7 record (`d7-onboarding-refusals-f627d06a.md`) triggered 45 first-run
 scenarios by hand and said a static scan finds about 180 more candidate refusal sites that were not
 triaged. This record triages all of them, and the sites in the modules around them.
 

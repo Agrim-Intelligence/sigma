@@ -1,0 +1,100 @@
+{
+  "break": "doctor",
+  "broken": true,
+  "checks": [
+    {
+      "detail": {
+        "pid_matches": true
+      },
+      "name": "watch_pid_file_is_the_spawned_pid",
+      "passed": true
+    },
+    {
+      "detail": "ON \u2014 last heartbeat 1 min ago",
+      "name": "A_alive_reads_ON",
+      "passed": true
+    },
+    {
+      "detail": {
+        "returncode": -15
+      },
+      "name": "B_sigterm_exits_by_signal",
+      "passed": true
+    },
+    {
+      "detail": {
+        "pid_file": null
+      },
+      "name": "B_sigterm_leaves_no_pid_or_heartbeat",
+      "passed": true
+    },
+    {
+      "detail": "ON, but NEVER RUN \u2014 no watcher has started yet (a loop trigger starts one)",
+      "name": "B_sigterm_is_reported_not_running",
+      "passed": true
+    },
+    {
+      "detail": {
+        "pid_alive": false,
+        "row": "ON \u2014 last heartbeat 0 min ago"
+      },
+      "name": "C0_pid_gone_but_young_heartbeat_still_reads_ON",
+      "passed": true
+    },
+    {
+      "detail": "ON \u2014 last heartbeat 3 min ago",
+      "name": "C1_dead_reads_STALE_by_age",
+      "passed": false
+    },
+    {
+      "detail": "Sigma's team ledger watcher looks stale. The shared ledger may not be staying pushed -- run /sigma-doctor for detail.",
+      "name": "C1_session_start_warns",
+      "passed": true
+    }
+  ],
+  "commit": "5ccaa68a3b226d7bba7209238e207a2cbdbb1593",
+  "interval_seconds": 60,
+  "passed": false,
+  "platform": "darwin",
+  "schema": "readiness-dead-vs-idle/v1",
+  "stages": [
+    {
+      "doctor_row": "ON \u2014 last heartbeat 1 min ago",
+      "heartbeat_age_s": 35.6,
+      "name": "A_alive_between_ticks",
+      "pid_alive": true,
+      "pid_file": "69819",
+      "session_start": "",
+      "signal_sent": null
+    },
+    {
+      "doctor_row": "ON, but NEVER RUN \u2014 no watcher has started yet (a loop trigger starts one)",
+      "heartbeat_age_s": null,
+      "name": "B_after_sigterm",
+      "pid_alive": false,
+      "pid_file": null,
+      "returncode": -15,
+      "session_start": "Sigma's team ledger watcher has never started. The shared ledger may not be staying pushed -- run /sigma-doctor for detail.",
+      "signal_sent": "SIGTERM"
+    },
+    {
+      "doctor_row": "ON \u2014 last heartbeat 0 min ago",
+      "heartbeat_age_s": 12.8,
+      "name": "C0_just_killed",
+      "pid_alive": false,
+      "pid_file": "72551",
+      "session_start": "",
+      "signal_sent": "SIGKILL"
+    },
+    {
+      "doctor_row": "ON \u2014 last heartbeat 3 min ago",
+      "heartbeat_age_s": 202.7,
+      "name": "C1_killed_older_than_stale_after",
+      "pid_alive": false,
+      "pid_file": "72551",
+      "session_start": "Sigma's team ledger watcher looks stale. The shared ledger may not be staying pushed -- run /sigma-doctor for detail.",
+      "signal_sent": "SIGKILL"
+    }
+  ],
+  "stale_after_seconds": 180
+}

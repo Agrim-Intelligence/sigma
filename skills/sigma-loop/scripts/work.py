@@ -1461,6 +1461,12 @@ def _run(cwd, argv):
         block = gh_session.proxy_session_block(detail)
         if block:
             detail = f"{block}\n(raw: {detail})" if detail else block
+        elif str(argv[0]) == _GH and detail:
+            # D7: a classified gh failure (auth, 404, 403 scope, rate limit, network) gains its fix
+            # AFTER gh's own text, so the raw reason, the argv prefix and `classify` are unchanged.
+            probe = RuntimeError(detail)
+            probe.hint = detail
+            detail = gh_api.with_remedy(probe, detail)
         raise RuntimeError(f"{' '.join(str(a) for a in argv)}: {detail}")
     return proc.stdout.strip()
 
