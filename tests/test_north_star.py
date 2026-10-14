@@ -354,3 +354,37 @@ def test_resolve_doc_types_each_state_and_refuses_escape(tmp_path):
     for bad in ("../outside.md", "/etc/hosts", "docs/../../x.md", "", "a\x00b"):
         state, why = ns.resolve_doc(tmp_path, bad)
         assert state == ns.UNREACHABLE and why, bad
+
+
+# --- D2 F03: an UNREACHABLE north-star is announced; an ABSENT one stays silent ------------------
+
+def _broken_worktree(path):
+    """A `.git` FILE pointing nowhere: git cannot answer, and the entry's type says 'linked worktree'
+    -> the one deterministic way to reach `unreachable` without chmod (which root ignores)."""
+    path.mkdir(parents=True, exist_ok=True)
+    (path / ".git").write_text("gitdir: /nonexistent/sigma-f03\n")
+    return path
+
+
+def test_notice_unreachable_is_loud_and_names_the_why(tmp_path):
+    line = ns.notice(_broken_worktree(tmp_path / "wt"))
+    assert line.startswith("Sigma: the north-star could not be located or read")
+    assert "NOT judging strategic alignment" in line and "/sigma-doctor" in line
+    assert "linked worktree" in line                      # the resolver's own reason rides along
+
+
+def test_notice_absent_and_present_stay_silent(tmp_path):
+    assert ns.check(tmp_path)[0] == ns.ABSENT and ns.notice(tmp_path) == ""   # genuinely unconfigured
+    (tmp_path / ".sdlc" / "context").mkdir(parents=True)
+    (tmp_path / ".sdlc" / "context" / "north-star.md").write_text(NORTH_STAR_BODY)
+    assert ns.check(tmp_path)[0] == ns.PRESENT and ns.notice(tmp_path) == ""
+
+
+def test_notice_cli_gesture_prints_only_when_unreachable(tmp_path):
+    """The documented gesture (`north_star.py notice <dir>`), run as a subprocess."""
+    run = lambda d: subprocess.run([sys.executable, str(SCRIPT), "notice", str(d)],
+                                   capture_output=True, text=True)
+    bad = run(_broken_worktree(tmp_path / "wt"))
+    assert bad.returncode == 0 and "could not be located or read" in bad.stdout
+    quiet = run(tmp_path)
+    assert quiet.returncode == 0 and quiet.stdout == ""

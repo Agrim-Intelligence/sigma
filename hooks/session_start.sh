@@ -82,6 +82,21 @@ if [ -z "${SIGMA_RUN_ID:-}" ] && [ -f "$PROJECT/.sdlc/config.json" ]; then
         fi
     fi
 fi
+
+# --- North-star unreachable (D2 F03) ------------------------------------------------------------
+# ACCELERATOR only: the line and the rule live in Sigma's own Python (north_star.py notice, also run by
+# /sigma-doctor), so a host without hooks still sees it there. Silent unless a north-star exists but cannot
+# be located or read; a project with none is never nagged. Rides with the notices above.
+if [ -z "${SIGMA_RUN_ID:-}" ] && [ -f "$PROJECT/.sdlc/config.json" ]; then
+    HOOK_NS_LINE="$(python3 "$PLUGIN_ROOT/skills/sigma-loop/scripts/north_star.py" notice "$PROJECT" 2>/dev/null)" || HOOK_NS_LINE=""
+    if [ -n "$HOOK_NS_LINE" ]; then
+        if [ -n "$HOOK_COEXIST_NOTICE" ]; then
+            HOOK_COEXIST_NOTICE="$HOOK_COEXIST_NOTICE"$'\n\n'"$HOOK_NS_LINE"
+        else
+            HOOK_COEXIST_NOTICE="$HOOK_NS_LINE"
+        fi
+    fi
+fi
 export HOOK_COEXIST_NOTICE
 
 # --- Guided setup wizard (issue #1560) ---------------------------------------------------------
