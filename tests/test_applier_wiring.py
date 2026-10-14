@@ -315,3 +315,26 @@ def test_a_closed_gate_no_changes_nothing(tmp_path):
     cfg["rulebook"]["autonomy"]["applier"]["enabled"] = False
     AP.close_for_issue(sd, cfg, 5, "no", refuse=True)
     assert not _asks(sd)[0].get("vetoed_at")
+
+
+# ----------------------------------------------------------------------------------- public privacy
+
+def _state_text(sd):
+    import pathlib
+    return "\n".join(p.read_text(errors="ignore") for p in pathlib.Path(sd).rglob("*") if p.is_file())
+
+
+def test_public_visibility_keeps_a_persons_answer_text_out_of_the_ask_file(tmp_path):
+    sd, cfg, _ = _setup(tmp_path)
+    cfg["rulebook"].setdefault("records", {})["repo_visibility"] = "public"
+    _open_plain(sd, cfg)
+    AP.close_for_issue(sd, cfg, 5, "SECRET-TEXT-123", now=T0)
+    assert [a["state"] for a in _asks(sd)] == ["answered"]
+    assert "SECRET-TEXT-123" not in _state_text(sd)
+
+
+def test_private_visibility_still_stores_the_answer_text(tmp_path):
+    sd, cfg, _ = _setup(tmp_path)
+    _open_plain(sd, cfg)
+    AP.close_for_issue(sd, cfg, 5, "SECRET-TEXT-123", now=T0)
+    assert _asks(sd)[0]["answer"] == "SECRET-TEXT-123"

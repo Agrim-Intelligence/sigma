@@ -197,7 +197,10 @@ def answer(sdlc_dir, aid, text, config, now):
                 return "applied"
             ask.update(vetoed_at=now.isoformat())
         elif ask.get("state") == "pending":
-            ask.update(answer=text, answered_at=now.isoformat(), state="answered")
+            # On a public repository the answer's free text must not be written: the autonomy folder is
+            # published with the records, and nothing reads this text back (only the state matters).
+            kept = "recorded privately" if _load("rulebook_cfg").visibility(config) == "public" else text
+            ask.update(answer=kept, answered_at=now.isoformat(), state="answered")
         else:
             return ask.get("state")
         _write_atomic(_ask_path(sdlc_dir, aid), ask)
