@@ -4,6 +4,7 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **A sweep where every unit failed is an attempt (#1418).** It leaves an attempt stamp and the 12-hour window stays open; a sweep with some units refused or parked still closes it.
 - **A future-dated upkeep stamp no longer bypasses the retry window (#1419).** A completed-sweep time dated ahead counts as none and is not carried into an attempt stamp, so a recent attempt still holds off `upkeep.retry_minutes`.
 - **Blocker priority rule follow-ups (#1415).** A blocking cycle now raises every member that transitively blocks something more urgent, whichever member the walk enters through; filing a blocker and recording a block now also strip the legacy confirmation label from the open blocker (an ownership-held filing no longer keeps it). Membership still follows the existing verdict rules. With the mode off nothing changes.
 - **`ack --all` acks only what the filed issue listed (#1412).** The listed shas are now written only when the direct-commits issue is actually filed, so a commit landing after the filing is not swept in by a later pass; when every listed sha is gone, `ack --all` says so and writes nothing.
