@@ -957,8 +957,11 @@ def test_gate_open_in_tree_does_not_read_the_base(monkeypatch, capsys):
     got = m._engine_route({"upkeep": {"enabled": True}}, "/nonexistent", _UNIT, lambda: True,
                           run=run, cwd="/x")
     assert got == 0 and run.calls == [] and capsys.readouterr().err == ""
-def test_engine_route_refuses_a_pair_unit_before_any_pass_or_pr(tmp_path, capsys):
+def test_engine_route_refuses_a_pair_unit_before_any_pass_or_pr(tmp_path, capsys, monkeypatch):
     """#1339, through the documented gesture's engine route: exit 1, the refusal printed, no pass, no PR."""
+    # The route reads the real process environment; a CI runner carries an unattended-driver marker that would
+    # refuse on approval first, so run it from a clean, attended environment.
+    monkeypatch.setattr("os.environ", {})
     from test_feature_land_front import World, CONFIG, load as load_front
     from test_feature_land_front import pair_unit
     m = _mod()
