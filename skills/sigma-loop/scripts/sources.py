@@ -5041,7 +5041,11 @@ class GitHubSource:
         try:
             # #1410: the field write needs the board; `board_active` gates it (project off or GraphQL
             # unavailable => label + comment only), and `_no_field_writes` is the repair's budget skip.
+            # The board is resolved first: on the block-recording path nothing has resolved it yet, so
+            # the card lookup ran with no board number (`project item-list None`) and the field was
+            # never written while the label was.
             item_id = (None if getattr(self, "_no_field_writes", False) or not self.board_active
+                       or not self._ensure_board(sync=False)
                        else self._item_id(int(ref)))
             if item_id:
                 self._write_priority_field(int(ref), new_rank, item_id)
