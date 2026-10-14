@@ -70,3 +70,15 @@ def test_loop_model_fallback_pipes_issue_text_via_stdin():                 # F07
     text = " ".join((SKILLS / "sigma-loop" / "references" / "running.md").read_text(encoding="utf-8").split())
     assert 'pipe that text to `predict.py resolve - .sdlc "$goal"`' in text
     assert "pass that text as the argument" not in text
+
+
+def test_only_owners_waive_a_review_finding():
+    """Owner ruling 2026-10-14 (D2 RV1): a reviewer never waives a finding."""
+    text = _skill("sigma-review")
+    flat = " ".join(text.split())
+    assert "can be waived with a stated reason" not in flat
+    assert "Rules are lessons, not laws" not in flat
+    assert "Only the owners named in the repository's CODEOWNERS may waive a finding, of any class" in flat
+    assert "you report it and never waive it" in flat
+    assert "recorded with their stated reason" in flat
+    assert "Unattended, a finding that would need one parks for a human" in flat
