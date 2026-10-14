@@ -132,12 +132,29 @@ def test_park_whose_rest_fallback_also_fails_exits_nonzero_with_one_clear_messag
 
 
 @posix_only
-def test_failed_transition_is_unchanged_no_rest_fallback(tmp_path):
-    """`failed` shares _offboard but is not the park transition: byte-identical, no REST label write."""
+def test_failed_transition_uses_the_generic_swap_rest_twin_not_the_park_fallback(tmp_path):
+    """`failed` shares _offboard but is not the park transition. Since #1398 EVERY label swap falls
+    back to REST when GraphQL is refused, so `failed` lands its labels over REST too -- but through
+    that generic twin (one `using REST` line), never through the park-only #1303 fallback: no
+    `park label write failed` message, and no second round of label writes."""
     w = _world(tmp_path)
     p = _record(w, "failed")
     assert p.returncode == 0, p.stdout + p.stderr
-    assert _rest_label_writes(w) == []
+    assert "using REST" in p.stderr                          # the #1398 twin carried it
+    assert "still pickable" not in p.stderr and "park label write failed" not in p.stderr
+    writes = [(c[c.index("--method") + 1].upper(), c[1]) for c in _rest_label_writes(w)]
+    assert len(writes) == len(set(writes)), writes            # one pass, not the swap plus a park retry
+    labels = _state(w)["labels"]
+    assert "sdlc:parked" in labels and "sdlc:goal" not in labels, labels
+
+
+@posix_only
+def test_failed_transition_never_fails_the_exit_code_when_rest_also_fails(tmp_path):
+    """The control that separates `failed` from park: park whose REST fallback also fails exits
+    non-zero (above); a `failed` record in the same world keeps its historical exit 0."""
+    w = _world(tmp_path, rest_fail=True)
+    p = _record(w, "failed")
+    assert p.returncode == 0, p.stdout + p.stderr
     assert "still pickable" not in p.stderr
 
 

@@ -113,7 +113,7 @@ def test_no_parked_plus_label_pair():
                               run=lambda args: "")
     swaps = []
     gh._ensure_labels = lambda: None
-    gh._swap_labels_best_effort = lambda goal, add=(), remove=(), what="": (
+    gh._swap_labels_best_effort = lambda goal, add=(), remove=(), what="", **kw: (
         swaps.append((sorted(add), sorted(remove))) or True)
     gh._set_board_status = lambda *a, **k: True
     gh.note = lambda goal, text: None

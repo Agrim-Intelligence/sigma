@@ -165,13 +165,18 @@ def test_a_refused_graphql_still_repairs_through_rest_without_the_board_field():
 
 
 def test_the_board_field_is_written_only_when_graphql_budget_allows():
-    for kw, expect in (({"fail_graphql": True}, 0), ({"graphql_remaining": 10}, 0), ({}, 1)):
+    # The board field needs the board: a repo with no enabled project never looks a card up (#1410,
+    # gated by `board_active` like every other board call), so the budget cases run on a board repo.
+    for kw, expect, board in (({"fail_graphql": True}, 0, True), ({"graphql_remaining": 10}, 0, True),
+                              ({}, 1, True), ({}, 0, False)):
         run = _runner(_p0_blocked_by_p3(), **kw)
         src = _src(run)
+        if board:
+            src.project_enabled = True
         looked = []
         src._item_id = lambda n, _l=looked: _l.append(n)
         src.repair_blocker_ranks()
-        assert len(looked) == expect, kw
+        assert len(looked) == expect, (kw, board)
 
 
 # ------------------------------------------------------------------ through the real verb

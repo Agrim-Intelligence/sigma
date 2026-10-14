@@ -4979,7 +4979,10 @@ class GitHubSource:
             self._note_scope(exc)
             return
         try:
-            item_id = None if getattr(self, "_no_field_writes", False) else self._item_id(int(ref))   # #1410
+            # #1410: the field write needs the board; `board_active` gates it (project off or GraphQL
+            # unavailable => label + comment only), and `_no_field_writes` is the repair's budget skip.
+            item_id = (None if getattr(self, "_no_field_writes", False) or not self.board_active
+                       else self._item_id(int(ref)))
             if item_id:
                 self._write_priority_field(int(ref), new_rank, item_id)
         except Exception as exc:
