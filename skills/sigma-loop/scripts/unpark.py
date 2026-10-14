@@ -144,8 +144,9 @@ QUESTIONS = {
     ],
     "reviewer_down": [
         {"id": "route", "ask": "The independent reviewer did not work, so no review was recorded: {reason} "
-                               "Fix the reviewer and re-run it, or switch review.host to inline "
-                               "(an explicit operator choice)?",
+                               "Fix the reviewer and re-run it (reviewer.py run), review with a different "
+                               "host, or choose inline review, which you record with reviewer.py "
+                               "accept-inline after setting review.host to inline?",
          "options": ["fix and re-run the reviewer", "choose inline review"]},
     ],
     "unknown": [

@@ -6,6 +6,7 @@ that receipt says the process ran, printed a lone `VERDICT: approve`, and (plan-
 plan bytes. Each guard clause has its own test below; the PR body names the red test per break."""
 import hashlib
 import importlib.util
+import time
 import json
 import os
 import pathlib
@@ -799,3 +800,150 @@ def test_frames_are_length_prefixed_so_a_name_cannot_swallow_the_next_record():
     one = rv._frame(b"u", b"a" + i + b"u" + b"b", j)       # one record whose NAME imitates the first
     assert two != one
     assert rv._frame(b"uF", b"e", __import__("hashlib").sha256(b"").digest()) != rv._frame(b"uG", b"e", __import__("hashlib").sha256(b"").digest())
+
+
+# ---- re-attack of #1384 @22cc97b: git filters, and a recovery lever that works ------------------------
+
+def _filter_script(tmp_path):
+    marker = tmp_path.parent / ("filter-ran-%s" % tmp_path.name)
+    script = tmp_path.parent / ("filter-%s.sh" % tmp_path.name)
+    script.write_text("#!/bin/sh\ntouch %s\ncat\n" % marker); script.chmod(0o755)
+    return marker, script
+
+
+@pytest.mark.parametrize("variant", ["clean", "process", "info_attributes"])
+def test_a_git_clean_or_process_filter_is_never_executed_while_hashing(tmp_path, variant):
+    marker, script = _filter_script(tmp_path)
+    p = _project(tmp_path)
+    key = "process" if variant == "process" else "clean"
+    subprocess.run(["git", "-C", str(p), "config", "filter.ev.%s" % key, str(script)], check=True)
+    attrs = "code.py filter=ev\n"
+    if variant == "info_attributes":
+        (p / ".git" / "info").mkdir(exist_ok=True); (p / ".git" / "info" / "attributes").write_text(attrs)
+    else:
+        (p / ".gitattributes").write_text(attrs)
+    now = time.time_ns()
+    os.utime(p / "code.py", ns=(now, now))                 # stat-dirty, content unchanged
+    marker.unlink(missing_ok=True)
+    k, cause = _key(p)
+    assert k, cause
+    assert not marker.exists(), "git ran the repository's %s filter while computing the key" % key
+    reviewer_script(p, APPROVE)
+    assert run_reviewer(p).returncode == 0
+    assert not marker.exists()
+
+
+def test_a_nested_repo_whose_dot_git_is_a_symlink_runs_no_git(tmp_path):
+    marker, script = _marker_script(tmp_path)
+    p = _project(tmp_path)
+    real = tmp_path.parent / ("realgit-%s" % tmp_path.name)
+    subprocess.run(["git", "init", "-q", str(real)], check=True)
+    subprocess.run(["git", "-C", str(real), "config", "core.fsmonitor", str(script)], check=True)
+    n = p / "vendor"; n.mkdir()
+    (n / ".git").symlink_to(real / ".git")
+    (n / "f").write_text("1")
+    marker.unlink(missing_ok=True)
+    key, cause = _key(p)
+    assert not marker.exists()
+    assert key or cause
+
+
+def _config_host(p, host, **extra):
+    cfg = json.loads((p / ".sdlc/config.json").read_text())
+    cfg["review"] = {"host": host, **extra}
+    (p / ".sdlc/config.json").write_text(json.dumps(cfg))
+
+
+def _failed_codex(tmp_path, monkeypatch):
+    bindir = _stub_host(tmp_path, monkeypatch, "codex", "exit 1\n")
+    p = _project(tmp_path, review={"host": "codex"})
+    assert run_reviewer(p).returncode == 1
+    return p, bindir
+
+
+def test_lever_subagent_route_is_not_blocked_by_an_old_process_failure(tmp_path, monkeypatch):
+    p, bindir = _failed_codex(tmp_path, monkeypatch)
+    _config_host(p, "claude")
+    env = {**_without(bindir), "CLAUDECODE": "1"}
+    env.pop("CLAUDE_CODE_SESSION_ID", None)
+    r = work(p, "record-review", ".sdlc", GOAL, "--verdict", "APPROVE", env=env)
+    assert r.returncode == 2 and "--agent-id" in r.stderr and "FAILED" not in r.stderr      # its own proof applies
+    r = work(p, "record-review", ".sdlc", GOAL, "--verdict", "APPROVE", "--agent-id", "rev9", env=env)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["route"] == "subagent"
+
+
+def test_lever_a_different_process_host_runs_and_supersedes_the_old_failure(tmp_path, monkeypatch):
+    p, bindir = _failed_codex(tmp_path, monkeypatch)
+    _stub_host(tmp_path, monkeypatch, "cursor-agent", "echo ok\necho 'VERDICT: approve'\n")
+    _config_host(p, "cursor")
+    r = record_review(p)                                          # no run on THIS route yet; the old failure is not its
+    assert r.returncode == 2 and "no run of it is on record" in r.stderr and "FAILED" not in r.stderr
+    assert run_reviewer(p).returncode == 0
+    assert record_review(p).returncode == 0
+
+
+def test_lever_same_route_after_a_fix_clears_it(tmp_path, monkeypatch):
+    p, bindir = _failed_codex(tmp_path, monkeypatch)
+    assert record_review(p).returncode == 2
+    (bindir / "codex").write_text("#!/bin/sh\necho ok\necho 'VERDICT: approve'\n")
+    assert run_reviewer(p).returncode == 0
+    assert record_review(p).returncode == 0
+
+
+def test_lever_inline_needs_the_recorded_owner_choice_not_just_a_config_edit(tmp_path, monkeypatch):
+    p, bindir = _failed_codex(tmp_path, monkeypatch)
+    _config_host(p, "inline")
+    r = record_review(p)
+    assert r.returncode == 2 and "accept-inline" in r.stderr            # the refusal names the lever
+    gesture = [sys.executable, str(S / "reviewer.py"), "accept-inline", ".sdlc", "--goal", GOAL, "--phase", "review"]
+    assert subprocess.run(gesture, cwd=p, capture_output=True, text=True).returncode == 2       # --reason required
+    got = subprocess.run([*gesture, "--reason", "owner chose inline review in /sigma-unpark"], cwd=p,
+                         capture_output=True, text=True)
+    assert got.returncode == 0, got.stderr
+    r = record_review(p)
+    assert r.returncode == 0 and json.loads(r.stdout)["route"] == "inline"
+    receipt = json.loads((p / ".sdlc/state/reviewer-runs/0001-x.review.json").read_text())
+    assert receipt["outcome"] == "waived_inline" and receipt["failure"] == "nonzero_exit" and receipt["reason"]
+
+
+def test_accept_inline_is_refused_where_it_would_launder_a_failure(tmp_path, monkeypatch):
+    p, bindir = _failed_codex(tmp_path, monkeypatch)
+    cmd = [sys.executable, str(S / "reviewer.py"), "accept-inline", ".sdlc", "--goal", GOAL, "--phase", "review",
+           "--reason", "x"]
+    env = _without(bindir)
+    r = subprocess.run(cmd, cwd=p, capture_output=True, text=True, env=env)       # host still codex, now missing
+    assert r.returncode == 2 and "review.host" in r.stderr
+    r = subprocess.run(cmd, cwd=p, capture_output=True, text=True)                 # route is still process
+    assert r.returncode == 2 and "not inline" in r.stderr
+    q = tmp_path / "q"; q.mkdir()
+    p2 = _project(q, review={"host": "inline"})
+    r = subprocess.run(cmd, cwd=p2, capture_output=True, text=True)                # nothing failed
+    assert r.returncode == 2 and "nothing to accept" in r.stderr
+
+
+def test_the_d1_repro_stays_closed_after_scoping_the_receipt_to_its_route(tmp_path, monkeypatch):
+    p, bindir = _failed_codex(tmp_path, monkeypatch)
+    r = record_review(p, env=_without(bindir))                  # host still codex, binary gone
+    assert r.returncode == 2 and "FAILED" in r.stderr and "not installed" in r.stderr
+    _config_host(p, "auto")                                     # a config edit alone is not the owner's choice
+    r = record_review(p, env=_without(bindir))
+    assert r.returncode == 2 and "accept-inline" in r.stderr
+
+
+def test_phase_status_ignores_a_failure_from_another_route(tmp_path, monkeypatch):
+    p, bindir = _failed_codex(tmp_path, monkeypatch)
+    rv = _rv()
+    monkeypatch.setenv("CLAUDECODE", "1")
+    _config_host(p, "claude")
+    assert rv.failed_receipt(str(p / ".sdlc"), GOAL, "review") is None
+
+
+def test_a_receipt_with_no_route_still_applies_except_on_the_subagent_route(tmp_path, monkeypatch):
+    p = _project(tmp_path)
+    _rv()._write_receipt(str(p / ".sdlc"), GOAL, "review", outcome="failed", failure="nonzero_exit")   # untagged
+    rv = _rv()
+    assert rv.failed_receipt(str(p / ".sdlc"), GOAL, "review") == ("nonzero_exit", "")
+    monkeypatch.setenv("CLAUDECODE", "1")
+    _config_host(p, "claude")
+    assert rv.failed_receipt(str(p / ".sdlc"), GOAL, "review") is None
