@@ -153,14 +153,14 @@ review-evidence .sdlc "$goal" --manifest "$REVIEW_MANIFEST" --review-result "$RE
   with an equally fresh reviewer subagent** (its own prior verdict plus a freshly re-run
   `review_context.py brief` — never the earlier reviewer's transcript). Repeat the generation,
   resolution, review-result, and evidence sequence, then post `--evidence "$REVIEW_EVIDENCE"
-  --verdict approve`.
+  --verdict approve`. If a repair changed behaviour after Retrospective, re-run `sigma-retro` on the final diff and pass that grade at `record review`/`done`.
   **`commit` is LOCAL; only `pr` pushes.** Skipping it leaves the PR head at the pre-fix commit,
   so GitHub's checks and reviews all pass — correctly — about code nobody approved, and an armed
   auto-merge squashes that. This shipped defects to a protected `main` three times before
   `gate()` grew a STALE HEAD refusal; the guard is the backstop, this line is the intent. **The cycle is hard-capped:** `post-review` counts the
   block cycles and, once they hit `work.max_review_cycles` (default **3**), returns a `PARK: …` line
   instead of asking for another fix — the review genuinely didn't converge, so `record parked "<why>"`
-  for a human. You never have to count the cycles yourself; the cap is enforced in code.
+  for a human.
 
 To clear a prior loop block without changing the reviewed revision, publish a **fresh** generation
 for that same revision — re-run the `brief --output` gesture above; every publication is a new
@@ -199,9 +199,7 @@ moving under the PR mid-merge) that same ~7.5min budget can be spent again each 
 attaches a fresh head, up to `BEHIND_REBASES` (3) times before the race arms or parks — roughly
 **22.5 minutes** worst case, on top of the separate, smaller BEHIND poll-with-backoff
 (`BEHIND_ATTEMPTS` × `BEHIND_BACKOFF`, capped by `BEHIND_BACKOFF_MAX`) that watches each rebased
-head settle. The safe minimum is that full worst case, **~1,350,000ms (22.5 minutes)** — a common
-default like 600000ms (10 minutes) covers only the ordinary pending path and is NOT enough once a
-BEHIND-rebase is in play. `gate()` only READS GitHub's state while it polls; it mutates nothing.
+head settle. The safe minimum is that full worst case, **~1,350,000ms (22.5 minutes)** — `gate()` only READS GitHub's state while it polls; it mutates nothing.
 So if the host cuts the call short while it polls, nothing was recorded as merged or armed — re-run
 `work.py merge .sdlc "$goal"` (idempotent). A cut DURING the merge call itself may have landed: run `loop.py record .sdlc "$goal" review`, never re-run merge. Or
 read `gh api repos/{owner}/{repo}/pulls/<PR> --jq '{mergeable,mergeable_state}'` first to see GitHub's read. No GraphQL: REST reads in docs/cloud-sessions.md.
@@ -269,7 +267,8 @@ pass records the `done` later — see below.
 `work.auto_merge` says. An open PR (armed or not, fork, read-only, any policy) and one whose state
 could not be read both name `record review` as the next step; a PR **closed without merging** names
 `record parked "<why>"`. The issue is never closed on an unmerged PR. A goal with **no** PR on record
-(a docs-only / no-diff goal, or `work.enabled` off) records `done` exactly as before.
+records `done` as before only if `work.enabled` is off or it changed nothing; with it on, a branch ahead of base
+(docs-only too) or with uncommitted edits and no PR is REFUSED (`work.py pr`, `record review`, or `record parked`).
 
 **`record review`** (exit `2` if `work.enabled` is off or no PR is on record — there is nothing to
 await) flags the goal's work record `awaiting_merge`, moves the card to QC, leaves one note on the

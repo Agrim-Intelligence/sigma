@@ -67,9 +67,6 @@ reviewer would read is a maker→reviewer channel whatever the artifact is. It d
 flag implementation content: a breaker must never see the implementation, but a reviewer must — the
 diff is the artifact under review. A non-zero `check` blocks dispatch on every mechanism, `subagent` included: fix the brief, dispatch only after `check` exits 0.
 
-A maker reviewing its own plan just confirms it. The diff-to-come is the change; the codebase is the impact
-surface.
-
 ## 1. Forensic verification
 Every claim in the plan is a hypothesis. For each file path, function, line, or behavior the plan
 asserts — open the real code and confirm it. Classify each: Correct / Partially correct / Incorrect,
@@ -88,7 +85,7 @@ rules, conventions, or stated direction? Quote the specific rule if so.
 ## 4. Strategic & architectural alignment (vision-first projects)
 **Never test for the file yourself.** `.sdlc/` is gitignored, so inside a goal worktree — where the
 loop runs this phase — `.sdlc/context/north-star.md` does not exist even on a project that has one
-(#1778: 11,523 bytes in the main checkout, no `context/` dir at all in the worktree). Ask instead:
+(#1778). Ask instead:
 
 ```
 python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/north_star.py"
@@ -124,8 +121,11 @@ never a rebuilt one (a rebuild hashes the edited plan, so the check could never 
 ```
 python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/work.py" record-plan-review .sdlc "<goal>" \
   --verdict SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST \
-  --plan-sha256 "$(awk '/^Plan sha256: /{print $3; exit}' /tmp/brief-<goal>.md)"
+  --plan-sha256 "$(awk '/^Plan sha256: /{print $3; exit}' /tmp/brief-<goal>.md)" \
+  [--agent-id <id>]
 ```
+
+`--agent-id` (the reviewer's own id) is required on the `subagent` route only.
 
 It records SOUND → `pass`, SOUND-WITH-REFINEMENTS → `warn`, FIX-FIRST → `block` (a FIX-FIRST is
 recorded too), and it is the only emitter of the `plan_review` journal gate: do not also `loop.py

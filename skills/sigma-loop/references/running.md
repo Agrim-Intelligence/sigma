@@ -70,9 +70,7 @@ maker's conversation into the child. Bracket each phase-subagent dispatch itself
 --result <...>` right when it returns. **`--model <tier>` is REQUIRED (#2514): `loop.py log` refuses a `--role phase` dispatch without it.** `<tier>` is the `model_choice` value above, never a fresh resolve. Before a deploy, credentials, spend or production-data step: `log .sdlc "$goal" action --action '<plain-words step>'`; `permission_use` with that text if granted. One subagent PER PHASE, not one for the whole goal: that is
 what keeps a reviewer phase a **sibling** of the maker phase it checks (fresh context, no nesting),
 never a continuation of it — see the maker≠checker rule below. Artifacts pass between phases through
-the filesystem (`.sdlc/plans/`, the worktree diff, the issue timeline), not shared context. Where
-the host supports it, keep static instructions ahead of the varying goal/phase details so prompt
-caches can reuse the prefix. Do not paste whole prior phase transcripts into a child prompt. Have each
+the filesystem (`.sdlc/plans/`, the worktree diff, the issue timeline), not shared context. Do not paste whole prior phase transcripts into a child prompt. Have each
 phase return its verdict, changed artifact paths and any unresolved risk; keep full evidence in
 durable artifacts that the next phase can inspect. Preserve each plan step's verification and the
 fresh full proof required in the completion turn. `loop.py verify` remains mandatory and must run
@@ -150,8 +148,11 @@ rebuild the brief here, because a rebuild hashes the edited plan and the check c
 
 ```
 python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" record-plan-review .sdlc "$goal" --verdict <VERDICT> \
-  --plan-sha256 "$(awk '/^Plan sha256: /{print $3; exit}' "/tmp/brief-$(basename "$goal" .md).md")"
+  --plan-sha256 "$(awk '/^Plan sha256: /{print $3; exit}' "/tmp/brief-$(basename "$goal" .md).md")" \
+  [--agent-id <id>]
 ```
+
+`--agent-id` is required on the `subagent` route only.
 
 `<VERDICT>` is the reviewer's SOUND, SOUND-WITH-REFINEMENTS or FIX-FIRST; a FIX-FIRST is recorded
 too. This is the one writer of the verdict and the one emitter of its `plan_review` journal gate
@@ -330,7 +331,7 @@ Do **every edit for this goal inside that worktree**; the human's checkout must 
 and never change branch (it would rewrite `.sdlc/goals/` underneath you). Bookkeeping is the
 exception and stays in the MAIN checkout — keep passing `loop.py`/`ledger.py` the same `.sdlc`
 path as always, never the worktree's stale copy of it. `loop.py verify` finds the worktree by
-itself. Feature off → work in the checkout exactly as before (the agent-start registration above
+itself. Feature off → work in the checkout exactly as before (goals then run one at a time) (the agent-start registration above
 still runs either way).
 
 **3b. Independent slices? Run the wave — don't queue it.** Once the plan exists, if it declared
