@@ -421,4 +421,5 @@ def test_d2_threshold_is_the_amended_rule_not_literal_zero():
     for phrase in ("rated Medium or higher", "a different model family", "no new HIGH",
                    "Low items are listed, not required to be zero", "AMENDED 2026-10-15"):
         _check(phrase in d2, f"D2 row lacks {phrase!r}")
-    _check("not yet shown met" in text and "round 3" in text, "D2 cell must say the amended rule is not yet shown met")
+    _check("ROUND 4" in text and "ready for the independent scorers to re-score" in text and "NOT changed by this PR" in text,
+           "D2 cell must record round 4 and leave the score to the independent scorers")
