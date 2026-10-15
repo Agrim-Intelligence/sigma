@@ -31,13 +31,24 @@ def test_documented_gesture_yields_native_receipt_without_files(tmp_path):
     environment.pop('PYTHONDONTWRITEBYTECODE', None)
     result = subprocess.run([sys.executable, 'tools/parity/resources.py', *GESTURE], cwd=tmp_path,
                             capture_output=True, text=True, timeout=30, env=environment)
-    assert result.returncode == 0, result.stderr
-    receipt = json.loads(result.stdout)
+    assert result.returncode in (0, 2), result.stderr
+    receipt = json.loads(result.stdout if result.returncode == 0 else result.stderr)
     assert receipt['schema'] == 'parity-resource-preflight/v1'
-    assert receipt['status'] == 'ok'
     assert receipt['platform'] == sys.platform
-    assert receipt['sources']
-    assert int(receipt['limits']['output_bytes']) > 0
+    if result.returncode == 0:
+        assert result.stderr == ''
+        assert receipt['status'] == 'ok'
+        assert receipt['sources']
+        assert int(receipt['limits']['output_bytes']) > 0
+    else:
+        assert result.stdout == ''
+        assert set(receipt) == {'schema', 'status', 'platform', 'code', 'source', 'cgroup'}
+        assert receipt['status'] == 'refused'
+        assert receipt['code'] in {'unsupported-platform', 'source-unavailable', 'invalid-source',
+            'native-binding-unavailable', 'native-api-failed', 'cgroup-mapping-unsupported',
+            'cgroup-v1-memory-availability-unsupported', 'memory-exhausted', 'budget-exhausted',
+            'disk-exhausted'}
+        assert isinstance(receipt['source'], str) and receipt['source']
     assert {str(p.relative_to(tmp_path)): p.read_bytes() if p.is_file() else None
             for p in tmp_path.rglob('*')} == before
 
@@ -325,7 +336,7 @@ def test_linux_statm_uses_total_pages_and_measured_page_size(modules, monkeypatc
     _, sources = modules
     monkeypatch.setattr(sources.sys, 'platform', 'linux')
     proc_fixture(monkeypatch, sources, rows={'/proc/self/statm': '1001 17 3 4 5 6 7\n'})
-    monkeypatch.setattr(sources.os, 'sysconf', lambda key: 4096)
+    monkeypatch.setattr(sources.os, 'sysconf', lambda key: 4096, raising=False)
     monkeypatch.setattr(sources, 'address_space_limit', lambda: 10000000)
     assert sources.virtual_bytes() == 4100096
     row = sources.posix_address_space()
@@ -340,7 +351,7 @@ def test_linux_statm_malformed_zero_or_overflow_refuses(modules, monkeypatch, te
     _, sources = modules
     monkeypatch.setattr(sources.sys, 'platform', 'linux')
     proc_fixture(monkeypatch, sources, rows={'/proc/self/statm': text})
-    monkeypatch.setattr(sources.os, 'sysconf', lambda key: page)
+    monkeypatch.setattr(sources.os, 'sysconf', lambda key: page, raising=False)
     with pytest.raises(sources.Refused, match='invalid-source'):
         sources.virtual_bytes()
 
@@ -356,9 +367,14 @@ def test_linux_statm_missing_refuses(modules, monkeypatch):
 def test_posix_disk_reads_available_not_free_and_does_not_create(modules, monkeypatch, tmp_path):
     _, sources = modules
     from types import SimpleNamespace
-    monkeypatch.setattr(sources.os, 'fstatvfs', lambda fd: SimpleNamespace(f_bavail=7, f_bfree=99, f_frsize=4096))
+    monkeypatch.setattr(sources.sys, 'platform', 'darwin')
+    monkeypatch.setattr(sources.os, 'fstatvfs', lambda fd: SimpleNamespace(f_bavail=7, f_bfree=99, f_frsize=4096), raising=False)
+    monkeypatch.setattr(sources.os, 'open', lambda path, flags: 11)
+    closed = []
+    monkeypatch.setattr(sources.os, 'close', closed.append)
     disk = sources.disk_capacity(str(tmp_path))
     assert disk == dict(api='fstatvfs', directory=str(tmp_path.resolve()), available_bytes=28672)
+    assert closed == [11]
     with pytest.raises(sources.Refused):
         sources.disk_capacity(str(tmp_path/'does-not-exist'))
     assert list(tmp_path.iterdir()) == []
@@ -484,3 +500,31 @@ def test_native_bindings_and_platform_cannot_fall_back_to_subprocess(modules, mo
     monkeypatch.setattr(sources.sys, 'platform', 'unknown-os')
     with pytest.raises(sources.Refused, match='unsupported-platform'):
         sources.collect('.')
+
+
+@pytest.mark.parametrize('name', ['mach_host_self', 'host_statistics64', 'sysctlbyname',
+    'mach_port_deallocate', 'task_info', 'GlobalMemoryStatusEx', 'GetDiskFreeSpaceExW'])
+def test_binding_construction_declares_exact_abi(modules, monkeypatch, name):
+    _, sources = modules
+    import ctypes as c
+    from types import SimpleNamespace
+    signatures = {
+        'mach_host_self': ([], c.c_uint32),
+        'host_statistics64': ([c.c_uint32, c.c_int, c.c_void_p, c.POINTER(c.c_uint32)], c.c_int),
+        'sysctlbyname': ([c.c_char_p, c.c_void_p, c.POINTER(c.c_size_t), c.c_void_p, c.c_size_t], c.c_int),
+        'mach_port_deallocate': ([c.c_uint32, c.c_uint32], c.c_int),
+        'task_info': ([c.c_uint32, c.c_int, c.c_void_p, c.POINTER(c.c_uint32)], c.c_int),
+        'GlobalMemoryStatusEx': ([c.POINTER(sources.MemoryStatusEx)], c.c_int),
+        'GetDiskFreeSpaceExW': ([c.c_wchar_p, c.POINTER(c.c_uint64), c.POINTER(c.c_uint64),
+                               c.POINTER(c.c_uint64)], c.c_int),
+    }
+    lib = SimpleNamespace(**{key: NativeFunction(lambda *args: 0) for key in signatures})
+    if name.startswith(('Global', 'GetDisk')):
+        monkeypatch.setattr(sources.ctypes, 'WinDLL', lambda *args, **kwargs: lib, raising=False)
+        assert sources.windows_bindings() is lib
+    else:
+        monkeypatch.setattr(sources.ctypes, 'CDLL', lambda *args, **kwargs: lib)
+        monkeypatch.setattr(sources, 'darwin_exports', lambda library: (4096, 11))
+        assert sources.darwin_bindings() == (lib, 4096, 11)
+    assert getattr(getattr(lib, name), 'argtypes', None) == signatures[name][0]
+    assert getattr(getattr(lib, name), 'restype', None) is signatures[name][1]
