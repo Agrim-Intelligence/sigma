@@ -116,14 +116,13 @@ the structural + product debt the fix left behind and grade intent-vs-shipped. U
 "${CLAUDE_SKILL_DIR}/scripts/reviewer.py" resolve .sdlc`, then the mechanism it names, fed
 (`python3 "${CLAUDE_SKILL_DIR}/scripts/review_context.py" brief .sdlc "$goal" --for retro`) — the
 context that just argued the work was done shouldn't also grade whether it met the intent. Autonomous
-mode → **write only the audit-trail notes**, and **park** any north-star / standing-rule proposal to
+mode → **write only the audit-trail notes and the KG corpus note when `knowledge_graph.enabled`**, and **park** any north-star / standing-rule proposal to
 the review queue for a human; never edit a standing doc unattended. Fail-open — it never breaks the run.
 6. Record the outcome, including the retro grade from step 5 if Retrospective ran:
 `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" record .sdlc "$goal" done --retro-grade
 achieved|partial|diverged` (or `parked "reason" --retro-grade ...` / `failed "reason" --retro-grade
-...`; omit the flag entirely on a goal that never reached Retrospective — e.g. a pre-work
-auto-park).
-The flag is not only bookkeeping: passing it is also what refreshes the knowledge graph when
+...`; omit the flag on a goal that never reached Retrospective).
+The flag is not only bookkeeping: passing it refreshes the knowledge graph when
 `knowledge_graph.auto_refresh` is `true` (issue #1562) — `record` calls `kg.py refresh` itself,
 after the outcome is recorded. **Do not run a graph build by hand as well.** Omitting the flag on
 a goal that DID reach Retrospective silently skips that refresh.

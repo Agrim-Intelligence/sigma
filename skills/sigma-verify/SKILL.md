@@ -23,12 +23,11 @@ it's dishonesty. **No completion claim without fresh verification output in this
 run it just now, you can't claim it. (Different words don't exempt you: spirit over letter.)
 
 ## The gate — run this before ANY "done / fixed / passing"
-1. **Identify** the command that proves the claim — `.sdlc/project.md` → **Verify command** if set,
-   else the repo's tests/build/lint.
+1. **Identify** the command that proves the claim — goal frontmatter `verify_command`, else config `verify.command`
+   (as `loop.py verify`; `project.md` is not read), else repo tests/build/lint.
 2. **Run** it fresh and in full.
 3. **Read** the actual output — exit code, failure count.
-4. **Verify** the output confirms the claim. If it doesn't, state the *real* status *with* the output —
-   don't hedge.
+4. **Verify** the output confirms the claim. If it doesn't, state the *real* status *with* the output.
 5. **Only then** make the claim, and make it *with* the evidence.
 
 ## What each claim actually requires
@@ -43,7 +42,7 @@ run it just now, you can't claim it. (Different words don't exempt you: spirit o
 
 ## Red flags — stop and verify
 "should" / "probably" / "seems to" · premature "Great! / Perfect! / Done!" · about to commit/PR without
-running it · trusting a subagent's report · "just this once" / "I'm confident" (confidence ≠ evidence) ·
+running it · trusting a subagent's report · "just this once" / "I'm confident" ·
 **any wording that implies success without having run the check.**
 
 ## In the loop

@@ -59,22 +59,22 @@ It prints `model=<id> effort=<effort>`; Codex uses the selected `<effort>`, neve
 pass those exact values as the Codex subagent's `model`
 and reasoning-effort arguments. Never pass an Anthropic tier string as a Codex model ID. The
 resolver refuses an unknown or malformed mapping; choose an approved Codex ID in
-`model_host_overrides.codex`, or update the plugin when the catalog changes, instead of guessing.
+`model_host_overrides.codex`, or update the plugin when the catalog changes.
 Pass that returned ID to
 `phase_report.py start --host-model <id>` as well; `end` checks every observed turn and refuses a
 mismatch. On Codex, set `fork_turns="none"` for every phase and
 pass the goal, phase, worktree and relevant artifact paths in the prompt; the default copies the
-maker's conversation into the child. Bracket each phase-subagent dispatch itself:
+maker's conversation into the child. Bracket each phase-subagent dispatch:
 `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" log .sdlc "$goal" agent_dispatch --role phase --phase
 <phase> --model <tier>` right after dispatching it, `agent_done --role phase --phase <phase>
 --result <...>` right when it returns. **`--model <tier>` is REQUIRED (#2514): `loop.py log` refuses a `--role phase` dispatch without it.** `<tier>` is the `model_choice` value above, never a fresh resolve. Before a deploy, credentials, spend or production-data step: `log .sdlc "$goal" action --action '<plain-words step>'`; `permission_use` with that text if granted. One subagent PER PHASE, not one for the whole goal: that is
-what keeps a reviewer phase a **sibling** of the maker phase it checks (fresh context, no nesting),
+what keeps a reviewer phase a **sibling** of the maker phase it checks,
 never a continuation of it — see the maker≠checker rule below. Artifacts pass between phases through
 the filesystem (`.sdlc/plans/`, the worktree diff, the issue timeline), not shared context. Do not paste whole prior phase transcripts into a child prompt. Have each
 phase return its verdict, changed artifact paths and any unresolved risk; keep full evidence in
 durable artifacts that the next phase can inspect. Preserve each plan step's verification and the
 fresh full proof required in the completion turn. `loop.py verify` remains mandatory and must run
-the configured command; a prior manual test run never replaces it. Avoid duplicate manual
+the configured command (frontmatter `verify_command`, else `verify.command`); a prior manual test run never replaces it. Avoid duplicate manual
 full-suite invocations when the source and proving command have not changed; repeat when code
 changes or a concrete flaky failure leaves the result uncertain. This keeps independent review
 and required gates intact while avoiding duplicate
@@ -228,8 +228,7 @@ first word of its stdout:
   tier again still climbs rather than repeating a rung.
 - `CEILING <T>` (exit 3) — no tier above `<T>` within `model_selection_max_tier` (`fable` is never
   an escalation target). Keep the existing fix → re-review cycle at `<T>`; only a fix that still
-  does not resolve after a couple of rounds is "a failure you cannot resolve" (above) — park or
-  fail it rather than cycling indefinitely.
+  does not resolve after a couple of rounds is "a failure you cannot resolve" — record it `failed` (`parked` only for a human decision) rather than cycling.
 - `OFF` (exit 3) — `model_selection` is not `"auto"`, so no tier is routed and there is none to
   raise (Claude phases inherit the session model; Codex maps `off` to its ordinary-work model, as
   above); the same fix → re-review cycle, then the same rule, applies.
