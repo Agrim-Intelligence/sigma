@@ -198,3 +198,14 @@ def test_ambiguous_review_post_parks_never_reposts():                       # ro
     assert "genuinely never reached GitHub" not in landing and "Publish a **fresh** generation for the same, unchanged revision" not in landing
     assert "still ambiguous, park (`--qkind review_post_ambiguous`), never post again" in running
     assert "never by posting again" not in running
+
+
+def test_failed_review_tool_withholds_approval_unless_verify_covers_it():   # round 4 F1
+    # sigma-verify may pick a narrower proving command and required CI need not run the type-checker,
+    # so "those gates run separately" cannot excuse a failure Review itself saw.
+    text = " ".join(_skill("sigma-review").split())
+    assert "already catches — those gates run separately" not in text
+    assert "will certainly stop" in text
+    assert ("A tool you ran that FAILS is reported with its number; do not approve while it fails "
+            "unless the configured verification command demonstrably covers that same tool.") in text
+    assert "Lint / type clean" in _skill("sigma-verify")             # the claim-proof rule is untouched

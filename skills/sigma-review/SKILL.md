@@ -66,14 +66,13 @@ reviewer would read is a maker→reviewer channel. It does not flag implementati
 content: a reviewer must see the diff, its artifact. A non-zero `check` blocks dispatch on every mechanism, `subagent` included: fix the brief, dispatch only after `check` exits 0.
 
 **A diff-only review misses blast radius:** the diff is the *change*, the codebase is
-the *impact surface*. Before judging any change, read the code around it and grep every caller — you
-have full repo access. Small changes can have wide radii.
+the *impact surface*. Before judging any change, read the code around it and grep every caller.
 
 **Executor:** this skill is the review. On Claude Code with the optional `code-review` plugin
-installed, `/code-review` is a useful extra pass over the diff; it does not replace this one or satisfy any of its gates.
+installed, `/code-review` is an extra pass; it does not replace this one or satisfy any of its gates.
 
 Pick the mode from the request:
-- **Diff review** (default before a merge) — review the branch's changes vs base. Fast, targeted.
+- **Diff review** (default before a merge) — review the branch's changes vs base.
 - **Whole-repo audit** — not this skill. A periodic sweep is
   `/sigma-audit`.
 - **Counter-review** — the user pasted an external review (Cursor, GPT, SonarQube, another agent):
@@ -85,16 +84,14 @@ Run the objective tools the repo has and report the numbers, so quality is measu
 - **JS/TS:** the repo's `eslint` / `tsc` / test-coverage.
 - **Hotspots:** `git log` churn × current size — the files most likely to hide risk.
 
-Skip any tool the repo doesn't use; never invent numbers.
+Skip any tool the repo doesn't use; never invent numbers. A tool you ran that FAILS is reported with its number; do not approve while it fails unless the configured verification command demonstrably covers that same tool.
 
 ## 2. Qualitative scan — the eight axes
 Every axis, every review, each finding with `file:line` evidence. An axis you skipped is a blind spot,
 not a saved token — say so rather than imply coverage you did not have. Name the specific fault;
 "this could be cleaner" is not a finding.
 
-Each axis names the harm it prevents and how to detect it. Where an
-axis's boundary is unclear, decide by the harm each axis names. The full canon is
-[axes](references/axes.md).
+Where an axis's boundary is unclear, decide by the harm it names. Canon: [axes](references/axes.md).
 
 1. **Correctness & Intent** — *ships the wrong thing.* Walk the diff against the goal's acceptance
    criteria, not just against itself. Name the inputs that break it: null, empty, zero, negative, max,
@@ -160,7 +157,7 @@ write that case you do not have a **Bug**, you have a question — ask it as a *
 **Never report these.** Each costs a fix cycle for nothing:
 - A problem that pre-dates the change and stays dormant — *unless this change puts it on a live path*.
   A latent bug the diff just made reachable is this review's finding, not the last one's.
-- Anything a linter, type-checker or the test run already catches — those gates run separately.
+- Anything a linter, type-checker or the test run will certainly stop — not a failure you saw in §1.
 - A style preference not written down in `CLAUDE.md` or the north-star. Quote the rule, or drop it.
 - A behaviour change that is the change's point.
 - Something deliberately silenced in the code (a `noqa`, a documented waiver) — argue the waiver, not the line.
