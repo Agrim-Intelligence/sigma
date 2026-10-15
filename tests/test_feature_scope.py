@@ -350,7 +350,7 @@ def test_next_batch_fills_every_slot_from_inside_the_unit_and_then_stops():
     lp = _mod("loop")
     issues = [_issue(10), _issue(11, LABEL), _issue(12, OTHER_LABEL), _issue(13, LABEL)]
     with tempfile.TemporaryDirectory() as d:
-        base = _base(d, parallel={"goals": {"enabled": True, "max_concurrent": 4}})
+        base = _base(d, work={"enabled": True}, parallel={"goals": {"enabled": True, "max_concurrent": 4}})
         cfg, src = _source(lp, base, issues)
         picks = lp.next_batch(base, src, cfg)
     assert picks == [("goal", "11"), ("goal", "13"), ("DONE", None)]

@@ -15,7 +15,7 @@ empty path. Claude keeps its provided value.
 Detailed selection triggers: [selection](references/selection.md).
 
 The **Retrospective (Learn)** phase executor — Sigma's backward-learning loop, so a goal doesn't
-just ship, it *teaches*. Runs at the end of a goal, **after Review**. Grade **intent-vs-shipped as an
+just ship, it *teaches*. Runs at the end of a goal, **after Review**, and again on the final diff if a PR repair then changes behaviour. Grade **intent-vs-shipped as an
 independent, project-informed pass** — under `config.review.independent` (default on) the loop runs it
 as a fresh subagent, so the honest "did we build what the goal asked, and what debt did the narrow fix
 leave?" isn't answered by the same context that just argued the work was done. It is **advisory**: it
@@ -25,7 +25,7 @@ unattended (mirrors how `sigma-kg`'s `maintain` only proposes).
 
 ## Executor
 Always Sigma's own. It *complements* the Review phase's `sigma-verify` (which asks "is it correct /
-done?") — it does not duplicate it (this asks "what did we learn, what debt remains?"). Pure markdown discipline + `git` / `python3`, so it degrades gracefully on any host.
+done?") — it does not duplicate it (this asks "what did we learn, what debt remains?").
 
 ## Pre-flight — gather the evidence (repo-auto-detect, fail-open)
 Read what this specific repo offers; skip whatever's absent (never break the run):

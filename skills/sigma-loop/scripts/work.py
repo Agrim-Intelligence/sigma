@@ -172,7 +172,8 @@ ENFORCEMENT_GATES = (
                   "by one REST read, whatever `work.auto_merge` says; an open or unreadable PR is "
                   "recorded `review` instead (issue stays open, board QC) and `loop.py "
                   "reconcile-merges` records `done` and closes the issue once the PR merges; a goal "
-                  "with no PR is unaffected",
+                  "with no PR is refused too when its branch is ahead of base or has uncommitted "
+                  "edits (lever: `record parked`), and unaffected only if it changed nothing",
      "readme": "Done means merged"},
     {"control": "Secret-shaped paths and added content refused at work.py commit", "function": "_secret_refusal",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",),
@@ -309,6 +310,7 @@ ENFORCEMENT_EXEMPT = (
     ("effective_hard_plan_gate", "resolver for the gate's value; `_hard_plan_gate_refusal` refuses"),
     ("sibling_gate", "unwired: a pure, queryable check that its own docstring says nothing calls"),
     ("_sibling_gate", "body of `sibling_gate`, same"),
+    ("_diff_without_pr_refusal", "the no-PR branch of `done_refusal`, which carries the gate row"),
 )
 UNKNOWN_ATTEMPTS = 4        # GitHub computes mergeability lazily — the first read is usually UNKNOWN
 UNKNOWN_BACKOFF = 3         # seconds before the first retry, doubled each time
@@ -4286,6 +4288,28 @@ def pr_landing_state(sdlc_dir, rec, run=None):
     return UNKNOWN, f"unrecognised PR state {data.get('state')!r}"
 
 
+def _diff_without_pr_refusal(rec, ref, run):
+    """D2 round 2 F05: the refusal text when the goal's branch holds changes but no PR is on record,
+    else None. FAIL-OPEN on any read error or a missing worktree: this guards against losing a diff,
+    and must not strand a goal whose checkout is gone (`record parked` / `failed` stay available)."""
+    path, remote, base = rec.get("worktree"), rec.get("remote"), rec.get("base")
+    if not (path and remote and base and pathlib.Path(path).is_dir()):
+        return None
+    try:
+        ahead = int(run(path, ["git", "rev-list", "--count", f"{remote}/{base}..HEAD"]) or 0)
+        dirty = bool(run(path, ["git", "status", "--porcelain"]))
+    except Exception:                       # noqa: BLE001 - see the docstring: unreadable never wedges
+        return None
+    if not (ahead or dirty):
+        return None
+    what = ", ".join(([f"{ahead} commit(s) ahead of {remote}/{base}"] if ahead else [])
+                     + (["uncommitted edits"] if dirty else []))
+    return (f"goal {ref} has changes on its branch ({what}) but no PR on record, so it is not done "
+            f"(a goal that changed files lands by PR, docs-only included). Run `work.py commit` then "
+            f"`work.py pr`, then record `review`; if the change is meant to be discarded, record "
+            f"`parked \"<why>\"`")
+
+
 def done_refusal(sdlc_dir, config, goal, run=None, landing=None):
     """None iff `done` may be recorded for `goal`, else the reason to refuse -- #232: DONE MEANS
     MERGED. Called from loop.py's `record` dispatch before `_record()` runs, and by the
@@ -4302,8 +4326,10 @@ def done_refusal(sdlc_dir, config, goal, run=None, landing=None):
     when the PR lands. Refusing on an unreadable read is therefore safe in both directions -- the
     issue stays open (never falsely closed), and nothing is stranded.
 
-    Unchanged: `work.enabled` off (no PR is ever opened -- nothing to confirm) and no PR on record (a
-    docs-only / no-diff goal legitimately never opens one) both return None without a read.
+    Unchanged: `work.enabled` off (no PR is ever opened -- nothing to confirm) returns None without a
+    read. No PR on record returns None only for a goal that CHANGED NOTHING: a branch ahead of base, or
+    uncommitted edits, with no PR is refused (D2 round 2 F05 -- docs-only is a diff, it lands by PR
+    like any other; `record parked` is the lever for a change meant to be discarded).
 
     MERGED replays the per-sink merge-delivery receipt, exactly as before: a direct merge, a later
     `record done`, and the reconcile pass all converge on the same ownership/merge-SHA-derived keys,
@@ -4316,7 +4342,9 @@ def done_refusal(sdlc_dir, config, goal, run=None, landing=None):
         return None
     run = run or _run
     rec = _record(sdlc_dir, goal)
-    if not rec or not rec.get("pr"):
+    if rec and not rec.get("pr"):
+        return _diff_without_pr_refusal(rec, stem(goal), run)
+    if not rec:
         return None
     pr = rec["pr"]
     landing, detail = landing if landing is not None else pr_landing_state(sdlc_dir, rec, run)

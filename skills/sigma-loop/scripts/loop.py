@@ -2430,6 +2430,13 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
     _reconcile_sweep(sdlc_dir, config)
     if max_concurrent is None:
         enabled, cap = goals_parallel(config)
+        if enabled and not work.enabled(config):
+            # D2 round 2 F06: concurrent goals are isolated only by their own worktrees, which
+            # `work.py start` cuts; with work.enabled off they would share one checkout.
+            print("loop: parallel.goals.enabled needs work.enabled (one worktree per goal); "
+                  "running ONE goal at a time. Enable work.enabled to run goals concurrently.",
+                  file=sys.stderr)
+            enabled = False
         max_concurrent = cap if enabled else 1
     # Keep the old batch shape (only the remaining number of goal lines, with the
     # terminal reported on the next call) using the SAME session-local count that

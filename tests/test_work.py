@@ -2885,12 +2885,48 @@ def test_done_refusal_is_none_when_work_is_disabled(tmp_path):
 
 
 def test_done_refusal_is_none_when_no_pr_is_on_record(tmp_path):
-    """A docs-only / no-diff goal legitimately never opens a PR -- nothing to confirm merged."""
+    """A NO-DIFF goal legitimately never opens a PR -- nothing to confirm merged, and no changes to
+    land. (A goal that changed files is the next tests: a diff with no PR is refused.)"""
     d = _sdlc(tmp_path)
     goal = _started(d, pr="")
-    run = _runner([])
+    run = _runner([("rev-list --count", "0")])
     assert work.done_refusal(d, ON, goal, run=run) is None
-    assert run.calls == []
+    assert not any("pulls/" in c for c in run.calls)        # no PR read: there is no PR
+
+
+# --- D2 round 2 F05: work.enabled + a diff + no PR is not done ------------------------------------
+
+def test_done_refusal_refuses_commits_ahead_of_base_with_no_pr(tmp_path):
+    d = _sdlc(tmp_path)
+    goal = _started(d, pr="")
+    run = _runner([("rev-list --count", "2")])
+    refusal = work.done_refusal(d, ON, goal, run=run)
+    assert refusal and "2 commit(s) ahead of origin/main" in refusal and "no PR on record" in refusal
+    assert "work.py pr" in refusal and "parked" in refusal      # the way forward AND the polite lever
+
+
+def test_done_refusal_refuses_uncommitted_edits_with_no_pr(tmp_path):
+    d = _sdlc(tmp_path)
+    goal = _started(d, pr="")
+    run = _runner([("rev-list --count", "0"), ("status --porcelain", " M docs/a.md")])
+    refusal = work.done_refusal(d, ON, goal, run=run)
+    assert refusal and "uncommitted edits" in refusal
+
+
+def test_done_refusal_ignores_a_diff_when_work_is_disabled(tmp_path):
+    d = _sdlc(tmp_path, {"work": {"enabled": False}})
+    goal = _started(d, pr="")
+    run = _runner([("rev-list --count", "2")])
+    assert work.done_refusal(d, {"work": {"enabled": False}}, goal, run=run) is None
+
+
+def test_done_refusal_does_not_wedge_on_an_unreadable_branch(tmp_path):
+    """Fail-open on a git read error: the refusal is a guard against LOSING a diff, not a gate that
+    may strand a goal whose worktree is gone (the record is still releasable)."""
+    d = _sdlc(tmp_path)
+    goal = _started(d, pr="")
+    run = _runner([("rev-list --count", RuntimeError("fatal: bad revision"))])
+    assert work.done_refusal(d, ON, goal, run=run) is None
 
 
 def test_done_refusal_is_none_when_the_pr_is_merged(tmp_path):

@@ -173,7 +173,7 @@ Then repeat until the helper says stop:
    `references/progress.md`.
 4. Entering the **review** phase? Move the board card to QC:
    `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" qc .sdlc "$goal"` (github-project board only — a no-op for local/issues).
-5. **Retrospective (Learn)** — after Review, run the **`sigma-retro`** executor (output advisory; the phase is required). Under
+5. **Retrospective (Learn)** — after Review, run the **`sigma-retro`** executor (output advisory; the phase is required unless the owner's recorded trivial-goal `waive-phases` call waived it). Under
    `config.review.independent` this too runs through the resolver, not as an assertion. Autonomous
    mode → **write only the audit-trail notes**, and **park** any north-star / standing-rule proposal
    to the review queue for a human; never edit a standing doc unattended.
@@ -207,7 +207,7 @@ Then repeat until the helper says stop:
    for character**, then re-run `commit`. Never `git add -f` past it.
 
    **Then REVIEW the PR you just opened, if `config.work.require_review` is set** — a real review AFTER
-   the PR. Self-review before the PR is never enough. **Resolve the mechanism, never assert it** —
+   the PR. **Resolve the mechanism, never assert it** —
    `reviewer.py resolve .sdlc` and use what it names, fed the `--for pr-review --artifact <PR#>`
    brief. The skills ask that the maker not clear its own PR; code cannot stop it. **No human approves — the loop reviews and clears its
    own PR:**
@@ -216,7 +216,7 @@ Then repeat until the helper says stop:
    - **Blocking issues** → `--verdict block --reason "<the issues>"`, then **fix them in the
      worktree — fresh, never resumed** (back to Implement), re-run `loop.py verify`, then
      `work.py commit` **AND `work.py
-     pr` — the push is not optional**, and **re-review, also fresh** (own verdict;
+     pr`**, and **re-review, also fresh** (own verdict;
      `references/running.md`), until clean.
      **`commit` is LOCAL; only `pr` pushes.** **The cycle is hard-capped:** at
      `work.max_review_cycles` (default **3**) `post-review` returns `PARK: …` instead of asking for

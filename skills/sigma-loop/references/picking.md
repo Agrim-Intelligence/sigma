@@ -14,7 +14,7 @@ loop the same way either way — the helper handles where goals come from and ho
 
 First, reset the per-run budget: `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" start .sdlc
 --session-pid "$PPID"` (mid-session, `start-run .sdlc --session-pid "$PPID"` resets your session's
-and the checkout's budget for a deliberate fresh push, without `start`'s side effects or
+and the checkout's budget for a fresh push, only when the user says so this session, never to continue past a stop, without `start`'s side effects or
 editing `config.json`; bare: the only live session, or none.) **Always pass
 `--session-pid "$PPID"`** on this call and on every
 `next`/`next-batch` call below — `$PPID` here means literally that: read it fresh from YOUR OWN
@@ -54,7 +54,7 @@ same transcript one level up, goal after goal).
 **1a. Dispatch every goal when subagents are available — one line or many** (#2521, extends F10.5-3/#375's own batch shape to a
 batch of one) — mirrors 3b's slice-wave shape one level up: instead of ONE goal's implementation
 slices running concurrently, one or more WHOLE GOALS run — concurrently when `parallel.goals.enabled`
-allows more than one at a time, one at a time otherwise, but ALWAYS each in its own fresh subagent,
+allows more than one at a time and `work.enabled` is on (else `next-batch` clamps to one), one at a time otherwise, but ALWAYS each in its own fresh subagent,
 never inline in the orchestrating session.
 
 **Capture the goal's resolved tier before you dispatch it — the SAME `next`/`next-batch` call that
@@ -74,9 +74,7 @@ off — the shipped default), **fall back to resolving it yourself**, the exact 
 (`gh api repos/{owner}/{repo}/issues/"$goal" --jq '.title + "\n\n" + (.body // "")'`)
 and pass that text, never the bare `"$goal"`. Under the default selection
 setting that fallback prints `off`; retain it as the explicit no-auto-selection state and give it to
-Codex's host resolver, which selects its versioned ordinary-work mapping. (A host with
-no subagent capability never reaches this step at all — goal-slot dispatch has always required
-one, per this section's own opening sentence; nothing here changes that.)
+Codex's host resolver, which selects its versioned ordinary-work mapping.
 
 For each goal in the batch, dispatch a **subagent** (fresh context) that runs this skill's steps 2
 through 7 for that ONE goal. Claude receives the tier you just captured as its Task `model` value.

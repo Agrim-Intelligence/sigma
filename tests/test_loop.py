@@ -3208,7 +3208,7 @@ def test_next_batch_stops_at_the_remaining_handoff_budget_even_with_room_in_max_
         (pathlib.Path(base) / "config.json").write_text(json.dumps(
             {"ledger": {"enabled": True, "actor": "me", "lease": {"ttl_hours": 0}},
              "handoff": {"after_goals": 5},
-             "parallel": {"goals": {"enabled": True, "max_concurrent": 5}}}))
+             "work": {"enabled": True}, "parallel": {"goals": {"enabled": True, "max_concurrent": 5}}}))
         lp = _loop()
         for _ in range(3):
             lp.state.advance_cursor(base, "goal")   # 3 goals already recorded this run; 2 remain before HANDOFF
@@ -3236,7 +3236,7 @@ def test_handoff_refill_counts_claimed_goals_before_admitting_another():
         (pathlib.Path(base) / "config.json").write_text(json.dumps(
             {"ledger": {"enabled": True, "actor": "me", "lease": {"ttl_hours": 0}},
              "handoff": {"after_goals": 5},
-             "parallel": {"goals": {"enabled": True, "max_concurrent": 5}}}))
+             "work": {"enabled": True}, "parallel": {"goals": {"enabled": True, "max_concurrent": 5}}}))
         lp = _loop()
         for _ in range(3):
             lp.state.advance_cursor(base, "goal")
@@ -3262,7 +3262,7 @@ def test_handoff_refuses_refill_after_own_live_session_marker_expires():
         (pathlib.Path(base) / "config.json").write_text(json.dumps(
             {"ledger": {"enabled": True, "actor": "me", "lease": {"ttl_hours": 12}},
              "handoff": {"after_goals": 2},
-             "parallel": {"goals": {"enabled": True, "max_concurrent": 2}}}))
+             "work": {"enabled": True}, "parallel": {"goals": {"enabled": True, "max_concurrent": 2}}}))
         lp = _loop()
         pid = os.getpid()
         lp.main(["loop.py", "start", base, "--session-pid", str(pid)])
@@ -3406,10 +3406,27 @@ def test_next_batch_defaults_to_the_configured_cap_when_goal_parallelism_is_on()
         base = _lease_base(d, actor="me", claims=[])
         (pathlib.Path(base) / "config.json").write_text(json.dumps(
             {"ledger": {"enabled": True, "actor": "me", "lease": {"ttl_hours": 0}},
+             "work": {"enabled": True},
              "parallel": {"goals": {"enabled": True, "max_concurrent": 2}}}))
         lp = _loop(); src = _Queue(["a", "b", "c"])
         picks = lp.next_batch(base, src, lp.state.load_config(base))   # no explicit cap
         assert picks == [("goal", "a"), ("goal", "b")]
+
+
+def test_next_batch_clamps_to_one_when_work_is_off_even_with_goal_parallelism_on(capsys):
+    """D2 round 2 F06: concurrent goals are only safe because each gets its own worktree
+    (`work.py start`). With `work.enabled` off every goal edits the one checkout, so the cap is 1
+    and the operator is told why (stderr), politely: nothing is refused, nothing stalls."""
+    with tempfile.TemporaryDirectory() as d:
+        base = _lease_base(d, actor="me", claims=[])
+        (pathlib.Path(base) / "config.json").write_text(json.dumps(
+            {"ledger": {"enabled": True, "actor": "me", "lease": {"ttl_hours": 0}},
+             "parallel": {"goals": {"enabled": True, "max_concurrent": 3}}}))
+        lp = _loop(); src = _Queue(["a", "b", "c"])
+        picks = lp.next_batch(base, src, lp.state.load_config(base))
+        assert picks == [("goal", "a")]
+        err = capsys.readouterr().err
+        assert "parallel.goals" in err and "work.enabled" in err
 
 
 def test_next_batch_never_reclaims_a_goal_it_already_picked_this_batch():
