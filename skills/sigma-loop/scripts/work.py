@@ -307,6 +307,11 @@ ENFORCEMENT_GATES = (
                   "new PR-review generation the same way: a late comment from the abandoned generation could outrank "
                   "a newer verdict at the merge gate. The refusal names the park (`review_post_ambiguous`) and the "
                   "lever, `work.py abandon-review-post` after a hand check of the PR, which refuses if the comment is there"},
+    {"control": "An `unblock` needs an earlier block", "function": "_unblock_without_block_refusal",
+     "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
+     "mechanism": "refuses `work.py post-review --verdict unblock` unless a server-confirmed `block` post for the "
+                  "same goal and PR is on record here (a block carries across generations), so a lone unblock "
+                  "cannot read as a clean sign-off; the refusal says to post approve if the review is clean"},
     {"control": "`finish` refused while the PR is open", "function": "_open_pr_refusal",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
      "mechanism": "refuses `work.py finish` (worktree removal) while the goal's PR is still open, "
@@ -7003,6 +7008,31 @@ def _invocation_refusal(sdlc_dir, goal, pr, head_sha, brief_sha256, evidence):
         return f"PARK: invocation check failed ({exc.__class__.__name__}); attended review needed"
 
 
+def _unblock_without_block_refusal(sdlc_dir, goal, pr):
+    """Refusal text when `unblock` has no earlier block to lift, else None (D2 round-3 F09).
+
+    The merge gate reads the latest `sigma:` comment, so a lone `sigma:unblock` is never an approval
+    (it leaves `_comment_directive` at None) -- but it would still read as a clean sign-off in the PR
+    thread. The local fact for "a prior block" is a server-CONFIRMED `block` post request for this goal
+    and PR in `state/review-posts` (the loop's own block, which is what `unblock` is documented to
+    clear). A block is not tied to one generation or head: it stands on the PR until lifted, so one
+    from an older generation of the same PR authorises the unblock; a block on another PR does not.
+    ponytail: a block already lifted still counts (no ordering in the receipts); a human's remote block
+    this machine never posted is not seen -- they comment `sigma:unblock` themselves."""
+    for path in sorted((pathlib.Path(sdlc_dir) / "state" / "review-posts").glob("*.json")):
+        try:
+            req = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if (isinstance(req, dict) and req.get("verdict") == "block" and req.get("state") == "remote-confirmed"
+                and pathlib.Path(str(req.get("goal"))).stem == pathlib.Path(str(goal)).stem
+                and str(req.get("pr")) == str(pr)):
+            return None
+    return (f"there is no block to lift on PR #{pr}: post approve if the review is clean "
+            f"(`work.py post-review {sdlc_dir} {goal} --evidence <evidence> --verdict approve`). "
+            "A `sigma:block` this machine did not post is lifted by commenting `sigma:unblock` on the PR by hand")
+
+
 def post_review(sdlc_dir, config, goal, run=None, verdict="", reason="", evidence=""):
     """Post the loop's OWN post-PR review verdict as a PR comment — the signal `require_review` reads.
 
@@ -7042,6 +7072,10 @@ def post_review(sdlc_dir, config, goal, run=None, verdict="", reason="", evidenc
         return f"review evidence is not bound to this goal's current review generation ({exc})"
     if rebound["verdict"] != v:
         return "review evidence does not match this goal and verdict"
+    if v == "unblock":
+        refusal = _unblock_without_block_refusal(sdlc_dir, goal, rec["pr"])
+        if refusal:
+            return refusal
     try:
         bound = json.loads(pathlib.Path(evidence).read_text(encoding="utf-8"))
         if bound.get("goal") != str(goal) or bound.get("verdict") != v:

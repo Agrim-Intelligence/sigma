@@ -141,11 +141,11 @@ Two gates run alongside the axes:
   The detector is a bash trigger (zero LLM cost); it names the risk, the skill judges it.
   **On a committed branch or PR add `--base <base-ref>`**: without it only uncommitted, staged and
   untracked files are read, so an empty `matched` clears nothing. If stderr says the base failed,
-  decide each category from `git diff --name-only <base>...HEAD`. The verdict says which way.
+  decide each category from `git diff --name-only <base>...HEAD`.
 
 ## 3. Verdict + findings
 Open with **how this review was run** — `Reviewed by: dispatched subagent | fresh process (<host>) |
-operator command | inline, author self-review` — then an **overall verdict** (**APPROVE**, **SEND-BACK** or **BLOCK**: the words `work.py record-review` takes; as a PR review the caller maps APPROVE→`approve`, SEND-BACK or BLOCK→`block`; you return `unblock` only when clearing a prior loop block, never inferred from APPROVE), then findings by
+operator command | inline, author self-review` — then an **overall verdict** (**APPROVE**, **SEND-BACK** or **BLOCK**: the words `work.py record-review` takes; as a PR review the caller maps APPROVE→`approve`, SEND-BACK or BLOCK→`block`; you return `unblock` only when clearing a prior loop block, never inferred from APPROVE; `post-review` refuses it with no earlier block), then findings by
 category, most-severe first:
 **Bug** (will misbehave) · **Concern** (design risk) · **Coverage** (untested behavior) · **Missing**
 (a required piece absent) · **Good** (worth keeping) · **Minor / Nit** (style). Each: what, where

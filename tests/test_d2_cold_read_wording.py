@@ -178,6 +178,12 @@ def test_pr_review_verdict_words_map_to_evidence_results():                 # F0
     assert "you return `unblock` only when clearing a prior loop block, never inferred from APPROVE" in review
 
 
+def test_unblock_is_documented_as_needing_an_earlier_block():              # F09 code check
+    assert "refuses it unless this PR has an earlier confirmed block (post `approve`" in _ref("landing.md")
+    assert "refused without an earlier confirmed block (post `approve` if clean)" in _ref("running.md")
+    assert "`post-review` refuses it with no earlier block" in _flat("sigma-review/SKILL.md")
+
+
 def test_ceiling_branch_records_failed_not_parked():                        # F14
     running = _ref("running.md")
     assert "record it `failed` (`parked` only for a human decision)" in running
