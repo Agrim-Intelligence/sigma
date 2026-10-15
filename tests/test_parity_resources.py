@@ -147,6 +147,21 @@ def test_fraction_clause_refuses_through_public_argv(fake_cli):
                               platform=sys.platform, code='invalid-input', source='arguments', cgroup=None)
 
 
+def test_cli_serializes_each_native_refusal_without_partial_success(fake_cli, monkeypatch):
+    invoke, _, _, sources = fake_cli
+    for code in ['unsupported-platform', 'source-unavailable', 'invalid-source',
+                 'native-binding-unavailable', 'native-api-failed',
+                 'cgroup-v1-memory-availability-unsupported', 'cgroup-mapping-unsupported',
+                 'memory-exhausted', 'budget-exhausted', 'disk-exhausted']:
+        provenance = dict(mode='v1-unsupported', mount=None, mount_root=None,
+                          process_path='/legacy', ancestors=[]) if code.startswith('cgroup-v1') else None
+        def refuse(directory):
+            raise sources.Refused(code, 'native-source', provenance)
+        monkeypatch.setattr(sources, 'collect', refuse)
+        assert invoke() == (2, dict(schema='parity-resource-preflight/v1', status='refused',
+                                   platform=sys.platform, code=code, source='native-source', cgroup=provenance))
+
+
 def test_invalid_argument_shape_is_typed(fake_cli):
     for argv in [[], ['--unknown'], ['--reserve-fraction', '0.5'],
         ['--reserve-fraction', '0.5', '--record-bytes', '0', '--output-dir', '.'],
@@ -391,6 +406,8 @@ def test_posix_disk_reads_available_not_free_and_does_not_create(modules, monkey
     monkeypatch.setattr(sources.sys, 'platform', 'darwin')
     monkeypatch.setattr(sources.os, 'fstatvfs', lambda fd: SimpleNamespace(f_bavail=7, f_bfree=99, f_frsize=4096), raising=False)
     monkeypatch.setattr(sources.os, 'open', lambda path, flags: 11)
+    identity = tmp_path.stat()
+    monkeypatch.setattr(sources.os, 'fstat', lambda fd: identity)
     closed = []
     monkeypatch.setattr(sources.os, 'close', closed.append)
     disk = sources.disk_capacity(str(tmp_path))
@@ -399,6 +416,29 @@ def test_posix_disk_reads_available_not_free_and_does_not_create(modules, monkey
     with pytest.raises(sources.Refused):
         sources.disk_capacity(str(tmp_path/'does-not-exist'))
     assert list(tmp_path.iterdir()) == []
+
+
+def test_posix_output_swap_refuses_and_closes_descriptor(modules, monkeypatch, tmp_path):
+    _, sources = modules
+    monkeypatch.setattr(sources.sys, 'platform', 'darwin')
+    directory = tmp_path/'chosen'
+    directory.mkdir()
+    real_open, real_close = os.open, os.close
+    opened, closed = [], []
+    def swap(path, flags):
+        fd = real_open(path, flags)
+        opened.append(fd)
+        directory.rename(tmp_path/'original')
+        directory.mkdir()
+        return fd
+    def close(fd):
+        closed.append(fd)
+        real_close(fd)
+    monkeypatch.setattr(sources.os, 'open', swap)
+    monkeypatch.setattr(sources.os, 'close', close)
+    with pytest.raises(sources.Refused, match='invalid-source'):
+        sources.disk_capacity(str(directory))
+    assert opened and closed == opened
 
 
 def test_output_file_and_symlink_to_file_refuse_on_each_native_route(modules, monkeypatch, tmp_path, capsys):
@@ -437,7 +477,7 @@ class NativeFunction:
 
 
 def darwin_fixture(monkeypatch, sources, *, status=0, total=1000000, free=10,
-                   inactive=20, speculative=7, count=38, deallocate=0):
+                   inactive=20, speculative=7, count=38, deallocate=0, task_count=36, virtual=123456):
     import ctypes
     from types import SimpleNamespace
     calls = []
@@ -457,7 +497,8 @@ def darwin_fixture(monkeypatch, sources, *, status=0, total=1000000, free=10,
         return deallocate
     def task_info(task, flavor, ptr, size):
         assert (task, flavor) == (11, 22)
-        ctypes.cast(ptr, ctypes.POINTER(sources.TaskVMInfo)).contents.virtual_size = 123456
+        ctypes.cast(ptr, ctypes.POINTER(sources.TaskVMInfo)).contents.virtual_size = virtual
+        ctypes.cast(size, ctypes.POINTER(ctypes.c_uint32)).contents.value = task_count
         return status
     lib = SimpleNamespace(mach_host_self=NativeFunction(lambda: 7),
                           host_statistics64=NativeFunction(statistics),
@@ -483,7 +524,8 @@ def test_darwin_speculative_is_already_free_and_port_is_released(modules, monkey
 def test_darwin_native_return_codes_and_counts_fail_closed(modules, monkeypatch):
     for kwargs, code in [({'status': 1}, 'native-api-failed'),
         ({'count': 1}, 'invalid-source'), ({'total': 100}, 'invalid-source'),
-        ({'free': 0, 'inactive': 0}, 'memory-exhausted'), ({'deallocate': 1}, 'native-api-failed')]:
+        ({'free': 0, 'inactive': 0, 'speculative': 0}, 'memory-exhausted'),
+        ({'speculative': 11}, 'invalid-source'), ({'deallocate': 1}, 'native-api-failed')]:
         _, sources = modules
         calls = darwin_fixture(monkeypatch, sources, **kwargs)
         with pytest.raises(sources.Refused) as refusal:
@@ -492,8 +534,24 @@ def test_darwin_native_return_codes_and_counts_fail_closed(modules, monkeypatch)
         assert calls == [(11, 7)]
 
 
+def test_darwin_virtual_source_status_count_and_value_checked(modules, monkeypatch):
+    _, sources = modules
+    for kwargs, code in [({'status': 1}, 'native-api-failed'),
+                         ({'task_count': 1}, 'invalid-source'), ({'virtual': 0}, 'invalid-source')]:
+        darwin_fixture(monkeypatch, sources, **kwargs)
+        with pytest.raises(sources.Refused) as refusal:
+            sources.darwin_virtual_bytes()
+        assert refusal.value.code == code
+
+
+WINDOWS_GUID_ROOT = '\\\\?\\Volume{12345678-1234-1234-1234-123456789abc}\\'
+WINDOWS_GUID_DIRECTORY = WINDOWS_GUID_ROOT + 'chosen'
+
+
 def windows_fixture(monkeypatch, sources, *, memory_status=1, disk_status=1,
-                    total=120000, available=100000):
+                    total=120000, available=100000, handle=99, information_status=1,
+                    directory_attribute=16, path_status=None, required_size=None,
+                    final_path=WINDOWS_GUID_DIRECTORY, close_status=1, after_open=None):
     import ctypes
     from types import SimpleNamespace
     def memory(ptr):
@@ -501,13 +559,43 @@ def windows_fixture(monkeypatch, sources, *, memory_status=1, disk_status=1,
         assert stats.dwLength == 64
         stats.ullTotalPhys, stats.ullAvailPhys = total, available
         return memory_status
+    events = []
     def disk(directory, avail, total, free):
-        assert isinstance(directory, str)
-        ctypes.cast(avail, ctypes.POINTER(ctypes.c_uint64)).contents.value = 1234
+        events.append(('volume', directory))
+        # A mutable alias would identify another volume after the deliberate swap.
+        ctypes.cast(avail, ctypes.POINTER(ctypes.c_uint64)).contents.value = (
+            1234 if directory == WINDOWS_GUID_ROOT else 999999)
         return disk_status
+    def open_directory(path, access, sharing, security, creation, flags, template):
+        assert access == 0 and sharing == 3 and creation == 3 and flags == 0x02000000
+        assert security is None and template is None
+        events.append(('open', path))
+        if after_open:
+            after_open()
+        return handle
+    def information(opened, ptr):
+        assert opened == handle
+        ctypes.cast(ptr, ctypes.POINTER(sources.FileInformation)).contents.dwFileAttributes = directory_attribute
+        return information_status
+    def final_name(opened, buffer, size, flags):
+        assert opened == handle and flags == 1
+        if not size:
+            return len(final_path)+1 if required_size is None else required_size
+        if path_status is not None:
+            return path_status
+        buffer.value = final_path
+        return len(final_path)
+    def close(opened):
+        events.append(('close', opened))
+        return close_status
     lib = SimpleNamespace(GlobalMemoryStatusEx=NativeFunction(memory),
-                          GetDiskFreeSpaceExW=NativeFunction(disk))
+                          GetDiskFreeSpaceExW=NativeFunction(disk),
+                          CreateFileW=NativeFunction(open_directory),
+                          GetFileInformationByHandle=NativeFunction(information),
+                          GetFinalPathNameByHandleW=NativeFunction(final_name),
+                          CloseHandle=NativeFunction(close))
     monkeypatch.setattr(sources, 'windows_bindings', lambda: lib)
+    return events
 
 
 def test_windows_native_memory_and_caller_volume_capacity(modules, monkeypatch, tmp_path):
@@ -515,7 +603,7 @@ def test_windows_native_memory_and_caller_volume_capacity(modules, monkeypatch, 
     windows_fixture(monkeypatch, sources)
     assert sources.windows_memory() == finite('GlobalMemoryStatusEx', 'GlobalMemoryStatusEx')
     assert sources.windows_disk(str(tmp_path)) == dict(api='GetDiskFreeSpaceExW',
-        directory=str(tmp_path.resolve()), available_bytes=1234)
+        directory=WINDOWS_GUID_DIRECTORY, available_bytes=1234)
 
 
 def test_windows_memory_status_and_totals_checked(modules, monkeypatch):
@@ -535,6 +623,36 @@ def test_windows_disk_status_checked(modules, monkeypatch, tmp_path):
         sources.windows_disk(str(tmp_path))
 
 
+def test_windows_held_handle_binds_volume_despite_alias_swap(modules, monkeypatch, tmp_path):
+    _, sources = modules
+    directory = tmp_path/'alias'
+    directory.mkdir()
+    def swap():
+        directory.rename(tmp_path/'original')
+        directory.mkdir()
+    events = windows_fixture(monkeypatch, sources, after_open=swap)
+    disk = sources.windows_disk(str(directory))
+    assert disk['directory'] == WINDOWS_GUID_DIRECTORY
+    assert disk['available_bytes'] == 1234
+    assert events[-2:] == [('volume', WINDOWS_GUID_ROOT), ('close', 99)]
+
+
+def test_windows_directory_handle_and_final_path_fail_closed(modules, monkeypatch, tmp_path):
+    _, sources = modules
+    for kwargs, code in [({'handle': None}, 'native-api-failed'),
+        ({'handle': -1}, 'native-api-failed'), ({'information_status': 0}, 'native-api-failed'),
+        ({'directory_attribute': 0}, 'invalid-input'), ({'required_size': 0}, 'native-api-failed'),
+        ({'required_size': 32769}, 'invalid-source'), ({'path_status': 0}, 'native-api-failed'),
+        ({'path_status': 99999}, 'invalid-source'), ({'final_path': 'C:\\mutable\\alias'}, 'invalid-source'),
+        ({'close_status': 0}, 'native-api-failed')]:
+        events = windows_fixture(monkeypatch, sources, **kwargs)
+        with pytest.raises(sources.Refused) as refusal:
+            sources.windows_disk(str(tmp_path))
+        assert refusal.value.code == code, kwargs
+        if kwargs.get('handle', 99) not in (None, -1):
+            assert events[-1] == ('close', 99)
+
+
 def test_native_bindings_and_platform_cannot_fall_back_to_subprocess(modules, monkeypatch):
     _, sources = modules
     def unavailable(*args, **kwargs):
@@ -552,7 +670,8 @@ def test_native_bindings_and_platform_cannot_fall_back_to_subprocess(modules, mo
 
 def test_binding_construction_declares_exact_abi(modules, monkeypatch):
     for name in ['mach_host_self', 'host_statistics64', 'sysctlbyname',
-        'mach_port_deallocate', 'task_info', 'GlobalMemoryStatusEx', 'GetDiskFreeSpaceExW']:
+        'mach_port_deallocate', 'task_info', 'GlobalMemoryStatusEx', 'GetDiskFreeSpaceExW',
+        'CreateFileW', 'GetFileInformationByHandle', 'GetFinalPathNameByHandleW', 'CloseHandle']:
         _, sources = modules
         import ctypes as c
         from types import SimpleNamespace
@@ -565,9 +684,15 @@ def test_binding_construction_declares_exact_abi(modules, monkeypatch):
             'GlobalMemoryStatusEx': ([c.POINTER(sources.MemoryStatusEx)], c.c_int),
             'GetDiskFreeSpaceExW': ([c.c_wchar_p, c.POINTER(c.c_uint64), c.POINTER(c.c_uint64),
                                    c.POINTER(c.c_uint64)], c.c_int),
+            'CreateFileW': ([c.c_wchar_p, c.c_uint32, c.c_uint32, c.c_void_p,
+                            c.c_uint32, c.c_uint32, c.c_void_p], c.c_void_p),
+            'GetFileInformationByHandle': ([c.c_void_p, c.POINTER(sources.FileInformation)], c.c_int),
+            'GetFinalPathNameByHandleW': ([c.c_void_p, c.c_wchar_p, c.c_uint32, c.c_uint32], c.c_uint32),
+            'CloseHandle': ([c.c_void_p], c.c_int),
         }
         lib = SimpleNamespace(**{key: NativeFunction(lambda *args: 0) for key in signatures})
-        if name.startswith(('Global', 'GetDisk')):
+        if name in ('GlobalMemoryStatusEx', 'GetDiskFreeSpaceExW', 'CreateFileW',
+                    'GetFileInformationByHandle', 'GetFinalPathNameByHandleW', 'CloseHandle'):
             monkeypatch.setattr(sources.ctypes, 'WinDLL', lambda *args, **kwargs: lib, raising=False)
             assert sources.windows_bindings() is lib
         else:
