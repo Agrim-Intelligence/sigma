@@ -388,3 +388,13 @@ def test_notice_cli_gesture_prints_only_when_unreachable(tmp_path):
     assert bad.returncode == 0 and "could not be located or read" in bad.stdout
     quiet = run(tmp_path)
     assert quiet.returncode == 0 and quiet.stdout == ""
+
+
+# --- D2 round-3 F02: the same unreachable north-star also means code review judged no project rules ---
+
+def test_notice_default_names_both_gaps_and_each_kind_only_its_own(tmp_path):
+    wt = _broken_worktree(tmp_path / "wt")
+    both = ns.notice(wt)
+    assert "NOT judging strategic alignment" in both and "NOT judging project-rule conformance" in both
+    assert "project-rule" not in ns.notice(wt, "alignment") and "alignment" not in ns.notice(wt, "rules")
+    assert ns.notice(tmp_path, "rules") == ""                         # absent stays silent

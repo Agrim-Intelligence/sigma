@@ -7812,3 +7812,17 @@ def test_doctor_does_not_crash_on_an_unreadable_north_star(tmp_path, monkeypatch
         PermissionError("denied")) if self.name == "north-star.md" else real(self, *a, **k))
     rows = _ns_reachable_rows(tmp_path)
     assert rows["north-star reachable"]["ok"] is False and "north-star filled" not in rows
+
+
+# --- D2 round-3 F02: "project rules reachable" - failing row only, same source as the north-star ---
+
+def test_doctor_flags_unreachable_project_rules(tmp_path):
+    (tmp_path / ".git").write_text("gitdir: /nonexistent/sigma-f02\n")
+    _sdlc(tmp_path, {})
+    row = _ns_reachable_rows(tmp_path)["project rules reachable"]
+    assert row["ok"] is False and "NOT judging project-rule conformance" in row["fix"]
+
+
+def test_doctor_has_no_project_rules_row_when_absent(tmp_path):
+    _sdlc(tmp_path, {})
+    assert "project rules reachable" not in _ns_reachable_rows(tmp_path)

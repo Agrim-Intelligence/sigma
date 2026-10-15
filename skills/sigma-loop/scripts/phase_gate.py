@@ -269,7 +269,7 @@ def format_status(sdlc_dir, config, goal):
     return "\n".join(out)
 
 
-def record_verdict(sdlc_dir, config, goal, phase, verdict, agent_id="", plan_hash="", reason=""):
+def record_verdict(sdlc_dir, config, goal, phase, verdict, agent_id="", plan_hash="", reason="", project_rules=""):
     """Write a `verdict` row (phase plan_review|review). Raises ValueError to refuse."""
     actionlog = _load("actionlog")
     if not actionlog.enabled(config):
@@ -296,7 +296,7 @@ def record_verdict(sdlc_dir, config, goal, phase, verdict, agent_id="", plan_has
     row = actionlog.append(sdlc_dir, goal, "verdict", "loop", phase=phase, verdict=verdict, route=route,
                            waiver="accept-inline" if why else None, waiver_reason=why or None,
                            agent_id=agent_id or None, plan_hash=plan_hash or None,
-                           verified=verified or None)
+                           verified=verified or None, project_rules=project_rules or None)
     return row
 
 

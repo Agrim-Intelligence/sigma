@@ -164,18 +164,25 @@ def resolve_doc(root, rel):
     return PRESENT, str(rel)
 
 
-def notice(start="."):
+_ALIGN = "Plan-review is NOT judging strategic alignment until it can - it checks correctness alone."
+_RULES = ("Code review is NOT judging project-rule conformance (the north-star Architecture Rules) "
+          "until it can - its approval does not say the rules were met.")
+
+
+def notice(start=".", kind=""):
     """One loud line when the north-star is UNREACHABLE, else "" (D2 F03, owner ruling 2026-10-14).
 
-    Plan-review keeps judging correctness alone when it cannot look, so the fact that alignment was
-    NOT judged must reach a human. `absent` (a genuinely unconfigured project) and `present` stay
-    silent: a nag on a drop-in project stops being read. Never raises."""
+    Plan-review keeps judging correctness alone when it cannot look (and, D2 round-3 F02, owner ruling
+    2026-10-15, code review keeps judging the diff without the project rules), so that NOT-judged fact
+    must reach a human. `kind` "alignment" / "rules" gives only that half (doctor's two rows); empty
+    gives both (session start). `absent` (a genuinely unconfigured project) and `present` stay silent:
+    a nag on a drop-in project stops being read. Never raises."""
     state, detail = check(start)
     if state != UNREACHABLE:
         return ""
-    return ("Sigma: the north-star could not be located or read (%s). Plan-review is NOT judging "
-            "strategic alignment until it can - it checks correctness alone. Fix the path or "
-            "permissions on .sdlc/context/north-star.md, then run /sigma-doctor." % detail)
+    said = {"alignment": _ALIGN, "rules": _RULES}.get(kind) or (_ALIGN + " " + _RULES)
+    return ("Sigma: the north-star could not be located or read (%s). %s Fix the path or "
+            "permissions on .sdlc/context/north-star.md, then run /sigma-doctor." % (detail, said))
 
 
 USAGE = "usage: north_star.py [start_dir] | north_star.py notice [start_dir]"

@@ -131,7 +131,8 @@ INTERNAL_FIELDS = {
     # reviewer.resolve's mechanism, `verified` says whether the agent id was checked against the host's
     # transcript store); `phase_waived` only by `loop.py waive-phases` (research and retro only).
     "phase": ("phase", "state", "agent_id", "cost", "verified"),
-    "verdict": ("phase", "verdict", "route", "agent_id", "plan_hash", "verified", "waiver", "waiver_reason"),
+    "verdict": ("phase", "verdict", "route", "agent_id", "plan_hash", "verified", "waiver", "waiver_reason",
+                "project_rules"),
     "phase_waived": ("phase", "reason"),
 }
 #: `gate.gate` restricted to these three for INTERNAL writes — the only gates this log records
