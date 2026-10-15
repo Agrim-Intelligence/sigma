@@ -132,3 +132,9 @@ def test_followup_is_never_a_project_rule_violation():                      # F1
     review = " ".join(_skill("sigma-review").split())
     assert "except for a project-rule violation: that blocks unless the owners waive it" in review
     assert "or a project-rule violation (quote the rule)" in review
+
+
+def test_unreachable_project_rules_are_recorded_and_flagged_not_held():      # D2 round-3 F02
+    review = " ".join(_skill("sigma-review").split())
+    assert "The approval is not held: `work.py record-review` records `project_rules: not-judged (<why>)`" in review
+    assert "doctor and session start flag it" in review

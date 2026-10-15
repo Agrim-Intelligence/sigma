@@ -3057,9 +3057,13 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     ns = base / "context" / "north-star.md"
     # D2 F03: a north-star that exists but cannot be read (or whose project root git cannot place) is
     # NOT "absent" - plan-review then judges correctness alone. Failing row only; absent stays silent.
-    ns_notice = _load_loop_script("north_star").notice(base.parent)
+    ns_notice = _load_loop_script("north_star").notice(base.parent, "alignment")
     if ns_notice:
         out.append(_chk("north-star reachable", False, ns_notice))
+    # D2 round-3 F02: the same source holds code review's project rules; failing row only.
+    rules_notice = _load_loop_script("north_star").notice(base.parent, "rules")
+    if rules_notice:
+        out.append(_chk("project rules reachable", False, rules_notice))
     if ns.exists() and os.access(ns, os.R_OK):
         text = ns.read_text(encoding="utf-8")
         # issue #1484: TWO failure modes, not one. The original check asked only "does any scaffold

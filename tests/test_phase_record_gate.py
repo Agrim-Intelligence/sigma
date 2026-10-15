@@ -365,3 +365,28 @@ def test_implement_may_not_start_before_the_plan_review_verdict_is_recorded(tmp_
     q = _project(tmp_path / "off")
     (q / ".sdlc/config.json").write_text(json.dumps({"action_log": {"enabled": True}}))     # gate key absent: off
     assert run(q, "phase_report.py", "start", ".sdlc", GOAL, "implement", "--model", "sonnet").returncode == 0
+
+
+# --- D2 round-3 F02: record-review records `project_rules: not-judged` when the rules source is unreachable ---
+
+def _review_row(p):
+    return [x for x in log_rows(p) if x["kind"] == "verdict" and x["phase"] == "review"][-1]
+
+
+def test_record_review_records_unreachable_project_rules_and_still_approves(tmp_path):
+    p = _project(tmp_path)
+    (p / ".git").write_text("gitdir: /nonexistent/sigma-f02\n")        # linked worktree, git blind -> unreachable
+    r = review(p)
+    assert r.returncode == 0, r.stderr                                 # the approval is NOT held
+    row = _review_row(p)
+    assert row["verdict"] == "approve" and row["project_rules"].startswith("not-judged (")
+    assert "project-rule conformance was NOT judged" in r.stderr
+
+
+def test_record_review_carries_no_project_rules_field_when_absent_or_present(tmp_path):
+    p = _project(tmp_path)
+    r = review(p)                                                      # absent: a drop-in project
+    assert r.returncode == 0 and "project_rules" not in _review_row(p) and r.stderr == ""
+    (p / ".sdlc/context").mkdir()
+    (p / ".sdlc/context/north-star.md").write_text("## Architecture\n1. a rule\n")
+    assert review(p).returncode == 0 and "project_rules" not in _review_row(p)   # present
