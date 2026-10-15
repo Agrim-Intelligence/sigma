@@ -178,8 +178,8 @@ paths using `source <(python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" review-paths
 "$goal" --evidence "$REVIEW_EVIDENCE" --verdict approve`, or the same evidence argument with
 `--verdict block --reason "<the issues>"`. To clear a prior loop block on the same revision, publish
 a fresh generation, have its reviewer return `unblock`, and post that
-evidence with `--verdict unblock`; a block's own evidence cannot be reused. The CLI and writer
-boundary reject a post-review call without that evidence. An `inline` route passes its verdict
+evidence with `--verdict unblock`, refused without an earlier confirmed block (post `approve` if clean); a block's evidence cannot be reused.
+An `inline` route passes its verdict
 explicitly to `run-resolved-review` with `--verdict` and `--reason`. An ambiguous post is recovered
 with `work.py reconcile-review-post .sdlc "$goal" --evidence "$REVIEW_EVIDENCE"`; still ambiguous, park
 (`--qkind review_post_ambiguous`), never post again (landing.md). A host refusal of `post-review` (e.g. auto mode denying it as self-approval) is never retried or

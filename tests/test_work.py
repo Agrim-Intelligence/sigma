@@ -5884,6 +5884,7 @@ def test_post_review_refuses_missing_or_malformed_evidence_before_any_remote_pos
 def test_post_review_unblock_posts_a_typed_journal_observation(tmp_path):
     cfg = {**ON, **JOURNAL_ON, **ACTIONLOG}
     d = _sdlc(tmp_path, cfg); goal = _started(d)
+    _seed_request(d)                                         # F09: an unblock lifts an earlier block
     evidence, head = _review_chain(d, goal, "unblock")
     run = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)),
                    (POST_COMMENT, _comment_reply(43))])
@@ -5891,6 +5892,91 @@ def test_post_review_unblock_posts_a_typed_journal_observation(tmp_path):
     assert any("sigma:unblock" in call for call in run.calls)
     events = [event for event in journal_events(_load("ledger"), d) if event.get("kind") == "review_posted"]
     assert len(events) == 1 and events[0]["verdict"] == "unblock"
+
+
+# --- D2 round-3 F09: an `unblock` needs an earlier block ------------------------------------------
+NO_BLOCK = "there is no block to lift"
+
+
+def _post_verdict(d, goal, verdict, reply):
+    evidence, head = _review_chain(d, goal, verdict)
+    run = _runner([(PR_GET, prfake.rest_pull(headRefOid=head)), (POST_COMMENT, _comment_reply(reply))])
+    return work.post_review(d, ON, goal, run=run, verdict=verdict, evidence=str(evidence)), run
+
+
+def test_a_lone_unblock_is_refused_and_posts_nothing(tmp_path):
+    """The hole: on main this posts `sigma:unblock` with no block anywhere, a clean-looking sign-off."""
+    d = _sdlc(tmp_path); goal = _started(d)
+    out, run = _post_verdict(d, goal, "unblock", 41)
+    assert NO_BLOCK in out and "post approve" in out, out
+    assert not any(_posted(c) for c in run.calls)
+    assert not list((pathlib.Path(d) / "state" / "review-posts").glob("*.json"))
+
+
+def test_block_then_unblock_posts(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    assert _post_verdict(d, goal, "block", 41)[0].startswith("posted sigma:block")
+    assert _post_verdict(d, goal, "unblock", 42)[0].startswith("posted sigma:unblock")
+
+
+def test_a_block_from_an_older_generation_still_authorises_the_unblock(tmp_path):
+    """Semantics: a block stands on the PR (the gate's latest-marker rule) until lifted, so it
+    carries across generations; an unblock of generation N+2 lifts the block of generation 1."""
+    d = _sdlc(tmp_path); goal = _started(d)
+    assert _post_verdict(d, goal, "block", 41)[0].startswith("posted sigma:block")
+    _review_chain(d, goal, "approve"); _review_chain(d, goal, "approve")      # newer generations, unposted
+    assert _post_verdict(d, goal, "unblock", 42)[0].startswith("posted sigma:unblock")
+
+
+def _seed_request(d, **over):
+    req = {"goal": "0001-x.md", "pr": "7", "evidence_id": "a" * 32, "verdict": "block", "state": "remote-confirmed"}
+    req.update(over)
+    root = pathlib.Path(d) / "state" / "review-posts"; root.mkdir(parents=True, exist_ok=True)
+    (root / (req["evidence_id"] + ".json")).write_text(json.dumps(req))
+
+
+@pytest.mark.parametrize("over", [{"pr": "8"},                      # clause: same PR
+                                  {"goal": "0002-other.md"},        # clause: same goal
+                                  {"state": "abandoned"},           # clause: server-confirmed
+                                  {"verdict": "approve"}])          # clause: it is a block
+def test_only_a_confirmed_block_on_this_goal_and_pr_authorises_an_unblock(tmp_path, over):
+    d = _sdlc(tmp_path); goal = _started(d)
+    assert goal == "0001-x.md"
+    _seed_request(d, **over)
+    out, _ = _post_verdict(d, goal, "unblock", 42)
+    assert NO_BLOCK in out or out.startswith("PARK: "), out
+    assert not out.startswith("posted"), out
+
+
+def test_the_seeded_block_itself_authorises(tmp_path):                    # control for the table above
+    d = _sdlc(tmp_path); goal = _started(d)
+    _seed_request(d)
+    assert _post_verdict(d, goal, "unblock", 42)[0].startswith("posted sigma:unblock")
+
+
+def test_approve_only_flow_is_unaffected(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    assert _post_verdict(d, goal, "approve", 41)[0].startswith("posted sigma:approve")
+
+
+def test_the_documented_post_review_gesture_refuses_a_lone_unblock(tmp_path):
+    d = _sdlc(tmp_path); goal = _started(d)
+    evidence, _ = _review_chain(d, goal, "unblock")
+    script = pathlib.Path(work.__file__)
+    p = subprocess.run([sys.executable, str(script), "post-review", str(d), goal, "--evidence", str(evidence),
+                        "--verdict", "unblock"], capture_output=True, text=True)
+    assert NO_BLOCK in p.stdout + p.stderr and "post approve" in p.stdout + p.stderr
+
+
+def test_a_lone_unblock_comment_is_never_an_approval_at_the_merge_gate(tmp_path):
+    """Belt and braces: even a stray `sigma:unblock` already on a PR leaves `approval` unmet."""
+    cfg = {"work": {"enabled": True, "require_review": "approval"}}
+    d = _sdlc(tmp_path, cfg); goal = _started(d)
+    rows = [{"body": "sigma:unblock", "author": {"login": "me"}, "authorAssociation": "OWNER"}]
+    assert work._comment_directive(work._record(d, goal), _runner(_comments(rows, pr_author="me")))[0] is None
+    run = _runner(_review(decision=None, comments=["sigma:unblock"], associations=["OWNER"]))
+    ok, why = work.review_gate(d, cfg, goal, run=run)
+    assert not ok and "not approved" in why, why
 
 
 def test_rollout_census_fails_when_post_review_attempts_a_journal_off_write(tmp_path):
@@ -6211,6 +6297,7 @@ def test_documented_unblock_gesture_clears_a_prior_block_on_the_same_revision(tm
     assert work.main(["work.py", "review-evidence", d, goal, "--manifest", manifest,
                       "--review-result", first["REVIEW_RESULT"]]) == 0
     capsys.readouterr()
+    _seed_request(d)                                                  # F09: the block being cleared
     _, _, second = _gesture_up_to_result(d, goal, monkeypatch, capsys, verdict="unblock")
     assert second["REVIEW_GENERATION"] != first["REVIEW_GENERATION"]   # same head, fresh generation
     assert work.main(["work.py", "review-evidence", d, goal, "--manifest", manifest,

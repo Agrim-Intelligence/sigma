@@ -124,7 +124,7 @@ the PR. Self-review before the PR is never enough; this is a **fresh, adversaria
 real, mergeable diff** (post-commit, post-CI). **Resolve the mechanism, never assert it** — `python3
 "${CLAUDE_SKILL_DIR}/scripts/reviewer.py" resolve .sdlc` and use what it names (`subagent` /
 `process` / `command`; only a machine where it returns `inline` reviews inline, and that verdict
-must say so; a failed reviewer parks, and only the owner's `reviewer.py accept-inline` allows inline). The skills ask that the maker not clear its own PR. Fed the reviewer brief for this gate:
+must say so; a failed reviewer parks, and only the owner's `reviewer.py accept-inline` allows inline). Fed the reviewer brief for this gate:
 `python3 "${CLAUDE_SKILL_DIR}/scripts/review_context.py" brief .sdlc "$goal" --for pr-review
 --artifact <PR#>` (see the maker≠checker rule, step 3), running `/sigma-review` in diff mode (`/code-review` may add
 a pass, never replaces it). That subagent decides the verdict below. **Create a generation and
@@ -163,8 +163,8 @@ review-evidence .sdlc "$goal" --manifest "$REVIEW_MANIFEST" --review-result "$RE
 To clear a prior loop block without changing the reviewed revision, publish a **fresh** generation
 for that same revision — re-run the `brief --output` gesture above; every publication is a new
 generation — have the resolved reviewer return `unblock`, then post that generation's evidence with
-`--verdict unblock`. The block's own evidence cannot be reused: its result is create-once and says
-`block`. The writer emits `sigma:unblock` and records a typed `review_posted` journal event
+`--verdict unblock`; `post-review` refuses it unless this PR has an earlier confirmed block (post `approve`
+if the review is clean). The block's own evidence cannot be reused. The writer emits `sigma:unblock` and records a `review_posted` journal event
 before it reports success.
 
 On an **inline** route (`review.independent: false`, or a host with no session marker and no
