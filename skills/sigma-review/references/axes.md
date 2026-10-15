@@ -60,7 +60,7 @@ the author is structurally blind on is the reason review exists at all.
 ## Precision
 
 **Precision, alongside recall.** Every axis above improves what the reviewer *finds*; §3 of `SKILL.md`
-governs what it *reports*. A finding must carry a written failing case before it may block, five
+governs what it *reports*. A general-review finding must carry a written failing case before it may block (a risk review's `critical`/`high` excepted), five
 false-positive classes are never reported at all, and a real-but-not-blocking finding is filed as
 `sdlc:followup` rather than spending one of the three review cycles that would otherwise park the
 goal. The gate is the north-star's own Standing Rule 1 — a claim in prose is not evidence — turned on
@@ -68,4 +68,4 @@ the reviewer.
 
 The one carve-out is deliberately narrow: a pre-existing problem is not this review's finding *unless
 the change puts it on a live path*. An unqualified "ignore pre-existing issues" rule would cancel the
-blast-radius discipline the skill opens with, which is the single thing a diff-only review most needs.
+blast-radius discipline the skill opens with.

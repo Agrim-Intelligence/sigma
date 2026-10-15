@@ -100,8 +100,7 @@ axis's boundary is unclear, decide by the harm each axis names. The full canon i
    criteria, not just against itself. Name the inputs that break it: null, empty, zero, negative, max,
    malformed, duplicate. Half-done paths, shipped TODOs, an error path that never returns.
 2. **Concurrency & State** — *right alone, wrong together.* For every shared mutable value the change
-   touches: what guards it? Every awaitable awaited, every task's exception surfaced rather than
-   swallowed. Then run it twice in your head — is it idempotent, and is a retry safe?
+   touches: what guards it? Every awaitable awaited, every task's exception surfaced. Then run it twice in your head — is it idempotent, and is a retry safe?
 3. **Performance & Resources** — *degrades under load or over time.* A query inside a loop (N+1),
    blocking I/O on a hot path, superlinear work on user-controlled input, unbounded growth in a
    long-lived collection. Every acquired resource — file, socket, connection, task — released on the
@@ -109,22 +108,19 @@ axis's boundary is unclear, decide by the harm each axis names. The full canon i
 4. **Security** — *a hostile caller reaches something they should not.* Trace inputs -> validation ->
    persistence -> output. Access control, injection (SQL / command / template / prompt), secrets in
    logs or errors, unpinned dependencies. On a real surface run `/sigma-security-review` for the full
-   OWASP pass rather than free-handing it here.
+   OWASP pass.
 5. **Observability** — *it breaks in production and nobody can tell why.* At each new failure point:
    does anything record that it happened, with enough context to diagnose it and nothing sensitive in
-   it? A metric or span on a new surface. A security-relevant event that is never logged is a silent
-   breach.
-6. **Structure & Maintainability** — *the next change is unsafe to make.* Name the smell rather than
-   gesturing at "structure": Long Method, Large Class, Long Parameter List, Primitive Obsession
+   it? A metric or span on a new surface.
+6. **Structure & Maintainability** — *the next change is unsafe to make.* Name the smell: Long Method, Large Class, Long Parameter List, Primitive Obsession
    (cohesion) · Feature Envy, Inappropriate Intimacy, Message Chains, Middle Man (coupling) · Shotgun
    Surgery, Divergent Change (change amplification) · Dead Code, Duplicate Code,
    Speculative Generality (dispensables). And: does the change fight the existing design, or diverge
    from the surrounding patterns?
 7. **Intelligibility** — *correct but unreadable, so the next change breaks it.* Do names say what the
    thing does and what it mutates? Do comments explain WHY, not restate WHAT? Is any comment, docstring
-   or README now FALSE because of this diff — a comment that lies is worse than no comment at all.
-8. **Test Adequacy** — *unverified, so the next change breaks it silently.* Not "is there a test" but
-   **would it fail if the code were wrong?** A test that asserts a mock, or asserts the implementation
+   or README now FALSE because of this diff.
+8. **Test Adequacy** — *unverified, so the next change breaks it silently.* **Would it fail if the code were wrong?** A test that asserts a mock, or asserts the implementation
    rather than the behaviour, is not coverage. Boundaries tested, not only the happy path.
 
 Two gates run alongside the axes:
@@ -149,11 +145,11 @@ Two gates run alongside the axes:
 
 ## 3. Verdict + findings
 Open with **how this review was run** — `Reviewed by: dispatched subagent | fresh process (<host>) |
-operator command | inline, author self-review` — then an **overall verdict** (**APPROVE**, **SEND-BACK** or **BLOCK**: the words `work.py record-review` takes), then findings by
+operator command | inline, author self-review` — then an **overall verdict** (**APPROVE**, **SEND-BACK** or **BLOCK**: the words `work.py record-review` takes; as a PR review the caller maps APPROVE→`approve`, SEND-BACK or BLOCK→`block`; you return `unblock` only when clearing a prior loop block, never inferred from APPROVE), then findings by
 category, most-severe first:
 **Bug** (will misbehave) · **Concern** (design risk) · **Coverage** (untested behavior) · **Missing**
 (a required piece absent) · **Good** (worth keeping) · **Minor / Nit** (style). Each: what, where
-(`file:line`), why it matters, and the fix. Don't pad with praise; if you didn't try to break it, you
+(`file:line`), why it matters, and the fix. If you didn't try to break it, you
 didn't review it. Only the owners named in the repository's CODEOWNERS may waive a finding, of any class; you report it and never waive it. A waiver is their decision, recorded with their stated reason. Unattended, a finding that would need one parks for a human.
 
 ### Before you report it
@@ -172,15 +168,15 @@ write that case you do not have a **Bug**, you have a question — ask it as a *
 ### Blocking, or follow-up
 Not every real finding should stop the change: a
 blocking finding costs a full fix -> push -> re-review round, and `work.max_review_cycles` (default 3)
-**parks the goal** once they run out. Spend them deliberately:
+**parks the goal** once they run out.
 - **Blocking** — you wrote the failing case, and it is a **Bug** or **Missing**; a risk review
   returned `critical`/`high`; or a project-rule violation (quote the rule). Your reasons ARE the fix instructions: write them so the next pass can act.
 - **Follow-up** — real, but the change is better landed than held: **Concern**, **Coverage**, **Nit**
   — or a **Missing** you could not write a failing case for (an absent piece, like missing
   observability, that resists a probeable check). File it with `--label sdlc:followup` instead of blocking.
 
-Reporting a real finding as follow-up is a judgement you may make, except for a project-rule violation: that blocks unless the owners waive it. Reporting one you could
-not write a failing case for, as blocking, is the failure this section exists to prevent. A
+Reporting a real finding as follow-up is a judgement you may make, except for a project-rule violation: that blocks unless the owners waive it. The failing-case rule binds this general review's findings; a dedicated risk review's `critical`/`high`
+blocks without one. Blocking on a finding you could not write a failing case for is the failure this section exists to prevent. A
 **Missing** with no constructible failing case is Follow-up per the bullet above, never dropped.
 
 ## Counter-review
