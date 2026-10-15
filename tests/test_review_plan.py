@@ -411,3 +411,14 @@ def test_accepted_coverage_cuts_are_recorded():
 def test_seeded_page_80_is_a_tool_property():
     text = " ".join((ROOT / "docs" / "launch" / "seeded-defects.md").read_text(encoding="utf-8").split())
     _check("not a D1 threshold" in text, "seeded-defects.md still presents 80% recall as the D1 rule")
+
+
+def test_d2_threshold_is_the_amended_rule_not_literal_zero():
+    """Owner decision 2026-10-15: D2 is no longer '0 gate-skip ambiguities'; the amended text must stay."""
+    text = _plan()
+    d2 = next(line for line in text.splitlines() if line.startswith("| D2 |"))
+    _check("0 gate-skip ambiguities" not in d2, "old D2 threshold string is back")
+    for phrase in ("rated Medium or higher", "a different model family", "no new HIGH",
+                   "Low items are listed, not required to be zero", "AMENDED 2026-10-15"):
+        _check(phrase in d2, f"D2 row lacks {phrase!r}")
+    _check("not yet shown met" in text and "round 3" in text, "D2 cell must say the amended rule is not yet shown met")
