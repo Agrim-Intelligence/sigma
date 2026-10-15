@@ -153,7 +153,7 @@ Linux performs O(depth) memory-file probes and emits O(depth) rows, but path pro
 receipt **bytes** scale with the sum of ancestor path lengths. Growing paths can therefore
 produce quadratic byte/work growth in nesting depth; a row count is not a timing. Mountinfo
 parsing also scales with its text bytes, and output-directory resolution adds path-component
-work. The macOS/Windows memory collectors use a constant number of native calls, not a claimed
+work. The macOS/Windows memory probes use a constant number of native calls, not a claimed
 constant execution time. OS/filesystem latency is unmeasured. With fixed measured facts, 10×/100×
 encoded record sizes reduce output record counts roughly 10×/100× (integer rounding applies),
 increase per-record decode cost, and can reduce workers to zero, which refuses. Memory does

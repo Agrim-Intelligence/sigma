@@ -1,10 +1,10 @@
 {
   "kind": "own-clause-mutation-evidence",
   "native_certification": false,
-  "test_sha256": "c82559e7d000602e115bfda0f759b0af5ff152f1f3951fc0c191b22aed510d15",
-  "harness_sha256": "f8354bd793126e208366a67045e2eba9c588516f1cdfc1a7bdf4d1b1ee3bed29",
-  "raw_report_sha256": "d2919a8aeee5c2d67455d7834dd723c09c1b78bdc79776a2b0c42d827cd14bfa",
-  "seconds": 63.05542120800237,
+  "test_sha256": "d8be132b79b8d26292b9cf7ca674e51a9a2ef62c59096e235b521f41853182c4",
+  "harness_sha256": "50ca2d31d581904a187adc88f2ad0bf3308ed2f091a588dc87c59440c4c26561",
+  "raw_report_sha256": "7e1cbe47c53b88b6838eb88ab1caf3ec6f3c1afcbee332f86c39618df43dbfd5",
+  "seconds": 56.70196379200206,
   "restored_sha256": {
     "tools/parity/resource_sources.py": "bb77d1a1a0199c9660fdf6e98dc74d543e501e50e06a34da7b3367d98b45d856",
     "tools/parity/resources.py": "7117f0f6b371d77c6e9d1fdff74da3f7302a51ac8180f28063e19ac52be715ad",
@@ -279,7 +279,7 @@
       "old": "not lib.GlobalMemoryStatusEx(ctypes.byref(stats))",
       "new": "False",
       "failure_count": 3,
-      "first_failing_test": "FAILED tests/test_parity_resources.py::test_collector_routes_native_sources_and_address_limits_by_os"
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_snapshot_routes_native_sources_and_address_limits_by_os"
     },
     {
       "index": 31,
@@ -405,7 +405,7 @@
       "old": "lib.host_statistics64(host, 4, ctypes.byref(stats), ctypes.byref(count)) != 0",
       "new": "False",
       "failure_count": 3,
-      "first_failing_test": "FAILED tests/test_parity_resources.py::test_collector_routes_native_sources_and_address_limits_by_os"
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_snapshot_routes_native_sources_and_address_limits_by_os"
     },
     {
       "index": 45,
@@ -459,7 +459,7 @@
       "old": "lib.sysctlbyname(b'hw.memsize', ctypes.byref(total), ctypes.byref(size), None, 0) != 0",
       "new": "False",
       "failure_count": 3,
-      "first_failing_test": "FAILED tests/test_parity_resources.py::test_collector_routes_native_sources_and_address_limits_by_os"
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_snapshot_routes_native_sources_and_address_limits_by_os"
     },
     {
       "index": 51,
@@ -495,7 +495,7 @@
       "old": "not lib.GetFileInformationByHandle(handle, ctypes.byref(information))",
       "new": "False",
       "failure_count": 5,
-      "first_failing_test": "FAILED tests/test_parity_resources.py::test_collector_routes_native_sources_and_address_limits_by_os"
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_snapshot_routes_native_sources_and_address_limits_by_os"
     },
     {
       "index": 55,
@@ -1471,7 +1471,7 @@
     },
     {
       "index": 163,
-      "label": "finite address-space source detached from collector",
+      "label": "finite address-space source detached from snapshot",
       "state": "killed",
       "old": "rows.append(posix_address_space())",
       "new": "pass",

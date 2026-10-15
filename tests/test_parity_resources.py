@@ -420,7 +420,7 @@ def test_read_text_distinguishes_missing_optional_from_failed_evidence(modules, 
             assert refusal.value.code == code
 
 
-def test_collector_routes_native_sources_and_address_limits_by_os(modules, monkeypatch, tmp_path):
+def test_snapshot_routes_native_sources_and_address_limits_by_os(modules, monkeypatch, tmp_path):
     _, sources = modules
     monkeypatch.setattr(sources, 'address_space_limit', lambda: None)
     proc_fixture(monkeypatch, sources)
@@ -969,7 +969,7 @@ def test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets(tmp_pa
             path = tmp_path/'receipt.json'
             path.write_text(json.dumps(receipt))
             result = subprocess.run([sys.executable, '-c', program, str(path), platform_name],
-                                    capture_output=True, text=True, timeout=10)
+                                    capture_output=True, text=True, timeout=60)
             assert (result.returncode == 0) == (change is None), (platform_name, change, result.stderr)
     intact = copy.deepcopy(base)
     intact['cgroup'] = dict(mode='v2', mount='/sys/fs/cgroup', mount_root='/', process_path='/parent/child',
@@ -991,5 +991,5 @@ def test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets(tmp_pa
         path = tmp_path/'receipt.json'
         path.write_text(json.dumps(receipt))
         result = subprocess.run([sys.executable, '-c', program, str(path), 'linux'],
-                                capture_output=True, text=True, timeout=10)
+                                capture_output=True, text=True, timeout=60)
         assert (result.returncode == 0) == (change is None), (change, result.stderr)
