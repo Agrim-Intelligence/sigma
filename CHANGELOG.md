@@ -4,6 +4,7 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **An optional shared weekly and monthly spend cap covers every paid model call (#1502).** `rulebook.spend.weekly_usd` and `rulebook.spend.monthly_usd` (both unset by default, which changes nothing) cap the real cost of the import classifier and the drift judge together over a rolling 7 and 30 days; a call that would run past a cap is refused with one line, counted in `.sdlc/state/spend-cap.jsonl`, and shown by the doctor with the reset time.
 - **Import docs show a project-folder form that works in bash and zsh, and a scan prints the folders it read (#1503).** The rulebook import section and the `--project-dir` help say one folder per flag (or a quoted array), and `scan`, `plan` and `apply` print a `folders read:` line on stderr.
 - **Import calls a missing project folder "skipped", and plan and apply print scan notices (#1488).** A `--project-dir` found under none of the given profiles now reads `skipped: ... the other folders were read` instead of `refused`; `plan` and `apply` print the scan notices on stderr, and `apply` adds a `partial import: N files not read` line when a time budget, size cap or candidate cap cut the import short.
 - **The drift judge records which documents it did not see (#1481).** A document past the `max_total_chars` budget is no longer passed on empty and listed as read: it is named in `documents_clipped_out`, a cut-short one in `documents_truncated`, the prompt carries no empty block, and the doctor warns when the documents exceed the budget.
