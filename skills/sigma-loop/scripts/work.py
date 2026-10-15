@@ -300,6 +300,13 @@ ENFORCEMENT_GATES = (
                   "the same unit has not landed, and when the unit-keyed lookup cannot answer; reads the "
                   "landing records and the feature registry, writes nothing",
      "condition": "inert while the upkeep gate is closed"},
+    {"control": "No second review generation past an ambiguous post", "function": "_ambiguous_review_post_refusal",
+     "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
+     "mechanism": "refuses `work.py post-review` for any evidence while another evidence's post on the same PR is "
+                  "unresolved (request `prepared`, outcome unknown), and `review_context.py brief --output` refuses a "
+                  "new PR-review generation the same way: a late comment from the abandoned generation could outrank "
+                  "a newer verdict at the merge gate. The refusal names the park (`review_post_ambiguous`) and the "
+                  "lever, `work.py abandon-review-post` after a hand check of the PR, which refuses if the comment is there"},
     {"control": "`finish` refused while the PR is open", "function": "_open_pr_refusal",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
      "mechanism": "refuses `work.py finish` (worktree removal) while the goal's PR is still open, "
@@ -1047,6 +1054,46 @@ def _repair_review_post_effects(sdlc_dir, config, goal, rec, request, request_pa
     request_path.write_text(json.dumps(request, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
 
 
+#: Appended to every ambiguous-post PARK: the lookup missing is not proof the comment never landed.
+AMBIGUOUS_NEXT = (" -- park with --qkind review_post_ambiguous and publish NO other review generation; "
+                  "the lever is in landing.md (check the PR by hand, then `work.py abandon-review-post`)")
+
+
+def _ambiguous_review_post_refusal(sdlc_dir, goal, pr, evidence_id):
+    """Refusal text when ANOTHER evidence's post is unresolved, else None (F07)."""
+    rc = _load("review_context")
+    others = [i for i in rc.unresolved_review_posts(sdlc_dir, goal, pr) if i != evidence_id]
+    return "PARK: " + rc.ambiguous_post_lever(sdlc_dir, goal, others) if others else None
+
+
+def abandon_review_post(sdlc_dir, goal, evidence_id, decision, run=None):
+    """The lever: a human has checked the PR by hand and records that this post never landed.
+
+    Re-runs the marker lookup first; a comment that IS there is reconciled, never abandoned.  After this
+    the evidence can never post (its receipt stays), and a fresh generation may be published."""
+    run = run or _run
+    if not re.fullmatch(r"[0-9a-f]{32}", str(evidence_id)):
+        raise ValueError("--evidence-id is the 32-hex id in the refusal message")
+    if not (decision or "").strip():
+        raise ValueError("abandon needs --decision: what you found when you checked the PR's comments")
+    path = pathlib.Path(sdlc_dir) / "state" / "review-posts" / (evidence_id + ".json")
+    request = json.loads(path.read_text(encoding="utf-8"))
+    rec = _record(sdlc_dir, goal)
+    if not rec or request.get("goal") != str(goal) or str(request.get("pr")) != str(rec.get("pr")):
+        raise ValueError("review request does not match this goal's active PR")
+    if request.get("state") != "prepared":
+        raise ValueError("this post is not ambiguous (state %s); nothing to abandon" % request.get("state"))
+    try:
+        found = _find_evidence_marker(run, rec["worktree"], rec["pr"], evidence_id)
+    except Exception as exc:  # noqa: BLE001 - an unreadable PR is not proof of anything
+        raise ValueError("cannot read the PR's comments (%s); retry" % exc) from None
+    if found:
+        raise ValueError("the comment IS on the PR (id %s): run `work.py reconcile-review-post`, do not abandon" % found.get("id"))
+    request["state"] = "abandoned"; request["decision"] = scrub(decision.strip())
+    _load("review_context")._atomic_bytes(path, (json.dumps(request, sort_keys=True, separators=(",", ":")) + "\n").encode())
+    return "abandoned review post %s; a fresh generation may now be published" % evidence_id
+
+
 def reconcile_review_post(sdlc_dir, config, goal, evidence_path, run=None):
     """Lookup-only repair for an ambiguous evidence-backed post; never creates a comment."""
     run = run or _run
@@ -1058,7 +1105,7 @@ def reconcile_review_post(sdlc_dir, config, goal, evidence_path, run=None):
         raise ValueError("review request does not match active PR")
     found = _find_evidence_marker(run, rec["worktree"], rec["pr"], evidence_id)
     if not found:
-        return "PARK: remote comment outcome ambiguous"
+        return "PARK: remote comment outcome ambiguous" + AMBIGUOUS_NEXT
     request["state"] = "remote-confirmed"; request["comment_id"] = str(found.get("id"))
     evidence = json.loads(pathlib.Path(evidence_path).read_text(encoding="utf-8"))
     _repair_review_post_effects(sdlc_dir, config, goal, rec, request, request_path, evidence)
@@ -7071,16 +7118,21 @@ def post_review(sdlc_dir, config, goal, run=None, verdict="", reason="", evidenc
         # the receipt attest to bytes GitHub never received, and left a retry unable to prove
         # it was looking for exactly the original request.
         body += "\n\n<!-- sigma-review-evidence:%s -->" % evidence_id
+        blocked = _ambiguous_review_post_refusal(sdlc_dir, goal, rec["pr"], evidence_id)
+        if blocked:
+            return blocked
         request, request_path, created = _review_post_request(sdlc_dir, goal, rec["pr"], v, body, evidence)
         if request.get("state") == "remote-confirmed" and request.get("effects_repaired") is True:
             return f"posted sigma:{v} on PR #{rec['pr']}"
+        if request.get("state") == "abandoned":
+            return "PARK: this evidence was abandoned by a human check (work.py abandon-review-post), so it will not post; publish a fresh generation"
         if not created:
             # A previous process may have timed out after GitHub accepted the post.  It is
             # never safe to submit another comment from a prepared receipt: first reconcile
             # the immutable marker, then leave the goal parked if the server has no answer.
             found = _find_evidence_marker(run, rec["worktree"], rec["pr"], request["evidence_id"])
             if not found:
-                return "PARK: remote comment outcome ambiguous"
+                return "PARK: remote comment outcome ambiguous" + AMBIGUOUS_NEXT
             request["state"] = "remote-confirmed"
             request["comment_id"] = str(found.get("id"))
             bound = json.loads(pathlib.Path(evidence).read_text(encoding="utf-8"))
@@ -7096,7 +7148,7 @@ def post_review(sdlc_dir, config, goal, run=None, verdict="", reason="", evidenc
                                            fallback_run=_pr_api_run(run, rec["worktree"]), sdlc_dir=sdlc_dir)
     except Exception as exc:                # noqa: BLE001 - report, never traceback at the loop
         # Dispatch may have reached GitHub; only reconcile-review-post may inspect the marker.
-        return f"PARK: remote comment outcome ambiguous ({exc})"
+        return f"PARK: remote comment outcome ambiguous ({exc})" + AMBIGUOUS_NEXT
     try:
         match = re.search(r"(?:comments?/|issuecomment-)(\d+)", str(comment_output))
         if match and request:
@@ -7945,6 +7997,13 @@ def main(argv):
             return 0
         except ValueError as exc:
             print(f"work: {exc}", file=sys.stderr)
+            return 2
+    if len(argv) >= 4 and argv[1] == "abandon-review-post":
+        try:
+            print(abandon_review_post(argv[2], argv[3], _flag(argv, "--evidence-id"), _flag(argv, "--decision")))
+            return 0
+        except (OSError, ValueError) as exc:
+            print(f"work: {exc}\nusage: work.py abandon-review-post <sdlc_dir> <goal> --evidence-id <id> --decision <text>", file=sys.stderr)
             return 2
     if len(argv) >= 4 and argv[1] == "reconcile-review-post":
         evidence = _flag(argv, "--evidence")

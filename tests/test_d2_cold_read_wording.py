@@ -182,3 +182,13 @@ def test_ceiling_branch_records_failed_not_parked():                        # F1
     running = _ref("running.md")
     assert "record it `failed` (`parked` only for a human decision)" in running
     assert "park or fail it rather than cycling" not in running
+
+
+def test_ambiguous_review_post_parks_never_reposts():                       # round 3 F07
+    landing, running = " ".join(_ref("landing.md").split()), " ".join(_ref("running.md").split())
+    assert "that is not proof it never landed" in landing
+    assert "publish no other generation" in landing and "--qkind review_post_ambiguous" in landing
+    assert "work.py abandon-review-post" in landing and "then `/sigma-unpark`" in landing
+    assert "genuinely never reached GitHub" not in landing and "Publish a **fresh** generation for the same, unchanged revision" not in landing
+    assert "still ambiguous, park (`--qkind review_post_ambiguous`), never post again" in running
+    assert "never by posting again" not in running

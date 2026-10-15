@@ -995,6 +995,36 @@ def pr_diff_sha256(worktree, base_ref, head):
     return hashlib.sha256(diff.stdout).hexdigest()
 
 
+def unresolved_review_posts(sdlc_dir, goal, pr=None):
+    """Evidence ids of this goal's review posts whose outcome is unknown (request `prepared`, never
+    confirmed or abandoned).  GitHub may still accept such a comment late; the merge gate reads the
+    LATEST `sigma:` comment, so a new generation published past one can be outranked by a stale verdict.
+    ponytail: an unreadable receipt is skipped (it names no goal we can match); revisit if one ever lands."""
+    found = []
+    stem = pathlib.Path(str(goal)).stem
+    for path in sorted((pathlib.Path(sdlc_dir) / "state" / "review-posts").glob("*.json")):
+        try:
+            request = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if (isinstance(request, dict) and request.get("state") == "prepared"
+                and pathlib.Path(str(request.get("goal"))).stem == stem
+                and (pr is None or str(request.get("pr")) == str(pr))):
+            found.append(path.stem)
+    return found
+
+
+def ambiguous_post_lever(sdlc_dir, goal, evidence_ids):
+    """The one polite lever, shared by every refusal of this hazard."""
+    ids = ", ".join(evidence_ids)
+    return ("a review post's outcome is unresolved (evidence %s): it may still reach GitHub late and outrank a newer "
+            "verdict, so no other review generation is published or posted. Park the goal (`loop.py record %s parked "
+            "\"review post outcome ambiguous\" --qkind review_post_ambiguous`), check the PR's comments by hand for "
+            "`sigma-review-evidence:<id>`: if it is there run `work.py reconcile-review-post`; if not, delete any stray "
+            "copy, then run `work.py abandon-review-post %s %s --evidence-id <id> --decision \"<what you found>\"` and "
+            "/sigma-unpark with the decision" % (ids, goal, sdlc_dir, goal))
+
+
 def publish_generation(sdlc_dir, goal, text, artifact, output, phase=""):
     """Publish immutable review input then atomically replace the sole manifest pointer.
 
@@ -1006,6 +1036,11 @@ def publish_generation(sdlc_dir, goal, text, artifact, output, phase=""):
     root = pathlib.Path(sdlc_dir) / "state"
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
     binding = _pr_generation_binding(sdlc_dir, goal, artifact)
+    if binding:
+        # F07: never a second PR generation past an unresolved post (see unresolved_review_posts).
+        open_posts = unresolved_review_posts(sdlc_dir, goal, binding["pr"])
+        if open_posts:
+            raise ValueError(ambiguous_post_lever(sdlc_dir, goal, open_posts))
     if phase == "pr-review" and artifact and not binding:
         raise ValueError(
             'pr-review needs --artifact in the exact form "PR#<N>" (e.g. "PR#2819"), got %r -- a '

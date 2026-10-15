@@ -481,6 +481,15 @@ with `sigma-qkind: reviewer_down`. It is a **kind, not a new `sdlc:*` label**: a
 not an authority check (the maker must not run it); it is stamped on the verdict row and covers only the bytes it was
 given for. No sweep resumes it.
 
+## 2b-v. Review post ambiguous — a park with the kind `review_post_ambiguous`
+
+When a review comment's post times out or errors, GitHub may still accept it later, and the merge gate reads the
+LATEST `sigma:` comment. So an unresolved post parks the goal with `sigma-qkind: review_post_ambiguous`, and the code
+refuses any other PR-review generation (`review_context.py brief --output`) and any other post while it is open. A kind,
+not a label (§2b-iv). **Who clears it:** a human checks the PR's comments for the `sigma-review-evidence` marker: if it
+is there, `work.py reconcile-review-post`; if not, delete any stray copy and run `work.py abandon-review-post`
+(`--evidence-id`, `--decision`), then `/sigma-unpark`. The abandon re-reads the PR first and refuses if the comment exists.
+
 ## 2c. "Do we still need `sdlc:followup`?"
 
 Yes, though it is the least load-bearing of the three annotations. The three answer different
