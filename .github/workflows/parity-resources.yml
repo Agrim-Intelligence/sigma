@@ -1,0 +1,104 @@
+name: Parity resource native proof
+
+on:
+  pull_request:
+    paths:
+      - 'tools/parity/resource_sources.py'
+      - 'tools/parity/resources.py'
+      - 'tests/test_parity_resources.py'
+      - 'docs/parity-resources.md'
+      - '.github/workflows/parity-resources.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/parity/resource_sources.py'
+      - 'tools/parity/resources.py'
+      - 'tests/test_parity_resources.py'
+      - 'docs/parity-resources.md'
+      - '.github/workflows/parity-resources.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    name: native-${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: macos-latest
+            platform: darwin
+          - os: windows-latest
+            platform: win32
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Native read-only gesture and raw receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/parity/resources.py --reserve-fraction 0.25 --record-bytes 256 --output-dir . | tee "$RUNNER_TEMP/parity-resource-receipt.json"
+          python - "$RUNNER_TEMP/parity-resource-receipt.json" "${{ matrix.platform }}" <<'PY'
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          receipt = json.loads(Path(sys.argv[1]).read_text(encoding='utf-8'))
+          expected = sys.argv[2]
+          assert receipt['schema'] == 'parity-resource-preflight/v1'
+          assert receipt['status'] == 'ok'
+          assert receipt['platform'] == expected
+          native = {'linux': 'MemAvailable', 'darwin': 'HOST_VM_INFO64', 'win32': 'GlobalMemoryStatusEx'}
+          names = {row['name'] for row in receipt['sources']}
+          assert native[expected] in names
+          if expected != 'win32':
+              assert 'RLIMIT_AS' in names
+          cgroup = receipt['cgroup']
+          if expected == 'linux':
+              assert cgroup['mode'] in ('v2', 'none')
+              if cgroup['mode'] == 'v2':
+                  assert cgroup['mount_root'] == '/'
+                  locations = [r['location'] for r in receipt['sources'] if r['name'] in ('cgroup-v2', 'cgroup-v2-root')]
+                  assert locations == cgroup['ancestors']
+                  assert locations[-1] == cgroup['mount']
+          else:
+              assert cgroup['mode'] == 'not-applicable'
+          assert receipt['disk']['api'] == ('GetDiskFreeSpaceExW' if expected == 'win32' else 'fstatvfs')
+
+          def size(value):
+              assert re.fullmatch(r'0|[1-9][0-9]*', value)
+              return int(value)
+
+          finite = []
+          for row in receipt['sources']:
+              if row['mode'] == 'finite':
+                  remaining = size(row['available_bytes'])
+                  assert size(row['limit_bytes']) - size(row['used_bytes']) == remaining
+                  finite.append(remaining)
+              else:
+                  assert row['mode'] == 'unlimited'
+                  assert row['limit_bytes'] is None and row['available_bytes'] is None
+          limits = receipt['limits']
+          counts = {key: size(limits[key]) for key in ('available_bytes', 'reserve_bytes', 'usable_bytes',
+                    'decode_bytes', 'output_buffer_bytes', 'object_overhead_bytes', 'blob_bytes_per_worker', 'output_bytes')}
+          assert all(value > 0 for value in counts.values())
+          workers, expansion, cpu = limits['worker_slots'], limits['decode_expansion'], receipt['cpu_count']
+          assert all(type(value) is int and value > 0 for value in (workers, expansion, cpu))
+          assert workers <= cpu
+          assert counts['available_bytes'] == min(finite)
+          assert counts['usable_bytes'] + counts['reserve_bytes'] == counts['available_bytes']
+          assert counts['decode_bytes'] + counts['output_buffer_bytes'] == counts['usable_bytes']
+          assert workers * (expansion * counts['blob_bytes_per_worker'] + counts['object_overhead_bytes']) <= counts['decode_bytes']
+          assert counts['output_bytes'] <= counts['output_buffer_bytes']
+          assert size(receipt['disk']['available_bytes']) >= counts['output_bytes']
+          print('native receipt validated:', expected)
+          PY

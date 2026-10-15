@@ -1,0 +1,3358 @@
+{
+  "kind": "own-clause-mutation-evidence",
+  "native_certification": false,
+  "test_sha256": "d8be132b79b8d26292b9cf7ca674e51a9a2ef62c59096e235b521f41853182c4",
+  "test_sha256_by_path": {
+    "tests/test_parity_resources.py": "d8be132b79b8d26292b9cf7ca674e51a9a2ef62c59096e235b521f41853182c4",
+    "tests/test_parity_resource_controller_evidence.py": "2fa68c4e1b4b3c5fd7c90b251481ac315fef2ee327a8b8fa21105e1c42e0f040",
+    "tests/test_parity_resource_oversized_fraction.py": "8b76ef4d25090fd38f60706c7f762ffc261664043d2863ccc21bf9116da0b65f",
+    "tests/test_parity_resource_cli_controls.py": "62ee7c713e43c373139d5a8505ca31c5f460797e5a40bb89be4633136ea8a5fe"
+  },
+  "harness_sha256": "852fe49933e4643e4a2b88d4510e13f439ca59faf251f602f1fa3acfbe9f12ed",
+  "raw_report_sha256": "c0df319e669ebc9ac97d1da028b52525a5236de4e17cc34c8f60ab0c5117916d",
+  "seconds": 83.39601812500041,
+  "restored_sha256": {
+    "tools/parity/resource_sources.py": "45b101359243ff96b6fd2c51dc567da430595bd14da3377b1f1d611d43d395ae",
+    "tools/parity/resources.py": "b6b355cbb32f7d49a5e2a9018930587a5499dc6322234d1af8cf91fd066744a7",
+    ".github/workflows/parity-resources.yml": "4581ac3e0c9c56606cc64981e1d072b48b71f67005a1d81bb8f218f646ad1e07"
+  },
+  "command": [
+    "python",
+    "-B",
+    "-m",
+    "pytest",
+    "tests/test_parity_resource_cli_controls.py",
+    "tests/test_parity_resource_controller_evidence.py",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "--tb=short"
+  ],
+  "selection": "First run public main/collect controls only; entrypoint/bytecode variants use the literal-process test. Workflow variants run the actual native_ci_validator. Only public survivors run the existing planned/controller/oversized tests separately and are marked library-contract-only.",
+  "verification_path": "$HOME/.sigma-venv312/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+  "verification_path_normalization": "The personal home directory is represented by $HOME.",
+  "initial_controller_red": {
+    "failed": 10,
+    "passed": 2,
+    "raw_report_sha256": "5a163bfbcf4234d819df0ffb772453a2c8b552a366aadc243ccc146ccbb4ebac"
+  },
+  "restored_green": {
+    "passed": 92,
+    "seconds": 4.03,
+    "includes_direct_gh_ratchet": true,
+    "raw_report_sha256": "f12b671cd31465a8d96bb6dbafeea4a15b59726e59074c768009c0360054a50f"
+  },
+  "historical_control_run": {
+    "test_sha256": "d8be132b79b8d26292b9cf7ca674e51a9a2ef62c59096e235b521f41853182c4",
+    "harness_sha256": "50ca2d31d581904a187adc88f2ad0bf3308ed2f091a588dc87c59440c4c26561",
+    "raw_report_sha256": "7e1cbe47c53b88b6838eb88ab1caf3ec6f3c1afcbee332f86c39618df43dbfd5",
+    "seconds": 56.70196379200206,
+    "restored_sha256": {
+      "tools/parity/resource_sources.py": "bb77d1a1a0199c9660fdf6e98dc74d543e501e50e06a34da7b3367d98b45d856",
+      "tools/parity/resources.py": "7117f0f6b371d77c6e9d1fdff74da3f7302a51ac8180f28063e19ac52be715ad",
+      ".github/workflows/parity-resources.yml": "4581ac3e0c9c56606cc64981e1d072b48b71f67005a1d81bb8f218f646ad1e07"
+    },
+    "killed": 189
+  },
+  "results": [
+    {
+      "index": 1,
+      "label": "resource_sources.py:17 guard disabled",
+      "state": "killed",
+      "old": "type(value) is not int or value < 0 or value > sys.maxsize or (positive and value == 0)",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 9,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_disk_number_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_cpu_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_overhead_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_record_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_statm_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 2,
+      "label": "resource_sources.py:17 Or clause 1 removed",
+      "state": "killed",
+      "old": "type(value) is not int or value < 0 or value > sys.maxsize or (positive and value == 0)",
+      "new": "False or value < 0 or value > sys.maxsize or (positive and value == 0)",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_posix_disk_number_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_disk_number_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_cpu_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_overhead_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 3,
+      "label": "resource_sources.py:17 Or clause 2 removed",
+      "state": "killed",
+      "old": "type(value) is not int or value < 0 or value > sys.maxsize or (positive and value == 0)",
+      "new": "type(value) is not int or False or value > sys.maxsize or (positive and value == 0)",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 7,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_disk_number_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_cpu_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_overhead_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_record_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 4,
+      "label": "resource_sources.py:17 Or clause 3 removed",
+      "state": "killed",
+      "old": "type(value) is not int or value < 0 or value > sys.maxsize or (positive and value == 0)",
+      "new": "type(value) is not int or value < 0 or False or (positive and value == 0)",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 6,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_disk_number_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_cpu_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_overhead_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_record_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_statm_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 5,
+      "label": "resource_sources.py:17 Or clause 4 removed",
+      "state": "killed",
+      "old": "type(value) is not int or value < 0 or value > sys.maxsize or (positive and value == 0)",
+      "new": "type(value) is not int or value < 0 or value > sys.maxsize or False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 6,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_disk_number_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_cpu_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_overhead_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_record_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_statm_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 6,
+      "label": "resource_sources.py:17 And clause 1 removed",
+      "state": "killed",
+      "old": "positive and value == 0",
+      "new": "True and value == 0",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 7,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_valid_absence_and_disabled_memory_remain_supported",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_enabled_memory_without_membership_refuses_mapping"
+      ]
+    },
+    {
+      "index": 7,
+      "label": "resource_sources.py:17 And clause 2 removed",
+      "state": "killed",
+      "old": "positive and value == 0",
+      "new": "positive and True",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 34,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_binding_and_platform_failure_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_disk_number_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_close_failure_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_cpu_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_overhead_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_budget_and_disk_boundaries_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_path_validation_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_statm_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_real_read_error_translation_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_root_and_address_modes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_os_measurement_errors_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_valid_noncontrol_unicode_path_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_output_file_refuses_before_open",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_empty_controller_file_refuses_public_cli",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_reported_malformed_disabled_memory_refuses_public_cli",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_header_required",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_row_requires_four_fields",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_names_are_valid",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_duplicate_controller_names_refuse",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_hierarchy_is_unsigned",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_count_is_unsigned",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_unrelated_controller_fields_are_validated",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_enabled_is_binary",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_valid_absence_and_disabled_memory_remain_supported",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_enabled_memory_without_membership_refuses_mapping"
+      ]
+    },
+    {
+      "index": 8,
+      "label": "resource_sources.py:23 guard disabled",
+      "state": "killed",
+      "old": "not re.fullmatch(r'0|[1-9][0-9]*', text)",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_statm_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_statm_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_hierarchy_is_unsigned",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_count_is_unsigned"
+      ]
+    },
+    {
+      "index": 9,
+      "label": "resource_sources.py:72 guard disabled",
+      "state": "killed",
+      "old": "not value.startswith('/') or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in value)\n            or (value != '/' and any(p in ('', '.', '..') for p in value.split('/')[1:]))",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_path_validation_reaches_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_path_validation_reaches_cli"
+      ]
+    },
+    {
+      "index": 10,
+      "label": "resource_sources.py:72 Or clause 1 removed",
+      "state": "killed",
+      "old": "not value.startswith('/') or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in value)\n            or (value != '/' and any(p in ('', '.', '..') for p in value.split('/')[1:]))",
+      "new": "False or any((ord(c) < 32 or 127 <= ord(c) <= 159 for c in value)) or (value != '/' and any((p in ('', '.', '..') for p in value.split('/')[1:])))",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_path_validation_reaches_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_path_validation_reaches_cli"
+      ]
+    },
+    {
+      "index": 11,
+      "label": "resource_sources.py:72 Or clause 2 removed",
+      "state": "killed",
+      "old": "not value.startswith('/') or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in value)\n            or (value != '/' and any(p in ('', '.', '..') for p in value.split('/')[1:]))",
+      "new": "not value.startswith('/') or False or (value != '/' and any((p in ('', '.', '..') for p in value.split('/')[1:])))",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_path_validation_reaches_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_path_validation_reaches_cli"
+      ]
+    },
+    {
+      "index": 12,
+      "label": "resource_sources.py:72 Or clause 3 removed",
+      "state": "killed",
+      "old": "not value.startswith('/') or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in value)\n            or (value != '/' and any(p in ('', '.', '..') for p in value.split('/')[1:]))",
+      "new": "not value.startswith('/') or any((ord(c) < 32 or 127 <= ord(c) <= 159 for c in value)) or False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_path_validation_reaches_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_path_validation_reaches_cli"
+      ]
+    },
+    {
+      "index": 13,
+      "label": "resource_sources.py:73 And clause 1 removed",
+      "state": "killed",
+      "old": "value != '/' and any(p in ('', '.', '..') for p in value.split('/')[1:])",
+      "new": "True and any((p in ('', '.', '..') for p in value.split('/')[1:]))",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 26,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_disk_number_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_close_failure_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_cpu_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_overhead_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_budget_and_disk_boundaries_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_statm_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_real_read_error_translation_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_root_and_address_modes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_os_measurement_errors_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_valid_noncontrol_unicode_path_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_output_file_refuses_before_open",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_empty_controller_file_refuses_public_cli",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_reported_malformed_disabled_memory_refuses_public_cli",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_header_required",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_row_requires_four_fields",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_names_are_valid",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_duplicate_controller_names_refuse",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_hierarchy_is_unsigned",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_count_is_unsigned",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_unrelated_controller_fields_are_validated",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_enabled_is_binary",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_valid_absence_and_disabled_memory_remain_supported"
+      ]
+    },
+    {
+      "index": 14,
+      "label": "resource_sources.py:73 And clause 2 removed",
+      "state": "killed",
+      "old": "value != '/' and any(p in ('', '.', '..') for p in value.split('/')[1:])",
+      "new": "value != '/' and True",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 15,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_disk_number_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_close_failure_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_cpu_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_overhead_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_budget_and_disk_boundaries_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_statm_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_real_read_error_translation_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_root_and_address_modes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_os_measurement_errors_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_valid_noncontrol_unicode_path_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_output_file_refuses_before_open",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli"
+      ]
+    },
+    {
+      "index": 15,
+      "label": "resource_sources.py:72 Or clause 1 removed",
+      "state": "killed",
+      "old": "ord(c) < 32 or 127 <= ord(c) <= 159",
+      "new": "False or 127 <= ord(c) <= 159",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_path_validation_reaches_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_path_validation_reaches_cli"
+      ]
+    },
+    {
+      "index": 16,
+      "label": "resource_sources.py:72 Or clause 2 removed",
+      "state": "killed",
+      "old": "ord(c) < 32 or 127 <= ord(c) <= 159",
+      "new": "ord(c) < 32 or False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_path_validation_reaches_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_path_validation_reaches_cli"
+      ]
+    },
+    {
+      "index": 17,
+      "label": "resource_sources.py:72 chain bound 1 removed",
+      "state": "killed",
+      "old": "127 <= ord(c) <= 159",
+      "new": "(ord(c) <= 159)",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 26,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_disk_number_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_close_failure_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_cpu_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_overhead_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_budget_and_disk_boundaries_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_statm_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_real_read_error_translation_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_root_and_address_modes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_os_measurement_errors_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_valid_noncontrol_unicode_path_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_output_file_refuses_before_open",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_empty_controller_file_refuses_public_cli",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_reported_malformed_disabled_memory_refuses_public_cli",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_header_required",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_row_requires_four_fields",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_names_are_valid",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_duplicate_controller_names_refuse",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_hierarchy_is_unsigned",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_count_is_unsigned",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_unrelated_controller_fields_are_validated",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_enabled_is_binary",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_valid_absence_and_disabled_memory_remain_supported"
+      ]
+    },
+    {
+      "index": 18,
+      "label": "resource_sources.py:72 chain bound 2 removed",
+      "state": "killed",
+      "old": "127 <= ord(c) <= 159",
+      "new": "(127 <= ord(c))",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_valid_noncontrol_unicode_path_reaches_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_valid_noncontrol_unicode_path_reaches_cli"
+      ]
+    },
+    {
+      "index": 19,
+      "label": "resource_sources.py:95 guard disabled",
+      "state": "killed",
+      "old": "set(values) != {'MemTotal', 'MemAvailable'}",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 20,
+      "label": "resource_sources.py:112 guard disabled",
+      "state": "killed",
+      "old": "not paths",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 11,
+      "first_failing_test": "FAILED tests/test_parity_resource_controller_evidence.py::test_empty_controller_file_refuses_public_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_empty_controller_file_refuses_public_cli",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_reported_malformed_disabled_memory_refuses_public_cli",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_header_required",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_row_requires_four_fields",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_names_are_valid",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_duplicate_controller_names_refuse",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_hierarchy_is_unsigned",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_count_is_unsigned",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_unrelated_controller_fields_are_validated",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_enabled_is_binary",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_valid_absence_and_disabled_memory_remain_supported"
+      ]
+    },
+    {
+      "index": 21,
+      "label": "resource_sources.py:132 guard disabled",
+      "state": "killed",
+      "old": "len(paths) != 1",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 22,
+      "label": "resource_sources.py:144 guard disabled",
+      "state": "killed",
+      "old": "len(mounts) != 1 or mounts[0][0] != '/'",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 23,
+      "label": "resource_sources.py:144 Or clause 1 removed",
+      "state": "killed",
+      "old": "len(mounts) != 1 or mounts[0][0] != '/'",
+      "new": "False or mounts[0][0] != '/'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 24,
+      "label": "resource_sources.py:144 Or clause 2 removed",
+      "state": "killed",
+      "old": "len(mounts) != 1 or mounts[0][0] != '/'",
+      "new": "len(mounts) != 1 or False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 25,
+      "label": "resource_sources.py:205 guard disabled",
+      "state": "killed",
+      "old": "sys.platform != 'linux'",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_source_text_protocols_and_no_controller_mode",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_source_text_protocols_and_no_controller_mode"
+      ],
+      "scope_reason": "collect rejects unsupported platforms before virtual_bytes; direct helper-only platform guard."
+    },
+    {
+      "index": 26,
+      "label": "resource_sources.py:208 guard disabled",
+      "state": "killed",
+      "old": "len(fields) != 7",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_statm_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_statm_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 27,
+      "label": "resource_sources.py:285 guard disabled",
+      "state": "killed",
+      "old": "not host",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 28,
+      "label": "resource_sources.py:314 guard disabled",
+      "state": "killed",
+      "old": "lib.task_info(task, 22, ctypes.byref(info), ctypes.byref(count)) != 0",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 29,
+      "label": "resource_sources.py:316 guard disabled",
+      "state": "killed",
+      "old": "count.value != capacity",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 30,
+      "label": "resource_sources.py:340 guard disabled",
+      "state": "killed",
+      "old": "not lib.GlobalMemoryStatusEx(ctypes.byref(stats))",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 31,
+      "label": "resource_sources.py:362 guard disabled",
+      "state": "killed",
+      "old": "handle in (None, 0, -1, ctypes.c_void_p(-1).value)",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 32,
+      "label": "resource_sources.py:399 guard disabled",
+      "state": "killed",
+      "old": "sys.platform not in ('linux', 'darwin')",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_source_text_protocols_and_no_controller_mode",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_source_text_protocols_and_no_controller_mode"
+      ],
+      "scope_reason": "collect rejects unsupported platforms before disk_capacity; direct helper-only platform guard."
+    },
+    {
+      "index": 33,
+      "label": "resource_sources.py:40 guard disabled",
+      "state": "killed",
+      "old": "available <= 0",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 34,
+      "label": "resource_sources.py:82 guard disabled",
+      "state": "killed",
+      "old": "re.search(r'\\\\(?![0-7]{3})', value)",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 35,
+      "label": "resource_sources.py:104 guard disabled",
+      "state": "killed",
+      "old": "len(parts) != 3 or not parts[0].isdigit()",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_path_validation_reaches_cli"
+      ]
+    },
+    {
+      "index": 36,
+      "label": "resource_sources.py:104 Or clause 1 removed",
+      "state": "killed",
+      "old": "len(parts) != 3 or not parts[0].isdigit()",
+      "new": "False or not parts[0].isdigit()",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 37,
+      "label": "resource_sources.py:104 Or clause 2 removed",
+      "state": "killed",
+      "old": "len(parts) != 3 or not parts[0].isdigit()",
+      "new": "len(parts) != 3 or False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 38,
+      "label": "resource_sources.py:107 guard disabled",
+      "state": "killed",
+      "old": "'memory' in parts[1].split(',')",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_root_and_address_modes_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_root_and_address_modes_reach_cli"
+      ]
+    },
+    {
+      "index": 39,
+      "label": "resource_sources.py:115 guard disabled",
+      "state": "killed",
+      "old": "rows[:1] != [['#subsys_name', 'hierarchy', 'num_cgroups', 'enabled']]",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resource_controller_evidence.py::test_empty_controller_file_refuses_public_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_empty_controller_file_refuses_public_cli",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_reported_malformed_disabled_memory_refuses_public_cli",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_header_required"
+      ]
+    },
+    {
+      "index": 40,
+      "label": "resource_sources.py:137 guard disabled",
+      "state": "killed",
+      "old": "len(parts) != 2",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 41,
+      "label": "resource_sources.py:157 guard disabled",
+      "state": "killed",
+      "old": "len(set(controllers)) != len(controllers)\n                or any(not re.fullmatch(r'[a-z][a-z0-9_]*', c) for c in controllers)",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 42,
+      "label": "resource_sources.py:157 Or clause 1 removed",
+      "state": "killed",
+      "old": "len(set(controllers)) != len(controllers)\n                or any(not re.fullmatch(r'[a-z][a-z0-9_]*', c) for c in controllers)",
+      "new": "False or any((not re.fullmatch('[a-z][a-z0-9_]*', c) for c in controllers))",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 43,
+      "label": "resource_sources.py:157 Or clause 2 removed",
+      "state": "killed",
+      "old": "len(set(controllers)) != len(controllers)\n                or any(not re.fullmatch(r'[a-z][a-z0-9_]*', c) for c in controllers)",
+      "new": "len(set(controllers)) != len(controllers) or False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 44,
+      "label": "resource_sources.py:162 guard disabled",
+      "state": "killed",
+      "old": "(root_max is None) != (root_current is None)",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_root_and_address_modes_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_root_and_address_modes_reach_cli"
+      ]
+    },
+    {
+      "index": 45,
+      "label": "resource_sources.py:291 guard disabled",
+      "state": "killed",
+      "old": "lib.host_statistics64(host, 4, ctypes.byref(stats), ctypes.byref(count)) != 0",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 4,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 46,
+      "label": "resource_sources.py:293 guard disabled",
+      "state": "killed",
+      "old": "not 24 <= count.value <= capacity or stats.speculative_count > stats.free_count",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 47,
+      "label": "resource_sources.py:293 Or clause 1 removed",
+      "state": "killed",
+      "old": "not 24 <= count.value <= capacity or stats.speculative_count > stats.free_count",
+      "new": "False or stats.speculative_count > stats.free_count",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 48,
+      "label": "resource_sources.py:293 Or clause 2 removed",
+      "state": "killed",
+      "old": "not 24 <= count.value <= capacity or stats.speculative_count > stats.free_count",
+      "new": "not 24 <= count.value <= capacity or False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 49,
+      "label": "resource_sources.py:293 chain bound 1 removed",
+      "state": "killed",
+      "old": "24 <= count.value <= capacity",
+      "new": "(count.value <= capacity)",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 50,
+      "label": "resource_sources.py:293 chain bound 2 removed",
+      "state": "killed",
+      "old": "24 <= count.value <= capacity",
+      "new": "(24 <= count.value)",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 51,
+      "label": "resource_sources.py:296 guard disabled",
+      "state": "killed",
+      "old": "lib.sysctlbyname(b'hw.memsize', ctypes.byref(total), ctypes.byref(size), None, 0) != 0",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 4,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 52,
+      "label": "resource_sources.py:298 guard disabled",
+      "state": "killed",
+      "old": "size.value != ctypes.sizeof(total)",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 53,
+      "label": "resource_sources.py:305 guard disabled",
+      "state": "killed",
+      "old": "lib.mach_port_deallocate(task, host) != 0",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 54,
+      "label": "resource_sources.py:349 guard disabled",
+      "state": "killed",
+      "old": "not stat.S_ISDIR(identity.st_mode)",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_output_file_refuses_before_open",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_output_file_refuses_before_open"
+      ]
+    },
+    {
+      "index": 55,
+      "label": "resource_sources.py:366 guard disabled",
+      "state": "killed",
+      "old": "not lib.GetFileInformationByHandle(handle, ctypes.byref(information))",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 56,
+      "label": "resource_sources.py:368 guard disabled",
+      "state": "killed",
+      "old": "not information.dwFileAttributes & 16",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 57,
+      "label": "resource_sources.py:371 guard disabled",
+      "state": "killed",
+      "old": "not required",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 58,
+      "label": "resource_sources.py:374 guard disabled",
+      "state": "killed",
+      "old": "required > 32768",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 59,
+      "label": "resource_sources.py:378 guard disabled",
+      "state": "killed",
+      "old": "not written",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 60,
+      "label": "resource_sources.py:380 guard disabled",
+      "state": "killed",
+      "old": "written >= required",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 61,
+      "label": "resource_sources.py:384 guard disabled",
+      "state": "killed",
+      "old": "not volume",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 62,
+      "label": "resource_sources.py:387 guard disabled",
+      "state": "killed",
+      "old": "not lib.GetDiskFreeSpaceExW(volume[1], ctypes.byref(available), ctypes.byref(total), ctypes.byref(free))",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 63,
+      "label": "resource_sources.py:392 guard disabled",
+      "state": "killed",
+      "old": "not lib.CloseHandle(handle)",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli"
+      ]
+    },
+    {
+      "index": 64,
+      "label": "resource_sources.py:410 guard disabled",
+      "state": "killed",
+      "old": "not stat.S_ISDIR(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 65,
+      "label": "resource_sources.py:410 Or clause 1 removed",
+      "state": "killed",
+      "old": "not stat.S_ISDIR(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)",
+      "new": "False or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 66,
+      "label": "resource_sources.py:410 Or clause 2 removed",
+      "state": "killed",
+      "old": "not stat.S_ISDIR(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)",
+      "new": "not stat.S_ISDIR(opened.st_mode) or False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 67,
+      "label": "resource_sources.py:416 guard disabled",
+      "state": "killed",
+      "old": "(after.st_dev, after.st_ino) != (opened.st_dev, opened.st_ino)",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 68,
+      "label": "resource_sources.py:92 guard disabled",
+      "state": "killed",
+      "old": "not match or match[1] in values",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 69,
+      "label": "resource_sources.py:92 Or clause 1 removed",
+      "state": "killed",
+      "old": "not match or match[1] in values",
+      "new": "False or match[1] in values",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 70,
+      "label": "resource_sources.py:92 Or clause 2 removed",
+      "state": "killed",
+      "old": "not match or match[1] in values",
+      "new": "not match or False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 71,
+      "label": "resource_sources.py:119 guard disabled",
+      "state": "killed",
+      "old": "len(row) != 4",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_row_requires_four_fields",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_row_requires_four_fields"
+      ]
+    },
+    {
+      "index": 72,
+      "label": "resource_sources.py:122 guard disabled",
+      "state": "killed",
+      "old": "not re.fullmatch(r'[a-z][a-z0-9_]*', name) or name in controllers",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_names_are_valid",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_names_are_valid",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_duplicate_controller_names_refuse"
+      ]
+    },
+    {
+      "index": 73,
+      "label": "resource_sources.py:122 Or clause 1 removed",
+      "state": "killed",
+      "old": "not re.fullmatch(r'[a-z][a-z0-9_]*', name) or name in controllers",
+      "new": "False or name in controllers",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_names_are_valid",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_names_are_valid"
+      ]
+    },
+    {
+      "index": 74,
+      "label": "resource_sources.py:122 Or clause 2 removed",
+      "state": "killed",
+      "old": "not re.fullmatch(r'[a-z][a-z0-9_]*', name) or name in controllers",
+      "new": "not re.fullmatch('[a-z][a-z0-9_]*', name) or False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_controller_evidence.py::test_duplicate_controller_names_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_duplicate_controller_names_refuse"
+      ]
+    },
+    {
+      "index": 75,
+      "label": "resource_sources.py:126 guard disabled",
+      "state": "killed",
+      "old": "enabled not in ('0', '1')",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_enabled_is_binary",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_enabled_is_binary"
+      ]
+    },
+    {
+      "index": 76,
+      "label": "resource_sources.py:141 guard disabled",
+      "state": "killed",
+      "old": "len(left) < 6 or len(right) < 3",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 77,
+      "label": "resource_sources.py:141 Or clause 1 removed",
+      "state": "killed",
+      "old": "len(left) < 6 or len(right) < 3",
+      "new": "False or len(right) < 3",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 78,
+      "label": "resource_sources.py:141 Or clause 2 removed",
+      "state": "killed",
+      "old": "len(left) < 6 or len(right) < 3",
+      "new": "len(left) < 6 or False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli"
+      ]
+    },
+    {
+      "index": 79,
+      "label": "resource_sources.py:270 mach_host_self argtypes weakened",
+      "state": "killed",
+      "old": "[]",
+      "new": "[c.c_void_p]",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 80,
+      "label": "resource_sources.py:270 mach_host_self restype weakened",
+      "state": "killed",
+      "old": "c.c_uint32",
+      "new": "c.c_short",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 81,
+      "label": "resource_sources.py:271 host_statistics64 argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_uint32, c.c_int, c.c_void_p, c.POINTER(c.c_uint32)]",
+      "new": "[c.c_void_p, c.c_int, c.c_void_p, c.POINTER(c.c_uint32)]",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 82,
+      "label": "resource_sources.py:271 host_statistics64 restype weakened",
+      "state": "killed",
+      "old": "c.c_int",
+      "new": "c.c_short",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 83,
+      "label": "resource_sources.py:272 sysctlbyname argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_char_p, c.c_void_p, c.POINTER(c.c_size_t), c.c_void_p, c.c_size_t]",
+      "new": "[c.c_void_p, c.c_void_p, c.POINTER(c.c_size_t), c.c_void_p, c.c_size_t]",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 84,
+      "label": "resource_sources.py:272 sysctlbyname restype weakened",
+      "state": "killed",
+      "old": "c.c_int",
+      "new": "c.c_short",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 85,
+      "label": "resource_sources.py:273 mach_port_deallocate argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_uint32, c.c_uint32]",
+      "new": "[c.c_void_p, c.c_uint32]",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 86,
+      "label": "resource_sources.py:273 mach_port_deallocate restype weakened",
+      "state": "killed",
+      "old": "c.c_int",
+      "new": "c.c_short",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 87,
+      "label": "resource_sources.py:274 task_info argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_uint32, c.c_int, c.c_void_p, c.POINTER(c.c_uint32)]",
+      "new": "[c.c_void_p, c.c_int, c.c_void_p, c.POINTER(c.c_uint32)]",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 88,
+      "label": "resource_sources.py:274 task_info restype weakened",
+      "state": "killed",
+      "old": "c.c_int",
+      "new": "c.c_short",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 89,
+      "label": "resource_sources.py:325 GlobalMemoryStatusEx argtypes weakened",
+      "state": "killed",
+      "old": "[c.POINTER(MemoryStatusEx)]",
+      "new": "[c.c_void_p]",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 90,
+      "label": "resource_sources.py:325 GlobalMemoryStatusEx restype weakened",
+      "state": "killed",
+      "old": "c.c_int",
+      "new": "c.c_short",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 91,
+      "label": "resource_sources.py:326 GetDiskFreeSpaceExW argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_wchar_p, c.POINTER(c.c_uint64), c.POINTER(c.c_uint64), c.POINTER(c.c_uint64)]",
+      "new": "[c.c_void_p, c.POINTER(c.c_uint64), c.POINTER(c.c_uint64), c.POINTER(c.c_uint64)]",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 92,
+      "label": "resource_sources.py:326 GetDiskFreeSpaceExW restype weakened",
+      "state": "killed",
+      "old": "c.c_int",
+      "new": "c.c_short",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 93,
+      "label": "resource_sources.py:327 CreateFileW argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_wchar_p, c.c_uint32, c.c_uint32, c.c_void_p, c.c_uint32, c.c_uint32, c.c_void_p]",
+      "new": "[c.c_void_p, c.c_uint32, c.c_uint32, c.c_void_p, c.c_uint32, c.c_uint32, c.c_void_p]",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 94,
+      "label": "resource_sources.py:327 CreateFileW restype weakened",
+      "state": "killed",
+      "old": "c.c_void_p",
+      "new": "c.c_short",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 95,
+      "label": "resource_sources.py:328 GetFileInformationByHandle argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_void_p, c.POINTER(FileInformation)]",
+      "new": "[c.c_int, c.POINTER(FileInformation)]",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 96,
+      "label": "resource_sources.py:328 GetFileInformationByHandle restype weakened",
+      "state": "killed",
+      "old": "c.c_int",
+      "new": "c.c_short",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 97,
+      "label": "resource_sources.py:329 GetFinalPathNameByHandleW argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_void_p, c.c_wchar_p, c.c_uint32, c.c_uint32]",
+      "new": "[c.c_int, c.c_wchar_p, c.c_uint32, c.c_uint32]",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 98,
+      "label": "resource_sources.py:329 GetFinalPathNameByHandleW restype weakened",
+      "state": "killed",
+      "old": "c.c_uint32",
+      "new": "c.c_short",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 99,
+      "label": "resource_sources.py:330 CloseHandle argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_void_p]",
+      "new": "[c.c_int]",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 100,
+      "label": "resource_sources.py:330 CloseHandle restype weakened",
+      "state": "killed",
+      "old": "c.c_int",
+      "new": "c.c_short",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 101,
+      "label": "resources.py:189 guard disabled",
+      "state": "killed",
+      "old": "__name__ == '__main__'",
+      "new": "False",
+      "scope": "public-cli-process",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_documented_gesture_yields_native_receipt_without_files",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_documented_gesture_yields_native_receipt_without_files"
+      ]
+    },
+    {
+      "index": 102,
+      "label": "resources.py:36 guard disabled",
+      "state": "killed",
+      "old": "type(fraction) not in (int, float) or fraction <= 0 or fraction >= 1\n            or not math.isfinite(fraction)",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_fraction_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_fraction_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 103,
+      "label": "resources.py:36 Or clause 1 removed",
+      "state": "killed",
+      "old": "type(fraction) not in (int, float) or fraction <= 0 or fraction >= 1\n            or not math.isfinite(fraction)",
+      "new": "False or fraction <= 0 or fraction >= 1 or (not math.isfinite(fraction))",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_library_fraction_capacity_and_disk_types",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_library_fraction_capacity_and_disk_types"
+      ],
+      "scope_reason": "argparse supplies only float fractions; nonnumeric Python object fractions are library-only inputs."
+    },
+    {
+      "index": 104,
+      "label": "resources.py:36 Or clause 2 removed",
+      "state": "killed",
+      "old": "type(fraction) not in (int, float) or fraction <= 0 or fraction >= 1\n            or not math.isfinite(fraction)",
+      "new": "type(fraction) not in (int, float) or False or fraction >= 1 or (not math.isfinite(fraction))",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_fraction_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_fraction_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 105,
+      "label": "resources.py:36 Or clause 3 removed",
+      "state": "killed",
+      "old": "type(fraction) not in (int, float) or fraction <= 0 or fraction >= 1\n            or not math.isfinite(fraction)",
+      "new": "type(fraction) not in (int, float) or fraction <= 0 or False or (not math.isfinite(fraction))",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_fraction_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_fraction_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 106,
+      "label": "resources.py:36 Or clause 4 removed",
+      "state": "killed",
+      "old": "type(fraction) not in (int, float) or fraction <= 0 or fraction >= 1\n            or not math.isfinite(fraction)",
+      "new": "type(fraction) not in (int, float) or fraction <= 0 or fraction >= 1 or False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_fraction_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_fraction_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 107,
+      "label": "resources.py:48 guard disabled",
+      "state": "killed",
+      "old": "available == 0",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_library_fraction_capacity_and_disk_types",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_library_fraction_capacity_and_disk_types"
+      ],
+      "scope_reason": "source_row and memory_receipts reject exhausted finite sources before calculate receives available."
+    },
+    {
+      "index": 108,
+      "label": "resources.py:56 guard disabled",
+      "state": "killed",
+      "old": "workers == 0",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_budget_and_disk_boundaries_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_budget_and_disk_boundaries_reach_cli"
+      ]
+    },
+    {
+      "index": 109,
+      "label": "resources.py:63 guard disabled",
+      "state": "killed",
+      "old": "disk_available < total",
+      "new": "False",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_budget_and_disk_boundaries_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_budget_and_disk_boundaries_reach_cli"
+      ]
+    },
+    {
+      "index": 110,
+      "label": "resources.py:74 guard disabled",
+      "state": "killed",
+      "old": "not isinstance(rows, list)",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 111,
+      "label": "resources.py:113 guard disabled",
+      "state": "killed",
+      "old": "not finite",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 112,
+      "label": "resources.py:120 guard disabled",
+      "state": "killed",
+      "old": "not isinstance(value, dict) or set(value) != keys",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 113,
+      "label": "resources.py:120 Or clause 1 removed",
+      "state": "killed",
+      "old": "not isinstance(value, dict) or set(value) != keys",
+      "new": "False or set(value) != keys",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 114,
+      "label": "resources.py:120 Or clause 2 removed",
+      "state": "killed",
+      "old": "not isinstance(value, dict) or set(value) != keys",
+      "new": "not isinstance(value, dict) or False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 115,
+      "label": "resources.py:79 guard disabled",
+      "state": "killed",
+      "old": "not isinstance(row, dict) or set(row) != expected\n                or not isinstance(row['name'], str) or not row['name']\n                or not isinstance(row['location'], str) or not row['location']\n                or not isinstance(row['facts'], dict)",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 116,
+      "label": "resources.py:79 Or clause 1 removed",
+      "state": "killed",
+      "old": "not isinstance(row, dict) or set(row) != expected\n                or not isinstance(row['name'], str) or not row['name']\n                or not isinstance(row['location'], str) or not row['location']\n                or not isinstance(row['facts'], dict)",
+      "new": "False or set(row) != expected or (not isinstance(row['name'], str)) or (not row['name']) or (not isinstance(row['location'], str)) or (not row['location']) or (not isinstance(row['facts'], dict))",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 117,
+      "label": "resources.py:79 Or clause 2 removed",
+      "state": "killed",
+      "old": "not isinstance(row, dict) or set(row) != expected\n                or not isinstance(row['name'], str) or not row['name']\n                or not isinstance(row['location'], str) or not row['location']\n                or not isinstance(row['facts'], dict)",
+      "new": "not isinstance(row, dict) or False or (not isinstance(row['name'], str)) or (not row['name']) or (not isinstance(row['location'], str)) or (not row['location']) or (not isinstance(row['facts'], dict))",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 118,
+      "label": "resources.py:79 Or clause 3 removed",
+      "state": "killed",
+      "old": "not isinstance(row, dict) or set(row) != expected\n                or not isinstance(row['name'], str) or not row['name']\n                or not isinstance(row['location'], str) or not row['location']\n                or not isinstance(row['facts'], dict)",
+      "new": "not isinstance(row, dict) or set(row) != expected or False or (not row['name']) or (not isinstance(row['location'], str)) or (not row['location']) or (not isinstance(row['facts'], dict))",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 119,
+      "label": "resources.py:79 Or clause 4 removed",
+      "state": "killed",
+      "old": "not isinstance(row, dict) or set(row) != expected\n                or not isinstance(row['name'], str) or not row['name']\n                or not isinstance(row['location'], str) or not row['location']\n                or not isinstance(row['facts'], dict)",
+      "new": "not isinstance(row, dict) or set(row) != expected or (not isinstance(row['name'], str)) or False or (not isinstance(row['location'], str)) or (not row['location']) or (not isinstance(row['facts'], dict))",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 120,
+      "label": "resources.py:79 Or clause 5 removed",
+      "state": "killed",
+      "old": "not isinstance(row, dict) or set(row) != expected\n                or not isinstance(row['name'], str) or not row['name']\n                or not isinstance(row['location'], str) or not row['location']\n                or not isinstance(row['facts'], dict)",
+      "new": "not isinstance(row, dict) or set(row) != expected or (not isinstance(row['name'], str)) or (not row['name']) or False or (not row['location']) or (not isinstance(row['facts'], dict))",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 121,
+      "label": "resources.py:79 Or clause 6 removed",
+      "state": "killed",
+      "old": "not isinstance(row, dict) or set(row) != expected\n                or not isinstance(row['name'], str) or not row['name']\n                or not isinstance(row['location'], str) or not row['location']\n                or not isinstance(row['facts'], dict)",
+      "new": "not isinstance(row, dict) or set(row) != expected or (not isinstance(row['name'], str)) or (not row['name']) or (not isinstance(row['location'], str)) or False or (not isinstance(row['facts'], dict))",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 122,
+      "label": "resources.py:79 Or clause 7 removed",
+      "state": "killed",
+      "old": "not isinstance(row, dict) or set(row) != expected\n                or not isinstance(row['name'], str) or not row['name']\n                or not isinstance(row['location'], str) or not row['location']\n                or not isinstance(row['facts'], dict)",
+      "new": "not isinstance(row, dict) or set(row) != expected or (not isinstance(row['name'], str)) or (not row['name']) or (not isinstance(row['location'], str)) or (not row['location']) or False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 123,
+      "label": "resources.py:123 guard disabled",
+      "state": "killed",
+      "old": "value['mount_root'] != '/' or not isinstance(value['ancestors'], list)\n                or not value['ancestors']",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 124,
+      "label": "resources.py:123 Or clause 1 removed",
+      "state": "killed",
+      "old": "value['mount_root'] != '/' or not isinstance(value['ancestors'], list)\n                or not value['ancestors']",
+      "new": "False or not isinstance(value['ancestors'], list) or (not value['ancestors'])",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 125,
+      "label": "resources.py:123 Or clause 2 removed",
+      "state": "killed",
+      "old": "value['mount_root'] != '/' or not isinstance(value['ancestors'], list)\n                or not value['ancestors']",
+      "new": "value['mount_root'] != '/' or False or (not value['ancestors'])",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 126,
+      "label": "resources.py:123 Or clause 3 removed",
+      "state": "killed",
+      "old": "value['mount_root'] != '/' or not isinstance(value['ancestors'], list)\n                or not value['ancestors']",
+      "new": "value['mount_root'] != '/' or not isinstance(value['ancestors'], list) or False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 127,
+      "label": "resources.py:130 guard disabled",
+      "state": "killed",
+      "old": "value['ancestors'][-1] != value['mount']",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 128,
+      "label": "resources.py:165 guard disabled",
+      "state": "killed",
+      "old": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'}\n                or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW')\n                or not isinstance(disk['directory'], str) or not disk['directory']",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 129,
+      "label": "resources.py:165 Or clause 1 removed",
+      "state": "killed",
+      "old": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'}\n                or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW')\n                or not isinstance(disk['directory'], str) or not disk['directory']",
+      "new": "False or set(disk) != {'api', 'directory', 'available_bytes'} or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW') or (not isinstance(disk['directory'], str)) or (not disk['directory'])",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 130,
+      "label": "resources.py:165 Or clause 2 removed",
+      "state": "killed",
+      "old": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'}\n                or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW')\n                or not isinstance(disk['directory'], str) or not disk['directory']",
+      "new": "not isinstance(disk, dict) or False or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW') or (not isinstance(disk['directory'], str)) or (not disk['directory'])",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 131,
+      "label": "resources.py:165 Or clause 3 removed",
+      "state": "killed",
+      "old": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'}\n                or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW')\n                or not isinstance(disk['directory'], str) or not disk['directory']",
+      "new": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'} or False or (not isinstance(disk['directory'], str)) or (not disk['directory'])",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 132,
+      "label": "resources.py:165 Or clause 4 removed",
+      "state": "killed",
+      "old": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'}\n                or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW')\n                or not isinstance(disk['directory'], str) or not disk['directory']",
+      "new": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'} or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW') or False or (not disk['directory'])",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 133,
+      "label": "resources.py:165 Or clause 5 removed",
+      "state": "killed",
+      "old": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'}\n                or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW')\n                or not isinstance(disk['directory'], str) or not disk['directory']",
+      "new": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'} or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW') or (not isinstance(disk['directory'], str)) or False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 134,
+      "label": "resources.py:88 guard disabled",
+      "state": "killed",
+      "old": "limit-used <= 0",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_exhaustion_refuses_without_partial_receipt",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_exhaustion_refuses_without_partial_receipt"
+      ],
+      "scope_reason": "source_row rejects exhausted finite sources before memory_receipts receives them."
+    },
+    {
+      "index": 135,
+      "label": "resources.py:91 guard disabled",
+      "state": "killed",
+      "old": "limit-used != available",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_every_finite_source_is_validated_before_minimum",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_every_finite_source_is_validated_before_minimum"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 136,
+      "label": "resources.py:106 guard disabled",
+      "state": "killed",
+      "old": "not isinstance(key, str) or not key",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 137,
+      "label": "resources.py:106 Or clause 1 removed",
+      "state": "killed",
+      "old": "not isinstance(key, str) or not key",
+      "new": "False or not key",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 138,
+      "label": "resources.py:106 Or clause 2 removed",
+      "state": "killed",
+      "old": "not isinstance(key, str) or not key",
+      "new": "not isinstance(key, str) or False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 139,
+      "label": "resources.py:127 guard disabled",
+      "state": "killed",
+      "old": "not isinstance(path, str)",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 140,
+      "label": "resources.py:134 guard disabled",
+      "state": "killed",
+      "old": "locations != value['ancestors']",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 141,
+      "label": "resources.py:137 guard disabled",
+      "state": "killed",
+      "old": "any(value[key] is not None for key in ('mount', 'mount_root', 'process_path')) or value['ancestors'] != []",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 142,
+      "label": "resources.py:137 Or clause 1 removed",
+      "state": "killed",
+      "old": "any(value[key] is not None for key in ('mount', 'mount_root', 'process_path')) or value['ancestors'] != []",
+      "new": "False or value['ancestors'] != []",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 143,
+      "label": "resources.py:137 Or clause 2 removed",
+      "state": "killed",
+      "old": "any(value[key] is not None for key in ('mount', 'mount_root', 'process_path')) or value['ancestors'] != []",
+      "new": "any((value[key] is not None for key in ('mount', 'mount_root', 'process_path'))) or False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 144,
+      "label": "resources.py:95 guard disabled",
+      "state": "killed",
+      "old": "limit is not None or available is not None",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 145,
+      "label": "resources.py:95 Or clause 1 removed",
+      "state": "killed",
+      "old": "limit is not None or available is not None",
+      "new": "False or available is not None",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 146,
+      "label": "resources.py:95 Or clause 2 removed",
+      "state": "killed",
+      "old": "limit is not None or available is not None",
+      "new": "limit is not None or False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 147,
+      "label": "resources.py:98 guard disabled",
+      "state": "killed",
+      "old": "name not in ('RLIMIT_AS', 'cgroup-v2-root')",
+      "new": "False",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 148,
+      "label": "controller hierarchy numeric validation removed",
+      "state": "killed",
+      "old": "unsigned(hierarchy, '/proc/cgroups')",
+      "new": "pass",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_hierarchy_is_unsigned",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_hierarchy_is_unsigned",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_unrelated_controller_fields_are_validated"
+      ]
+    },
+    {
+      "index": 149,
+      "label": "controller count numeric validation removed",
+      "state": "killed",
+      "old": "unsigned(count, '/proc/cgroups')",
+      "new": "pass",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_count_is_unsigned",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_controller_count_is_unsigned",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_unrelated_controller_fields_are_validated"
+      ]
+    },
+    {
+      "index": 150,
+      "label": "finite conversion precedes oversized fraction range validation",
+      "state": "killed",
+      "old": "type(fraction) not in (int, float) or fraction <= 0 or fraction >= 1\n            or not math.isfinite(fraction)",
+      "new": "type(fraction) not in (int, float) or not math.isfinite(fraction)\n            or fraction <= 0 or fraction >= 1",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resource_oversized_fraction.py::test_positive_oversized_integer_fraction_refuses",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_oversized_fraction.py::test_positive_oversized_integer_fraction_refuses",
+        "FAILED tests/test_parity_resource_oversized_fraction.py::test_negative_oversized_integer_fraction_refuses"
+      ],
+      "scope_reason": "argparse parses fraction strings as float; oversized Python integer fractions only reach the library API."
+    },
+    {
+      "index": 151,
+      "label": "finite minimum becomes maximum",
+      "state": "killed",
+      "old": "return encoded, min(finite)",
+      "new": "return encoded, max(finite)",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_root_and_address_modes_reach_cli"
+      ]
+    },
+    {
+      "index": 152,
+      "label": "source current usage ignored",
+      "state": "killed",
+      "old": "available, mode = limit-used,",
+      "new": "available, mode = limit,",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 14,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_memory_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_windows_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_cpu_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_overhead_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_budget_and_disk_boundaries_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_real_read_error_translation_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_root_and_address_modes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_valid_noncontrol_unicode_path_reaches_cli",
+        "FAILED tests/test_parity_resource_controller_evidence.py::test_valid_absence_and_disabled_memory_remain_supported"
+      ]
+    },
+    {
+      "index": 153,
+      "label": "parent traversal skipped",
+      "state": "killed",
+      "old": "current = current.parent",
+      "new": "current = root",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli"
+      ]
+    },
+    {
+      "index": 154,
+      "label": "unlimited sentinel disarmed",
+      "state": "killed",
+      "old": "maximum.strip() == 'max'",
+      "new": "maximum.strip() == 'bogus'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 15,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_disk_number_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_close_failure_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_cpu_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_overhead_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_budget_and_disk_boundaries_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_bad_measurements_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_statm_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_real_read_error_translation_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_root_and_address_modes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_os_measurement_errors_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_valid_noncontrol_unicode_path_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_output_file_refuses_before_open",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli"
+      ]
+    },
+    {
+      "index": 155,
+      "label": "resident pages mistaken for virtual pages",
+      "state": "killed",
+      "old": "pages[0]*page_bytes",
+      "new": "pages[1]*page_bytes",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_statm_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_root_and_address_modes_reach_cli"
+      ]
+    },
+    {
+      "index": 156,
+      "label": "page size multiplication removed",
+      "state": "killed",
+      "old": "pages[0]*page_bytes",
+      "new": "pages[0]*1",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_statm_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_root_and_address_modes_reach_cli"
+      ]
+    },
+    {
+      "index": 157,
+      "label": "finite address-space usage ignored",
+      "state": "killed",
+      "old": "limit, virtual_bytes())",
+      "new": "limit, 0)",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 7,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_statm_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_real_read_error_translation_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_root_and_address_modes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_os_measurement_errors_reach_cli"
+      ]
+    },
+    {
+      "index": 158,
+      "label": "speculative double counted",
+      "state": "killed",
+      "old": "(stats.free_count+stats.inactive_count)*page",
+      "new": "(stats.free_count+stats.inactive_count+stats.speculative_count)*page",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli"
+      ]
+    },
+    {
+      "index": 159,
+      "label": "mutable alias used instead of held volume",
+      "state": "killed",
+      "old": "lib.GetDiskFreeSpaceExW(volume[1],",
+      "new": "lib.GetDiskFreeSpaceExW(str(resolved),",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli"
+      ]
+    },
+    {
+      "index": 160,
+      "label": "documented gesture writes bytecode",
+      "state": "killed",
+      "old": "sys.dont_write_bytecode = True",
+      "new": "sys.dont_write_bytecode = False",
+      "scope": "public-cli-process",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_documented_gesture_yields_native_receipt_without_files",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_documented_gesture_yields_native_receipt_without_files"
+      ]
+    },
+    {
+      "index": 161,
+      "label": "reserve ignored",
+      "state": "killed",
+      "old": "usable = available * (denominator-numerator) // denominator",
+      "new": "usable = available",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 162,
+      "label": "simultaneous partitions oversubscribed",
+      "state": "killed",
+      "old": "decode, output = usable//2, usable-usable//2",
+      "new": "decode, output = usable, usable",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 163,
+      "label": "decode scheduling bound ignored",
+      "state": "killed",
+      "old": "workers = min(cpu_count, decode//record_memory)",
+      "new": "workers = cpu_count",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_budget_and_disk_boundaries_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_budget_and_disk_boundaries_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli"
+      ]
+    },
+    {
+      "index": 164,
+      "label": "decoded blob expansion ignored",
+      "state": "killed",
+      "old": "blob = (decode//workers-overhead)//expansion",
+      "new": "blob = decode//workers",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli"
+      ]
+    },
+    {
+      "index": 165,
+      "label": "output record partition ignored",
+      "state": "killed",
+      "old": "records = output//record_bytes",
+      "new": "records = usable//record_bytes",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_abi_is_constructed_on_public_cli_route"
+      ]
+    },
+    {
+      "index": 166,
+      "label": "output ceiling rounded upward",
+      "state": "killed",
+      "old": "total = records*record_bytes",
+      "new": "total = output+record_bytes",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli"
+      ]
+    },
+    {
+      "index": 167,
+      "label": "initial device identity ignored",
+      "state": "killed",
+      "old": "(opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)",
+      "new": "opened.st_ino != before.st_ino",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 168,
+      "label": "initial inode identity ignored",
+      "state": "killed",
+      "old": "(opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)",
+      "new": "opened.st_dev != before.st_dev",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 169,
+      "label": "post-measurement device identity ignored",
+      "state": "killed",
+      "old": "(after.st_dev, after.st_ino) != (opened.st_dev, opened.st_ino)",
+      "new": "after.st_ino != opened.st_ino",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 170,
+      "label": "post-measurement inode identity ignored",
+      "state": "killed",
+      "old": "(after.st_dev, after.st_ino) != (opened.st_dev, opened.st_ino)",
+      "new": "after.st_dev != opened.st_dev",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_identity_refusals_reach_cli"
+      ]
+    },
+    {
+      "index": 171,
+      "label": "native ancestor order reversed",
+      "state": "killed",
+      "old": "ancestors.append(str(current))",
+      "new": "ancestors.insert(0, str(current))",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 7,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_measured_cpu_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_cpu_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_measured_overhead_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_budget_and_disk_boundaries_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_real_read_error_translation_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_root_and_address_modes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_valid_noncontrol_unicode_path_reaches_cli"
+      ]
+    },
+    {
+      "index": 172,
+      "label": "finite address-space source detached from snapshot",
+      "state": "killed",
+      "old": "rows.append(posix_address_space())",
+      "new": "pass",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 8,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_darwin_virtual_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_arithmetic_and_complete_provenance_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_native_success_routes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_statm_refusals_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_real_read_error_translation_reaches_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_linux_root_and_address_modes_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_os_measurement_errors_reach_cli",
+        "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli"
+      ]
+    },
+    {
+      "index": 173,
+      "label": "source provenance order weakened to membership",
+      "state": "killed",
+      "old": "locations != value['ancestors']",
+      "new": "set(locations) != set(value['ancestors'])",
+      "scope": "library-contract-only",
+      "public_control_state": "survived",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+      ],
+      "scope_reason": "The intact gatherer constructs the row, facts, disk and provenance shapes together; violating this defensive contract requires a fabricated snapshot or direct helper input, not raw OS measurements. Existing tests inject that library-contract input and do not constitute main-plus-collect evidence."
+    },
+    {
+      "index": 174,
+      "label": "CI provenance order weakened to membership",
+      "state": "killed",
+      "old": "assert locations == cgroup['ancestors']",
+      "new": "set equality",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 175,
+      "label": "workflow:57 receipt guard removed",
+      "state": "killed",
+      "old": "assert receipt['schema'] == 'parity-resource-preflight/v1'",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 176,
+      "label": "workflow:58 receipt guard removed",
+      "state": "killed",
+      "old": "assert receipt['status'] == 'ok'",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 177,
+      "label": "workflow:59 receipt guard removed",
+      "state": "killed",
+      "old": "assert receipt['platform'] == expected",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 178,
+      "label": "workflow:62 receipt guard removed",
+      "state": "killed",
+      "old": "assert native[expected] in names",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 179,
+      "label": "workflow:64 receipt guard removed",
+      "state": "killed",
+      "old": "assert 'RLIMIT_AS' in names",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 180,
+      "label": "workflow:67 receipt guard removed",
+      "state": "killed",
+      "old": "assert cgroup['mode'] in ('v2', 'none')",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 181,
+      "label": "workflow:69 receipt guard removed",
+      "state": "killed",
+      "old": "assert cgroup['mount_root'] == '/'",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 182,
+      "label": "workflow:71 receipt guard removed",
+      "state": "killed",
+      "old": "assert locations == cgroup['ancestors']",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 183,
+      "label": "workflow:72 receipt guard removed",
+      "state": "killed",
+      "old": "assert locations[-1] == cgroup['mount']",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 184,
+      "label": "workflow:74 receipt guard removed",
+      "state": "killed",
+      "old": "assert cgroup['mode'] == 'not-applicable'",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 185,
+      "label": "workflow:75 receipt guard removed",
+      "state": "killed",
+      "old": "assert receipt['disk']['api'] == ('GetDiskFreeSpaceExW' if expected == 'win32' else 'fstatvfs')",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 186,
+      "label": "workflow:78 receipt guard removed",
+      "state": "killed",
+      "old": "assert re.fullmatch(r'0|[1-9][0-9]*', value)",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 187,
+      "label": "workflow:85 receipt guard removed",
+      "state": "killed",
+      "old": "assert size(row['limit_bytes']) - size(row['used_bytes']) == remaining",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 188,
+      "label": "workflow:88 receipt guard removed",
+      "state": "killed",
+      "old": "assert row['mode'] == 'unlimited'",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 189,
+      "label": "workflow:89 receipt guard removed",
+      "state": "killed",
+      "old": "assert row['limit_bytes'] is None and row['available_bytes'] is None",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 190,
+      "label": "workflow:93 receipt guard removed",
+      "state": "killed",
+      "old": "assert all(value > 0 for value in counts.values())",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 191,
+      "label": "workflow:95 receipt guard removed",
+      "state": "killed",
+      "old": "assert all(type(value) is int and value > 0 for value in (workers, expansion, cpu))",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 192,
+      "label": "workflow:96 receipt guard removed",
+      "state": "killed",
+      "old": "assert workers <= cpu",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 193,
+      "label": "workflow:97 receipt guard removed",
+      "state": "killed",
+      "old": "assert counts['available_bytes'] == min(finite)",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 194,
+      "label": "workflow:98 receipt guard removed",
+      "state": "killed",
+      "old": "assert counts['usable_bytes'] + counts['reserve_bytes'] == counts['available_bytes']",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 195,
+      "label": "workflow:99 receipt guard removed",
+      "state": "killed",
+      "old": "assert counts['decode_bytes'] + counts['output_buffer_bytes'] == counts['usable_bytes']",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 196,
+      "label": "workflow:100 receipt guard removed",
+      "state": "killed",
+      "old": "assert workers * (expansion * counts['blob_bytes_per_worker'] + counts['object_overhead_bytes']) <= counts['decode_bytes']",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 197,
+      "label": "workflow:101 receipt guard removed",
+      "state": "killed",
+      "old": "assert counts['output_bytes'] <= counts['output_buffer_bytes']",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 198,
+      "label": "workflow:102 receipt guard removed",
+      "state": "killed",
+      "old": "assert size(receipt['disk']['available_bytes']) >= counts['output_bytes']",
+      "new": "pass",
+      "scope": "workflow-validator",
+      "public_control_state": "not-applicable",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets",
+      "failing_tests": [
+        "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+      ]
+    },
+    {
+      "index": 199,
+      "label": "resource_sources.py:28 exception mapping corrupted",
+      "state": "killed",
+      "old": "'invalid-source'",
+      "new": "'wrong-error-code'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli"
+      ]
+    },
+    {
+      "index": 200,
+      "label": "resource_sources.py:59 exception mapping corrupted",
+      "state": "killed",
+      "old": "'source-unavailable'",
+      "new": "'wrong-error-code'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_real_read_error_translation_reaches_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_real_read_error_translation_reaches_cli"
+      ]
+    },
+    {
+      "index": 201,
+      "label": "resource_sources.py:61 exception mapping corrupted",
+      "state": "killed",
+      "old": "'invalid-source'",
+      "new": "'wrong-error-code'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_real_read_error_translation_reaches_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_real_read_error_translation_reaches_cli"
+      ]
+    },
+    {
+      "index": 202,
+      "label": "resource_sources.py:63 exception mapping corrupted",
+      "state": "killed",
+      "old": "'source-unavailable'",
+      "new": "'wrong-error-code'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_real_read_error_translation_reaches_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_real_read_error_translation_reaches_cli"
+      ]
+    },
+    {
+      "index": 203,
+      "label": "resource_sources.py:196 exception mapping corrupted",
+      "state": "killed",
+      "old": "'native-binding-unavailable'",
+      "new": "'wrong-error-code'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli"
+      ]
+    },
+    {
+      "index": 204,
+      "label": "resource_sources.py:198 exception mapping corrupted",
+      "state": "killed",
+      "old": "'source-unavailable'",
+      "new": "'wrong-error-code'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_os_measurement_errors_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_os_measurement_errors_reach_cli"
+      ]
+    },
+    {
+      "index": 205,
+      "label": "resource_sources.py:214 exception mapping corrupted",
+      "state": "killed",
+      "old": "'source-unavailable'",
+      "new": "'wrong-error-code'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_os_measurement_errors_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_os_measurement_errors_reach_cli"
+      ]
+    },
+    {
+      "index": 206,
+      "label": "resource_sources.py:279 exception mapping corrupted",
+      "state": "killed",
+      "old": "'native-binding-unavailable'",
+      "new": "'wrong-error-code'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_binding_and_platform_failure_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_binding_and_platform_failure_reach_cli"
+      ]
+    },
+    {
+      "index": 207,
+      "label": "resource_sources.py:333 exception mapping corrupted",
+      "state": "killed",
+      "old": "'native-binding-unavailable'",
+      "new": "'wrong-error-code'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_binding_and_platform_failure_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_binding_and_platform_failure_reach_cli"
+      ]
+    },
+    {
+      "index": 208,
+      "label": "resource_sources.py:353 exception mapping corrupted",
+      "state": "killed",
+      "old": "'source-unavailable'",
+      "new": "'wrong-error-code'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli"
+      ]
+    },
+    {
+      "index": 209,
+      "label": "resource_sources.py:355 exception mapping corrupted",
+      "state": "killed",
+      "old": "'invalid-input'",
+      "new": "'wrong-error-code'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli"
+      ]
+    },
+    {
+      "index": 210,
+      "label": "resource_sources.py:405 exception mapping corrupted",
+      "state": "killed",
+      "old": "'native-binding-unavailable'",
+      "new": "'wrong-error-code'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli"
+      ]
+    },
+    {
+      "index": 211,
+      "label": "resource_sources.py:407 exception mapping corrupted",
+      "state": "killed",
+      "old": "'source-unavailable'",
+      "new": "'wrong-error-code'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_raw_measurement_exception_clauses_reach_cli"
+      ]
+    },
+    {
+      "index": 212,
+      "label": "resource_sources.py:420 exception mapping corrupted",
+      "state": "killed",
+      "old": "'source-unavailable'",
+      "new": "'wrong-error-code'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_os_measurement_errors_reach_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_os_measurement_errors_reach_cli"
+      ]
+    },
+    {
+      "index": 213,
+      "label": "resource_sources.py:425 exception mapping corrupted",
+      "state": "killed",
+      "old": "'source-unavailable'",
+      "new": "'wrong-error-code'",
+      "scope": "public-argv-measurement",
+      "public_control_state": "killed",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resource_cli_controls.py::test_posix_close_failure_reaches_cli",
+      "failing_tests": [
+        "FAILED tests/test_parity_resource_cli_controls.py::test_posix_close_failure_reaches_cli"
+      ]
+    }
+  ],
+  "scope_counts": {
+    "public-argv-measurement": 142,
+    "library-contract-only": 44,
+    "public-cli-process": 2,
+    "workflow-validator": 25
+  },
+  "new_public_test_nodes": [
+    "test_binding_and_platform_failure_reach_cli",
+    "test_budget_and_disk_boundaries_reach_cli",
+    "test_darwin_memory_refusals_reach_cli",
+    "test_darwin_virtual_refusals_reach_cli",
+    "test_fraction_refusals_reach_cli",
+    "test_linux_arithmetic_and_complete_provenance_reach_cli",
+    "test_linux_bad_measurements_reach_cli",
+    "test_linux_path_validation_reaches_cli",
+    "test_linux_root_and_address_modes_reach_cli",
+    "test_linux_statm_refusals_reach_cli",
+    "test_measured_cpu_refusals_reach_cli",
+    "test_measured_overhead_refusals_reach_cli",
+    "test_native_abi_is_constructed_on_public_cli_route",
+    "test_native_success_routes_reach_cli",
+    "test_os_measurement_errors_reach_cli",
+    "test_output_file_refuses_before_open",
+    "test_posix_close_failure_reaches_cli",
+    "test_posix_disk_number_refusals_reach_cli",
+    "test_posix_identity_refusals_reach_cli",
+    "test_raw_measurement_exception_clauses_reach_cli",
+    "test_real_read_error_translation_reaches_cli",
+    "test_record_refusals_reach_cli",
+    "test_valid_noncontrol_unicode_path_reaches_cli",
+    "test_windows_refusals_reach_cli"
+  ],
+  "new_public_test_nodes_seen_red": 24,
+  "previous_controller_control_run": {
+    "seconds": 79.5053981670062,
+    "harness_sha256": "aa0554ca1694fa3cecdf8a21ebdabef0a04b7ad23d1a0400e54ed53321e7064b",
+    "raw_report_sha256": "519b8375ea234126f2110a0395f1a620b8c9d9b41a0412415090a1f47684433d",
+    "test_sha256_by_path": {
+      "tests/test_parity_resources.py": "d8be132b79b8d26292b9cf7ca674e51a9a2ef62c59096e235b521f41853182c4",
+      "tests/test_parity_resource_controller_evidence.py": "2fa68c4e1b4b3c5fd7c90b251481ac315fef2ee327a8b8fa21105e1c42e0f040",
+      "tests/test_parity_resource_oversized_fraction.py": "8b76ef4d25090fd38f60706c7f762ffc261664043d2863ccc21bf9116da0b65f"
+    },
+    "restored_green": {
+      "passed": 68,
+      "seconds": 4.07,
+      "includes_direct_gh_ratchet": true,
+      "raw_report_sha256": "443db2d5796c824f640ad84e79fcfb8f7d4407d275e27a2cf3b087b51482834f"
+    }
+  }
+}
