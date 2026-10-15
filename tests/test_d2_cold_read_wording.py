@@ -39,7 +39,8 @@ def test_implement_requires_an_approving_plan_review_before_starting():
 
 
 def test_verify_prefers_the_projects_verify_command_over_a_weaker_check():
-    assert "**Verify command** if set" in _skill("sigma-verify")
+    # round 3 F04: the configured command is the goal's `verify_command` / config `verify.command` (what the code reads)
+    assert "`verify.command`" in _skill("sigma-verify") and "else repo tests/build/lint" in " ".join(_skill("sigma-verify").split())
 
 
 def test_plan_review_fix_first_blocks_implement():
@@ -132,3 +133,46 @@ def test_followup_is_never_a_project_rule_violation():                      # F1
     review = " ".join(_skill("sigma-review").split())
     assert "except for a project-rule violation: that blocks unless the owners waive it" in review
     assert "or a project-rule violation (quote the rule)" in review
+
+
+# --- third independent Codex read, docs/launch/evidence/review-s5-codex-read-round3-9065e4aa5076.md ---
+
+def _flat(path):
+    return " ".join((SKILLS / path).read_text(encoding="utf-8").split())
+
+
+def test_failing_case_rule_states_the_risk_review_exception():              # F03
+    review = _flat("sigma-review/SKILL.md")
+    assert "The failing-case rule binds this general review's findings; a dedicated risk review's `critical`/`high` blocks without one" in review
+    assert "Reporting one you could not write a failing case for, as blocking" not in review
+    assert "(a risk review's `critical`/`high` excepted)" in _flat("sigma-review/references/axes.md")
+
+
+def test_verify_command_precedence_is_the_codes():                          # F04 (code: state.declared_verify_commands)
+    assert "goal frontmatter `verify_command`, else config `verify.command` (as `loop.py verify`; `project.md` is not read)" in _flat("sigma-verify/SKILL.md")
+    assert "Verify command** if set" not in _flat("sigma-verify/SKILL.md")
+    assert "frontmatter `verify_command`, else config `verify.command`; `project.md` is not read" in _ref("landing.md")
+    assert "(frontmatter `verify_command`, else `verify.command`)" in _ref("running.md")
+
+
+def test_autonomous_retro_writes_the_kg_note_too():                         # F05
+    for text in (_flat("sigma-loop/SKILL.md"), _ref("progress.md")):
+        assert "write only the audit-trail notes and the KG corpus note when `knowledge_graph.enabled`" in text
+
+
+def test_secret_path_exception_is_a_humans_to_add():                        # F08
+    landing = _ref("landing.md")
+    assert "which a human adds: never add or edit it (or any secret exception) yourself" in landing
+    assert "the answer is the EXACT path" not in landing
+
+
+def test_pr_review_verdict_words_map_to_evidence_results():                 # F09
+    review = _flat("sigma-review/SKILL.md")
+    assert "APPROVE→`approve`, SEND-BACK or BLOCK→`block`" in review
+    assert "you return `unblock` only when clearing a prior loop block, never inferred from APPROVE" in review
+
+
+def test_ceiling_branch_records_failed_not_parked():                        # F14
+    running = _ref("running.md")
+    assert "record it `failed` (`parked` only for a human decision)" in running
+    assert "park or fail it rather than cycling" not in running

@@ -58,16 +58,14 @@ it; treating a kill as live wastes a turn.
 
 With `config.verify.enforce` on, a `done` needs FRESH machine evidence first —
 `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" verify .sdlc "$goal"` runs the goal's proving
-command (frontmatter `verify_command`, else `verify.command`) and records it; `record done` is
+command (frontmatter `verify_command`, else config `verify.command`; `project.md` is not read) and records it; `record done` is
 REFUSED without a passing, this-run verify. **Before that command ever runs, `loop.py verify`
 now checks the worktree isn't stale (#1890)** — a worktree that has drifted behind its own base
 auto-rebases via the same `rebase()` `work.py merge` already trusts, and says so on stderr; one
 that cannot apply cleanly REFUSES outright rather than run the suite against code already known
 to be behind — exit `4`, and no evidence is written, so the refusal above already covers it with
-nothing further for you to check. (This exit `4` is `loop.py verify`'s own, unrelated to the
-different exit `4` `loop.py record` uses further down this same file for its own PR-unmerged
-refusal — two separate subcommands, two separate exit-code spaces, never confused for one
-another because you never branch on the bare number, only on which command produced it.)
+nothing further for you to check. (This exit `4` is `loop.py verify`'s own, not the
+exit `4` of `loop.py record` below: branch on which command produced it.)
 **This call has no timeout of its own — size your tool-call timeout to the PROJECT's verify
 command, not to a Sigma default.** `loop.py verify` runs that command through a bare
 `subprocess.run(..., cwd=root)` with no `timeout=` argument, so the call's wall time is exactly
@@ -113,8 +111,8 @@ offending path, takes those paths back out of the index, and leaves every file o
 **Do exactly what the refusal prints** — it gives you a
 ready-made `.gitignore` line (already escaped and anchored; the raw path often is NOT a valid
 pattern), and for a file already tracked here, the `git rm --cached` that must come with it.
-Then re-run `commit`. Never `git add -f` past it. For a fixture, a certificate, or a file this repo commits ON PURPOSE, the answer is the EXACT path in `work.allow_secret_paths` in
-`.sdlc/config.json`. **Deleting a secret is
+Then re-run `commit`. Never `git add -f` past it. For a fixture, a certificate, or a file this repo commits ON PURPOSE, the exception is the EXACT path in `work.allow_secret_paths` in
+`.sdlc/config.json`, which a human adds: never add or edit it (or any secret exception) yourself; `record parked "<why>"`. Config edits are not authenticated. **Deleting a secret is
 never refused.**
 
 **A content hit** (`credential-assignment`): Remove the literal or read it from the environment, then

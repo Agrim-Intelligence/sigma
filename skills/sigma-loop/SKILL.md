@@ -172,16 +172,16 @@ Then repeat until the helper says stop:
    first create/edit/delete per phase and record 🔒 Critical Insights. Banner and inline details:
    `references/progress.md`.
 4. Entering the **review** phase? Move the board card to QC:
-   `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" qc .sdlc "$goal"` (github-project board only — a no-op for local/issues).
+   `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" qc .sdlc "$goal"` (github-project board only; no-op otherwise).
 5. **Retrospective (Learn)** — after Review, run the **`sigma-retro`** executor (output advisory; the phase is required unless the owner's recorded trivial-goal `waive-phases` call waived it). Under
-   `config.review.independent` this too runs through the resolver, not as an assertion. Autonomous
-   mode → **write only the audit-trail notes**, and **park** any north-star / standing-rule proposal
+   `config.review.independent` this too runs through the resolver. Autonomous
+   mode → **write only the audit-trail notes and the KG corpus note when `knowledge_graph.enabled`**, and **park** any north-star / standing-rule proposal
    to the review queue for a human; never edit a standing doc unattended.
 6. Record the outcome, including the retro grade from step 5 if Retrospective ran:
    `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" record .sdlc "$goal" done --retro-grade
    achieved|partial|diverged` (or `parked "reason" --qkind <kind>` / `failed "reason" ...`; omit the flag on a
-   goal that never reached Retrospective). The grade never substitutes for verified `done_when`. Passing it is also what refreshes the knowledge graph
-   when `knowledge_graph.auto_refresh` is `true`. **Do not run a graph build by hand as well.**
+   goal that never reached Retrospective). The grade never substitutes for verified `done_when`. Passing it also refreshes the graph
+   when `knowledge_graph.auto_refresh` is `true`. **Never also run a graph build by hand.**
 
    **REQUIRED PATTERN** — any blocking call (`loop.py verify`, `work.py merge`, a dispatched
    review-gate subagent, or any other long-running step a phase must wait on): issue it as ONE
