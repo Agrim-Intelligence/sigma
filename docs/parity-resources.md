@@ -35,6 +35,9 @@ not an invented zero. A namespace can display an outer non-root group at its vis
 when both accounting files exist there, their limit and usage remain applicable. A partial
 pair or unreadable evidence refuses rather than becoming unlimited. Only an absent controller
 with no mapped-root accounting is a distinct `none` mode.
+Without a unified membership, `/proc/cgroups` must have its kernel header and valid,
+unique controller rows with unsigned hierarchy/count fields and a binary enabled field.
+Empty or malformed evidence refuses; a validated absent or disabled memory controller permits `none`.
 
 Mach speculative pages are already included in free pages and are not added again. Native
 return codes and returned structure sizes are checked; the acquired Mach host port is

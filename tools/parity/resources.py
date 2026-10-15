@@ -33,8 +33,8 @@ def object_overhead():
 
 
 def reserve_ratio(fraction):
-    if (type(fraction) not in (int, float) or not math.isfinite(fraction)
-            or fraction <= 0 or fraction >= 1):
+    if (type(fraction) not in (int, float) or fraction <= 0 or fraction >= 1
+            or not math.isfinite(fraction)):
         raise sources.Refused('invalid-input', 'arguments')
     return float(fraction).as_integer_ratio()
 

@@ -110,10 +110,23 @@ def linux_cgroup_location():
         if parts[0] == '0' and parts[1] == '':
             paths.append(path)
     if not paths:
-        controllers = read_text('/proc/cgroups', '/proc/cgroups')
-        memory = [line.split() for line in controllers.splitlines() if line.startswith('memory\t')
-                  or line.startswith('memory ')]
-        if not memory or (len(memory) == 1 and len(memory[0]) == 4 and memory[0][3] == '0'):
+        # Absence is evidence only after validating the complete kernel table.
+        rows = [line.split() for line in read_text('/proc/cgroups', '/proc/cgroups').splitlines()]
+        if rows[:1] != [['#subsys_name', 'hierarchy', 'num_cgroups', 'enabled']]:
+            raise Refused('invalid-source', '/proc/cgroups')
+        controllers = {}
+        for row in rows[1:]:
+            if len(row) != 4:
+                raise Refused('invalid-source', '/proc/cgroups')
+            name, hierarchy, count, enabled = row
+            if not re.fullmatch(r'[a-z][a-z0-9_]*', name) or name in controllers:
+                raise Refused('invalid-source', '/proc/cgroups')
+            unsigned(hierarchy, '/proc/cgroups')
+            unsigned(count, '/proc/cgroups')
+            if enabled not in ('0', '1'):
+                raise Refused('invalid-source', '/proc/cgroups')
+            controllers[name] = enabled
+        if controllers.get('memory', '0') == '0':
             return None, None
         raise Refused('cgroup-mapping-unsupported', '/proc/self/cgroup')
     if len(paths) != 1:
