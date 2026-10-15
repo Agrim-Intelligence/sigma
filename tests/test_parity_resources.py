@@ -137,72 +137,72 @@ def test_exact_receipt_and_hand_checked_rounding(fake_cli, tmp_path):
     assert invoke()[1]['limits']['available_bytes'] == '100000'
 
 
-@pytest.mark.parametrize('fraction', ['0', '1', '-0.1', 'nan', 'inf', '-inf', '1.01'])
-def test_fraction_clause_refuses_through_public_argv(fake_cli, fraction):
-    invoke, _, _, _ = fake_cli
-    code, receipt = invoke(['--reserve-fraction', fraction, '--record-bytes', '16', '--output-dir', '.'])
-    assert code == 2
-    assert receipt == dict(schema='parity-resource-preflight/v1', status='refused',
-                          platform=sys.platform, code='invalid-input', source='arguments', cgroup=None)
+def test_fraction_clause_refuses_through_public_argv(fake_cli):
+    for fraction in ['0', '1', '-0.1', 'nan', 'inf', '-inf', '1.01']:
+        invoke, _, _, _ = fake_cli
+        code, receipt = invoke(['--reserve-fraction', fraction, '--record-bytes', '16', '--output-dir', '.'])
+        assert code == 2
+        assert receipt == dict(schema='parity-resource-preflight/v1', status='refused',
+                              platform=sys.platform, code='invalid-input', source='arguments', cgroup=None)
 
 
-@pytest.mark.parametrize('argv', [[], ['--unknown'], ['--reserve-fraction', '0.5'],
-    ['--reserve-fraction', '0.5', '--record-bytes', '0', '--output-dir', '.'],
-    ['--reserve-fraction', '0.5', '--record-bytes', '-1', '--output-dir', '.'],
-    ['--reserve-fraction', '0.5', '--record-bytes', str(sys.maxsize+1), '--output-dir', '.'],
-    ['--reserve-fraction', '0.5', '--record-bytes', '1.2', '--output-dir', '.']])
-def test_invalid_argument_shape_is_typed(fake_cli, argv):
-    _, _, resources, _ = fake_cli
-    from io import StringIO
-    from contextlib import redirect_stdout, redirect_stderr
-    out, err = StringIO(), StringIO()
-    with redirect_stdout(out), redirect_stderr(err):
-        assert resources.main(argv) == 2
-    assert out.getvalue() == ''
-    assert json.loads(err.getvalue())['code'] == 'invalid-input'
+def test_invalid_argument_shape_is_typed(fake_cli):
+    for argv in [[], ['--unknown'], ['--reserve-fraction', '0.5'],
+        ['--reserve-fraction', '0.5', '--record-bytes', '0', '--output-dir', '.'],
+        ['--reserve-fraction', '0.5', '--record-bytes', '-1', '--output-dir', '.'],
+        ['--reserve-fraction', '0.5', '--record-bytes', str(sys.maxsize+1), '--output-dir', '.'],
+        ['--reserve-fraction', '0.5', '--record-bytes', '1.2', '--output-dir', '.']]:
+        _, _, resources, _ = fake_cli
+        from io import StringIO
+        from contextlib import redirect_stdout, redirect_stderr
+        out, err = StringIO(), StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            assert resources.main(argv) == 2
+        assert out.getvalue() == ''
+        assert json.loads(err.getvalue())['code'] == 'invalid-input'
 
 
-@pytest.mark.parametrize('key,value', [('cpu_count', 0), ('cpu_count', True),
-                                     ('cpu_count', sys.maxsize+1)])
-def test_invalid_observed_cpu_is_not_a_worker_entitlement(fake_cli, key, value):
-    invoke, snapshot, _, _ = fake_cli
-    snapshot[key] = value
-    assert invoke()[1]['code'] == 'invalid-source'
+def test_invalid_observed_cpu_is_not_a_worker_entitlement(fake_cli):
+    for key, value in [('cpu_count', 0), ('cpu_count', True),
+                                         ('cpu_count', sys.maxsize+1)]:
+        invoke, snapshot, _, _ = fake_cli
+        snapshot[key] = value
+        assert invoke()[1]['code'] == 'invalid-source'
 
 
-@pytest.mark.parametrize('value', [0, -1, True, 1.5, sys.maxsize+1])
-def test_library_record_validation(fake_cli, value):
-    _, _, resources, sources = fake_cli
-    with pytest.raises(sources.Refused) as refusal:
-        resources.calculate(100000, 0.5, value, 2, 100000)
-    assert refusal.value.code == 'invalid-input'
+def test_library_record_validation(fake_cli):
+    for value in [0, -1, True, 1.5, sys.maxsize+1]:
+        _, _, resources, sources = fake_cli
+        with pytest.raises(sources.Refused) as refusal:
+            resources.calculate(100000, 0.5, value, 2, 100000)
+        assert refusal.value.code == 'invalid-input'
 
 
-@pytest.mark.parametrize('change', [dict(limit_bytes=True), dict(used_bytes=-1),
-    dict(available_bytes=100001), dict(limit_bytes=sys.maxsize+1),
-    dict(available_bytes=1.25), dict(mode='unknown')])
-def test_every_finite_source_is_validated_before_minimum(fake_cli, change):
-    invoke, snapshot, _, _ = fake_cli
-    row = finite(limit=1000000, used=200000)
-    row.update(change)
-    snapshot['sources'].append(row)
-    code, receipt = invoke()
-    assert code == 2
-    assert receipt['code'] == 'invalid-source'
+def test_every_finite_source_is_validated_before_minimum(fake_cli):
+    for change in [dict(limit_bytes=True), dict(used_bytes=-1),
+        dict(available_bytes=100001), dict(limit_bytes=sys.maxsize+1),
+        dict(available_bytes=1.25), dict(mode='unknown')]:
+        invoke, snapshot, _, _ = fake_cli
+        row = finite(limit=1000000, used=200000)
+        row.update(change)
+        snapshot['sources'].append(row)
+        code, receipt = invoke()
+        assert code == 2
+        assert receipt['code'] == 'invalid-source'
 
 
-@pytest.mark.parametrize('available,record,disk,code', [
-    (0, 16, 100000, 'memory-exhausted'), (100, 16, 100000, 'budget-exhausted'),
-    (100000, 10000, 100000, 'budget-exhausted'),
-    (100000, 16, 24991, 'disk-exhausted')])
-def test_exhaustion_refuses_without_partial_receipt(fake_cli, available, record, disk, code):
-    invoke, snapshot, _, _ = fake_cli
-    snapshot['sources'] = [finite(limit=available+10, used=10)]
-    snapshot['disk']['available_bytes'] = disk
-    rc, receipt = invoke(['--reserve-fraction', '0.5', '--record-bytes', str(record), '--output-dir', '.'])
-    assert rc == 2
-    assert receipt['code'] == code
-    assert set(receipt) == {'schema', 'status', 'platform', 'code', 'source', 'cgroup'}
+def test_exhaustion_refuses_without_partial_receipt(fake_cli):
+    for available, record, disk, code in [
+        (0, 16, 100000, 'memory-exhausted'), (100, 16, 100000, 'budget-exhausted'),
+        (100000, 10000, 100000, 'budget-exhausted'),
+        (100000, 16, 24991, 'disk-exhausted')]:
+        invoke, snapshot, _, _ = fake_cli
+        snapshot['sources'] = [finite(limit=available+10, used=10)]
+        snapshot['disk']['available_bytes'] = disk
+        rc, receipt = invoke(['--reserve-fraction', '0.5', '--record-bytes', str(record), '--output-dir', '.'])
+        assert rc == 2
+        assert receipt['code'] == code
+        assert set(receipt) == {'schema', 'status', 'platform', 'code', 'source', 'cgroup'}
 
 
 def test_disk_equality_and_odd_partition_rounding(fake_cli):
@@ -266,31 +266,31 @@ def test_linux_minimum_and_path_identity_use_public_argv(fake_cli, monkeypatch):
     assert first['cgroup'] != second['cgroup']
 
 
-@pytest.mark.parametrize('path', ['/../escape', '/a/../b', '/a//b', '/a/./b', '/a\x00b', '/a\tb'])
-def test_cgroup_kernel_path_rejects_traversal_and_controls(modules, monkeypatch, path):
-    _, sources = modules
-    proc_fixture(monkeypatch, sources, path=path)
-    with pytest.raises(sources.Refused):
-        sources.linux_memory()
+def test_cgroup_kernel_path_rejects_traversal_and_controls(modules, monkeypatch):
+    for path in ['/../escape', '/a/../b', '/a//b', '/a/./b', '/a\x00b', '/a\tb']:
+        _, sources = modules
+        proc_fixture(monkeypatch, sources, path=path)
+        with pytest.raises(sources.Refused):
+            sources.linux_memory()
 
 
-@pytest.mark.parametrize('where,text,code', [
-    ('/proc/meminfo', 'MemTotal: 1 kB\nMemAvailable: 2 kB', 'invalid-source'),
-    ('/proc/meminfo', 'MemTotal: 1 kB', 'invalid-source'),
-    ('/proc/meminfo', 'MemTotal: 2 kB\nMemAvailable: 1 MB', 'invalid-source'),
-    ('/proc/meminfo', 'MemTotal: 2 kB\nMemAvailable: 0 kB', 'memory-exhausted'),
-    ('/sys/fs/cgroup/parent/memory.max', 'bad', 'invalid-source'),
-    ('/sys/fs/cgroup/parent/memory.current', '100001', 'memory-exhausted'),
-    ('/sys/fs/cgroup/parent/child/memory.current', '-1', 'invalid-source'),
-    ('/proc/self/cgroup', '0::/a\n0::/b\n', 'cgroup-mapping-unsupported'),
-    ('/proc/self/mountinfo', '29 23 0:26 /container /sys/fs/cgroup rw - cgroup2 cgroup rw',
-     'cgroup-mapping-unsupported')])
-def test_linux_bad_sources_refuse(modules, monkeypatch, where, text, code):
-    _, sources = modules
-    proc_fixture(monkeypatch, sources, rows={where: text})
-    with pytest.raises(sources.Refused) as refusal:
-        sources.linux_memory()
-    assert refusal.value.code == code
+def test_linux_bad_sources_refuse(modules, monkeypatch):
+    for where, text, code in [
+        ('/proc/meminfo', 'MemTotal: 1 kB\nMemAvailable: 2 kB', 'invalid-source'),
+        ('/proc/meminfo', 'MemTotal: 1 kB', 'invalid-source'),
+        ('/proc/meminfo', 'MemTotal: 2 kB\nMemAvailable: 1 MB', 'invalid-source'),
+        ('/proc/meminfo', 'MemTotal: 2 kB\nMemAvailable: 0 kB', 'memory-exhausted'),
+        ('/sys/fs/cgroup/parent/memory.max', 'bad', 'invalid-source'),
+        ('/sys/fs/cgroup/parent/memory.current', '100001', 'memory-exhausted'),
+        ('/sys/fs/cgroup/parent/child/memory.current', '-1', 'invalid-source'),
+        ('/proc/self/cgroup', '0::/a\n0::/b\n', 'cgroup-mapping-unsupported'),
+        ('/proc/self/mountinfo', '29 23 0:26 /container /sys/fs/cgroup rw - cgroup2 cgroup rw',
+         'cgroup-mapping-unsupported')]:
+        _, sources = modules
+        proc_fixture(monkeypatch, sources, rows={where: text})
+        with pytest.raises(sources.Refused) as refusal:
+            sources.linux_memory()
+        assert refusal.value.code == code
 
 
 def test_linux_missing_nonroot_or_controller_evidence_refuses(modules, monkeypatch):
@@ -344,16 +344,16 @@ def test_linux_statm_uses_total_pages_and_measured_page_size(modules, monkeypatc
         '/proc/self/statm', 4100096, 5899904)
 
 
-@pytest.mark.parametrize('text,page', [('garbage', 4096), ('-1 2 3 4 5 6 7', 4096),
-    ('0 2 3 4 5 6 7', 4096), ('1001 17 3 4 5 6 7', 0),
-    (f'{sys.maxsize} 2 3 4 5 6 7', 4096)])
-def test_linux_statm_malformed_zero_or_overflow_refuses(modules, monkeypatch, text, page):
-    _, sources = modules
-    monkeypatch.setattr(sources.sys, 'platform', 'linux')
-    proc_fixture(monkeypatch, sources, rows={'/proc/self/statm': text})
-    monkeypatch.setattr(sources.os, 'sysconf', lambda key: page, raising=False)
-    with pytest.raises(sources.Refused, match='invalid-source'):
-        sources.virtual_bytes()
+def test_linux_statm_malformed_zero_or_overflow_refuses(modules, monkeypatch):
+    for text, page in [('garbage', 4096), ('-1 2 3 4 5 6 7', 4096),
+        ('0 2 3 4 5 6 7', 4096), ('1001 17 3 4 5 6 7', 0),
+        (f'{sys.maxsize} 2 3 4 5 6 7', 4096)]:
+        _, sources = modules
+        monkeypatch.setattr(sources.sys, 'platform', 'linux')
+        proc_fixture(monkeypatch, sources, rows={'/proc/self/statm': text})
+        monkeypatch.setattr(sources.os, 'sysconf', lambda key: page, raising=False)
+        with pytest.raises(sources.Refused, match='invalid-source'):
+            sources.virtual_bytes()
 
 
 def test_linux_statm_missing_refuses(modules, monkeypatch):
@@ -432,16 +432,16 @@ def test_darwin_speculative_is_already_free_and_port_is_released(modules, monkey
     assert ctypes.sizeof(sources.TaskVMInfo) == 144
 
 
-@pytest.mark.parametrize('kwargs,code', [({'status': 1}, 'native-api-failed'),
-    ({'count': 1}, 'invalid-source'), ({'total': 100}, 'invalid-source'),
-    ({'free': 0, 'inactive': 0}, 'memory-exhausted'), ({'deallocate': 1}, 'native-api-failed')])
-def test_darwin_native_return_codes_and_counts_fail_closed(modules, monkeypatch, kwargs, code):
-    _, sources = modules
-    calls = darwin_fixture(monkeypatch, sources, **kwargs)
-    with pytest.raises(sources.Refused) as refusal:
-        sources.darwin_memory()
-    assert refusal.value.code == code
-    assert calls == [(11, 7)]
+def test_darwin_native_return_codes_and_counts_fail_closed(modules, monkeypatch):
+    for kwargs, code in [({'status': 1}, 'native-api-failed'),
+        ({'count': 1}, 'invalid-source'), ({'total': 100}, 'invalid-source'),
+        ({'free': 0, 'inactive': 0}, 'memory-exhausted'), ({'deallocate': 1}, 'native-api-failed')]:
+        _, sources = modules
+        calls = darwin_fixture(monkeypatch, sources, **kwargs)
+        with pytest.raises(sources.Refused) as refusal:
+            sources.darwin_memory()
+        assert refusal.value.code == code
+        assert calls == [(11, 7)]
 
 
 def windows_fixture(monkeypatch, sources, *, memory_status=1, disk_status=1,
@@ -470,14 +470,14 @@ def test_windows_native_memory_and_caller_volume_capacity(modules, monkeypatch, 
         directory=str(tmp_path.resolve()), available_bytes=1234)
 
 
-@pytest.mark.parametrize('kwargs,code', [({'memory_status': 0}, 'native-api-failed'),
-    ({'available': 120001}, 'invalid-source'), ({'available': 0}, 'memory-exhausted')])
-def test_windows_memory_status_and_totals_checked(modules, monkeypatch, kwargs, code):
-    _, sources = modules
-    windows_fixture(monkeypatch, sources, **kwargs)
-    with pytest.raises(sources.Refused) as refusal:
-        sources.windows_memory()
-    assert refusal.value.code == code
+def test_windows_memory_status_and_totals_checked(modules, monkeypatch):
+    for kwargs, code in [({'memory_status': 0}, 'native-api-failed'),
+        ({'available': 120001}, 'invalid-source'), ({'available': 0}, 'memory-exhausted')]:
+        _, sources = modules
+        windows_fixture(monkeypatch, sources, **kwargs)
+        with pytest.raises(sources.Refused) as refusal:
+            sources.windows_memory()
+        assert refusal.value.code == code
 
 
 def test_windows_disk_status_checked(modules, monkeypatch, tmp_path):
@@ -502,29 +502,29 @@ def test_native_bindings_and_platform_cannot_fall_back_to_subprocess(modules, mo
         sources.collect('.')
 
 
-@pytest.mark.parametrize('name', ['mach_host_self', 'host_statistics64', 'sysctlbyname',
-    'mach_port_deallocate', 'task_info', 'GlobalMemoryStatusEx', 'GetDiskFreeSpaceExW'])
-def test_binding_construction_declares_exact_abi(modules, monkeypatch, name):
-    _, sources = modules
-    import ctypes as c
-    from types import SimpleNamespace
-    signatures = {
-        'mach_host_self': ([], c.c_uint32),
-        'host_statistics64': ([c.c_uint32, c.c_int, c.c_void_p, c.POINTER(c.c_uint32)], c.c_int),
-        'sysctlbyname': ([c.c_char_p, c.c_void_p, c.POINTER(c.c_size_t), c.c_void_p, c.c_size_t], c.c_int),
-        'mach_port_deallocate': ([c.c_uint32, c.c_uint32], c.c_int),
-        'task_info': ([c.c_uint32, c.c_int, c.c_void_p, c.POINTER(c.c_uint32)], c.c_int),
-        'GlobalMemoryStatusEx': ([c.POINTER(sources.MemoryStatusEx)], c.c_int),
-        'GetDiskFreeSpaceExW': ([c.c_wchar_p, c.POINTER(c.c_uint64), c.POINTER(c.c_uint64),
-                               c.POINTER(c.c_uint64)], c.c_int),
-    }
-    lib = SimpleNamespace(**{key: NativeFunction(lambda *args: 0) for key in signatures})
-    if name.startswith(('Global', 'GetDisk')):
-        monkeypatch.setattr(sources.ctypes, 'WinDLL', lambda *args, **kwargs: lib, raising=False)
-        assert sources.windows_bindings() is lib
-    else:
-        monkeypatch.setattr(sources.ctypes, 'CDLL', lambda *args, **kwargs: lib)
-        monkeypatch.setattr(sources, 'darwin_exports', lambda library: (4096, 11))
-        assert sources.darwin_bindings() == (lib, 4096, 11)
-    assert getattr(getattr(lib, name), 'argtypes', None) == signatures[name][0]
-    assert getattr(getattr(lib, name), 'restype', None) is signatures[name][1]
+def test_binding_construction_declares_exact_abi(modules, monkeypatch):
+    for name in ['mach_host_self', 'host_statistics64', 'sysctlbyname',
+        'mach_port_deallocate', 'task_info', 'GlobalMemoryStatusEx', 'GetDiskFreeSpaceExW']:
+        _, sources = modules
+        import ctypes as c
+        from types import SimpleNamespace
+        signatures = {
+            'mach_host_self': ([], c.c_uint32),
+            'host_statistics64': ([c.c_uint32, c.c_int, c.c_void_p, c.POINTER(c.c_uint32)], c.c_int),
+            'sysctlbyname': ([c.c_char_p, c.c_void_p, c.POINTER(c.c_size_t), c.c_void_p, c.c_size_t], c.c_int),
+            'mach_port_deallocate': ([c.c_uint32, c.c_uint32], c.c_int),
+            'task_info': ([c.c_uint32, c.c_int, c.c_void_p, c.POINTER(c.c_uint32)], c.c_int),
+            'GlobalMemoryStatusEx': ([c.POINTER(sources.MemoryStatusEx)], c.c_int),
+            'GetDiskFreeSpaceExW': ([c.c_wchar_p, c.POINTER(c.c_uint64), c.POINTER(c.c_uint64),
+                                   c.POINTER(c.c_uint64)], c.c_int),
+        }
+        lib = SimpleNamespace(**{key: NativeFunction(lambda *args: 0) for key in signatures})
+        if name.startswith(('Global', 'GetDisk')):
+            monkeypatch.setattr(sources.ctypes, 'WinDLL', lambda *args, **kwargs: lib, raising=False)
+            assert sources.windows_bindings() is lib
+        else:
+            monkeypatch.setattr(sources.ctypes, 'CDLL', lambda *args, **kwargs: lib)
+            monkeypatch.setattr(sources, 'darwin_exports', lambda library: (4096, 11))
+            assert sources.darwin_bindings() == (lib, 4096, 11)
+        assert getattr(getattr(lib, name), 'argtypes', None) == signatures[name][0]
+        assert getattr(getattr(lib, name), 'restype', None) is signatures[name][1]
