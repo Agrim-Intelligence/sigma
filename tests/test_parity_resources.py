@@ -40,6 +40,12 @@ def test_documented_gesture_yields_native_receipt_without_files(tmp_path):
         assert receipt['status'] == 'ok'
         assert receipt['sources']
         assert int(receipt['limits']['output_bytes']) > 0
+        names = {row['name'] for row in receipt['sources']}
+        assert {'linux': 'MemAvailable', 'darwin': 'HOST_VM_INFO64',
+                'win32': 'GlobalMemoryStatusEx'}[sys.platform] in names
+        if sys.platform in ('linux', 'darwin'):
+            assert 'RLIMIT_AS' in names
+        assert receipt['disk']['api'] == ('GetDiskFreeSpaceExW' if sys.platform == 'win32' else 'fstatvfs')
     else:
         assert result.stdout == ''
         assert set(receipt) == {'schema', 'status', 'platform', 'code', 'source', 'cgroup'}
@@ -194,6 +200,87 @@ def test_library_record_validation(fake_cli):
         assert refusal.value.code == 'invalid-input'
 
 
+def test_library_fraction_capacity_and_disk_types(fake_cli):
+    _, _, resources, sources = fake_cli
+    for fraction in ('0.5', None, object()):
+        with pytest.raises(sources.Refused) as refusal:
+            resources.calculate(100000, fraction, 16, 2, 100000)
+        assert refusal.value.code == 'invalid-input'
+    for available, disk, code in [(0, 100000, 'memory-exhausted'),
+            (-1, 100000, 'invalid-source'), (True, 100000, 'invalid-source'),
+            (sys.maxsize+1, 100000, 'invalid-source'), (100000, True, 'invalid-source'),
+            (100000, 1.5, 'invalid-source'), (100000, -1, 'invalid-source')]:
+        with pytest.raises(sources.Refused) as refusal:
+            resources.calculate(available, 0.5, 16, 2, disk)
+        assert refusal.value.code == code
+
+
+def test_invalid_policy_never_starts_measurements(fake_cli, monkeypatch):
+    invoke, _, _, sources = fake_cli
+    def forbidden(directory):
+        raise AssertionError('invalid policy reached native measurement')
+    monkeypatch.setattr(sources, 'collect', forbidden)
+    for option, value in [('--record-bytes', '0'), ('--record-bytes', str(sys.maxsize+1)),
+                          ('--reserve-fraction', '0'), ('--reserve-fraction', 'nan')]:
+        argv = ['--reserve-fraction', '0.5', '--record-bytes', '16', '--output-dir', '.']
+        argv[argv.index(option)+1] = value
+        code, receipt = invoke(argv)
+        assert code == 2 and receipt['cgroup'] is None
+
+
+def test_malformed_source_rows_facts_and_unlimited_state_refuse(fake_cli):
+    from collections import UserDict
+    invoke, snapshot, _, _ = fake_cli
+    unlimited = dict(name='RLIMIT_AS', location='getrlimit(RLIMIT_AS)', mode='unlimited',
+                     limit_bytes=None, used_bytes=None, available_bytes=None, facts={})
+    malformed = [None, (), [], (finite(),), [UserDict(finite())],
+        [dict(finite(), extra='field')], [dict(finite(), name=123)], [dict(finite(), name='')],
+        [dict(finite(), location=123)], [dict(finite(), location='')],
+        [dict(finite(), facts=[])], [dict(finite(), facts={123: 1})], [dict(finite(), facts={'': 1})],
+        [dict(finite(), facts={'free_pages': True})], [unlimited],
+        [finite(), dict(unlimited, limit_bytes=1)], [finite(), dict(unlimited, available_bytes=1)],
+        [finite(), dict(unlimited, name='cgroup-v2')]]
+    for rows in malformed:
+        snapshot['sources'] = rows
+        code, receipt = invoke()
+        assert code == 2 and receipt['code'] == 'invalid-source', rows
+
+
+def test_cgroup_shape_and_ancestor_validation_are_typed(fake_cli, monkeypatch):
+    from collections import UserDict, UserList
+    import copy
+    invoke, snapshot, _, sources = fake_cli
+    # Unknown malformed provenance must not itself leak an invalid shape into a refusal.
+    for value in [UserDict(NOT_APPLICABLE), {}, 'bad', dict(NOT_APPLICABLE, mount='/unexpected'),
+                  dict(NOT_APPLICABLE, ancestors=['/unexpected'])]:
+        snapshot['cgroup'] = value
+        code, receipt = invoke()
+        assert code == 2 and receipt['code'] == 'invalid-source'
+        assert receipt['cgroup'] is None
+    monkeypatch.setattr(sources.sys, 'platform', 'linux')
+    proc_fixture(monkeypatch, sources)
+    rows, original = sources.linux_memory()
+    snapshot['sources'] = rows
+    for change in [dict(mount_root='/hidden'), dict(ancestors=tuple(original['ancestors'])),
+                   dict(ancestors=UserList(original['ancestors'])),
+                   dict(ancestors=[]), dict(process_path=123), dict(mount=123),
+                   dict(ancestors=[original['ancestors'][1], original['ancestors'][0], *original['ancestors'][2:]]),
+                   dict(ancestors=['/wrong', *original['ancestors'][1:]]), dict(mount='/other')]:
+        snapshot['cgroup'] = dict(copy.deepcopy(original), **change)
+        code, receipt = invoke()
+        assert code == 2 and receipt['code'] == 'invalid-source', change
+
+
+def test_bad_disk_snapshot_is_a_typed_refusal(fake_cli):
+    invoke, snapshot, _, _ = fake_cli
+    original = dict(snapshot['disk'])
+    for disk in [None, [], dict(original, extra=1), dict(original, api='unknown'),
+                 dict(original, directory=123), dict(original, directory='')]:
+        snapshot['disk'] = disk
+        code, receipt = invoke()
+        assert code == 2 and receipt['code'] == 'invalid-source', disk
+
+
 def test_every_finite_source_is_validated_before_minimum(fake_cli):
     for change in [dict(limit_bytes=True), dict(used_bytes=-1),
         dict(available_bytes=100001), dict(limit_bytes=sys.maxsize+1),
@@ -286,11 +373,70 @@ def test_linux_minimum_and_path_identity_use_public_argv(fake_cli, monkeypatch):
 
 
 def test_cgroup_kernel_path_rejects_traversal_and_controls(modules, monkeypatch):
-    for path in ['/../escape', '/a/../b', '/a//b', '/a/./b', '/a\x00b', '/a\tb']:
+    for path in ['relative', '/../escape', '/a/../b', '/a//b', '/a/./b', '/a\x00b', '/a\tb', '/a\x7fb', '/a\x85b']:
         _, sources = modules
         proc_fixture(monkeypatch, sources, path=path)
-        with pytest.raises(sources.Refused):
+        with pytest.raises(sources.Refused) as refusal:
             sources.linux_memory()
+        assert refusal.value.code == 'cgroup-mapping-unsupported'
+    assert sources.kernel_path('/parent/雪') == '/parent/雪'
+
+
+def test_source_text_protocols_and_no_controller_mode(modules, monkeypatch):
+    _, sources = modules
+    for value in ('01', '+1', '-1', '1.0', 'bad'):
+        with pytest.raises(sources.Refused, match='invalid-source'):
+            sources.unsigned(value, 'fixture')
+    assert sources.mount_path(r'/a\134b') == '/a\\b'
+    with pytest.raises(sources.Refused, match='cgroup-mapping-unsupported'):
+        sources.mount_path(r'/a\unknown')
+    proc_fixture(monkeypatch, sources, groups='1:cpu:/\n', rows={
+        '/proc/cgroups': '#subsys_name hierarchy num_cgroups enabled\nmemory 0 1 0\n'})
+    rows, provenance = sources.linux_memory()
+    assert len(rows) == 1 and provenance['mode'] == 'none'
+    for function in (sources.collect, sources.disk_capacity, lambda directory: sources.virtual_bytes()):
+        monkeypatch.setattr(sources.sys, 'platform', 'unknown')
+        with pytest.raises(sources.Refused, match='unsupported-platform'):
+            function('.')
+
+
+def test_read_text_distinguishes_missing_optional_from_failed_evidence(modules, monkeypatch):
+    _, sources = modules
+    for failure, code in [(FileNotFoundError('opaque-read-error'), 'source-unavailable'),
+                          (PermissionError('opaque-read-error'), 'source-unavailable'),
+                          (UnicodeDecodeError('utf-8', b'\xff', 0, 1, 'bad'), 'invalid-source')]:
+        def fail(*args, **kwargs):
+            raise failure
+        monkeypatch.setattr(sources.Path, 'read_text', fail)
+        with pytest.raises(sources.Refused) as refusal:
+            sources.read_text('/fixture', 'native-read')
+        assert refusal.value.code == code
+        assert 'opaque-read-error' not in str(refusal.value)
+        if type(failure) is FileNotFoundError:
+            assert sources.read_text('/fixture', 'native-read', missing_ok=True) is None
+        else:
+            with pytest.raises(sources.Refused) as refusal:
+                sources.read_text('/fixture', 'native-read', missing_ok=True)
+            assert refusal.value.code == code
+
+
+def test_collector_routes_native_sources_and_address_limits_by_os(modules, monkeypatch, tmp_path):
+    _, sources = modules
+    monkeypatch.setattr(sources, 'address_space_limit', lambda: None)
+    proc_fixture(monkeypatch, sources)
+    monkeypatch.setattr(sources.sys, 'platform', 'linux')
+    linux = sources.collect(str(tmp_path))
+    assert [row['name'] for row in linux['sources']] == [
+        'MemAvailable', 'cgroup-v2', 'cgroup-v2', 'cgroup-v2-root', 'RLIMIT_AS']
+    darwin_fixture(monkeypatch, sources)
+    monkeypatch.setattr(sources.sys, 'platform', 'darwin')
+    darwin = sources.collect(str(tmp_path))
+    assert [row['name'] for row in darwin['sources']] == ['HOST_VM_INFO64', 'RLIMIT_AS']
+    windows_fixture(monkeypatch, sources)
+    monkeypatch.setattr(sources.sys, 'platform', 'win32')
+    windows = sources.collect(str(tmp_path))
+    assert [row['name'] for row in windows['sources']] == ['GlobalMemoryStatusEx']
+    assert windows['cgroup'] == NOT_APPLICABLE
 
 
 def test_linux_bad_sources_refuse(modules, monkeypatch):
@@ -299,10 +445,21 @@ def test_linux_bad_sources_refuse(modules, monkeypatch):
         ('/proc/meminfo', 'MemTotal: 1 kB', 'invalid-source'),
         ('/proc/meminfo', 'MemTotal: 2 kB\nMemAvailable: 1 MB', 'invalid-source'),
         ('/proc/meminfo', 'MemTotal: 2 kB\nMemAvailable: 0 kB', 'memory-exhausted'),
+        ('/proc/meminfo', 'MemTotal: 2 kB\nMemTotal: 2 kB\nMemAvailable: 1 kB', 'invalid-source'),
         ('/sys/fs/cgroup/parent/memory.max', 'bad', 'invalid-source'),
         ('/sys/fs/cgroup/parent/memory.current', '100001', 'memory-exhausted'),
         ('/sys/fs/cgroup/parent/child/memory.current', '-1', 'invalid-source'),
         ('/proc/self/cgroup', '0::/a\n0::/b\n', 'cgroup-mapping-unsupported'),
+        ('/proc/self/cgroup', 'bad', 'cgroup-mapping-unsupported'),
+        ('/proc/self/cgroup', '0:cpu', 'cgroup-mapping-unsupported'),
+        ('/proc/self/cgroup', 'x:memory:/', 'cgroup-mapping-unsupported'),
+        ('/proc/self/cgroup', 'x::/', 'cgroup-mapping-unsupported'),
+        ('/proc/self/mountinfo', 'no separator', 'cgroup-mapping-unsupported'),
+        ('/proc/self/mountinfo', '29 23 0:26 / /sys/fs/cgroup - cgroup2 cgroup rw', 'cgroup-mapping-unsupported'),
+        ('/proc/self/mountinfo', '29 23 0:26 / /sys/fs/cgroup rw - cgroup2 cgroup', 'cgroup-mapping-unsupported'),
+        ('/proc/self/mountinfo', '29 23 0:26 / /sys/fs/cgroup rw - cgroup2 cgroup rw\n30 23 0:26 / /other rw - cgroup2 cgroup rw', 'cgroup-mapping-unsupported'),
+        ('/sys/fs/cgroup/cgroup.controllers', 'cpu memory memory', 'invalid-source'),
+        ('/sys/fs/cgroup/cgroup.controllers', 'cpu memory bad!', 'invalid-source'),
         ('/proc/self/mountinfo', '29 23 0:26 /container /sys/fs/cgroup rw - cgroup2 cgroup rw',
          'cgroup-mapping-unsupported')]:
         _, sources = modules
@@ -382,6 +539,7 @@ def test_linux_statm_uses_total_pages_and_measured_page_size(modules, monkeypatc
 
 def test_linux_statm_malformed_zero_or_overflow_refuses(modules, monkeypatch):
     for text, page in [('garbage', 4096), ('-1 2 3 4 5 6 7', 4096),
+        ('1001', 4096), ('1001 2 3 4 5 6 7 8', 4096),
         ('0 2 3 4 5 6 7', 4096), ('1001 17 3 4 5 6 7', 0),
         (f'{sys.maxsize} 2 3 4 5 6 7', 4096)]:
         _, sources = modules
@@ -441,6 +599,44 @@ def test_posix_output_swap_refuses_and_closes_descriptor(modules, monkeypatch, t
     assert opened and closed == opened
 
 
+def test_posix_descriptor_type_identity_and_close_errors(modules, monkeypatch, tmp_path):
+    _, sources = modules
+    from types import SimpleNamespace
+    import stat
+    monkeypatch.setattr(sources.sys, 'platform', 'darwin')
+    original = dict(st_mode=stat.S_IFDIR|0o700, st_dev=1, st_ino=2)
+    for field, value, when in [('st_dev', 3, 'opened'), ('st_ino', 3, 'opened'),
+                               ('st_mode', stat.S_IFREG|0o600, 'opened'),
+                               ('st_dev', 3, 'after'), ('st_ino', 3, 'after')]:
+        opened = dict(original)
+        after = dict(original)
+        (opened if when == 'opened' else after)[field] = value
+        # Match the post-open target when testing the original-identity comparison alone.
+        if when == 'opened':
+            after.update(opened)
+        class Resolved:
+            def stat(self):
+                return SimpleNamespace(**after)
+            def __str__(self):
+                return '/chosen'
+        monkeypatch.setattr(sources, 'output_directory', lambda path: (Resolved(), SimpleNamespace(**original)))
+        monkeypatch.setattr(sources.os, 'open', lambda *args: 11)
+        monkeypatch.setattr(sources.os, 'fstat', lambda fd: SimpleNamespace(**opened))
+        monkeypatch.setattr(sources.os, 'fstatvfs', lambda fd: SimpleNamespace(f_bavail=7, f_frsize=4096), raising=False)
+        closed = []
+        monkeypatch.setattr(sources.os, 'close', closed.append)
+        with pytest.raises(sources.Refused, match='invalid-source'):
+            sources.disk_capacity('.')
+        assert closed == [11]
+    monkeypatch.setattr(sources.os, 'fstat', lambda fd: SimpleNamespace(**original))
+    after.update(original)
+    def close_failure(fd):
+        raise OSError('close failed')
+    monkeypatch.setattr(sources.os, 'close', close_failure)
+    with pytest.raises(sources.Refused, match='source-unavailable'):
+        sources.disk_capacity('.')
+
+
 def test_output_file_and_symlink_to_file_refuse_on_each_native_route(modules, monkeypatch, tmp_path, capsys):
     resources, sources = modules
     regular = tmp_path/'ordinary-file'
@@ -477,7 +673,8 @@ class NativeFunction:
 
 
 def darwin_fixture(monkeypatch, sources, *, status=0, total=1000000, free=10,
-                   inactive=20, speculative=7, count=38, deallocate=0, task_count=36, virtual=123456):
+                   inactive=20, speculative=7, count=38, deallocate=0, task_count=36, virtual=123456,
+                   host_port=7, sysctl_status=0, sysctl_size=8):
     import ctypes
     from types import SimpleNamespace
     calls = []
@@ -490,8 +687,8 @@ def darwin_fixture(monkeypatch, sources, *, status=0, total=1000000, free=10,
     def memsize(name, ptr, size, new, newlen):
         assert name == b'hw.memsize' and new is None and newlen == 0
         ctypes.cast(ptr, ctypes.POINTER(ctypes.c_uint64)).contents.value = total
-        ctypes.cast(size, ctypes.POINTER(ctypes.c_size_t)).contents.value = 8
-        return 0
+        ctypes.cast(size, ctypes.POINTER(ctypes.c_size_t)).contents.value = sysctl_size
+        return sysctl_status
     def release(task, host):
         calls.append((task, host))
         return deallocate
@@ -500,7 +697,7 @@ def darwin_fixture(monkeypatch, sources, *, status=0, total=1000000, free=10,
         ctypes.cast(ptr, ctypes.POINTER(sources.TaskVMInfo)).contents.virtual_size = virtual
         ctypes.cast(size, ctypes.POINTER(ctypes.c_uint32)).contents.value = task_count
         return status
-    lib = SimpleNamespace(mach_host_self=NativeFunction(lambda: 7),
+    lib = SimpleNamespace(mach_host_self=NativeFunction(lambda: host_port),
                           host_statistics64=NativeFunction(statistics),
                           sysctlbyname=NativeFunction(memsize),
                           mach_port_deallocate=NativeFunction(release),
@@ -524,6 +721,8 @@ def test_darwin_speculative_is_already_free_and_port_is_released(modules, monkey
 def test_darwin_native_return_codes_and_counts_fail_closed(modules, monkeypatch):
     for kwargs, code in [({'status': 1}, 'native-api-failed'),
         ({'count': 1}, 'invalid-source'), ({'total': 100}, 'invalid-source'),
+        ({'count': 100}, 'invalid-source'), ({'sysctl_status': 1}, 'native-api-failed'),
+        ({'sysctl_size': 7}, 'invalid-source'),
         ({'free': 0, 'inactive': 0, 'speculative': 0}, 'memory-exhausted'),
         ({'speculative': 11}, 'invalid-source'), ({'deallocate': 1}, 'native-api-failed')]:
         _, sources = modules
@@ -532,6 +731,10 @@ def test_darwin_native_return_codes_and_counts_fail_closed(modules, monkeypatch)
             sources.darwin_memory()
         assert refusal.value.code == code
         assert calls == [(11, 7)]
+    calls = darwin_fixture(monkeypatch, sources, host_port=0)
+    with pytest.raises(sources.Refused, match='native-api-failed'):
+        sources.darwin_memory()
+    assert calls == []
 
 
 def test_darwin_virtual_source_status_count_and_value_checked(modules, monkeypatch):
@@ -560,6 +763,7 @@ def windows_fixture(monkeypatch, sources, *, memory_status=1, disk_status=1,
         stats.ullTotalPhys, stats.ullAvailPhys = total, available
         return memory_status
     events = []
+    queries = 0
     def disk(directory, avail, total, free):
         events.append(('volume', directory))
         # A mutable alias would identify another volume after the deliberate swap.
@@ -578,10 +782,14 @@ def windows_fixture(monkeypatch, sources, *, memory_status=1, disk_status=1,
         ctypes.cast(ptr, ctypes.POINTER(sources.FileInformation)).contents.dwFileAttributes = directory_attribute
         return information_status
     def final_name(opened, buffer, size, flags):
+        nonlocal queries
         assert opened == handle and flags == 1
         if not size:
-            return len(final_path)+1 if required_size is None else required_size
+            queries += 1
+            # A failed size query can recover later; the first failure must still be refused.
+            return len(final_path)+1 if required_size is None or queries > 1 else required_size
         if path_status is not None:
+            buffer.value = final_path
             return path_status
         buffer.value = final_path
         return len(final_path)
@@ -722,19 +930,64 @@ def test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets(tmp_pa
                    'decode_bytes': '25000', 'output_buffer_bytes': '25000',
                    'object_overhead_bytes': '112', 'blob_bytes_per_worker': '2477',
                    'output_bytes': '24992', 'worker_slots': 2, 'decode_expansion': 5}}
-    changes = [None, ('status', 'refused'), ('platform', 'darwin'), ('sources', []),
-               ('disk.api', 'unknown'), ('cgroup.mode', 'not-applicable'),
-               ('limits.output_bytes', '100001'), ('limits.worker_slots', 0),
-               ('limits.decode_bytes', '24999'), ('limits.output_buffer_bytes', '25001')]
-    for change in changes:
-        receipt = copy.deepcopy(base)
+    platforms = [('linux', 'MemAvailable'), ('darwin', 'HOST_VM_INFO64'), ('win32', 'GlobalMemoryStatusEx')]
+    for platform_name, api in platforms:
+        intact = copy.deepcopy(base)
+        intact['platform'] = platform_name
+        intact['sources'][0]['name'] = api
+        intact['cgroup'] = dict(NOT_APPLICABLE, mode='none' if platform_name == 'linux' else 'not-applicable')
+        if platform_name == 'win32':
+            intact['sources'] = intact['sources'][:1]
+            intact['disk']['api'] = 'GetDiskFreeSpaceExW'
+        extra_limit = dict(name='additional-native-limit', location='fixture', mode='finite',
+                           limit_bytes='100000', used_bytes='10000', available_bytes='90000', facts={})
+        changes = [None, ('schema', 'old-schema'), ('status', 'refused'), ('platform', 'other'),
+            ('sources', []), ('sources', [{**intact['sources'][0], 'name': 'unknown'}, *intact['sources'][1:]]),
+            ('sources', [{**intact['sources'][0], 'limit_bytes': '120001'}, *intact['sources'][1:]]),
+            ('sources', [*intact['sources'], extra_limit]), ('disk.api', 'unknown'),
+            ('cgroup.mode', 'not-applicable' if platform_name == 'linux' else 'none'),
+            ('limits.output_bytes', '25001'), ('limits.output_bytes', '0'),
+            ('limits.worker_slots', 0), ('limits.decode_expansion', 5.0), ('limits.decode_expansion', 0),
+            ('cpu_count', 1), ('limits.reserve_bytes', '50001'),
+            ('limits.blob_bytes_per_worker', '100000'), ('disk.available_bytes', '24991'),
+            ('limits.available_bytes', '0100000'), ('limits.available_bytes', 100000),
+            ('limits.decode_bytes', '24999'), ('limits.output_buffer_bytes', '25001')]
+        if platform_name != 'win32':
+            changes.extend([('sources', intact['sources'][:1]),
+                ('sources', [intact['sources'][0], dict(intact['sources'][1], mode='unknown')]),
+                ('sources', [intact['sources'][0], dict(intact['sources'][1], limit_bytes='1')]),
+                ('sources', [intact['sources'][0], dict(intact['sources'][1], available_bytes='1')])])
+        for change in changes:
+            receipt = copy.deepcopy(intact)
+            if change:
+                key, value = change
+                parts = key.split('.')
+                target = receipt
+                for part in parts[:-1]:
+                    target = target[part]
+                target[parts[-1]] = value
+            path = tmp_path/'receipt.json'
+            path.write_text(json.dumps(receipt))
+            result = subprocess.run([sys.executable, '-c', program, str(path), platform_name],
+                                    capture_output=True, text=True, timeout=10)
+            assert (result.returncode == 0) == (change is None), (platform_name, change, result.stderr)
+    intact = copy.deepcopy(base)
+    intact['cgroup'] = dict(mode='v2', mount='/sys/fs/cgroup', mount_root='/', process_path='/parent/child',
+                           ancestors=['/sys/fs/cgroup/parent/child', '/sys/fs/cgroup/parent', '/sys/fs/cgroup'])
+    intact['sources'].extend([
+        dict(name='cgroup-v2', location='/sys/fs/cgroup/parent/child', mode='finite',
+             limit_bytes='150000', used_bytes='10000', available_bytes='140000', facts={}),
+        dict(name='cgroup-v2', location='/sys/fs/cgroup/parent', mode='finite',
+             limit_bytes='140000', used_bytes='20000', available_bytes='120000', facts={}),
+        dict(name='cgroup-v2-root', location='/sys/fs/cgroup', mode='unlimited',
+             limit_bytes=None, used_bytes=None, available_bytes=None, facts={})])
+    for change in (None, ('mount_root', '/hidden'), ('mount', '/other'),
+                   ('ancestors', ['/wrong', '/sys/fs/cgroup/parent', '/sys/fs/cgroup']),
+                   ('ancestors', ['/sys/fs/cgroup/parent', '/sys/fs/cgroup/parent/child', '/sys/fs/cgroup']),
+                   ('ancestors', [])):
+        receipt = copy.deepcopy(intact)
         if change:
-            key, value = change
-            parts = key.split('.')
-            target = receipt
-            for part in parts[:-1]:
-                target = target[part]
-            target[parts[-1]] = value
+            receipt['cgroup'][change[0]] = change[1]
         path = tmp_path/'receipt.json'
         path.write_text(json.dumps(receipt))
         result = subprocess.run([sys.executable, '-c', program, str(path), 'linux'],

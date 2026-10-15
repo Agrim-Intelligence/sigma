@@ -1,0 +1,1716 @@
+{
+  "kind": "own-clause-mutation-evidence",
+  "native_certification": false,
+  "test_sha256": "c82559e7d000602e115bfda0f759b0af5ff152f1f3951fc0c191b22aed510d15",
+  "harness_sha256": "f8354bd793126e208366a67045e2eba9c588516f1cdfc1a7bdf4d1b1ee3bed29",
+  "raw_report_sha256": "d2919a8aeee5c2d67455d7834dd723c09c1b78bdc79776a2b0c42d827cd14bfa",
+  "seconds": 63.05542120800237,
+  "restored_sha256": {
+    "tools/parity/resource_sources.py": "bb77d1a1a0199c9660fdf6e98dc74d543e501e50e06a34da7b3367d98b45d856",
+    "tools/parity/resources.py": "7117f0f6b371d77c6e9d1fdff74da3f7302a51ac8180f28063e19ac52be715ad",
+    ".github/workflows/parity-resources.yml": "4581ac3e0c9c56606cc64981e1d072b48b71f67005a1d81bb8f218f646ad1e07"
+  },
+  "results": [
+    {
+      "index": 1,
+      "label": "resource_sources.py:17 guard disabled",
+      "state": "killed",
+      "old": "type(value) is not int or value < 0 or value > sys.maxsize or (positive and value == 0)",
+      "new": "False",
+      "failure_count": 12,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_invalid_argument_shape_is_typed"
+    },
+    {
+      "index": 2,
+      "label": "resource_sources.py:17 Or clause 1 removed",
+      "state": "killed",
+      "old": "type(value) is not int or value < 0 or value > sys.maxsize or (positive and value == 0)",
+      "new": "False or value < 0 or value > sys.maxsize or (positive and value == 0)",
+      "failure_count": 5,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_invalid_observed_cpu_is_not_a_worker_entitlement"
+    },
+    {
+      "index": 3,
+      "label": "resource_sources.py:17 Or clause 2 removed",
+      "state": "killed",
+      "old": "type(value) is not int or value < 0 or value > sys.maxsize or (positive and value == 0)",
+      "new": "type(value) is not int or False or value > sys.maxsize or (positive and value == 0)",
+      "failure_count": 6,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_invalid_argument_shape_is_typed"
+    },
+    {
+      "index": 4,
+      "label": "resource_sources.py:17 Or clause 3 removed",
+      "state": "killed",
+      "old": "type(value) is not int or value < 0 or value > sys.maxsize or (positive and value == 0)",
+      "new": "type(value) is not int or value < 0 or False or (positive and value == 0)",
+      "failure_count": 6,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_invalid_argument_shape_is_typed"
+    },
+    {
+      "index": 5,
+      "label": "resource_sources.py:17 Or clause 4 removed",
+      "state": "killed",
+      "old": "type(value) is not int or value < 0 or value > sys.maxsize or (positive and value == 0)",
+      "new": "type(value) is not int or value < 0 or value > sys.maxsize or False",
+      "failure_count": 6,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_invalid_argument_shape_is_typed"
+    },
+    {
+      "index": 6,
+      "label": "resource_sources.py:17 And clause 1 removed",
+      "state": "killed",
+      "old": "positive and value == 0",
+      "new": "True and value == 0",
+      "failure_count": 5,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_library_fraction_capacity_and_disk_types"
+    },
+    {
+      "index": 7,
+      "label": "resource_sources.py:17 And clause 2 removed",
+      "state": "killed",
+      "old": "positive and value == 0",
+      "new": "positive and True",
+      "failure_count": 17,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_documented_gesture_yields_native_receipt_without_files"
+    },
+    {
+      "index": 8,
+      "label": "resource_sources.py:23 guard disabled",
+      "state": "killed",
+      "old": "not re.fullmatch(r'0|[1-9][0-9]*', text)",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_source_text_protocols_and_no_controller_mode"
+    },
+    {
+      "index": 9,
+      "label": "resource_sources.py:72 guard disabled",
+      "state": "killed",
+      "old": "not value.startswith('/') or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in value)\n            or (value != '/' and any(p in ('', '.', '..') for p in value.split('/')[1:]))",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_kernel_path_rejects_traversal_and_controls"
+    },
+    {
+      "index": 10,
+      "label": "resource_sources.py:72 Or clause 1 removed",
+      "state": "killed",
+      "old": "not value.startswith('/') or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in value)\n            or (value != '/' and any(p in ('', '.', '..') for p in value.split('/')[1:]))",
+      "new": "False or any((ord(c) < 32 or 127 <= ord(c) <= 159 for c in value)) or (value != '/' and any((p in ('', '.', '..') for p in value.split('/')[1:])))",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_kernel_path_rejects_traversal_and_controls"
+    },
+    {
+      "index": 11,
+      "label": "resource_sources.py:72 Or clause 2 removed",
+      "state": "killed",
+      "old": "not value.startswith('/') or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in value)\n            or (value != '/' and any(p in ('', '.', '..') for p in value.split('/')[1:]))",
+      "new": "not value.startswith('/') or False or (value != '/' and any((p in ('', '.', '..') for p in value.split('/')[1:])))",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_kernel_path_rejects_traversal_and_controls"
+    },
+    {
+      "index": 12,
+      "label": "resource_sources.py:72 Or clause 3 removed",
+      "state": "killed",
+      "old": "not value.startswith('/') or any(ord(c) < 32 or 127 <= ord(c) <= 159 for c in value)\n            or (value != '/' and any(p in ('', '.', '..') for p in value.split('/')[1:]))",
+      "new": "not value.startswith('/') or any((ord(c) < 32 or 127 <= ord(c) <= 159 for c in value)) or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_kernel_path_rejects_traversal_and_controls"
+    },
+    {
+      "index": 13,
+      "label": "resource_sources.py:73 And clause 1 removed",
+      "state": "killed",
+      "old": "value != '/' and any(p in ('', '.', '..') for p in value.split('/')[1:])",
+      "new": "True and any((p in ('', '.', '..') for p in value.split('/')[1:]))",
+      "failure_count": 9,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 14,
+      "label": "resource_sources.py:73 And clause 2 removed",
+      "state": "killed",
+      "old": "value != '/' and any(p in ('', '.', '..') for p in value.split('/')[1:])",
+      "new": "value != '/' and True",
+      "failure_count": 10,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 15,
+      "label": "resource_sources.py:72 Or clause 1 removed",
+      "state": "killed",
+      "old": "ord(c) < 32 or 127 <= ord(c) <= 159",
+      "new": "False or 127 <= ord(c) <= 159",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_kernel_path_rejects_traversal_and_controls"
+    },
+    {
+      "index": 16,
+      "label": "resource_sources.py:72 Or clause 2 removed",
+      "state": "killed",
+      "old": "ord(c) < 32 or 127 <= ord(c) <= 159",
+      "new": "ord(c) < 32 or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_kernel_path_rejects_traversal_and_controls"
+    },
+    {
+      "index": 17,
+      "label": "resource_sources.py:72 chain bound 1 removed",
+      "state": "killed",
+      "old": "127 <= ord(c) <= 159",
+      "new": "(ord(c) <= 159)",
+      "failure_count": 10,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 18,
+      "label": "resource_sources.py:72 chain bound 2 removed",
+      "state": "killed",
+      "old": "127 <= ord(c) <= 159",
+      "new": "(127 <= ord(c))",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_kernel_path_rejects_traversal_and_controls"
+    },
+    {
+      "index": 19,
+      "label": "resource_sources.py:95 guard disabled",
+      "state": "killed",
+      "old": "set(values) != {'MemTotal', 'MemAvailable'}",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - KeyErr..."
+    },
+    {
+      "index": 20,
+      "label": "resource_sources.py:112 guard disabled",
+      "state": "killed",
+      "old": "not paths",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_source_text_protocols_and_no_controller_mode"
+    },
+    {
+      "index": 21,
+      "label": "resource_sources.py:119 guard disabled",
+      "state": "killed",
+      "old": "len(paths) != 1",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - Assert..."
+    },
+    {
+      "index": 22,
+      "label": "resource_sources.py:131 guard disabled",
+      "state": "killed",
+      "old": "len(mounts) != 1 or mounts[0][0] != '/'",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - Failed..."
+    },
+    {
+      "index": 23,
+      "label": "resource_sources.py:131 Or clause 1 removed",
+      "state": "killed",
+      "old": "len(mounts) != 1 or mounts[0][0] != '/'",
+      "new": "False or mounts[0][0] != '/'",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - Failed..."
+    },
+    {
+      "index": 24,
+      "label": "resource_sources.py:131 Or clause 2 removed",
+      "state": "killed",
+      "old": "len(mounts) != 1 or mounts[0][0] != '/'",
+      "new": "len(mounts) != 1 or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - Failed..."
+    },
+    {
+      "index": 25,
+      "label": "resource_sources.py:192 guard disabled",
+      "state": "killed",
+      "old": "sys.platform != 'linux'",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_source_text_protocols_and_no_controller_mode"
+    },
+    {
+      "index": 26,
+      "label": "resource_sources.py:195 guard disabled",
+      "state": "killed",
+      "old": "len(fields) != 7",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_statm_malformed_zero_or_overflow_refuses"
+    },
+    {
+      "index": 27,
+      "label": "resource_sources.py:272 guard disabled",
+      "state": "killed",
+      "old": "not host",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_darwin_native_return_codes_and_counts_fail_closed"
+    },
+    {
+      "index": 28,
+      "label": "resource_sources.py:301 guard disabled",
+      "state": "killed",
+      "old": "lib.task_info(task, 22, ctypes.byref(info), ctypes.byref(count)) != 0",
+      "new": "False",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_darwin_speculative_is_already_free_and_port_is_released"
+    },
+    {
+      "index": 29,
+      "label": "resource_sources.py:303 guard disabled",
+      "state": "killed",
+      "old": "count.value != capacity",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_darwin_virtual_source_status_count_and_value_checked"
+    },
+    {
+      "index": 30,
+      "label": "resource_sources.py:327 guard disabled",
+      "state": "killed",
+      "old": "not lib.GlobalMemoryStatusEx(ctypes.byref(stats))",
+      "new": "False",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_collector_routes_native_sources_and_address_limits_by_os"
+    },
+    {
+      "index": 31,
+      "label": "resource_sources.py:349 guard disabled",
+      "state": "killed",
+      "old": "handle in (None, 0, -1, ctypes.c_void_p(-1).value)",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_windows_directory_handle_and_final_path_fail_closed"
+    },
+    {
+      "index": 32,
+      "label": "resource_sources.py:386 guard disabled",
+      "state": "killed",
+      "old": "sys.platform not in ('linux', 'darwin')",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_source_text_protocols_and_no_controller_mode"
+    },
+    {
+      "index": 33,
+      "label": "resource_sources.py:40 guard disabled",
+      "state": "killed",
+      "old": "available <= 0",
+      "new": "False",
+      "failure_count": 4,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - Failed..."
+    },
+    {
+      "index": 34,
+      "label": "resource_sources.py:82 guard disabled",
+      "state": "killed",
+      "old": "re.search(r'\\\\(?![0-7]{3})', value)",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_source_text_protocols_and_no_controller_mode"
+    },
+    {
+      "index": 35,
+      "label": "resource_sources.py:104 guard disabled",
+      "state": "killed",
+      "old": "len(parts) != 3 or not parts[0].isdigit()",
+      "new": "False",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_kernel_path_rejects_traversal_and_controls"
+    },
+    {
+      "index": 36,
+      "label": "resource_sources.py:104 Or clause 1 removed",
+      "state": "killed",
+      "old": "len(parts) != 3 or not parts[0].isdigit()",
+      "new": "False or not parts[0].isdigit()",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - IndexE..."
+    },
+    {
+      "index": 37,
+      "label": "resource_sources.py:104 Or clause 2 removed",
+      "state": "killed",
+      "old": "len(parts) != 3 or not parts[0].isdigit()",
+      "new": "len(parts) != 3 or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - Assert..."
+    },
+    {
+      "index": 38,
+      "label": "resource_sources.py:107 guard disabled",
+      "state": "killed",
+      "old": "'memory' in parts[1].split(',')",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_no_controller_and_v1_preserve_distinct_modes"
+    },
+    {
+      "index": 39,
+      "label": "resource_sources.py:124 guard disabled",
+      "state": "killed",
+      "old": "len(parts) != 2",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - IndexE..."
+    },
+    {
+      "index": 40,
+      "label": "resource_sources.py:144 guard disabled",
+      "state": "killed",
+      "old": "len(set(controllers)) != len(controllers)\n                or any(not re.fullmatch(r'[a-z][a-z0-9_]*', c) for c in controllers)",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - Failed..."
+    },
+    {
+      "index": 41,
+      "label": "resource_sources.py:144 Or clause 1 removed",
+      "state": "killed",
+      "old": "len(set(controllers)) != len(controllers)\n                or any(not re.fullmatch(r'[a-z][a-z0-9_]*', c) for c in controllers)",
+      "new": "False or any((not re.fullmatch('[a-z][a-z0-9_]*', c) for c in controllers))",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - Failed..."
+    },
+    {
+      "index": 42,
+      "label": "resource_sources.py:144 Or clause 2 removed",
+      "state": "killed",
+      "old": "len(set(controllers)) != len(controllers)\n                or any(not re.fullmatch(r'[a-z][a-z0-9_]*', c) for c in controllers)",
+      "new": "len(set(controllers)) != len(controllers) or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - Failed..."
+    },
+    {
+      "index": 43,
+      "label": "resource_sources.py:149 guard disabled",
+      "state": "killed",
+      "old": "(root_max is None) != (root_current is None)",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_visible_namespace_root_limit_cannot_be_silently_ignored"
+    },
+    {
+      "index": 44,
+      "label": "resource_sources.py:278 guard disabled",
+      "state": "killed",
+      "old": "lib.host_statistics64(host, 4, ctypes.byref(stats), ctypes.byref(count)) != 0",
+      "new": "False",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_collector_routes_native_sources_and_address_limits_by_os"
+    },
+    {
+      "index": 45,
+      "label": "resource_sources.py:280 guard disabled",
+      "state": "killed",
+      "old": "not 24 <= count.value <= capacity or stats.speculative_count > stats.free_count",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_darwin_native_return_codes_and_counts_fail_closed"
+    },
+    {
+      "index": 46,
+      "label": "resource_sources.py:280 Or clause 1 removed",
+      "state": "killed",
+      "old": "not 24 <= count.value <= capacity or stats.speculative_count > stats.free_count",
+      "new": "False or stats.speculative_count > stats.free_count",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_darwin_native_return_codes_and_counts_fail_closed"
+    },
+    {
+      "index": 47,
+      "label": "resource_sources.py:280 Or clause 2 removed",
+      "state": "killed",
+      "old": "not 24 <= count.value <= capacity or stats.speculative_count > stats.free_count",
+      "new": "not 24 <= count.value <= capacity or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_darwin_native_return_codes_and_counts_fail_closed"
+    },
+    {
+      "index": 48,
+      "label": "resource_sources.py:280 chain bound 1 removed",
+      "state": "killed",
+      "old": "24 <= count.value <= capacity",
+      "new": "(count.value <= capacity)",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_darwin_native_return_codes_and_counts_fail_closed"
+    },
+    {
+      "index": 49,
+      "label": "resource_sources.py:280 chain bound 2 removed",
+      "state": "killed",
+      "old": "24 <= count.value <= capacity",
+      "new": "(24 <= count.value)",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_darwin_native_return_codes_and_counts_fail_closed"
+    },
+    {
+      "index": 50,
+      "label": "resource_sources.py:283 guard disabled",
+      "state": "killed",
+      "old": "lib.sysctlbyname(b'hw.memsize', ctypes.byref(total), ctypes.byref(size), None, 0) != 0",
+      "new": "False",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_collector_routes_native_sources_and_address_limits_by_os"
+    },
+    {
+      "index": 51,
+      "label": "resource_sources.py:285 guard disabled",
+      "state": "killed",
+      "old": "size.value != ctypes.sizeof(total)",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_darwin_native_return_codes_and_counts_fail_closed"
+    },
+    {
+      "index": 52,
+      "label": "resource_sources.py:292 guard disabled",
+      "state": "killed",
+      "old": "lib.mach_port_deallocate(task, host) != 0",
+      "new": "False",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_darwin_speculative_is_already_free_and_port_is_released"
+    },
+    {
+      "index": 53,
+      "label": "resource_sources.py:336 guard disabled",
+      "state": "killed",
+      "old": "not stat.S_ISDIR(identity.st_mode)",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_output_file_and_symlink_to_file_refuse_on_each_native_route"
+    },
+    {
+      "index": 54,
+      "label": "resource_sources.py:353 guard disabled",
+      "state": "killed",
+      "old": "not lib.GetFileInformationByHandle(handle, ctypes.byref(information))",
+      "new": "False",
+      "failure_count": 5,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_collector_routes_native_sources_and_address_limits_by_os"
+    },
+    {
+      "index": 55,
+      "label": "resource_sources.py:355 guard disabled",
+      "state": "killed",
+      "old": "not information.dwFileAttributes & 16",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_windows_directory_handle_and_final_path_fail_closed"
+    },
+    {
+      "index": 56,
+      "label": "resource_sources.py:358 guard disabled",
+      "state": "killed",
+      "old": "not required",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_windows_directory_handle_and_final_path_fail_closed"
+    },
+    {
+      "index": 57,
+      "label": "resource_sources.py:361 guard disabled",
+      "state": "killed",
+      "old": "required > 32768",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_windows_directory_handle_and_final_path_fail_closed"
+    },
+    {
+      "index": 58,
+      "label": "resource_sources.py:365 guard disabled",
+      "state": "killed",
+      "old": "not written",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_windows_directory_handle_and_final_path_fail_closed"
+    },
+    {
+      "index": 59,
+      "label": "resource_sources.py:367 guard disabled",
+      "state": "killed",
+      "old": "written >= required",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_windows_directory_handle_and_final_path_fail_closed"
+    },
+    {
+      "index": 60,
+      "label": "resource_sources.py:371 guard disabled",
+      "state": "killed",
+      "old": "not volume",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_windows_directory_handle_and_final_path_fail_closed"
+    },
+    {
+      "index": 61,
+      "label": "resource_sources.py:374 guard disabled",
+      "state": "killed",
+      "old": "not lib.GetDiskFreeSpaceExW(volume[1], ctypes.byref(available), ctypes.byref(total), ctypes.byref(free))",
+      "new": "False",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_windows_native_memory_and_caller_volume_capacity"
+    },
+    {
+      "index": 62,
+      "label": "resource_sources.py:379 guard disabled",
+      "state": "killed",
+      "old": "not lib.CloseHandle(handle)",
+      "new": "False",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_windows_held_handle_binds_volume_despite_alias_swap"
+    },
+    {
+      "index": 63,
+      "label": "resource_sources.py:397 guard disabled",
+      "state": "killed",
+      "old": "not stat.S_ISDIR(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_posix_descriptor_type_identity_and_close_errors"
+    },
+    {
+      "index": 64,
+      "label": "resource_sources.py:397 Or clause 1 removed",
+      "state": "killed",
+      "old": "not stat.S_ISDIR(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)",
+      "new": "False or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_posix_descriptor_type_identity_and_close_errors"
+    },
+    {
+      "index": 65,
+      "label": "resource_sources.py:397 Or clause 2 removed",
+      "state": "killed",
+      "old": "not stat.S_ISDIR(opened.st_mode) or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)",
+      "new": "not stat.S_ISDIR(opened.st_mode) or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_posix_descriptor_type_identity_and_close_errors"
+    },
+    {
+      "index": 66,
+      "label": "resource_sources.py:403 guard disabled",
+      "state": "killed",
+      "old": "(after.st_dev, after.st_ino) != (opened.st_dev, opened.st_ino)",
+      "new": "False",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_posix_output_swap_refuses_and_closes_descriptor"
+    },
+    {
+      "index": 67,
+      "label": "resource_sources.py:92 guard disabled",
+      "state": "killed",
+      "old": "not match or match[1] in values",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - TypeEr..."
+    },
+    {
+      "index": 68,
+      "label": "resource_sources.py:92 Or clause 1 removed",
+      "state": "killed",
+      "old": "not match or match[1] in values",
+      "new": "False or match[1] in values",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - TypeEr..."
+    },
+    {
+      "index": 69,
+      "label": "resource_sources.py:92 Or clause 2 removed",
+      "state": "killed",
+      "old": "not match or match[1] in values",
+      "new": "not match or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - Failed..."
+    },
+    {
+      "index": 70,
+      "label": "resource_sources.py:128 guard disabled",
+      "state": "killed",
+      "old": "len(left) < 6 or len(right) < 3",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - Failed..."
+    },
+    {
+      "index": 71,
+      "label": "resource_sources.py:128 Or clause 1 removed",
+      "state": "killed",
+      "old": "len(left) < 6 or len(right) < 3",
+      "new": "False or len(right) < 3",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - Failed..."
+    },
+    {
+      "index": 72,
+      "label": "resource_sources.py:128 Or clause 2 removed",
+      "state": "killed",
+      "old": "len(left) < 6 or len(right) < 3",
+      "new": "len(left) < 6 or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_bad_sources_refuse - Failed..."
+    },
+    {
+      "index": 73,
+      "label": "resource_sources.py:257 mach_host_self argtypes weakened",
+      "state": "killed",
+      "old": "[]",
+      "new": "[c.c_void_p]",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_documented_gesture_yields_native_receipt_without_files"
+    },
+    {
+      "index": 74,
+      "label": "resource_sources.py:257 mach_host_self restype weakened",
+      "state": "killed",
+      "old": "c.c_uint32",
+      "new": "c.c_short",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 75,
+      "label": "resource_sources.py:258 host_statistics64 argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_uint32, c.c_int, c.c_void_p, c.POINTER(c.c_uint32)]",
+      "new": "[c.c_void_p, c.c_int, c.c_void_p, c.POINTER(c.c_uint32)]",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 76,
+      "label": "resource_sources.py:258 host_statistics64 restype weakened",
+      "state": "killed",
+      "old": "c.c_int",
+      "new": "c.c_short",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 77,
+      "label": "resource_sources.py:259 sysctlbyname argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_char_p, c.c_void_p, c.POINTER(c.c_size_t), c.c_void_p, c.c_size_t]",
+      "new": "[c.c_void_p, c.c_void_p, c.POINTER(c.c_size_t), c.c_void_p, c.c_size_t]",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 78,
+      "label": "resource_sources.py:259 sysctlbyname restype weakened",
+      "state": "killed",
+      "old": "c.c_int",
+      "new": "c.c_short",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 79,
+      "label": "resource_sources.py:260 mach_port_deallocate argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_uint32, c.c_uint32]",
+      "new": "[c.c_void_p, c.c_uint32]",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 80,
+      "label": "resource_sources.py:260 mach_port_deallocate restype weakened",
+      "state": "killed",
+      "old": "c.c_int",
+      "new": "c.c_short",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 81,
+      "label": "resource_sources.py:261 task_info argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_uint32, c.c_int, c.c_void_p, c.POINTER(c.c_uint32)]",
+      "new": "[c.c_void_p, c.c_int, c.c_void_p, c.POINTER(c.c_uint32)]",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 82,
+      "label": "resource_sources.py:261 task_info restype weakened",
+      "state": "killed",
+      "old": "c.c_int",
+      "new": "c.c_short",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 83,
+      "label": "resource_sources.py:312 GlobalMemoryStatusEx argtypes weakened",
+      "state": "killed",
+      "old": "[c.POINTER(MemoryStatusEx)]",
+      "new": "[c.c_void_p]",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 84,
+      "label": "resource_sources.py:312 GlobalMemoryStatusEx restype weakened",
+      "state": "killed",
+      "old": "c.c_int",
+      "new": "c.c_short",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 85,
+      "label": "resource_sources.py:313 GetDiskFreeSpaceExW argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_wchar_p, c.POINTER(c.c_uint64), c.POINTER(c.c_uint64), c.POINTER(c.c_uint64)]",
+      "new": "[c.c_void_p, c.POINTER(c.c_uint64), c.POINTER(c.c_uint64), c.POINTER(c.c_uint64)]",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 86,
+      "label": "resource_sources.py:313 GetDiskFreeSpaceExW restype weakened",
+      "state": "killed",
+      "old": "c.c_int",
+      "new": "c.c_short",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 87,
+      "label": "resource_sources.py:314 CreateFileW argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_wchar_p, c.c_uint32, c.c_uint32, c.c_void_p, c.c_uint32, c.c_uint32, c.c_void_p]",
+      "new": "[c.c_void_p, c.c_uint32, c.c_uint32, c.c_void_p, c.c_uint32, c.c_uint32, c.c_void_p]",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 88,
+      "label": "resource_sources.py:314 CreateFileW restype weakened",
+      "state": "killed",
+      "old": "c.c_void_p",
+      "new": "c.c_short",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 89,
+      "label": "resource_sources.py:315 GetFileInformationByHandle argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_void_p, c.POINTER(FileInformation)]",
+      "new": "[c.c_int, c.POINTER(FileInformation)]",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 90,
+      "label": "resource_sources.py:315 GetFileInformationByHandle restype weakened",
+      "state": "killed",
+      "old": "c.c_int",
+      "new": "c.c_short",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 91,
+      "label": "resource_sources.py:316 GetFinalPathNameByHandleW argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_void_p, c.c_wchar_p, c.c_uint32, c.c_uint32]",
+      "new": "[c.c_int, c.c_wchar_p, c.c_uint32, c.c_uint32]",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 92,
+      "label": "resource_sources.py:316 GetFinalPathNameByHandleW restype weakened",
+      "state": "killed",
+      "old": "c.c_uint32",
+      "new": "c.c_short",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 93,
+      "label": "resource_sources.py:317 CloseHandle argtypes weakened",
+      "state": "killed",
+      "old": "[c.c_void_p]",
+      "new": "[c.c_int]",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 94,
+      "label": "resource_sources.py:317 CloseHandle restype weakened",
+      "state": "killed",
+      "old": "c.c_int",
+      "new": "c.c_short",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_binding_construction_declares_exact_abi"
+    },
+    {
+      "index": 95,
+      "label": "resources.py:189 guard disabled",
+      "state": "killed",
+      "old": "__name__ == '__main__'",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_documented_gesture_yields_native_receipt_without_files"
+    },
+    {
+      "index": 96,
+      "label": "resources.py:36 guard disabled",
+      "state": "killed",
+      "old": "type(fraction) not in (int, float) or not math.isfinite(fraction)\n            or fraction <= 0 or fraction >= 1",
+      "new": "False",
+      "failure_count": 3,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_fraction_clause_refuses_through_public_argv"
+    },
+    {
+      "index": 97,
+      "label": "resources.py:36 Or clause 1 removed",
+      "state": "killed",
+      "old": "type(fraction) not in (int, float) or not math.isfinite(fraction)\n            or fraction <= 0 or fraction >= 1",
+      "new": "False or not math.isfinite(fraction) or fraction <= 0 or (fraction >= 1)",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_library_fraction_capacity_and_disk_types"
+    },
+    {
+      "index": 98,
+      "label": "resources.py:36 Or clause 2 removed",
+      "state": "killed",
+      "old": "type(fraction) not in (int, float) or not math.isfinite(fraction)\n            or fraction <= 0 or fraction >= 1",
+      "new": "type(fraction) not in (int, float) or False or fraction <= 0 or (fraction >= 1)",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_fraction_clause_refuses_through_public_argv"
+    },
+    {
+      "index": 99,
+      "label": "resources.py:36 Or clause 3 removed",
+      "state": "killed",
+      "old": "type(fraction) not in (int, float) or not math.isfinite(fraction)\n            or fraction <= 0 or fraction >= 1",
+      "new": "type(fraction) not in (int, float) or not math.isfinite(fraction) or False or (fraction >= 1)",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_fraction_clause_refuses_through_public_argv"
+    },
+    {
+      "index": 100,
+      "label": "resources.py:36 Or clause 4 removed",
+      "state": "killed",
+      "old": "type(fraction) not in (int, float) or not math.isfinite(fraction)\n            or fraction <= 0 or fraction >= 1",
+      "new": "type(fraction) not in (int, float) or not math.isfinite(fraction) or fraction <= 0 or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_fraction_clause_refuses_through_public_argv"
+    },
+    {
+      "index": 101,
+      "label": "resources.py:48 guard disabled",
+      "state": "killed",
+      "old": "available == 0",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_library_fraction_capacity_and_disk_types"
+    },
+    {
+      "index": 102,
+      "label": "resources.py:56 guard disabled",
+      "state": "killed",
+      "old": "workers == 0",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_exhaustion_refuses_without_partial_receipt"
+    },
+    {
+      "index": 103,
+      "label": "resources.py:63 guard disabled",
+      "state": "killed",
+      "old": "disk_available < total",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_exhaustion_refuses_without_partial_receipt"
+    },
+    {
+      "index": 104,
+      "label": "resources.py:74 guard disabled",
+      "state": "killed",
+      "old": "not isinstance(rows, list)",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 105,
+      "label": "resources.py:113 guard disabled",
+      "state": "killed",
+      "old": "not finite",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 106,
+      "label": "resources.py:120 guard disabled",
+      "state": "killed",
+      "old": "not isinstance(value, dict) or set(value) != keys",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 107,
+      "label": "resources.py:120 Or clause 1 removed",
+      "state": "killed",
+      "old": "not isinstance(value, dict) or set(value) != keys",
+      "new": "False or set(value) != keys",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 108,
+      "label": "resources.py:120 Or clause 2 removed",
+      "state": "killed",
+      "old": "not isinstance(value, dict) or set(value) != keys",
+      "new": "not isinstance(value, dict) or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 109,
+      "label": "resources.py:79 guard disabled",
+      "state": "killed",
+      "old": "not isinstance(row, dict) or set(row) != expected\n                or not isinstance(row['name'], str) or not row['name']\n                or not isinstance(row['location'], str) or not row['location']\n                or not isinstance(row['facts'], dict)",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 110,
+      "label": "resources.py:79 Or clause 1 removed",
+      "state": "killed",
+      "old": "not isinstance(row, dict) or set(row) != expected\n                or not isinstance(row['name'], str) or not row['name']\n                or not isinstance(row['location'], str) or not row['location']\n                or not isinstance(row['facts'], dict)",
+      "new": "False or set(row) != expected or (not isinstance(row['name'], str)) or (not row['name']) or (not isinstance(row['location'], str)) or (not row['location']) or (not isinstance(row['facts'], dict))",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 111,
+      "label": "resources.py:79 Or clause 2 removed",
+      "state": "killed",
+      "old": "not isinstance(row, dict) or set(row) != expected\n                or not isinstance(row['name'], str) or not row['name']\n                or not isinstance(row['location'], str) or not row['location']\n                or not isinstance(row['facts'], dict)",
+      "new": "not isinstance(row, dict) or False or (not isinstance(row['name'], str)) or (not row['name']) or (not isinstance(row['location'], str)) or (not row['location']) or (not isinstance(row['facts'], dict))",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 112,
+      "label": "resources.py:79 Or clause 3 removed",
+      "state": "killed",
+      "old": "not isinstance(row, dict) or set(row) != expected\n                or not isinstance(row['name'], str) or not row['name']\n                or not isinstance(row['location'], str) or not row['location']\n                or not isinstance(row['facts'], dict)",
+      "new": "not isinstance(row, dict) or set(row) != expected or False or (not row['name']) or (not isinstance(row['location'], str)) or (not row['location']) or (not isinstance(row['facts'], dict))",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 113,
+      "label": "resources.py:79 Or clause 4 removed",
+      "state": "killed",
+      "old": "not isinstance(row, dict) or set(row) != expected\n                or not isinstance(row['name'], str) or not row['name']\n                or not isinstance(row['location'], str) or not row['location']\n                or not isinstance(row['facts'], dict)",
+      "new": "not isinstance(row, dict) or set(row) != expected or (not isinstance(row['name'], str)) or False or (not isinstance(row['location'], str)) or (not row['location']) or (not isinstance(row['facts'], dict))",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 114,
+      "label": "resources.py:79 Or clause 5 removed",
+      "state": "killed",
+      "old": "not isinstance(row, dict) or set(row) != expected\n                or not isinstance(row['name'], str) or not row['name']\n                or not isinstance(row['location'], str) or not row['location']\n                or not isinstance(row['facts'], dict)",
+      "new": "not isinstance(row, dict) or set(row) != expected or (not isinstance(row['name'], str)) or (not row['name']) or False or (not row['location']) or (not isinstance(row['facts'], dict))",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 115,
+      "label": "resources.py:79 Or clause 6 removed",
+      "state": "killed",
+      "old": "not isinstance(row, dict) or set(row) != expected\n                or not isinstance(row['name'], str) or not row['name']\n                or not isinstance(row['location'], str) or not row['location']\n                or not isinstance(row['facts'], dict)",
+      "new": "not isinstance(row, dict) or set(row) != expected or (not isinstance(row['name'], str)) or (not row['name']) or (not isinstance(row['location'], str)) or False or (not isinstance(row['facts'], dict))",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 116,
+      "label": "resources.py:79 Or clause 7 removed",
+      "state": "killed",
+      "old": "not isinstance(row, dict) or set(row) != expected\n                or not isinstance(row['name'], str) or not row['name']\n                or not isinstance(row['location'], str) or not row['location']\n                or not isinstance(row['facts'], dict)",
+      "new": "not isinstance(row, dict) or set(row) != expected or (not isinstance(row['name'], str)) or (not row['name']) or (not isinstance(row['location'], str)) or (not row['location']) or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 117,
+      "label": "resources.py:123 guard disabled",
+      "state": "killed",
+      "old": "value['mount_root'] != '/' or not isinstance(value['ancestors'], list)\n                or not value['ancestors']",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 118,
+      "label": "resources.py:123 Or clause 1 removed",
+      "state": "killed",
+      "old": "value['mount_root'] != '/' or not isinstance(value['ancestors'], list)\n                or not value['ancestors']",
+      "new": "False or not isinstance(value['ancestors'], list) or (not value['ancestors'])",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 119,
+      "label": "resources.py:123 Or clause 2 removed",
+      "state": "killed",
+      "old": "value['mount_root'] != '/' or not isinstance(value['ancestors'], list)\n                or not value['ancestors']",
+      "new": "value['mount_root'] != '/' or False or (not value['ancestors'])",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 120,
+      "label": "resources.py:123 Or clause 3 removed",
+      "state": "killed",
+      "old": "value['mount_root'] != '/' or not isinstance(value['ancestors'], list)\n                or not value['ancestors']",
+      "new": "value['mount_root'] != '/' or not isinstance(value['ancestors'], list) or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 121,
+      "label": "resources.py:130 guard disabled",
+      "state": "killed",
+      "old": "value['ancestors'][-1] != value['mount']",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 122,
+      "label": "resources.py:165 guard disabled",
+      "state": "killed",
+      "old": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'}\n                or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW')\n                or not isinstance(disk['directory'], str) or not disk['directory']",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal"
+    },
+    {
+      "index": 123,
+      "label": "resources.py:165 Or clause 1 removed",
+      "state": "killed",
+      "old": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'}\n                or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW')\n                or not isinstance(disk['directory'], str) or not disk['directory']",
+      "new": "False or set(disk) != {'api', 'directory', 'available_bytes'} or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW') or (not isinstance(disk['directory'], str)) or (not disk['directory'])",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal"
+    },
+    {
+      "index": 124,
+      "label": "resources.py:165 Or clause 2 removed",
+      "state": "killed",
+      "old": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'}\n                or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW')\n                or not isinstance(disk['directory'], str) or not disk['directory']",
+      "new": "not isinstance(disk, dict) or False or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW') or (not isinstance(disk['directory'], str)) or (not disk['directory'])",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal"
+    },
+    {
+      "index": 125,
+      "label": "resources.py:165 Or clause 3 removed",
+      "state": "killed",
+      "old": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'}\n                or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW')\n                or not isinstance(disk['directory'], str) or not disk['directory']",
+      "new": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'} or False or (not isinstance(disk['directory'], str)) or (not disk['directory'])",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal"
+    },
+    {
+      "index": 126,
+      "label": "resources.py:165 Or clause 4 removed",
+      "state": "killed",
+      "old": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'}\n                or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW')\n                or not isinstance(disk['directory'], str) or not disk['directory']",
+      "new": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'} or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW') or False or (not disk['directory'])",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal"
+    },
+    {
+      "index": 127,
+      "label": "resources.py:165 Or clause 5 removed",
+      "state": "killed",
+      "old": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'}\n                or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW')\n                or not isinstance(disk['directory'], str) or not disk['directory']",
+      "new": "not isinstance(disk, dict) or set(disk) != {'api', 'directory', 'available_bytes'} or disk['api'] not in ('fstatvfs', 'GetDiskFreeSpaceExW') or (not isinstance(disk['directory'], str)) or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_bad_disk_snapshot_is_a_typed_refusal"
+    },
+    {
+      "index": 128,
+      "label": "resources.py:88 guard disabled",
+      "state": "killed",
+      "old": "limit-used <= 0",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_exhaustion_refuses_without_partial_receipt"
+    },
+    {
+      "index": 129,
+      "label": "resources.py:91 guard disabled",
+      "state": "killed",
+      "old": "limit-used != available",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_every_finite_source_is_validated_before_minimum"
+    },
+    {
+      "index": 130,
+      "label": "resources.py:106 guard disabled",
+      "state": "killed",
+      "old": "not isinstance(key, str) or not key",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 131,
+      "label": "resources.py:106 Or clause 1 removed",
+      "state": "killed",
+      "old": "not isinstance(key, str) or not key",
+      "new": "False or not key",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 132,
+      "label": "resources.py:106 Or clause 2 removed",
+      "state": "killed",
+      "old": "not isinstance(key, str) or not key",
+      "new": "not isinstance(key, str) or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 133,
+      "label": "resources.py:127 guard disabled",
+      "state": "killed",
+      "old": "not isinstance(path, str)",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 134,
+      "label": "resources.py:134 guard disabled",
+      "state": "killed",
+      "old": "locations != value['ancestors']",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 135,
+      "label": "resources.py:137 guard disabled",
+      "state": "killed",
+      "old": "any(value[key] is not None for key in ('mount', 'mount_root', 'process_path')) or value['ancestors'] != []",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 136,
+      "label": "resources.py:137 Or clause 1 removed",
+      "state": "killed",
+      "old": "any(value[key] is not None for key in ('mount', 'mount_root', 'process_path')) or value['ancestors'] != []",
+      "new": "False or value['ancestors'] != []",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 137,
+      "label": "resources.py:137 Or clause 2 removed",
+      "state": "killed",
+      "old": "any(value[key] is not None for key in ('mount', 'mount_root', 'process_path')) or value['ancestors'] != []",
+      "new": "any((value[key] is not None for key in ('mount', 'mount_root', 'process_path'))) or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 138,
+      "label": "resources.py:95 guard disabled",
+      "state": "killed",
+      "old": "limit is not None or available is not None",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 139,
+      "label": "resources.py:95 Or clause 1 removed",
+      "state": "killed",
+      "old": "limit is not None or available is not None",
+      "new": "False or available is not None",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 140,
+      "label": "resources.py:95 Or clause 2 removed",
+      "state": "killed",
+      "old": "limit is not None or available is not None",
+      "new": "limit is not None or False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 141,
+      "label": "resources.py:98 guard disabled",
+      "state": "killed",
+      "old": "name not in ('RLIMIT_AS', 'cgroup-v2-root')",
+      "new": "False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_malformed_source_rows_facts_and_unlimited_state_refuse"
+    },
+    {
+      "index": 142,
+      "label": "finite minimum becomes maximum",
+      "state": "killed",
+      "old": "return encoded, min(finite)",
+      "new": "return encoded, max(finite)",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_exact_receipt_and_hand_checked_rounding"
+    },
+    {
+      "index": 143,
+      "label": "source current usage ignored",
+      "state": "killed",
+      "old": "available, mode = limit-used,",
+      "new": "available, mode = limit,",
+      "failure_count": 10,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_every_ancestor_and_unlimited_provenance"
+    },
+    {
+      "index": 144,
+      "label": "parent traversal skipped",
+      "state": "killed",
+      "old": "current = current.parent",
+      "new": "current = root",
+      "failure_count": 4,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_every_ancestor_and_unlimited_provenance"
+    },
+    {
+      "index": 145,
+      "label": "unlimited sentinel disarmed",
+      "state": "killed",
+      "old": "maximum.strip() == 'max'",
+      "new": "maximum.strip() == 'bogus'",
+      "failure_count": 6,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 146,
+      "label": "resident pages mistaken for virtual pages",
+      "state": "killed",
+      "old": "pages[0]*page_bytes",
+      "new": "pages[1]*page_bytes",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_statm_uses_total_pages_and_measured_page_size"
+    },
+    {
+      "index": 147,
+      "label": "page size multiplication removed",
+      "state": "killed",
+      "old": "pages[0]*page_bytes",
+      "new": "pages[0]*1",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_statm_uses_total_pages_and_measured_page_size"
+    },
+    {
+      "index": 148,
+      "label": "finite address-space usage ignored",
+      "state": "killed",
+      "old": "limit, virtual_bytes())",
+      "new": "limit, 0)",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_finite_address_limit_subtracts_virtual_not_resident_space"
+    },
+    {
+      "index": 149,
+      "label": "speculative double counted",
+      "state": "killed",
+      "old": "(stats.free_count+stats.inactive_count)*page",
+      "new": "(stats.free_count+stats.inactive_count+stats.speculative_count)*page",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_darwin_speculative_is_already_free_and_port_is_released"
+    },
+    {
+      "index": 150,
+      "label": "mutable alias used instead of held volume",
+      "state": "killed",
+      "old": "lib.GetDiskFreeSpaceExW(volume[1],",
+      "new": "lib.GetDiskFreeSpaceExW(str(resolved),",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_windows_native_memory_and_caller_volume_capacity"
+    },
+    {
+      "index": 151,
+      "label": "documented gesture writes bytecode",
+      "state": "killed",
+      "old": "sys.dont_write_bytecode = True",
+      "new": "sys.dont_write_bytecode = False",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_documented_gesture_yields_native_receipt_without_files"
+    },
+    {
+      "index": 152,
+      "label": "reserve ignored",
+      "state": "killed",
+      "old": "usable = available * (denominator-numerator) // denominator",
+      "new": "usable = available",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_exact_receipt_and_hand_checked_rounding"
+    },
+    {
+      "index": 153,
+      "label": "simultaneous partitions oversubscribed",
+      "state": "killed",
+      "old": "decode, output = usable//2, usable-usable//2",
+      "new": "decode, output = usable, usable",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_exact_receipt_and_hand_checked_rounding"
+    },
+    {
+      "index": 154,
+      "label": "decode scheduling bound ignored",
+      "state": "killed",
+      "old": "workers = min(cpu_count, decode//record_memory)",
+      "new": "workers = cpu_count",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_exhaustion_refuses_without_partial_receipt"
+    },
+    {
+      "index": 155,
+      "label": "decoded blob expansion ignored",
+      "state": "killed",
+      "old": "blob = (decode//workers-overhead)//expansion",
+      "new": "blob = decode//workers",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_exact_receipt_and_hand_checked_rounding"
+    },
+    {
+      "index": 156,
+      "label": "output record partition ignored",
+      "state": "killed",
+      "old": "records = output//record_bytes",
+      "new": "records = usable//record_bytes",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_exact_receipt_and_hand_checked_rounding"
+    },
+    {
+      "index": 157,
+      "label": "output ceiling rounded upward",
+      "state": "killed",
+      "old": "total = records*record_bytes",
+      "new": "total = output+record_bytes",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_exact_receipt_and_hand_checked_rounding"
+    },
+    {
+      "index": 158,
+      "label": "initial device identity ignored",
+      "state": "killed",
+      "old": "(opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)",
+      "new": "opened.st_ino != before.st_ino",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_posix_descriptor_type_identity_and_close_errors"
+    },
+    {
+      "index": 159,
+      "label": "initial inode identity ignored",
+      "state": "killed",
+      "old": "(opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)",
+      "new": "opened.st_dev != before.st_dev",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_posix_descriptor_type_identity_and_close_errors"
+    },
+    {
+      "index": 160,
+      "label": "post-measurement device identity ignored",
+      "state": "killed",
+      "old": "(after.st_dev, after.st_ino) != (opened.st_dev, opened.st_ino)",
+      "new": "after.st_ino != opened.st_ino",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_posix_descriptor_type_identity_and_close_errors"
+    },
+    {
+      "index": 161,
+      "label": "post-measurement inode identity ignored",
+      "state": "killed",
+      "old": "(after.st_dev, after.st_ino) != (opened.st_dev, opened.st_ino)",
+      "new": "after.st_dev != opened.st_dev",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_posix_output_swap_refuses_and_closes_descriptor"
+    },
+    {
+      "index": 162,
+      "label": "native ancestor order reversed",
+      "state": "killed",
+      "old": "ancestors.append(str(current))",
+      "new": "ancestors.insert(0, str(current))",
+      "failure_count": 4,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_linux_every_ancestor_and_unlimited_provenance"
+    },
+    {
+      "index": 163,
+      "label": "finite address-space source detached from collector",
+      "state": "killed",
+      "old": "rows.append(posix_address_space())",
+      "new": "pass",
+      "failure_count": 2,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_documented_gesture_yields_native_receipt_without_files"
+    },
+    {
+      "index": 164,
+      "label": "source provenance order weakened to membership",
+      "state": "killed",
+      "old": "locations != value['ancestors']",
+      "new": "set(locations) != set(value['ancestors'])",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_cgroup_shape_and_ancestor_validation_are_typed"
+    },
+    {
+      "index": 165,
+      "label": "CI provenance order weakened to membership",
+      "state": "killed",
+      "old": "assert locations == cgroup['ancestors']",
+      "new": "set equality",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 166,
+      "label": "workflow:57 receipt guard removed",
+      "state": "killed",
+      "old": "assert receipt['schema'] == 'parity-resource-preflight/v1'",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 167,
+      "label": "workflow:58 receipt guard removed",
+      "state": "killed",
+      "old": "assert receipt['status'] == 'ok'",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 168,
+      "label": "workflow:59 receipt guard removed",
+      "state": "killed",
+      "old": "assert receipt['platform'] == expected",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 169,
+      "label": "workflow:62 receipt guard removed",
+      "state": "killed",
+      "old": "assert native[expected] in names",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 170,
+      "label": "workflow:64 receipt guard removed",
+      "state": "killed",
+      "old": "assert 'RLIMIT_AS' in names",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 171,
+      "label": "workflow:67 receipt guard removed",
+      "state": "killed",
+      "old": "assert cgroup['mode'] in ('v2', 'none')",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 172,
+      "label": "workflow:69 receipt guard removed",
+      "state": "killed",
+      "old": "assert cgroup['mount_root'] == '/'",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 173,
+      "label": "workflow:71 receipt guard removed",
+      "state": "killed",
+      "old": "assert locations == cgroup['ancestors']",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 174,
+      "label": "workflow:72 receipt guard removed",
+      "state": "killed",
+      "old": "assert locations[-1] == cgroup['mount']",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 175,
+      "label": "workflow:74 receipt guard removed",
+      "state": "killed",
+      "old": "assert cgroup['mode'] == 'not-applicable'",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 176,
+      "label": "workflow:75 receipt guard removed",
+      "state": "killed",
+      "old": "assert receipt['disk']['api'] == ('GetDiskFreeSpaceExW' if expected == 'win32' else 'fstatvfs')",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 177,
+      "label": "workflow:78 receipt guard removed",
+      "state": "killed",
+      "old": "assert re.fullmatch(r'0|[1-9][0-9]*', value)",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 178,
+      "label": "workflow:85 receipt guard removed",
+      "state": "killed",
+      "old": "assert size(row['limit_bytes']) - size(row['used_bytes']) == remaining",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 179,
+      "label": "workflow:88 receipt guard removed",
+      "state": "killed",
+      "old": "assert row['mode'] == 'unlimited'",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 180,
+      "label": "workflow:89 receipt guard removed",
+      "state": "killed",
+      "old": "assert row['limit_bytes'] is None and row['available_bytes'] is None",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 181,
+      "label": "workflow:93 receipt guard removed",
+      "state": "killed",
+      "old": "assert all(value > 0 for value in counts.values())",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 182,
+      "label": "workflow:95 receipt guard removed",
+      "state": "killed",
+      "old": "assert all(type(value) is int and value > 0 for value in (workers, expansion, cpu))",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 183,
+      "label": "workflow:96 receipt guard removed",
+      "state": "killed",
+      "old": "assert workers <= cpu",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 184,
+      "label": "workflow:97 receipt guard removed",
+      "state": "killed",
+      "old": "assert counts['available_bytes'] == min(finite)",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 185,
+      "label": "workflow:98 receipt guard removed",
+      "state": "killed",
+      "old": "assert counts['usable_bytes'] + counts['reserve_bytes'] == counts['available_bytes']",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 186,
+      "label": "workflow:99 receipt guard removed",
+      "state": "killed",
+      "old": "assert counts['decode_bytes'] + counts['output_buffer_bytes'] == counts['usable_bytes']",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 187,
+      "label": "workflow:100 receipt guard removed",
+      "state": "killed",
+      "old": "assert workers * (expansion * counts['blob_bytes_per_worker'] + counts['object_overhead_bytes']) <= counts['decode_bytes']",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 188,
+      "label": "workflow:101 receipt guard removed",
+      "state": "killed",
+      "old": "assert counts['output_bytes'] <= counts['output_buffer_bytes']",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    },
+    {
+      "index": 189,
+      "label": "workflow:102 receipt guard removed",
+      "state": "killed",
+      "old": "assert size(receipt['disk']['available_bytes']) >= counts['output_bytes']",
+      "new": "pass",
+      "failure_count": 1,
+      "first_failing_test": "FAILED tests/test_parity_resources.py::test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets"
+    }
+  ]
+}

@@ -23,7 +23,7 @@ availability measurement. Do not silently fall back to copied limits or ignore i
 | --- | --- | --- | --- |
 | Linux | `/proc/meminfo` MemAvailable, checked against MemTotal | Every visible cgroup-v2 ancestor's memory.max minus memory.current; finite RLIMIT_AS minus current virtual bytes | Existing directory descriptor, fstatvfs f_bavail × f_frsize |
 | macOS | In-process HOST_VM_INFO64 free + inactive pages × vm_kernel_page_size, checked against hw.memsize | Finite RLIMIT_AS minus TASK_VM_INFO revision-0 virtual_size | Existing directory descriptor, fstatvfs f_bavail × f_frsize |
-| Windows | In-process GlobalMemoryStatusEx ullAvailPhys, checked against ullTotalPhys | No POSIX address-space source | GetDiskFreeSpaceExW per-caller available bytes |
+| Windows | In-process GlobalMemoryStatusEx ullAvailPhys, checked against ullTotalPhys | No POSIX address-space source | GetDiskFreeSpaceExW per-caller available bytes on the held directory handle's GUID volume |
 
 Linux virtual bytes use `/proc/self/statm`'s **first** field (total virtual pages) times the
 measured SC_PAGE_SIZE, not resident memory. Active cgroup-v1 memory accounting refuses.
@@ -40,6 +40,16 @@ Mach speculative pages are already included in free pages and are not added agai
 return codes and returned structure sizes are checked; the acquired Mach host port is
 released on success and failure. ctypes argument/return widths are explicitly declared.
 Native binding/API failures refuse, with no shell-command fallback.
+
+Output paths are resolved strictly and must be directories, not files or symlinks to files.
+POSIX measures an O_DIRECTORY descriptor and checks its type/device/inode against the original
+and post-measurement pathname identity. Windows opens an existing directory for metadata only,
+checks its handle attributes, and obtains its canonical volume-GUID path. It measures that GUID
+volume while holding the directory handle, then closes the handle on every path. The Windows
+receipt names this canonical GUID directory, not a mutable drive/junction alias. Missing GUID
+support or failed/truncated native results refuse; there is no weaker pathname fallback. Native
+handle-path buffers are bounded by the Windows API's extended-path protocol limit, not a laptop
+memory policy. A filesystem probe is still not a reservation for a later write.
 
 These semantics follow the [Linux cgroup-v2 interface](https://docs.kernel.org/admin-guide/cgroup-v2.html),
 the macOS SDK's mach/vm_statistics.h and mach/task_info.h declarations, and Microsoft's
@@ -139,8 +149,12 @@ Cgroup provenance covers visible ancestors only. A namespace can hide external a
 this receipt does not attest host-wide headroom or hidden policy. CPU count is a scheduling
 bound, not a job/container CPU-quota entitlement. Record size is caller-supplied, not attested.
 
-Linux collection is O(mountinfo entries + visible cgroup depth); its receipt is O(depth).
-Other platforms use a constant number of native calls. With fixed measured facts, 10×/100×
+Linux performs O(depth) memory-file probes and emits O(depth) rows, but path processing and
+receipt **bytes** scale with the sum of ancestor path lengths. Growing paths can therefore
+produce quadratic byte/work growth in nesting depth; a row count is not a timing. Mountinfo
+parsing also scales with its text bytes, and output-directory resolution adds path-component
+work. The macOS/Windows memory collectors use a constant number of native calls, not a claimed
+constant execution time. OS/filesystem latency is unmeasured. With fixed measured facts, 10×/100×
 encoded record sizes reduce output record counts roughly 10×/100× (integer rounding applies),
 increase per-record decode cost, and can reduce workers to zero, which refuses. Memory does
 not grow with a repository's item count here: this command does not enumerate the repository.
