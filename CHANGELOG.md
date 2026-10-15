@@ -4,6 +4,7 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Ledger entry file names can use an alias or a per-repository salted host token, and the doctor warns about raw host names on a public repository (#1514).** `ledger.host_alias` and `ledger.salt_host_token` (both off by default, which changes no file name) replace or salt the hash of the host name in `entries/<actor>-<host>.<pid>.jsonl`; older files stay read and attributed, and the doctor's `ledger entries carry no raw host name` row reads the local copy of the ledger branch.
 - An unstamped legacy answers block is no longer counted for a newer stamped park, and a quota wait-it-out ask is applied only after its recorded reset time (unknown counts as not yet) (#1522).
 
 - A needs_decision closing answer is now normalised through the bank (case, spacing, a trailing recommended marker) into the stored `answer`; other text is `free` and never learnable (#1521).
