@@ -135,6 +135,12 @@ def test_followup_is_never_a_project_rule_violation():                      # F1
     assert "or a project-rule violation (quote the rule)" in review
 
 
+def test_unreachable_project_rules_are_recorded_and_flagged_not_held():      # D2 round-3 F02
+    review = " ".join(_skill("sigma-review").split())
+    assert "The approval is not held: `work.py record-review` records `project_rules: not-judged (<why>)`" in review
+    assert "doctor and session start flag it" in review
+
+
 # --- third independent Codex read, docs/launch/evidence/review-s5-codex-read-round3-9065e4aa5076.md ---
 
 def _flat(path):

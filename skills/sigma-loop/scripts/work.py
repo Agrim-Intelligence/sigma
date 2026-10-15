@@ -1401,8 +1401,7 @@ def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", 
     # `unreachable`, and that fact is RECORDED here, not only said in the reviewer's prose. Resolved
     # from the goal's worktree when there is one (the reviewer's own vantage), else the project root.
     # `present` / `absent` add nothing: the field exists only to carry the gap.
-    ns_state, ns_detail = _load("north_star").check(rec["worktree"] if rec and rec.get("worktree")
-                                                    else project_root(sdlc_dir))
+    ns_state, ns_detail = _north_star_state(sdlc_dir, rec)
     if ns_state == "unreachable":
         record["alignment"] = f"not-judged ({ns_detail})"
         print(f"work: strategic alignment was NOT judged for {goal}: {ns_detail}", file=sys.stderr)
@@ -1434,6 +1433,14 @@ def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", 
     return {**record, "path": path}
 
 
+def _north_star_state(sdlc_dir, rec):
+    """(state, detail) of the north-star from the goal's worktree when it has one (the reviewer's own
+    vantage), else the project root. `detail` is one bounded line (it is written into records)."""
+    state, detail = _load("north_star").check(rec["worktree"] if rec and rec.get("worktree")
+                                              else project_root(sdlc_dir))
+    return state, " ".join(str(detail).split())[:200]
+
+
 def record_review(sdlc_dir, config, goal, verdict, agent_id="", reason=""):
     """Record the code-review verdict in the action log (#684) -- the only place a local-only goal,
     which has no PR, can show that an independent review ran and approved. Verdicts: APPROVE,
@@ -1442,7 +1449,16 @@ def record_review(sdlc_dir, config, goal, verdict, agent_id="", reason=""):
     mapped = pg.REVIEW_VERDICTS.get(str(verdict or "").strip().upper())
     if not mapped:
         raise ValueError(f"unknown review verdict {verdict!r}: one of " + ", ".join(pg.REVIEW_VERDICTS))
-    return pg.record_verdict(sdlc_dir, config, goal, "review", mapped, agent_id=agent_id)
+    # D2 round-3 F02 (owner ruling 2026-10-15): the approval is NOT held when the project rules cannot be
+    # read, but the gap is RECORDED on the verdict row, not only said in the reviewer's prose. The rules
+    # live in the north-star, so this is the same three-way check plan-review uses; absent/present add
+    # nothing.
+    ns_state, ns_detail = _north_star_state(sdlc_dir, _record(sdlc_dir, goal) if enabled(config) else None)
+    rules = f"not-judged ({ns_detail})" if ns_state == "unreachable" else ""
+    row = pg.record_verdict(sdlc_dir, config, goal, "review", mapped, agent_id=agent_id, project_rules=rules)
+    if rules:
+        print(f"work: project-rule conformance was NOT judged for {goal}: {ns_detail}", file=sys.stderr)
+    return row
 
 
 def phase_gate_on(config):

@@ -469,3 +469,8 @@ def test_unreachable_north_star_is_announced_even_without_the_policy_brief(tmp_p
 
 def test_absent_north_star_adds_no_session_notice(tmp_path):
     assert "north-star could not be located" not in _run(_ns_project(tmp_path, broken=False))
+
+
+def test_unreachable_north_star_announces_that_code_review_judged_no_project_rules(tmp_path):   # D2 round-3 F02
+    ctx = _context(_run(_ns_project(tmp_path, broken=True)))
+    assert "NOT judging project-rule conformance" in ctx

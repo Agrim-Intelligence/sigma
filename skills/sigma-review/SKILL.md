@@ -125,19 +125,20 @@ axis's boundary is unclear, decide by the harm each axis names. The full canon i
 
 Two gates run alongside the axes:
 - **Project-rule violations** — anything breaking the project's rules: the **north-star Architecture
-  Rules** + governing **`CLAUDE.md`** conventions. Quote the rule. **Never open the north-star by its
-  path** — `.sdlc/` is gitignored, so it is absent from the goal worktree this phase runs in (#1778).
-  The brief either carries a north-star section or names it as a gap: **check which, don't assume**.
+  Rules** + governing **`CLAUDE.md`** conventions. Quote it. **Never open the north-star by its
+  path** — `.sdlc/` is gitignored, so it is absent from the goal worktree.
+  The brief either carries a north-star section or names it as a gap: **check which**.
   If it is a gap — or you are reviewing with no brief at all — resolve it yourself with
   `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/north_star.py"`, and branch: `present <path>` read it;
   `absent` is a drop-in project, so there are no such rules to break; `unreachable` means the verdict
-  **states that project-rule conformance was not judged**, never that it passed.
+  **states that project-rule conformance was not judged**, never that it passed. The approval is not
+  held: `work.py record-review` records `project_rules: not-judged (<why>)`, and doctor and session
+  start flag it.
 - **Conditional-risk surfaces** — run `bash "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/risk-detect.sh"`
-  (read-only, fail-open, secret-safe — it emits location only, never a matched value) over the change.
+  (read-only, fail-open, secret-safe: location only, never a matched value) over the change.
   For each category in its `matched`, ALSO run the dedicated review it names — `migration` →
   `/sigma-migration-check`, `contract` → `/sigma-contract-check`, `sensitive` → `/sigma-security-review`.
-  The detector is a bash trigger (zero LLM cost); it names the risk, the skill judges it. A code-quality
-  pass alone will not catch a broken public contract or an unsafe migration.
+  The detector is a bash trigger (zero LLM cost); it names the risk, the skill judges it.
   **On a committed branch or PR add `--base <base-ref>`**: without it only uncommitted, staged and
   untracked files are read, so an empty `matched` clears nothing. If stderr says the base failed,
   decide each category from `git diff --name-only <base>...HEAD`. The verdict says which way.
