@@ -1,6 +1,7 @@
 """The detached, bounded upkeep job: one unit, one pass, started by the scheduler (`feature_upkeep_sched`).
 
 Usage: feature_upkeep_job.py --sdlc DIR --root DIR --unit NAME --run-id ID --cap SECONDS
+       feature_upkeep_job.py --sweep --sdlc DIR --root DIR --run-id ID --cap SECONDS   (#1387: every unit, one total cap)
        feature_upkeep_job.py --engine --sdlc DIR --root DIR --unit NAME      (the pass itself; the job starts this)
 
 Not meant to be run by hand: the scheduler starts it with every stdio stream on the null device, in its own session.
@@ -157,6 +158,84 @@ def run_job(config, sdlc_dir, root, unit, run_id, cap, *, environ=None, command=
     return {"outcome": outcome, "unit_tip": tip}
 
 
+SWEEP_UNIT = "window"          # the record's unit key for a sweep (it is no unit's outcome)
+
+
+def _engine_argv(sdlc_dir, root, unit, run_id, cap):
+    return [sys.executable, "-I", str(pathlib.Path(__file__).resolve()), "--engine", "--sdlc", str(sdlc_dir),
+            "--root", str(root), "--unit", unit, "--run-id", str(run_id), "--cap", str(cap)]
+
+
+@feature_upkeep.gated("machine")
+def run_sweep(config, sdlc_dir, root, run_id, cap, *, environ=None, command=None, clock=time.monotonic, beat=None,
+              list_units=None, now=None):
+    """#1387: bring EVERY registry unit (include and exclude lists applied) up to the base in one bounded run. Takes the same
+    exclusive lock as `run_job`: when it is held the answer is {"outcome": "busy"}, recorded in the window stamp as a refusal,
+    never as a failure. Each unit goes, in turn, through the existing per-unit engine child (lease, backup ref, direct-commit
+    refusal, conflicts), which reports `current` for a unit already at the base, so a unit another machine's sweep brought
+    current costs one bounded read and nothing else. A refused, parked or failed unit does not stop the others. `cap` is the
+    TOTAL wall-clock for the sweep; a unit the cap or a stop file prevented is listed as unreached, in the job record and in
+    the window stamp. -> {"outcome": "swept"|"busy"|"refused", "sweep": {...}}."""
+    bounded, state, window = _sibling("bounded_run"), _sibling("feature_upkeep_state"), _sibling("feature_upkeep_window")
+    if bounded.group_refusal() is not None:
+        return {"outcome": "refused"}
+    try:
+        import fcntl
+    except ImportError:
+        return {"outcome": "refused"}
+    stamp_now = lambda: int(time.time() if now is None else now)           # noqa: E731
+    lock_path = sched.path_of(sdlc_dir, sched.LOCK_REL)
+    _sibling("state").refuse_symlinks(sdlc_dir, sched.LOCK_REL, True)
+    with open(lock_path, "a") as lock:
+        try:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            prior = window.read(sdlc_dir) or {}
+            window.stamp_attempt(sdlc_dir, stamp_now(), "busy", prior.get("unreached") or [])
+            return {"outcome": "busy"}
+        head = {"schema": sched.RECORD_SCHEMA, "unit": SWEEP_UNIT, "run_id": run_id, "noted": False, "sweep_job": True}
+        _record(sdlc_dir, dict(head, state="running", started_at=stamp_now()))
+        beat_path = sched.path_of(sdlc_dir, sched.BEAT_REL)
+        _touch(beat_path)
+        counts, unreached, outcome = {}, [], "failed"
+        try:
+            reading = feature_upkeep.read(config)
+            names = sched.selected((list_units or sched.list_units)(sdlc_dir), reading.settings["units.include"],
+                                   reading.settings["units.exclude"])
+            clk = beat or BeatingClock(lambda: _touch(beat_path), base=clock)
+            started = clk()
+            stops = (sched.path_of(sdlc_dir, sched.STOP_REL), sched.path_of(sdlc_dir, sched.WATCH_STOP_REL))
+            env = bounded.unattended_env(sched.allowed_env(os.environ if environ is None else environ,
+                                                           (sched.CALL_TIMEOUT_ENV, feature_upkeep.ENV_MACHINE)))
+            for index, name in enumerate(names):
+                remaining = cap - (clk() - started)
+                if remaining <= 0 or any(os.path.exists(p) for p in stops):
+                    unreached = names[index:]
+                    break
+                argv = command(name) if command else _engine_argv(sdlc_dir, root, name, run_id, cap)
+                result = bounded.run_group(argv, root, remaining, env=env, stop_path=EitherStop(*stops), merge=False, clock=clk)
+                word, tip = _outcome_of(result, bounded)
+                counts[word] = counts.get(word, 0) + 1
+                if word in state.OUTCOMES:
+                    state.record_outcome(sdlc_dir, name, int(time.time()), word, tip if tip and len(tip) in (40, 64) else None)
+                elif word == "timeout":
+                    state.record_outcome(sdlc_dir, name, int(time.time()), "failed")
+                if word in ("timeout", "stopped"):                 # the cap or a stop file cut this child short: it and everything after it are left for the next trigger
+                    unreached = names[index:]
+                    break
+            outcome = "swept"
+        finally:
+            summary = {"counts": counts, "unreached": unreached}
+            _record(sdlc_dir, dict(head, state="done", outcome=outcome, unit_tip=None, finished_at=stamp_now(), sweep=summary))
+            done_units = sum(n for w, n in counts.items() if w not in ("timeout", "stopped"))
+            every_failed = bool(counts) and set(counts) == {"failed"}       # nothing worked: an attempt, retried after retry_minutes
+            if outcome == "swept" and (done_units or not unreached) and not every_failed:      # a sweep cut off before any unit finished is an attempt
+                window.stamp(sdlc_dir, stamp_now(), outcome, unreached)
+            else:
+                window.stamp_attempt(sdlc_dir, stamp_now(), outcome, unreached)
+    return {"outcome": outcome, "sweep": {"counts": counts, "unreached": unreached}}
+
+
 SKIPPED_AFTER = "rebased"     # the older pass's outcome word for "I moved the unit": the new unit pass then stays out of the run
 
 
@@ -166,7 +245,7 @@ def _unit_pass(config, sdlc_dir, root, unit, unit_pass=None):
     try:
         rebase = _sibling("feature_rebase")
         remote = rebase._remote(config)
-        base = rebase._safe_ref("work.base", rebase._settings(config).get("base")) or ""
+        base = rebase.base_of(config)
         branch = rebase.features.BRANCH_PREFIX + unit
         if not base:
             return {}
@@ -189,7 +268,7 @@ def run_engine(config, sdlc_dir, root, unit, *, environ=None, upkeep=None, unit_
     """The pass itself, inside the child: the engine's own entry point, called in-process, handed NO goal. Prints one JSON
     line (`outcome`, `unit_tip`) as its last line of output. -> the report."""
     rebase = _sibling("feature_rebase")
-    if rebase.is_unit_base(rebase._safe_ref("work.base", rebase._settings(config).get("base")) or "", rebase._remote(config)):
+    if rebase.is_unit_base(rebase.base_of(config), rebase._remote(config), config):
         line = {"outcome": rebase.NO_BASE, "unit_tip": None, "unit_pass": "skipped", "reason": rebase.UNIT_BASE_WHY}   # #1311
         print(json.dumps(line, sort_keys=True), flush=True)
         return line
@@ -215,7 +294,8 @@ def build_parser():
                                      "the scheduler; not meant to be run by hand).")
     parser.add_argument("--sdlc", required=True)
     parser.add_argument("--root", required=True)
-    parser.add_argument("--unit", required=True)
+    parser.add_argument("--unit", default="")
+    parser.add_argument("--sweep", action="store_true")
     parser.add_argument("--run-id", default="")
     parser.add_argument("--cap", type=float, required=True)
     parser.add_argument("--engine", action="store_true")
@@ -235,7 +315,11 @@ def main(argv=None):
         config = json.loads(pathlib.Path(args.sdlc).joinpath("config.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return 0                                          # no readable config: the gate would be closed
-    if args.engine:
+    if args.sweep:
+        run_sweep(config, args.sdlc, args.root, args.run_id, args.cap)
+    elif not args.unit:
+        build_parser().error("--unit is required")
+    elif args.engine:
         run_engine(config, args.sdlc, args.root, args.unit)
     else:
         run_job(config, args.sdlc, args.root, args.unit, args.run_id, args.cap)

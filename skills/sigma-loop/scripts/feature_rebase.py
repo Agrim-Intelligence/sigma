@@ -455,6 +455,17 @@ def _remote(config):
     return remote if isinstance(remote, str) and remote.strip() else DEFAULT_REMOTE
 
 
+def base_of(config):
+    """`work.base` as a bare branch name, '' when unset. The same rule `work.settings()` applies: a base written
+    with the remote's name (`origin/main`) means `main` (#1425), so the pass, landing and the job child fetch
+    `<remote> main`, not the missing remote ref `origin/main`."""
+    base = _safe_ref("work.base", _settings(config).get("base")) or ""
+    lead = "%s/" % _remote(config)
+    if base.startswith(lead) and len(base) > len(lead):
+        return base[len(lead):]
+    return base
+
+
 def merge_method(config):
     got = _settings(config).get("merge_method")
     return (got.strip().lower() if isinstance(got, str) and got.strip() else DEFAULT_MERGE_METHOD)
@@ -658,7 +669,7 @@ def ack(sdlc_dir, config, unit, shas, all_=False, run=None, cwd=None, remote=Non
     run = run or _run
     cwd = str(cwd or pathlib.Path(sdlc_dir).parent)
     remote = remote or _remote(config)
-    base = _safe_ref("work.base", _settings(config).get("base")) or ""
+    base = base_of(config)
     branch = features.BRANCH_PREFIX + unit
     result = {"ok": False, "unit": unit, "acked": [], "why": "", "path": ""}
     try:
@@ -674,7 +685,12 @@ def ack(sdlc_dir, config, unit, shas, all_=False, run=None, cwd=None, remote=Non
         result["why"] = _flat(exc)
         return result
     if all_:
-        chosen = list(found)
+        listed = _read_listed(sdlc_dir, unit)       # #1403: only what the filed issue listed
+        chosen = [d for d in found if d["sha"] in listed] if listed else list(found)
+        if listed and found and not chosen:
+            result["why"] = ("every commit the filed issue listed is gone from %s; the commits now on "
+                             "it were not listed -- ack them by sha (`feature_rebase.py show`)" % branch)
+            return result
     else:
         chosen, unknown = [], []
         for want in shas:
@@ -1857,6 +1873,32 @@ def _read_filed(sdlc_dir, unit):
     return seen if isinstance(seen, dict) else {}
 
 
+LISTED_SUFFIX = ".rebase-listed.json"
+
+
+def _listed_path(sdlc_dir, unit):
+    return filed_path(sdlc_dir, unit).with_name(unit.lower() + LISTED_SUFFIX)
+
+
+def _record_listed(sdlc_dir, unit, found):
+    """#1403: remember the shas the direct-commits issue listed, so `ack --all` acks those and not
+    whatever has landed on the branch since. Runtime bookkeeping; never raises."""
+    try:
+        path = _listed_path(sdlc_dir, unit)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(sorted(d["sha"] for d in found)), encoding="utf-8")
+    except (OSError, ValueError, KeyError):   # noqa: S110
+        pass
+
+
+def _read_listed(sdlc_dir, unit):
+    try:
+        data = json.loads(_listed_path(sdlc_dir, unit).read_text(encoding="utf-8"))
+    except Exception:                         # noqa: BLE001 - absent or unreadable means "no record"
+        return set()
+    return {x for x in data if isinstance(x, str)} if isinstance(data, list) else set()
+
+
 def _told_before(sdlc_dir, unit, slot, fingerprint):
     """Has this exact finding ALREADY BEEN FILED SUCCESSFULLY? -> bool.
 
@@ -2486,20 +2528,29 @@ def _report(goal, unit, config):
             "serialised": True, "merge_method": merge_method(config), "why": "", "note": ""}
 
 
-UNIT_BASE_WHY = "base is a unit branch; upkeep needs the default branch"
-UNIT_BASE_NOTE = "base is a unit branch"
+UNIT_BASE_WHY = "base is a unit branch; upkeep needs the default branch (or declare it as work.integration_base)"
+UNIT_BASE_NOTE = "base is a unit branch (declare work.integration_base if intended)"
 
 
-def is_unit_base(base, remote=None):
-    """#1311: a `work.base` that is itself a unit branch is no integration branch; upkeep refuses it (default branch only).
-    #1327: also when written with the remote's name or as a full ref (`origin/feature/x`, `refs/heads/feature/x`)."""
-    if not isinstance(base, str):
-        return False
-    name, remote = base.strip(), (remote or DEFAULT_REMOTE)
+def _bare_ref(base, remote):
+    name = base.strip()
     for lead in ("refs/heads/", "refs/remotes/" + remote + "/", remote + "/"):
         if name.startswith(lead):
-            name = name[len(lead):]
-            break
+            return name[len(lead):]
+    return name
+
+
+def is_unit_base(base, remote=None, config=None):
+    """#1311: a `work.base` that is itself a unit branch is no integration branch; upkeep refuses it (default branch only).
+    #1327: also when written with the remote's name or as a full ref (`origin/feature/x`, `refs/heads/feature/x`).
+    #1389: unless `work.integration_base` declares that very branch (same spellings) as the integration branch."""
+    if not isinstance(base, str):
+        return False
+    remote = remote or DEFAULT_REMOTE
+    name = _bare_ref(base, remote)
+    declared = _settings(config).get("integration_base")
+    if isinstance(declared, str) and declared.strip() and _bare_ref(declared, remote) == name:
+        return False
     return name.startswith(features.BRANCH_PREFIX)
 
 
@@ -2569,7 +2620,7 @@ def _upkeep(sdlc_dir, config, goal, unit, run, cwd, remote, report):
     cwd = str(cwd or pathlib.Path(sdlc_dir).parent)
     remote = remote or _remote(config)
     branch = features.BRANCH_PREFIX + unit
-    base = _safe_ref("work.base", _settings(config).get("base")) or ""
+    base = base_of(config)
     report["branch"], report["base"] = branch, base
 
     # THE LOCK IS TAKEN BEFORE ANY OTHER DECISION, and the reordering is the fix for a strand that
@@ -2620,7 +2671,7 @@ def _upkeep(sdlc_dir, config, goal, unit, run, cwd, remote, report):
                 report["why"] = ("work.base is empty, so upkeep has no integration branch and did nothing; "
                                  "set it in .sdlc/config.json (for example to your default branch)")
             return report
-        if is_unit_base(base, remote or _remote(config)):
+        if is_unit_base(base, remote or _remote(config), config):
             report["outcome"] = NO_BASE
             report["why"] = UNIT_BASE_WHY
             return report
@@ -2753,6 +2804,8 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
                     why="%s carries %d commit(s) no pull request accounts for, so it was not "
                         "rebased onto %s" % (branch, len(found), base),
                     body=_direct_body(unit, branch, base, found))
+        if report.get("filing") == FILED:             # #1412: only what an issue really listed
+            _record_listed(sdlc_dir, unit, found)
         return report
 
     # THE BACKUP DESCRIPTOR. With the upkeep gate open (the project door; a pure query that adds no command) the push
@@ -2775,7 +2828,7 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
             registry_now = None
         # Classifier TEXT only (never executed); the real push is `_pushed`, the one pinned colon-refspec site.
         verdict = hsg.guard("git push --force-with-lease %s HEAD:%s" % (remote, "refs/heads/" + branch),
-                            {"branch": branch, "registry": registry_now}, config)
+                            {"branch": branch, "registry": registry_now, "pass_branch": branch}, config)
         if verdict.blocked:
             report["outcome"] = FAILED
             report["why"] = verdict.reason
@@ -2818,6 +2871,7 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
         return report
     if outcome != REBASED:
         return report
+    report["why"] = ""                    # #1403: a success keeps no intermediate git conflict text
     _clear_blocked(sdlc_dir, unit)
     if report.get("resolved"):
         _after_resolved_push(sdlc_dir, config, run, cwd, remote, base_ref, report)
@@ -2939,8 +2993,8 @@ def main(argv):
         return 0
     state = _load("state")
     if len(argv) >= 4 and argv[1] == "upkeep":
-        report = upkeep(argv[2], state.load_config(argv[2]), argv[4] if len(argv) >= 5 else "-",
-                        argv[3])
+        goal = argv[4] if len(argv) >= 5 and argv[4] != "-" else None    # #1427: no goal means None, never a "-" issue
+        report = upkeep(argv[2], state.load_config(argv[2]), goal, argv[3])
         print(json.dumps(report, indent=2, sort_keys=True))
         # #144: a refused replay is a BLOCKED pass, not a clean one, and a script must see that.
         return 1 if report["outcome"] in (FAILED, WOULD_DROP) else 0
@@ -2948,7 +3002,7 @@ def main(argv):
         config = state.load_config(argv[2])
         remote, branch = _remote(config), features.BRANCH_PREFIX + argv[3]
         cwd = str(pathlib.Path(argv[2]).parent)
-        base = _safe_ref("work.base", _settings(config).get("base")) or ""
+        base = base_of(config)
         print(json.dumps({
             "unit": argv[3], "branch": branch, "base": base,
             "verifiable": _verifiable(config), "merge_method": merge_method(config),

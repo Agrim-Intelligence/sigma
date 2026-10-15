@@ -28,7 +28,7 @@ def _git(repo, *args):
 
 
 def _repo(tmp_path):
-    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "init", "-q", "-b", "main")
     _git(tmp_path, "config", "user.email", "t@example.invalid")
     _git(tmp_path, "config", "user.name", "t")
     (tmp_path / "f.txt").write_text("x")

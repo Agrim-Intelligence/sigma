@@ -170,7 +170,8 @@ it is **being worked**. A thing does not stop being a noun while the verb is hap
 `sdlc:blocking` is applied automatically to an issue that other work is waiting on. It is a
 **signal**, not a queue: it re-ranks issues that are **already** eligible. While
 `discovery.blocking_priority_override` is on (the default; only the literal `false` turns it off), an
-eligible issue carrying it sorts ahead of every other pending one, whatever its priority tier.
+eligible issue carrying it sorts ahead of its tier peers. It orders within a tier, never across one: a
+blocker is raised to the priority of what it blocks, so it already sits in the right tier.
 
 ```
       What people assume                    What actually happens
@@ -800,7 +801,7 @@ when that work lands:
         │                                        │       │       │
         │   #42:  sdlc:goal + sdlc:blocked        │  each: sdlc:goal + sdlc:blocking
         │   still visible to every sweep,         │  and each SORTS AHEAD of
-        │   just not pickable                     │  everything else in the queue
+        │   just not pickable                     │  its tier peers in the queue
         │                                         ▼       ▼       ▼
         │                                      worked · worked · worked
         │                                        │       │       │
@@ -853,7 +854,7 @@ Both halves are independent, and both are on unless you say otherwise:
 ```json
 "discovery": {
   "auto_unpark": { "mode": "off" },        // stop resuming blocked goals automatically
-  "blocking_priority_override": false      // stop blockers sorting first
+  "blocking_priority_override": false      // stop blockers sorting ahead of their tier peers
 }
 ```
 

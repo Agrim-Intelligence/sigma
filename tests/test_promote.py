@@ -699,9 +699,19 @@ def test_one_failure_never_stops_the_rest():
     p = _mod("promote")
     run = _runner(views={"5": _view("sdlc:needs-confirmation"),
                          "6": _view("sdlc:needs-confirmation")},
-                  fail_on=["issue(number: 5)"])
+                  # #1398: a GraphQL refusal alone now lands over REST, so #5 must fail on BOTH routes
+                  # (GraphQL id read, REST label write and its one `issue edit` fallback) to be a failure.
+                  fail_on=["issue(number: 5)", "issues/5/labels", "issue edit 5"])
     result = p.promote(".sdlc", _config(), ["5", "6"], run=run)
     assert [r["outcome"] for r in result["results"]] == ["failed", "promoted"]
+
+
+def test_a_graphql_refusal_alone_promotes_over_rest():
+    """The #1398 counterpart of the failure test above: with only GraphQL refused the swap lands over REST."""
+    p = _mod("promote")
+    run = _runner(views={"5": _view("sdlc:needs-confirmation")}, fail_on=["issue(number: 5)"])
+    result = p.promote(".sdlc", _config(), ["5"], run=run)
+    assert [r["outcome"] for r in result["results"]] == ["promoted"]
 
 
 def test_dry_run_writes_nothing_but_names_the_exact_swap():

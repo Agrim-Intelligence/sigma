@@ -270,6 +270,10 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_window.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/features.py",
       "role": "library"
     },

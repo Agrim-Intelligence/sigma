@@ -32,6 +32,7 @@ import os
 import pathlib
 import sys
 import tempfile
+import time
 import uuid
 
 _HERE = pathlib.Path(__file__).resolve().parent
@@ -196,7 +197,10 @@ def answer(sdlc_dir, aid, text, config, now):
                 return "applied"
             ask.update(vetoed_at=now.isoformat())
         elif ask.get("state") == "pending":
-            ask.update(answer=text, answered_at=now.isoformat(), state="answered")
+            # On a public repository the answer's free text must not be written: the autonomy folder is
+            # published with the records, and nothing reads this text back (only the state matters).
+            kept = "recorded privately" if _load("rulebook_cfg").visibility(config) == "public" else text
+            ask.update(answer=kept, answered_at=now.isoformat(), state="answered")
         else:
             return ask.get("state")
         _write_atomic(_ask_path(sdlc_dir, aid), ask)
@@ -410,11 +414,14 @@ def _loud_text(m, qkind, config):
             "the window. Reply no to veto." % (m.rule_id, qkind, m.option))
 
 
-def tick(sdlc_dir, config, now, source=None, run=None, apply_actions=True, comments_fn=None):
+def tick(sdlc_dir, config, now, source=None, run=None, apply_actions=True, comments_fn=None,
+         monotonic_fn=time.monotonic):
     """Plan, and unless `apply_actions` is false apply, one pass. Returns the actions (dicts with a
     `result` of would, done, failed or skipped). Closed gate: `[]`, nothing read, nothing written."""
     if not enabled(config):
         return []
+    started = monotonic_fn()    # #1390: each ask is stamped when its own gesture lands, not at tick start
+    clock = lambda: now + datetime.timedelta(seconds=monotonic_fn() - started)  # noqa: E731
     actions = []
     try:
         asks = _asks(sdlc_dir)
@@ -469,11 +476,17 @@ def tick(sdlc_dir, config, now, source=None, run=None, apply_actions=True, comme
         if apply_actions:
             done = dict(stored)   # only applies that landed advance the counter
             moved = False
+            refused = False
+            if source is None and actions:    # #1392: one source per tick; a refusal fails each ask once, unretried
+                try:
+                    source = _load("sources").GitHubSource(config, run=run)
+                except Exception:
+                    refused = True
             for a, key, text in zip(actions, eligible, loud):
                 if key is not None:   # #1361: the slot is decided now, from the landed count
                     a["silent"] = (done.get(key, 0) + 1) % settings(config)["spot_check_one_in"] != 0
                     a["text"] = "" if a["silent"] else text
-                a["result"] = apply(a, sdlc_dir, config, now, source=source, run=run)
+                a["result"] = "failed" if refused else apply(a, sdlc_dir, config, now, source=source, run=run, clock=clock)
                 if key is not None and a["result"] == "done":
                     done[key] = done.get(key, 0) + 1
                     moved = True
@@ -506,7 +519,7 @@ def _prune(sdlc_dir, asks, now, config=None):
                 continue
 
 
-def apply(action, sdlc_dir, config, now, source=None, run=None):
+def apply(action, sdlc_dir, config, now, source=None, run=None, clock=None):
     """Perform one action; returns done, failed or skipped. Never raises. The only GitHub writes are
     the atomic swap through `triage.apply_actions` (unpark) or `promote.promote`, then one comment."""
     try:
@@ -548,6 +561,16 @@ def apply(action, sdlc_dir, config, now, source=None, run=None):
         if source is None:
             source = _load("sources").GitHubSource(config, run=run)
         issue = action["issue"]
+        # #1395: a person may have unparked it since the ask opened; the read failing keeps the ask pending.
+        # A promote starts from a proposed issue, not a parked one, so only the other gestures check.
+        data = {"labels": []} if action["kind"] == "promote" else source._read_issue(issue, ["labels"])
+        if not isinstance(data, dict) or not isinstance(data.get("labels"), list):
+            return "failed"
+        names = {(l.get("name") if isinstance(l, dict) else l) for l in data["labels"]}
+        if action["kind"] != "promote" and source.parked_label not in names:
+            ask.update(state="answered", answer="already unparked", answered_at=now.isoformat())
+            _write_atomic(_ask_path(sdlc_dir, ask["id"]), ask)
+            return "skipped"
         board_failed = False
         if action["kind"] == "promote":
             os.environ[_APPLYING_ENV] = "1"      # its own gesture must not close the ask it applies
@@ -573,7 +596,7 @@ def apply(action, sdlc_dir, config, now, source=None, run=None):
             board_failed = not all(s["result"] == "done" for s in res)
         # Status first (#1106): a failed write returns failed before any record or comment, so the
         # retry repeats only the idempotent gesture and never a duplicate record or comment.
-        ask.update(state="applied", applied_at=now.isoformat(), rid=None, rule_id=action["rule_id"],
+        ask.update(state="applied", applied_at=(clock() if clock else now).isoformat(), rid=None, rule_id=action["rule_id"],
                    silent=bool(action["silent"]))
         if action["kind"] != "promote" and board_failed:
             ask.update(board_failed=True)       # visible, never retried: the swap already landed
@@ -619,6 +642,9 @@ def main(argv):
         done = [a for a in acts if a.get("result") == "done"]
         if done:
             print("applier: %d answer(s) applied or vetoed" % len(done))
+        failed = [a for a in acts if a.get("result") == "failed"]
+        if failed:                                      # #1403: a failed ask stays pending; say so
+            print("applier: %d asks failed and will be retried" % len(failed), file=sys.stderr)
     except Exception as exc:  # noqa: BLE001 - a watcher tick is never fatal
         print("applier: tick failed (non-fatal): %s" % type(exc).__name__, file=sys.stderr)
         return 1

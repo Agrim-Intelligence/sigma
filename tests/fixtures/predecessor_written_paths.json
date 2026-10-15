@@ -468,7 +468,7 @@
   {
    "compatible": true,
    "pattern": ".sdlc/state",
-   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1152 (refs #1142): sync.py::_reroot_guarded takes the existing knowledge flock (the already vetted _knowledge_lock file) and sync.py::bootstrap makes directories and aside copies only under .sdlc/state/orphaned/<stamp>/, a subtree the predecessor does not write; neither writes a file the predecessor writes in .sdlc/state. Vetted #1229: drift_shadow.py::_save and ::shadow_for_park write only .sdlc/state/drift-shadow.json, a file the predecessor never writes (shadow-mode drift verdicts of this product). Vetted #1243: decision_import.py::classify_model and ::_cache_save write only .sdlc/state/decision-import-classes.json (the import classification cache), a file the predecessor never writes.",
+   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1152 (refs #1142): sync.py::_reroot_guarded takes the existing knowledge flock (the already vetted _knowledge_lock file) and sync.py::bootstrap makes directories and aside copies only under .sdlc/state/orphaned/<stamp>/, a subtree the predecessor does not write; neither writes a file the predecessor writes in .sdlc/state. Vetted #1229: drift_shadow.py::_save and ::shadow_for_park write only .sdlc/state/drift-shadow.json, a file the predecessor never writes (shadow-mode drift verdicts of this product). Vetted #1243: decision_import.py::classify_model and ::_cache_save write only .sdlc/state/decision-import-classes.json (the import classification cache), a file the predecessor never writes. Vetted #1410: reconcile_tick.py::_blocker_rank_repair and ::_write_repair_state write only .sdlc/state/blocker-repair.meta.json (the blocker-rank repair record), a file the predecessor never writes.",
    "verdict": "directory",
    "vetted_writers": [
     "skills/sigma-init/scripts/init_flow.py::main",
@@ -512,6 +512,8 @@
     "skills/sigma-loop/scripts/loop.py::next_batch",
     "skills/sigma-loop/scripts/loop.py::run_loop",
     "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
+    "skills/sigma-loop/scripts/reconcile_tick.py::_blocker_rank_repair",
+    "skills/sigma-loop/scripts/reconcile_tick.py::_write_repair_state",
     "skills/sigma-loop/scripts/slack_commands_listen.py::_dispatch",
     "skills/sigma-loop/scripts/slack_commands_listen.py::_log",
     "skills/sigma-loop/scripts/slack_commands_listen.py::_on_request",

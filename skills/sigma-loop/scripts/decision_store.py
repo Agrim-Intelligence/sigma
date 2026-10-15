@@ -348,13 +348,19 @@ def _git(root, *args):
 def _unit_branches(root):
     names, units = set(), os.path.join(root, ".sdlc", "features", "units")
     try:
-        for n in os.listdir(units):
+        files = os.listdir(units)
+    except OSError:
+        return names
+    for n in files:
+        try:
             with open(os.path.join(units, n), encoding="utf-8") as fh:
-                b = json.load(fh).get("branch")
-            if isinstance(b, str) and b:
-                names.add(b)
-    except (OSError, ValueError, AttributeError):
-        pass
+                rec = json.load(fh)
+            found = [rec.get("branch")]
+            for entry in rec.get("features", {}).values():
+                found += [r.get("branch") for r in entry.get("repos", {}).values()]
+        except (OSError, ValueError, AttributeError):
+            continue
+        names.update(b for b in found if isinstance(b, str) and b)
     return names
 
 
@@ -390,7 +396,9 @@ def publish(sdlc_dir, config):
         if not gd or gd != cd:
             return skip("goal-worktree")
         branch = _git(root, "symbolic-ref", "--short", "-q", "HEAD").stdout.strip()
-        if not branch or branch in _unit_branches(root):
+        # A `feature/` branch is a unit branch even before its record names it (a unit just opened has
+        # empty `repos`): nobody commits directly to a unit branch, so never publish onto one.
+        if not branch or branch.startswith("feature/") or branch in _unit_branches(root):
             return skip("unit-branch")
         rel = os.path.relpath(sdlc, root)
         paths = [os.path.join(rel, settings(config)["store_dir"]), os.path.join(rel, "autonomy"),
