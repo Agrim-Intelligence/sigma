@@ -30,8 +30,11 @@ measured SC_PAGE_SIZE, not resident memory. Active cgroup-v1 memory accounting r
 Ambiguous or non-root cgroup2 mount mappings refuse; paths containing traversal or control
 characters refuse before use. All non-root accounting must be readable and valid, even if
 another source would supply a smaller minimum. An explicit `max` is unlimited, not zero.
-The hierarchy root has no memory.max/current interface: its usage is unmeasured, not an
-invented zero. A verified lack of a memory controller is a distinct `none` mode.
+The genuine hierarchy root has no memory.max/current interface: its usage is unmeasured,
+not an invented zero. A namespace can display an outer non-root group at its visible root:
+when both accounting files exist there, their limit and usage remain applicable. A partial
+pair or unreadable evidence refuses rather than becoming unlimited. Only an absent controller
+with no mapped-root accounting is a distinct `none` mode.
 
 Mach speculative pages are already included in free pages and are not added again. Native
 return codes and returned structure sizes are checked; the acquired Mach host port is

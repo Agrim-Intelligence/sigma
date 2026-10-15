@@ -89,6 +89,7 @@ def fake_cli(modules, monkeypatch, tmp_path, capsys):
 
 def make_fake_cli(modules, monkeypatch, tmp_path, capsys):
     resources, sources = modules
+    monkeypatch.setattr(sources.sys, 'platform', 'darwin')
     snapshot = dict(sources=[finite()], cgroup=dict(NOT_APPLICABLE), cpu_count=2,
                     disk=dict(api='fstatvfs', directory=str(tmp_path), available_bytes=100000))
     monkeypatch.setattr(sources, 'collect', lambda directory: snapshot)
@@ -255,6 +256,7 @@ def test_linux_every_ancestor_and_unlimited_provenance(modules, monkeypatch):
 
 def test_linux_minimum_and_path_identity_use_public_argv(fake_cli, monkeypatch):
     invoke, snapshot, _, sources = fake_cli
+    monkeypatch.setattr(sources.sys, 'platform', 'linux')
     files = proc_fixture(monkeypatch, sources)
     snapshot['sources'], snapshot['cgroup'] = sources.linux_memory()
     first = invoke()[1]
@@ -316,6 +318,12 @@ def test_visible_namespace_root_limit_cannot_be_silently_ignored(modules, monkey
     assert rows[-1]['mode'] == 'finite'
     assert rows[-1]['available_bytes'] == 30000
     assert provenance['ancestors'][-1] == '/sys/fs/cgroup'
+    proc_fixture(monkeypatch, sources, controllers='cpu', rows={
+        '/sys/fs/cgroup/memory.max': '50000', '/sys/fs/cgroup/memory.current': '20000'})
+    assert sources.linux_memory()[0][-1]['available_bytes'] == 30000
+    proc_fixture(monkeypatch, sources, rows={'/sys/fs/cgroup/memory.max': '50000'})
+    with pytest.raises(sources.Refused, match='source-unavailable'):
+        sources.linux_memory()
 
 
 def test_no_controller_and_v1_preserve_distinct_modes(modules, monkeypatch):
