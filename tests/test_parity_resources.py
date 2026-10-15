@@ -4,6 +4,7 @@ import importlib
 import os
 from pathlib import Path
 import socket
+import shutil
 import subprocess
 import sys
 
@@ -17,10 +18,18 @@ GESTURE = ['--reserve-fraction', '0.25', '--record-bytes', '256', '--output-dir'
 
 def test_documented_gesture_yields_native_receipt_without_files(tmp_path):
     """Run the real documented argv on this OS; no fixture/native-source override is used."""
-    before = set(CLI.parent.rglob('*')) if CLI.parent.exists() else set()
+    assert CLI.is_file(), 'the resource preflight capability is not implemented'
+    # A fresh, byte-identical source copy makes a missing cache guard observable even if the
+    # developer's checkout already has a cache. The native APIs and argv remain unchanged.
+    directory = tmp_path / 'tools' / 'parity'
+    directory.mkdir(parents=True)
+    for name in ('resources.py', 'resource_sources.py'):
+        shutil.copyfile(CLI.with_name(name), directory / name)
+    before = {str(p.relative_to(tmp_path)): p.read_bytes() if p.is_file() else None
+              for p in tmp_path.rglob('*')}
     environment = dict(os.environ)
     environment.pop('PYTHONDONTWRITEBYTECODE', None)
-    result = subprocess.run([sys.executable, str(CLI), *GESTURE], cwd=tmp_path,
+    result = subprocess.run([sys.executable, 'tools/parity/resources.py', *GESTURE], cwd=tmp_path,
                             capture_output=True, text=True, timeout=30, env=environment)
     assert result.returncode == 0, result.stderr
     receipt = json.loads(result.stdout)
@@ -29,17 +38,28 @@ def test_documented_gesture_yields_native_receipt_without_files(tmp_path):
     assert receipt['platform'] == sys.platform
     assert receipt['sources']
     assert int(receipt['limits']['output_bytes']) > 0
-    assert list(tmp_path.iterdir()) == []
-    assert set(CLI.parent.rglob('*')) == before
+    assert {str(p.relative_to(tmp_path)): p.read_bytes() if p.is_file() else None
+            for p in tmp_path.rglob('*')} == before
 
 
 @pytest.fixture
 def modules(monkeypatch):
-    assert CLI.is_file(), 'the resource preflight capability is not implemented'
-    monkeypatch.syspath_prepend(str(ROOT))
-    monkeypatch.setattr(sys, 'dont_write_bytecode', True)
-    resources = importlib.import_module('tools.parity.resources')
-    return resources, resources.sources
+    def load():
+        assert CLI.is_file(), 'the resource preflight capability is not implemented'
+        monkeypatch.syspath_prepend(str(ROOT))
+        monkeypatch.setattr(sys, 'dont_write_bytecode', True)
+        resources = importlib.import_module('tools.parity.resources')
+        return resources, resources.sources
+    return LazyFixture(load)
+
+
+class LazyFixture:
+    """Load in the test body so an absent capability is assertion-red, not a setup error."""
+    def __init__(self, load):
+        self.load = load
+
+    def __iter__(self):
+        return iter(self.load())
 
 
 def finite(name='physical', location='native', limit=120000, used=20000, facts=None):
@@ -53,6 +73,10 @@ NOT_APPLICABLE = dict(mode='not-applicable', mount=None, mount_root=None,
 
 @pytest.fixture
 def fake_cli(modules, monkeypatch, tmp_path, capsys):
+    return LazyFixture(lambda: make_fake_cli(modules, monkeypatch, tmp_path, capsys))
+
+
+def make_fake_cli(modules, monkeypatch, tmp_path, capsys):
     resources, sources = modules
     snapshot = dict(sources=[finite()], cgroup=dict(NOT_APPLICABLE), cpu_count=2,
                     disk=dict(api='fstatvfs', directory=str(tmp_path), available_bytes=100000))
@@ -295,6 +319,38 @@ def test_finite_address_limit_subtracts_virtual_not_resident_space(modules, monk
         sources.posix_address_space()
     monkeypatch.setattr(sources, 'address_space_limit', lambda: None)
     assert sources.posix_address_space()['used_bytes'] is None
+
+
+def test_linux_statm_uses_total_pages_and_measured_page_size(modules, monkeypatch):
+    _, sources = modules
+    monkeypatch.setattr(sources.sys, 'platform', 'linux')
+    proc_fixture(monkeypatch, sources, rows={'/proc/self/statm': '1001 17 3 4 5 6 7\n'})
+    monkeypatch.setattr(sources.os, 'sysconf', lambda key: 4096)
+    monkeypatch.setattr(sources, 'address_space_limit', lambda: 10000000)
+    assert sources.virtual_bytes() == 4100096
+    row = sources.posix_address_space()
+    assert (row['location'], row['used_bytes'], row['available_bytes']) == (
+        '/proc/self/statm', 4100096, 5899904)
+
+
+@pytest.mark.parametrize('text,page', [('garbage', 4096), ('-1 2 3 4 5 6 7', 4096),
+    ('0 2 3 4 5 6 7', 4096), ('1001 17 3 4 5 6 7', 0),
+    (f'{sys.maxsize} 2 3 4 5 6 7', 4096)])
+def test_linux_statm_malformed_zero_or_overflow_refuses(modules, monkeypatch, text, page):
+    _, sources = modules
+    monkeypatch.setattr(sources.sys, 'platform', 'linux')
+    proc_fixture(monkeypatch, sources, rows={'/proc/self/statm': text})
+    monkeypatch.setattr(sources.os, 'sysconf', lambda key: page)
+    with pytest.raises(sources.Refused, match='invalid-source'):
+        sources.virtual_bytes()
+
+
+def test_linux_statm_missing_refuses(modules, monkeypatch):
+    _, sources = modules
+    monkeypatch.setattr(sources.sys, 'platform', 'linux')
+    proc_fixture(monkeypatch, sources)
+    with pytest.raises(sources.Refused, match='source-unavailable'):
+        sources.virtual_bytes()
 
 
 def test_posix_disk_reads_available_not_free_and_does_not_create(modules, monkeypatch, tmp_path):
