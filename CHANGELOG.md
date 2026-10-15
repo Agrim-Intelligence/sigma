@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- `promote.py migrate-confirmation` now arms an item whose only hold is an open blocker (`sdlc:goal` plus the `sdlc:blocked` overlay, reason `armed (held by #N)`) instead of parking it; the pick-time dependency hold and auto-unpark take it from there (#1518).
+
 - **The confirmation migration no longer arms upper-tier items (#1517).** `promote.py migrate-confirmation` removes the retired label from an item labelled epic, story, dossier or spec and reports `upper tier: label removed, not armed` (no goal label, no park); `promote.py apply` refuses such an item with one line.
 - **Rulebook levels pool machines, survive retention and recover from vetoes (#1500).** A pair's comparisons count together across machines (a machine with too few comparisons no longer caps it, a disagreeing one with enough still does), the ladder reads the newest `l4_min_answers` comparisons whatever their age and pruning keeps them, a veto's one-level drop wears off after `veto_recover_after` agreeing answers, and a missing area reads `repo`.
 - **Blocker repair no longer writes to merged pull requests, builds edges from prose, or lets the dry pass change the cache (#1475).** The four blocker-priority writers drop any blocker that is not OPEN (MERGED and CLOSED resolve) and never raise a pull request, whole-body scans use only blocked by / depends on / depends upon, the dry pass writes nothing, and outside blockers beyond the 10-read cap are reported on stderr and in the result (`unread`).
