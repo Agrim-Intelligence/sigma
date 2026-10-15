@@ -6361,6 +6361,12 @@ def test_post_review_a_retry_after_a_failed_post_counts_exactly_one_cycle(tmp_pa
     failing = _runner([(POST_COMMENT, RuntimeError("secondary rate limit"))])
     assert _post_review(d, ON, goal, failing, "block", "x").startswith("PARK:")
     assert work._record(d, goal).get("review_cycles", 0) == 0
+    # D2 F07: the failed post is AMBIGUOUS, so a fresh generation is refused until a human has checked
+    # the PR and abandoned it (the lever); only then does the retry post, as cycle 1.
+    with pytest.raises(ValueError, match="abandon-review-post"):
+        _review_chain(d, goal, "block", "x")
+    eid = next((pathlib.Path(d) / "state" / "review-posts").glob("*.json")).stem
+    work.abandon_review_post(d, goal, eid, "checked by hand: no comment", run=_runner([("issues/7/comments", "[]")]))
     ok = _runner([])
     out = _post_review(d, ON, goal, ok, "block", "x")
     assert out.startswith("posted")

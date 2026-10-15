@@ -175,16 +175,15 @@ reviewer to run, so the verdict is passed explicitly: `python3 "${CLAUDE_SKILL_D
 and a verdict written into `resolution.json` is refused everywhere. A failed reviewer refuses this route until the owner records `accept-inline` (an audit trail, not an authority check).
 
 If `post-review` returns `PARK: remote comment outcome ambiguous`, or asks you to reconcile before a
-retry, GitHub may already have accepted the comment. Never post again. Run `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py"
+retry, GitHub may have accepted it. Never post again. Run `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py"
 reconcile-review-post .sdlc "$goal" --evidence "$REVIEW_EVIDENCE"`: it only looks the comment up
-by its evidence marker and repairs the local record, and it never creates a comment.
+by its evidence marker, repairs the local record, never posts.
 
-If reconcile still returns `PARK: remote comment outcome ambiguous` — the comment genuinely never
-reached GitHub (a network failure before any response, not a lost acknowledgement) — that evidence
-is abandoned, not retried: post-review will never post it, because the request receipt it already
-wrote is immutable. Publish a **fresh** generation for the same, unchanged revision (re-run the
-`brief --output` gesture; every publication is new, per the same mechanism `unblock` above uses),
-have the resolved reviewer return its verdict again, and post that generation's evidence instead.
+If reconcile still returns `PARK: remote comment outcome ambiguous`, that is not proof it never landed: it may arrive late
+and outrank a newer verdict, so publish no other generation (`brief --output` refuses). Park:
+`loop.py record .sdlc "$goal" parked "review post ambiguous" --qkind review_post_ambiguous`. Check the PR's comments
+by hand: if the evidence marker is there, `reconcile-review-post`; if not, delete any stray copy, run
+`work.py abandon-review-post .sdlc "$goal" --evidence-id <id> --decision "<found>"`, then `/sigma-unpark`.
 
 Then `work.py merge .sdlc "$goal"`. **This call can block for minutes — raise your tool-call
 timeout before running it, not after it times out** (the REQUIRED PATTERN above `loop.py verify`

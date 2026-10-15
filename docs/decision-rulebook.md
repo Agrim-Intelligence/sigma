@@ -165,7 +165,7 @@ which adds one machine line (`sigma-qkind: <kind>`) to the park comment. Without
 text, and the Rulebook treats an undeclared kind as not learnable. The closed list:
 
 `irreversible`, `needs_decision`, `merge_conflict`, `failing_check`, `no_evidence`, `dependency`, `review_cap`,
-`quota`, `unknown`, `scope_hold`, `owner_hold`, `reviewer_down`.
+`quota`, `unknown`, `scope_hold`, `owner_hold`, `reviewer_down`, `review_post_ambiguous`.
 
 `scope_hold` and `owner_hold` are written by the two pick gates (scope expansion and ownership). With AI-filed
 triage on (`ai_filed.triage.enabled`, default true) those gates park a held goal with that kind instead of writing the

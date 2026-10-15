@@ -150,6 +150,13 @@ QUESTIONS = {
                                "accept-inline after setting review.host to inline?",
          "options": ["fix and re-run the reviewer", "choose inline review"]},
     ],
+    "review_post_ambiguous": [
+        {"id": "route", "ask": "A review comment may or may not have reached the PR: {reason} Check the PR's "
+                               "comments by hand for the sigma-review-evidence marker. Is the comment there "
+                               "(confirm it: work.py reconcile-review-post), or is it not (delete any stray "
+                               "copy, then work.py abandon-review-post)?",
+         "options": ["the comment is there", "it is not there"]},
+    ],
     "unknown": [
         {"id": "next", "ask": "Here is what it stopped on: {reason} What should happen next?"},
     ],

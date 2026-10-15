@@ -177,12 +177,12 @@ paths using `source <(python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" review-paths
 "$REVIEW_MANIFEST" --review-result "$REVIEW_RESULT"`. Only then post `work.py post-review .sdlc
 "$goal" --evidence "$REVIEW_EVIDENCE" --verdict approve`, or the same evidence argument with
 `--verdict block --reason "<the issues>"`. To clear a prior loop block on the same revision, publish
-a fresh generation (every publication is new), have its reviewer return `unblock`, and post that
+a fresh generation, have its reviewer return `unblock`, and post that
 evidence with `--verdict unblock`; a block's own evidence cannot be reused. The CLI and writer
 boundary reject a post-review call without that evidence. An `inline` route passes its verdict
 explicitly to `run-resolved-review` with `--verdict` and `--reason`. An ambiguous post is recovered
-with `work.py reconcile-review-post .sdlc "$goal" --evidence "$REVIEW_EVIDENCE"`, never by posting
-again. A host refusal of `post-review` (e.g. auto mode denying it as self-approval) is never retried or
+with `work.py reconcile-review-post .sdlc "$goal" --evidence "$REVIEW_EVIDENCE"`; still ambiguous, park
+(`--qkind review_post_ambiguous`), never post again (landing.md). A host refusal of `post-review` (e.g. auto mode denying it as self-approval) is never retried or
 routed around: `record parked "host refused review"`; the README's attended fallback applies.
 See `landing.md` for all three.
 
