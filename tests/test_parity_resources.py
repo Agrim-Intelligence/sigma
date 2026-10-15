@@ -229,8 +229,10 @@ def proc_fixture(monkeypatch, sources, *, path='/parent/child', root='/', contro
         '/sys/fs/cgroup/parent/memory.current': '20000\n',
     }
     files.update(rows or {})
-    def read(path, source):
+    def read(path, source, *, missing_ok=False):
         if str(path) not in files:
+            if missing_ok:
+                return None
             raise sources.Refused('source-unavailable', source)
         return files[str(path)]
     monkeypatch.setattr(sources, 'read_text', read)
@@ -303,6 +305,17 @@ def test_linux_missing_nonroot_or_controller_evidence_refuses(modules, monkeypat
     del files['/sys/fs/cgroup/cgroup.controllers']
     with pytest.raises(sources.Refused, match='source-unavailable'):
         sources.linux_memory()
+
+
+def test_visible_namespace_root_limit_cannot_be_silently_ignored(modules, monkeypatch):
+    _, sources = modules
+    proc_fixture(monkeypatch, sources, rows={
+        '/sys/fs/cgroup/memory.max': '50000', '/sys/fs/cgroup/memory.current': '20000'})
+    rows, provenance = sources.linux_memory()
+    assert rows[-1]['location'] == '/sys/fs/cgroup'
+    assert rows[-1]['mode'] == 'finite'
+    assert rows[-1]['available_bytes'] == 30000
+    assert provenance['ancestors'][-1] == '/sys/fs/cgroup'
 
 
 def test_no_controller_and_v1_preserve_distinct_modes(modules, monkeypatch):
@@ -378,6 +391,33 @@ def test_posix_disk_reads_available_not_free_and_does_not_create(modules, monkey
     with pytest.raises(sources.Refused):
         sources.disk_capacity(str(tmp_path/'does-not-exist'))
     assert list(tmp_path.iterdir()) == []
+
+
+def test_output_file_and_symlink_to_file_refuse_on_each_native_route(modules, monkeypatch, tmp_path, capsys):
+    resources, sources = modules
+    regular = tmp_path/'ordinary-file'
+    regular.write_text('preserve this')
+    link = tmp_path/'link-to-file'
+    link.symlink_to(regular)
+    def forbidden(*args, **kwargs):
+        raise AssertionError('a nondirectory reached the volume API')
+    for platform_name in ('darwin', 'win32'):
+        monkeypatch.setattr(sources.sys, 'platform', platform_name)
+        monkeypatch.setattr(sources, 'windows_bindings', forbidden)
+        monkeypatch.setattr(sources.os, 'fstatvfs', forbidden, raising=False)
+        # Real directory resolution/type validation, with no memory-source or volume API shortcut.
+        monkeypatch.setattr(sources, 'collect', lambda directory: dict(
+            sources=[finite()], cgroup=NOT_APPLICABLE, cpu_count=2,
+            disk=sources.disk_capacity(directory)))
+        for path in (regular, link):
+            assert resources.main(['--reserve-fraction', '0.25', '--record-bytes', '256',
+                                   '--output-dir', str(path)]) == 2
+            output = capsys.readouterr()
+            assert output.out == ''
+            assert json.loads(output.err)['code'] == 'invalid-input'
+            assert json.loads(output.err)['source'] == 'output-directory'
+        assert regular.read_text() == 'preserve this'
+        assert set(p.name for p in tmp_path.iterdir()) == {'ordinary-file', 'link-to-file'}
 
 
 class NativeFunction:
@@ -528,3 +568,42 @@ def test_binding_construction_declares_exact_abi(modules, monkeypatch):
             assert sources.darwin_bindings() == (lib, 4096, 11)
         assert getattr(getattr(lib, name), 'argtypes', None) == signatures[name][0]
         assert getattr(getattr(lib, name), 'restype', None) is signatures[name][1]
+
+
+def test_native_ci_validator_rejects_refusal_wrong_os_sources_and_budgets(tmp_path):
+    """Exercise the actual workflow's receipt gate, not a test-owned validator."""
+    workflow = ROOT / '.github' / 'workflows' / 'parity-resources.yml'
+    assert workflow.is_file(), 'the required native proof workflow is not implemented'
+    import copy
+    import textwrap
+    text = workflow.read_text()
+    program = textwrap.dedent(text.split("<<'PY'\n", 1)[1].split('\n          PY', 1)[0])
+    base = {'schema': 'parity-resource-preflight/v1', 'status': 'ok', 'platform': 'linux',
+        'cpu_count': 2, 'cgroup': dict(NOT_APPLICABLE, mode='none'),
+        'sources': [dict(name='MemAvailable', location='/proc/meminfo', mode='finite',
+                        limit_bytes='120000', used_bytes='20000', available_bytes='100000', facts={}),
+                    dict(name='RLIMIT_AS', location='getrlimit(RLIMIT_AS)', mode='unlimited',
+                         limit_bytes=None, used_bytes=None, available_bytes=None, facts={})],
+        'disk': {'api': 'fstatvfs', 'available_bytes': '100000'},
+        'limits': {'available_bytes': '100000', 'reserve_bytes': '50000', 'usable_bytes': '50000',
+                   'decode_bytes': '25000', 'output_buffer_bytes': '25000',
+                   'object_overhead_bytes': '112', 'blob_bytes_per_worker': '2477',
+                   'output_bytes': '24992', 'worker_slots': 2, 'decode_expansion': 5}}
+    changes = [None, ('status', 'refused'), ('platform', 'darwin'), ('sources', []),
+               ('disk.api', 'unknown'), ('cgroup.mode', 'not-applicable'),
+               ('limits.output_bytes', '100001'), ('limits.worker_slots', 0),
+               ('limits.decode_bytes', '24999'), ('limits.output_buffer_bytes', '25001')]
+    for change in changes:
+        receipt = copy.deepcopy(base)
+        if change:
+            key, value = change
+            parts = key.split('.')
+            target = receipt
+            for part in parts[:-1]:
+                target = target[part]
+            target[parts[-1]] = value
+        path = tmp_path/'receipt.json'
+        path.write_text(json.dumps(receipt))
+        result = subprocess.run([sys.executable, '-c', program, str(path), 'linux'],
+                                capture_output=True, text=True, timeout=10)
+        assert (result.returncode == 0) == (change is None), (change, result.stderr)
