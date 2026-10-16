@@ -54,7 +54,7 @@ commits (or a body naming the reverted commit) and `fix`-subject commits that to
 goal changed, within 14 days after that goal's merge commit. It misses an unrelated fix, a defect nobody
 fixed and a fix landed by a later Sigma goal, so it bounds no defect rate and prints none. A `fix` whose
 last `(#N)` is another goal's PR is skipped; a revert of that shape still counts. A revert that names
-a goal's merge commit belongs to that goal alone; a revert of a revert (a re-land) is not a defect.
+a goal's merge commit belongs to that goal alone; a revert of a revert (a re-land) is not a defect. A commit whose body merely says `This reverts commit <sha>` is a revert only when that sha is a commit in the pass (a squash body listing a branch's internal revert is not).
 
 - **Which goals.** A goal with a `merged` record (or a `merge_armed` one) naming a PR that resolves, by
   the last `(#N)` ending a squash-merge subject, to a commit on the base branch's first-parent
@@ -65,22 +65,26 @@ a goal's merge commit belongs to that goal alone; a revert of a revert (a re-lan
   `recorded done` and no `merged` or `merge_armed` record is invisible: nothing names its PR.
 - **Maturity and the floor.** A goal merged less than 14 days ago is `immature` and is not listed. With
   fewer than 10 mature goals the output is the proxy line and `unmeasured: <reason>`. A `--window` of
-  14 days or less can never hold a mature goal, and the reason says so. Exit status is 0 either way.
+  14 days or less can never hold a mature goal, and the reason says so. Goal logs with no readable entry (garbage, empty, unopenable) are counted as `unreadable=` in the header and in the unmeasured reason. Exit status is 0 either way.
 - **Shared files.** `CHANGELOG.md`, `README.md`, `docs/launch/write-surface.json`,
   `docs/configuration.md`, `.sdlc/*` and `*.lock` never attribute a commit, and neither does any file
   touched by more than a fifth of the commits in the pass (the header prints that derived set as `hot=`).
-  Without it, a median fix overlapped about 15 goals on this repo (up to 94). One commit attributed to
+  Measured with the tool's own code on this repo's 49 mature goals and its 47 `fix` commits (goal-PR
+  fixes excluded): with the denylist and no derived set, a fix overlapped a median of 2 goals (max 17);
+  with the derived set as well, the same, because on this repo the derived set (`CHANGELOG.md`,
+  `docs/launch/write-surface.json`) is already in the denylist, so it changes no number here. With
+  neither, the median was 7 (max 41); with the derived set alone, 2 (max 27). One commit attributed to
   several goals is one entry in `totals` and counts in `multi-attributed`.
 - **Bounds.** `--window` is capped at the action log's retention (`action_log.retention_days`,
   default 90, floor 30; when pruning is disabled the header says `retention=disabled` and the cap is
-  365 days). Larger values are refused: `outcomes.py: REFUSED [window-exceeds-retention]`, exit 2. A goal's
+  365 days). Larger values are refused: `outcomes.py: REFUSED [window-exceeds-retention]`, exit 2. The window is checked before the log is judged on or off, so with the log off `--window 91` is still refused. A goal's
   file list is cut at 200 files (`files-capped=` in the header), 100 goal rows are printed (the rest summarised, totals still
   cover all), and git runs once with a 60 second timeout.
 - **Writes nothing.** No file, no network, no `gh`, no environment variable, no config key. It never
   calls the timing wrapper, so there is no timing-store write either.
 - **Scale.** One `git log` pass over window plus 14 days, O(commits plus the capped file lists), all in
   memory. Measured on this repo, which has only about 18 days of history: 313 commits and 5,955 changed-file
-  entries took 0.11 s for the git pass, and the whole verb (49 mature goals, 69 immature) took 0.6 to 0.95 s
+  entries took about 0.1 to 0.2 s for the git pass (0.11 s on a quiet machine, up to 0.15 s measured again under load), and the whole verb (49 mature goals, 69 immature) took 0.6 to 0.95 s
   wall on a loaded shared machine. 10x and 100x are extrapolated, not measured. The ceiling is one process and
   one git child. A shallow clone is `unmeasured`. On this repo's own history 26 of the 29 fix commits
   counted were attributed to two or more goals, so per-goal rows still overlap: read `totals` first.

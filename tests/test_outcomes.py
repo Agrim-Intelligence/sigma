@@ -49,7 +49,7 @@ def test_script_help(tmp_path, flag):
     assert "usage" in r.stdout.lower()
 
 
-@pytest.mark.parametrize("window", ["91", "0", "-3", "abc", "1.5", ""])
+@pytest.mark.parametrize("window", ["91", "0", "-3", "abc", "1.5", "", "1_5", " 5", "+5", "\u0663\u0660"])
 def test_bad_window_is_a_typed_refusal(tmp_path, window):
     r = _run("report", "--window", window, cwd=tmp_path)
     assert r.returncode == 2
@@ -101,7 +101,7 @@ class World:
         assert r.returncode == 0, r.stderr
         return r.stdout.strip()
 
-    def commit(self, subject, files=("f.txt",), ago=0, body="", delete=(), renames=()):
+    def commit(self, subject, files=("f.txt",), ago=0, body="", delete=(), renames=(), at=None):
         for path in files:
             p = self.repo / path
             p.parent.mkdir(parents=True, exist_ok=True)
@@ -113,7 +113,7 @@ class World:
         for old, new in renames:
             (self.repo / new).parent.mkdir(parents=True, exist_ok=True)
             self.git("mv", old, new)
-        stamp = f"{int(NOW - ago * DAY)} +0000"
+        stamp = f"{int(NOW - ago * DAY) if at is None else int(at)} +0000"
         msg = [subject] + ([body] if body else [])
         args = ["commit", "-q", "--allow-empty"]
         for m in msg:
@@ -123,6 +123,9 @@ class World:
 
     def log(self, goal, kind, ago, **fields):
         return actionlog.append(str(self.sdlc), str(goal), kind, "loop", now=NOW - ago * DAY, **fields)
+
+    def log_at(self, goal, kind, at, **fields):
+        return actionlog.append(str(self.sdlc), str(goal), kind, "loop", now=at, **fields)
 
     def goal(self, goal, pr, files, ago, kind="merged", subject=None, logged=True):
         sha = self.commit(subject or f"feat: goal {goal} ({'#' + str(pr)})", files, ago)
@@ -604,7 +607,7 @@ def test_revert_target_wins_over_file_overlap(tmp_path, capsys):
 
 def test_unresolvable_revert_target_falls_back_to_overlap(tmp_path, capsys):
     w = attr_world(tmp_path)
-    w.commit("chore: undo something", ["a.py"], 15, body="This reverts commit " + "d" * 40 + ".")
+    w.commit('Revert "something"', ["a.py"], 15, body="This reverts commit " + "d" * 40 + ".")
     assert row(measure(w, capsys), 200) == (1, 0)
 
 
@@ -799,3 +802,189 @@ def test_loading_log_py_restores_the_bytecode_flag():
             assert sys.dont_write_bytecode is before
         finally:
             sys.dont_write_bytecode = True
+
+
+# --------------------------------------------------------------------- review round: boundaries, one clause each
+
+
+def test_a_goals_own_revert_subject_never_counts_against_itself(tmp_path, capsys):
+    w = World(tmp_path)
+    w.mature_goals(10)
+    w.goal(300, 300, ["own.py"], 22, subject='Revert "feat: something older" (#300)')
+    for i in range(8):
+        w.commit(f"chore: pad {i}", [f"pad{i}.txt"], 20.5 - i * 0.01)
+    assert row(measure(w, capsys), 300) == (0, 0)
+
+
+def _attr_at(tmp_path, at_offset):
+    """Goal 200 merged at NOW-22d exactly; one fix on its file `at_offset` seconds after its merge."""
+    w = World(tmp_path)
+    w.mature_goals(10)
+    merged_at = NOW - 22 * DAY
+    w.commit("feat: goal 200 (#200)", ["a.py"], at=merged_at)
+    w.log_at(200, "merged", merged_at, pr="200")
+    for i in range(8):
+        w.commit(f"chore: pad {i}", [f"pad{i}.txt"], 20.5 - i * 0.01)
+    w.commit("fix: edge", ["a.py"], at=merged_at + at_offset)
+    return w
+
+
+def test_fix_exactly_fourteen_days_after_the_merge_counts(tmp_path, capsys):
+    assert row(measure(_attr_at(tmp_path, 14 * DAY), capsys), 200) == (0, 1)
+
+
+def test_fix_one_second_past_fourteen_days_does_not_count(tmp_path, capsys):
+    assert row(measure(_attr_at(tmp_path, 14 * DAY + 1), capsys), 200) == (0, 0)
+
+
+def _edge_goal(tmp_path, at, newest):
+    w = World(tmp_path)
+    if not newest:
+        w.commit("feat: edge (#50)", ["edge.txt"], at=at)
+        w.log_at(50, "merged", at, pr="50")
+    w.mature_goals(10)
+    if newest:
+        w.commit("feat: edge (#50)", ["edge.txt"], at=at)
+        w.log_at(50, "merged", at, pr="50")
+    return w
+
+
+def test_goal_merged_exactly_at_the_window_start_is_included(tmp_path, capsys):
+    w = _edge_goal(tmp_path, NOW - 30 * DAY, newest=False)
+    rc, lines, _ = w.run(capsys)
+    assert counts(lines) == (11, 0, 0)
+
+
+def test_goal_merged_one_second_before_the_window_start_is_excluded(tmp_path, capsys):
+    w = _edge_goal(tmp_path, NOW - 30 * DAY - 1, newest=False)
+    rc, lines, _ = w.run(capsys)
+    assert counts(lines) == (10, 0, 0)
+
+
+def test_goal_merged_exactly_fourteen_days_ago_is_mature(tmp_path, capsys):
+    w = _edge_goal(tmp_path, NOW - 14 * DAY, newest=True)
+    rc, lines, _ = w.run(capsys)
+    assert counts(lines) == (11, 0, 0)
+
+
+def test_goal_merged_one_second_inside_fourteen_days_is_immature(tmp_path, capsys):
+    w = _edge_goal(tmp_path, NOW - 14 * DAY + 1, newest=True)
+    rc, lines, _ = w.run(capsys)
+    assert counts(lines) == (10, 1, 0)
+
+
+def test_a_file_in_exactly_a_fifth_of_the_commits_is_not_hot(tmp_path, capsys):
+    """4 of 20 commits touch h.py: exactly 1/5, and hot means MORE than 1/5."""
+    w = World(tmp_path)
+    w.mature_goals(10)
+    for i, ago in enumerate((22, 21.5, 21)):
+        w.goal(200 + i, 200 + i, [f"s{i}.py", "h.py"], ago)
+    for i in range(6):
+        w.commit(f"chore: pad {i}", [f"pad{i}.txt"], 20.5 - i * 0.01)
+    w.commit("fix: only the shared file", ["h.py"], 15)
+    lines = measure(w, capsys)
+    assert "hot=none" in lines[1]
+    assert totals(lines) == (0, 1, 1)
+
+
+def test_the_longest_allowed_window_without_pruning_is_365_days(tmp_path, capsys):
+    w = World(tmp_path, config={"action_log": {"enabled": True, "retention_days": False}})
+    (w.sdlc / "state" / "log").mkdir()
+    w.commit("feat: a (#1)")
+    assert w.run(capsys, "--window", "365")[0] == 0
+    rc, lines, err = w.run(capsys, "--window", "366")
+    assert rc == 2 and "window-exceeds-retention" in err
+    assert outcomes.HARD_MAX_WINDOW == 365
+
+
+def test_a_pr_marker_on_two_commits_resolves_to_the_newest(tmp_path, capsys):
+    w = World(tmp_path)
+    w.mature_goals(9)
+    w.commit("feat: first try (#400)", ["m.txt"], 26)
+    newest = w.commit("feat: second try (#400)", ["n.txt"], 22)
+    w.log(400, "merged", 22, pr="400")
+    lines = measure(w, capsys)
+    merged = {line.split("\t")[0]: line.split("\t")[2] for line in lines[2:-1]}
+    assert merged["400"] == outcomes._iso(NOW - 22 * DAY), newest
+
+
+def test_a_log_record_exactly_at_the_record_floor_is_kept(tmp_path, capsys):
+    """Floor = window + 14 days back. A `merged` record there that does not resolve is unresolved."""
+    w = World(tmp_path)
+    w.mature_goals(10)
+    w.log_at(600, "merged", NOW - 44 * DAY, pr="7777")
+    w.log_at(601, "merged", NOW - 44 * DAY - 1, pr="7778")     # one second older: silent
+    rc, lines, _ = w.run(capsys)
+    assert counts(lines) == (10, 0, 1)
+
+
+def test_a_hash_prefixed_pr_in_the_log_still_resolves(tmp_path, capsys):
+    w = World(tmp_path)
+    w.mature_goals(9)
+    w.commit("feat: hashed (#701)", ["h.txt"], 20)
+    w.log(701, "merged", 20, pr="#701")
+    rc, lines, _ = w.run(capsys)
+    assert counts(lines) == (10, 0, 0)
+
+
+def test_revert_sha_shorter_than_seven_characters_is_not_a_revert():
+    assert outcomes._kind("chore: x", "This reverts commit abc123") is None
+    assert outcomes._kind("chore: x", "This reverts commit abc1234") == "revert"
+    assert outcomes._kind("chore: x", "This reverts commit " + "a" * 40) == "revert"
+
+
+# a squash body that merely lists an internal revert is not a revert (concern 3)
+
+
+def test_body_only_revert_of_an_unknown_commit_is_not_a_revert(tmp_path, capsys):
+    w = attr_world(tmp_path)
+    w.commit("chore: squash of a branch", ["a.py"], 15, body="This reverts commit " + "d" * 40 + ".")
+    assert totals(measure(w, capsys)) == (0, 0, 0)
+
+
+def test_body_only_revert_of_an_unknown_commit_still_counts_as_a_fix_by_subject(tmp_path, capsys):
+    w = attr_world(tmp_path)
+    w.commit("fix: real fix", ["a.py"], 15, body="This reverts commit " + "d" * 40 + ".")
+    assert totals(measure(w, capsys)) == (0, 1, 0)
+
+
+def test_body_only_revert_of_a_commit_in_the_pass_counts_by_overlap(tmp_path, capsys):
+    w = attr_world(tmp_path)
+    pad = w.commit("chore: the thing being undone", ["undone.py"], 18)
+    w.commit("chore: undo it", ["a.py"], 15, body=f"This reverts commit {pad}.")
+    lines = measure(w, capsys)
+    assert row(lines, 200) == (1, 0) and totals(lines) == (1, 0, 0)
+
+
+# unreadable goal logs are counted, not silent (nit)
+
+
+def test_a_garbage_goal_log_is_counted_in_the_header(tmp_path, capsys):
+    w = World(tmp_path)
+    w.mature_goals(10)
+    d = w.sdlc / "state" / "log"
+    (d / "garbage.jsonl").write_text("{not json\n", encoding="utf-8")
+    (d / "empty.jsonl").write_text("", encoding="utf-8")
+    lines = measure(w, capsys)
+    assert header(lines)["unreadable"] == "2"
+
+
+def test_unreadable_goal_logs_are_named_when_unmeasured(tmp_path, capsys):
+    w = World(tmp_path)
+    w.mature_goals(9)
+    (w.sdlc / "state" / "log" / "garbage.jsonl").write_text("[1]\n", encoding="utf-8")
+    rc, lines, _ = w.run(capsys)
+    assert lines[1].startswith("unmeasured:") and "unreadable=1" in lines[1]
+
+
+@pytest.mark.skipif(hasattr(os, "geteuid") and os.geteuid() == 0, reason="root reads anything")
+def test_a_goal_log_that_cannot_be_opened_is_counted(tmp_path, capsys):
+    w = World(tmp_path)
+    w.mature_goals(11)
+    locked = w.sdlc / "state" / "log" / "100.jsonl"
+    locked.chmod(0)
+    try:
+        lines = measure(w, capsys)
+    finally:
+        locked.chmod(0o644)
+    assert header(lines)["unreadable"] == "1" and header(lines)["mature"] == "10"

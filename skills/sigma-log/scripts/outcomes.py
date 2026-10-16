@@ -70,10 +70,10 @@ class Refusal(Exception):
 
 
 def _window_arg(raw):
-    try:
-        window = int(raw)
-    except (TypeError, ValueError):
+    # ASCII digits only: int() alone would also take `1_5`, ` 5`, `+5` and non-ASCII digits.
+    if not re.fullmatch(r"[0-9]+", str(raw)):
         raise Refusal("bad-window", f"--window needs a whole number of days, got {raw!r}")
+    window = int(raw)
     if window < 1:
         raise Refusal("bad-window", f"--window must be at least 1 day, got {window}")
     return window
@@ -133,9 +133,10 @@ def _window_cap(config):
     return (HARD_MAX_WINDOW if days is None else days), ("disabled" if days is None else f"{days}d")
 
 
-def _log_gate(log, sdlc):
-    """-> (config, reason). `reason` is None when the log can be read."""
-    state, _detail, config = log.action_log_state(sdlc)
+def _log_gate(log, sdlc, state_triple):
+    """-> (config, reason). `reason` is None when the log can be read. `state_triple` is
+    `log.action_log_state(sdlc)`, read once by main."""
+    state, _detail, config = state_triple
     if state == log.LOG_UNKNOWN:
         return None, ("action log state unknown (config.json could not be read; a goal worktree has "
                       "none, so this is not the same as off)")
@@ -240,12 +241,18 @@ REVERT_BODY_RE = re.compile(r"This reverts commit ([0-9a-f]{7,40})")
 RELAND_PREFIX = 'Revert "Revert '
 
 
-def _kind(subject, body):
+def _kind(subject, body, known=None):
     """'revert', 'fix' or None. A revert is `Revert "..."` or a body naming the reverted commit; a
-    revert OF a revert is a re-land, not a defect, so it is None."""
+    revert OF a revert is a re-land, not a defect, so it is None. A body-only mention counts only
+    when `known(sha)` says the sha is a commit in this pass: a squash body that lists a branch's
+    internal revert names a commit that never reached base, and is not a revert of anything here.
+    `known=None` trusts the body (the classification table)."""
     if subject.startswith(RELAND_PREFIX):
         return None
-    if subject.startswith('Revert "') or REVERT_BODY_RE.search(body or ""):
+    if subject.startswith('Revert "'):
+        return "revert"
+    named = REVERT_BODY_RE.search(body or "")
+    if named and (known is None or known(named.group(1))):
         return "revert"
     return "fix" if FIX_RE.search(subject) else None
 
@@ -256,11 +263,12 @@ def _pr_text(value):
 
 
 def _goal_records(log, sdlc, stem, floor):
-    """-> (prs in preference order, merged_seen, every pr this goal ever logged). A `merged` PR
+    """-> (prs in preference order, merged_seen, every pr this goal ever logged, readable). A `merged` PR
     outranks a `merge_armed` one; within each, the latest first. Records older than `floor` are too
     old to matter for this window and are skipped (so an old, pruned-from-git goal is silent)."""
     merged, armed, seen, every = [], [], False, set()
-    for entry in log.read_goal(sdlc, stem):
+    entries = log.read_goal(sdlc, stem)
+    for entry in entries:
         pr = _pr_text(entry.get("pr"))
         if pr:
             every.add(pr)
@@ -273,11 +281,11 @@ def _goal_records(log, sdlc, stem, floor):
         seen = seen or kind == "merged"
         if pr:
             (merged if kind == "merged" else armed).append(pr)
-    return list(reversed(merged)) + list(reversed(armed)), seen, every
+    return list(reversed(merged)) + list(reversed(armed)), seen, every, bool(entries)
 
 
 def _merged_goals(log, sdlc, commits, now, window):
-    """-> dict(mature=[rows], immature=int, unresolved=int, goal_prs=set). A row is
+    """-> dict(mature=[rows], immature=int, unresolved=int, unreadable=int, goal_prs=set). A row is
     {goal, pr, sha, idx, ts, files}; `idx` is the merge commit's position in the newest-first base
     walk, which is what decides 'later on base' (time only caps)."""
     by_pr = {}
@@ -287,10 +295,11 @@ def _merged_goals(log, sdlc, commits, now, window):
             by_pr.setdefault(pr, idx)            # newest wins a duplicate marker
     floor = now - (window + FIX_DAYS) * DAY
     start, mature_before = now - window * DAY, now - FIX_DAYS * DAY
-    out = {"mature": [], "immature": 0, "unresolved": 0, "goal_prs": set()}
+    out = {"mature": [], "immature": 0, "unresolved": 0, "unreadable": 0, "goal_prs": set()}
     for stem in log._all_goal_stems(sdlc):
-        prs, merged_seen, every = _goal_records(log, sdlc, stem, floor)
+        prs, merged_seen, every, readable = _goal_records(log, sdlc, stem, floor)
         out["goal_prs"] |= every
+        out["unreadable"] += 0 if readable else 1     # garbage, empty or unopenable: never silent
         hit = next((pr for pr in prs if pr in by_pr), None)
         if hit is None:
             out["unresolved"] += 1 if merged_seen else 0
@@ -308,9 +317,10 @@ def _merged_goals(log, sdlc, commits, now, window):
 
 def _hot_files(commits):
     """Files touched by more than 1/HOT_SHARE of the pass's own commits. A static denylist cannot
-    keep up with whatever a repository churns (measured here: a median fix overlapped about 15
-    goals, up to 94, before this set existed), so the window itself names the files too shared to
-    say anything about one goal."""
+    keep up with whatever a repository churns, so the window itself names the files too shared to
+    say anything about one goal. On this repo it changes no number: its derived set (CHANGELOG.md
+    and the write-surface file) is already in the denylist (docs/action-log-and-ledger.md has the
+    measured medians)."""
     seen = collections.Counter()
     for commit in commits:
         seen.update(commit["files"])
@@ -362,10 +372,15 @@ def _attribute(commits, rows, goal_prs, hot):
     for row in rows:
         for path in row["scope"]:
             by_file[path].append(row)
+    shas = [commit["sha"] for commit in commits]
+
+    def known(prefix):
+        return any(sha.startswith(prefix) for sha in shas)
+
     tally = {id(row): [0, 0] for row in rows}
     who = {"revert": collections.defaultdict(set), "fix": collections.defaultdict(set)}
     for idx, commit in enumerate(commits):
-        kind = _kind(commit["subject"], commit["body"])
+        kind = _kind(commit["subject"], commit["body"], known)
         if kind is None or (kind == "fix" and _merge_pr(commit["subject"]) in goal_prs):
             continue
         for row in _candidates(commit, kind, rows, by_file, hot):
@@ -386,9 +401,8 @@ def _hot_text(hot):
     return ",".join(names[:HOT_SHOWN]) + (f",+{len(names) - HOT_SHOWN}more" if len(names) > HOT_SHOWN else "")
 
 
-def report(sdlc, window, base, now):
-    log = _load_log()
-    config, reason = _log_gate(log, sdlc)
+def report(log, sdlc, state, window, base, now):
+    config, reason = _log_gate(log, sdlc, state)
     if reason:
         return _unmeasured(reason)
     if window <= FIX_DAYS:
@@ -403,17 +417,17 @@ def report(sdlc, window, base, now):
     except GitFailure as exc:
         return _unmeasured(str(exc))
     goals = _merged_goals(log, sdlc, commits, now, window)
-    _cap, retention = _window_cap(config)
+    retention = _window_cap(config)[1]
     rows = sorted(goals["mature"], key=lambda r: (r["ts"], r["goal"]))
     if len(rows) < MIN_GOALS:
         return _unmeasured(f"{len(rows)} mature goals in the last {window}d (retention={retention}), "
                            f"need {MIN_GOALS}; immature={goals['immature']} "
-                           f"unresolved={goals['unresolved']}")
+                           f"unresolved={goals['unresolved']} unreadable={goals['unreadable']}")
     hot = _hot_files(commits)
     capped = _scopes(rows, hot)
     tally, who = _attribute(commits, rows, goals["goal_prs"], hot)
     head = (f"window={window}d mature={len(rows)} immature={goals['immature']} "
-            f"unresolved={goals['unresolved']} retention={retention} base={ref} commits={len(commits)} "
+            f"unresolved={goals['unresolved']} unreadable={goals['unreadable']} retention={retention} base={ref} commits={len(commits)} "
             f"denylist={','.join(DENYLIST)} hot={_hot_text(hot)}"
             + (f" files-capped={capped}" if capped else ""))
     lines = [PROXY, head]
@@ -435,11 +449,11 @@ def main(argv, now=None):
     try:
         window, base, sdlc = _parse(argv)
         log = _load_log()
-        config = None
         state = log.action_log_state(sdlc)
-        if state[0] == log.LOG_ON:
-            config = state[2]
-        cap, _label = _window_cap(config)
+        # Order: the window is checked against retention BEFORE the log is judged on or off. With
+        # the log off or unreadable, retention is unknown and the default (90) is the cap, so
+        # `--window 91` is refused even then; an over-long window is a usage error whatever the log says.
+        cap, _label = _window_cap(state[2] if state[0] == log.LOG_ON else None)
         if window > cap:
             raise Refusal("window-exceeds-retention",
                           f"--window {window} is longer than the {cap} days the action log keeps "
@@ -448,7 +462,7 @@ def main(argv, now=None):
     except Refusal as exc:
         print(f"outcomes.py: REFUSED [{exc.code}]: {exc.detail}", file=sys.stderr)
         return 2
-    lines = report(sdlc, window, base, time.time() if now is None else now)
+    lines = report(log, sdlc, state, window, base, time.time() if now is None else now)
     print("\n".join(lines))
     return 0
 
