@@ -757,6 +757,11 @@ def test_a_run_writes_nothing_anywhere(tmp_path):
     unmeasured.commit("feat: a (#1)")
     scripts, home = _isolated_copy(tmp_path), tmp_path / "home"
     home.mkdir()
+    # Warm the interpreter once, unmeasured: Apple's /usr/bin/python3 writes its OWN bytecode caches
+    # under $HOME/Library/Caches on first use, which is the interpreter and not outcomes.py (the
+    # planned-test proof runs under that interpreter). The pyc assertion below still catches any
+    # bytecode written for this script's modules, and the snapshot then measures steady state.
+    _run_copy(scripts, measured.repo, home)
     for world, expect in ((measured, "window="), (unmeasured, "unmeasured:")):
         before = _snapshot(world.repo, scripts, home)
         r = _run_copy(scripts, world.repo, home)
