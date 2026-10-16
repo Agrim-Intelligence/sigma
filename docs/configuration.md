@@ -34,6 +34,7 @@ Defaults below are what `/sigma-init` scaffolds (`config.json.tmpl`). Not everyt
 | `budget.max_iterations` / `max_minutes` / `max_tokens` / `max_codex_raw_tokens` | 20 / 480 / 100,000,000 / 0 (off) | goals-per-session / wall-clock / priced Claude-equivalent / measured Codex raw phase-token admission ceilings; each enforces only when set to a positive number |
 | `knowledge_graph.enabled` | off | research capture + the self-improving graph |
 | `SIGMA_GATE_GLOBAL=1` (env) | unset | restores the always-on prompt gate (the reminder in every repository, adopted or not) |
+| `quality.metrics` | absent | a list of metric commands `quality_delta.py <goal>` measures at the merge-base and at the head and compares; nothing runs while it is absent. See [quality metrics](quality-delta.md) |
 
 > For any zero-touch / unattended multi-issue run, turn `backlog_check.enabled: true` on — it is
 > what makes a human-authored, comment-only dependency marker (bypassing `hand_off()`) actually
@@ -71,3 +72,14 @@ The categories reader never raises. A missing file, wrong schema
 or unreadable JSON reads as no categories; an entry with a missing or duplicate id (the first wins),
 an unknown threshold key or a wrong-typed value is dropped on its own. `autonomy.readout` and the
 doctor autonomy row show the matched category and the thresholds in force once the file exists.
+
+## Quality metrics
+
+`quality.metrics` is opt-in and absent from a fresh config, so nothing measures anything until you add it.
+Each entry is `{name, command, direction, scope}` plus an optional `required` and `timeout_seconds`;
+`quality.memory_floor_fraction` and `quality.env_drop` are optional block-level keys.
+`python3 <installed-sigma>/skills/sigma-loop/scripts/quality_delta.py <goal>` reads the block from `.sdlc/config.json` **as
+committed at the merge-base**, never the head's file, runs each command once at the merge-base and once at the
+head in scratch worktrees, one at a time, and prints base, head, delta and `better`, `same`, `worse` or
+`unmeasured`. A command that fails or times out is `unmeasured`, never `same`. The schema, the number grammar,
+the command environment, the limits and the recovery lever are in [quality-delta.md](quality-delta.md).

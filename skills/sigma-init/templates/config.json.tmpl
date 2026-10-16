@@ -274,5 +274,8 @@
       "remote": "origin"
     },
     "_sync": "Opt-in sharing of ANALYSIS NOTES across machines, on the ledger's ops-branch pattern. What leaves the machine: ONLY .sdlc/knowledge/analysis/**/*.md (the notes Retrospective writes) — never research/, gaps.md, a graph build, or any non-.md file beside the notes; the worktree's own .gitignore enforces this, prose does not. When enabled (strict true, together with knowledge_graph.enabled), `loop.py record ... --retro-grade` publishes this machine's notes to <remote>/<branch> and pulls everyone else's before the graph refresh. Publish REFUSES a note containing a secret-shaped string, naming the file (it inspects what it is about to stage; a note committed by hand inside the worktree is already past the gate). One-time per clone: `python3 <plugin>/skills/sigma-loop/scripts/sync.py bootstrap .sdlc --channel knowledge` (carries existing local notes in). Manual lever after a failed push: the same command with `publish`."
+  },
+  "quality": {
+    "_comment": "Opt-in quality metrics (#1635). Absent by default, so nothing here runs. Add a `metrics` list, each entry {name, command (an argv list, no shell), direction lower|higher, scope repo|changed-files, optional required and timeout_seconds}, and `python3 <installed-sigma>/skills/sigma-loop/scripts/quality_delta.py <goal>` runs each command once at the merge-base and once at the head, in scratch worktrees, one at a time, and prints base, head, delta and better|same|worse|unmeasured. The metrics are read from the config as committed at the MERGE-BASE, never the head's, so commit .sdlc/config.json for them to apply. Optional memory_floor_fraction (default 0.15) and env_drop (names to remove from the command environment). See docs/quality-delta.md."
   }
 }
