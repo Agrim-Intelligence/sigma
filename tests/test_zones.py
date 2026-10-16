@@ -41,6 +41,11 @@ def _repo(path, files=("README.md",)):
     subprocess.run(["git", "init", "-q", "-b", "main", str(path)], check=True)
     _git(path, "config", "user.email", "t@example.com")
     _git(path, "config", "user.name", "t")
+    # No background git while a test snapshots the tree: `git commit` otherwise starts auto
+    # maintenance, whose objects/maintenance.lock appears mid-test and reads as a write by zones.py
+    # (seen in about one run in three under xdist).
+    _git(path, "config", "maintenance.auto", "false")
+    _git(path, "config", "gc.auto", "0")
     (path / ".gitignore").write_text(".sdlc/\n", encoding="utf-8")
     _git(path, "add", ".gitignore")
     for f in files:
@@ -551,6 +556,13 @@ def _snapshot(*roots):
                 except OSError:
                     snap[p] = "unreadable"
     return snap
+
+
+def test_fixture_repos_disable_background_maintenance(tmp_path):
+    """The writes-nothing snapshot is only meaningful if no git housekeeping runs beside it."""
+    repo = _repo(tmp_path / "q")
+    assert _git(repo, "config", "--get", "maintenance.auto").strip() == "false"
+    assert _git(repo, "config", "--get", "gc.auto").strip() == "0"
 
 
 def test_zones_writes_nothing(tmp_path):
