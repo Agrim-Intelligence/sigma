@@ -1,6 +1,7 @@
 """#267: hard test-first proof, including controls that must refuse weak evidence."""
 import importlib.util
 import json
+import os
 import pathlib
 import subprocess
 
@@ -184,6 +185,56 @@ def test_real_pytest_red_then_green_without_editing_tests(case):
     proof = m.observe(sdlc, '42', root, plan)
     assert proof['passed'], proof
     assert m.refusal(sdlc, '42', root, plan, proof) == ''
+
+
+def _long_failing_node(case):
+    """#414: a node id past 100 characters whose real red also prints captured stdout, so only
+    pytest's per-node summary reason (trimmed at narrow COLUMNS) can attribute its assertion."""
+    root, sdlc, plan = case
+    file = 'tests/test_' + 'x' * 60 + '.py'
+    name = 'test_' + 'y' * 60
+    (root / file).write_text(f"from pathlib import Path\ndef {name}():\n    print('noise')\n"
+                             "    assert Path('ready').exists()\n")
+    node = f'{file}::{name}'
+    plan.write_text(f'# Plan\n\n## Tests\n- `{node}`\n')
+    assert len(node) > 100
+    return node
+
+
+def test_long_node_id_assertion_red_is_recorded_at_default_width(case, monkeypatch):
+    monkeypatch.delenv('COLUMNS', raising=False)
+    root, sdlc, plan = case
+    node = _long_failing_node(case)
+    m = load('red_green')
+    red = m.observe(sdlc, '42', root, plan)
+    assert not red['passed']
+    rows = [r for r in load('witness').witnesses(sdlc, '42') if r.get('test') == node]
+    assert len(rows) == 1, load('witness').witnesses(sdlc, '42')
+
+
+def test_inherited_narrow_columns_is_overridden(case, monkeypatch):
+    monkeypatch.setenv('COLUMNS', '60')
+    root, sdlc, plan = case
+    node = _long_failing_node(case)
+    m = load('red_green')
+    red = m.observe(sdlc, '42', root, plan)
+    assert not red['passed']
+    rows = [r for r in load('witness').witnesses(sdlc, '42') if r.get('test') == node]
+    assert len(rows) == 1, load('witness').witnesses(sdlc, '42')
+
+
+def test_run_hands_wide_columns_to_subprocess(tmp_path, monkeypatch):
+    monkeypatch.setenv('COLUMNS', '60')
+    m = load('red_green')
+    seen = {}
+    def record(argv, **kwargs):
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(argv, 0, '', '')
+    monkeypatch.setattr(m.subprocess, 'run', record)
+    m._run(tmp_path, ['true'])
+    assert seen.get('env'), f'_run passed no env: {sorted(seen)}'
+    assert int(seen['env']['COLUMNS']) >= 1000
+    assert seen['env']['PATH'] == os.environ['PATH']
 
 
 def pr_case(case, monkeypatch):

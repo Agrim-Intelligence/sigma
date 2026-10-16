@@ -233,10 +233,15 @@ ENFORCEMENT_GATES = (
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled", "verify.enforce"),
      "settings": (), "mechanism": "refuses `work.py pr` (exit 4) unless the published plan's "
                   "pytest nodes have matching whole-file assertion-red evidence preceding fresh "
-                  "observed green; an explicit `--no-tests <reason>` bypasses only this test-first "
+                  "observed green; pytest runs with `COLUMNS=4000` (the caller's value overridden), "
+                  "so a long node id does not lose its assertion reason to pytest's summary trim; "
+                  "an explicit `--no-tests <reason>` bypasses only this test-first "
                   "proof and carries the reason verbatim into the PR body",
      "condition": "local evidence is not tamper-proof; legacy advisory witnesses do not qualify; "
-                  "external fixture/helper bytes are not part of red's test-file identity"},
+                  "external fixture/helper bytes are not part of red's test-file identity; the "
+                  "wide `COLUMNS` also reaches the tests under proof, so width-sensitive output "
+                  "(argparse help, `shutil.get_terminal_size`) can differ from a developer's shell; "
+                  "only one pytest release was measured"},
     {"control": "Plan review before implementation", "function": "_plan_review_refusal",
      "kind": "python-gate", "hosts": "all",
      "enabled_by": ("work.enabled", "gates.plan_review.enabled"), "settings": (),
