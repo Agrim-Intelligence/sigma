@@ -156,7 +156,7 @@ def test_unreadable_config_is_unreachable(tmp_path):
 def test_path_normalisation_forms(tmp_path):
     repo = _repo(tmp_path / "p", ("a/b.py",))
     _config(repo, {})
-    p = _run(repo, "./a/b.py", "a\\b.py", str(repo / "a" / "b.py"), "a//b.py")
+    p = _run(repo, "./a/b.py", str(repo / "a" / "b.py"), "a//b.py", "a/./b.py")
     assert p.returncode == 0, p.stderr
     assert [r[0] for r in _rows(p)] == ["a/b.py"] * 4
 
@@ -801,3 +801,49 @@ def test_control_characters_other_than_newline_do_not_split_rows(tmp_path):
     p = _run(wt, "ok.py", "a\x0bb.py", "c\x0cd.py", "ok.py")
     rows = [ln.split("\t") for ln in p.stdout.split("\n") if ln]       # not splitlines(): \x0b is a path byte
     assert [r[2] for r in rows] == ["existing", "new", "new", "existing"], rows
+
+
+def test_backslash_in_a_posix_name_is_not_a_separator(tmp_path):
+    repo = _repo(tmp_path / "p", ("back\\slash.py", "back/slash.py"))
+    _config(repo, _zones(("*", "legacy")))
+    _with_origin(repo, tmp_path)
+    wt = _worktree(repo)
+    rows = _rows(_run(wt, "back\\slash.py", "back/slash.py"))
+    assert [r[:3] for r in rows] == [["back\\slash.py", "legacy", "existing"],
+                                     ["back/slash.py", "legacy", "existing"]]
+
+
+def test_tab_in_a_path_is_refused_like_newline(tmp_path):
+    repo = _repo(tmp_path / "p")
+    _config(repo, {})
+    p = _run(repo, "README.md", "a\tb.py")
+    assert p.returncode == 2 and p.stdout == "" and "tab" in p.stderr.lower()
+
+
+def test_base_value_starting_with_dash_is_refused_not_passed_to_git(tmp_path):
+    repo, wt = _fork_fixture(tmp_path)
+    for base in ("--base=--all", "-x"):
+        argv = ["--base=--all"] if base == "--base=--all" else ["--base", base]
+        p = _run(wt, *argv, "old.py")
+        assert p.returncode == 2 and p.stdout == "" and "base" in p.stderr.lower(), (argv, p.stderr)
+
+
+def test_documented_limit_nfd_and_case_spellings_print_new(tmp_path):
+    """PINS the limits docs/change-zones.md states: git looks names up byte for byte, so a different
+    Unicode spelling (NFD of an NFC name) or a different-case spelling of a tracked file prints `new`
+    even where the filesystem would open it. If this changes, update the docs section too."""
+    nfc = "caf\u00e9.py"
+    nfd = "cafe\u0301.py"
+    repo = _repo(tmp_path / "p", (nfc, "Readme.py"))
+    _config(repo, _zones(("*", "legacy")))
+    _with_origin(repo, tmp_path)
+    wt = _worktree(repo)
+    rows = _rows(_run(wt, nfc, nfd, "Readme.py", "readme.py"))
+    assert [r[2] for r in rows] == ["existing", "new", "existing", "new"], rows
+
+
+def test_doc_states_the_nfd_and_case_limits_and_refusals():
+    t = DOC.read_text(encoding="utf-8")
+    for term in ("Unicode normalisation", "NFD", "NFC", "Case (case-insensitive", "may be wrong",
+                 "pass the spelling git", "carriage return or tab", "never a separator"):
+        assert term in t, term

@@ -12,7 +12,8 @@ processes whatever the path count (one `rev-parse`, one `merge-base`, one batche
 Nothing infers zones: the owner declares them (docs/change-zones.md).
 
 REFUSAL (exit 2, empty stdout, typed reason on stderr): a path outside the checkout, a path
-containing a newline or carriage return (the output is line-oriented), or malformed
+containing a newline, carriage return or tab (the output is line- and tab-delimited), a `--base`
+value starting with a dash, or malformed
 `design.zones` (the reason names `design.zones[i]`). Everything else exits 0, including rows whose
 state is `unknown` or whose zone is `unreachable`: those are stated gaps, never a silent pass.
 
@@ -69,9 +70,10 @@ def _toplevel(cwd):
 
 
 def _normalise(arg, cwd, top):
-    if "\n" in arg or "\r" in arg:
-        raise Refusal("path contains a newline or carriage return: output is line-oriented")
-    p = arg.replace("\\", "/")
+    if "\n" in arg or "\r" in arg or "\t" in arg:
+        raise Refusal("path contains a newline, carriage return or tab: the output is "
+                      "line-oriented and tab-separated")
+    p = arg.replace(os.sep, "/") if os.sep != "/" else arg      # a backslash is a name byte on POSIX
     full = p if os.path.isabs(p) else os.path.join(str(cwd), p)
     base = os.path.basename(full)
     if base in ("", ".", ".."):
@@ -227,6 +229,8 @@ def _rule(zone, state):
 
 
 def classify(paths, cwd, base=None):
+    if base is not None and base.startswith("-"):
+        raise Refusal("--base must be a ref, not an option: %s" % base)
     top = _toplevel(cwd)
     rels = [_normalise(a, cwd, top) for a in paths]
     cfg = _config(top)

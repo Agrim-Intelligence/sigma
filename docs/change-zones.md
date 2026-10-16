@@ -50,7 +50,8 @@ The rule printed, in this precedence:
 
 An unreachable config prints ahead of the unknown fallback. Paths may be relative (joined to the
 current directory), absolute, or contain `./`; a path outside the checkout, or one containing a
-newline, is refused. A path that starts with a dash needs `--`: `zones.py classify -- -odd.py`.
+newline, carriage return or tab (the output is tab-separated), is refused; so is a `--base` value
+that starts with a dash. A backslash is an ordinary name byte on POSIX, never a separator. A path that starts with a dash needs `--`: `zones.py classify -- -odd.py`.
 It is read-only apart from the kit-wide script-time record, runs a constant number of git
 processes whatever the path count, and uses no network and no `gh`.
 
@@ -60,6 +61,21 @@ number of git processes is constant, but wall time still grows with the path cou
 linearly across those two points); a de-duplication that scanned a list instead of a hash made the
 20,000 case 12.6 s. Not measured: a large real repository, a networked filesystem, or more than
 20,000 paths.
+
+## Limits of the `new` reading
+
+Newness is a byte-for-byte lookup of the path you pass in git's tree at the fork point. Two
+spellings of a file that is tracked therefore print `new` although the file exists:
+
+- **Unicode normalisation (macOS).** macOS can open a file by a different Unicode spelling than the
+  one git stored, for example the decomposed (NFD) spelling of a tracked precomposed (NFC) name
+  such as `cafe` plus a combining accent for `café`. Git does not equate them, so the row prints `new`.
+- **Case (case-insensitive filesystems, the macOS default).** `readme.py` opens `Readme.py` on such
+  a filesystem, but git tracks `Readme.py`, so the row for `readme.py` prints `new`.
+
+In both cases the safe reading is that `new` for such a spelling may be wrong; pass the spelling git
+tracks (`git ls-files` shows it). The zone glob match is case-sensitive for the same reason. This is
+a documented limit, not handled; a test pins the current behaviour so a change is noticed.
 
 ## Sprout and wrap
 
