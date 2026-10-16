@@ -17,6 +17,8 @@ import time
 
 import backup_support as bk
 from changelog_layout import entries_naming
+import pytest
+import git_identity_support  # noqa: E402  (#1572)
 
 ROOT = bk.ROOT
 UNIT = "u"
@@ -29,6 +31,13 @@ OLD_SIX = {
     ("skills/sigma-loop/scripts/feature_rebase.py", "_pushed", "colon_refspec"),
     ("skills/sigma-loop/scripts/release_manifest.py", "publish_to_ledger_branch", "colon_refspec"),
 }
+
+
+@pytest.fixture(autouse=True)
+def _scoped_git_identity_1572(tmp_path_factory, monkeypatch):
+    """#1572: production git in these tests commits/rebases with the inherited identity, which a host without a
+    global one lacks. Give it one, scoped to each test (never process-wide: that breaks test_ledger_single_branch)."""
+    git_identity_support.scoped_git_identity(tmp_path_factory.mktemp("git-identity"), monkeypatch)
 
 
 def _load_path(name, path):

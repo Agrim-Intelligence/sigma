@@ -12,8 +12,16 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import test_feature_rebase as tfr  # noqa: E402
 from test_feature_rebase import FEATURE, World, _git, _load, _write  # noqa: E402
 from test_union_headed import CUT, OPEN, _nonblank, _remote_changelog, _under  # noqa: E402
+import git_identity_support  # noqa: E402  (#1572)
 
 SEED = "# Changelog\n\n## Unreleased\n\n- a1\n- a2\n\n## 1.0.3 %s 2026-01-01\n\n- old\n" % CUT
+
+
+@pytest.fixture(autouse=True)
+def _scoped_git_identity_1572(tmp_path_factory, monkeypatch):
+    """#1572: production git in these tests commits/rebases with the inherited identity, which a host without a
+    global one lacks. Give it one, scoped to each test (never process-wide: that breaks test_ledger_single_branch)."""
+    git_identity_support.scoped_git_identity(tmp_path_factory.mktemp("git-identity"), monkeypatch)
 
 
 def _unit(entries):
