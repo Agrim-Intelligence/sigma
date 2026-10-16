@@ -82,7 +82,8 @@ def verdict(direction, base, head):
 
 
 def format_number(number):
-    return format(number, "f")
+    """Plain decimal, never scientific; negative zero prints as 0."""
+    return "0" if number == 0 else format(number, "f")
 
 
 def format_delta(base, head):
@@ -93,7 +94,8 @@ def format_delta(base, head):
 
 #: Suffix rules cover the exact names too: GH_TOKEN and GITHUB_TOKEN end in _TOKEN, and X_API_KEY
 #: ends in _KEY, so neither needs a line of its own (a redundant rule could never be seen red).
-_CREDENTIAL_EXACT = frozenset(("SSH_AUTH_SOCK",))
+#: Names with no credential-shaped suffix that still carry one: database and cluster logins.
+_CREDENTIAL_EXACT = frozenset(("SSH_AUTH_SOCK", "PGPASSWORD", "MYSQL_PWD", "DATABASE_URL", "KUBECONFIG"))
 _CREDENTIAL_SUFFIXES = ("_TOKEN", "_SECRET", "_PASSWORD", "_PASSWD", "_PASS", "_PAT", "_KEY", "_CREDENTIALS")
 _CREDENTIAL_SUBSTRINGS = ("AUTHTOKEN",)
 _CREDENTIAL_PREFIXES = ("AWS_", "ANTHROPIC_", "OPENAI_")
@@ -331,6 +333,9 @@ def remove_scratch(git2, root, sdlc, scratch):
 Report = collections.namedtuple("Report", "code out err")
 
 _FILES_NAME = ".sigma-quality-files"
+#: `git worktree add` checks out a whole tree, so it gets its own bounded ceiling (seconds), not the 30 s of a
+#: read. A tree that needs longer than this is `unmeasured` with git's timeout in the reason; documented.
+_WORKTREE_ADD_TIMEOUT = 600
 _MAX_OUT_BYTES = 1 << 20
 _TERM_GRACE = 2
 _LS_TREE = re.compile(r"(\d{6}) \w+ ([0-9a-f]{40,64})\t")
@@ -366,16 +371,29 @@ def read_record(sdlc, stem):
     try:
         record = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return None, "no readable work record for this goal"
+        return None, "no readable work record for this goal", None
     if not isinstance(record, dict):
-        return None, "the work record is not an object"
+        return None, "the work record is not an object", None
     base, remote = record.get("base"), record.get("remote")
     if record.get("base_resolved") is not True:
-        return None, "the work record's base is not resolved"
+        return None, "the work record's base is not resolved", None
     for part in (base, remote):
         if not isinstance(part, str) or not part:
-            return None, "the work record has no usable base or remote"
-    return "%s/%s" % (remote, base), ""
+            return None, "the work record has no usable base or remote", None
+    return "%s/%s" % (remote, base), "", record
+
+
+def _wrong_worktree(git, wt, record):
+    """A reason when `cwd` is not the goal's own worktree on the goal's branch, else "". Without this,
+    `quality_delta.py 1635` run from goal 2000's worktree would measure 2000's head as 1635's."""
+    recorded = record.get("worktree")
+    if isinstance(recorded, str) and recorded and os.path.realpath(recorded) != os.path.realpath(wt):
+        return "this is not the goal's worktree (the work record names a different one)"
+    branch = record.get("branch")
+    code, out, _err = git(wt, ["rev-parse", "--abbrev-ref", "HEAD"])
+    if isinstance(branch, str) and branch and (code != 0 or out.strip() != branch):
+        return "the worktree is not on the goal's branch %s" % branch
+    return ""
 
 
 def _memory_ok(reading, fraction):
@@ -457,8 +475,11 @@ def measure(goal, cwd=".", *, probe=None, git=None, runner=None, pid_alive=None)
     if root is None or wt is None:
         return _everything_unmeasured(None, head, why or "not inside a git working tree")
     sdlc = root / ".sdlc"
-    ref, why = read_record(sdlc, stem)
+    ref, why, record = read_record(sdlc, stem)
     if ref is None:
+        return _everything_unmeasured(None, head, why)
+    why = _wrong_worktree(git, wt, record)
+    if why:
         return _everything_unmeasured(None, head, why)
     code, out, err = git(wt, ["merge-base", "HEAD", ref])
     fork = out.strip() if code == 0 and out.strip() else None
@@ -497,7 +518,7 @@ def measure(goal, cwd=".", *, probe=None, git=None, runner=None, pid_alive=None)
         for scratch, rev in zip(scratch_paths_pair, (fork, head)):
             diff_revert._owner_path(scratch).write_text(str(os.getpid()), encoding="ascii")
             created.append(scratch)
-            code, _out, err = git(wt, ["worktree", "add", "-q", "--detach", str(scratch), rev])
+            code, _out, err = git(wt, ["worktree", "add", "-q", "--detach", str(scratch), rev], _WORKTREE_ADD_TIMEOUT)
             if code != 0:
                 return _all_metrics(fork, head, cfg, "could not create a scratch worktree: %s" % _one_line(err))
             if files is not None:

@@ -23,6 +23,19 @@ base=<merge-base sha> head=<head sha>
 <name>: unmeasured (<one-line reason>)
 ```
 
+When the whole run cannot be measured (no work record, no merge-base, a `.sdlc/config.json` at the
+merge-base that cannot be read, not in a git working tree, run from a worktree that is not the goal's) the
+output is the header with a dash for what is unknown, then one line for the whole run, and no metric lines:
+
+```
+base=- head=-
+unmeasured: <one-line reason>
+```
+
+`quality_delta.py <goal>` must be run from that goal's own worktree, on its own branch: the work record's
+`worktree` and `branch` are compared with where it runs, and a mismatch is `unmeasured`, not a measurement of
+whatever head happens to be checked out.
+
 `same` is exact equality. There is no tolerance here. Exit 0 for every measured or unmeasured outcome; exit 2
 for a refusal (malformed `quality` block, unsafe goal name, a host that cannot stop a process group), with
 nothing on stdout and the reason on stderr, e.g. `quality_delta.py: REFUSED [bad-metric] metrics[1]: ...`.
@@ -81,7 +94,7 @@ A command that exits non-zero, is not found, times out, prints more than 1 MiB o
 lost), or prints no valid number, at **either** commit. Uncommitted work in the goal worktree (modified or staged
 tracked files, untracked source files outside `.sdlc`): the head scratch is the committed HEAD, so measuring it
 would print a false `same`; commit first. Untracked plan, research and acceptance copies under `.sdlc` do not
-count. Also: no work record or an unresolved base, no merge-base, a `.sdlc/config.json` at the merge-base that is
+count, and neither does a modified **tracked** file under `.sdlc` (the exclude covers every path there). Also: no work record or an unresolved base, no merge-base, a `.sdlc/config.json` at the merge-base that is
 not a regular file or not readable JSON, a probe that cannot read memory, memory below the floor, a scratch
 worktree held by a live run (it abstains rather than fight over it).
 
@@ -90,7 +103,8 @@ worktree held by a live run (it abstains rather than fight over it).
 Each command starts from `bounded_run.unattended_env()` (no repository-location variables, no prompts) with
 credential-shaped names removed, case-insensitively: `SSH_AUTH_SOCK`; any name ending `_TOKEN`, `_SECRET`,
 `_PASSWORD`, `_PASSWD`, `_PASS`, `_PAT`, `_KEY` or `_CREDENTIALS`; any name containing `AUTHTOKEN`; any name
-starting `AWS_`, `ANTHROPIC_` or `OPENAI_`; plus everything in `quality.env_drop`. That includes `GH_TOKEN` and
+starting `AWS_`, `ANTHROPIC_` or `OPENAI_`; and the exact names `PGPASSWORD`, `MYSQL_PWD`, `DATABASE_URL` and
+`KUBECONFIG`; plus everything in `quality.env_drop`. That includes `GH_TOKEN` and
 `GITHUB_TOKEN`.
 
 Two limits, stated plainly. It is a **denylist**: a credential with an unusual name survives, and
@@ -105,6 +119,9 @@ by a metric command. A metric command is code you chose to run; treat it as you 
   percent by default, a judgement, not a measurement), or unreadable: no command runs and every metric is
   `unmeasured`. A dip mid-run marks that metric and every later one `unmeasured` and keeps the ones already
   measured. The check and the spawn are not atomic (a named ceiling).
+- **Git ceiling.** Reads (merge-base, config, status, diff) have a fixed 30 s limit each; creating a scratch
+  worktree has its own 600 s limit. A tree whose checkout needs longer is `unmeasured` with git's timeout as the
+  reason, every run; these two numbers are constants, not derived from `timeout_seconds`.
 - **Time.** One command at a time per goal, twice per metric. Wall time is bounded by `2 x sum(timeout + 2 s grace)`
   plus the git work. Two goals run two commands at once, guarded only by the per-command probe.
 - **Output.** At most 1 MiB of stdout per command is kept; more is `unmeasured`.

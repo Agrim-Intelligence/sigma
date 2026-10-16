@@ -73,6 +73,13 @@ def test_verdict_same_is_exact_equality():
     assert qd.verdict("higher", D("10"), D("10.0000001")) == "better"
 
 
+def test_negative_zero_prints_as_zero():
+    assert qd.format_number(qd.parse_number("-0")) == "0"
+    assert qd.format_number(qd.parse_number("-0.0")) == "0"
+    assert qd.format_delta(qd.parse_number("-0"), qd.parse_number("0")) == "0"
+    assert qd.format_number(D("-1")) == "-1"
+
+
 def test_delta_prints_without_scientific_notation():
     assert qd.format_number(D("1E+3")) == "1000"
     assert qd.format_number(D("2.5E-7")) == "0.00000025"
@@ -86,7 +93,7 @@ def test_delta_prints_without_scientific_notation():
 DROPPED = [
     "GH_TOKEN", "GITHUB_TOKEN", "foo_token", "MY_SECRET", "DB_PASSWORD", "DB_PASSWD", "SIGMA_SMTP_PASS",
     "GH_PAT", "SECRET_KEY", "PRIVATE_KEY", "STRIPE_KEY", "X_API_KEY", "X_CREDENTIALS", "NPM_CONFIG_AUTHTOKEN",
-    "npm_config_authtoken", "AWS_X", "ANTHROPIC_X", "OPENAI_X", "SSH_AUTH_SOCK", "SIGMA_OWN_NAME",
+    "npm_config_authtoken", "PGPASSWORD", "MYSQL_PWD", "DATABASE_URL", "KUBECONFIG", "pgpassword", "AWS_X", "ANTHROPIC_X", "OPENAI_X", "SSH_AUTH_SOCK", "SIGMA_OWN_NAME",
 ]
 
 
@@ -612,7 +619,7 @@ def test_two_goal_ids_run_concurrently_without_collision(tmp_path):
               "while len(glob.glob(os.path.join(d,'*.arrive')))<2 and time.time()<end: time.sleep(0.05)\n"
               "print(int(len(glob.glob(os.path.join(d,'*.arrive')))>=2))\n")
     r = build(tmp_path / "r", metrics=[metric(command=[sys.executable, "-c", waiter, str(shared)], timeout_seconds=55)])
-    write_record(r, goal="g2")
+    write_record(r, goal="g2", branch="sdlc/1635")
     procs = [subprocess.Popen([sys.executable, str(SCRIPT), goal], cwd=str(r.wt), stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, text=True, stdin=subprocess.DEVNULL) for goal in ("1635", "g2")]
     outs = []
@@ -1138,3 +1145,61 @@ def test_default_runner_bounds_output_and_grace(tmp_path, monkeypatch):
 def test_required_flag_is_validated_but_does_not_change_the_row(tmp_path):
     r = build(tmp_path, metrics=[metric(required=True)])
     assert metric_lines(measure(r, runner=ok_runner("3\n"))) == ["words: base=3 head=3 delta=0 same"]
+
+
+# ------------------------------------------------------------------------- review send-back (#1635)
+
+def _second_goal(r, goal="2000"):
+    wt2 = r.tmp / ("wt" + goal)
+    git(r.main, "worktree", "add", "-q", "-b", "sdlc/%s" % goal, str(wt2))
+    (wt2 / "data.txt").write_text("a b c d e f g\n")
+    git(wt2, "add", "-A")
+    git(wt2, "commit", "-q", "-m", "other goal")
+    write_record(r, goal=goal, worktree=str(wt2), branch="sdlc/%s" % goal)
+    return wt2
+
+
+def test_wrong_goal_worktree_is_unmeasured(tmp_path):
+    """From goal 2000's worktree, `quality_delta.py 1635` must not measure 2000's head as 1635's."""
+    r = build(tmp_path)
+    wt2 = _second_goal(r)
+    calls = []
+    got = qd.measure("1635", wt2, probe=PLENTY, runner=ok_runner(calls=calls))
+    assert calls == [] and got.out[0].startswith("base=- head=")
+    assert got.out[1].startswith("unmeasured") and "worktree" in got.out[1]
+    ok = qd.measure("2000", wt2, probe=PLENTY, runner=ok_runner("3\n"))
+    assert metric_lines(ok) == ["words: base=3 head=3 delta=0 same"]
+
+
+def test_wrong_branch_in_the_right_worktree_is_unmeasured(tmp_path):
+    r = build(tmp_path)
+    git(r.wt, "checkout", "-q", "-b", "somewhere-else")
+    calls = []
+    got = measure(r, runner=ok_runner(calls=calls))
+    assert calls == [] and got.out[1].startswith("unmeasured") and "branch" in got.out[1]
+
+
+def test_worktree_add_has_its_own_bounded_timeout(tmp_path):
+    r = build(tmp_path)
+    real, seen = qd._git, []
+
+    def spy(root, argv, timeout=30):
+        if argv[:2] == ["worktree", "add"]:
+            seen.append(timeout)
+        return real(root, argv, timeout)
+
+    measure(r, git=spy, runner=ok_runner())
+    assert seen == [qd._WORKTREE_ADD_TIMEOUT] * 2 and 30 < qd._WORKTREE_ADD_TIMEOUT <= 3600
+
+
+def test_negative_zero_metric_prints_zero(tmp_path):
+    r = build(tmp_path, metrics=[metric(command=[sys.executable, "-c", "print('-0')"])])
+    assert metric_lines(measure(r)) == ["words: base=0 head=0 delta=0 same"]
+
+
+def test_right_branch_but_other_worktree_path_is_unmeasured(tmp_path):
+    r = build(tmp_path)
+    write_record(r, worktree=str(tmp_path / "elsewhere"))
+    calls = []
+    got = measure(r, runner=ok_runner(calls=calls))
+    assert calls == [] and got.out[1].startswith("unmeasured") and "worktree" in got.out[1]
