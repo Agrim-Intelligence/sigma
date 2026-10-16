@@ -9,12 +9,14 @@ from test_loop import _backlog, _lease_base, _loop, _verify_base
 def test_agent_start_collision_names_the_reclaim_and_thread_levers(monkeypatch, capsys):
     monkeypatch.delenv("CLAUDECODE", raising=False)
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
     lp = _loop()
     with tempfile.TemporaryDirectory() as d:
         base = _lease_base(d, actor="me", claims=[])
         monkeypatch.setenv("CODEX_SESSION_ID", "01999aaa-aaaa-7aaa-8aaa-aaaaaaaaaaaa")
-        assert lp._dispatch(["loop.py", "agent-start", base, "42", "--pid", str(os.getpid())]) == 2
+        result = lp._dispatch(["loop.py", "agent-start", base, "42", "--pid", str(os.getpid())])
         err = capsys.readouterr().err
+        assert result == 2
     assert "cannot register agent identity" in err              # tests/test_loop.py pins this substring
     assert f"`loop.py agent-reclaim {base} 42`" in err and "--thread" in err
 
