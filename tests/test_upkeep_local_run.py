@@ -10,12 +10,21 @@ import pathlib
 import backup_support as bk
 import test_feature_rebase as eng
 import upkeep_support as support
+import pytest
+import git_identity_support  # noqa: E402  (#1572)
 
 ROOT = support.ROOT
 RECORD = ROOT / "docs" / "launch" / "evidence" / "upkeep-local-run.md"
 BEGIN, END = "<!-- transcript:begin -->", "<!-- transcript:end -->"
 STEP = 60
 DAY = 86400
+
+
+@pytest.fixture(autouse=True)
+def _scoped_git_identity_1572(tmp_path_factory, monkeypatch):
+    """#1572: production git in these tests commits/rebases with the inherited identity, which a host without a
+    global one lacks. Give it one, scoped to each test (never process-wide: that breaks test_ledger_single_branch)."""
+    git_identity_support.scoped_git_identity(tmp_path_factory.mktemp("git-identity"), monkeypatch)
 
 
 def refs_of(world):

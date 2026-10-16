@@ -6,6 +6,15 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from test_feature_rebase import FEATURE, World, _filer, _git, _mod, _register_agent, _upkeep, _write  # noqa: E402
 from test_goal_conflict_cause_1494 import CONFLICT, _goal_bodies, _move_feature, _probe_returning  # noqa: E402
+import pytest
+import git_identity_support  # noqa: E402  (#1572)
+
+
+@pytest.fixture(autouse=True)
+def _scoped_git_identity_1572(tmp_path_factory, monkeypatch):
+    """#1572: production git in these tests commits/rebases with the inherited identity, which a host without a
+    global one lacks. Give it one, scoped to each test (never process-wide: that breaks test_ledger_single_branch)."""
+    git_identity_support.scoped_git_identity(tmp_path_factory.mktemp("git-identity"), monkeypatch)
 
 
 def test_a_clean_probe_with_a_conflicting_commit_by_commit_replay_is_unknown(tmp_path):
