@@ -88,6 +88,10 @@ class World:
         self.git("init", "-q", "-b", "main")
         self.git("config", "user.email", "t@example.com")
         self.git("config", "user.name", "t")
+        # No background git while a test snapshots the tree: a commit otherwise starts auto
+        # maintenance whose objects/maintenance.lock appears mid-snapshot and reads as a write.
+        self.git("config", "maintenance.auto", "false")
+        self.git("config", "gc.auto", "0")
         self.sdlc = self.repo / ".sdlc"
         (self.sdlc / "state").mkdir(parents=True)
         if config is not None:
@@ -736,6 +740,13 @@ def _run_copy(scripts, repo, home, *args):
     env["HOME"] = str(home)
     return subprocess.run([sys.executable, str(scripts / "outcomes.py"), "report", *args], cwd=str(repo),
                           capture_output=True, text=True, env=env, timeout=60)
+
+
+def test_fixture_repos_disable_background_maintenance(tmp_path):
+    """The writes-nothing snapshot is only meaningful if no git housekeeping runs beside it."""
+    world = World(tmp_path / "q")
+    assert world.git("config", "--get", "maintenance.auto").strip() == "false"
+    assert world.git("config", "--get", "gc.auto").strip() == "0"
 
 
 def test_a_run_writes_nothing_anywhere(tmp_path):
