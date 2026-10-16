@@ -54,9 +54,12 @@ newline, is refused. A path that starts with a dash needs `--`: `zones.py classi
 It is read-only apart from the kit-wide script-time record, runs a constant number of git
 processes whatever the path count, and uses no network and no `gh`.
 
-Measured (macOS, git 2.55, Python 3.12, local repo of 1,100 files, `--base main`, 5 runs): 1,000 paths
-take 0.136 to 0.145 s wall in one run, against 0.093 s for a single path, because the git calls are
-constant in number. Not measured: repositories above 1,100 files or a networked filesystem.
+Measured (macOS, git 2.55, Python 3.12, `--base main`): 1,000 paths take 0.20 s wall in one run (all
+new paths, each in its own directory, in a one-file repo), and 20,000 such paths take 2.6 s. The
+number of git processes is constant, but wall time still grows with the path count (roughly
+linearly across those two points); a de-duplication that scanned a list instead of a hash made the
+20,000 case 12.6 s. Not measured: a large real repository, a networked filesystem, or more than
+20,000 paths.
 
 ## Sprout and wrap
 

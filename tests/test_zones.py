@@ -270,6 +270,8 @@ _BAD = [
     ("bad-zone", {"design": {"zones": [{"glob": "a", "zone": "ancient"}]}}, "design.zones[0]"),
     ("extra-key", {"design": {"zones": [{"glob": "a", "zone": "legacy", "why": "x"}]}}, "design.zones[0]"),
     ("design-not-dict", {"design": ["zones"]}, "design"),
+    ("zones-null", {"design": {"zones": None}}, "got null"),
+    ("design-null", {"design": None}, "got null"),
 ]
 
 
@@ -517,7 +519,7 @@ def test_raw_cat_file_e_returns_128_for_a_missing_path(tmp_path):
 def test_repo_root_itself_is_refused(tmp_path):
     repo = _repo(tmp_path / "p")
     _config(repo, {})
-    for arg in (".", str(repo), "src/.."):
+    for arg in (".", str(repo), "src/..", "..", ""):
         p = _run(repo, arg)
         assert p.returncode == 2 and p.stdout == "", arg
 
@@ -704,3 +706,98 @@ def test_ac4_checker_requires_the_word_suggest(tmp_path):
     f = tmp_path / "n.md"
     f.write_text("The owner owns `design.zones`; never write it.\n", encoding="utf-8")
     assert _vision_violations([f])
+
+
+# --- review round 1: spaces, non-UTF-8, symlinks, scale, `..` ----------------------------------
+
+
+def test_spaced_new_path_next_to_existing_path_in_one_call(tmp_path):
+    """git echoes the key, so a `missing` line has as many tokens as the path has spaces; one such
+    line must not turn every row unknown."""
+    repo = _repo(tmp_path / "p", ("old file.py", "plain.py"))
+    _config(repo, _zones(("*", "legacy")))
+    _with_origin(repo, tmp_path)
+    wt = _worktree(repo)
+    _commit(wt, "new file.py", "n\n")
+    rows = _rows(_run(wt, "new file.py", "plain.py", "old file.py", "src/sub dir/x y.py"))
+    assert [r[2] for r in rows] == ["new", "existing", "existing", "new"], rows
+    assert rows[0][3] == NEW_RULE and rows[1][3] == LEGACY_EXISTING
+
+
+def test_spaced_colon_and_dash_paths_together(tmp_path):
+    repo = _repo(tmp_path / "p", ("a b:c.py", "-d e.py"))
+    _config(repo, _zones(("*", "legacy")))
+    _with_origin(repo, tmp_path)
+    wt = _worktree(repo)
+    rows = _rows(_run(wt, "--", "a b:c.py", "-d e.py", "z z:y.py"))
+    assert [r[2] for r in rows] == ["existing", "existing", "new"], rows
+
+
+def test_non_utf8_argument_is_classified_and_does_not_poison_the_batch(tmp_path):
+    repo = _repo(tmp_path / "p", ("ok.py",))
+    _config(repo, _zones(("*", "legacy")))
+    _with_origin(repo, tmp_path)
+    wt = _worktree(repo)
+    bad = b"src/\xff.py"
+    p = subprocess.run([sys.executable, str(SCRIPT), "classify", "ok.py", bad], cwd=str(wt),
+                       capture_output=True, timeout=60)
+    assert p.returncode == 0, p.stderr
+    rows = [ln.split(b"\t") for ln in p.stdout.split(b"\n") if ln]
+    assert rows[0][0] == b"ok.py" and rows[0][2] == b"existing"
+    assert rows[1][0] == bad and rows[1][2] == b"new"
+
+
+def test_tracked_symlink_is_classified_as_itself(tmp_path):
+    repo = _repo(tmp_path / "p", ("src/a.py",))
+    _config(repo, _zones(("src/*", "legacy")))
+    os.symlink("a.py", str(repo / "src" / "link.py"))
+    os.symlink("/etc/hosts", str(repo / "src" / "out.py"))
+    _git(repo, "add", "src/link.py", "src/out.py")
+    _git(repo, "commit", "-q", "-m", "links")
+    _with_origin(repo, tmp_path)
+    wt = _worktree(repo)
+    rows = _rows(_run(wt, "src/link.py", "src/out.py"))
+    assert [r[0] for r in rows] == ["src/link.py", "src/out.py"], rows
+    assert [r[1:3] for r in rows] == [["legacy", "existing"]] * 2
+
+
+def test_newly_added_symlink_to_existing_target_is_new(tmp_path):
+    repo = _repo(tmp_path / "p", ("src/a.py",))
+    _config(repo, _zones(("*", "legacy")))
+    _with_origin(repo, tmp_path)
+    wt = _worktree(repo)
+    os.symlink("a.py", str(wt / "src" / "fresh.py"))
+    _git(wt, "add", "src/fresh.py")
+    _git(wt, "commit", "-q", "-m", "link")
+    rows = _rows(_run(wt, "src/fresh.py", "src/a.py"))
+    assert [r[0:3] for r in rows] == [["src/fresh.py", "legacy", "new"], ["src/a.py", "legacy", "existing"]]
+
+
+def test_twenty_thousand_paths_finish_quickly(tmp_path):
+    """The key de-duplication must be hashed, not a list scan (30,000 paths took 6.5 s that way)."""
+    repo = _repo(tmp_path / "p", ("a.py",))
+    _config(repo, _zones(("*", "legacy")))
+    _with_origin(repo, tmp_path)
+    wt = _worktree(repo)
+    paths = ["d%d/e%d/f.py" % (i, i) for i in range(20000)]   # unique parents: 40,000 keys
+    import time
+    t0 = time.perf_counter()
+    p = _run(wt, *paths)
+    elapsed = time.perf_counter() - t0
+    assert p.returncode == 0, p.stderr
+    assert len(p.stdout.splitlines()) == 20000
+    assert elapsed < SCALE_BOUND_S, elapsed
+
+
+# Measured on this machine: hashed 2.6 s, list scan 12.6 s at 20,000 paths. 6 s sits between them.
+SCALE_BOUND_S = 6.0
+
+
+def test_control_characters_other_than_newline_do_not_split_rows(tmp_path):
+    repo = _repo(tmp_path / "p", ("ok.py",))
+    _config(repo, _zones(("*", "legacy")))
+    _with_origin(repo, tmp_path)
+    wt = _worktree(repo)
+    p = _run(wt, "ok.py", "a\x0bb.py", "c\x0cd.py", "ok.py")
+    rows = [ln.split("\t") for ln in p.stdout.split("\n") if ln]       # not splitlines(): \x0b is a path byte
+    assert [r[2] for r in rows] == ["existing", "new", "new", "existing"], rows

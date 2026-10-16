@@ -52,9 +52,11 @@ def _load(name):
 def _git(args, cwd, stdin=None):
     """(rc, stdout) of one git call. rc is None when git could not run or timed out."""
     try:
-        p = subprocess.run(["git", "-C", str(cwd), *args], input=stdin, capture_output=True,
-                           text=True, timeout=GIT_TIMEOUT)
-        return p.returncode, p.stdout
+        # bytes in and out: a path need not be UTF-8, and surrogateescape round-trips every byte
+        p = subprocess.run([os.fsencode("git"), b"-C", os.fsencode(str(cwd)), *map(os.fsencode, args)],
+                           input=None if stdin is None else os.fsencode(stdin),
+                           capture_output=True, timeout=GIT_TIMEOUT)
+        return p.returncode, os.fsdecode(p.stdout)
     except Exception:                   # noqa: BLE001 - git missing or wedged: typed as unknown by callers
         return None, ""
 
@@ -71,7 +73,13 @@ def _normalise(arg, cwd, top):
         raise Refusal("path contains a newline or carriage return: output is line-oriented")
     p = arg.replace("\\", "/")
     full = p if os.path.isabs(p) else os.path.join(str(cwd), p)
-    rel = os.path.relpath(os.path.realpath(full), top)
+    base = os.path.basename(full)
+    if base in ("", ".", ".."):
+        resolved = os.path.realpath(full)
+    else:
+        # git tracks a symlink ITSELF, so only the parent directory is resolved, never the last part
+        resolved = os.path.join(os.path.realpath(os.path.dirname(full)), base)
+    rel = os.path.relpath(resolved, top)
     if rel == ".." or rel.startswith(".." + os.sep) or rel == ".":
         raise Refusal("path is outside the checkout: %s" % arg)
     return rel.replace(os.sep, "/")
@@ -90,18 +98,22 @@ def _config(top):
         return None
 
 
+def _tname(v):
+    return "null" if v is None else type(v).__name__
+
+
 def _validate(cfg):
     """The validated zone list (possibly empty). Refuses a malformed `design.zones`, naming the entry."""
     if "design" not in cfg:
         return []
     design = cfg["design"]
     if not isinstance(design, dict):
-        raise Refusal("design must be an object, got %s" % type(design).__name__)
+        raise Refusal("design must be an object, got %s" % _tname(design))
     if "zones" not in design:
         return []
     zones = design["zones"]
     if not isinstance(zones, list):
-        raise Refusal("design.zones must be a list, got %s" % type(zones).__name__)
+        raise Refusal("design.zones must be a list, got %s" % _tname(zones))
     out = []
     for i, e in enumerate(zones):
         where = "design.zones[%d]" % i
@@ -173,25 +185,26 @@ def _newness(top, fork, rels):
     different line count = unknown for every path. A path under a gitlink is unknown, never new."""
     if fork is None:
         return {r: "unknown" for r in rels}
-    keys = []
+    seen = {}
     for r in rels:
         parts = r.split("/")
         for i in range(1, len(parts) + 1):
-            k = "/".join(parts[:i])
-            if k not in keys:
-                keys.append(k)
+            seen["/".join(parts[:i])] = None        # insertion-ordered set: O(1) per key
+    keys = list(seen)
     rc, out = _git(["cat-file", "--batch-check"], top,
                    stdin="".join("%s:%s\n" % (fork, k) for k in keys))
-    lines = out.splitlines()
+    lines = out.split("\n")[:-1] if out.endswith("\n") else out.split("\n")   # not splitlines(): \x0b, \x0c, \x85 are path bytes
     if rc != 0 or len(lines) != len(keys):
         return {r: "unknown" for r in rels}
     kind = {}
     for k, line in zip(keys, lines):
+        # Only a `missing` line echoes the key we sent, and a path may hold spaces: compare the whole
+        # line to `<key> missing`, never split it. An existing line is `<oid> <type> <size>`, no path.
         toks = line.split()
-        if len(toks) >= 2 and toks[1] in _EXISTING_TYPES:
-            kind[k] = toks[1]
-        elif line.endswith(" missing") and len(toks) == 2 and toks[1] == "missing":
+        if line == "%s:%s missing" % (fork, k):
             kind[k] = "missing"
+        elif len(toks) >= 2 and toks[1] in _EXISTING_TYPES:
+            kind[k] = toks[1]
         else:
             return {r: "unknown" for r in rels}
     res = {}
@@ -241,7 +254,7 @@ def main(argv):
     except Refusal as exc:
         print("zones.py: REFUSED: %s" % exc, file=sys.stderr)
         return 2
-    sys.stdout.write("".join("\t".join(r) + "\n" for r in rows))
+    sys.stdout.buffer.write(os.fsencode("".join("\t".join(r) + "\n" for r in rows)))
     return 0
 
 
