@@ -66,6 +66,7 @@ ENV_ALLOW = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TMPDIR", "SSH
              "GIT_SSH_COMMAND", "GIT_SSH")
 CREDENTIAL_ENV = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_HOST")
 CALL_TIMEOUT_ENV = "SIGMA_WATCH_CALL_TIMEOUT"
+SWEEP_RUN_ENV = "SIGMA_UPKEEP_SWEEP_RUN"         # the sweep job sets it in each child; the Level 2 sweep counter reads it (#1536)
 _JOBS = []                                      # Popen handles of jobs this process started; polled so none stays a zombie
 
 
@@ -143,10 +144,32 @@ def selected(names, include, exclude):
     return sorted(n for n in names if hit(n, include or ["*"]) and not hit(n, exclude or []))
 
 
-def list_units(sdlc_dir):
+def list_units_notes(sdlc_dir):
+    """-> (sorted unit names, the registry reader's stderr notes as a list of lines). #1493: the notes are kept, not dropped."""
     registry = _sibling("feature_registry")
-    with contextlib.redirect_stderr(io.StringIO()):          # one stderr note per unreadable shard, every call
-        return sorted(registry.read(registry.registry_dir(sdlc_dir)))
+    sink = io.StringIO()
+    with contextlib.redirect_stderr(sink):                   # one stderr note per unreadable shard, every call
+        names = sorted(registry.read(registry.registry_dir(sdlc_dir)))
+    return names, [line.strip() for line in sink.getvalue().splitlines() if line.strip()]
+
+
+def list_units(sdlc_dir):
+    return list_units_notes(sdlc_dir)[0]
+
+
+def unregistered_heads(sdlc_dir, remote, cwd=None, registered=None):
+    """#1493: the remote-tracking `feature/*` branches (one local git read, no network) whose unit is not in the registry:
+    the sweep cannot see them, so nothing maintains them. Sorted unit names; [] on any error, never an exception."""
+    try:
+        if not (isinstance(remote, str) and remote and not remote.startswith("-")):
+            return []
+        known = {n.lower() for n in (list_units(sdlc_dir) if registered is None else registered)}
+        prefix = "refs/remotes/%s/%s" % (remote, _sibling("features").BRANCH_PREFIX)
+        out = _drift_runner(cwd or pathlib.Path(sdlc_dir).parent, ["for-each-ref", "--format=%(refname)", prefix])
+        names = {line.strip()[len(prefix):] for line in str(out).splitlines() if line.strip().startswith(prefix)}
+        return sorted(n for n in names if n and n.lower() not in known)
+    except Exception:                                        # noqa: BLE001 - an unanswered read is no finding
+        return []
 
 
 def refs_of(config, unit):
@@ -254,12 +277,20 @@ def with_actor(config):
     return cfg
 
 
+def _units_run(record):
+    """#1535: a sweep record's count of units that ran (0 for a zero-unit sweep); None for any other record."""
+    if not record.get("sweep_job"):
+        return None
+    counts = (record.get("sweep") or {}).get("counts")
+    return sum(n for n in counts.values() if type(n) is int) if isinstance(counts, dict) else 0
+
+
 def write_outcome_note(config, sdlc_dir, record, append=None):
     """The job's outcome as one UNADDRESSED note, written by THIS process. A filing the job made is not echoed as a note to
     anyone: the job files with no goal, so the ledger row it leaves carries no addressee either. -> bool."""
     tip = str(record.get("unit_tip") or "")[:12] or "none"
     done = _sibling("feature_upkeep_pass").ledger_note(with_actor(config), sdlc_dir, str(record.get("unit") or ""),
-                                                       str(record.get("outcome") or "unknown"), tip, append=append)
+                                                       str(record.get("outcome") or "unknown"), tip, append=append, units=_units_run(record))
     return bool(done.get("ok"))
 
 

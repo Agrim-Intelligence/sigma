@@ -1442,6 +1442,7 @@ _NO_UNIT_NAME = {
     ("feature_park", "_load"),                # #946: the sibling importer
     ("feature_upkeep_prove", "_sibling"),
     ("feature_upkeep_prove", "_one_stop"),
+    ("feature_upkeep_prove", "_union_appended"),   # #1515: joins the worktree path and a conflicted file; no unit name
     ("feature_upkeep_prove", "resolve_stops"),
     ("feature_registry", "_load"),
     ("feature_stamp", "_load"),
@@ -1468,7 +1469,6 @@ _NO_UNIT_NAME = {
     ("feature_upkeep_launcher", "build_env"),   # #949: the resolver launcher; paths come from a request and a scratch root, no unit name
     ("feature_upkeep_launcher", "entry_limit"),   # #949: the resolver launcher; paths come from a request and a scratch root, no unit name
     ("feature_upkeep_launcher", "make_scratch"),   # #949: the resolver launcher; paths come from a request and a scratch root, no unit name
-    ("feature_upkeep_launcher", "refuse_ancestors"),   # #949: the resolver launcher; paths come from a request and a scratch root, no unit name
     ("feature_propagate", "record_path"),     # keyed by GOAL, not by unit
     ("feature_rebase", "rebase_stopped"),     # takes a path that is already built
     # #278: keyed by a git BRANCH name (which may be a goal's `sdlc/<n>`), never a unit name; its
@@ -1855,6 +1855,7 @@ _REGISTRY_WRITE_CALLERS = {
 _REGISTRY_ADJACENT_WRITERS = {
     "feature_rebase": "names the registry files only to read the unit record's tip fields; its writes are the leased push "
                       "of a branch and the per-unit state under `state/upkeep/`, never a unit or index record",
+    "feature_upkeep_level2": "names the registry files only in its refusal wording; its writes are the per-unit attempt store and the per-sweep counter under `state/upkeep/`, never a unit or index record",
     "feature_upkeep_pass": "reads the unit record for its tips; writes only the per-unit upkeep state and the acks "
                            "file under `state/upkeep/`, never a unit or index record",
     "migrate": "the converter: refuses a legacy delta record (names `repair`), converts the index "

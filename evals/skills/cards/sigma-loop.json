@@ -2,7 +2,7 @@
   "skill": "sigma-loop",
   "kind": "pinned",
   "gates": [
-    "(deploy, delete, overwrite, spend, migrate) — NEVER"
+    "(deploy, delete, overwrite, spend, migrate) \u2014 NEVER"
   ],
   "scripts": [
     {
@@ -31,7 +31,7 @@
     },
     {
       "path": "skills/sigma-loop/scripts/autonomy.py",
-      "role": "library"
+      "role": "gesture"
     },
     {
       "path": "skills/sigma-loop/scripts/autowatch.py",
@@ -568,6 +568,14 @@
     {
       "path": "skills/sigma-loop/scripts/worktree_prune.py",
       "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/judge_isolation.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/spend_cap.py",
+      "role": "library"
     }
   ],
   "artifacts": [

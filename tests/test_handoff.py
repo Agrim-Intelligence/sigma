@@ -2686,11 +2686,31 @@ def test_filing_park_is_scoped_own_with_priority_label_first(tmp_path):
 
 # #1331: an upkeep finding is a report for a person, never a pickable goal, even with triage on.
 
-def test_upkeep_finding_with_triage_on_carries_no_goal_label_and_is_queued(tmp_path):
-    report, src = _file(tmp_path, upkeep_finding=True)
-    assert src.created["goal_label"] is False
-    assert handoff.PROPOSED_LABEL in src.created["labels"]
-    assert "triage" not in report and src.parked == []
+def test_upkeep_finding_with_triage_on_is_parked_with_its_kind_and_never_armed(tmp_path):
+    """#1490: triage on -> parked, declared kind, park event, the unclear bucket (not P1), no legacy label."""
+    for kind in ("merge_conflict", "needs_decision"):
+        report, src = _file(tmp_path, upkeep_finding=True, upkeep_qkind=kind)
+        assert src.created["goal_label"] is False
+        assert handoff.PROPOSED_LABEL not in src.created["labels"]
+        assert "priority:P4" in src.created["labels"] and "priority:P1" not in src.created["labels"]
+        assert len(src.parked) == 1 and "sigma-qkind: %s" % kind in src.parked[0][1]
+        assert "upkeep finding: a person decides" in src.parked[0][1]
+        assert report["triage"]["kind"] == "park"
+
+
+def test_upkeep_finding_park_writes_a_park_event_and_does_not_count_as_an_ai_filed_followup(tmp_path):
+    _r, src = _file(tmp_path, config={"journal": {"enabled": True}}, upkeep_finding=True, upkeep_qkind="needs_decision")
+    from journal_events import journal_events
+    evs = [e for e in journal_events(ledger, tmp_path) if e.get("kind") == "park"]
+    assert len(evs) == 1 and "sigma-qkind: needs_decision" in src.parked[0][1]
+    assert not (tmp_path / "state" / "ai_filed_counter.json").exists()
+    assert not list(tmp_path.rglob("ai_filed_counter.json"))
+
+
+def test_upkeep_finding_with_triage_off_keeps_the_legacy_label_and_old_priority(tmp_path):
+    _r, src = _file(tmp_path, _off(), upkeep_finding=True, upkeep_qkind="merge_conflict")
+    assert src.created["goal_label"] is False and handoff.PROPOSED_LABEL in src.created["labels"]
+    assert "priority:P1" in src.created["labels"] and src.parked == []
 
 
 def test_upkeep_finding_keyword_off_is_byte_identical_for_every_other_caller(tmp_path):
@@ -2700,3 +2720,57 @@ def test_upkeep_finding_keyword_off_is_byte_identical_for_every_other_caller(tmp
         assert default.created == explicit.created
     _r, on = _file(tmp_path)
     assert on.created["goal_label"] is True and handoff.PROPOSED_LABEL not in on.created["labels"]
+
+
+# #1473: an upkeep finding is machine-recognisable by a body marker, so the legacy-label migration can park it.
+
+def test_upkeep_finding_body_carries_the_marker_once_and_other_filings_do_not(tmp_path):
+    _r, on = _file(tmp_path, upkeep_finding=True, body="a conflict body\n")
+    assert on.created["body"].count("<!-- sigma:upkeep-finding -->") == 1
+    _r, off = _file(tmp_path)
+    assert "sigma:upkeep-finding" not in off.created["body"]
+
+
+# --- #1484: an upkeep finding and a triage park never keep the human default priority ---------------
+
+def _prio(src):
+    return [l for l in src.created["labels"] if l.startswith("priority:")]
+
+
+def test_upkeep_finding_is_filed_at_the_lowest_bucket_priority_1484(tmp_path):
+    _r, src = _file(tmp_path, upkeep_finding=True)
+    assert _prio(src) == ["priority:P4"]
+
+
+def test_upkeep_finding_follows_a_configured_unclear_bucket_1484(tmp_path):
+    cfg = {"ai_filed": {"buckets": {"unclear": "P3"}}}
+    _r, src = _file(tmp_path, config=cfg, upkeep_finding=True)
+    assert _prio(src) == ["priority:P3"]
+
+
+def test_triage_park_writes_the_bucket_priority_not_the_caller_default_1484(tmp_path):
+    _r, src = _file(tmp_path, why="needs a force push to the shared branch")
+    assert len(src.parked) == 1 and _prio(src) == ["priority:P4"]
+
+
+def test_ownership_park_writes_the_bucket_priority_1484(tmp_path, monkeypatch):
+    class Verdict:
+        allowed = False
+        owner = None
+        repo = None
+    owner_mod = handoff._feature_owner()
+    monkeypatch.setattr(handoff, "_ownership_verdict", lambda *a, **k: (Verdict(), "billing"))
+    monkeypatch.setattr(owner_mod, "tell_at_filing", lambda *a, **k: None)
+    monkeypatch.setattr(owner_mod, "refusal_clause", lambda *a, **k: "not the owner")
+    monkeypatch.setattr(owner_mod, "whoami", lambda *a, **k: "amy")
+    _r, src = _file(tmp_path)
+    assert _prio(src) == ["priority:P4"]
+
+
+def test_non_upkeep_filings_and_triage_off_keep_their_priority_1484(tmp_path):
+    _r, src = _file(tmp_path)
+    assert _prio(src) == ["priority:P3"]
+    _r, off = _file(tmp_path, config=_off())
+    assert _prio(off) == ["priority:P1"]
+    _r, human = _file(tmp_path, config=_off(), priority="P1")
+    assert _prio(human) == ["priority:P1"]

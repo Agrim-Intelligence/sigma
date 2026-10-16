@@ -2191,30 +2191,32 @@ def _upkeep_merge_trigger(sdlc_dir, config):
         print(f"sigma: upkeep trigger skipped (non-fatal): {type(exc).__name__}", file=sys.stderr)
 
 
-def _cut_tip_fields(config, run, path, remote, base):
+def _cut_tip_fields(config, run, path, remote, base, ref="HEAD"):
     """The goal record's cut-from tip, as the extra keys to save: `{"cut_tip": <sha>}` or `{}`.
 
-    Only under the upkeep opt-in, and only for a goal cut from a unit branch. The gate is asked FIRST, so a closed gate
-    makes no call at all and the record is byte-identical to before. A tip that cannot be read records nothing (the goal
-    then replays the legacy way)."""
+    #1483: for a goal cut from a unit branch, whatever the upkeep opt-in says -- the pick-time pass force-pushes a unit
+    by default, so the replay that drops pre-rewrite unit commits cannot depend on the opt-in. At the cut `ref` is the
+    new worktree's own HEAD (the default), NOT the shared `<remote>/<base>` ref, which another pass's push can move
+    between the fetch and this read. `_rerecord_cut_tip` passes the remote ref, because after a goal rebase the unit tip
+    is what the goal sits on. A tip that cannot be read records nothing (the goal then replays the legacy way);
+    a goal with no unit base makes no call at all. `config` is kept for the callers' signature."""
     if not (isinstance(base, str) and base.startswith(features.BRANCH_PREFIX)):
         return {}
-    if not _feature_upkeep().enabled(config):
-        return {}
     try:
-        tip = str(run(path, ["git", "rev-parse", f"{remote}/{base}"]) or "").strip()
+        tip = str(run(path, ["git", "rev-parse", ref]) or "").strip()
     except Exception:                       # noqa: BLE001 - no record is the legacy path, never a failed pick
         return {}
     return {"cut_tip": tip} if _SHA_RE.match(tip) else {}
 
 
 def _rebase_argv(config, run, path, remote, base, rec):
-    """The `git rebase` argv `rebase()` runs. Legacy (replay on `<remote>/<base>`) unless the upkeep opt-in is open AND the
-    record holds the tip the goal was cut from AND that tip is still in the goal's history: then `--onto <new unit tip>
-    <cut tip>` replays only the goal's own commits, which a unit rewritten by the upkeep pass would otherwise conflict with."""
+    """The `git rebase` argv `rebase()` runs. Legacy (replay on `<remote>/<base>`) unless the record holds the tip the goal
+    was cut from AND that tip is still in the goal's history: then `--onto <new unit tip> <cut tip>` replays only the goal's
+    own commits, which a unit rewritten by the upkeep pass would otherwise conflict with. #1483: no opt-in test -- only a
+    goal cut from a unit has a cut tip, and the pick-time pass rewrites units whether or not the opt-in is on."""
     plain = ["git", "rebase", "--autostash", f"{remote}/{base}"]
     cut = rec.get("cut_tip")
-    if not (isinstance(cut, str) and _SHA_RE.match(cut) and _feature_upkeep().enabled(config)):
+    if not (isinstance(cut, str) and _SHA_RE.match(cut)):
         return plain
     try:
         run(path, ["git", "merge-base", "--is-ancestor", cut, "HEAD"])
@@ -2225,10 +2227,10 @@ def _rebase_argv(config, run, path, remote, base, rec):
 
 def _rerecord_cut_tip(sdlc_dir, config, goal, rec, run, path, remote, base):
     """After a goal rebase landed on `<remote>/<base>`: the goal now sits on that tip, so it is the new cut tip. Only for a
-    goal that has a record, only under the opt-in. Never raises."""
+    goal that has a record. Never raises."""
     if not rec.get("cut_tip"):
         return
-    fields = _cut_tip_fields(config, run, path, remote, base)
+    fields = _cut_tip_fields(config, run, path, remote, base, ref=f"{remote}/{base}")
     if fields:
         try:
             _save(sdlc_dir, goal, dict(rec, **fields))
@@ -2344,6 +2346,38 @@ def _upkeep_had_anything_to_do(sdlc_dir, config, unit):
         return False
 
 
+#: #1483: whether the LAST `_rebase_upkeep` call found the unit's rebase lock held. A module variable rather than a
+#: return value so the function keeps its string result and signature (callers and spies depend on both).
+_UPKEEP_BUSY = False
+
+
+def _upkeep_was_busy():
+    return _UPKEEP_BUSY
+
+
+def _recut_after_busy(run, path, remote, base):
+    """#1483: the pick-time pass could not take the unit's rebase lock, so the cut just made may be from a tip another
+    pass is about to replace. NO WAIT (PROVISIONAL; a bounded wait would stall the pick door): re-fetch, and if
+    `<remote>/<base>` is no longer HEAD, move the still-empty goal branch with `git rebase --onto`. -> a clause naming
+    the cut sha. Never raises; a failure leaves the goal where it is, and the recorded cut tip still makes its later
+    rebase replay only its own commits."""
+    try:
+        cut = str(run(path, ["git", "rev-parse", "HEAD"]) or "").strip()
+        run(path, ["git", "fetch", remote, base])
+        tip = str(run(path, ["git", "rev-parse", f"{remote}/{base}"]) or "").strip()
+        if not (_SHA_RE.match(cut) and _SHA_RE.match(tip)):
+            return ""
+        if tip == cut:
+            return (f" — cut from {cut[:12]} while another pass held {base}'s rebase lock; re-checked after the "
+                    f"cut and the tip had not moved")
+        run(path, ["git", "rebase", "--onto", f"{remote}/{base}", cut])
+        return (f" — cut from {cut[:12]} while another pass was rewriting {base}; moved onto {tip[:12]} before any "
+                f"work was done")
+    except Exception as exc:                # noqa: BLE001 - maintenance, never a failed pick
+        return (f" — cut while another pass held {base}'s rebase lock; the re-check after the cut could not "
+                f"finish ({' '.join(str(exc).split())[:80]}), so it will be rebased onto the new tip before verify")
+
+
 def _rebase_upkeep(sdlc_dir, config, goal, unit, run, base_root, remote, session_pid=None):
     """#1476: bring this unit's feature branch forward onto the integration branch, then replay the
     unit's goal worktrees onto it.
@@ -2393,6 +2427,8 @@ def _rebase_upkeep(sdlc_dir, config, goal, unit, run, base_root, remote, session
     set `rebase_upkeep: off`. Nothing was skipped in any of those — there was no pass.
 
     Returns the one-line clause to append to `start()`'s own result, or ""."""
+    global _UPKEEP_BUSY
+    _UPKEEP_BUSY = False
     try:
         if _resume_blocked_by_a_live_sibling(sdlc_dir, config, goal, session_pid=session_pid):
             if not _upkeep_had_anything_to_do(sdlc_dir, config, unit):
@@ -2400,8 +2436,11 @@ def _rebase_upkeep(sdlc_dir, config, goal, unit, run, base_root, remote, session
             return (f" — upkeep: SKIPPED, another live process is registered as working {goal}, so "
                     f"feature/{unit} was not brought forward and may be behind. If that process is "
                     f"this session, pass `--session-pid $PPID` to `work.py start`")
-        return _feature_rebase().upkeep(sdlc_dir, config, goal, unit, run=run, cwd=base_root,
-                                        remote=remote)["note"]
+        report = _feature_rebase().upkeep(sdlc_dir, config, goal, unit, run=run, cwd=base_root,
+                                          remote=remote)
+        note = report["note"]
+        _UPKEEP_BUSY = report.get("outcome") == getattr(_feature_rebase(), "BUSY", "busy")
+        return note
     except Exception as exc:                # noqa: BLE001 - never break a start over maintenance
         print(f"sigma: rebase upkeep skipped (non-fatal): {exc}", file=sys.stderr)
         return ""
@@ -2835,6 +2874,8 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None):
     # which #1572 clears on reattach on purpose.
     saved = {"worktree": str(path), "branch": branch, "base": base,
              "base_resolved": base_resolved, "remote": s["remote"], "pr": ""}
+    if not reattached and _upkeep_was_busy() and base.startswith(features.BRANCH_PREFIX):
+        upkeep_note += _recut_after_busy(run, path, s["remote"], base)      # #1483: BEFORE the cut tip is read
     if not reattached:                      # a reattached branch is not at its cut tip: record nothing, replay the legacy way
         saved.update(_cut_tip_fields(config, run, path, s["remote"], base))
     carried = (rec or {}).get("stale_resume_releases")
@@ -3646,6 +3687,7 @@ def commit(sdlc_dir, config, goal, run=None, message=""):
     if not rec:
         return "not started — run `work.py start` first (nothing committed)"
     path = rec["worktree"]
+    _copy_acceptance_into_worktree(sdlc_dir, rec, goal, run)    # #1474
     run(path, ["git", "add", "-A"])
     staged = run(path, ["git", "diff", "--cached", "--name-only"])
     if not staged:
@@ -3843,6 +3885,78 @@ def _research_missing_from_branch(sdlc_dir, rec, goal, run):
     return _phase_doc_missing_from_branch(sdlc_dir, rec, goal, run, "research", "research dossier")
 
 
+def _acceptance_missing_from_branch(sdlc_dir, rec, goal, run):
+    """The refusal line when this goal's acceptance record is on disk but not on its branch (#1474)."""
+    return _phase_doc_missing_from_branch(sdlc_dir, rec, goal, run, "acceptance", "acceptance record")
+
+
+def _copy_acceptance_into_worktree(sdlc_dir, rec, goal, run):
+    """#1474: byte-copy the root `.sdlc/acceptance/<stem>.md` into the worktree so `git add -A` sees it.
+
+    Create-only: a worktree copy that already exists is never touched. Skipped when the repo's own
+    ignore rules cover the path (the #1504 boundary `_phase_doc_missing_from_branch` draws), and a
+    failure to read those rules fails open, as there. Never raises: commit must not strand on this."""
+    try:
+        doc = _load("review_context").phase_doc_file(sdlc_dir, goal, "acceptance")
+        if not doc:
+            return False
+        rel = doc.resolve().relative_to(project_root(sdlc_dir)).as_posix()
+        target = pathlib.Path(rec["worktree"], rel)
+        if target.exists():
+            return False
+        try:
+            run(rec["worktree"], ["git", "check-ignore", "-v", "--non-matching", "--", rel])
+            return False                # exit 0: a pattern covers it -> this repo does not commit these
+        except Exception as exc:        # noqa: BLE001 - told apart by git's own words
+            if _NO_IGNORE_MATCH not in str(exc):
+                return False
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(doc.read_bytes())
+        return True
+    except Exception:                   # noqa: BLE001 - best-effort: commit must not strand on a copy
+        return False
+
+
+def _clean_landed_root_records(sdlc_dir, rec, goal, run):
+    """#1474: after a CONFIRMED merge, drop root-checkout plan/research/acceptance copies that landed.
+
+    A copy is unlinked (file only, never a directory) only when it is untracked AND its blob id equals
+    the blob at `<remote>/<base>:<path>`, i.e. exactly what landed on the branch the PR merged into.
+    A copy that differs, or is on no such branch, is left alone and reported. Returns report lines;
+    never raises, because cleanup must not fail a merge that already happened."""
+    lines = []
+    try:
+        root = project_root(sdlc_dir)
+        rc = _load("review_context")
+        found = [(sub, rc.phase_doc_file(sdlc_dir, goal, sub)) for sub in ("plans", "research", "acceptance")]
+        found = [(sub, f) for sub, f in found if f]
+        if not found:
+            return lines
+        remote, base = rec["remote"], rec["base"]
+        try:
+            run(root, ["git", "fetch", "-q", remote, base])
+        except Exception:               # noqa: BLE001 - a stale remote ref only makes us keep more files
+            pass
+        for sub, doc in found:
+            rel = doc.resolve().relative_to(root).as_posix()
+            if run(root, ["git", "ls-files", "--", rel]):
+                continue                # tracked: not ours to remove
+            try:
+                landed = run(root, ["git", "rev-parse", f"{remote}/{base}:{rel}"])
+            except Exception:           # noqa: BLE001 - not on the landed branch
+                landed = ""
+            if not landed:
+                lines.append(f"kept {rel}: not on {remote}/{base} (commit it or it is lost)")
+            elif run(root, ["git", "hash-object", "--", str(doc)]) != landed:
+                lines.append(f"kept {rel}: differs from the copy that landed on {remote}/{base}")
+            else:
+                doc.unlink()
+                lines.append(f"removed landed duplicate {rel}")
+    except Exception as exc:            # noqa: BLE001
+        lines.append(f"root record cleanup skipped: {exc}")
+    return lines
+
+
 def _default_branch(path, run):
     """The default branch of the repo this PR is opened against, or "" when it cannot be read.
 
@@ -4013,6 +4127,9 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None):
     missing_research = _research_missing_from_branch(sdlc_dir, rec, goal, run)
     if missing_research:
         return missing_research
+    missing_acceptance = _acceptance_missing_from_branch(sdlc_dir, rec, goal, run)     # #1474
+    if missing_acceptance:
+        return missing_acceptance
 
     test_first_refusal = _test_first_refusal(sdlc_dir, config, rec, goal, run, no_tests)
     if test_first_refusal:
@@ -5222,7 +5339,8 @@ def _stale_resume_refusal(sdlc_dir, config, goal, run=None):
                 rec["stale_resume_releases"] = releases + 1
                 _save(sdlc_dir, goal, rec)
         else:
-            loop._record(sdlc_dir, source, goal, "parked", diagnosis)   # see the release branch
+            loop._record(sdlc_dir, source, goal, "parked", diagnosis,   # see the release branch
+                         qkind="needs_decision")                  # #1524: a person decides
             transitioned = True
             did = "Parked it — this one needs a person"
             certainty = ("The cursor write is certain; the ledger entry is fail-open and the "
@@ -5972,17 +6090,23 @@ def review_gate(sdlc_dir, config, goal, run=None, mode=None):
     # Skipped when GraphQL is unavailable (cloud, SIGMA_GH_GRAPHQL=off). Approval mode: unknown is not met,
     # so it parks unless a trusted `sigma:approve` comment is present (#1398). Changes mode: unknown -> go on.
     decision = None
+    read_failed = False
     if gh_api.graphql_available()["available"]:
         try:
             decision = json.loads(run(rec["worktree"], ["gh", "pr", "view", str(rec["pr"]),
                                                         "--json", "reviewDecision"])).get("reviewDecision")
         except Exception:                       # noqa: BLE001 - open for `changes`, CLOSED for `approval`
-            decision, unreadable = None, True
+            decision, unreadable, read_failed = None, True, True
         else:
             unreadable = False
     else:
         unreadable = True
     # #1398 (provisional): a `sigma:approve` directive satisfies approval when the decision is unreadable.
+    if unreadable and not read_failed and mode == REVIEW_APPROVAL and directive != "approve":
+        # #1506: GraphQL is simply not offered here (not a failed read), so what the operator must act on
+        # is the missing approval, not an API budget.
+        return False, (f"PR #{rec['pr']} is not approved yet — approve it, or comment `sigma:approve` "
+                       "(GitHub blocks self-approval), then re-queue")
     if unreadable and mode == REVIEW_APPROVAL and directive != "approve":  # #635: an approval is a positive requirement; unknown is not met
         return False, (f"could not read PR #{rec['pr']}'s review decision (it needs GraphQL, which is "
                        "unavailable or failed), so `require_review: approval` cannot be satisfied — "
@@ -7341,6 +7465,8 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
                     print("merge receipt publication pending: %s" % exc, file=sys.stderr)
             if not _merge_delivery_complete(sdlc_dir, goal):
                 return "PARK: confirmed merge observation delivery is pending; retry finish to repair it"
+    root_report = _clean_landed_root_records(sdlc_dir, rec, goal, run) if merged_before_cleanup else []
+    note = ("; " + "; ".join(root_report)) if root_report else ""
     remove_argv = ["git", "worktree", "remove", rec["worktree"]] + (["--force"] if force else [])
     try:
         run(project_root(sdlc_dir), remove_argv)
@@ -7388,15 +7514,15 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
         try:
             run(project_root(sdlc_dir), ["git", "branch", "-D", branch])
         except Exception:                   # noqa: BLE001 - best-effort; the worktree is already gone
-            return f"removed {rec['worktree']}"
+            return f"removed {rec['worktree']}{note}"
         # Report exactly what was confirmed, not what was attempted (code-review finding: the
         # local delete succeeding must never be read as "the branch is fully gone" when the
         # remote half -- usually already done by `merge()`'s own eager call, but not always --
         # came back unconfirmed).
         if remote_deleted:
-            return f"removed {rec['worktree']}, deleted branch {branch}"
-        return f"removed {rec['worktree']}, deleted local branch {branch} (remote delete unconfirmed)"
-    return f"removed {rec['worktree']}"
+            return f"removed {rec['worktree']}, deleted branch {branch}{note}"
+        return f"removed {rec['worktree']}, deleted local branch {branch} (remote delete unconfirmed){note}"
+    return f"removed {rec['worktree']}{note}"
 
 
 def prune_terminal_review_copies(sdlc_dir, goal):

@@ -30,7 +30,10 @@ jobs:
   test:
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
     runs-on: macos-latest
-    timeout-minutes: 60
+    # 90, not 60: measured macos-latest runs of this job took 15 to 48 minutes on main, and one
+    # 1.0.15 release run reached only 54% of pytest in 60 minutes with no single slow test (#1538)
+    # 120: the 90-minute run on #1538 was cancelled at the limit (about 91 minutes) before pytest finished
+    timeout-minutes: 120
     env:
       SLOW: >-
         --ignore=tests/test_readiness_drills.py

@@ -8,7 +8,7 @@ is enforced by /sigma-loop SKILL.md prose. Claim and outcome are mirrored to the
 (ledger.py) when `ledger.enabled` is on — every such call is fail-open, so a ledger problem can never
 stop a run."""
 import os, sys, pathlib, importlib.util, time, subprocess, inspect, json, re, tempfile, hashlib, uuid
-import contextlib
+import contextlib, calendar
 import errno
 
 try:
@@ -2127,6 +2127,8 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
     _reconcile_sweep(sdlc_dir, config)
     just_unparked = _auto_unpark_sweep(sdlc_dir, config)
     just_reclaimed = _auto_reclaim_stale_claims(sdlc_dir, source, config)
+    if refresh_heartbeat:                  # #1531: a standalone pick; next_batch ran it in its prologue
+        just_reclaimed = frozenset(just_reclaimed) | _release_held_unstarted(sdlc_dir, config)
     # #1468 / #2521: only when this call could actually do work. `_budget_reason`/`_handoff_reason`
     # are both local cursor reads, and skipping the sweep on a halted run is what keeps "a run that
     # reports BUDGET or HANDOFF mutated nothing" true of THIS commit's own code, not only of the
@@ -2428,6 +2430,7 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
     # This prologue can be the only tick when reconciliation blocks or drains the batch.
     write_session_heartbeat(sdlc_dir, session_pid)
     _reconcile_sweep(sdlc_dir, config)
+    capped_by_config = max_concurrent is None      # #1531: free slots count only against the configured cap
     if max_concurrent is None:
         enabled, cap = goals_parallel(config)
         if enabled and not work.enabled(config):
@@ -2441,6 +2444,7 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
     # Keep the old batch shape (only the remaining number of goal lines, with the
     # terminal reported on the next call) using the SAME session-local count that
     # `_next` reserves atomically. The reservation remains the final race guard.
+    ceiling_applied = False
     ceilings = [n for n in (_handoff_ceiling(config.get("handoff") or {}),
                              (config.get("budget") or {}).get("max_iterations")) if n]
     if ceilings:
@@ -2451,12 +2455,34 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
         else:
             admitted = snapshot["settled_admissions"] + len(set(snapshot["in_flight"]))
             try:
-                max_concurrent = min(int(max_concurrent or 1), max(0, min(ceilings) - admitted))
+                cap_free = int(max_concurrent or 1)
+                if capped_by_config and claim_hold_seconds(config):
+                    cap_free = max(0, cap_free - len(set(snapshot["in_flight"])))   # #1531
+                # the ceiling term's `admitted` already counts in-flight goals: take the tighter
+                # of the two free-slot bounds, never both subtracted
+                max_concurrent = min(cap_free, max(0, min(ceilings) - admitted))
+                ceiling_applied = True
+                if cap_free == 0:            # #1531: no free slot: a read-only answer, no claim
+                    return [("FULL", "no free slots, %d in flight" % len(set(snapshot["in_flight"])))]
             except (TypeError, ValueError):
                 pass  # malformed optional config still leaves the atomic `_next` guard in charge
     picks = []
-    skip = set(extra_skip)
-    for _ in range(max(1, max_concurrent)):
+    skip = set(extra_skip) | _release_held_unstarted(sdlc_dir, config)      # #1531
+    slots = max(1, max_concurrent)
+    # #1531: never claim past this session's free slots. Applies only when the hold is on, the
+    # cap is the configured one, and the ceilings branch (whose `admitted` already counts
+    # in-flight goals) did not already subtract them.
+    if capped_by_config and not ceiling_applied and claim_hold_seconds(config):
+        try:
+            own = _session_marker_path(sdlc_dir, session_pid)
+            held = len(set(_session_read(own)["in_flight"])) if own.is_file() else 0
+        except (OSError, TypeError, ValueError):
+            held = 0
+        if held:
+            if held >= slots:                # no free slot: a read-only answer, nothing is claimed
+                return [("FULL", "no free slots, %d in flight" % held)]
+            slots -= held
+    for _ in range(slots):
         kind, goal = _next(sdlc_dir, source, config, extra_skip=skip, session_pid=session_pid,
                            refresh_heartbeat=False)
         if kind != "goal":
@@ -2723,11 +2749,149 @@ def session_end(sdlc_dir, session_pid=None, generation=None):
             if isinstance(owner_generation, str) and owner_generation:
                 if generation != owner_generation:
                     return False
+            nonlocal_goals.extend(_session_read(path)["in_flight"])
             path.unlink(missing_ok=True); heartbeat.unlink(missing_ok=True)
             return True
-        _session_locked(sdlc_dir, pid, _end_if_owner, path=path, require_lock=True)
+        nonlocal_goals = []
+        ended = _session_locked(sdlc_dir, pid, _end_if_owner, path=path, require_lock=True)
+        # #1529: AFTER the lifecycle lock is released (`_release` takes the same per-session lock
+        # through `_session_release`), hand back what this session claimed and never started.
+        if ended and nonlocal_goals:
+            _release_unstarted(sdlc_dir, nonlocal_goals, "session ended")
     except (OSError, TypeError, ValueError):
         pass
+
+
+DEFAULT_SESSION_RELEASE_GRACE_MINUTES = 15
+
+
+def session_release_grace_seconds(config):
+    """#1529: how long a DEAD session's registry entry must have been quiet before its unstarted
+    claims are handed back -- `session_release.grace_minutes`, default 15. A bad value reads as
+    the default (a typo must not turn the grace into zero)."""
+    try:
+        minutes = float(((config or {}).get("session_release") or {}).get(
+            "grace_minutes", DEFAULT_SESSION_RELEASE_GRACE_MINUTES))
+        if minutes < 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        minutes = DEFAULT_SESSION_RELEASE_GRACE_MINUTES
+    return minutes * 60
+
+
+def _goal_started(sdlc_dir, goal):
+    """#1529: True iff `goal` shows ANY sign of work: a work record (`work.py` writes it when a
+    goal is started: worktree and branch) or a registered agent marker (`agent_start`'s
+    heartbeat). Unsafe goal names fail toward True: never release what cannot be judged."""
+    try:
+        return work._record(sdlc_dir, goal) is not None or bool(agent_threads(sdlc_dir, goal))
+    except Exception:                                    # noqa: BLE001
+        return True
+
+
+def _release_unstarted(sdlc_dir, goals, why):
+    """#1529: release each claimed-but-never-started goal in `goals` through the SAME `_release`
+    the over-capacity path uses (label off, "claimed but not started" comment, ledger `release`,
+    action-log `released` with actor and reason). Only a GitHub source releases; the local path
+    does nothing here. Best-effort: never raises, so a stop or a prune is never blocked.
+    #1530: returns True iff nothing failed (a later pick retries a dead session's entry on False)."""
+    ok = True
+    try:
+        config = state.load_config(sdlc_dir)
+        if ((config.get("discovery") or {}).get("source")) != "github":
+            return True
+        source = sources.get_source(sdlc_dir, config)
+        for goal in dict.fromkeys(str(g) for g in goals):
+            try:
+                if not _goal_started(sdlc_dir, goal):
+                    _release(sdlc_dir, source, goal, reason=why)
+                    warnings = source.release_warnings() if hasattr(source, "release_warnings") else []
+                    if warnings:                         # the source swallows gh failures into warnings
+                        ok = False
+                        print(f"loop: unstarted release of {goal} incomplete ({warnings[0]})", file=sys.stderr)
+            except Exception as exc:                     # noqa: BLE001
+                ok = False
+                print(f"loop: unstarted release of {goal} skipped ({exc})", file=sys.stderr)
+    except Exception as exc:                             # noqa: BLE001
+        ok = False
+        print(f"loop: unstarted release skipped ({exc})", file=sys.stderr)
+    return ok
+
+
+DEFAULT_CLAIM_HOLD_MINUTES = 30
+
+
+def claim_hold_seconds(config):
+    """#1531: how long a live session may hold a claimed goal it has not started --
+    `session_release.hold_minutes`, default 30; 0 or false turns the hold off (returns 0). A bad
+    value reads as the default (a typo must not silently disable or zero the bound)."""
+    raw = ((config or {}).get("session_release") or {}).get("hold_minutes", DEFAULT_CLAIM_HOLD_MINUTES)
+    if raw is False or (not isinstance(raw, bool) and raw == 0):
+        return 0
+    try:
+        minutes = float(raw)
+        if isinstance(raw, bool) or minutes < 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        minutes = DEFAULT_CLAIM_HOLD_MINUTES
+    return minutes * 60
+
+
+def _claimed_at(sdlc_dir, goal):
+    """#1531: epoch of the newest action-log `claimed` entry for `goal` that no later `released`
+    entry has ended, or None when there is none or it cannot be read (the caller then keeps it)."""
+    try:
+        stamp = None
+        for entry in actionlog.read_goal(sdlc_dir, goal):
+            if entry.get("kind") == "claimed":
+                stamp = entry.get("ts")
+            elif entry.get("kind") == "released":
+                stamp = None
+        if not stamp:
+            return None
+        return calendar.timegm(time.strptime(stamp[:19], "%Y-%m-%dT%H:%M:%S")) + \
+            (int(stamp[20:23]) / 1000.0 if len(stamp) >= 23 and stamp[19] == "." else 0.0)
+    except Exception:                                    # noqa: BLE001
+        return None
+
+
+def _release_held_unstarted(sdlc_dir, config, now=None):
+    """#1531: hand back every goal that a LIVE session has held in flight for longer than the hold
+    with no work record and no agent marker (`_goal_started`), through `_release_unstarted` (the
+    #1529 release: label off, "claimed but not started" comment, ledger release, action log).
+    Runs from any session's pick, so an idle or capped session cannot sit on goals other sessions
+    could take. GitHub source only; hold off (0), or no readable claim time, keeps the goal.
+    Fail-open. Returns a frozenset of the goal refs released."""
+    try:
+        hold = claim_hold_seconds(config)
+        if not hold or ((config.get("discovery") or {}).get("source")) != "github":
+            return frozenset()
+        current = time.time() if now is None else now
+        due = []
+        for pid, path, in_flight in _session_entries(sdlc_dir):
+            if not _session_pid_live(pid, path, config):
+                continue                                 # a dead session is #1529's, after its grace
+            for goal in in_flight:
+                since = _claimed_at(sdlc_dir, goal)
+                if since is not None and current - since > hold and not _goal_started(sdlc_dir, goal):
+                    due.append(str(goal))
+        if not due:
+            return frozenset()
+        due = list(dict.fromkeys(due))
+        _release_unstarted(sdlc_dir, due, "claimed but not started: held past the hold")
+        return frozenset(g for g in due if g not in _session_in_flight_goals_raw(sdlc_dir, config))
+    except Exception as exc:                             # noqa: BLE001
+        print(f"loop: claim-hold release skipped ({exc})", file=sys.stderr)
+        return frozenset()
+
+
+def _session_in_flight_goals_raw(sdlc_dir, config):
+    """Goals still registered by a live session, with no pruning side effect."""
+    goals = set()
+    for pid, path, in_flight in _session_entries(sdlc_dir):
+        if _session_pid_live(pid, path, config):
+            goals.update(in_flight)
+    return goals
 
 
 def session_active(sdlc_dir, config):
@@ -2788,6 +2952,31 @@ def _prune_dead_session_entries(sdlc_dir, config):
     for pid, path, _in_flight in _session_entries(sdlc_dir):
         if _session_pid_live(pid, path, config):
             continue
+        # #1529: a dead session past the grace hands back its unstarted claims; within the grace
+        # the entry stays (the session may be mid-restart), so a later pass decides.
+        if ((config.get("discovery") or {}).get("source")) == "github":
+            try:
+                quiet_for = now - path.stat().st_mtime
+            except OSError:
+                continue
+            if quiet_for < session_release_grace_seconds(config):
+                continue
+        # #1530: release BEFORE the entry goes, so a failed release (host unreachable) keeps the
+        # entry and a later pick retries. Release is idempotent (a goal already released is a
+        # no-op on the source), so a retry or a concurrent pass never posts a second comment.
+        if ((config.get("discovery") or {}).get("source")) == "github":
+            def _peek(path=path, pid=pid):
+                if _session_pid_live(pid, path, config):
+                    return None
+                return list(_session_read(path)["in_flight"])
+            try:
+                pending = _session_locked(sdlc_dir, pid, _peek, path=path, require_lock=True)
+            except (OSError, RuntimeError):
+                continue
+            if pending is None:
+                continue
+            if pending and not _release_unstarted(sdlc_dir, pending, "session ended"):
+                continue
         def _prune(path=path, pid=pid):
             # Re-check under this entry's own lock: a session may have re-announced itself after
             # the outer scan. Lock the enumerated path, not this pruner's Codex thread identity.
@@ -2798,7 +2987,7 @@ def _prune_dead_session_entries(sdlc_dir, config):
         try:
             _session_locked(sdlc_dir, pid, _prune, path=path, require_lock=True)
         except (OSError, RuntimeError):
-            pass
+            continue
 
 
 def _session_in_flight_goals(sdlc_dir, config):
@@ -3598,6 +3787,26 @@ def _reason_class_matched(detail):
     return "unknown", None
 
 
+def _needle_kind(detail):
+    """The kind of the `_REASON_CLASS_RULES` needle that fired in `detail`, else None. For Sigma's OWN
+    fixed park wording only; never for a CLI-typed park (#1498: a needle is a substring, and agent prose
+    such as "add a rate limit ..." would be declared quota)."""
+    return _reason_class_matched(detail)[0] if _reason_class_matched(detail)[1] else None
+
+
+def _suggest_kind(detail):
+    """A SUGGESTION for a park with no declared kind: the needle kind, else the first matching
+    `decision_import.KIND_WORDS` row, else `unknown`. Never a declaration."""
+    found = _needle_kind(detail)
+    if found:
+        return found
+    text = (detail or "").lower()
+    for kind, words in _load("decision_import").KIND_WORDS:
+        if any(w in text for w in words):
+            return kind
+    return "unknown"
+
+
 def _reason_class(detail):
     """Classify a park `detail` string into one of `ledger.REASON_CLASSES`, by ordered substring
     match — pure, no I/O. Two of the eleven documented classes are honestly NOT guaranteed
@@ -4154,7 +4363,8 @@ def _reconcile_one(sdlc_dir, config, source, goal, run, now, results):
         if outcome != "done":
             work.note_close_failure(sdlc_dir, goal)
     elif landing[0] == work.CLOSED_PR:
-        outcome = _record(sdlc_dir, source, goal, "parked", f"PR #{pr} was closed without merging")
+        outcome = _record(sdlc_dir, source, goal, "parked", f"PR #{pr} was closed without merging",
+                          qkind="needs_decision")
     else:
         return
     results.append((goal, outcome, pr))
@@ -4202,6 +4412,8 @@ def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transit
                   "recording as parked instead of losing the terminal record entirely", file=sys.stderr)
             result = "parked"
             detail = f"source error recording 'done' ({exc})"
+            if qkind is None:                     # #1524: our own park declares its kind
+                qkind = "quota" if _reason_class(detail) == "quota" else "needs_decision"
     reason_class = None
     tier = None
     if result == "failed" and hasattr(source, "fail"):
@@ -4519,7 +4731,10 @@ def precheck(sdlc_dir, goal, config, source, run=None, now=None):
             # would drop membership and hand a machine-resolvable wait to a human -- the exact
             # confusion between "waiting to be picked" and "waiting for a person" this release
             # exists to remove. `transition="blocked"` keeps membership and the auto-resume.
-            _record(sdlc_dir, source, goal, "parked", reason, transition=transition)
+            blocked_by = any(f.get("kind") == "blocked-by" and f.get("confident")
+                             for f in ((pack or {}).get("findings") or []))
+            _record(sdlc_dir, source, goal, "parked", reason, transition=transition,
+                    qkind="dependency" if blocked_by or transition == "blocked" else "needs_decision")
             return ("BLOCKED " if transition == "blocked" else "PARKED ") + reason
         if decision["note"]:
             try:
@@ -4695,7 +4910,7 @@ def decompose_check(sdlc_dir, goal, config, source):
             # feature exists to catch, on top of it now ALSO being parked on GitHub). So a park
             # decision, once made, is reported as PARKED no matter what happens next.
             try:
-                _record(sdlc_dir, source, goal, "parked", detail)
+                _record(sdlc_dir, source, goal, "parked", detail, qkind="needs_decision")
             except Exception as e:
                 print(f"loop.py decompose-check: park record failed after park — "
                       f"treating as PARKED anyway: {e}", file=sys.stderr)
@@ -4901,7 +5116,7 @@ def design_check(sdlc_dir, goal, config, source):
             # Mirrors decompose_check's own R9/#522 nested `_park`: once a park decision is made it
             # is reported as PARKED no matter what a later bookkeeping failure does.
             try:
-                _record(sdlc_dir, source, goal, "parked", detail)
+                _record(sdlc_dir, source, goal, "parked", detail, qkind="needs_decision")
             except Exception as e:
                 print(f"loop.py design-check: park record failed after park — "
                       f"treating as PARKED anyway: {e}", file=sys.stderr)
@@ -4998,7 +5213,7 @@ def _park_design(sdlc_dir, source, goal, detail):
     inline — this one branch runs BEFORE that closure is defined (it fires before any network read),
     so it cannot simply call it."""
     try:
-        _record(sdlc_dir, source, goal, "parked", detail)
+        _record(sdlc_dir, source, goal, "parked", detail, qkind="needs_decision")
     except Exception as e:
         print(f"loop.py design-check: park record failed after park — "
               f"treating as PARKED anyway: {e}", file=sys.stderr)
@@ -5614,7 +5829,8 @@ def run_loop(sdlc_dir, run_goal):
             # differ from the `result` just passed in. Trust that return value for this run's
             # counters rather than re-deriving "did complete() fail?" a second, independent way —
             # exactly the duplication issue #1201 calls out avoiding.
-            outcome = _record(sdlc_dir, source, goal, result, detail)
+            outcome = _record(sdlc_dir, source, goal, result, detail,
+                              qkind=_needle_kind(detail) if result == "parked" else None)
         except Exception as exc:
             # F4: this is now the BACKSTOP for whatever `_record`'s own internal downgrade could not
             # absorb — e.g. `source.park()` itself also raising right after the downgrade, or any
@@ -5624,7 +5840,8 @@ def run_loop(sdlc_dir, run_goal):
             # still be open and re-pickable next run, so the local record must not claim otherwise.
             try:
                 outcome = _record(sdlc_dir, source, goal, "parked",
-                                   f"source error recording '{result}' ({exc})")
+                                   f"source error recording '{result}' ({exc})",
+                                   qkind=_needle_kind(f"source error recording '{result}' ({exc})"))
             except Exception:
                 # POST-REVIEW FIX: even the park-record failed — this goal cannot be reliably
                 # recorded at all. Without this, `source.next_pending` would re-serve it forever
@@ -5773,7 +5990,7 @@ def _print_pick(kind, payload):
         print(payload)
         return
     print(kind)
-    if payload and kind in ("BUDGET", "DONE", "HANDOFF"):
+    if payload and kind in ("BUDGET", "DONE", "HANDOFF", "FULL"):
         print(f"{kind} ({payload})", file=sys.stderr)
 
 
@@ -6675,6 +6892,9 @@ def _dispatch(argv):
                       f"for {argv[3]} -- run `work.py pr` first, or record done/parked/failed",
                       file=sys.stderr)
                 return 2
+        if qkind is None and argv[4] == "parked":      # #1498: never guessed here, only suggested
+            print("no --qkind: this park cannot be learned from; suggested kind: %s" % _suggest_kind(reason),
+                  file=sys.stderr)
         park_failed = []
         if merged_pr:
             _record(argv[2], sources.get_source(argv[2], config), argv[3], argv[4],

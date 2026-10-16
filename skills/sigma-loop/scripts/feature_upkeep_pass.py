@@ -201,8 +201,11 @@ def ack_union(config, sdlc_dir, unit, acks):
         if not isinstance(entry, dict):
             continue
         item = {"sha": str(entry.get("sha") or ""), "patch_id": str(entry.get("patch_id") or "")}
-        if (item["sha"] or item["patch_id"]) and (item["sha"], item["patch_id"]) not in seen:
-            seen.add((item["sha"], item["patch_id"]))
+        if entry.get("rewrite_key"):                        # #1470: the key a merge or empty commit is matched by
+            item["rewrite_key"] = str(entry["rewrite_key"])
+        ident = (item["sha"], item["patch_id"], item.get("rewrite_key", ""))
+        if (item["sha"] or item["patch_id"] or item.get("rewrite_key")) and ident not in seen:
+            seen.add(ident)
             merged.append(item)
     units[unit] = merged
     try:
@@ -242,13 +245,13 @@ def classify_push_refusal(*, pr_merged, remote_branch_exists):
 # ------------------------------------------------------------------------------------------ the ledger note
 
 @feature_upkeep.gated("project")
-def ledger_note(config, sdlc_dir, unit_key, outcome, sha12, *, append=None):
+def ledger_note(config, sdlc_dir, unit_key, outcome, sha12, *, append=None, units=None):
     """One UNADDRESSED `note` for a pass outcome: goal `upkeep-<unit-key>`, ref `upkeep:<outcome>:<sha12>`, written in this
     process with `ledger.safe_append`. Never through `loop.py note` (it arms a real claim) and never addressed (an addressed
-    note wakes the inbox and the autowatcher). The append is injectable for tests. -> {"ok": bool, "entry"}."""
+    note wakes the inbox and the autowatcher). A sweep note passes `units` (#1535) and its ref ends `:units=<n>`. The append is injectable for tests. -> {"ok": bool, "entry"}."""
     append = append or _sibling("ledger").safe_append
     entry = append(sdlc_dir, "note", "upkeep-" + str(unit_key).lower(), config=config,
-                   ref="upkeep:%s:%s" % (outcome, str(sha12)[:12]))
+                   ref="upkeep:%s:%s" % (outcome, str(sha12)[:12]) + ("" if units is None else ":units=%d" % units))
     return {"ok": entry is not None, "entry": entry}
 
 
@@ -374,6 +377,8 @@ def upkeep_pass(config, sdlc_dir, unit, unit_ref, base_ref, base_name, now, *, r
         report["result"] = UNREADABLE
     elif verdict in (LANDED_CONTAINED, LANDED_PR):
         report["result"] = "skipped"
+        # #1532: the only writer on this path. A landed unit never enters the engine below, and the pass is reached
+        # only after the older engine pass has ended; this record carries the tips read here, so it is kept, not doubled.
         state = _sibling("feature_upkeep_state").record_outcome(sdlc_dir, unit, now, "current", unit_tip, base_tip)
         report["recorded"] = bool(getattr(state, "ok", False))
     elif rewrite is not None:
@@ -388,7 +393,7 @@ def upkeep_pass(config, sdlc_dir, unit, unit_ref, base_ref, base_name, now, *, r
 
 # ------------------------------------------------------------------------------------------ the shipped entry point
 
-def unit_callables(cwd, remote, branch):
+def unit_callables(cwd, remote, branch, sdlc_dir=None, unit=None):
     """-> (rewrite, push): the pass's two callables for one unit. `rewrite` replays the unit onto the base tip in a throwaway
     detached worktree (the unit ref is never moved; a conflict aborts and reads `ok: False`, nothing is resolved here) and
     remembers the new commit; `push` sends that commit to `remote` as `branch` under a lease on the tip the pass read, so a
@@ -416,7 +421,27 @@ def unit_callables(cwd, remote, branch):
                 box["new"] = run(tree, ["git", "rev-parse", "HEAD"])
             finally:
                 run(cwd, ["git", "worktree", "remove", "--force", tree])
-        return {"ok": True, "resolved": False}
+        return {"ok": True, "resolved": False, "acks": _carried_acks(run, tips, box["new"])}
+
+    def _carried_acks(run, tips, new):
+        """#1470: the acks of the replayed copies of every acked commit, so a clean rewrite carries them forward. Best
+        effort: a failure here loses one carry, never the rewrite (the rewrite key still matches by itself)."""
+        if not (sdlc_dir and unit):
+            return []
+        try:
+            rb = _sibling("feature_rebase")
+            unit_tip, base_tip = tips
+            found = [{"sha": s, "subject": t} for s, t in rb.landed_commits(run, cwd, base_tip, unit_tip)]
+            _, acked = rb._unacked(sdlc_dir, run, cwd, unit, base_tip, found)
+            out = []
+            for _, sha in rb.pair_acked(run, cwd, acked, rb.landed_commits(run, cwd, base_tip, new)):
+                entry = {"sha": sha, "patch_id": rb.patch_id(run, cwd, sha)}
+                if not entry["patch_id"]:
+                    entry["rewrite_key"] = rb.rewrite_key(run, cwd, sha)
+                out.append(entry)
+            return out
+        except Exception:                                   # noqa: BLE001
+            return []
 
     def push(run, tips):
         new = box.get("new")
@@ -435,5 +460,5 @@ def run_unit_pass(config, sdlc_dir, unit, unit_ref, base_ref, base_name, now, *,
     is behind its base replays it and pushes it. Anything else (`run`, `landing_prs`, ...) goes through to the pass."""
     if not (valid_ref(remote) and valid_ref(branch)):
         return {"result": "failed", "reason": "invalid-ref", "unit": unit, "unit_tip": None, "base_tip": None}
-    rewrite, push = unit_callables(cwd, remote, branch)
+    rewrite, push = unit_callables(cwd, remote, branch, sdlc_dir, unit)
     return upkeep_pass(config, sdlc_dir, unit, unit_ref, base_ref, base_name, now, cwd=cwd, rewrite=rewrite, push=push, **kw)

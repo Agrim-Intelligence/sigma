@@ -489,6 +489,14 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/feature_judge.py",
+      "function": "ask_claude",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "removes only the empty temporary working directory it created with `tempfile.mkdtemp()` for one model call; never a repository tree",
+      "risk": "high"
+    },
+    {
       "path": "skills/sigma-loop/scripts/backlog_check.py",
       "function": "_dense_channel",
       "rule": "fs-write",
@@ -625,6 +633,14 @@
       "risk": "low"
     },
     {
+      "path": "skills/sigma-loop/scripts/decision_import.py",
+      "function": "remove",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "person-run remove verb with --apply (dry run otherwise); records part enabled; unlinks only imported decision records and imported watch files whose origin names the given project folder (and profile when given), never a file without an origin and never a symbolic link",
+      "risk": "high"
+    },
+    {
       "path": "skills/sigma-loop/scripts/decision_store.py",
       "function": "_lock",
       "rule": "fs-write",
@@ -653,7 +669,7 @@
       "function": "archive",
       "rule": "fs-remove",
       "count": 2,
-      "gate": "person-run archive verb; records part enabled; removes only record files older than records.archive_after_days after they are written into a yearly archive file under the lock",
+      "gate": "person-run archive library function (no command runs it); records part enabled; removes only record files older than records.archive_after_days after they are written into a yearly archive file under the lock",
       "risk": "high"
     },
     {
@@ -1969,6 +1985,30 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/spend_cap.py",
+      "function": "_prune",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "off by default: runs only when rulebook.spend.weekly_usd or monthly_usd is set (a paid call records into it); writes only its own spend-cap ledger under the sigma state directory, append-only, pruned by age through a temp file then replace; never deletes user data",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/spend_cap.py",
+      "function": "_prune",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "off by default: runs only when rulebook.spend.weekly_usd or monthly_usd is set (a paid call records into it); writes only its own spend-cap ledger under the sigma state directory, append-only, pruned by age through a temp file then replace; never deletes user data",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/spend_cap.py",
+      "function": "append",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "off by default: runs only when rulebook.spend.weekly_usd or monthly_usd is set (a paid call records into it); writes only its own spend-cap ledger under the sigma state directory, append-only, pruned by age through a temp file then replace; never deletes user data",
+      "risk": "low"
+    },
+    {
       "path": "skills/sigma-loop/scripts/state.py",
       "function": "_patch_cursor",
       "rule": "fs-remove",
@@ -2462,6 +2502,22 @@
       "rule": "fs-write",
       "count": 1,
       "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/work.py",
+      "function": "_clean_landed_root_records",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "work.enabled; only after a confirmed merge; unlinks one file (never a directory) under the root .sdlc/plans, research or acceptance, only when untracked and byte-identical (blob id) to the copy that landed on <remote>/<base>; differing or unlanded copies are reported, never removed (#1474)",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/work.py",
+      "function": "_copy_acceptance_into_worktree",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "work.enabled; create-only byte copy of the root acceptance record into the goal worktree; skipped when the worktree already has it or the repo ignores the path (#1474)",
       "risk": "medium"
     },
     {
@@ -3537,6 +3593,14 @@
       "risk": "high"
     },
     {
+      "path": "skills/sigma-loop/scripts/autonomy.py",
+      "function": "rekey",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "operator-run verb, dry run unless --apply; rulebook.autonomy.enabled is exactly true; removes only watch files in the autonomy folder whose would is a bank option and whose actual is a closing answer; vetoes and links are never touched",
+      "risk": "high"
+    },
+    {
       "path": "skills/sigma-loop/scripts/rulebook.py",
       "function": "_write",
       "rule": "fs-remove",
@@ -3719,6 +3783,30 @@
       "count": 1,
       "gate": "removes only the two receipt files of the goal being finished, named by the receipt path; called by work.py finish",
       "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_rebase.py",
+      "function": "_default_level2_plan",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "opt-in; upkeep.enabled, conflicts.resolve agent and both conflicts.agent spend keys set; creates three empty directories under the system temp directory for the resolver export, scratch and review, never in the work tree",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_level2.py",
+      "function": "_sweep_write",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "opt-in; upkeep.enabled and conflicts.resolve agent; atomic replace of the one sweep counter file under the local state directory",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/feature_upkeep_level2.py",
+      "function": "_sweep_write",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "opt-in; upkeep.enabled and conflicts.resolve agent; the one sweep counter file under the local state directory, written to a temporary name then replaced",
+      "risk": "medium"
     }
   ]
 }

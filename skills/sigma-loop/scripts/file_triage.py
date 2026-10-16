@@ -25,7 +25,9 @@ import re
 
 _HERE = pathlib.Path(__file__).resolve().parent
 
-Decision = collections.namedtuple("Decision", "kind priority reason")
+#: `matched` (#1498): the deny-list class that parked the filing (`hard-stop word`, `spend phrase`, `secret`,
+#: `hard-stop class`, `permission marker`), else None. Callers declare a hard-stop kind from it.
+Decision = collections.namedtuple("Decision", "kind priority reason matched", defaults=(None,))
 
 DEFAULT_BUCKETS = {"urgent": "P2", "routine": "P3", "unclear": "P4"}
 DEFAULT_HUMAN_PRIORITY = "P1"
@@ -33,6 +35,14 @@ DEFAULT_DENY_WORDS = ("irreversible", "force push", "production data", "drop tab
                       "private key", "credentials")
 DEFAULT_SPEND_PHRASES = ("paid run", "rent a GPU", "new vendor", "paid API", "cloud GPU benchmark")
 _PRIO = re.compile(r"P[0-4]")
+_FENCE = re.compile(r"```.*?(?:```|\Z)", re.DOTALL)
+_NUMWORD = (r"(?:one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|sixty|seventy|eighty"
+            r"|ninety|hundred|thousand)")
+_AMOUNT = (r"(?:(?:\$|US\$|USD\s?)\s?\d[\d,]*(?:\.\d+)?\s?[kK]?\b|\b\d[\d,]*(?:\.\d+)?\s*(?:dollars?|USD|bucks)\b"
+           r"|\b" + _NUMWORD + r"(?:[- ]" + _NUMWORD + r")*\s+(?:dollars?|bucks)\b)")
+_COMPUTE = r"\b(?:GPUs?|instances?|clusters?|credits|compute|pods?|cloud|runs?|nodes?)\b"
+_AMOUNT_FOR_COMPUTE = re.compile(_AMOUNT + r"[^.\n]{0,60}" + _COMPUTE + "|" + _COMPUTE + r"[^.\n]{0,60}" + _AMOUNT,
+                                 re.IGNORECASE)
 _SECRET = re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----|\b(?:token|secret|password|api[_-]?key)\s*[:=]\s*\S{8,}",
                      re.IGNORECASE)
 _URGENT = re.compile(r"\b(unsafe|vulnerab\w*|exploit\w*|data corrupt\w*|deadlock\w*|every run|silently wrong)\b",
@@ -40,8 +50,8 @@ _URGENT = re.compile(r"\b(unsafe|vulnerab\w*|exploit\w*|data corrupt\w*|deadlock
 _ROUTINE = re.compile(r"\b(tech.?debt|cleanup|edge case|polish|follow.?up|cosmetic|nice.to.have)\b", re.IGNORECASE)
 
 
-def _park(reason):
-    return Decision("park", None, reason)
+def _park(reason, matched=None):
+    return Decision("park", None, reason, matched)
 
 
 def _block(config):
@@ -91,35 +101,108 @@ def _load(name):
     return mod
 
 
+#: A deny word counts only in action position (#1519, structural rule, fail closed). The text is split into
+#: clauses; a clause holding the word is descriptive only when its deny word sits in backticks or quotes, follows
+#: a noun-phrase marker ("detector for"), the clause is passive ("are read by"), or it opens with a protective
+#: verb ("redact") or a determiner with no action verb before the word. A clause opening with an action verb, or
+#: with anything unrecognised, holds.
+_CLAUSES = re.compile(r"(?<=[.!?;,:])\s+|\n+|\s+(?:and then|then|and|or|but|&|after that|so that|so|by|via|using|-+)\s+",
+                      re.IGNORECASE)
+_QUOTED = re.compile(r"`[^`\n]*`|\"[^\"\n]*\"|(?<!\w)'[^'\n]*'(?!\w)")
+_BULLET = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
+_LEAD = re.compile(r"^(?:please\s+)?(?:(?:we|i|you)\s+(?:should|will|must|can|could|need to|have to)\s+)?",
+                   re.IGNORECASE)
+_ACTION = frozenset((
+    "delete drop remove wipe purge erase destroy truncate overwrite rotate revoke reset force push run deploy "
+    "publish release migrate rename rebase merge send print dump leak expose share commit upload copy use spend "
+    "rent buy pay disable enable execute apply perform do make take start launch kill terminate scrub "
+    "deleting dropping removing wiping purging erasing destroying truncating overwriting rotating revoking "
+    "resetting forcing pushing running deploying publishing releasing migrating sending printing dumping "
+    "exposing sharing committing uploading copying using spending executing applying performing").split())
+_PROTECT = frozenset(("redact redacts mask masks detect detects document documents describe describes gate "
+                      "gates prevent prevents refuse refuses warn warns guard guards protect protects classify "
+                      "classifies flag flags report reports list lists explain explains mention mentions note "
+                      "log logs test tests check checks verify verifies assert asserts").split())
+_HANDOFF = frozenset("to we you i when before while if until once after".split())
+_COPULA = frozenset("is are be was were being should must will can could".split())
+_DETERMINER = frozenset(("the a an this that these those it its they their which what when where if how why all "
+                         "any each every some no one there").split())
+_NP_HEAD = re.compile(r"\b(?:detector|detection|detecting|redaction|redacting|mentions?|rule|rules|check|checks|"
+                      r"handling|scan|scanner|filter|docs?|documentation|tests?|gate|warning|guard)\s+"
+                      r"(?:for|of|about)\s+(?:\w+\s+){0,2}$", re.IGNORECASE)
+_PASSIVE = re.compile(r"\b(?:are|is) (?:read|listed|reported|detected|logged|redacted|masked|documented)\b",
+                      re.IGNORECASE)
+_WORD = re.compile(r"[a-z']+")
+
+
+def _descriptive(clause, at, deny):
+    """True when the deny word at `at` in this clause is described rather than done."""
+    prefix = clause[:at]
+    before = _WORD.findall(prefix.lower())
+    if any(w in _ACTION for w in before) or (before and before[-1] in _HANDOFF):
+        return False
+    if _NP_HEAD.search(prefix) or _PASSIVE.search(clause):
+        return True
+    words = _WORD.findall(_LEAD.sub("", _BULLET.sub("", clause)).lower())
+    if not words:
+        return False
+    first = words[0]
+    if first in _ACTION:
+        return False
+    if first in _PROTECT:
+        return True
+    if first in _DETERMINER:
+        return not any(w in _ACTION or w in _COPULA for w in _WORD.findall(clause[:at + len(deny)].lower()))
+    return False
+
+
+def _action_sentence(text, word):
+    """-> the (trimmed) first clause holding `word` in action position, else None."""
+    w = word.lower()
+    if not w:
+        return None
+    for clause in _CLAUSES.split(text):
+        low = _QUOTED.sub(" ", clause).lower()
+        at = low.find(w)
+        if at < 0:
+            continue
+        if _descriptive(low, at, w):
+            continue
+        return " ".join(clause.split())[:100]
+    return None
+
+
 def _deny(title, body, blk):
-    """-> reason string when the deny-list matches, else None. Raises on a broken helper (caller parks)."""
+    """-> (reason, class) when the deny-list matches, else None. Raises on a broken helper (caller parks)."""
     status = _load("spend_approval").parse_marker(body)[0]
     if status != "none":
-        return "first body line carries a recorded-permission marker"
+        return "first body line carries a recorded-permission marker", "permission marker"
     text = "%s\n%s" % (title, body)
     words = blk.get("triage", {}).get("deny_words") if isinstance(blk.get("triage"), dict) else None
     if not (isinstance(words, (list, tuple)) and all(isinstance(w, str) for w in words)):
         words = DEFAULT_DENY_WORDS
-    low = text.lower()
     for w in words:
-        if w and w.lower() in low:
-            return "hard-stop word: " + w
+        hit = _action_sentence(text, w)
+        if hit:
+            return "hard-stop word: %s (in: %s)" % (w, hit), "hard-stop word"
     tri = blk.get("triage") if isinstance(blk.get("triage"), dict) else {}
     phrases = tri.get("spend_phrases")
     if not (isinstance(phrases, (list, tuple)) and all(isinstance(w, str) for w in phrases)):
         phrases = DEFAULT_SPEND_PHRASES
     for ph in phrases:
         if ph.strip() and re.search(r"\b" + r"\s+".join(map(re.escape, ph.split())) + r"\b", text, re.IGNORECASE):
-            return "spend phrase: " + ph
+            return "spend phrase: " + ph, "spend phrase"
+    if phrases and _AMOUNT_FOR_COMPUTE.search(_FENCE.sub(" ", text)):
+        return "spend phrase: money amount for compute", "spend phrase"
     if _SECRET.search(text):
-        return "secret-shaped text"
+        return "secret-shaped text", "secret"
     res = _load("hard_stop").classify(text, {}, {"hard_stops": {"enabled": True}})
     # A shell parse failure on free prose (an odd apostrophe) is not a stop: the text is not a command.
     # Every other cannot-tell (detector error, not text) and every matched class still parks.
     if res.cls == "cannot-tell" and res.pattern_id == "parse-error":
         return None
     if res.cls is not None:
-        return "hard-stop class: " + str(res.cls)
+        return "hard-stop class: " + str(res.cls), "hard-stop class"
     return None
 
 
@@ -155,7 +238,7 @@ def _decide(title, body, flags, config):
         return _park(v["reason"])
     why = _deny(title, body, blk)
     if why:
-        return _park(why)
+        return _park(why[0], why[1])
     flags = flags if isinstance(flags, dict) else {}
     if flags.get("human_confirmed") is True:
         pri = flags.get("priority")

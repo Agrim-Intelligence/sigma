@@ -35,8 +35,8 @@ REGISTERED_CALLERS = (
 #: only after `gate.enabled(config)` and the `conflicts.resolve` level check pass (see `_level1_inputs`), so with the
 #: gate closed it is never reached. Any further caller must be added here in the same change that gates it.
 GATED_CALLERS = (
-    "skills/sigma-loop/scripts/feature_upkeep_prove.py:186",
-    "skills/sigma-loop/scripts/feature_upkeep_prove.py:193",
+    "skills/sigma-loop/scripts/feature_upkeep_prove.py:228",
+    "skills/sigma-loop/scripts/feature_upkeep_prove.py:235",
 )
 ALLOWED_LOADS = {"shell_policy", "bounded_run"}
 #: Names of the one place a claim is armed and its helpers.

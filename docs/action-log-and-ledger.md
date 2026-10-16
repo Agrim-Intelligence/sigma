@@ -108,6 +108,12 @@ Write anything else explicitly — kinds are
 ledger.py append .sdlc note 0007-cache.md --why "spike looks viable"
 ```
 
+A `release` is also written for you, on a GitHub source, when a loop session ends or dies holding goals it
+claimed but never started (no work record, no agent marker): the comment reads `claimed but not started: session
+ended`. A dead session waits `session_release.grace_minutes` (default `15`, in `config.json`) first, measured from the last write to its registry entry (its last announce or claim, so quiet means no write for that long); if the release fails (host unreachable) the entry is kept and a later pick retries; started
+goals and live sessions are never released.
+A live session that sits on a claimed goal without starting it (no work record, no agent marker or beat) for longer than `session_release.hold_minutes` (default `30`; `0` turns it off) has that goal released by the next pick in any session, with a `claimed but not started` comment; `next-batch` also never claims more goals than the session has free slots.
+
 An entry with a `to` is **addressed** to that person: it lands in the team view and in their
 `ledger.py mine`. `/sigma-status` reports the entry count; `/sigma-doctor` reports whether the ledger
 is on.
@@ -120,6 +126,30 @@ write says which tick will carry it, rather than racing it for the worktree's in
 here can change the command's own output: stdout stays the bare entry id and the exit code is
 untouched, so a push that fails costs you a warning, never the write. Set
 `ledger.publish_on_write: false` to keep the push local and leave it to the watcher.
+
+### What the entry file name says about your machine
+
+Each machine writes its own file, `entries/<actor>-<host token>.<pid>.jsonl`, and the ops branch
+publishes it. The host token is a short hash of the host name, never the host name itself, on any
+repository. Two optional `ledger` settings change it, both off by default (the default file names
+are unchanged):
+
+- `host_alias`: a label of your choosing (letters and digits, at most 12) used in place of the hash.
+- `salt_host_token: true`: salts the hash with `discovery.github.repo`, so one machine has a different
+  token in each repository.
+
+Changing `host_alias` or `salt_host_token` re-roots this machine: its host token, and so its file
+names, change. During a re-root, older loose files look like another machine's, and open claims made
+under the old token are not this machine's until they expire. It is a one-time switch; pick the
+setting once. Two machines sharing one alias is unsupported, since they would write the same file
+names. `/sigma-doctor` warns when `salt_host_token` is true and `discovery.github.repo` is unset,
+which silently gives the unsalted hash.
+
+Files written by older versions are still read and attributed by the `actor` field inside each line.
+`/sigma-doctor` reads the file names in the local copy of the ledger branch (at most 500) and warns
+when a public repository's published entries carry a host part that is not a hash, the alias or a
+pid; fix it with `host_alias` and remove those files from the ledger branch. It does not rewrite
+history.
 
 ### Blocked on someone else's area? Hand it off, don't park into silence
 

@@ -23,7 +23,8 @@ def _config(**gh):
 def _view(number=5, title="A goal", body="", labels=("sdlc:parked",), comments=(), state="OPEN"):
     return json.dumps({"number": number, "title": title, "body": body,
                        "labels": [{"name": n} for n in labels],
-                       "comments": [{"body": c} for c in comments], "state": state})
+                       "comments": [c if isinstance(c, dict) else {"body": c, "authorAssociation": "OWNER"} for c in comments],
+                       "state": state})
 
 
 def _runner(views=None, by_label=None, states=None, fail_on=()):
@@ -155,7 +156,10 @@ def test_brief_drops_a_ref_slot_when_there_is_no_concrete_ref_to_name():
                   states={"7": "CLOSED"})
     b = u.brief(".sdlc", _config(), 5, run=run)
     assert not any("{ref}" in q["ask"] for q in b["questions"])
-    assert not any("is still open" in q["ask"] for q in b["questions"])
+    assert not any(q["ask"].startswith("#") for q in b["questions"])
+    # #1495: the route question is still asked, worded without a reference, so the route answer exists
+    route = [q for q in b["questions"] if q["id"] == "route"]
+    assert route and route[0]["options"] == ["wait for it", "work around it", "drop this"]
 
 
 def test_brief_never_re_asks_something_a_previous_round_answered():

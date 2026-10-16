@@ -100,9 +100,10 @@ def test_tie_and_other_area_give_no_would(tmp_path):
 
 def test_sealed_rule_wins_over_majority(tmp_path):
     sd, cfg = str(tmp_path / ".sdlc"), _cfg(l1=3)
-    _seed(sd, cfg, ["close"] * 5)
-    _approved_rule(sd, cfg, option="merge")
-    assert DR.would_for(sd, _rec(), cfg) == "merge"
+    # #1495: a rule's option must be a bank option of its kind, so the test uses real needs_decision options
+    _seed(sd, cfg, ["leave it parked"] * 5)
+    _approved_rule(sd, cfg, option="start it again")
+    assert DR.would_for(sd, _rec("start it again"), cfg) == "start it again"
 
 
 def test_none_would_writes_nothing_and_comparison_records_agreement(tmp_path):
@@ -171,15 +172,19 @@ def test_ack_path_writes_one_comparison(tmp_path):
     sd, cfg = str(tmp_path / ".sdlc"), _cfg(l1=3)
     _seed(sd, cfg, ["done"] * 3, qkind="unknown", area="docs")
     _mod("handoff")._record_ack(sd, cfg, 7, None, "done", "why", area="docs")
-    (f,) = _watch_files(sd)
-    w = json.loads(f.read_text())
-    assert (w["would"], w["actual"]) == ("done", "done")
+    # #1495: an ack is not a park answer, so it leaves no comparison (old: one comparison done/done)
+    assert _watch_files(sd) == []
+    assert len(DS.list_by(sd, cfg, qkind="unknown")) == 4      # the ack record itself is still stored
 
 
 def test_promote_gesture_writes_one_comparison(tmp_path):
     sd, cfg = str(tmp_path / ".sdlc"), _cfg(l1=3)
     _seed(sd, cfg, ["promote"] * 3, qkind="needs_decision", area="docs")
     _write(sd, _rec("promote", gesture="promote"), cfg)
+    # #1495: a promote is not a park answer, so it leaves no comparison (old: one); red control below
+    assert _watch_files(sd) == []
+    _seed(sd, cfg, ["start it again"] * 4)     # outvotes the 3 seeded "promote" answers
+    _write(sd, _rec("start it again"), cfg)
     assert len(_watch_files(sd)) == 1
 
 
@@ -195,8 +200,10 @@ def _unpark_n(sd, cfg, n, u=None):
     u = u or TU._mod("unpark")
     park = TU._park("needs a call\n" + DR.qkind.render_line("needs_decision"))
     for i in range(n):
-        run = TU._runner(views={"5": TU._view(labels=("sdlc:parked", "area:docs"), comments=[park])})
-        r = u.resolve(sd, cfg, 5, {"decision": "start it again"}, "unpark", run=run)
+        # #1495: one park counts once, so each answer is a different issue (old: the same issue 14 times)
+        k = 5 + i
+        run = TU._runner(views={str(k): TU._view(number=k, labels=("sdlc:parked", "area:docs"), comments=[park])})
+        r = u.resolve(sd, cfg, k, {"decision": "start it again"}, "unpark", run=run)
         assert r["outcome"] == "unparked"
 
 

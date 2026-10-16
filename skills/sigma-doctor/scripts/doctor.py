@@ -453,10 +453,14 @@ def _board_dup_risk(gh_cfg, run):
             ".sdlc (read-only preview; add --yes to create).")
 
 
-#: What gh prints when GitHub ANSWERED and the board (or its owner) is not there. Measured:
+#: What gh prints when GitHub ANSWERED and the board is not there. Measured:
 #: `gh project view 99999 --owner <org>` -> "GraphQL: Could not resolve to a ProjectV2 with the
-#: number 99999."; an owner login that does not exist -> "unknown owner type".
-_BOARD_GONE = ("could not resolve to a", "unknown owner type")
+#: number 99999." A bare "unknown owner type" is NOT in this list (#1485): gh prints it too when its
+#: GraphQL owner lookup is refused (usually the rate limit), so it is confirmed over REST first.
+_BOARD_GONE = ("could not resolve to a",)
+_OWNER_REFUSED = ("unknown owner type",)
+#: the same markers cross_repo/promote use for "GitHub is rate limiting this account"
+_RATE_LIMIT_MARKERS = ("rate limit", "secondary rate", "abuse detection", "too many requests")
 
 
 def _pinned_board_unreachable(gh_cfg, run):
@@ -466,7 +470,8 @@ def _pinned_board_unreachable(gh_cfg, run):
 
 
 def _pinned_board_state(gh_cfg, run):
-    """(state, fix): "ok", "gone" (with the fix), "unverifiable", or "unpinned".
+    """(state, fix): "ok", "gone" (with the fix), "refused" (GitHub refused the read, owner exists),
+    "unverifiable", or "unpinned".
 
     #235: `project.number` is pinned but GitHub says that board does not exist under its owner --
     deleted, transferred, or a wrong `project.owner`. The loop then turns board mirroring OFF on
@@ -501,13 +506,41 @@ def _pinned_board_state(gh_cfg, run):
         return ("ok" if isinstance(got, dict) and got.get("number") == want
                 else "unverifiable"), None
     said = _failure_text(raw).lower()
+    if any(tell in said for tell in _RATE_LIMIT_MARKERS):
+        return "unverifiable", None  # #1485: a rate-limited read says nothing about the board
+    if any(tell in said for tell in _OWNER_REFUSED) and not any(t in said for t in _BOARD_GONE):
+        # #1485: gh prints this when its GraphQL owner lookup is refused. Ask REST (a different pool).
+        def _rest(argv, cwd=None, timeout=None):
+            res = run(list(argv))
+            return (0, str(res)) if res else (1, _failure_text(res))
+        try:
+            pf = _load_init_script("preflight")
+            found = pf.check_owner_type(owner, None, _rest, pf.network_timeout())
+        except Exception:                    # noqa: BLE001 - a lookup that cannot run is no verdict
+            found = None
+        if found is not None:
+            return "refused", ("GitHub refused the board read (usually the GraphQL rate limit); "
+                               "wait for the reset and re-run /sigma-doctor")
+        if not _owner_missing(owner, run):
+            return "unverifiable", None
+        return "gone", _board_gone_fix(want, owner)
     if not any(tell in said for tell in _BOARD_GONE):
         return "unverifiable", None  # the read failed -- says nothing about the board
-    return "gone", (f"the pinned board #{want} does not exist under {owner} (GitHub: could not "
-                    "resolve it -- deleted, moved, or a wrong project.owner) - the loop mirrors "
-                    "nothing while it is unreachable. Fix discovery.github.project.number/owner, "
-                    "or create and pin a new one: python3 "
-                    "<sigma>/skills/sigma-init/scripts/board_setup.py create .sdlc.")
+    return "gone", _board_gone_fix(want, owner)
+
+
+def _board_gone_fix(want, owner):
+    return (f"the pinned board #{want} does not exist under {owner} (GitHub: could not "
+            "resolve it -- deleted, moved, or a wrong project.owner) - the loop mirrors "
+            "nothing while it is unreachable. Fix discovery.github.project.number/owner, "
+            "or create and pin a new one: python3 "
+            "<sigma>/skills/sigma-init/scripts/board_setup.py create .sdlc.")
+
+
+def _owner_missing(owner, run):
+    """#1485: True only when REST itself says the owner is not there (a 404)."""
+    res = run(["gh", "api", f"users/{owner}", "--jq", ".type"])
+    return (not res) and "404" in _failure_text(res)
 
 
 def _self_merge_risk(gh_cfg, wk, run):
@@ -1182,15 +1215,25 @@ def _blocker_rank_row(cfg, sdlc_dir, now=None):
     source is not github or the rule is explicitly off."""
     try:
         disc = (cfg or {}).get("discovery") or {}
-        block = disc.get("blocker_promotion")
-        if disc.get("source") != "github" or (isinstance(block, dict) and block.get("mode") == "off"):
+        if disc.get("source") != "github":
             return None
+        mode = _load_loop_script("sources")._blocker_promotion(cfg)
+        if mode == "off":
+            return None
+        if mode == "smart":
+            return _chk('blocker priority rule inactive: discovery.blocker_promotion.mode is "smart" (board '
+                        "pass only; the reconcile repair and block-time raise are skipped)", False,
+                        'set it to "always" (or remove the key) to turn the rule on')
         tick = _load_loop_script("reconcile_tick")
         loop = tick.loop
         st = tick.read_repair_state(sdlc_dir)
         if not st:
             return _chk("blockers ranked below what they block: not yet checked (the reconcile tick has not run)",
                         True, "")
+        if not tick.always_repair_has_run(st):
+            # #1526: only the smart skip marker is on file; the first always repair has not run yet.
+            return _chk("blockers ranked below what they block: first repair has not run (the reconcile "
+                        "tick has not run since the mode changed)", True, "")
         now = now if now is not None else time.time()
         n = int(st.get("violations") or 0)
         last = st.get("last_repair")
@@ -1319,6 +1362,59 @@ def _preflight_fix(check):
     return head + (f" ({tail})" if tail else "")
 
 
+_REGISTRY_COMMIT_CMD = 'git add .sdlc/features && git commit -m "registry: record unit membership"'   # branching-model s15
+_STALE_RECORD_DIRS = ("acceptance", "plans", "research")
+
+
+def _stale_record_rows(base, run, now=None):
+    """#1474: one row on untracked `.sdlc/{acceptance,plans,research}/*.md` older than a day, split into a
+    landed duplicate (byte-identical to the default branch's blob: safe to remove) and a file on no branch
+    (commit it or it is lost). Detection only. An unanswered git call is no finding."""
+    repo = str(base.parent)
+    ok = lambda v: isinstance(v, str) and getattr(v, "raw", None) is None      # noqa: E731
+    out = run(["git", "-C", repo, "ls-files", "--others", "--exclude-standard", "--"]
+              + [str(base / d) for d in _STALE_RECORD_DIRS])
+    if not ok(out):
+        return []
+    cutoff = (now if now is not None else time.time()) - 86400
+    default = run(["git", "-C", repo, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"])
+    default = default.strip() if ok(default) and "/" in default else "origin/main"
+    landed, lost, differs = [], [], []
+    for rel in (x.strip() for x in out.splitlines() if x.strip()):
+        f = pathlib.Path(repo) / rel if not pathlib.Path(rel).is_absolute() else pathlib.Path(rel)
+        try:
+            if f.stat().st_mtime > cutoff:
+                continue
+        except OSError:
+            continue
+        name = f.parent.name + "/" + f.name
+        blob = run(["git", "-C", repo, "rev-parse", "--verify", "-q", default + ":" + _repo_rel(repo, f)])
+        mine = run(["git", "-C", repo, "hash-object", "--", str(f)])
+        if ok(blob) and blob.strip() and blob.strip() == str(mine).strip():
+            landed.append(name)
+        elif ok(blob) and blob.strip():
+            differs.append(name)
+        else:
+            seen = run(["git", "-C", repo, "log", "--all", "-1", "--format=%H", "--", _repo_rel(repo, f)])
+            if ok(seen) and not seen.strip():
+                lost.append(name)
+    parts = []
+    if landed:
+        parts.append("landed duplicate (safe to remove): " + ", ".join(landed[:5]))
+    if differs:
+        parts.append("differs from the landed copy (diff it, then remove): " + ", ".join(differs[:5]))
+    if lost:
+        parts.append("on no branch (commit it or it is lost): " + ", ".join(lost[:5]))
+    return [_chk("old untracked acceptance/plans/research records", not parts, "; ".join(parts))]
+
+
+def _repo_rel(repo, f):
+    try:
+        return pathlib.Path(f).resolve().relative_to(pathlib.Path(repo).resolve()).as_posix()
+    except ValueError:
+        return str(f)
+
+
 def _unit_record_rows(base, run, cheap_only):
     """#1312: one row on unit records git cannot show other machines -- a record file that is
     untracked, or a remote `feature/*` branch with no record. Absent without `.sdlc/features/`;
@@ -1331,6 +1427,10 @@ def _unit_record_rows(base, run, cheap_only):
     out = run(["git", "-C", repo, "ls-files", "--others", "--exclude-standard", "--", str(features / "units")])
     if isinstance(out, str) and getattr(out, "raw", None) is None:
         found += ["untracked record " + pathlib.PurePath(x).name for x in out.splitlines() if x.strip()]
+    mod = run(["git", "-C", repo, "status", "--porcelain", "--", str(features)])      # #1474
+    if isinstance(mod, str) and getattr(mod, "raw", None) is None:
+        found += ["modified record " + pathlib.PurePath(x[3:].strip()).name
+                  for x in mod.splitlines() if x.strip() and not x.startswith("??")]
     if not cheap_only:
         heads = run(["git", "-C", repo, "ls-remote", "--heads", "origin", "feature/*"])
         if isinstance(heads, str) and getattr(heads, "raw", None) is None:
@@ -1347,7 +1447,25 @@ def _unit_record_rows(base, run, cheap_only):
                         if unit.lower() not in known:
                             found.append("remote branch " + ref[len("refs/heads/"):] + " has no record")
     return [_chk("unit records visible to other machines", not found,
-                 "; ".join(found[:5]) + " -- commit the record (git add <file> && git commit) or open the unit")]
+                 "; ".join(found[:5]) + " -- commit the record (git add <file> && git commit) or open the unit;"
+                 " a modified one: " + _REGISTRY_COMMIT_CMD)]
+
+
+def _unmaintained_row(sched, base, cfg):
+    """#1493: upkeep maintains the units the registry lists; a remote `feature/*` branch with no record is not maintained.
+    One local ref read (no network), shown whenever upkeep is on, also when no `.sdlc/features/` exists."""
+    try:
+        registered = sched.list_units(base)
+        remote = _load_loop_script("feature_rebase")._remote(cfg)
+        loose = sched.unregistered_heads(base, remote, base.parent, registered=registered)
+        loose = sched.selected(loose, ["*"], _load_loop_script("feature_upkeep").read(cfg).settings["units.exclude"])    # #1535
+    except Exception:                       # noqa: BLE001 - an unanswered read is no finding
+        return _chk("upkeep units: could not be read", False, "run /sigma-doctor again")
+    names = ", ".join(_UNIT_BRANCH_PREFIX + n for n in loose[:5])
+    return _chk("upkeep units: %d registered, %d remote feature branch(es) not maintained%s"
+                % (len(registered), len(loose), (" (" + names + ")") if loose else ""), not loose,
+                "register the unit (open it with /sigma-define) or it is never kept current; a branch that is not a unit: list its"
+                " name in upkeep.units.exclude; see docs/upkeep.md")
 
 
 def _upkeep_rows(base, cfg, run, which, injected, cheap_only, now=None):
@@ -1360,6 +1478,7 @@ def _upkeep_rows(base, cfg, run, which, injected, cheap_only, now=None):
             return []
         rows = [_chk(f"{label}: {detail}", ok, "see docs/branching-model.md for the opt-in and the stop file")
                 for label, ok, detail in sched.health(cfg, base, now)]
+        rows.append(_unmaintained_row(sched, base, cfg))
         if not cheap_only:
             pf = _load_init_script("preflight")
             runner = None
@@ -1377,6 +1496,46 @@ def _upkeep_rows(base, cfg, run, which, injected, cheap_only, now=None):
 
 
 RESOLVER_PROBE_SECONDS = 5.0          # PROVISIONAL: a version probe on a healthy binary answers in well under a second
+
+
+MAX_STORE_READ = 1 << 20     # PROVISIONAL: the spend store holds at most a day of records; a larger file is not read
+
+
+def _resolver_spend_today(path, launcher, now):
+    """The rolling 24 hour resolver spend from the launcher's store, or None when it exists and cannot be read (bounded read)."""
+    try:
+        if not path.joinpath(launcher.SPEND_FILE).exists():
+            return 0.0
+        if path.joinpath(launcher.SPEND_FILE).stat().st_size > MAX_STORE_READ:
+            return None
+        records, ok = launcher._load_records(str(path))
+        return round(launcher._sum(records, now), 6) if ok else None
+    except Exception:                       # noqa: BLE001
+        return None
+
+
+def _count_parked(base, limit=200):
+    """How many units carry a park marker (bounded scan of the feature state directory)."""
+    try:
+        return sum(1 for _, e in zip(range(limit), (e for e in os.scandir(base / "state" / "features")
+                                                    if e.name.endswith(".rebase-parked.json"))))
+    except OSError:
+        return 0
+
+
+def _newest_resolution(store, suffix, limit=200):
+    """(level, verdict, outcome-word) of the newest resolution record, or None. A record that is a resolution was pushed."""
+    try:
+        files = [e for _, e in zip(range(limit), (e for e in os.scandir(store) if e.name.endswith(suffix) and e.is_file()))]
+        if not files:
+            return None
+        newest = max(files, key=lambda e: e.stat().st_mtime)
+        if newest.stat().st_size > MAX_STORE_READ:
+            return None
+        doc = json.loads(pathlib.Path(newest.path).read_text(encoding="utf-8"))
+        return (doc.get("level", "?"), doc.get("verdict") or "n/a", "pushed")
+    except (OSError, ValueError):
+        return None
 
 
 def _resolver_rows(base, cfg, which, cheap_only, now=None):
@@ -1417,11 +1576,29 @@ def _resolver_rows(base, cfg, which, cheap_only, now=None):
         rows.append(_chk("resolver model: " + ("catalog holds only the placeholder id" if models <= {placeholder}
                                               else "a non-placeholder id is in the catalog"),
                          not models <= {placeholder}, "supply a validated model id override"))
-        caps = [k for k in gate.SCHEMA if ("usd" in k or "spend" in k)]
-        finite = bool(caps) and all(isinstance(settings.get(k), (int, float)) and not isinstance(settings.get(k), bool)
-                                    and math.isfinite(settings[k]) and settings[k] > 0 for k in caps)
+        rebase = _load_loop_script("feature_rebase")
+        budget, ceiling = settings.get("conflicts.agent.max_budget_usd_per_unit"), settings.get("conflicts.agent.spend_ceiling_usd_per_day")
+        finite = budget is not None and ceiling is not None
+        why_off = rebase.level2_off_reason(cfg, which)
+        on_placeholder = why_off is None and launcher.CATALOG.get(settings["conflicts.agent.model"], placeholder) == placeholder
+        rows.append(_chk("resolver configured: " + ("model %s resolves to the placeholder id, so every launch is refused" % settings["conflicts.agent.model"]
+                                                    if on_placeholder else
+                                                    "model %s, up to $%g per unit, $%g per day" % (settings["conflicts.agent.model"], budget, ceiling)
+                                                    if why_off is None else "behaves as off (%s)" % why_off), why_off is None and not on_placeholder,
+                         "supply a validated model id override" if on_placeholder else
+                         "set conflicts.agent.max_budget_usd_per_unit and conflicts.agent.spend_ceiling_usd_per_day in .sdlc/config.json"))
         rows.append(_chk("resolver spend: " + ("finite caps configured" if finite else "no finite spend cap in the upkeep settings"),
                          finite, "the launcher refuses a launch without finite per-run, per-machine and team caps"))
+        spent = _resolver_spend_today(pathlib.Path(base).joinpath(*rebase.LEVEL2_SPEND_REL.split("/")), launcher, now)
+        if spent is None:
+            rows.append(_chk("resolver spend today: unreadable", False, "check the spend store under .sdlc/state/upkeep/spend; the launcher stays closed on it"))
+        else:
+            over = ceiling is not None and spent >= ceiling
+            rows.append(_chk("resolver spend today: $%.2f%s" % (spent, "" if ceiling is None else " of $%g" % ceiling), not over,
+                             "the daily ceiling is met: units park as 'spend ceiling reached' until the 24 hour window moves on"))
+        parked = _count_parked(pathlib.Path(base))
+        if parked:
+            rows.append(_chk("units parked on conflict: %d" % parked, True, ""))
         store = pathlib.Path(base).joinpath(*review.STORE_REL.split("/"))
         shape_ok = not os.path.lexists(store) or (store.is_dir() and not store.is_symlink())
         rows.append(_chk("reviewer store: " + ("usable" if shape_ok else "exists but is not a plain directory"), shape_ok,
@@ -1439,6 +1616,9 @@ def _resolver_rows(base, cfg, which, cheap_only, now=None):
             rows.append(_chk("resolution age: %d record(s), oldest %ds old" % (len(records), oldest) + ("" if ok else
                              " (older than the prune horizon: the prune may not be running)"), ok,
                              "review the open resolution records; the prune is not removing them"))
+        newest = _newest_resolution(rstore, resolution.SUFFIX)
+        if newest:
+            rows.append(_chk("last resolution: level %s, verdict %s, %s" % newest, True, ""))
         return rows
     except Exception:                       # noqa: BLE001 - a row that cannot be built says so; it is never an all-clear
         return [_chk("resolver readiness rows could not be built", False, "run /sigma-doctor again; see the loop scripts")]
@@ -1547,6 +1727,37 @@ def _list(run, gh_cfg, fields, labels, state="open", cap=200, sort="created", re
         return gh_api.list_issues_gh(raising, fields, repo=repo or gh_cfg.get("repo") or None,
                                      labels=labels, state=state, cap=cap, sort=sort,
                                      gql_run=raising, fetch=_LIST_FETCH[0])
+    except Exception:
+        return None
+
+
+def _mis_kinded_hardstop_parks(cfg, gh_cfg, run, cap=20):
+    """#1498: open parked issues whose title or body matches the filing deny-list (a hard stop) but whose
+    declared kind is not a hard-stop kind. -> a list of issue numbers (empty = none), or None when the
+    read could not be made. READ-ONLY; cost: one list read plus one issue read per deny-list match, at
+    most `cap` of them."""
+    try:
+        sources = _load_loop_script("sources")
+        ft = _load_loop_script("file_triage")
+        hs = _load_loop_script("hard_stop")
+        qk = _load_loop_script("qkind")
+        src = sources.GitHubSource(cfg, run=_raising_gh(run))    # sources' runner takes no binary
+        label = src.parked_label
+        rows = _list(run, gh_cfg, ["number", "title", "body"], [label], cap=100)
+        if rows is None:
+            return None
+        found = []
+        for it in rows:
+            d = ft.decide(it.get("title") or "", it.get("body") or "", {}, {})
+            if d.kind != "park" or not d.matched:
+                continue
+            data = src._read_issue(it["number"], ["number", "comments", "state"])
+            kind = qk.resolve(data.get("comments") or [], goal=it["number"])
+            if not hs.is_hardstop_kind(kind, None, cfg) and not qk.resolve_hardstop(data.get("comments") or []):
+                found.append(it["number"])
+            if len(found) >= cap:
+                break
+        return found
     except Exception:
         return None
 
@@ -2661,6 +2872,25 @@ def _watcher_build_rows(base, cfg):
         return []
 
 
+def _stale_watch_stop_rows(base, cfg):
+    """#1510: warn when a leftover state/watch.stop exists and no watcher is live (it would exit at once). Silent otherwise. Read-only."""
+    try:
+        st = pathlib.Path(base) / "state"
+        if not (st / "watch.stop").is_file():
+            return []
+        try:
+            os.kill(int((st / "watch.pid").read_text(encoding="utf-8").strip()), 0)
+            if _load_loop_script("sync").watcher_liveness(base, cfg)[0] == "live":
+                return []
+        except Exception:                    # noqa: BLE001 - no readable live pid means no live watcher
+            pass
+        return [_chk("no leftover watcher stop file", False,
+                     "state/watch.stop exists and no watcher is running, so a watcher started now exits at once; "
+                     "remove it with `rm .sdlc/state/watch.stop`, then start the watcher.")]
+    except Exception:                        # noqa: BLE001 - a detector that cannot run says nothing
+        return []
+
+
 _PROGRESS_ON = False
 
 
@@ -2832,12 +3062,14 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
             out.extend(_landing_rows(base, cfg, run, which))        # #974: branch-creation rulesets
     out.extend(_origin_mismatch_rows(base, disc, run))      # #1314
     out.extend(_watcher_build_rows(base, cfg))                # #1315
+    out.extend(_stale_watch_stop_rows(base, cfg))             # #1510
     _progress("unit branch readiness")
     out.extend(_upkeep_rows(base, cfg, run, which, injected, cheap_only))
     _progress("resolvers")
     out.extend(_resolver_rows(base, cfg, which, cheap_only))
     _progress("unit records")
     out.extend(_unit_record_rows(base, run, cheap_only))
+    out.extend(_stale_record_rows(base, run))      # #1474
     if disc.get("source") == "github":
         gh_disc = _block(disc, "github")
         if _block(gh_disc, "project").get("enabled"):
@@ -2855,6 +3087,9 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
                 if state in ("ok", "gone"):
                     out.append(_chk("pinned board #%s reachable"
                                     % _block(gh_disc, "project").get("number"), state == "ok", gone))
+                elif state == "refused":     # #1485: cannot verify, never a "gone" and never a create advice
+                    out.append(_chk("pinned board #%s reachable (cannot verify)"
+                                    % _block(gh_disc, "project").get("number"), False, gone))
                 # #280: read-only, same gate. A column with no matching Status option makes that
                 # card move a no-op; a case/spacing-only difference already matches.
                 unmatched = (_board_columns_unmatched(gh_disc, run, board_fields)
@@ -2906,6 +3141,14 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
             out.append(_chk(
                 "every open unit's landing PR is CI-verifiable (not conflicted with zero checks)",
                 landing is None, landing))
+
+            # #1498: a park the filing deny-list would stop, declared as an ordinary kind. Warn only; no write.
+            mk = _mis_kinded_hardstop_parks(cfg, gh_disc, run)
+            if mk:
+                out.append(_chk("deny-list parks are declared a hard-stop kind", False,
+                                "parked issue(s) match the filing deny-list but are not declared a hard-stop kind: #"
+                                + ", #".join(str(n) for n in mk[:10])
+                                + " -- run `unpark.py declare .sdlc <issue> irreversible`."))
 
             # #389: NOT gated on backlog_check.enabled (nor on the `project` block above) -- a repo with
             # backlog_check OFF has zero auto-skip happening at all, so this is arguably more useful
@@ -3023,9 +3266,11 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
                 out.append(_chk(
                     "no issue still carries the legacy confirmation label (advisory)",
                     False,
-                    f"{len(leftovers)} open issue(s) ({shown}{more}) carry the legacy confirmation label. Nothing "
-                    "writes it any more, so "
-                    "this is a leftover from an older board: the loop will never pick these. " + how +
+                    f"{len(leftovers)} open issue(s) ({shown}{more}) carry the legacy confirmation label. " +
+                    ("Nothing writes it any more, so this is a leftover from an older board: the loop will "
+                     "never pick these. " if gate_on else
+                     "Triage is off, so follow-ups and upkeep findings are filed with it by design; the loop "
+                     "will never pick these. ") + how +
                     "`/sigma-promote` to approve or clear each one. Advisory only -- nothing was changed."))
 
             # #1408: a blocker that still carries the legacy label or has no priority (advisory).
@@ -3184,6 +3429,30 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
                         "run /sigma-ledger — one command joins the existing ops branch, seeds your file + TEAM.md, and pushes"
                         if joins else
                         "run /sigma-ledger — one command creates the ops branch, seeds your file + TEAM.md, and pushes"))
+
+    # #1514: a published entry file named for the raw machine name tells a public repository's readers
+    # who works there. Local read of the already-fetched ledger worktree, bounded; one REST read of
+    # visibility only when a raw name was actually found.
+    if _block(cfg, "ledger").get("enabled") is True:
+        raw = _raw_host_entry_files(base, cfg)
+        if raw:
+            real = _real_repo_public(cfg, run, base) if run is not None else None
+            if real is None:
+                real = _load_loop_script("rulebook_cfg").visibility(cfg) == "public"
+            out.append(_chk("ledger entries carry no raw host name", not real,
+                            "%d published ledger entry file(s) on a public repository carry a raw host name "
+                            "(e.g. %s); set ledger.host_alias in .sdlc/config.json, then remove those files "
+                            "from the ledger branch" % (len(raw), raw[0])))
+
+    # #1528: salt_host_token with no discovery.github.repo silently gets the UNSALTED hash
+    # (ledger.host_token's own condition); an alias wins before the salt is read, so it exempts.
+    _led = _block(cfg, "ledger")
+    if _led.get("salt_host_token") is True and not _led.get("host_alias"):
+        _repo = _block(_block(cfg, "discovery"), "github").get("repo")
+        if not isinstance(_repo, str):
+            out.append(_chk("ledger salt needs discovery.github.repo", False,
+                            "ledger.salt_host_token is true but discovery.github.repo is unset, so the host "
+                            "token is the plain unsalted hash; set discovery.github.repo in .sdlc/config.json"))
 
     # #2698: the same shape one channel over. Knowledge-graph analysis notes share an ops branch
     # only once `.sdlc/knowledge/analysis` is a worktree; until then `loop.py record` says so on
@@ -3782,8 +4051,8 @@ def _blocking_priority_override_feature_state(cfg):
     disc = _block(cfg, "discovery")
     if disc.get("source") != "github":
         return "n/a — backlog source is not github"
-    return ("ON (default) — an sdlc:goal issue also carrying sdlc:blocking sorts ahead of every "
-            "non-blocking issue, regardless of priority tier") \
+    return ("ON (default) — a blocking goal goes first within its own tier; a blocker is "
+            "raised to the tier of what it blocks") \
         if disc.get("blocking_priority_override") is not False \
         else "off — set discovery.blocking_priority_override to true to re-enable"
 
@@ -5149,6 +5418,33 @@ def _model_max_tier(cfg):
 _STALE_RULEBOOK_KEY = "`decision_rubric` was renamed `rulebook`; it is not read"
 
 
+LEDGER_RAW_HOST_SCAN_MAX = 500
+
+
+def _raw_host_entry_files(base, cfg):
+    """#1514: names of ledger entry files whose host part is neither an 8-hex hash, the configured
+    `ledger.host_alias`, nor a bare pid (the oldest shape). Reads file NAMES under the local ledger
+    worktree only, at most LEDGER_RAW_HOST_SCAN_MAX of them; never raises."""
+    try:
+        alias = _block(cfg, "ledger").get("host_alias")
+        alias = "".join(c for c in alias.lower() if c.isascii() and c.isalnum())[:12] if isinstance(alias, str) else ""
+        found = []
+        for i, p in enumerate(sorted((pathlib.Path(base) / "ledger" / "entries").glob("*.jsonl"))):
+            if i >= LEDGER_RAW_HOST_SCAN_MAX:
+                break
+            stem = p.name[:-len(".jsonl")]
+            _actor, dash, instance = stem.rpartition("-")
+            host, dot, pid = instance.rpartition(".")
+            if not (dash and dot and host and pid.isdigit()):
+                continue
+            if re.fullmatch(r"[0-9a-f]{8}", host) or (alias and host == alias):
+                continue
+            found.append(p.name)
+        return found
+    except Exception:
+        return []
+
+
 def _real_repo_slug(cfg, run, sdlc_dir):
     """A plain owner/name for the REST read: discovery.github.repo, else origin parsed (host aliases
     included), else None. A failed git read yields None."""
@@ -5230,15 +5526,56 @@ def _rulebook_state_core(cfg, sdlc_dir=None, run=None):
             old = store.untracked_old(sdlc_dir, config=cfg)
             if old:
                 extra.append("%d decision records are untracked for over a day; commit them" % len(old))
+            if rub.part_enabled("rules"):
+                rbk = _load_loop_script("rulebook")
+                for ar in rbk.acceptance(sdlc_dir, cfg):
+                    if ar["never_matches"]:
+                        extra.append("rule %s: its option %r never matches a recorded answer"
+                                     % (ar["id"], ar["option"]))
+                    if ar["answers"]:
+                        extra.append(rbk.acceptance_line(ar))
+                rows = [r for r in _load_loop_script("rule_draft").suggest(sdlc_dir, cfg) if not r["covered"]][:3]
+                if rows:
+                    extra.append("top uncovered rule pairs (rule_draft.py suggest): " + "; ".join(
+                        "%s / %s (score %.1f)" % (r["qkind"], r["area"], r["score"]) for r in rows))
             ptr = _load_loop_script("ledger_pointer")
             if ptr.is_open(cfg):
                 extra.append("ledger pointer on: %d ledger entry files, %d ids queued"
                              % (ptr.pointer_file_count(sdlc_dir), ptr.queued(sdlc_dir)))
+        if sdlc_dir is not None and rub.part_enabled("records"):
+            n, names = _load_loop_script("decision_store").commits_differing(sdlc_dir, cfg, behind=False)
+            if n:
+                extra.append("%d local commit%s touching %s %s not on the default branch; push or merge %s"
+                             % (n, "" if n == 1 else "s", ", ".join(names), "is" if n == 1 else "are",
+                                "it" if n == 1 else "them"))
+        if sdlc_dir is not None and rub.part_enabled("rules"):
+            rbm = _load_loop_script("rulebook")
+            if rbm.enabled(cfg):
+                import datetime as _dt
+                due = rbm.due_ages(rbm.load(sdlc_dir, cfg), _dt.datetime.now(_dt.timezone.utc), cfg)
+                if due:
+                    extra.append("%d approved rule(s) due for confirmation (older than reask_days): %s"
+                                 % (len(due), ", ".join(str(i) for i, _ in due)))
+                bad = rbm.invalid(sdlc_dir, cfg)
+                if bad:
+                    extra.append("%d invalid rule(s) in the rulebook, never acting (retire them with "
+                                 "rule_draft.py retire): %s" % (len(bad), "; ".join("%s (%s)" % b for b in bad)))
         if sdlc_dir is not None:
             at = _load_loop_script("drift_judge").ceiling_paused_at(cfg, time.time(), sdlc_dir)
             if at is not None:
                 extra.append("drift judge paused: daily ceiling reached at "
                              + time.strftime("%H:%M", time.localtime(at)))
+            for sr in _load_loop_script("spend_cap").status(sdlc_dir, cfg, time.time()):
+                over = sr["spent"] >= sr["cap"] and sr["reset_at"]
+                extra.append("spend cap %s: $%.2f of $%.2f%s" % (
+                    sr["window"], sr["spent"], sr["cap"],
+                    ", resets " + time.strftime("%a %H:%M", time.localtime(sr["reset_at"])) if over else ""))
+            ds = _load_loop_script("drift_shadow")
+            if _load_loop_script("rulebook_cfg").load(cfg).part_enabled("drift"):
+                _d, _b, _n, cut, out = ds.read_documents_detail(pathlib.Path(sdlc_dir).resolve().parent, cfg)
+                if cut or out:
+                    extra.append("drift documents exceed max_total_chars: %d cut short, %d left out"
+                                 % (len(cut), len(out)))
         return state + "".join("; " + e for e in extra)
     except Exception as exc:  # a readout never fails the dashboard
         return "unreadable (%s)" % type(exc).__name__
@@ -5265,9 +5602,29 @@ def _autonomy_state(cfg, sdlc_dir=None):
                                          _category_clause(r)) for r in out["kinds"]]
         head = "on: " + ("; ".join(rows) if rows else "no kinds yet") + "; %d watch records, %d vetoes" % (
             out["watch_records"], out["vetoes"])
-        return head + "".join("\n      " + l for l in ([mod.NO_RECORDS_LINE] if not rows else [mod.describe(r) for r in out["kinds"]]))
+        lines = [mod.NO_RECORDS_LINE] if not rows else [mod.describe(r) for r in out["kinds"]]
+        for r in out["kinds"]:   # #1500: a level the comparisons on hand cannot reach inside the retention window
+            need = r.get("comparisons_needed")
+            if r.get("next_level") and need and not r.get("capped") and r.get("answers", 0) >= (r.get("answers_needed") or 0):
+                recent, days = mod.recent_comparisons(sdlc_dir if sdlc_dir is not None else ".sdlc", r["qkind"], r["area"], cfg)
+                if r.get("comparisons", 0) < need and recent < need:
+                    lines.append("%s / %s: level %d unreachable: needs %d comparisons, %d recorded in the last %d days"
+                                 % (r["qkind"], r["area"] or "-", r["next_level"], need, recent, days))
+        lines += _load_loop_script("autonomy").category_notes(sdlc_dir if sdlc_dir is not None else ".sdlc", cfg)
+        return head + "".join("\n      " + l for l in lines)
     except Exception as exc:  # a readout never fails the dashboard
         return "unreadable (%s)" % type(exc).__name__
+
+
+def _no_owners_clause(cfg):
+    """#1500: the applier needs an owner to read a veto from; owners (or the approvers fallback) empty means none."""
+    try:
+        if not _load_loop_script("autonomy").owners(cfg):
+            return ("; WARNING: rulebook.autonomy.owners (and the spend_approval.approvers fallback) is empty, "
+                    "so no one can veto or approve a rule")
+    except Exception:
+        pass
+    return ""
 
 
 def _applier_state(cfg, sdlc_dir=None, now=None):
@@ -5282,8 +5639,9 @@ def _applier_state(cfg, sdlc_dir=None, now=None):
         beat = mod.read_heartbeat(sdlc_dir if sdlc_dir is not None else ".sdlc")
         if mod.tick_is_dead(beat, cfg, when):
             return ("on, WARNING: the applier tick looks dead (%s); parked questions stay parked until the "
-                    "watcher runs again" % ("never ran" if beat is None else "last tick " + beat.isoformat()))
-        return "on: last tick " + beat.isoformat()
+                    "watcher runs again" % ("never ran" if beat is None else "last tick " + beat.isoformat())
+                    + _no_owners_clause(cfg))
+        return "on: last tick " + beat.isoformat() + _no_owners_clause(cfg)
     except Exception as exc:  # a readout never fails the dashboard
         return "unreadable (%s)" % type(exc).__name__
 

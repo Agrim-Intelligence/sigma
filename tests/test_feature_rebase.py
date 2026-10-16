@@ -1180,6 +1180,85 @@ def test_a_real_conflict_is_still_reported_as_a_conflict(tmp_path):
     assert filed[0]["title"] == "Rebase conflict: %s onto %s" % (FEATURE, INTEGRATION)
 
 
+# --------------------------------------------------------------------------- #1490: findings are parked
+
+
+class _ParkSource:
+    """A recording stand-in for the issue host: what the REAL filer would send."""
+
+    def __init__(self):
+        self.created, self.parked = None, []
+
+    def create_dependency(self, title, body, assignee, labels=(), goal_label=True):
+        self.created = {"title": title, "body": body, "labels": list(labels), "goal_label": goal_label}
+        return "61"
+
+    def park(self, goal, reason, tier=None):
+        self.parked.append((str(goal), reason))
+
+    def fetch_title_body(self, goal):
+        return ("t", "")
+
+    def ensure_label(self, name):
+        pass
+
+    def note(self, goal, text):
+        pass
+
+
+def _real_filer(m, tmp_path, triage_on=True):
+    """Route feature_rebase's filing through the REAL handoff.create_tracked_issue with a fake host."""
+    real, src = _load("handoff"), _ParkSource()
+    cfg = {"ledger": {"enabled": True, "actor": "amy"}}
+    if not triage_on:
+        cfg["ai_filed"] = {"triage": {"enabled": False}}
+
+    def create(sdlc_dir, config, goal, area, why, **kw):
+        return real.create_tracked_issue(sdlc_dir, cfg, goal, area, why, source=src, dedup=False, **kw)
+
+    m._HANDOFF = types.SimpleNamespace(create_tracked_issue=create, DEFAULT_PRIORITY="P1")
+    return src
+
+
+def _assert_parked_finding(src, kind):
+    assert src.created["goal_label"] is False
+    assert "sdlc:needs-confirmation" not in src.created["labels"]
+    assert "priority:P1" not in src.created["labels"] and "priority:P4" in src.created["labels"]
+    assert len(src.parked) == 1 and "sigma-qkind: %s" % kind in src.parked[0][1]
+
+
+def test_direct_commit_finding_through_the_real_filer_is_parked_needs_decision(tmp_path):
+    m = _mod()
+    world = World(tmp_path).build(feature_commits=(
+        ("f.txt", "f", "feat: land a goal (#11)"), ("h.txt", "h", "quick fix, straight onto the branch")))
+    world.move_integration()
+    src = _real_filer(m, tmp_path)
+    _upkeep(m, world)
+    assert "Direct commits on" in src.created["title"]
+    _assert_parked_finding(src, "needs_decision")
+
+
+def test_goal_conflict_finding_through_the_real_filer_is_parked_merge_conflict(tmp_path):
+    m = _mod()
+    world = World(tmp_path).build(
+        feature_commits=(("seed.txt", "feature edit", "feat: touch the seed (#11)"),))
+    world.move_integration(name="seed.txt", body="integration edit")
+    src = _real_filer(m, tmp_path)
+    assert _upkeep(m, world)["outcome"] == m.CONFLICT
+    assert src.created["title"].startswith("Rebase conflict")
+    _assert_parked_finding(src, "merge_conflict")
+
+
+def test_finding_with_triage_off_keeps_the_legacy_label(tmp_path):
+    m = _mod()
+    world = World(tmp_path).build(
+        feature_commits=(("seed.txt", "feature edit", "feat: touch the seed (#11)"),))
+    world.move_integration(name="seed.txt", body="integration edit")
+    src = _real_filer(m, tmp_path, triage_on=False)
+    _upkeep(m, world)
+    assert "sdlc:needs-confirmation" in src.created["labels"] and src.parked == []
+
+
 # --------------------------------------------------------------------------- F4: silence and truncation
 
 
@@ -2607,6 +2686,56 @@ def test_an_already_flattened_branch_can_be_acked_and_the_ack_survives_the_rebas
     world.move_integration(name="m3.txt", body="m3", subject="and again")
     again = _upkeep(m, world)
     assert again["outcome"] == m.REBASED, "the ack must survive the rewrite it allowed: %s" % again
+
+
+def _merge_base_into_unit(world):
+    """A hand-made "merge base into unit" commit: the feature branch merges the integration tip it
+    was cut from, so the merge has the OLD integration tip as its second parent (#1470)."""
+    _git(world.local, "checkout", "-q", FEATURE)
+    _git(world.local, "pull", "-q", "origin", FEATURE)
+    _git(world.local, "merge", "-q", "--no-ff", "-m", "merge base into unit", "origin/" + INTEGRATION)
+    _git(world.local, "push", "-q", "origin", FEATURE)
+    _git(world.local, "checkout", "-q", INTEGRATION)
+
+
+def test_an_ack_of_a_merge_commit_survives_the_replay_that_recreates_it(tmp_path):
+    """#1470: a merge has no patch-id, so its ack matched by sha only, and the rebase-merges replay re-creates it
+    under a new sha. The ack must also carry a rewrite-stable key (author, author date, raw message, parent count),
+    or the second pass after the base moves refuses with DIRECT_COMMITS again."""
+    m = _mod()
+    world = World(tmp_path).build()
+    world.move_integration()
+    _merge_base_into_unit(world)
+    world.move_integration(name="m2.txt", body="m2", subject="integration moves again")
+    _filer(m)
+    locked = _upkeep(m, world)
+    assert locked["outcome"] == m.DIRECT_COMMITS, locked
+    assert [d["subject"] for d in locked["direct"]] == ["merge base into unit"]
+    assert m.ack(str(world.sdlc), _cfg(), UNIT, [locked["direct"][0]["sha"]])["ok"] is True
+
+    first = _upkeep(m, world)
+    assert first["outcome"] == m.REBASED, first
+    _git(world.local, "fetch", "-q", "origin")
+    merges = _git(world.local, "log", "--merges", "--format=%H",
+                  "origin/%s..origin/%s" % (INTEGRATION, FEATURE)).split()
+    assert merges and merges[0] != locked["direct"][0]["sha"], "the replay must have re-created the merge"
+    world.move_integration(name="m3.txt", body="m3", subject="and again")
+    second = _upkeep(m, world)
+    assert second["outcome"] == m.REBASED, "the merge ack must survive the replay: %s" % second
+
+
+def test_a_commit_with_a_patch_id_is_not_acked_by_the_rewrite_key(tmp_path):
+    """The rewrite key is only for commits with no patch-id: acking a normal commit stores none."""
+    m = _mod()
+    world = World(tmp_path).build(feature_commits=(
+        ("f.txt", "f", "feat: land a goal (#11)"),
+        ("h.txt", "h", "quick fix, straight onto the branch")))
+    world.move_integration()
+    _filer(m)
+    first = _upkeep(m, world)
+    assert m.ack(str(world.sdlc), _cfg(), UNIT, [first["direct"][0]["sha"]])["ok"] is True
+    entries = json.loads(m.ack_path(str(world.sdlc), UNIT).read_text(encoding="utf-8"))["acked"]
+    assert entries and all(e["patch_id"] and not e.get("rewrite_key") for e in entries), entries
 
 
 def test_an_ack_covers_only_the_commits_it_names(tmp_path):

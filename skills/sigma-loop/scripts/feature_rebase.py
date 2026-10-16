@@ -262,7 +262,9 @@ WORKTREE_DIRNAME = "rebase"
 LOCK_DIRNAME = "rebase-locks"
 LOCK_SUFFIX = ".lock"
 #: ONE non-blocking attempt. A pick that WAITS on another process's rebase is a pick that stalls the
-#: whole loop for a git operation it does not need; the other process is already doing the work.
+#: whole loop. The pick does need the unit brought forward before its cut, so a `busy` pick does not skip
+#: that need: `work.start` re-checks the unit tip right after the cut and moves the still-empty goal branch
+#: onto it (#1483), and the goal's recorded cut tip makes any later rebase replay only its own commits.
 LOCK_TIMEOUT = 0.0
 
 DEFAULT_REMOTE = "origin"
@@ -581,6 +583,35 @@ def patch_id(run, cwd, sha):
     return (out.split() or [""])[0]
 
 
+def rewrite_key(run, cwd, sha):
+    """The rewrite-stable key of a commit that has NO patch-id (a merge, an empty commit), else "" (#1470).
+
+    A hash of author name/email, author date, the raw message and the parent count: `rebase --rebase-merges` and
+    `pick` keep all of these and change only the committer, so the re-created commit carries the same key under a new
+    sha. For a merge the patch-id of `git show --remerge-diff` is folded in too, so an evil merge is told apart from a
+    clean one; a git without that option simply leaves it out of BOTH sides of the comparison."""
+    import hashlib
+    if patch_id(run, cwd, sha):
+        return ""
+    try:
+        head = run(cwd, ["git", "show", "-s", "--date=raw", "--format=%an%x00%ae%x00%ad%x00%P%x00%B", sha])
+        name, mail, date, parents, body = str(head or "").split("\x00", 4)
+    except Exception:                     # noqa: BLE001 - no key is "not acked", never a crash
+        return ""
+    remerge = ""
+    if len(parents.split()) > 1:
+        try:
+            import subprocess
+            diff = run(cwd, ["git", "show", "--remerge-diff", "--format=", sha])
+            remerge = subprocess.run(["git", "patch-id", "--stable"], input=str(diff or ""), cwd=cwd,
+                                     capture_output=True, text=True, check=True).stdout.split()[0:1]
+            remerge = remerge[0] if remerge else ""
+        except Exception:                 # noqa: BLE001
+            remerge = ""
+    material = "\x00".join([name, mail, date, str(len(parents.split())), body, remerge])
+    return hashlib.sha256(material.encode("utf-8", "replace")).hexdigest()
+
+
 def _read_acks(text):
     try:
         data = json.loads(text)
@@ -604,18 +635,13 @@ def _runtime_acks(sdlc_dir, unit):
         return []
 
 
-def _acked(sdlc_dir, run, cwd, unit, integration_ref, config=None):
-    """Every ack for `unit` -> `(patch_ids, shas)`: the local file UNION the copy on the remote
-    integration branch. Never raises; anything unreadable contributes nothing, so a broken store
-    fails towards REFUSING, which costs a pass and never data.
-
-    #1017/#1086: both runtime files (`state/upkeep/acks.json` and the per-unit `state/rebase-acks/` one; written only under the upkeep opt-in) are read only while that gate is open when a `config`
-    is given, so a file left behind after the gate was closed again is ignored. `config=None` keeps the old reading."""
+def _acked_entries(sdlc_dir, run, cwd, unit, integration_ref, config=None):
+    """Every ack entry for `unit` (local file, runtime files, remote copy). Never raises; see `_acked`."""
     entries = []
     try:
         path = ack_path(sdlc_dir, unit)
     except ValueError:
-        return set(), set()
+        return entries
     try:
         entries += _read_acks(path.read_text(encoding="utf-8"))
     except OSError:
@@ -635,6 +661,23 @@ def _acked(sdlc_dir, run, cwd, unit, integration_ref, config=None):
             entries += _read_acks(run(cwd, ["git", "show", "%s:%s" % (integration_ref, rel)]))
         except Exception:                 # noqa: BLE001 - not on the integration branch yet
             pass
+    return entries
+
+
+def _acked_keys(sdlc_dir, run, cwd, unit, integration_ref, config=None):
+    """The `rewrite_key`s of the acks for `unit` -> set (#1470); the third answer beside `_acked`'s two."""
+    return {str(e.get("rewrite_key")) for e in
+            _acked_entries(sdlc_dir, run, cwd, unit, integration_ref, config) if e.get("rewrite_key")}
+
+
+def _acked(sdlc_dir, run, cwd, unit, integration_ref, config=None):
+    """Every ack for `unit` -> `(patch_ids, shas)`: the local file UNION the copy on the remote
+    integration branch. Never raises; anything unreadable contributes nothing, so a broken store
+    fails towards REFUSING, which costs a pass and never data.
+
+    #1017/#1086: both runtime files (`state/upkeep/acks.json` and the per-unit `state/rebase-acks/` one; written only under the upkeep opt-in) are read only while that gate is open when a `config`
+    is given, so a file left behind after the gate was closed again is ignored. `config=None` keeps the old reading."""
+    entries = _acked_entries(sdlc_dir, run, cwd, unit, integration_ref, config)
     return ({str(e.get("patch_id")) for e in entries if e.get("patch_id")},
             {str(e.get("sha")) for e in entries if e.get("sha")})
 
@@ -644,12 +687,14 @@ def _unacked(sdlc_dir, run, cwd, unit, integration_ref, found, config=None):
     if not found:
         return found, []
     pids, shas = _acked(sdlc_dir, run, cwd, unit, integration_ref, config)
-    if not pids and not shas:
+    keys = _acked_keys(sdlc_dir, run, cwd, unit, integration_ref, config)
+    if not pids and not shas and not keys:
         return found, []
     still, acked = [], []
     for d in found:
-        pid = patch_id(run, cwd, d["sha"]) if pids else ""
-        (acked if (d["sha"] in shas or (pid and pid in pids)) else still).append(d)
+        pid = patch_id(run, cwd, d["sha"]) if (pids or keys) else ""
+        key = rewrite_key(run, cwd, d["sha"]) if (keys and not pid) else ""
+        (acked if (d["sha"] in shas or (pid and pid in pids) or (key and key in keys)) else still).append(d)
     return still, acked
 
 
@@ -711,8 +756,10 @@ def ack(sdlc_dir, config, unit, shas, all_=False, run=None, cwd=None, remote=Non
     have = {e.get("sha") for e in entries}
     for d in chosen:
         if d["sha"] not in have:
-            entries.append({"sha": d["sha"], "patch_id": patch_id(run, cwd, d["sha"]),
-                            "subject": d["subject"]})
+            entry = {"sha": d["sha"], "patch_id": patch_id(run, cwd, d["sha"]), "subject": d["subject"]}
+            if not entry["patch_id"]:     # #1470: a merge / empty commit is matched by its rewrite-stable key
+                entry["rewrite_key"] = rewrite_key(run, cwd, d["sha"])
+            entries.append(entry)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps({"unit": unit, "branch": branch, "acked": entries},
@@ -1555,14 +1602,18 @@ def _prove():
 
 
 def _park_resolved(report, item):
-    """Turn a Level 1 refusal that left no stop to describe into a parked CONFLICT: a synthetic stop record whose id is
-    derived from the unit, the refusal code and the conflicted file, so the same refusal is one finding."""
-    report["why"] = "level 1 refused (%s): %s" % (item.get("code"), item.get("detail"))
-    paths = [_prove().CHANGELOG]
-    cid = park.conflict_id(report["unit"], "", item.get("code") or "", "level1", paths)
-    report["park"] = {"id": cid, "sha": "", "subject": "", "paths": paths,
-                      "brief": "Level 1 refused (%s): %s\n" % (park.neutralise(item.get("code")),
-                                                              park.neutralise(item.get("detail")))}
+    """Turn a Level 1 or Level 2 refusal that left no stop to describe into a parked CONFLICT: a synthetic stop record whose
+    id is derived from the unit, the refusal code and the conflicted file, so the same refusal is one finding. A Level 2
+    refusal carries the attempt (a bounded diff of the unit's side against what the resolver produced) when there was one."""
+    level = 2 if item.get("level") == 2 else 1
+    report["why"] = "level %d refused (%s): %s" % (level, item.get("code"), item.get("detail"))
+    paths = [str(p) for p in (item.get("paths") or [])][:8] if level == 2 else []
+    paths = paths or [_prove().CHANGELOG]
+    cid = park.conflict_id(report["unit"], "", item.get("code") or "", "level%d" % level, paths)
+    brief = "Level %d refused (%s): %s\n" % (level, park.neutralise(item.get("code")), park.neutralise(item.get("detail")))
+    if level == 2 and item.get("attempt"):
+        brief += "The attempted resolution, as a diff against the unit's side:\n%s\n" % park.neutralise(item["attempt"])
+    report["park"] = {"id": cid, "sha": "", "subject": "", "paths": paths, "brief": brief}
     return CONFLICT
 
 
@@ -1581,7 +1632,7 @@ def _level1(run, cwd, path, base_ref, report, level1):
     report["why"] = "level 1 refused (%s): %s" % (out["refusal"].get("code"), out["refusal"].get("detail"))
     if out.get("restorable"):
         try:
-            run(str(path), ["git", "checkout", "--merge", "--", prove.CHANGELOG])
+            run(str(path), ["git", "checkout", "--merge", "--", out.get("file") or prove.CHANGELOG])
         except Exception:                 # noqa: BLE001 - an unrestorable stop is described as what it is
             pass
         try:
@@ -1593,16 +1644,81 @@ def _level1(run, cwd, path, base_ref, report, level1):
     return {"parked": True}
 
 
-#: Level 2 (upkeep part B, slice 10). A seam, None in the shipped engine: until the owner supplies the binary, the credential
-#: route and the caps (nothing reads them from configuration) the resolver is unreachable. A function `(config) -> plan dict`.
-LEVEL2_PLAN_FACTORY = None
+#: Level 2 (upkeep part B). A seam: `(config) -> plan dict`. Tests replace it; the shipped value builds the plan from the
+#: `upkeep.conflicts.agent` keys (#1516) and answers None, which behaves exactly as `off`, until a budget and a daily
+#: ceiling are set and the model resolves. The launcher's unverified flags and placeholder model catalog are NOT touched here:
+#: with the placeholder in place the launcher refuses the run, at no cost, and the finding says so.
+_LAUNCHER = None
 
 
-def _level2_plan(config):
+def _launcher():
+    global _LAUNCHER
+    if _LAUNCHER is None:
+        _LAUNCHER = _load("feature_upkeep_launcher")
+    return _LAUNCHER
+
+
+LEVEL2_SPEND_REL = "state/upkeep/spend"
+LEVEL2_ROOT_PREFIX = "upkeep-l2-"
+
+
+def level2_off_reason(config, which=None):
+    """None when the config would yield a Level 2 plan, else the exact reason it behaves as off. Pure; reads PATH only."""
+    try:
+        reading = gate.read(config)
+        if not reading.enabled or reading.settings["conflicts.resolve"] != "agent":
+            return "conflicts.resolve is not agent"
+        s = reading.settings
+        if s["conflicts.agent.max_budget_usd_per_unit"] is None:
+            return "conflicts.agent.max_budget_usd_per_unit is not set"
+        if s["conflicts.agent.spend_ceiling_usd_per_day"] is None:
+            return "conflicts.agent.spend_ceiling_usd_per_day is not set"
+        catalog = _launcher().CATALOG
+        for key in ("conflicts.agent.model", "conflicts.agent.reviewer.model"):
+            if not catalog.get(s[key]):
+                return "%s %r has no model id in the catalog" % (key, s[key])
+        if not (which or shutil.which)("claude"):
+            return "the claude command is not on PATH"
+        return None
+    except Exception as exc:              # noqa: BLE001 - any doubt reads as off
+        return "the settings could not be read (%s)" % type(exc).__name__
+
+
+def _default_level2_plan(config, sdlc_dir=None, cwd=None):
+    """The Level 2 plan from configuration, or None (off) for any missing piece. No model is called here."""
+    if sdlc_dir is None or level2_off_reason(config) is not None:
+        return None
+    import hashlib
+    import tempfile
+    s = gate.read(config).settings
+    launcher = _launcher()
+    root = os.path.join(tempfile.gettempdir(), LEVEL2_ROOT_PREFIX + hashlib.sha256(str(sdlc_dir).encode()).hexdigest()[:10])
+    for name in ("resolver", "scratch", "review"):
+        os.makedirs(os.path.join(root, name), exist_ok=True)
+    budget = float(s["conflicts.agent.max_budget_usd_per_unit"])
+    ceiling = float(s["conflicts.agent.spend_ceiling_usd_per_day"])
+    common = dict(state_dir=os.path.join(str(sdlc_dir), *LEVEL2_SPEND_REL.split("/")), repo_root=str(cwd) if cwd else None,
+                  binary=shutil.which("claude"), flags=(), credential_var=None, scratch_parent=os.path.join(root, "scratch"), rates=None,
+                  ceiling_machine_usd=ceiling, ceiling_team_usd=ceiling, budget_seconds=5.0, home=os.path.expanduser("~"),
+                  timeout=int(s["conflicts.agent.timeout_minutes"]) * 60, cap_usd=budget, sdlc_dir=str(sdlc_dir))
+    # the reviewer gets half the per-unit budget: the launcher requires its cap to be smaller than the resolver's
+    review_model = launcher.CATALOG[s["conflicts.agent.reviewer.model"]]      # reviewer.enabled is validated, never honoured: a push needs a review
+    return {"sdlc_dir": str(sdlc_dir), "launch": dict(common, model=launcher.CATALOG[s["conflicts.agent.model"]]),
+            "review_launch": dict(common, model=review_model, directory=os.path.join(root, "review"), cap_usd=budget * 0.5), "review_cap_usd": budget * 0.5,
+            "review_model": review_model, "resolver_root": os.path.join(root, "resolver"), "limits": None, "host": "claude",
+            "environ": None, "config": config, "max_units_per_sweep": int(s["conflicts.agent.max_units_per_sweep"])}
+
+
+LEVEL2_PLAN_FACTORY = _default_level2_plan
+
+
+def _level2_plan(config, sdlc_dir=None, cwd=None):
     """The Level 2 plan, or None -- the factory unset, the level not `agent`, or any doubt. Pure query."""
     try:
         if LEVEL2_PLAN_FACTORY is None or gate.conflict_level(config) != "agent":
             return None
+        if LEVEL2_PLAN_FACTORY is _default_level2_plan:
+            return _default_level2_plan(config, sdlc_dir, cwd)
         return LEVEL2_PLAN_FACTORY(config)
     except Exception:                     # noqa: BLE001 - a doubtful plan reads closed
         return None
@@ -1616,10 +1732,17 @@ def _level2(run, path, report, level1):
     out = level2.resolve_stops(run, path, plan, rebase_stopped)
     report["level2_charged"] = out["charged"]
     if out["refusal"]:
-        _park_resolved(report, out["refusal"])
+        _park_resolved(report, dict(out["refusal"], level=2))
         return {"parked": True}
     return {"run_id": level1["run_id"], "stops": out["stops"], "files": out["files"], "level": 2, "evidence": out["evidence"],
             "charged": out["charged"], "plan": plan}
+
+
+def _attempt_of(resolved):
+    """The Level 2 attempt for a finding: its bounded diff and the files it touched."""
+    evidence = resolved.get("evidence") or []
+    return {"attempt": _load("feature_upkeep_level2").attempt_text(evidence),
+            "paths": sorted({str(e[0]).split("@")[0] for e in evidence})}
 
 
 def _review_level2(run, path, base_ref, sha, after, report, resolved):
@@ -1629,7 +1752,7 @@ def _review_level2(run, path, base_ref, sha, after, report, resolved):
     resolved["review"] = review
     if refused:
         report["level2_charged"] = round(resolved["charged"] + float(refused.get("charged") or 0.0), 6)
-        _park_resolved(report, refused)
+        _park_resolved(report, dict(refused, level=2, **_attempt_of(resolved)))
         return True
     return False
 
@@ -1643,7 +1766,7 @@ def _prove_level1(run, cwd, path, base_ref, sha, after, report, level1, resolved
                       run_verify=level1.get("run_verify"))
     resolved["checks"], resolved["pairs"] = got["checks"], got["pairs"]
     if got["refusals"]:
-        _park_resolved(report, got["refusals"][0])
+        _park_resolved(report, dict(got["refusals"][0], **(dict(level=2, **_attempt_of(resolved)) if resolved.get("level") == 2 else {})))
         return True
     if resolved.get("level") == 2:
         return _review_level2(run, path, base_ref, sha, after, report, resolved)
@@ -1739,7 +1862,8 @@ def _goal_state(run, path, goal_branch, cwd, remote, before):
     return said
 
 
-def _replay_goals(sdlc_dir, config, goal, unit, branch, goals, run, report, cwd, remote):
+def _replay_goals(sdlc_dir, config, goal, unit, branch, goals, run, report, cwd, remote,
+                  unit_before=None, backup_ref=None):
     """Replay each of the unit's goal branches onto the freshly-rebased feature branch.
 
     `work.rebase()` DOES THE REPLAY, unchanged -- it already fetches, rebases `--autostash`,
@@ -1777,6 +1901,7 @@ def _replay_goals(sdlc_dir, config, goal, unit, branch, goals, run, report, cwd,
     goal without one is passed over in silence. A goal that HAS a record and still was not replayed
     is a real deferral and is always said."""
     work = _work()
+    probe_deadline = _probe_deadline()    # (#1537) one probe budget for the whole pass
     for number in goals:
         name = str(number)
         if name == str(goal):
@@ -1822,14 +1947,17 @@ def _replay_goals(sdlc_dir, config, goal, unit, branch, goals, run, report, cwd,
             report["replayed"].append(goal_branch)
             continue
         report["conflicts"].append(goal_branch)
+        cause = _conflict_cause(cwd, unit_before, before,
+                                remote_tip(run, cwd, remote, branch), outcome, deadline=probe_deadline)
         _file_issue(sdlc_dir, config, goal, report,
                     slot="goal-conflict:%s" % goal_branch,
                     key="%s@%s" % (goal_branch, before or "?"),
                     title="Rebase conflict: %s onto %s" % (goal_branch, branch),
-                    why="%s could not be replayed onto %s" % (goal_branch, branch),
+                    why="%s could not be replayed onto %s" % (goal_branch, branch), qkind="merge_conflict",
                     body=_goal_conflict_body(unit, goal_branch, branch, outcome,
                                              _goal_state(run, path, goal_branch, cwd, remote,
-                                                         before)))
+                                                         before),
+                                             cause=cause, unit_before=unit_before, backup_ref=backup_ref))
 
 
 # --------------------------------------------------------------------------- surfacing
@@ -1980,7 +2108,7 @@ DIRECT_SLOT = "direct:"
 DIRECT_ISSUE_SLOT = "directissue:"
 
 
-def _file_issue(sdlc_dir, config, goal, report, title, why, body, slot="", key=""):
+def _file_issue(sdlc_dir, config, goal, report, title, why, body, slot="", key="", qkind="needs_decision"):
     """File the finding as tracked work. Never raises, and never blocks the goal that found it.
 
     `handoff.create_tracked_issue` is the one place the kit opens an issue on its own behalf, so
@@ -2012,7 +2140,7 @@ def _file_issue(sdlc_dir, config, goal, report, title, why, body, slot="", key="
         result = _handoff().create_tracked_issue(
             sdlc_dir, config, goal, AREA, why,
             same_area=True, immediately_actionable=False, blocks_goal=False,
-            title=title, body=body, upkeep_finding=True,
+            title=title, body=body, upkeep_finding=True, upkeep_qkind=qkind,   # #1490
             # No goal to inherit a unit from: name the unit explicitly (`target_unit`), never read issue "None".
             **({"target_unit": report["unit"]} if goal is None else {}))
     except Exception as exc:              # noqa: BLE001 - a filing must never break a pick
@@ -2076,15 +2204,138 @@ def _feature_conflict_body(unit, branch, base, before, why, left, tip):
            base, branch, branch, base, why, unit, base))
 
 
-def _goal_conflict_body(unit, goal_branch, branch, why, state):
+CAUSE_PRE_EXISTING, CAUSE_INTRODUCED, CAUSE_UNKNOWN = "pre-existing", "introduced", "unknown"
+_CAUSE_PATHS_MAX = 20
+
+
+def _is_conflict_outcome(outcome):
+    """(#1494) Is this `work.rebase` outcome really a content conflict? `rebase` also returns "not started",
+    "refused", "gated" and "rebase deferred: <something that is not a conflict>" -- none of which a merge
+    probe can say anything about."""
+    text = str(outcome or "")
+    low = text.lower()
+    if not low.startswith("rebase deferred") or low.startswith("rebase deferred: could not confirm"):
+        return False
+    return "conflict" in low or "could not apply" in low
+
+
+def _probe_paths(out):
+    paths = []
+    for line in out.splitlines()[1:]:     # line 1 is the result tree; the paths end at the first blank line
+        if not line.strip():
+            break
+        paths.append(line.strip())
+    return paths
+
+
+#: (#1537) One upkeep pass may spend at most this many guard timeouts on cause probes in total, so a unit with
+#: many conflicting goals cannot stall the pass; once spent, findings fall back to the legacy wording.
+_PROBE_BUDGET_TIMEOUTS = 3
+_REPORTED_MAX = 2000
+_clock = time.monotonic
+
+
+def _probe_deadline():
+    return _clock() + _PROBE_BUDGET_TIMEOUTS * _guard_timeout()
+
+
+def _conflict_cause(cwd, unit_before, goal_tip, unit_after=None, outcome=None, deadline=None):
+    """(#1494) Did this pass cause a goal's replay conflict? -> (classification, conflicted paths).
+
+    READ-ONLY probes: `git merge-tree --write-tree --name-only <unit tip> <goal tip>` writes no ref,
+    no worktree and no index. Only a real conflict outcome is classified at all. PRE-EXISTING needs the
+    previous tip to conflict (exit 1). INTRODUCED needs evidence on both sides: the previous tip merges
+    cleanly (exit 0) AND the NEW tip conflicts (exit 1); the paths come from the new-tip probe. Anything
+    else (non-conflict outcome, old git, missing object, timeout, clean new tip, no tips) is UNKNOWN and
+    makes no causal claim. The probe is one three-way merge while the replay goes commit by commit, so on rare
+    histories they disagree; that lands in UNKNOWN too. Past `deadline` (the pass's probe budget) no git runs."""
+    if not unit_before or not goal_tip or not _is_conflict_outcome(outcome):
+        return CAUSE_UNKNOWN, []
+    if deadline is not None and _clock() >= deadline:
+        return CAUSE_UNKNOWN, []
+    try:
+        code, out = _merge_probe(cwd, unit_before, goal_tip)
+        if code == 1:
+            return CAUSE_PRE_EXISTING, _probe_paths(out)
+        if code != 0 or not unit_after:
+            return CAUSE_UNKNOWN, []
+        if deadline is not None and _clock() >= deadline:
+            return CAUSE_UNKNOWN, []
+        new_code, new_out = _merge_probe(cwd, unit_after, goal_tip)
+    except Exception:                     # noqa: BLE001 - a probe that cannot run is just unknown
+        return CAUSE_UNKNOWN, []
+    if new_code == 1:
+        return CAUSE_INTRODUCED, _probe_paths(new_out)
+    return CAUSE_UNKNOWN, []
+
+
+def _code_span(text):
+    """A path from a branch is data: no backtick, newline or control character may end the span."""
+    clean = "".join("?" if (ord(c) < 32 or ord(c) == 127) else c for c in str(text)).replace("`", "'")
+    return "`%s`" % clean
+
+
+def _reported(text):
+    """The rebase's own words are data inside a fence: no backtick, newline or control character, and capped."""
+    clean = "".join(" " if (ord(c) < 32 or ord(c) == 127) else c for c in str(text)).replace("`", "'")
+    return clean if len(clean) <= _REPORTED_MAX else clean[:_REPORTED_MAX - 3] + "..."
+
+
+def _paths_phrase(paths):
+    shown = ", ".join(_code_span(one) for one in paths[:_CAUSE_PATHS_MAX])
+    more = " and %d more" % (len(paths) - _CAUSE_PATHS_MAX) if len(paths) > _CAUSE_PATHS_MAX else ""
+    return (" in " + shown + more) if shown else ""
+
+
+def _merge_probe(cwd, left, right):
+    """-> (exit code, stdout) of one bounded, config-pinned `git merge-tree`; raises on the timeout."""
+    import subprocess
+    argv = ["git"]
+    for pin in _GUARD_CONFIG:
+        argv += ["-c", pin]
+    argv += ["merge-tree", "--write-tree", "--name-only", left, right]
+    proc = subprocess.run(argv, cwd=str(cwd), capture_output=True, timeout=_guard_timeout())
+    return proc.returncode, (proc.stdout or b"").decode("utf-8", "replace")
+
+
+def _cause_paragraph(cause, unit_before, backup_ref):
+    kind, paths = cause
+    tip = "`%s`" % unit_before[:12] if unit_before else "its previous tip"
+    backup = " (backup `%s`)" % backup_ref if backup_ref else ""
+    if kind == CAUSE_PRE_EXISTING:
+        return ("This pass did not cause it: the goal branch also conflicts with the unit's previous tip "
+                "%s%s%s." % (tip, backup, _paths_phrase(paths)))
+    return ("The goal branch replays cleanly onto the unit's previous tip %s%s but conflicts with the new one%s, "
+            "so this pass brought the conflict forward. To undo the pass, restore the previous tip with "
+            "`feature_rebase.py restore` if needed." % (tip, backup, _paths_phrase(paths)))
+
+
+def _goal_conflict_body(unit, goal_branch, branch, why, state, cause=None, unit_before=None, backup_ref=None):
+    kind = (cause or (CAUSE_UNKNOWN, []))[0]
+    why = _reported(why)
+    if kind == CAUSE_UNKNOWN:
+        # Byte-identical to the body before #1494: no cause is claimed, so nothing is added or reworded.
+        return (
+            "`%s` could not be replayed onto `%s` after that feature branch was brought forward.\n\n"
+            "Measured afterwards:\n\n%s\n\n"
+            "Reproduce and resolve:\n\n"
+            "```\ngit switch %s\ngit rebase origin/%s\n```\n\n"
+            "it reported:\n\n```\n%s\n```\n\n"
+            "Filed by Sigma's rebase upkeep for unit `%s`.\n"
+            % (goal_branch, branch, "\n".join("- %s" % one for one in state),
+               goal_branch, branch, why, unit))
+    head = ("`%s` could not be replayed onto `%s` after that feature branch was brought forward.\n\n"
+            if kind == CAUSE_INTRODUCED else
+            "`%s` could not be replayed onto `%s`.\n\n") % (goal_branch, branch)
     return (
-        "`%s` could not be replayed onto `%s` after that feature branch was brought forward.\n\n"
+        "%s%s\n\n"
         "Measured afterwards:\n\n%s\n\n"
         "Reproduce and resolve:\n\n"
         "```\ngit switch %s\ngit rebase origin/%s\n```\n\n"
         "it reported:\n\n```\n%s\n```\n\n"
         "Filed by Sigma's rebase upkeep for unit `%s`.\n"
-        % (goal_branch, branch, "\n".join("- %s" % one for one in state),
+        % (head, _cause_paragraph(cause, unit_before, backup_ref),
+           "\n".join("- %s" % one for one in state),
            goal_branch, branch, why, unit))
 
 
@@ -2112,7 +2363,8 @@ def _direct_body(unit, branch, base, found):
         "  (`--all` in place of the shas acks every commit listed above.) It writes "
         "`.sdlc/features/rebase-acks/%s.json`; land that file on `%s` through a pull request so "
         "every teammate's loop honours it. The ack is keyed by patch-id, so it survives the "
-        "rebase it unblocks.\n\n"
+        "rebase it unblocks; a merge or empty commit has no patch-id and is keyed by author, author date, "
+        "message and parent count instead.\n\n"
         "Until then `%s` stays behind `%s`.\n\n"
         "Filed by Sigma's rebase upkeep for unit `%s`.\n"
         % (branch, len(found), listed, branch, unit, unit, base, branch, base, unit))
@@ -2282,7 +2534,7 @@ def _file_park(sdlc_dir, config, report, branch, base, run=None, cwd=None, remot
         result = _handoff().create_tracked_issue(
             sdlc_dir, config, None, AREA, "%s could not be replayed onto %s (parked)" % (branch, base),
             same_area=True, immediately_actionable=False, blocks_goal=False, title=title,
-            upkeep_finding=True,
+            upkeep_finding=True, upkeep_qkind="merge_conflict",   # #1490
             body=_park_body(report["unit"], branch, base, info, report["leftovers"], report["tip"])
             + ("\nThis supersedes the earlier finding #%d, which named a different conflict for this unit; that one is "
                "left open for a person to close.\n" % supersedes["number"] if supersedes else ""),
@@ -2433,7 +2685,8 @@ def _clear_blocked(sdlc_dir, unit):
 #: saying nothing -- a mutant that removes a kind from the clause must break something visible.
 _WORDING = {
     BUSY: ("could not take %(branch)s's rebase lock -- another pass holds it, or the lock file "
-           "could not be opened"),
+           "could not be opened -- so this goal may have been cut from a tip that pass may be rewriting; "
+           "it is re-checked right after the cut and rebased onto the new tip before verify"),
     #: `%(path)s`, NOT `%(why)s`: the clause truncates `why` at `_CLAUSE_WHY_CHARS`, and the one
     #: thing an operator needs from this line is the path to clear -- which a deep `tmp`/CI path
     #: pushes past that limit. A path is one line by construction, so quoting it whole is safe.
@@ -2647,6 +2900,7 @@ def _upkeep(sdlc_dir, config, goal, unit, run, cwd, remote, report):
             return report
     else:
         report["serialised"] = False
+    _record_unit_attempt(sdlc_dir, config, unit)
     try:
         stale = worktree_path(sdlc_dir, unit)
         if stale.exists():
@@ -2688,10 +2942,62 @@ def _upkeep(sdlc_dir, config, goal, unit, run, cwd, remote, report):
             return report
         return _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, report)
     finally:
+        _record_unit_outcome(sdlc_dir, config, unit, run, cwd, remote, base, report)
         _release(lock)
 
 
-def _level1_options(config):
+def _record_unit_attempt(sdlc_dir, config, unit):
+    """#1492: before the work, under the unit lock, stamp the attempt in the per-unit upkeep record. Gate closed writes nothing.
+    Best effort: any failure is swallowed and never changes the pass. Keeps the reason a scheduler claim already recorded."""
+    try:
+        if not gate.enabled(config):
+            return
+        state = _load("feature_upkeep_state")
+        now = int(time.time())
+        read = state.read_state(sdlc_dir, unit, now)
+        reason = read.doc.get("due_reason") if read.kind == "ok" else None
+        state.record_attempt(sdlc_dir, unit, now, reason if reason in state.DUE_REASONS else "backstop")
+    except Exception:                     # noqa: BLE001 - recording never costs the pass
+        pass
+
+
+def _record_unit_outcome(sdlc_dir, config, unit, run, cwd, remote, base, report):
+    """#1492: the engine's one exit, still under the unit lock: record the outcome with the post-rewrite unit tip and the base
+    tip (full hex only). Gate closed writes nothing; best effort, never changes the report."""
+    try:
+        if not gate.enabled(config):
+            return
+        state = _load("feature_upkeep_state")
+        outcome = report.get("outcome")
+        if outcome not in state.OUTCOMES:
+            return
+        hexed = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+        unit_tip = base_tip = None
+        if outcome in state.SUCCESS:
+            for key in ("tip", "after", "before"):
+                got = report.get(key)
+                if isinstance(got, str) and hexed.fullmatch(got):
+                    unit_tip = got
+                    break
+            if outcome == CURRENT and unit_tip is None and cwd:
+                # #1532: a current pass whose report carries no usable tip must not leave the stored one stale
+                try:
+                    got = _git_read(cwd, ["rev-parse", "%s/%s%s" % (remote, features.BRANCH_PREFIX, unit)]).strip()
+                    unit_tip = got if hexed.fullmatch(got) else None
+                except Exception:         # noqa: BLE001 - no tip is recorded as none, the outcome still is
+                    unit_tip = None
+            if base and cwd:              # a bounded read of its own, not `run`: the pass's command sequence stays as it was
+                try:
+                    got = _git_read(cwd, ["rev-parse", "%s/%s" % (remote, base)]).strip()
+                    base_tip = got if hexed.fullmatch(got) else None
+                except Exception:         # noqa: BLE001 - #1532: an unreadable base tip is a null, never a dropped record
+                    base_tip = None
+        state.record_outcome(sdlc_dir, unit, int(time.time()), outcome, unit_tip, base_tip)
+    except Exception:                     # noqa: BLE001 - recording never costs the pass
+        pass
+
+
+def _level1_options(config, sdlc_dir=None, cwd=None):
     """What Level 1 needs, or None -- the gate closed, `conflicts.resolve` off, or any doubt. Pure queries: no command, no
     file. None is today's behaviour exactly."""
     try:
@@ -2703,7 +3009,7 @@ def _level1_options(config):
                 "verify_command": verify if isinstance(verify, str) else None,
                 "verify_timeout": int(settings["verify.timeout_minutes"]) * 60,
                 "allow_no_verify": settings["conflicts.mechanical_without_verify"] is True,
-                "level2": _level2_plan(config)}
+                "level2": _level2_plan(config, sdlc_dir, cwd)}
     except Exception:                     # noqa: BLE001 - a doubtful gate reads closed
         return None
 
@@ -2717,12 +3023,46 @@ def _acks_well_formed(text):
     return isinstance(data, dict) and isinstance(data.get("acked"), list)
 
 
-def _write_runtime_acks(sdlc_dir, run, cwd, unit, report):
-    """After a resolved push only: for each (original, replayed) pair whose original was acked, ack the replayed sha and
-    its patch-id in the RUNTIME file. The tracked store is not touched and the stamp is not read."""
+def _clean_pairs(run, cwd, base_ref, report):
+    """(original, replay) pairs for the acked commits of a CLEAN rewrite (#1470): each acked original is matched to the
+    unclaimed commit on the new first-parent line with the same subject and the same patch-id (or, with none, the same
+    rewrite key). Unmatched originals are left out -- a missed carry costs one re-ack, never a wrong ack."""
+    after = report.get("after")
+    acked = [d for d in (report.get("acked") or []) if isinstance(d, dict) and d.get("sha")]
+    if not (after and acked):
+        return []
+    return pair_acked(run, cwd, acked, landed_commits(run, cwd, base_ref, after))
+
+
+def pair_acked(run, cwd, acked, replayed):
+    """[(old_sha, new_sha)]: each acked `{"sha","subject"}` matched to the first unclaimed `(sha, subject)` of `replayed`
+    with the same subject and the same (patch-id, rewrite key). Shared by the rebase pass and the unit pass (#1470)."""
+    pairs, used = [], set()
+    for old in acked:
+        want = (patch_id(run, cwd, old["sha"]), rewrite_key(run, cwd, old["sha"]))
+        for sha, subject in replayed:
+            if sha in used or subject != old.get("subject"):
+                continue
+            if (patch_id(run, cwd, sha), rewrite_key(run, cwd, sha)) == want:
+                used.add(sha)
+                pairs.append((old["sha"], sha))
+                break
+    return pairs
+
+
+def _write_runtime_acks(sdlc_dir, run, cwd, unit, report, pairs=None):
+    """After a push that LANDED: for each (original, replayed) pair whose original was acked, ack the replayed sha, its
+    patch-id and (#1470) its rewrite key in the RUNTIME file. `pairs` defaults to the resolved replay's; a clean rewrite
+    passes its own. The tracked store is not touched and the stamp is not read."""
     acked = {str(d.get("sha")) for d in (report.get("acked") or []) if isinstance(d, dict)}
-    fresh = [{"sha": new, "patch_id": patch_id(run, cwd, new), "subject": "resolved replay of " + old[:12]}
-             for old, new in report["resolved"]["pairs"] if old in acked]
+    fresh = []
+    for old, new in (report["resolved"]["pairs"] if pairs is None else pairs):
+        if old in acked:
+            entry = {"sha": new, "patch_id": patch_id(run, cwd, new),
+                     "subject": "replay of " + old[:12]}
+            if not entry["patch_id"]:
+                entry["rewrite_key"] = rewrite_key(run, cwd, new)
+            fresh.append(entry)
     path = runtime_ack_path(sdlc_dir, unit)
     try:
         text = path.read_text(encoding="utf-8")
@@ -2835,7 +3175,7 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
             return report
     path = worktree_path(sdlc_dir, unit)
     outcome = _rebase_feature(run, cwd, path, branch, base_ref, before, remote, report,
-                              strict=gate.enabled(config), backup=backup, level1=_level1_options(config))
+                              strict=gate.enabled(config), backup=backup, level1=_level1_options(config, sdlc_dir, cwd))
     if outcome == CONFLICT and gate.enabled(config) and report.get("park"):
         outcome = PARKED                  # the gate is open and the stop was described before the drop
     report["outcome"] = outcome
@@ -2850,7 +3190,7 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
         _file_issue(sdlc_dir, config, goal, report,
                     slot="feature-conflict:%s" % branch, key=before,
                     title="Rebase conflict: %s onto %s" % (branch, base),
-                    why="%s could not be replayed onto %s" % (branch, base),
+                    why="%s could not be replayed onto %s" % (branch, base), qkind="merge_conflict",
                     body=_feature_conflict_body(unit, branch, base, before, report["why"],
                                                 report["leftovers"], report["tip"]))
         return report
@@ -2875,6 +3215,11 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
     _clear_blocked(sdlc_dir, unit)
     if report.get("resolved"):
         _after_resolved_push(sdlc_dir, config, run, cwd, remote, base_ref, report)
+    elif report.get("acked"):             # #1470: a clean rewrite carries the acks forward too (defence in depth)
+        try:
+            _write_runtime_acks(sdlc_dir, run, cwd, unit, report, _clean_pairs(run, cwd, base_ref, report))
+        except Exception as exc:          # noqa: BLE001 - the push cannot be undone; the rewrite key still matches
+            _note("sigma: rebase upkeep: the acks of the replayed commits were not recorded (%s).\n" % _flat(exc))
     _settle_parks(sdlc_dir, config, run, cwd, remote, report)
 
     entry = registry.read(registry.registry_dir(sdlc_dir)).get(unit) or {}
@@ -2899,7 +3244,8 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
     # path. Either way there is nothing recorded for this repo and nothing here to replay.
     repos = registry.normalise_entry(entry).get("repos") or {}
     goals = (repos.get(sync.repo_key(repos, repo)) or {}).get("goals") or []
-    _replay_goals(sdlc_dir, config, goal, unit, branch, goals, run, report, cwd, remote)
+    _replay_goals(sdlc_dir, config, goal, unit, branch, goals, run, report, cwd, remote,
+                  unit_before=before, backup_ref=report.get("backup"))
     return report
 
 
