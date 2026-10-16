@@ -1,7 +1,7 @@
 # What is new in 1.0.15
 
 This page lists every change in this release in grouped, readable form, each with its issue number. The same
-changes are in the `Unreleased` section of the [CHANGELOG](../CHANGELOG.md) in the order a maintainer reads them.
+changes are in the `1.0.15` section of the [CHANGELOG](../CHANGELOG.md) in the order a maintainer reads them.
 Start with [Upgrading from 1.0.14](#upgrading-from-1014) if you only want to know what changes for you.
 
 The main theme is the [Decision Rulebook](decision-rulebook.md): levels, the applier and rules now work on parks

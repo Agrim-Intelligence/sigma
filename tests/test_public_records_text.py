@@ -59,7 +59,10 @@ def test_private_and_closed_gate_are_byte_identical_to_before(tmp_path):
             assert "recorded privately" not in text
         # the exact fenced block, byte for byte
         u = _mod("unpark")
-        want = "\n".join([u.backlog_check.UNPARK_QA_START, u.QA_HEADING, "",
+        # #1495: with records open the block carries the park stamp (and a decision record follows it);
+        # the gate-closed configs (the last two) stay byte-identical to the pre-#1342 literal.
+        stamp = ["<!-- sigma-park: c0 -->"] if n < 2 else []
+        want = "\n".join([u.backlog_check.UNPARK_QA_START, u.QA_HEADING] + stamp + [""] + [
                           "- **decision** — start it again", "_What is the reason?_",
                           "- **why** — " + SECRET, "", u.backlog_check.UNPARK_QA_END])
         assert bodies[0].startswith(want)
@@ -82,11 +85,12 @@ def test_applier_text_omits_option_only_when_public_and_records_on(tmp_path):
         d = tmp_path / sub
         d.mkdir()
         text, rid = _applier_text(d, on, vis)
-        base = "Applied automatically by rule %s (needs_decision)" % rid
+        # #1495: the shared applier fixture is now a merge_conflict pair whose option is "rebase it"
+        base = "Applied automatically by rule %s (merge_conflict)" % rid
         if omit:
             assert text == base + ". No answer arrived within the window. Reply no to veto."
         else:
-            assert text == base + ": merge. No answer arrived within the window. Reply no to veto."
+            assert text == base + ": rebase it. No answer arrived within the window. Reply no to veto."
 
 
 def test_doctor_warns_only_on_public_with_records(tmp_path):

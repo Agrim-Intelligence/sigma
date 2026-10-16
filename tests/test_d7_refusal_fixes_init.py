@@ -137,8 +137,14 @@ class _FailingRun:
         self.token, self.message = token, message
 
     def __call__(self, cwd, argv):
-        if self.token in " ".join(map(str, argv)):
+        joined = " ".join(map(str, argv))
+        if self.token in joined:
             raise RuntimeError(self.message)
+        # #1504: the unit is cut from the remote base, so the base must exist there and resolve.
+        if "ls-remote" in joined and "refs/heads/main" in joined:
+            return "abc123\trefs/heads/main"
+        if "rev-parse" in joined:
+            return "a" * 40
         return ""
 
 
