@@ -773,24 +773,37 @@ def test_newly_added_symlink_to_existing_target_is_new(tmp_path):
     assert [r[0:3] for r in rows] == [["src/fresh.py", "legacy", "new"], ["src/a.py", "legacy", "existing"]]
 
 
-def test_twenty_thousand_paths_finish_quickly(tmp_path):
-    """The key de-duplication must be hashed, not a list scan (30,000 paths took 6.5 s that way)."""
+def test_path_count_scaling_is_not_quadratic(tmp_path):
+    """The key de-duplication must be hashed, not a list scan. Wall clock under load is unreliable, so
+    this compares the SAME call at N and 4N paths (best of 3 each, same process, same load): linear
+    gives a ratio near 4, a list scan near 9 at these sizes (measured: 3.9 and 9.1). The bound sits
+    between them; the absolute cap only guards against a hang."""
     repo = _repo(tmp_path / "p", ("a.py",))
     _config(repo, _zones(("*", "legacy")))
     _with_origin(repo, tmp_path)
     wt = _worktree(repo)
-    paths = ["d%d/e%d/f.py" % (i, i) for i in range(20000)]   # unique parents: 40,000 keys
     import time
-    t0 = time.perf_counter()
-    p = _run(wt, *paths)
-    elapsed = time.perf_counter() - t0
-    assert p.returncode == 0, p.stderr
-    assert len(p.stdout.splitlines()) == 20000
-    assert elapsed < SCALE_BOUND_S, elapsed
+
+    def best(n):
+        paths = ["d%d/e%d/f.py" % (i, i) for i in range(n)]       # unique parents: 2n keys
+        t_best = None
+        for _ in range(3):
+            t0 = time.perf_counter()
+            p = _run(wt, *paths)
+            dt = time.perf_counter() - t0
+            assert p.returncode == 0, p.stderr
+            assert len(p.stdout.splitlines()) == n
+            t_best = dt if t_best is None else min(t_best, dt)
+        return t_best
+
+    small, large = best(SCALE_N), best(4 * SCALE_N)
+    assert large < SCALE_HANG_CAP_S, large
+    assert large / small < SCALE_RATIO_MAX, (small, large, large / small)
 
 
-# Measured on this machine: hashed 2.6 s, list scan 12.6 s at 20,000 paths. 6 s sits between them.
-SCALE_BOUND_S = 6.0
+SCALE_N = 5000
+SCALE_RATIO_MAX = 6.0
+SCALE_HANG_CAP_S = 60.0
 
 
 def test_control_characters_other_than_newline_do_not_split_rows(tmp_path):
