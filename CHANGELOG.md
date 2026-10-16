@@ -3,6 +3,7 @@
 All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
+- **Change zones (#1540).** `design.zones` in `.sdlc/config.json` (absent by default, owner-declared, last matching glob wins) and the read-only `skills/sigma-loop/scripts/zones.py classify <path>...`, which prints each file's zone, whether it is new at the branch's fork point, and the one rule that applies (`docs/change-zones.md`). `/sigma-vision` may suggest candidate legacy paths but never writes the key.
 
 ## 1.0.15 — 2026-10-16 — the Rulebook learns and acts: declared question kinds, live comparisons, applier asks and vetoes, importance-ranked rule suggestions, upkeep union merge and agent conflict level, claim release, and ledger host privacy
 - The applier opens no ask for a park a person already answered (keep-parked, unpark or promote), so a sync after a rule is approved never turns an earlier human decision into a rule action (found by the acceptance run).
