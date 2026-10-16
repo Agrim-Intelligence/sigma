@@ -4,6 +4,7 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- The goal-replay conflict cause probe now has a per-pass time budget (three guard timeouts, after which findings keep the original wording), and the rebase's reported text in the finding is sanitised and capped; a probe/replay disagreement is documented as unknown (#1537).
 - **Upkeep's agent level is hardened (#1536).** A sweep child that finds its sweep counter missing, inactive or from another run now fails closed (the single-unit pass is unchanged), a resolver result that drops a line the integration side added is refused as `base-line-dropped` naming a few lines, and the doctor's `resolver configured` row fails while the model still resolves to the placeholder id.
 - The goal-replay conflict finding now says whether the upkeep pass caused it: a read-only `git merge-tree` of the goal tip against the unit's previous tip reports it as pre-existing (with the previous tip, backup ref and conflicted paths), introduced by the pass, or unknown, and only the introduced case says the pass brought the conflict forward (#1494).
 - The upkeep sweep note now ends `:units=<n>` (units that ran, `0` for an empty sweep), the doctor upkeep units row skips branches named in `upkeep.units.exclude` and its remedy names that list, and a test pins that a unit differing from its branch only in case is registered (#1535).
