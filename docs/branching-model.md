@@ -633,10 +633,11 @@ Some are paid per goal the loop **considers**, one per goal it **claims**, most 
 git and `gh` call on the start path goes through one injected runner, so the *started* rows are
 counted by driving `work.start()` against a throwaway project with a recording runner and diffing
 an adopted project against one with no `.sdlc/features/`: for one goal declaring a unit whose branch
-is behind its base, **4 calls become 17** — one `ls-remote` for the registry reconcile, and twelve
-for rebase upkeep (its own `ls-remote`, a `fetch`, a `push --force-with-lease`, and nine local git
+is behind its base, **4 calls become 18** — one `ls-remote` for the registry reconcile, and thirteen
+for rebase upkeep (its own `ls-remote`, a `fetch`, a `push --force-with-lease`, and ten local git
 calls — the ninth is #144's pre/post tree comparison, §3b, which runs through the guard's own
-config-pinned reader rather than the injected runner, so the measurement records it explicitly). **The baseline itself is 4, not 3, because of one call this table's own rule excludes**:
+config-pinned reader rather than the injected runner, so the measurement records it explicitly; the
+tenth is the `git log --first-parent` read of the unit's own commits that 1.0.15's upkeep added). **The baseline itself is 4, not 3, because of one call this table's own rule excludes**:
 `work.start()`'s dirty-root-checkout guard (#2014) runs a `git status --porcelain` unconditionally,
 on every start whether or not `.sdlc/features/` exists — so it fires before either project in this
 diff has a chance to differ, and correctly never appears as a row above (it did not exist before
