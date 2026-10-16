@@ -8,6 +8,7 @@ import hashlib
 import importlib.util
 import json
 import math
+import os
 import pathlib
 import re
 import subprocess
@@ -23,6 +24,7 @@ def _witness():
 
 PROVENANCE = 'planned-pytest-v1'
 MAX_SELECTORS = 25  # protocol scope ceiling, matching flake_check.MAX_SCOPED_FILES
+WIDE_COLUMNS = '4000'
 
 
 def digest(path):
@@ -62,7 +64,10 @@ def selectors(plan):
 
 
 def _run(root, argv):
-    return subprocess.run(argv, cwd=root, capture_output=True, text=True)
+    # Piped pytest sizes its -rA summary from COLUMNS (80 if unset) and drops the ' - reason' of a
+    # longer line (#414); an inherited narrow value is overridden on purpose.
+    return subprocess.run(argv, cwd=root, capture_output=True, text=True,
+                          env={**os.environ, 'COLUMNS': WIDE_COLUMNS})
 
 
 def _selected(node, scope):
