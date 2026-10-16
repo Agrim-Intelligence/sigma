@@ -570,6 +570,10 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/zones.py",
+      "role": "gesture"
+    },
+    {
       "path": "skills/sigma-loop/scripts/judge_isolation.py",
       "role": "library"
     },
