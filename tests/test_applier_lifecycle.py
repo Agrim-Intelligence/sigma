@@ -292,3 +292,17 @@ def test_an_ask_whose_level_drops_below_3_loses_armed_at_and_rearms_with_one_new
         assert sum(1 for _, n in src.notes if rid in n and "will apply" in n) == 2
     finally:
         AP.level_fn = None
+
+
+def test_sync_opens_no_ask_for_a_park_a_person_already_answered(tmp_path):
+    """Acceptance A3 F5: a person answered park c1 (keep-parked) before the rule existed; a later sync must
+    not turn that answer into a rule action. Control: an answer to an OLDER park (c0) does not cover c1."""
+    sd, cfg, _ = _dep_setup(tmp_path)
+    DS.append(sd, {"how": "human", "qkind": "dependency", "area": "docs", "choice": "keep-parked",
+                   "issue": 7, "park": "c1"}, cfg)
+    src = LSrc({7: [("c1", "dependency")]})
+    assert AP.sync(sd, cfg, src, now=T0, parked_fn=_fetch([7])) == []
+    assert AP._asks(sd) == []
+    DS.append(sd, {"how": "human", "qkind": "dependency", "area": "docs", "choice": "keep-parked",
+                   "issue": 8, "park": "c0"}, cfg)
+    assert len(AP.sync(sd, cfg, LSrc({8: [("c1", "dependency")]}), now=T0, parked_fn=_fetch([8]))) == 1

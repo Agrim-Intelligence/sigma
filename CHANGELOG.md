@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+## 1.0.15 — 2026-10-16 — the Rulebook learns and acts: declared question kinds, live comparisons, applier asks and vetoes, importance-ranked rule suggestions, upkeep union merge and agent conflict level, claim release, and ledger host privacy
+- The applier opens no ask for a park a person already answered (keep-parked, unpark or promote), so a sync after a rule is approved never turns an earlier human decision into a rule action (found by the acceptance run).
 - The goal-replay conflict cause probe now has a per-pass time budget (three guard timeouts, after which findings keep the original wording), and the rebase's reported text in the finding is sanitised and capped; a probe/replay disagreement is documented as unknown (#1537).
 - **Upkeep's agent level is hardened (#1536).** A sweep child that finds its sweep counter missing, inactive or from another run now fails closed (the single-unit pass is unchanged), a resolver result that drops a line the integration side added is refused as `base-line-dropped` naming a few lines, and the doctor's `resolver configured` row fails while the model still resolves to the placeholder id.
 - The goal-replay conflict finding now says whether the upkeep pass caused it: a read-only `git merge-tree` of the goal tip against the unit's previous tip reports it as pre-existing (with the previous tip, backup ref and conflicted paths), introduced by the pass, or unknown, and only the introduced case says the pass brought the conflict forward (#1494).
@@ -17,7 +19,6 @@ All notable changes to Sigma are recorded here, newest first.
 - **`rule_draft.py suggest` ranks which question kind and area pairs deserve a rule (#1513).** It scores each pair from parks, hours parked, goals blocked and answer agreement, names the majority option and whether one any-area rule covers it, never lists hard-stop or unknown kinds, and `--propose N` drafts the top N as proposals (never approved); the doctor's rulebook row lists the top uncovered pairs when rules are on.
 - The source-error downgrade-to-park declares `quota` for a quota or budget failure and `needs_decision` otherwise, and the stale-worktree escalation park declares `needs_decision` (#1524).
 - Filing triage holds a deny word only in an action clause: a clause that describes redaction, detection, gating or documentation before the deny word no longer parks, and the park reason now quotes the matched clause. Secret-shaped text and spend amounts still hold (#1519).
-- The source-error downgrade-to-park declares `quota` for a quota or budget failure and `needs_decision` otherwise, and the stale-worktree escalation park declares `needs_decision` (#1524).
 - **Upkeep's mechanical level resolves two append-only shapes (#1515).** A dated `## YYYY-MM` log and a bullet-list file that both sides only added to are unioned (per section in date order; base order then the unit's new items); an edit or removal on either side still parks.
 - A config that sets `discovery.blocker_promotion.mode` to `"smart"` now gets a one-time skip line from the reconcile tick and a not-OK "blocker priority rule inactive" doctor row naming the one-word fix to `"always"`; what smart, always and off do is unchanged (#1489).
 - `board_migrate.py --apply` now snapshots every card by project item id (issues, pull requests, drafts), fails if any card's Status changed during the option write, and prints counts that add up to the board (moved cards shown as a subset); an existing lane prints no kept-their-Status claim (#1491).
@@ -26,7 +27,6 @@ All notable changes to Sigma are recorded here, newest first.
 
 - **The doctor row for `blocking_priority_override` describes the within-tier order (#1509).** It said a blocking goal sorts ahead of every other issue regardless of priority tier; it now says a blocking goal goes first within its own tier and a blocker is raised to the tier of what it blocks.
 - **Session end and dead sessions now release goals they claimed but never started (#1529).** On a GitHub source, `loop.py session-end` hands back each goal in its own session marker that has no work record and no agent marker, through the same release as the over-capacity path (comment `claimed but not started: session ended`, ledger `release`, action-log `released`); a dead session's entry does the same on the next pick or start after `session_release.grace_minutes` (default 15). Started and live-session goals, a mismatched generation, and the local source are untouched.
-- An unstamped legacy answers block is no longer counted for a newer stamped park, and a quota wait-it-out ask is applied only after its recorded reset time (unknown counts as not yet) (#1522).
 
 - A needs_decision closing answer is now normalised through the bank (case, spacing, a trailing recommended marker) into the stored `answer`; other text is `free` and never learnable (#1521).
 
