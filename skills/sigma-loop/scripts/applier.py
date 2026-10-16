@@ -295,6 +295,10 @@ def open_for_park(sdlc_dir, config, issue, qkind_, source=None, now=None, info=N
         info = info or {}
         area = _load("decision_record").area_of(info.get("labels")) if info.get("labels") is not None else "repo"
         park, park_at = info.get("park"), info.get("park_at")
+        # a person already answered this park (keep-parked, unpark or promote): the person wins, so no ask
+        # is opened for it, and a sync never turns an old human decision into a rule action
+        if park and _load("decision_record").answered_park(sdlc_dir, config, issue, park):
+            return None
         mine = [a for a in _asks(sdlc_dir) if _issue_key(a.get("issue")) == _issue_key(issue)]
         for a in mine:                       # M-02: an applied, answered or vetoed ask covers its park
             if park and a.get("park") == park and a.get("state") not in ("pending", "superseded"):

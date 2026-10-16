@@ -602,7 +602,8 @@ def test_park_mode_records_exactly_once_with_needs_decision_reason_class(tmp_pat
     assert result == "PARKED " + expected_detail
     park_calls = [c for c in src.calls if c[0] == "park"]
     assert len(park_calls) == 1                                       # exactly one _record park
-    assert park_calls[0] == ("park", "7", expected_detail)
+    # #1495: the source park text ends with the declared kind line
+    assert park_calls[0] == ("park", "7", expected_detail + "\nsigma-qkind: needs_decision")
     assert state.load_cursor(base)["run_iteration"] == 1              # the park counted as an iteration
 
     events = [e for e in journal_events(ledger, base) if e["kind"] == "park"]
