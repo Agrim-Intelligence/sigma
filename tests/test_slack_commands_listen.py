@@ -23,9 +23,17 @@ import types
 import pytest
 
 import rest_merge_support
+import git_identity_support  # noqa: E402  (#1572)
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 S = ROOT / "skills" / "sigma-loop" / "scripts"
+
+
+@pytest.fixture(autouse=True)
+def _scoped_git_identity_1572(tmp_path_factory, monkeypatch):
+    """#1572: production git in these tests commits/rebases with the inherited identity, which a host without a
+    global one lacks. Give it one, scoped to each test (never process-wide: that breaks test_ledger_single_branch)."""
+    git_identity_support.scoped_git_identity(tmp_path_factory.mktemp("git-identity"), monkeypatch)
 
 
 def _mask_slack_sdk(monkeypatch):

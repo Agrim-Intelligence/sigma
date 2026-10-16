@@ -6,10 +6,18 @@ import pytest
 import test_feature_rebase as base
 import test_upkeep_level1 as lv
 import upkeep_support as support
+import git_identity_support  # noqa: E402  (#1572)
 
 proof = support.script("conflict_proof")
 LOG_BASE = "# Decisions\n\n## 2026-01\n\n- a\n"
 BULLETS = "- one\n- two\n"
+
+
+@pytest.fixture(autouse=True)
+def _scoped_git_identity_1572(tmp_path_factory, monkeypatch):
+    """#1572: production git in these tests commits/rebases with the inherited identity, which a host without a
+    global one lacks. Give it one, scoped to each test (never process-wide: that breaks test_ledger_single_branch)."""
+    git_identity_support.scoped_git_identity(tmp_path_factory.mktemp("git-identity"), monkeypatch)
 
 
 def union(b, o, t):

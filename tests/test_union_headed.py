@@ -16,6 +16,7 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import test_feature_rebase as tfr  # noqa: E402
 from test_feature_rebase import FEATURE, UNIT, World, _git, _load, _write  # noqa: E402
+import git_identity_support  # noqa: E402  (#1572)
 
 _ORIGINAL_UNION_DIFF3_SHA = "7149d016eb17d3d309c63ff864aeb496c0efb5041207885969bf07962b28e83b"
 CUT = "—"
@@ -30,6 +31,13 @@ NEAR = [{}, {"upkeep": {}}, {"upkeep": {"enabled": True}},
         {"upkeep": {"enabled": False, "conflicts": {"resolve": "mechanical"}}},
         {"upkeep": {"enabled": "true", "conflicts": {"resolve": "mechanical"}}},
         {"upkeep": {"enabled": True, "conflicts": {"resolve": "bogus"}}}]
+
+
+@pytest.fixture(autouse=True)
+def _scoped_git_identity_1572(tmp_path_factory, monkeypatch):
+    """#1572: production git in these tests commits/rebases with the inherited identity, which a host without a
+    global one lacks. Give it one, scoped to each test (never process-wide: that breaks test_ledger_single_branch)."""
+    git_identity_support.scoped_git_identity(tmp_path_factory.mktemp("git-identity"), monkeypatch)
 
 
 def _merged(*pairs):
