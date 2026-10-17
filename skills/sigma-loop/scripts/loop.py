@@ -5638,6 +5638,68 @@ def verify_goal(sdlc_dir, goal):
     return code
 
 
+def red_goal(sdlc_dir, goal):
+    """#1673: record the planned tests' assertion reds WITHOUT the full verify. Separate from verify on
+    purpose: no _CallGuard, lock, evidence, ledger, actionlog or timing write, so it cannot make a goal
+    look verified. Exit: 0 every planned node recorded red; 1 nothing red / none recorded / partial;
+    2 refused (unsafe goal, no shell consent, no plan or `## Tests`); 6 a verify is running."""
+    stem = pathlib.Path(str(goal)).stem if str(goal).endswith(".md") else str(goal)
+    reason = state.unsafe_goal_reason(stem)
+    if reason:
+        print(f"loop.py red: unsafe goal {goal!r}: {reason}", file=sys.stderr)
+        return 2
+    root, _, _ = _verified_tree(sdlc_dir, stem)
+    if not shell_policy.repository_shell_commands_allowed(root):
+        print("loop.py red: " + shell_policy.refusal_message(), file=sys.stderr)
+        return 2
+    try:
+        plan = work.verification_plan(sdlc_dir, stem, root)
+    except ValueError as exc:
+        print("loop.py red: " + str(exc), file=sys.stderr)
+        return 2
+    if plan is None:
+        print(f"loop.py red: no plan for goal {stem}; write the plan with a `## Tests` section first",
+              file=sys.stderr)
+        return 2
+    if "## Tests" not in plan.read_text().splitlines():
+        print(f"loop.py red: plan {plan} has no `## Tests` section; nothing is planned to go red",
+              file=sys.stderr)
+        return 2
+    got_state, got = _rr.read(_rr.receipt_path(sdlc_dir, stem, "call-runs", "verify"), _CALL_GRACE)
+    if got_state == "ok" and got.get("outcome") == "running":
+        print(f"loop.py red: a verify for goal {stem} is running (pid {got.get('pid')}); "
+              f"wait for it with `loop.py wait-call {sdlc_dir} {stem} verify`", file=sys.stderr)
+        return 6
+    rg = _load("red_green")
+    seen = rg.observe(sdlc_dir, stem, root, plan)
+    if "provenance" not in seen:
+        print("loop.py red: " + str(seen.get("error") or "planned tests could not be observed"),
+              file=sys.stderr)
+        return 2
+    nodes = list(seen.get("nodes") or {})
+    done = {r.get("test") for r in witness.witnesses(sdlc_dir, stem)
+            if r.get("kind") == "assertion" and r.get("provenance") == rg.PROVENANCE
+            and r.get("observed_at") == seen.get("completed_at")}
+    recorded = [n for n in nodes if n in done]
+    if seen.get("passed"):
+        print("loop.py red: nothing is red -- every planned test passes, and a test that already "
+              "passes proves nothing", file=sys.stderr)
+        return 1
+    if not recorded:
+        print(f"loop.py red: no assertion red recorded (pytest exit {seen.get('exit')}: "
+              f"{seen.get('error') or 'no detail'}); errors, collection failures and non-assertion "
+              f"failures do not count", file=sys.stderr)
+        return 1
+    if len(recorded) < len(nodes):
+        print("loop.py red: PARTIAL -- the gate needs every planned node red.\n  recorded: "
+              + ", ".join(recorded) + "\n  not recorded: "
+              + ", ".join(n for n in nodes if n not in done), file=sys.stderr)
+        return 1
+    print(f"loop.py red: recorded assertion red for {len(recorded)} planned test(s); make them pass, "
+          f"then run `loop.py verify {sdlc_dir} {stem}` (red must be on the final test bytes)")
+    return 0
+
+
 def _verify_goal_body(sdlc_dir, goal, guard):
     """Run the goal's proving command and persist MACHINE evidence (sigma-verify's
     prose gate, made checkable). With an acceptance record, run the repository command then
@@ -6323,7 +6385,7 @@ USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> [--se
          "escalate <dir> <goal> <tier> --after plan-review|code-review|pr-review | "
          "escalate <dir> <goal> --show | "
          "lane-tier <dir> <goal> <small|medium|large> <current-tier> | "
-         "verify <dir> <goal> | wait-call <dir> <goal> verify|merge [--max-seconds N] [--run-id ID]")
+         "verify <dir> <goal> | red <dir> <goal> | wait-call <dir> <goal> verify|merge [--max-seconds N] [--run-id ID]")
 
 
 _ESCALATE_USAGE = ("usage: loop.py escalate <dir> <goal> <current-tier> "
@@ -7344,6 +7406,8 @@ def _dispatch(argv):
         _ensure_watcher(argv[2], _verify_cfg)
         _ensure_ledger_delivery(argv[2], _verify_cfg)    # ...and notices when that flow has stalled (#2393)
         return verify_goal(argv[2], argv[3])
+    if len(argv) >= 4 and argv[1] == "red":         # #1673: record planned-test reds only; no loop trigger
+        return red_goal(argv[2], argv[3])
     if len(argv) >= 2 and argv[1] == "wait-call":   # #1650: bounded wait on a yielded verify / merge call
         return _wait_call(argv)
     print(USAGE, file=sys.stderr)

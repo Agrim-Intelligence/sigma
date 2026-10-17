@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import subprocess
+import time
 
 import pytest
 
@@ -403,3 +404,196 @@ def test_captured_output_cannot_manufacture_assertion_red(case):
     assert not m.observe(sdlc, '42', root, plan)['passed']
     (root / 'ready').write_text('yes')
     assert m.refusal(sdlc, '42', root, plan, m.observe(sdlc, '42', root, plan))
+
+
+# --- #1673: `loop.py red` records planned-test reds without the full verify ----------------------------
+FAILING = "from pathlib import Path\ndef test_a():\n    assert Path('ready').exists()\n"
+
+
+def red_env(case, monkeypatch, failing=True, allow=True):
+    root, sdlc, plan = case
+    subprocess.run(['git', 'init', '-q', str(root)], check=True)
+    if allow:
+        subprocess.run(['git', '-C', str(root), 'config', '--local',
+                        'sigma.allowRepositoryShellCommands', 'true'], check=True)
+    (sdlc / 'config.json').write_text(json.dumps({'verify': {'command': 'true'}}))
+    if failing:
+        (root / 'tests/test_x.py').write_text(FAILING)
+    lp = load('loop')
+    monkeypatch.setattr(lp.work, 'ensure_fresh', lambda *args: '')
+    monkeypatch.setattr(lp, '_verified_tree', lambda *args: (str(root), 'head', False))
+    monkeypatch.setattr(lp, '_flake_verdict', lambda *args: {'verdict': 'absent'})
+    monkeypatch.setattr(lp, '_diff_revert_verdict', lambda *args: {'verdict': 'absent'})
+    return lp
+
+
+def no_pytest(lp, monkeypatch):
+    """The refused paths must run nothing: observe (the only pytest caller) raises if reached."""
+    orig = lp._load
+    def fake(name):
+        mod = orig(name)
+        if name == 'red_green':
+            def boom(*a, **k):
+                raise AssertionError('pytest must not run')
+            mod.observe = boom
+        return mod
+    monkeypatch.setattr(lp, '_load', fake)
+
+
+def out(capsys):
+    got = capsys.readouterr()
+    return got.out + got.err
+
+
+def rows(case, node=None):
+    return [r for r in load('witness').witnesses(case[1], '42') if node is None or r.get('test') == node]
+
+
+def test_red_records_assertion_red_that_the_gate_accepts(case, monkeypatch):
+    lp = red_env(case, monkeypatch)
+    assert lp.red_goal(case[1], '42.md') == 0     # a .md suffix reduces to the stem
+    assert len(rows(case, NODE)) == 1
+    (case[0] / 'ready').write_text('yes')
+    assert lp.verify_goal(case[1], '42') == 0
+    data = json.loads(lp.state.evidence_path(case[1], '42').read_text())
+    assert refusal(case, data['test_first']) == ''
+
+
+def test_red_writes_no_verify_evidence_and_done_stays_refused(case, monkeypatch):
+    lp = red_env(case, monkeypatch)
+    assert lp.red_goal(case[1], '42') == 0
+    assert not lp.state.evidence_path(case[1], '42').exists()
+    assert not (case[1] / 'state/call-runs').exists()
+    assert lp.state.done_refusal(case[1], '42')
+    assert refusal(case, None)                    # no observed green: the PR gate still refuses
+
+
+def test_red_without_tests_section_is_refused(case, monkeypatch, capsys):
+    lp = red_env(case, monkeypatch)
+    case[2].write_text('# Plan\n\nNothing to test.\n')
+    no_pytest(lp, monkeypatch)
+    assert lp.red_goal(case[1], '42') == 2
+    assert '## Tests' in out(capsys) and not rows(case)
+
+
+def test_red_with_missing_plan_is_refused(case, monkeypatch, capsys):
+    lp = red_env(case, monkeypatch)
+    case[2].unlink()
+    no_pytest(lp, monkeypatch)
+    assert lp.red_goal(case[1], '42') == 2
+    assert 'plan' in out(capsys).lower()
+
+
+@pytest.mark.parametrize('goal', ['../evil', 'a;b', ''])
+def test_red_with_unsafe_goal_is_refused(case, monkeypatch, goal):
+    lp = red_env(case, monkeypatch)
+    no_pytest(lp, monkeypatch)
+    assert lp.red_goal(case[1], goal) == 2
+
+
+def test_red_all_green_selectors_exit_nonzero(case, monkeypatch, capsys):
+    lp = red_env(case, monkeypatch, failing=False)
+    assert lp.red_goal(case[1], '42') == 1
+    assert 'nothing is red' in out(capsys) and not rows(case)
+
+
+def test_red_collection_error_exits_nonzero(case, monkeypatch, capsys):
+    lp = red_env(case, monkeypatch)
+    f = case[0] / 'tests/test_x.py'
+    f.write_text('def test_a():\n    import no_such_module_1673\n')   # runtime ImportError: exit 1, no assertion
+    assert lp.red_goal(case[1], '42') == 1
+    assert 'no assertion red' in out(capsys) and not rows(case)
+    f.write_text('import pytest\n@pytest.mark.skip\ndef test_a():\n    assert False\n')   # skipped is not red
+    assert lp.red_goal(case[1], '42') == 1 and not rows(case)
+    f.write_text('import no_such_module_1673\ndef test_a():\n    assert False\n')   # collection fails: no provenance
+    assert lp.red_goal(case[1], '42') == 2 and not rows(case)
+
+
+def test_red_partial_red_exits_nonzero_and_names_unrecorded(case, monkeypatch, capsys):
+    lp = red_env(case, monkeypatch)
+    case[2].write_text('# Plan\n\n## Tests\n- `tests/test_x.py`\n')
+    f = case[0] / 'tests/test_x.py'
+    f.write_text(FAILING + 'def test_b():\n    assert True\n')
+    w, rg = load('witness'), load('red_green')
+    # An OLDER matching assertion row for the passing node from an earlier run: it must not count as recorded now.
+    w.record(case[1], '42', OTHER, 'assertion', w.source_hash(w.test_source(OTHER, root=case[0])),
+             provenance=rg.PROVENANCE, file_hash=rg.digest(f), observed_at=1.0)
+    assert lp.red_goal(case[1], '42') == 1
+    text = out(capsys)
+    assert NODE in text and OTHER in text
+    assert [r for r in rows(case, NODE)] and len(rows(case, OTHER)) == 1     # only the stale row for test_b
+
+
+def test_red_refuses_when_repository_shell_commands_not_allowed(case, monkeypatch, capsys):
+    lp = red_env(case, monkeypatch, allow=False)
+    no_pytest(lp, monkeypatch)
+    assert lp.red_goal(case[1], '42') == 2
+    assert lp.shell_policy.refusal_message() in out(capsys)
+
+
+def _verify_receipt(lp, case, pid):
+    path = lp._rr.receipt_path(case[1], '42', 'call-runs', 'verify')
+    lp._rr.write(path, outcome='running', pid=pid, started_at=int(time.time()), timeout_seconds=3600,
+                 run_id='r1', kind='verify', goal='42')
+
+
+def test_red_refuses_while_a_verify_is_running(case, monkeypatch):
+    lp = red_env(case, monkeypatch)
+    _verify_receipt(lp, case, os.getpid())
+    no_pytest(lp, monkeypatch)
+    assert lp.red_goal(case[1], '42') == 6
+    assert not rows(case)
+
+
+def test_red_ignores_a_dead_verify_receipt(case, monkeypatch):
+    lp = red_env(case, monkeypatch)
+    dead = subprocess.Popen(['true'])
+    dead.wait()
+    _verify_receipt(lp, case, dead.pid)
+    assert lp.red_goal(case[1], '42') == 0
+    assert len(rows(case, NODE)) == 1
+
+
+def test_red_attributes_a_node_id_over_100_characters(case, monkeypatch):
+    lp = red_env(case, monkeypatch)
+    monkeypatch.setenv('COLUMNS', '60')
+    node = _long_failing_node(case)
+    assert lp.red_goal(case[1], '42') == 0
+    assert len(rows(case, node)) == 1
+
+
+def test_skipping_red_is_refused_by_the_pr_gate(case, monkeypatch, capsys):
+    lp = red_env(case, monkeypatch, failing=False)
+    assert lp.red_goal(case[1], '42') == 1        # a green tree has no red to record
+    assert lp.verify_goal(case[1], '42') == 0
+    data = json.loads(lp.state.evidence_path(case[1], '42').read_text())
+    assert 'no matching assertion red before green' in refusal(case, data['test_first'])
+
+
+def test_red_on_different_test_bytes_is_refused_by_the_pr_gate(case, monkeypatch):
+    lp = red_env(case, monkeypatch)
+    assert lp.red_goal(case[1], '42') == 0
+    (case[0] / 'tests/test_x.py').write_text(FAILING + '# edited after red\n')
+    (case[0] / 'ready').write_text('yes')
+    assert lp.verify_goal(case[1], '42') == 0
+    data = json.loads(lp.state.evidence_path(case[1], '42').read_text())
+    assert 'no matching assertion red before green' in refusal(case, data['test_first'])
+
+
+def test_red_then_verify_green_passes_the_pr_gate(case, monkeypatch):
+    lp = red_env(case, monkeypatch)
+    assert lp.red_goal(case[1], '42') == 0
+    (case[0] / 'ready').write_text('yes')
+    assert lp.verify_goal(case[1], '42') == 0
+    data = json.loads(lp.state.evidence_path(case[1], '42').read_text())
+    assert refusal(case, data['test_first']) == ''
+
+
+def test_refusal_text_names_loop_py_red(case, monkeypatch):
+    w, config, run, _ = pr_case(case, monkeypatch)
+    result = w.pr(case[1], config, '42', run=run)
+    assert result.startswith('TEST-FIRST REFUSED') and 'loop.py red' in result and 'loop.py verify' in result
+
+
+def test_red_is_listed_in_usage():
+    assert 'red <dir> <goal>' in load('loop').USAGE
