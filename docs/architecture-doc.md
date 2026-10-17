@@ -59,8 +59,8 @@ flowchart TB
 - A node whose technology is `Person` or `External system` is not a container and needs no row.
 - A node with no `[Technology]` at all is a finding.
 - The label forms read are `id["..."]`, `id("...")`, `id{{"..."}}`, `id[...]` and the shaped forms
-  `id[("...")]`, `id(["..."])`, `id[["..."]]`, `id(("..."))`; the shape punctuation is not part of
-  the name. A node defined on an edge line (`web["..."] --> api["..."]`) is read too. An id is
+  `id[("...")]`, `id(["..."])`, `id[["..."]]`, `id(("..."))`, `id[/"..."/]`, `id[\"..."\]`,
+  `id[/"..."\]` and `id[\"..."/]`; the shape punctuation is not part of the name. A node defined on an edge line (`web["..."] --> api["..."]`) is read too. An id is
   letters, digits and `_` (any script, so `café[...]` counts) joined by single hyphens. A
   `subgraph` title is not a container, nor is anything on a `%%` comment line, in edge text
   `-->|...|`, or on a `click`, `style`, `classDef`, `class`, `linkStyle` or `direction` line. When
@@ -76,7 +76,8 @@ flowchart TB
 Under **Technology inventory**, the first table lists each container by the exact name used in
 its label (trimmed and case-folded; no partial match, so a row `Billing API Gateway` does not
 cover `Billing API`). Only the first table counts, its header row is not a container, and a cell
-written as code (`` `Web UI` ``) is read without the backticks:
+written bold (`**Web UI**`), as a link (`[Web UI](architecture.md)`) or as code
+(`` `Web UI` ``) is read without that wrapper:
 
 ```markdown
 | Container | Technology |
@@ -112,8 +113,10 @@ is no second skeleton per service. `lint <dir>` accepts any directory that holds
 `architecture.system_root` is one key in `.sdlc/config.json` (see the
 [configuration reference](configuration.md)). It is either a repository-relative folder (no
 absolute path, no `..` segment, and its real location must stay inside the repository) or a
-repository URL starting `https://`, `ssh://` or `git@`. A URL is shape-checked only: the linter
-prints `existence not checked (no network)` and never reads the network.
+repository URL starting `https://`, `ssh://` or `git@`. A folder may not hold a control character
+(a newline, say). A URL is shape-checked only (at most 2,048 characters, no whitespace or control
+character, a host of letters, digits, `.` and `-` with an optional `:port`, and a repository path
+after it): the linter prints `existence not checked (no network)` and never reads the network.
 
 ## Rules live in the north-star
 
@@ -130,7 +133,8 @@ python3 skills/sigma-init/scripts/architecture_doc.py lint <dir>
 It reads `<dir>/architecture.md` and exits `0` when clean, `1` with one finding per line, or `2`
 for a usage error or a file it will not read (unreadable, larger than 1 MiB, not a regular file,
 or a symlink that leaves the directory). A finding reads `<file>:<line>: [<code>] <message>`; line
-`0` means the whole file. The codes are `missing-file`, `missing-heading`, `duplicate-heading`,
+`0` means the whole file. Pass the folder, not the file: `lint path/to/architecture.md` is a
+`missing-file` finding that says the target is not a directory. The codes are `missing-file`, `missing-heading`, `duplicate-heading`,
 `missing-diagram`, `unsupported-keyword`, `no-keyword`, `unbalanced-bracket`,
 `unbalanced-subgraph`, `node-no-technology`, `container-no-inventory`, `line-too-long`,
 `unclosed-fence` and `system-root`.
@@ -138,8 +142,9 @@ or a symlink that leaves the directory). A finding reads `<file>:<line>: [<code>
 Without `<dir>` it lints the folder `architecture.system_root` resolves to; when that value is a
 repository URL there is no local folder to read, so `lint` with no `<dir>` exits `2` and asks you
 to run it inside that repository or pass a directory. Two more verbs:
-`resolve` prints the resolved root and its form (`folder` or `url`), and `headings` prints the
-eleven headings. The optional flags are `--repo-root` (default: the current directory) and
+`resolve` prints the resolved root and its form, `folder`, `url` or `invalid` (exit `0`, or `1`
+for `invalid`, with the error on the next line; a value holding a control character, or one that
+is not a string, is printed as JSON), and `headings` prints the eleven headings. The optional flags are `--repo-root` (default: the current directory) and
 `--sdlc` (default: `<repo-root>/.sdlc`). The config flag is spelled `--sdlc`, as in
 `preflight.py`; do not lengthen it, because the longer spelling is a retired placeholder that the
 private-name guard rejects.
@@ -163,8 +168,18 @@ private-name guard rejects.
   can hide a container. In particular Mermaid 11's shape syntax, `db@{ shape: cyl, label: "Orders
   DB [PostgreSQL]" }`, is not read: such a node is silently not checked, so use `db[("...")]`.
   Edge text written as `A -- text(x) --> B` can be misread as a node; use the `-->|text|` form.
+- A space between the id and its bracket, `q ["Queue [Kafka]"]`, is not read as a node, so that
+  container is silently not checked; write `q["Queue [Kafka]"]`.
+- The asymmetric shape `q>"Queue [Kafka]"]` is reported as `unbalanced-bracket`, because its `>`
+  opens what only a `]` closes; use another shape.
+- Only the six keywords above are supported: `stateDiagram` (version 1), `flowchart-elk`, `pie`,
+  `gantt` and every other diagram type are reported as `no-keyword`. Use `stateDiagram-v2` and
+  `flowchart`.
+- Headings are read line by line, so a `## Constraints` line inside a multi-line HTML comment
+  (`<!--` ... `-->`) still counts as the heading (and as a duplicate if the real one follows).
 - The balance rule applies to sequence-diagram message text too, so `A->>B: retry (up to 3`
   is a finding although Mermaid renders it; close the bracket.
-- An unreadable `.sdlc/config.json` includes one that is not a regular file (a named pipe, say):
-  it is never opened, so it cannot hang the lint.
+- An unreadable `.sdlc/config.json` includes one that is not a regular file (a named pipe, say),
+  which is never opened, so it cannot hang the lint, and one larger than 1 MiB, which is not
+  parsed.
 - A line longer than 4,096 characters is a finding and is not otherwise checked.

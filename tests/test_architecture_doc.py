@@ -358,7 +358,7 @@ CONTROL_ROWS = [
      (1, ("[container-no-inventory]", "'Container'")), (0,)),
     ("delimiter_detect", "_is_delimiter", "return True", ("edit", "no_delimiter"),
      (0,), (1, ("[container-no-inventory]", "Web UI"))),
-    ("cell_backticks", "_cell_name", "return cell.strip().casefold()", ("edit", "backtick_cells"),
+    ("cell_backticks", "_unwrap_code", "return cell", ("edit", "backtick_cells"),
      (0,), (1, ("[container-no-inventory]", "Web UI"))),
     ("comment_balance", "_skip_in_balance", "return False", ("edit", "comment_bracket"),
      (0,), (1, ("[unbalanced-bracket]",))),
@@ -390,6 +390,48 @@ CONTROL_ROWS = [
      (1, ("[unclosed-fence]",)), (0,)),
     ("br_tags", "_strip_line_breaks", "return label", ("edit", "br_label"),
      (0,), (1, ("[container-no-inventory]", "Web UI<br/>"))),
+    # code review 2: each URL shape check alone, on an input only that check rejects
+    ("url_cap", "_url_over_cap", "return False", ("root", "url_long"),
+     (1, ("[system-root]", "over 2048 characters")), (0, ("existence not checked (no network)",))),
+    ("url_ws", "_url_has_blank", "return _has_control(value)", ("root", "url_space"),
+     (1, ("[system-root]", "whitespace")), (0, ("existence not checked (no network)",))),
+    ("url_control", "_url_has_blank", "return any((ch.isspace() for ch in value))", ("root", "url_ctrl"),
+     (1, ("[system-root]", "control character")), (0, ("existence not checked (no network)",))),
+    ("url_host", "_url_host_ok", "return True", ("root", "url_badhost"),
+     (1, ("[system-root]", "needs a host")), (0, ("existence not checked (no network)",))),
+    ("url_path", "_url_path_ok", "return True", ("root", "url_nopath"),
+     (1, ("[system-root]", "repository path")), (0, ("existence not checked (no network)",))),
+    # a control character in a folder value, and each half of the control-character test
+    ("refuse_control", "_refuse_control", "return None", ("root", "newline_folder"),
+     (1, ("[system-root]", "control character")), (1, ("does not exist",), ("control character",))),
+    ("control_c0", "_has_control", "return any((ord(ch) == 127 for ch in value))", ("root", "newline_folder"),
+     (1, ("[system-root]", "control character")), (1, ("does not exist",), ("control character",))),
+    ("control_del", "_has_control", "return any((ord(ch) < 32 for ch in value))", ("root", "del_folder"),
+     (1, ("[system-root]", "control character")), (1, ("does not exist",), ("control character",))),
+    ("config_cap", "_over_read_cap", "return False", ("root", "big_config"),
+     (0, (), (), ("read cap",)), (0, (), (), ("invalid JSON",))),
+    ("not_a_directory", "_not_a_directory", "return False", ("file_target", None),
+     (1, ("[missing-file]", "not a directory")), (1, ("does not exist",), ("not a directory",))),
+    ("heading_hashes", "_heading_text", "return raw", ("edit", "closing_hashes"),
+     (0,), (1, ("[missing-heading]", "Constraints"))),
+    ("unclosed_block_checked", "_keep_unclosed", "return False", ("edit", "unclosed_bad_block"),
+     (1, ("[unclosed-fence]", "[no-keyword]")), (1, ("[unclosed-fence]",), ("[no-keyword]",))),
+    ("node_trailing_dash", "_node_id",
+     'cut = run.rfind("--")\nif cut >= 0:\n    run = run[cut + 2:]\nfor i, ch in enumerate(run):\n'
+     '    if ch == "_" or ch.isalpha():\n        return run[i:]\nreturn None',
+     ("edit", "dash_run"), (0,), (1, ("[container-no-inventory]", "Ghost"))),
+    ("slant_label", "_skip_slant", "return i", ("edit", "slant_label"),
+     (0,), (1, ("[container-no-inventory]", "'\"Queue'"))),
+    ("exempt_case", "_is_exempt", 'return technology in ("Person", "External system")', ("edit", "exempt_case"),
+     (0,), (1, ("[container-no-inventory]", "Customer", "Payments"))),
+    ("exempt_person", "_is_exempt", 'return technology.casefold() in ("external system",)',
+     ("fixture", "person_exempt"), (0,), (1, ("Customer",), ("Payments",))),
+    ("exempt_external", "_is_exempt", 'return technology.casefold() in ("person",)',
+     ("fixture", "person_exempt"), (0,), (1, ("Payments",), ("Customer",))),
+    ("cell_bold", "_unwrap_bold", "return cell", ("edit", "bold_cells"),
+     (0,), (1, ("[container-no-inventory]", "Web UI"))),
+    ("cell_link", "_unwrap_link", "return cell", ("edit", "link_cells"),
+     (0,), (1, ("[container-no-inventory]", "Web UI"))),
 ]
 
 # ("edit", key) control inputs: the `clean` fixture with these literal (old, new) replacements, each
@@ -422,6 +464,14 @@ EDITS = {
     "redefined_node": [(NODE, NODE + '    web["Web UI v2 [TypeScript]"]\n')],
     "unclosed_fence": [(INVENTORY, INVENTORY + "\n```mermaid\nflowchart LR\n    A --> B\n")],
     "br_label": [('web["Web UI [TypeScript]"]', 'web["Web UI<br/>[TypeScript]"]')],
+    "closing_hashes": [("## Constraints\n", "## Constraints ##\n")],
+    "unclosed_bad_block": [(INVENTORY, INVENTORY + "\n```mermaid\nnotakeyword\n")],
+    "dash_run": [(NODE, NODE + '    x-["Ghost [Go]"]\n')],
+    "slant_label": [(NODE, NODE + '    q[/"Queue [Kafka]"/]\n'), (INVENTORY, INVENTORY + "| Queue | Kafka |\n")],
+    "exempt_case": [('    user["Customer [Person]"]\n    ext["Payments [External system]"]\n    web[',
+                     '    user["Customer [PERSON]"]\n    ext["Payments [external SYSTEM]"]\n    web[')],
+    "bold_cells": [("| Web UI | TypeScript |", "| **Web UI** | TypeScript |")],
+    "link_cells": [("| Web UI | TypeScript |", "| [Web UI](web.md) | TypeScript |")],
 }
 
 
@@ -443,14 +493,25 @@ def build_input(base, spec):
         return write_doc(base, text.rstrip("\n") + "\n\n" + "x" * 4097 + "\n", "line-cap"), None
     if kind == "edit":
         return write_doc(base, edited_clean(arg), arg), None
+    if kind == "file_target":       # `lint path/to/architecture.md`: a file where a folder belongs
+        return fixture("clean") / "architecture.md", None
     assert kind == "root", spec
     value = {"dotdot_x": "../x", "nope": "docs/nope", "default_value": "docs/architecture",
              "int5": 5, "sub_dotdot": "sub/../docs/architecture", "drive_dir": "C:\\x",
              "symlink_default": "docs/architecture",
-             "bad_url_space": "https" + "://" + "bad host/x"}.get(arg)
+             "bad_url_space": "https" + "://" + "bad host/x",
+             "url_long": "https" + "://" + "example.invalid/" + "r" * 2025,  # 2,049 characters
+             "url_space": "https" + "://" + "example.invalid/a b",
+             "url_ctrl": "https" + "://" + "example.invalid/a\x01b",
+             "url_badhost": "https" + "://" + "exa_mple.invalid/x",
+             "url_nopath": "https" + "://" + "example.invalid/",
+             "newline_folder": "docs/a\nb", "del_folder": "docs/a\x7fb"}.get(arg)
     config = {"architecture": {"system_root": value}}
     if arg == "empty_config":
         config = {}
+    elif arg == "big_config":       # a valid object 100 bytes over the read cap: a capped read cuts it
+        config = '{"pad": "' + "x" * (1024 * 1024 + 89) + '"}'
+        assert len(config) == 1024 * 1024 + 100
     elif arg == "arch_string":
         config = {"architecture": "docs/architecture"}
     repo = make_repo(base, config)
@@ -597,7 +658,7 @@ def test_resolve_system_root_forms(tmp_path):
         got = resolve({"architecture": {"system_root": url}})
         assert (got.form, got.path, got.error) == ("url", None, None), (url, got)
     for value in ("/" + "abs" + "/x", "docs/../../x", "C:\\x", "\\\\h\\s", "", 5, ["a"], {}, "link",
-                  "https" + "://"):
+                  "https" + "://", "docs/a\nb", "docs/a\x00b", "docs/a\x7fb"):
         got = resolve({"architecture": {"system_root": value}})
         assert got.form == "invalid" and "architecture.system_root" in (got.error or ""), (value, got)
     got = resolve({"architecture": "docs/architecture"})
@@ -616,6 +677,13 @@ def test_resolve_verb_output(tmp_path):
     rc, out, err = run_script(tmp_path, ["resolve"], cwd=repo)
     assert rc == 0 and out.splitlines()[0] == url + " url", (rc, out, err)
     assert "existence not checked (no network)" in out
+    # `lint` with no <dir> has no local folder to read for a URL root: exit 2, never a lint
+    rc, out, err = run_script(tmp_path, ["lint"], cwd=repo)
+    assert rc == 2 and "repository URL" in err and not FINDING.search(out), (rc, out, err)
+    # a value holding a control character is printed as JSON, so it cannot break the output line
+    repo = make_repo(tmp_path, {"architecture": {"system_root": "docs/a\nb"}})
+    rc, out, err = run_script(tmp_path, ["resolve"], cwd=repo)
+    assert rc == 1 and out.splitlines()[0] == '"docs/a\\nb" invalid', (rc, out, err)
 
 
 @pytest.mark.parametrize("raw", [
@@ -696,16 +764,20 @@ def test_node_extraction_edge_lines_and_subgraph_titles(tmp_path):
     for name in ("subgraph_title", "last_bracket"):
         check(run_gesture(tmp_path, fixture(name)), (0,))
     check(run_gesture(tmp_path, fixture("unbalanced_bracket_quoted")), (1, ("[unbalanced-bracket]",)))
-    # shape punctuation is not part of the name: cylinder, stadium, subroutine, circle
+    # shape punctuation is not part of the name: cylinder, stadium, subroutine, circle, and the
+    # quoted parallelogram and trapezoid forms
     clean = (fixture("clean") / "architecture.md").read_text(encoding="utf-8")
     shapes = ('    db[("Postgres [PostgreSQL]")]\n    st(["Status page [Static HTML]"])\n'
-              '    job[["Nightly job [Cron]"]]\n    hub(("Event hub [NATS]"))\n')
-    rows = "| Postgres | PostgreSQL |\n| Status page | Static HTML |\n| Nightly job | Cron |\n| Event hub | NATS |\n"
+              '    job[["Nightly job [Cron]"]]\n    hub(("Event hub [NATS]"))\n'
+              '    q[/"Queue [Kafka]"/]\n    p[\\"Parser [Rust]"\\]\n    t[/"Topic [Kafka]"\\]\n')
+    rows = ("| Postgres | PostgreSQL |\n| Status page | Static HTML |\n| Nightly job | Cron |\n| Event hub | NATS |\n"
+            "| Queue | Kafka |\n| Parser | Rust |\n| Topic | Kafka |\n")
     with_shapes = clean.replace("    user --> web\n", shapes + "    user --> web\n", 1)
     check(run_gesture(tmp_path, write_doc(tmp_path, with_shapes + rows)), (0,))
     rc, out, err = run_gesture(tmp_path, write_doc(tmp_path, with_shapes))
     named = sorted(re.findall(r"container '([^']*)'", out))
-    assert rc == 1 and named == ["Event hub", "Nightly job", "Postgres", "Status page"], (out, err)
+    assert rc == 1 and named == ["Event hub", "Nightly job", "Parser", "Postgres", "Queue", "Status page",
+                                 "Topic"], (out, err)
     # a line break before the technology is not part of the name, in every spelling
     for br in ("<br>", "<br/>", "<br />", "<BR/>"):
         check(run_gesture(tmp_path, write_doc(tmp_path, clean.replace(

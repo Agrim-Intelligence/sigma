@@ -45,20 +45,25 @@ fail to render in some host):
   * a code fence still open at the end of the file is a finding (everything after it reads as code);
   * every node `id["Name [Technology]"]` of every flowchart under `Building blocks` has a row named
     exactly `Name` (trimmed, case-folded; `<br>` in the label is a space) in the FIRST table under
-    `Technology inventory` (header and delimiter rows are not rows; a cell's surrounding backticks
-    are ignored), unless its technology is `Person` or `External system`; a node with no
+    `Technology inventory` (header and delimiter rows are not rows; a cell's surrounding bold
+    `**`/`__`, `[text](link)` and backticks are ignored), unless its technology is `Person` or `External system`; a node with no
     `[Technology]` is a finding. Ids are Unicode word characters with single hyphens; `%%` comment
     lines, edge text `|...|` and `subgraph`/`end`/`click`/`style`/`classDef`/`class`/`linkStyle`/
-    `direction` lines define no node; the first definition of an id wins;
+    `direction` lines define no node; the first definition of an id wins; the `/` or `\\` of a
+    parallelogram or trapezoid (`q[/"Queue [Kafka]"/]`) is shape punctuation, not label;
   * `architecture.system_root` (see resolve_system_root): an invalid value is always a finding
-    when the config is readable; a folder's existence is checked only when the key is explicit
-    and not the default `docs/architecture`.
+    when the config is readable (a folder holding a control character is invalid, and a URL needs
+    2,048 characters or fewer, no whitespace or control character, a host and a repository path);
+    a folder's existence is checked only when the key is explicit and not the default
+    `docs/architecture`.
 An unreadable or missing `.sdlc/config.json` is never a finding: one stderr line says so and the
 default is used (`lint <dir>` says `architecture.system_root not checked`).
 
 The proof that each clause is load-bearing is
 `tests/test_architecture_doc.py::test_each_clause_broken_alone_goes_red_through_documented_gesture`,
-which breaks every clause function below alone and runs the documented gesture against it.
+which breaks every clause function below alone and runs the documented gesture against it. The
+two behaviours that gesture cannot reach (`lint` with no <dir> and a URL root exits 2; `resolve`
+prints a value holding a control character as JSON) are pinned by `test_resolve_verb_output`.
 
 BOUNDS AND SCALE. One file per run, one pass, linear in file size, flat in repository count. The
 read is capped at READ_CAP (1 MiB): cap + 1 bytes are read and a larger file is refused with exit
@@ -74,22 +79,24 @@ read-only, so recovery from any failure is "run it again".
 
 Measured 2026-10-18 on arm64 macOS 26.6.2, warm cache, best of 5, wall time of the full
 documented gesture including interpreter start, on Python 3.12.13 and on the system Python 3.9.6
-(bare interpreter start on that host: 18 ms and 20 ms). "1 MiB of such lines" is as many whole
-lines as fit under READ_CAP (1,045,582 to 1,046,408 bytes), inside a valid document:
-  * a valid document of 1 MiB (18,013 containers, one inventory row each) lints clean in 84 ms on
-    3.12.13 and 116 ms on 3.9.6 (54 ms and 83 ms of it in-process);
-  * a 4096-character adversarial mermaid line (repeated `["a [b`) is reported in 28 ms and 33 ms;
-  * a file of READ_CAP + 1 bytes is refused in 28 ms and 32 ms;
-  * one prose line of 3,000 `~` then a backtick: 28 ms and 33 ms; 1 MiB of 4,000-`~`-then-backtick
-    lines: 30 ms and 34 ms;
+(bare interpreter start on that host: 17 ms and 19 ms). "1 MiB of such lines" is as many whole
+lines as fit under READ_CAP (1,045,582 to 1,046,408 bytes), inside a valid document. Re-measured
+after code review 2 (which added the inventory-cell unwrapping and the URL and folder checks):
+  * a valid document of 1 MiB (18,013 containers, one inventory row each) lints clean in 89 ms on
+    3.12.13 and 126 ms on 3.9.6 (60 ms and 91 ms of it in-process; 84 ms and 116 ms before that
+    review);
+  * a 4096-character adversarial mermaid line (repeated `["a [b`) is reported in 28 ms and 32 ms;
+  * a file of READ_CAP + 1 bytes is refused in 28 ms and 31 ms;
+  * one prose line of 3,000 `~` then a backtick: 28 ms and 31 ms; 1 MiB of 4,000-`~`-then-backtick
+    lines: 29 ms and 34 ms;
   * one 4096-character identifier run (`aaa...`, no opener) in the container flowchart: 28 ms and
-    31 ms; 1 MiB of such lines: 52 ms and 57 ms; 1 MiB of 4095-character `a-a-a-...` runs: 52 ms
+    31 ms; 1 MiB of such lines: 50 ms and 57 ms; 1 MiB of 4095-character `a-a-a-...` runs: 53 ms
     and 61 ms;
-  * one heading line `## ` + 2,000 ` #` + `x`: 28 ms and 32 ms; 1 MiB of such lines: 30 ms and
-    37 ms.
+  * one heading line `## ` + 2,000 ` #` + `x`: 27 ms and 31 ms; 1 MiB of such lines: 31 ms and
+    36 ms.
 The patterns these replaced, measured once on the same inputs on 3.12.13: the one tilde line took
 15.6 s, the 1 MiB identifier file 45.2 s, the hyphenated file 10.6 s, the heading file 9.8 s, and the
-1 MiB tilde file was killed unfinished at 120 s; the valid 1 MiB document took 73 ms (11 ms less
+1 MiB tilde file was killed unfinished at 120 s; the valid 1 MiB document took 73 ms (16 ms less
 than now; the difference was not attributed). The inventory is a set: with a tuple the earlier 1 MiB
 file took 725 ms (quadratic lookups), which is why it is not one. Unmeasured: Windows (drive-letter
 and UNC values are refused by shape only, not measured on Windows), and any cold-cache read.
@@ -265,9 +272,44 @@ def _body_rows(table: List[str]) -> List[str]:
     return table[2:] if len(table) > 1 and _is_delimiter(table[1]) else table[1:]
 
 
+def _unwrap_bold(cell: str) -> str:
+    """`**Web UI**` or `__Web UI__` -> `Web UI`."""
+    for mark in ("**", "__"):
+        if len(cell) > 4 and cell.startswith(mark) and cell.endswith(mark):
+            return cell[2:-2]
+    return cell
+
+
+def _unwrap_link(cell: str) -> str:
+    """`[Web UI](web.md)` -> `Web UI`. Read by hand, one pass: the text holds no `]`."""
+    close = cell.find("](")
+    if cell.startswith("[") and cell.endswith(")") and close > 0 and "]" not in cell[1:close]:
+        return cell[1:close]
+    return cell
+
+
+def _unwrap_code(cell: str) -> str:
+    """`` `Web UI` `` -> `Web UI`."""
+    return cell.strip("`")
+
+
 def _cell_name(cell: str) -> str:
-    """An inventory cell as a name: trimmed, surrounding backticks removed, case-folded."""
-    return cell.strip().strip("`").strip().casefold()
+    """An inventory cell as a name: trimmed; a bold, link and code wrapper removed, in that order;
+    case-folded."""
+    name = cell.strip()
+    for unwrap in (_unwrap_bold, _unwrap_link, _unwrap_code):
+        name = unwrap(name).strip()
+    return name.casefold()
+
+
+def _heading_text(raw: str) -> str:
+    """A heading's text without its optional closing `#`s (`## Constraints ##`)."""
+    return raw.rstrip(" \t#")
+
+
+def _keep_unclosed(fence: Optional[Tuple[str, int, bool, int]]) -> bool:
+    """A mermaid block still open at the end of the file is kept and checked like any other."""
+    return fence is not None and fence[2]
 
 
 def _parse(lines: List[str]) -> Doc:
@@ -295,13 +337,13 @@ def _parse(lines: List[str]) -> Doc:
             continue
         h = _HEADING.match(line)
         if h:
-            heading = _norm_heading(h.group(1).rstrip(" \t#"))
+            heading = _norm_heading(_heading_text(h.group(1)))
             headings.append((heading, number))
             continue
         if heading == _INVENTORY:
             inventory_lines.append(line)
     unclosed = fence[3] if fence is not None else None
-    if fence is not None and fence[2]:
+    if _keep_unclosed(fence):
         blocks.append(Block(fence[3], heading, _strip_front_matter(body)))
     inventory = frozenset(_cell_name(row.strip("|").split("|")[0])
                           for row in _body_rows(_first_table(inventory_lines)))
@@ -536,6 +578,12 @@ def _node_id(run: str) -> Optional[str]:
     return None
 
 
+def _skip_slant(text: str, i: int) -> int:
+    """Past the `/` or `\\` that opens a parallelogram or trapezoid (`[/"..."/]`, `[\\"..."\\]`),
+    so a quoted label after it is read as quoted."""
+    return i + 1 if i < len(text) and text[i] in "/\\" else i
+
+
 def _scan_nodes(line: str) -> list:
     """Every node definition on one line, in order: (id, label). An identifier immediately followed
     by an opener; shape punctuation (`[(`, `([`, `[[`, `((`, `{{`, `/`, `\\`) is not part of the label."""
@@ -552,6 +600,7 @@ def _scan_nodes(line: str) -> list:
         i = match.end()
         while i < len(text) and text[i] in "[({":
             i += 1
+        i = _skip_slant(text, i)
         while i < len(text) and text[i] == " ":
             i += 1
         if i < len(text) and text[i] == '"':
@@ -626,9 +675,14 @@ def lint_text(text: str) -> list:
 
 # ----------------------------------------------------------------------------------- system root
 
+def _over_read_cap(raw: bytes) -> bool:
+    return len(raw) > READ_CAP
+
+
 def _read_config(sdlc_dir: str) -> Tuple[Optional[dict], str]:
     """The parsed config object, or (None, reason): missing, unreadable, not a regular file (a FIFO
-    would block the read forever, so it is never opened), invalid JSON, not an object."""
+    would block the read forever, so it is never opened), over READ_CAP, invalid JSON, not an
+    object."""
     path = os.path.join(sdlc_dir, "config.json")
     try:
         mode = os.stat(path).st_mode
@@ -645,8 +699,8 @@ def _read_config(sdlc_dir: str) -> Tuple[Optional[dict], str]:
         return None, "missing"
     except OSError:
         return None, "unreadable"
-    if len(raw) > READ_CAP:
-        return None, "unreadable"
+    if _over_read_cap(raw):
+        return None, "over the %d-byte read cap" % READ_CAP
     try:
         data = json.loads(raw.decode("utf-8-sig"))
     except ValueError:
@@ -676,19 +730,48 @@ def _refuse_nonstring(value: object) -> Optional[str]:
     return None
 
 
+def _has_control(value: str) -> bool:
+    """A C0 control character or DEL (newline and NUL included)."""
+    return any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
+
+
+def _url_over_cap(value: str) -> bool:
+    return len(value) > URL_CAP
+
+
+def _url_has_blank(value: str) -> bool:
+    return any(ch.isspace() for ch in value) or _has_control(value)
+
+
+def _url_host_ok(host: str) -> bool:
+    return bool(host) and _URL_HOST.match(host) is not None
+
+
+def _url_path_ok(rest: str) -> bool:
+    return bool(rest.strip("/"))
+
+
 def _refuse_url_shape(value: str) -> Optional[str]:
     bad = "architecture.system_root: malformed repository URL"
-    if len(value) > URL_CAP:
+    if _url_over_cap(value):
         return "%s (over %d characters)" % (bad, URL_CAP)
-    if any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in value):
+    if _url_has_blank(value):
         return "%s (whitespace or control character)" % bad
     if value.startswith("git@"):
         host, _, rest = value[len("git@"):].partition(":")
     else:
         authority, _, rest = value.split("://", 1)[1].partition("/")
         host = authority.rpartition("@")[2]
-    if not host or not _URL_HOST.match(host) or not rest.strip("/"):
-        return "%s (needs a host and a repository path)" % bad
+    if not _url_host_ok(host):
+        return "%s (needs a host: letters, digits, '.', '-', optional :port)" % bad
+    if not _url_path_ok(rest):
+        return "%s (needs a repository path after the host)" % bad
+    return None
+
+
+def _refuse_control(value: str) -> Optional[str]:
+    if _has_control(value):
+        return "architecture.system_root: a control character is not allowed in a folder (%s)" % json.dumps(value)
     return None
 
 
@@ -742,7 +825,7 @@ def _resolve_config(config: Optional[dict], repo_root: str) -> Resolved:
     if value.startswith(URL_PREFIXES):
         error = _refuse_url_shape(value)
         return Resolved("invalid" if error else "url", value, None, error, None)
-    for refuse in (_refuse_absolute, _refuse_dotdot, _refuse_drive_or_unc):
+    for refuse in (_refuse_control, _refuse_absolute, _refuse_dotdot, _refuse_drive_or_unc):
         error = refuse(value)
         if error:
             return Resolved("invalid", value, None, error, None)
@@ -808,6 +891,11 @@ def _url_note() -> None:
     print("architecture.system_root: repository URL, existence not checked (no network)")
 
 
+def _not_a_directory(target: str) -> bool:
+    """`lint path/to/architecture.md`: the target exists but is a file, not the folder holding it."""
+    return os.path.exists(target) and not os.path.isdir(target)
+
+
 def _lint(opts: dict) -> int:
     sdlc_dir, repo_root = _locations(opts)
     config_path = os.path.join(sdlc_dir, "config.json")
@@ -835,7 +923,10 @@ def _lint(opts: dict) -> int:
         _emit(findings)
         return 1
     doc_path = os.path.join(target, DOC_NAME)
-    if not os.path.isdir(target):
+    if _not_a_directory(target):
+        findings.append((doc_path, 0, "missing-file", "%s is not a directory: lint takes the folder that "
+                         "holds %s%s" % (target, DOC_NAME, from_key)))
+    elif not os.path.isdir(target):
         findings.append((doc_path, 0, "missing-file", "directory %s does not exist%s" % (target, from_key)))
     elif not os.path.lexists(doc_path):
         findings.append((doc_path, 0, "missing-file", "%s does not exist%s" % (doc_path, from_key)))
@@ -850,13 +941,19 @@ def _lint(opts: dict) -> int:
     return 1 if findings else 0
 
 
+def _shown(value: object) -> str:
+    """A configured value as printed by `resolve`: a printable string as is, anything else
+    (a control character, a non-string) as JSON, so it can never break or forge an output line."""
+    return value if isinstance(value, str) and value.isprintable() else json.dumps(value)
+
+
 def _resolve(opts: dict) -> int:
     sdlc_dir, repo_root = _locations(opts)
     config, reason = _read_config(sdlc_dir)
     resolved = _resolve_config(config, repo_root)
     if resolved.note:
         _note(reason, False)
-    print("%s %s" % (resolved.value, resolved.form))
+    print("%s %s" % (_shown(resolved.value), resolved.form))
     if resolved.form == "url":
         _url_note()
     if resolved.form == "invalid":
