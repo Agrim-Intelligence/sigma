@@ -74,14 +74,22 @@ def _env(home):
     return {"PATH": os.environ.get("PATH", ""), "HOME": str(home), "PYTHONDONTWRITEBYTECODE": "1"}
 
 
+def _run(argv, base, cwd):
+    """(rc, out, err); a run that overruns the 10 s timeout is killed and returns rc None, so a hang
+    is an ASSERTION failure in the caller, never an uncaught TimeoutExpired."""
+    try:
+        proc = subprocess.run(argv, cwd=str(cwd), env=_env(_fresh(base, "home")), stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=10)
+    except subprocess.TimeoutExpired:
+        return None, "", "killed: over the 10 s timeout"
+    return proc.returncode, proc.stdout, proc.stderr
+
+
 def run_script(base, args, cwd=None, script=SCRIPT, python=None):
     """Run the script with `args` from `cwd` (default: a fresh empty dir); returns (rc, out, err)."""
     assert Path(script).exists(), "architecture_doc.py missing"
     cwd = cwd if cwd is not None else _fresh(base, "cwd")
-    proc = subprocess.run([python or sys.executable, str(script)] + [str(a) for a in args],
-                          cwd=str(cwd), env=_env(_fresh(base, "home")), stdin=subprocess.DEVNULL,
-                          capture_output=True, text=True, timeout=10)
-    return proc.returncode, proc.stdout, proc.stderr
+    return _run([python or sys.executable, str(script)] + [str(a) for a in args], base, cwd)
 
 
 def run_gesture(base, target, cwd=None, script=SCRIPT, python=None):
@@ -114,10 +122,7 @@ def documented_gesture(target, script=SCRIPT):
 
 def run_documented(base, target, cwd=None, script=SCRIPT):
     argv = documented_gesture(target, script)
-    cwd = cwd if cwd is not None else _fresh(base, "cwd")
-    proc = subprocess.run(argv, cwd=str(cwd), env=_env(_fresh(base, "home")), stdin=subprocess.DEVNULL,
-                          capture_output=True, text=True, timeout=10)
-    return proc.returncode, proc.stdout, proc.stderr
+    return _run(argv, base, cwd if cwd is not None else _fresh(base, "cwd"))
 
 
 def codes(out):
@@ -266,7 +271,8 @@ def test_each_clause_fixture_fails_only_its_own_clause(tmp_path, name, code):
 # (slug, function, mutant, input, real expectation, mutant expectation). A mutant is a body string
 # (the function's body is replaced, signature kept) or ("wrap", body) (the original is renamed
 # `<name>__real` and a new function of the original name and arguments, with this body, is added).
-# An input is ("fixture", slug), ("line_cap", None) or ("root", kind) for a throwaway repository.
+# An input is ("fixture", slug), ("line_cap", None), ("edit", key) for `clean` with the EDITS[key]
+# replacements, or ("root", kind) for a throwaway repository.
 
 CONTROL_ROWS = [
     ("inventory_lookup", "_check_inventory", "return []", ("fixture", "planted_missing_row"),
@@ -337,7 +343,94 @@ CONTROL_ROWS = [
      (1, ("[system-root]",)), (0,)),
     ("refuse_url_shape", "_refuse_url_shape", "return None", ("root", "bad_url_space"),
      (1, ("[system-root]",)), (0, ("existence not checked (no network)",))),
+    # each keyword of the brace exemption dropped alone
+    ("brace_er", "_counts_braces", 'return _first_token(block) not in ("classDiagram", "stateDiagram-v2")',
+     ("edit", "er_braces"), (0,), (1, ("[unbalanced-bracket]",))),
+    ("brace_class", "_counts_braces", 'return _first_token(block) not in ("erDiagram", "stateDiagram-v2")',
+     ("edit", "class_braces"), (0,), (1, ("[unbalanced-bracket]",))),
+    ("brace_state", "_counts_braces", 'return _first_token(block) not in ("erDiagram", "classDiagram")',
+     ("edit", "state_braces"), (0,), (1, ("[unbalanced-bracket]",))),
+    ("sequence_end", "_checks_subgraphs", "return True", ("edit", "sequence_loop"),
+     (0,), (1, ("[unbalanced-subgraph]",))),
+    ("first_table_only", "_first_table", 'return [l.strip() for l in lines if l.strip().startswith("|")]',
+     ("edit", "second_table"), (1, ("[container-no-inventory]", "Billing API")), (0,)),
+    ("header_skip", "_body_rows", "return table", ("edit", "header_named"),
+     (1, ("[container-no-inventory]", "'Container'")), (0,)),
+    ("delimiter_detect", "_is_delimiter", "return True", ("edit", "no_delimiter"),
+     (0,), (1, ("[container-no-inventory]", "Web UI"))),
+    ("cell_backticks", "_cell_name", "return cell.strip().casefold()", ("edit", "backtick_cells"),
+     (0,), (1, ("[container-no-inventory]", "Web UI"))),
+    ("comment_balance", "_skip_in_balance", "return False", ("edit", "comment_bracket"),
+     (0,), (1, ("[unbalanced-bracket]",))),
+    ("comment_scan", "_skip_in_scan", "return False", ("edit", "comment_node"),
+     (0,), (1, ("[container-no-inventory]", "Legacy"))),
+    ("excluded_click", "_is_excluded_line",
+     'return _first_word(line) in ("subgraph", "end", "style", "classDef", "class", "linkStyle", "direction")',
+     ("edit", "styling"), (0,), (1, ("[node-no-technology]", "'x'"))),
+    ("excluded_classdef", "_is_excluded_line",
+     'return _first_word(line) in ("subgraph", "end", "click", "style", "class", "linkStyle", "direction")',
+     ("edit", "styling"), (0,), (1, ("[node-no-technology]", "'1,2,3'"))),
+    ("excluded_style", "_is_excluded_line",
+     'return _first_word(line) in ("subgraph", "end", "click", "classDef", "class", "linkStyle", "direction")',
+     ("edit", "styling"), (0,), (1, ("[node-no-technology]", "'4,5,6'"))),
+    ("excluded_linkstyle", "_is_excluded_line",
+     'return _first_word(line) in ("subgraph", "end", "click", "style", "classDef", "class", "direction")',
+     ("edit", "styling"), (0,), (1, ("[node-no-technology]", "'7,8,9'"))),
+    ("edge_text", "_strip_edge_text", "return line", ("edit", "edge_text"),
+     (0,), (1, ("[node-no-technology]", "'fast'"))),
+    ("fence_char", "_closes", "return len(run) >= fence[1] and line.strip() == run", ("edit", "fence_char"),
+     (0,), (1, ("[duplicate-heading]",))),
+    ("fence_length", "_closes", "return run[0] == fence[0] and line.strip() == run", ("edit", "fence_length"),
+     (0,), (1, ("[duplicate-heading]",))),
+    ("fence_bare", "_closes", "return run[0] == fence[0] and len(run) >= fence[1]", ("edit", "fence_info"),
+     (0,), (1, ("[duplicate-heading]",))),
+    ("dedupe", "_unique_nodes", "return found", ("edit", "redefined_node"),
+     (0,), (1, ("[container-no-inventory]", "Web UI v2"))),
+    ("unclosed_fence", "_check_unclosed_fence", "return []", ("edit", "unclosed_fence"),
+     (1, ("[unclosed-fence]",)), (0,)),
+    ("br_tags", "_strip_line_breaks", "return label", ("edit", "br_label"),
+     (0,), (1, ("[container-no-inventory]", "Web UI<br/>"))),
 ]
+
+# ("edit", key) control inputs: the `clean` fixture with these literal (old, new) replacements, each
+# old string present exactly once. PARA sits under Runtime view; NODE is the container diagram.
+PARA = "How a request flows.\n"
+NODE = "    user --> web\n"
+INVENTORY = "| Billing API | Python |\n"
+EDITS = {
+    "er_braces": [(PARA, PARA + "\n```mermaid\nerDiagram\n    CUSTOMER ||--o{ ORDER : places\n"
+                   "    CUSTOMER {\n        string name\n    }\n```\n")],
+    "class_braces": [(PARA, PARA + "\n```mermaid\nclassDiagram\n    class Invoice {\n        +total\n    }\n```\n")],
+    "state_braces": [(PARA, PARA + "\n```mermaid\nstateDiagram-v2\n    state Billing {\n"
+                      "        [*] --> Open\n    }\n```\n")],
+    "sequence_loop": [(PARA, PARA + "\n```mermaid\nsequenceDiagram\n    loop Every minute\n"
+                       "        A->>B: ping\n    end\n```\n")],
+    "second_table": [(INVENTORY, ""),
+                     ("| Web UI | TypeScript |\n", "| Web UI | TypeScript |\n\nRetired containers.\n\n"
+                      "| Container | Technology |\n| --- | --- |\n" + INVENTORY)],
+    "header_named": [(NODE, '    ct["Container [Go]"]\n' + NODE)],
+    "no_delimiter": [("| --- | --- |\n", "")],
+    "backtick_cells": [("| Web UI | TypeScript |", "| `Web UI` | TypeScript |")],
+    "comment_bracket": [(NODE, "    %% see [docs\n" + NODE)],
+    "comment_node": [(NODE, '    %% old["Legacy [Perl]"]\n' + NODE)],
+    "styling": [(NODE, NODE + '    click api call callback("x")\n    classDef big fill:rgb(1,2,3)\n'
+                 "    style web fill:rgb(4,5,6)\n    linkStyle 0 stroke:rgb(7,8,9)\n")],
+    "edge_text": [(NODE, "    user -->|uses cache(fast)| web\n")],
+    "fence_char": [(PARA, PARA + "\n~~~text\n```\n## Constraints\n~~~\n")],
+    "fence_length": [(PARA, PARA + "\n````text\n```\n## Constraints\n````\n")],
+    "fence_info": [(PARA, PARA + "\n```text\n```js\n## Constraints\n```\n")],
+    "redefined_node": [(NODE, NODE + '    web["Web UI v2 [TypeScript]"]\n')],
+    "unclosed_fence": [(INVENTORY, INVENTORY + "\n```mermaid\nflowchart LR\n    A --> B\n")],
+    "br_label": [('web["Web UI [TypeScript]"]', 'web["Web UI<br/>[TypeScript]"]')],
+}
+
+
+def edited_clean(key):
+    text = (fixture("clean") / "architecture.md").read_text(encoding="utf-8")
+    for old, new in EDITS[key]:
+        assert text.count(old) == 1, (key, old)
+        text = text.replace(old, new)
+    return text
 
 
 def build_input(base, spec):
@@ -348,6 +441,8 @@ def build_input(base, spec):
     if kind == "line_cap":
         text = (fixture("clean") / "architecture.md").read_text(encoding="utf-8")
         return write_doc(base, text.rstrip("\n") + "\n\n" + "x" * 4097 + "\n", "line-cap"), None
+    if kind == "edit":
+        return write_doc(base, edited_clean(arg), arg), None
     assert kind == "root", spec
     value = {"dotdot_x": "../x", "nope": "docs/nope", "default_value": "docs/architecture",
              "int5": 5, "sub_dotdot": "sub/../docs/architecture", "drive_dir": "C:\\x",
@@ -527,13 +622,16 @@ def test_resolve_verb_output(tmp_path):
     pytest.param(None, id="missing"),
     pytest.param("{not json", id="invalid_json"),
     pytest.param("[1, 2]", id="json_list"),
+    pytest.param("FIFO", id="fifo"),
 ])
 def test_config_unreadable_falls_back_and_never_claims_checked(tmp_path, raw):
     mod = load_module()
     assert mod is not None, "architecture_doc.py missing"
     repo = make_repo(tmp_path, raw if raw is not None else {})
-    if raw is None:
+    if raw in (None, "FIFO"):
         (repo / ".sdlc" / "config.json").unlink()
+    if raw == "FIFO":       # a named pipe with no writer: opening it would block every run forever
+        os.mkfifo(str(repo / ".sdlc" / "config.json"))
     # an explicit <dir>: lints, never a finding for the key, and says the key was not checked
     rc, out, err = run_gesture(tmp_path, repo / "target", cwd=repo)
     assert rc == 0 and not FINDING.search(out), (rc, out, err)
@@ -608,6 +706,17 @@ def test_node_extraction_edge_lines_and_subgraph_titles(tmp_path):
     rc, out, err = run_gesture(tmp_path, write_doc(tmp_path, with_shapes))
     named = sorted(re.findall(r"container '([^']*)'", out))
     assert rc == 1 and named == ["Event hub", "Nightly job", "Postgres", "Status page"], (out, err)
+    # a line break before the technology is not part of the name, in every spelling
+    for br in ("<br>", "<br/>", "<br />", "<BR/>"):
+        check(run_gesture(tmp_path, write_doc(tmp_path, clean.replace(
+            'web["Web UI [TypeScript]"]', 'web["Web UI' + br + '[TypeScript]"]'))), (0,))
+    # a non-ASCII id is a node (it used to be skipped silently), and so is a node right after an
+    # open link `---` (the id is cut where the edge ends)
+    for node, name in (('    café["Café API [Go]"]\n', "Café API"),
+                       ('    user---q["Queue [Kafka]"]\n', "Queue")):
+        rc, out, err = run_gesture(tmp_path, write_doc(tmp_path, clean.replace("    user --> web\n",
+                                                                               node + "    user --> web\n")))
+        assert rc == 1 and re.findall(r"container '([^']*)'", out) == [name], (node, out, err)
 
 
 def test_second_container_diagram_is_not_silently_skipped(tmp_path):
@@ -652,6 +761,24 @@ def test_oversize_file_exit_2_and_line_cap_finding(tmp_path):
         para, para + "\n```mermaid\nflowchart LR\n" + adversarial + "\n```\n")))
     assert rc == 1 and "[unbalanced-bracket]" in out, (rc, out, err)
     assert time.monotonic() - started < 10                              # SMOKE
+    # Pattern blow-ups (code review 1). Each input took the earlier patterns 9.8 s to 45 s, or was
+    # killed at the 10 s timeout (rc None); every one now lints in tens of milliseconds, so 5 s is a
+    # generous bound, not a performance claim.
+    anchor = "    user --> web\n"
+    for unit, where, fill in (("~" * 3000 + "`\n", para, False),       # one tilde-then-backtick line
+                              ("~" * 4000 + "`\n", para, True),        # ~1 MiB of them
+                              ("a" * 4096 + "\n", anchor, True),       # ~1 MiB of identifier runs, no opener
+                              (("a-" * 2048)[:4095] + "\n", anchor, True),   # ~1 MiB of hyphenated runs
+                              ("## " + " #" * 2000 + "x\n", para, True)):    # ~1 MiB of trailing-hash headings
+        cut = clean.index(where) + (len(where) if where == para else 0)
+        head, tail = clean[:cut] + ("\n" if where == para else ""), clean[cut:]
+        room = mod.READ_CAP - len((head + tail).encode("utf-8"))
+        count = room // len(unit) if fill else 1
+        started = time.monotonic()
+        rc, out, err = run_gesture(tmp_path, write_doc(tmp_path, head + unit * count + tail))
+        elapsed = time.monotonic() - started
+        assert rc == 0 and not FINDING.search(out), (unit[:12], count, rc, out[:300], err[:300])
+        assert elapsed < 5, (unit[:12], count, elapsed)                 # SMOKE, generous
 
 
 def test_symlink_escape_exit_2(tmp_path):

@@ -51,13 +51,20 @@ flowchart TB
 ```
 
 - The technology is the text inside the **last** `[...]` of the label, so
-  `cache["Cache [v2] layer [Redis]"]` is the container `Cache [v2] layer` written in Redis.
+  `cache["Cache [v2] layer [Redis]"]` is the container `Cache [v2] layer` written in Redis. Put
+  the technology last: `web["Web UI [TypeScript] serves [beta] pages"]` reads as the container
+  `Web UI [TypeScript] serves` written in `beta`.
+- A line break in a label (`<br>`, `<br/>`, `<br />`) counts as a space, so
+  `web["Web UI<br/>[TypeScript]"]` is the container `Web UI`.
 - A node whose technology is `Person` or `External system` is not a container and needs no row.
 - A node with no `[Technology]` at all is a finding.
 - The label forms read are `id["..."]`, `id("...")`, `id{{"..."}}`, `id[...]` and the shaped forms
   `id[("...")]`, `id(["..."])`, `id[["..."]]`, `id(("..."))`; the shape punctuation is not part of
-  the name. A node defined on an edge line (`web["..."] --> api["..."]`) is read too. A
-  `subgraph` title is not a container.
+  the name. A node defined on an edge line (`web["..."] --> api["..."]`) is read too. An id is
+  letters, digits and `_` (any script, so `café[...]` counts) joined by single hyphens. A
+  `subgraph` title is not a container, nor is anything on a `%%` comment line, in edge text
+  `-->|...|`, or on a `click`, `style`, `classDef`, `class`, `linkStyle` or `direction` line. When
+  an id is defined twice, the first definition is the one read.
 - Mermaid's own C4 keywords (`C4Context`, `C4Container`, `C4Component`, `C4Dynamic`,
   `C4Deployment`) are reported as unsupported: that syntax is experimental and not rendered by
   every host, while `flowchart` is.
@@ -68,7 +75,8 @@ flowchart TB
 
 Under **Technology inventory**, the first table lists each container by the exact name used in
 its label (trimmed and case-folded; no partial match, so a row `Billing API Gateway` does not
-cover `Billing API`):
+cover `Billing API`). Only the first table counts, its header row is not a container, and a cell
+written as code (`` `Web UI` ``) is read without the backticks:
 
 ```markdown
 | Container | Technology |
@@ -86,7 +94,9 @@ Bracket and quote balance is checked per line: on each line the counts of `[` an
 `)`, and `{` and `}` must match and the number of `"` must be even, counted over the whole line,
 quoted label text included. So a label cannot hold a lone bracket; write `&#91;` for a literal
 `[`. Braces are not counted in `erDiagram`, `classDiagram` and `stateDiagram-v2` blocks, where
-they open multi-line bodies. `subgraph` and `end` must pair in a flowchart.
+they open multi-line bodies. `subgraph` and `end` must pair in a flowchart (only there: a
+sequence diagram closes `loop` and `alt` with `end` too). A code fence (of any kind) left open at
+the end of the file is a finding, `unclosed-fence`, because everything after it reads as code.
 
 ## Where the document lives
 
@@ -122,10 +132,12 @@ for a usage error or a file it will not read (unreadable, larger than 1 MiB, not
 or a symlink that leaves the directory). A finding reads `<file>:<line>: [<code>] <message>`; line
 `0` means the whole file. The codes are `missing-file`, `missing-heading`, `duplicate-heading`,
 `missing-diagram`, `unsupported-keyword`, `no-keyword`, `unbalanced-bracket`,
-`unbalanced-subgraph`, `node-no-technology`, `container-no-inventory`, `line-too-long` and
-`system-root`.
+`unbalanced-subgraph`, `node-no-technology`, `container-no-inventory`, `line-too-long`,
+`unclosed-fence` and `system-root`.
 
-Without `<dir>` it lints the folder `architecture.system_root` resolves to. Two more verbs:
+Without `<dir>` it lints the folder `architecture.system_root` resolves to; when that value is a
+repository URL there is no local folder to read, so `lint` with no `<dir>` exits `2` and asks you
+to run it inside that repository or pass a directory. Two more verbs:
 `resolve` prints the resolved root and its form (`folder` or `url`), and `headings` prints the
 eleven headings. The optional flags are `--repo-root` (default: the current directory) and
 `--sdlc` (default: `<repo-root>/.sdlc`). The config flag is spelled `--sdlc`, as in
@@ -148,6 +160,11 @@ private-name guard rejects.
   not fail `lint <dir>` on the key, while `lint` with no directory still exits 1 naming the missing
   `docs/architecture/architecture.md`.
 - The label reader is line-oriented: a label that spans lines, or a node syntax not listed above,
-  can hide a container. Edge text written as `A -- text(x) --> B` can be misread as a node; use
-  the `-->|text|` form.
+  can hide a container. In particular Mermaid 11's shape syntax, `db@{ shape: cyl, label: "Orders
+  DB [PostgreSQL]" }`, is not read: such a node is silently not checked, so use `db[("...")]`.
+  Edge text written as `A -- text(x) --> B` can be misread as a node; use the `-->|text|` form.
+- The balance rule applies to sequence-diagram message text too, so `A->>B: retry (up to 3`
+  is a finding although Mermaid renders it; close the bracket.
+- An unreadable `.sdlc/config.json` includes one that is not a regular file (a named pipe, say):
+  it is never opened, so it cannot hang the lint.
 - A line longer than 4,096 characters is a finding and is not otherwise checked.

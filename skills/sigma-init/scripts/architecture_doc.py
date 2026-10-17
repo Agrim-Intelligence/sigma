@@ -28,7 +28,8 @@ EXIT CODES: 0 clean; 1 findings, one per stdout line as `<file>:<line>: [<code>]
 unreadable, larger than READ_CAP, not a regular file, or a symlink that leaves the directory.
 Finding codes (closed set): missing-file, missing-heading, duplicate-heading, missing-diagram,
 unsupported-keyword, no-keyword, unbalanced-bracket, unbalanced-subgraph, node-no-technology,
-container-no-inventory, line-too-long, system-root.
+container-no-inventory, line-too-long, unclosed-fence, system-root. `lint` with no <dir> exits 2
+when `architecture.system_root` is a repository URL (there is no local folder to read).
 
 WHAT IS CHECKED (structural only; this is not a Mermaid parser and a block that passes can still
 fail to render in some host):
@@ -41,9 +42,14 @@ fail to render in some host):
     (quoted text included); `{ }` is not counted in erDiagram, classDiagram and stateDiagram-v2
     blocks, whose braces open multi-line bodies and ER cardinalities;
   * `subgraph`/`end` pair in flowchart blocks (sequence diagrams close loop/alt with `end` too);
-  * every node `id["Name [Technology]"]` of every flowchart under `Building blocks` has a
-    Technology inventory row named exactly `Name` (trimmed, case-folded), unless its technology is
-    `Person` or `External system`; a node with no `[Technology]` is a finding;
+  * a code fence still open at the end of the file is a finding (everything after it reads as code);
+  * every node `id["Name [Technology]"]` of every flowchart under `Building blocks` has a row named
+    exactly `Name` (trimmed, case-folded; `<br>` in the label is a space) in the FIRST table under
+    `Technology inventory` (header and delimiter rows are not rows; a cell's surrounding backticks
+    are ignored), unless its technology is `Person` or `External system`; a node with no
+    `[Technology]` is a finding. Ids are Unicode word characters with single hyphens; `%%` comment
+    lines, edge text `|...|` and `subgraph`/`end`/`click`/`style`/`classDef`/`class`/`linkStyle`/
+    `direction` lines define no node; the first definition of an id wins;
   * `architecture.system_root` (see resolve_system_root): an invalid value is always a finding
     when the config is readable; a folder's existence is checked only when the key is explicit
     and not the default `docs/architecture`.
@@ -58,21 +64,35 @@ BOUNDS AND SCALE. One file per run, one pass, linear in file size, flat in repos
 read is capped at READ_CAP (1 MiB): cap + 1 bytes are read and a larger file is refused with exit
 2 and its size, never truncated (a truncation could hide a planted container past the cut). A
 line longer than LINE_CAP (4096 characters) is a finding and is skipped by every pattern scan, so
-no regular expression ever sees an unbounded line, and none has nested quantifiers. At 10x or 100x
+no regular expression ever sees an unbounded line. No pattern has a nested quantifier, and no two
+adjacent quantifiers can match the same character except where the second is a final `(.*)$`, so
+every scan is linear in the line (see the comment above `_FENCE`; the review that found the earlier
+super-linear patterns is why the adversarial cases below are measured). At 10x or 100x
 more repositories the cost is unchanged (one file each); a 1,000-container diagram is unreadable
 long before it nears 1 MiB. No lock, writer, table, network, `gh` call or background process;
 read-only, so recovery from any failure is "run it again".
 
-Measured 2026-10-18 on arm64 macOS, warm cache, best of 5, wall time of the full documented gesture
-including interpreter start: a valid document of exactly 1 MiB (16,887 containers, one inventory
-row each) lints clean in 93 ms on Python 3.12.13 and 140 ms on the system Python 3.9.6 (54 ms of
-that is the in-process lint on 3.12.13); a 4096-character adversarial mermaid line (repeated
-`["a [b`, `subgraph `, `A --> `) is reported in 36 ms on Python 3.12.13 and 52 ms on Python 3.9.6
-(0.2 ms in-process); a file of READ_CAP + 1 bytes is refused in 38 ms on Python 3.12.13 and 46 ms on
-Python 3.9.6 (0.1 ms in-process). Bare interpreter start on that host is 23 ms (3.12.13) and 36 ms
-(3.9.6). The inventory is a set: with a tuple the same 1 MiB file took 725 ms (quadratic lookups),
-which is why it is not one. Unmeasured: Windows (drive-letter and UNC values are refused by shape
-only, not measured on Windows), and any cold-cache read.
+Measured 2026-10-18 on arm64 macOS 26.6.2, warm cache, best of 5, wall time of the full
+documented gesture including interpreter start, on Python 3.12.13 and on the system Python 3.9.6
+(bare interpreter start on that host: 18 ms and 20 ms). "1 MiB of such lines" is as many whole
+lines as fit under READ_CAP (1,045,582 to 1,046,408 bytes), inside a valid document:
+  * a valid document of 1 MiB (18,013 containers, one inventory row each) lints clean in 84 ms on
+    3.12.13 and 116 ms on 3.9.6 (54 ms and 83 ms of it in-process);
+  * a 4096-character adversarial mermaid line (repeated `["a [b`) is reported in 28 ms and 33 ms;
+  * a file of READ_CAP + 1 bytes is refused in 28 ms and 32 ms;
+  * one prose line of 3,000 `~` then a backtick: 28 ms and 33 ms; 1 MiB of 4,000-`~`-then-backtick
+    lines: 30 ms and 34 ms;
+  * one 4096-character identifier run (`aaa...`, no opener) in the container flowchart: 28 ms and
+    31 ms; 1 MiB of such lines: 52 ms and 57 ms; 1 MiB of 4095-character `a-a-a-...` runs: 52 ms
+    and 61 ms;
+  * one heading line `## ` + 2,000 ` #` + `x`: 28 ms and 32 ms; 1 MiB of such lines: 30 ms and
+    37 ms.
+The patterns these replaced, measured once on the same inputs on 3.12.13: the one tilde line took
+15.6 s, the 1 MiB identifier file 45.2 s, the hyphenated file 10.6 s, the heading file 9.8 s, and the
+1 MiB tilde file was killed unfinished at 120 s; the valid 1 MiB document took 73 ms (11 ms less
+than now; the difference was not attributed). The inventory is a set: with a tuple the earlier 1 MiB
+file took 725 ms (quadratic lookups), which is why it is not one. Unmeasured: Windows (drive-letter
+and UNC values are refused by shape only, not measured on Windows), and any cold-cache read.
 """
 from __future__ import annotations
 
@@ -108,12 +128,20 @@ _CONTEXT = "context and scope"
 _BUILDING = "building blocks"
 _INVENTORY = "technology inventory"
 
-_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*([^`\s]*)[^`]*$")
-_HEADING = re.compile(r"^ {0,3}##[ \t]+(.*?)[ \t#]*$")
+# Every pattern below is linear in the line it scans: no two adjacent quantifiers can match the
+# same character unless the second one is the last thing in the pattern (`(.*)$`, which never
+# backtracks), and none is nested. The info string of a fence, the trailing `#`s of a heading and
+# the cells of a delimiter row are read by hand, not by a pattern, because the patterns that did
+# that were super-linear (a 3,000-character `~~~...~` line took 17.6 s).
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+_HEADING = re.compile(r"^ {0,3}##[ \t]+(.*)$")
 _NUMBER = re.compile(r"^\d+\.?\s*")
-_NODE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:-[A-Za-z0-9_]+)*(?=[\[({])")
+# A whole identifier run ending right before an opener. The lookbehind makes a search that starts
+# inside a run fail at once, so a long run with no opener costs one pass, not one pass per start.
+_NODE = re.compile(r"(?<![\w-])[\w-]+(?=[\[({])")
 _EDGE_TEXT = re.compile(r"\|[^|]*\|")
-_DELIMITER = re.compile(r"^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?$")
+_DELIMITER_CELL = re.compile(r":?-+:?")
+_BR = re.compile(r"<br\s*/?>", re.IGNORECASE)
 _URL_HOST = re.compile(r"^[A-Za-z0-9.-]+(:\d+)?$")
 
 
@@ -138,6 +166,7 @@ class Doc(NamedTuple):
     headings: List[Tuple[str, int]]   # (normalised name, line)
     blocks: List[Block]
     inventory: FrozenSet[str]         # first-column cells, stripped and case-folded (a set: lookups stay O(1))
+    unclosed: Optional[int]           # line of a code fence still open at the end of the file, else None
 
 
 class Refusal(Exception):
@@ -191,48 +220,92 @@ def _strip_front_matter(lines: List[Tuple[int, str]]) -> List[Tuple[int, str]]:
     return lines
 
 
+def _fence_line(line: str) -> Optional[Tuple[str, str]]:
+    """(fence run, info word) when `line` is a code-fence line, else None. A line whose text after
+    the run holds a backtick is not a fence. The info word is the first whitespace-free run after
+    leading spaces and tabs, read by hand (linear)."""
+    match = _FENCE.match(line)
+    if not match or "`" in match.group(2):
+        return None
+    info = match.group(2).lstrip(" \t")
+    info = info.split(None, 1)[0] if info and not info[0].isspace() else ""
+    return match.group(1), info
+
+
+def _closes(fence: Tuple[str, int, bool, int], run: str, line: str) -> bool:
+    """A closing fence: the opener's character, at least its length, and nothing else on the line
+    (so no info string either)."""
+    return run[0] == fence[0] and len(run) >= fence[1] and line.strip() == run
+
+
+def _first_table(lines: List[str]) -> List[str]:
+    """The first run of consecutive `|` lines (stripped) among `lines`; later tables are ignored."""
+    table: List[str] = []
+    for line in lines:
+        s = line.strip()
+        if s.startswith("|"):
+            table.append(s)
+        elif table:
+            break
+    return table
+
+
+def _is_delimiter(row: str) -> bool:
+    """A table delimiter row such as `| --- | :-: |`: every cell is `:?-+:?` after trimming."""
+    s = row.strip()
+    if s.startswith("|"):
+        s = s[1:]
+    if s.endswith("|"):
+        s = s[:-1]
+    return all(_DELIMITER_CELL.fullmatch(cell.strip()) for cell in s.split("|"))
+
+
+def _body_rows(table: List[str]) -> List[str]:
+    """The data rows: the header row is never a row, nor is a delimiter row under it."""
+    return table[2:] if len(table) > 1 and _is_delimiter(table[1]) else table[1:]
+
+
+def _cell_name(cell: str) -> str:
+    """An inventory cell as a name: trimmed, surrounding backticks removed, case-folded."""
+    return cell.strip().strip("`").strip().casefold()
+
+
 def _parse(lines: List[str]) -> Doc:
     headings: List[Tuple[str, int]] = []
     blocks: List[Block] = []
-    inventory: List[str] = []
     heading: Optional[str] = None
     fence: Optional[Tuple[str, int, bool, int]] = None     # (char, length, is_mermaid, start)
     body: List[Tuple[int, str]] = []
-    table: List[str] = []
-    table_done = False
+    inventory_lines: List[str] = []
     for number, line in enumerate(lines, 1):
         if len(line) > LINE_CAP:
             continue            # reported by _check_line_length; never pattern-scanned
-        match = _FENCE.match(line)
+        found = _fence_line(line)
         if fence is not None:
-            if match and match.group(1)[0] == fence[0] and len(match.group(1)) >= fence[1] \
-                    and not match.group(2) and line.strip() == match.group(1):
+            if found and _closes(fence, found[0], line):
                 if fence[2]:
                     blocks.append(Block(fence[3], heading, _strip_front_matter(body)))
                 fence, body = None, []
             elif fence[2]:
                 body.append((number, line))
             continue
-        if match:
-            fence = (match.group(1)[0], len(match.group(1)), match.group(2) == "mermaid", number)
+        if found:
+            fence = (found[0][0], len(found[0]), found[1] == "mermaid", number)
             body = []
             continue
         h = _HEADING.match(line)
         if h:
-            heading = _norm_heading(h.group(1))
+            heading = _norm_heading(h.group(1).rstrip(" \t#"))
             headings.append((heading, number))
             continue
-        if heading == _INVENTORY and not table_done:
-            if line.strip().startswith("|"):
-                table.append(line.strip())
-            elif table:
-                table_done = True
+        if heading == _INVENTORY:
+            inventory_lines.append(line)
+    unclosed = fence[3] if fence is not None else None
     if fence is not None and fence[2]:
         blocks.append(Block(fence[3], heading, _strip_front_matter(body)))
-    rows = table[2:] if len(table) > 1 and _DELIMITER.match(table[1]) else table[1:]
-    for row in rows:
-        inventory.append(row.strip("|").split("|")[0].strip().casefold())
-    return Doc(headings, blocks, frozenset(inventory))
+    inventory = frozenset(_cell_name(row.strip("|").split("|")[0])
+                          for row in _body_rows(_first_table(inventory_lines)))
+    return Doc(headings, blocks, inventory, unclosed)
 
 
 def _first_token(block: Block) -> Optional[str]:
@@ -325,10 +398,20 @@ def _quote_ok(line: str) -> bool:
     return line.count('"') % 2 == 0
 
 
+def _counts_braces(block: Block) -> bool:
+    """`{ }` is counted except in erDiagram, classDiagram and stateDiagram-v2 blocks."""
+    return _first_token(block) not in BRACE_BODY_KEYWORDS
+
+
+def _skip_in_balance(line: str) -> bool:
+    """A `%%` comment line is not balance-checked."""
+    return line.strip().startswith("%%")
+
+
 def _check_balance(block: Block) -> list:
-    braces = _first_token(block) not in BRACE_BODY_KEYWORDS
+    braces = _counts_braces(block)
     for number, line in block.lines:
-        if line.strip().startswith("%%"):
+        if _skip_in_balance(line):
             continue
         if not (_square_ok(line) and _round_ok(line) and (_curly_ok(line) or not braces) and _quote_ok(line)):
             return [(number, "unbalanced-bracket",
@@ -361,8 +444,13 @@ def _unclosed_subgraph(lines: List[Tuple[int, str]]) -> bool:
     return depth > 0
 
 
+def _checks_subgraphs(block: Block) -> bool:
+    """Only flowcharts pair `subgraph`/`end`; a sequence diagram closes loop/alt/opt with `end`."""
+    return _first_token(block) in FLOWCHART_KEYWORDS
+
+
 def _check_subgraph(block: Block) -> list:
-    if _first_token(block) not in FLOWCHART_KEYWORDS:
+    if not _checks_subgraphs(block):
         return []
     if _stray_end(block.lines):
         return [(block.start, "unbalanced-subgraph",
@@ -373,7 +461,20 @@ def _check_subgraph(block: Block) -> list:
     return []
 
 
+def _check_unclosed_fence(unclosed: Optional[int]) -> list:
+    if unclosed is None:
+        return []
+    return [(unclosed, "unclosed-fence",
+             "code fence opened at line %d is never closed: everything after it is read as code" % unclosed)]
+
+
+def _strip_line_breaks(label: str) -> str:
+    """`<br>`, `<br/>` and `<br />` in a label become a space, so `Web UI<br/>[TypeScript]` is `Web UI`."""
+    return _BR.sub(" ", label)
+
+
 def _extract_label_parts(label: str) -> Tuple[str, Optional[str]]:
+    label = _strip_line_breaks(label)
     close = label.rfind("]")
     opening = label.rfind("[", 0, close) if close >= 0 else -1
     if opening < 0:
@@ -410,15 +511,44 @@ def _is_excluded_line(line: str) -> bool:
     return _first_word(line) in EXCLUDED_FIRST_TOKENS
 
 
+def _skip_in_scan(line: str) -> bool:
+    """A `%%` comment line defines no node."""
+    return line.strip().startswith("%%")
+
+
+def _strip_edge_text(line: str) -> str:
+    """Edge text `-->|text|` is not a node definition, whatever brackets it holds."""
+    return _EDGE_TEXT.sub(" ", line)
+
+
+def _node_id(run: str) -> Optional[str]:
+    """The identifier at the end of an identifier run before an opener, or None. An identifier
+    starts with a letter or `_` and holds single hyphens only, so the edge in `A---B[` is cut off
+    (`B`); a run ending in `-` has none. Read by hand, one pass."""
+    if run.endswith("-"):
+        return None
+    cut = run.rfind("--")
+    if cut >= 0:
+        run = run[cut + 2:]
+    for i, ch in enumerate(run):
+        if ch == "_" or ch.isalpha():
+            return run[i:]
+    return None
+
+
 def _scan_nodes(line: str) -> list:
     """Every node definition on one line, in order: (id, label). An identifier immediately followed
     by an opener; shape punctuation (`[(`, `([`, `[[`, `((`, `{{`, `/`, `\\`) is not part of the label."""
-    text = _EDGE_TEXT.sub(" ", line)
+    text = _strip_edge_text(line)
     out, pos = [], 0
     while True:
         match = _NODE.search(text, pos)
         if not match:
             return out
+        node_id = _node_id(match.group(0))
+        if node_id is None:
+            pos = match.end()
+            continue
         i = match.end()
         while i < len(text) and text[i] in "[({":
             i += 1
@@ -441,24 +571,34 @@ def _scan_nodes(line: str) -> list:
                     depth -= 1
                 i += 1
             label = text[start:i].strip().strip("/\\").strip()
-        out.append((match.group(0), label))
+        out.append((node_id, label))
         pos = max(i, match.end())
 
 
-def _containers(blocks: List[Block]) -> list:
+def _unique_nodes(found: list) -> list:
+    """(id, label, line) definitions with repeats of an id dropped: the first definition wins."""
     seen, out = set(), []
+    for node in found:
+        if node[0] not in seen:
+            seen.add(node[0])
+            out.append(node)
+    return out
+
+
+def _containers(blocks: List[Block]) -> list:
+    found = []
     for block in blocks:
         if block.heading != _BUILDING or _first_token(block) not in FLOWCHART_KEYWORDS:
             continue
         for number, line in block.lines:
-            if line.strip().startswith("%%") or _is_excluded_line(line):
+            if _skip_in_scan(line) or _is_excluded_line(line):
                 continue
             for node_id, label in _scan_nodes(line):
-                if node_id in seen:
-                    continue
-                seen.add(node_id)
-                name, technology = _extract_label_parts(label)
-                out.append((name, technology, number))
+                found.append((node_id, label, number))
+    out = []
+    for _, label, number in _unique_nodes(found):
+        name, technology = _extract_label_parts(label)
+        out.append((name, technology, number))
     return out
 
 
@@ -470,6 +610,7 @@ def lint_text(text: str) -> list:
     for name, line in doc.headings:
         heading_lines.setdefault(name, line)
     findings = _check_line_length(lines)
+    findings += _check_unclosed_fence(doc.unclosed)
     findings += _check_headings(doc.headings)
     findings += _check_duplicate_headings(doc.headings)
     findings += _check_required_diagrams(doc.blocks, heading_lines)
@@ -486,8 +627,17 @@ def lint_text(text: str) -> list:
 # ----------------------------------------------------------------------------------- system root
 
 def _read_config(sdlc_dir: str) -> Tuple[Optional[dict], str]:
-    """The parsed config object, or (None, reason): missing, unreadable, invalid JSON, not an object."""
+    """The parsed config object, or (None, reason): missing, unreadable, not a regular file (a FIFO
+    would block the read forever, so it is never opened), invalid JSON, not an object."""
     path = os.path.join(sdlc_dir, "config.json")
+    try:
+        mode = os.stat(path).st_mode
+    except FileNotFoundError:
+        return None, "missing"
+    except OSError:
+        return None, "unreadable"
+    if not stat.S_ISREG(mode):
+        return None, "not a regular file"
     try:
         with open(path, "rb") as fh:
             raw = fh.read(READ_CAP + 1)
@@ -573,7 +723,11 @@ def resolve_system_root(sdlc_dir: str, repo_root: str) -> Resolved:
 
     The one function later consumers import by sibling path. Never touches the network and never
     checks a folder's existence (that is `lint`'s job, for an explicit key only)."""
-    config, _ = _read_config(sdlc_dir)
+    return _resolve_config(_read_config(sdlc_dir)[0], repo_root)
+
+
+def _resolve_config(config: Optional[dict], repo_root: str) -> Resolved:
+    """resolve_system_root on a config already read (None: unreadable), so a run reads it once."""
     if config is None:
         return Resolved("folder", DEFAULT_SYSTEM_ROOT,
                         Path(os.path.realpath(repo_root)).joinpath(DEFAULT_SYSTEM_ROOT),
@@ -657,8 +811,8 @@ def _url_note() -> None:
 def _lint(opts: dict) -> int:
     sdlc_dir, repo_root = _locations(opts)
     config_path = os.path.join(sdlc_dir, "config.json")
-    resolved = resolve_system_root(sdlc_dir, repo_root)
     config, reason = _read_config(sdlc_dir)
+    resolved = _resolve_config(config, repo_root)
     findings = []
     if config is None:
         _note(reason, opts["dir"] is not None)
@@ -698,9 +852,10 @@ def _lint(opts: dict) -> int:
 
 def _resolve(opts: dict) -> int:
     sdlc_dir, repo_root = _locations(opts)
-    resolved = resolve_system_root(sdlc_dir, repo_root)
+    config, reason = _read_config(sdlc_dir)
+    resolved = _resolve_config(config, repo_root)
     if resolved.note:
-        _note(_read_config(sdlc_dir)[1], False)
+        _note(reason, False)
     print("%s %s" % (resolved.value, resolved.form))
     if resolved.form == "url":
         _url_note()
