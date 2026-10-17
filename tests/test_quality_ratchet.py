@@ -486,3 +486,23 @@ def test_ratchet_park_texts_classify_by_kind(tmp_path, monkeypatch):
         assert loop._suggest_kind(text) == want, (name, text)
     assert "could not measure" not in texts["mixed"], "a mixed park emits the WORSE text alone"
     assert "also unmeasured: n: head command exited 1" in texts["mixed"]
+
+
+# ------------------------------------------------------------------------- review follow-ups (#1637)
+
+def test_an_unrelated_park_naming_the_phrase_is_not_failing_check():
+    """The failing_check needle is the gate's own worse-metric wording, not the bare phrase: a quota park
+    that merely quotes a check called `quality ratchet` keeps its own class."""
+    text = "source error recording 'parked' (API rate limit exceeded while reading check quality ratchet)"
+    assert loop._needle_kind(text) == "quota", loop._needle_kind(text)
+    assert loop._suggest_kind(text) != "failing_check"
+
+
+def test_the_waiver_command_in_the_park_text_is_quoted(tmp_path, monkeypatch):
+    import shlex
+    fake = FakeQD(_result(_row("words", 3, 5)), _result(_row("words", None, 6)))
+    d, out, _loads = _gate(tmp_path / "has space", monkeypatch, fake)
+    assert " " in d
+    assert "work.py quality-waive %s %s --metric words" % (shlex.quote(d), shlex.quote(GOAL)) in out, out
+    cmd = out.split("work.py quality-waive ", 1)[1].split(" --metric", 1)[0]
+    assert shlex.split(cmd) == [d, GOAL], cmd

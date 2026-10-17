@@ -168,9 +168,9 @@ and the scratch worktrees are built from committed HEAD anyway, so files a verif
 **What it decides.** For each metric, `bad` is `head - base` for `lower` and `base - head` for `higher`; worse
 beyond tolerance means `bad > tolerance`, strictly.
 - A `required` metric worse beyond tolerance is measured at the head once more (one scratch at HEAD, only those
-  metrics, once each). The goal parks with `failing_check` only if that second reading is also worse beyond
-  tolerance against the first base, or unmeasured. If it is not worse, both readings are logged and the merge
-  goes on.
+  metrics, once each). If that second reading is also worse beyond tolerance against the first base, the goal
+  parks with `failing_check`. If the second reading is unmeasured, the metric counts as unmeasured and parks with
+  `no_evidence` (next bullet). If it is not worse, both readings are logged and the merge goes on.
 - A `required` metric that is `unmeasured` (a failed command, the memory floor, a live scratch owner, the time
   budget, a refusal, a crash, a measured head that is not the PR head) parks with `no_evidence`. When one metric is
   worse and another unmeasured, the worse text alone is emitted, so the park is classed `failing_check`.
@@ -183,13 +183,16 @@ beyond tolerance means `bad > tolerance`, strictly.
 three `worktree add` calls: a judgement, unmeasured; each add keeps its own 600 s ceiling, clipped to the time
 left. The first reading keeps back `R = min(B / 2, 120 + the sum of required timeouts)` for the second, so a slow
 first checkout cannot starve it. Command timeouts are clipped to the time left; past it a metric reads
-`unmeasured (the gate's time budget of N s ran out)`. Git reads (30 s each) are not clipped, plus at most 10 s per
-memory probe (probes are not clipped to the deadline either).
+`unmeasured (the gate's time budget of N s ran out)`. Git calls (30 s each) and memory probes (10 s each) are not
+clipped to the deadline; most of them land inside the budget, and only the work after the final deadline adds on
+top of it (below).
 
 **Worst case, in numbers.** With the gate off, `work.py merge` stays at 22.5 minutes. On, it adds at most B (1800 s
-by default, 3600 s at the maximum) plus at most 2 runs x 8 git reads x 30 s = 480 s, plus 10 s per memory probe
-(one per run and one per command): about 60.5 minutes by default and 90.5 minutes at the maximum. Unmeasured on a
-real project. Set `quality.gate_timeout_seconds` so that 22.5 min + the budget + 8 min fits the host's call-length
+by default, 3600 s at the maximum) plus the unclipped work that can still run after the final deadline: the first
+run's scratch cleanup (up to 120 s), the second run's git reads (up to 220 s), its stale-scratch reclaim (up to 60 s)
+and one memory probe (10 s), about 410 s in all. A run is about 26 git calls, most of them inside B (counted by an
+instrumented run with stale scratch left over). So the bound is under B + 480 s: about 60.5 minutes by default and
+90.5 minutes at the maximum, an upper bound, unmeasured on a real project. Set `quality.gate_timeout_seconds` so that 22.5 min + the budget + 8 min fits the host's call-length
 limit. A host that cuts the call mid-measurement records nothing; the next run reclaims the scratch and measures
 from zero.
 

@@ -6985,14 +6985,15 @@ def _quality_ratchet_refusal(sdlc_dir, config, goal, rec, vetted_head, actionlog
     head (`committed=True`), and the ORDER below is the contract:
 
     - a refusal or a raised exception parks (`could not measure`); it never passes silently;
-    - no metrics configured passes, logged; a whole-run `unmeasured` parks when any metric is required,
-      or when the metrics are unknown because the run stopped before the config was read (fail closed);
+    - no metrics configured passes, logged; a whole-run `unmeasured` always parks: it carries no rows,
+      so whether any metric is required is unknown (fail closed);
     - a measured head that is not `vetted_head` makes every required metric unmeasured;
     - per row, worse-beyond means `bad > tolerance`, strictly (bad = head - base for `lower`, base -
       head for `higher`); a required, worse-beyond metric is measured AT THE HEAD ONCE MORE
-      (`head_only`, inside the first run's deadline) and parks only if that reading is also worse
-      beyond tolerance against the FIRST base, or unmeasured; a second head sha that differs is
-      unmeasured; a required unmeasured metric parks; a non-required metric is logged, never parks;
+      (`head_only`, inside the first run's deadline) and parks failing_check only if that reading is
+      also worse beyond tolerance against the FIRST base; an unmeasured second reading, or a second head
+      sha that differs, makes it unmeasured; a required unmeasured metric parks no_evidence; a
+      non-required metric is logged, never parks;
     - a park candidate with a valid waiver for (goal, metric, measured head) is logged `waived`.
 
     Every metric gets one action-log `gate` row (gate `merge`, verdict pass/block/warn; the why names
@@ -7020,10 +7021,9 @@ def _quality_ratchet_refusal(sdlc_dir, config, goal, rec, vetted_head, actionlog
         log("pass", "quality ratchet: no metrics configured")
         return ""
     if first.unmeasured:
-        if not first.rows or any(row.required for row in first.rows):
-            return cannot([first.unmeasured])
-        log("pass", f"quality ratchet: whole run unmeasured ({first.unmeasured}); no metric is required -> pass")
-        return ""
+        # A whole-run unmeasured carries no rows (the run stopped before it could name its metrics, or
+        # with no commit to measure), so whether any metric is required is unknown: fail closed.
+        return cannot([first.unmeasured])
 
     readings = {}                           # name -> dict(row=..., head2=..., outcome=..., why=...)
     remeasure = []
@@ -7084,7 +7084,8 @@ def _quality_ratchet_refusal(sdlc_dir, config, goal, rec, vetted_head, actionlog
         metric = names[0] if len(names) == 1 else "<name>"
         return ("quality ratchet: " + "; ".join(worse) + also + "; fix the regression. An owner may record a "
                 "waiver (the loop never runs this): "
-                f"work.py quality-waive {sdlc_dir} {goal} --metric {metric} --reason \"<why>\""
+                f"work.py quality-waive {shlex.quote(str(sdlc_dir))} {shlex.quote(str(goal))} --metric {metric} "
+                "--reason \"<why>\""
                 + ("" if len(names) == 1 else f" (once per metric: {', '.join(names)})")
                 + ". Record with --qkind failing_check")
     if unmeasured:
