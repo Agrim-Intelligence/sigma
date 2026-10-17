@@ -152,7 +152,7 @@ def status(sdlc_dir, config, goal):
                        f"for {ph}; an earlier approval is not restored by a failed re-run")
             elif live := rv.running_receipt(sdlc_dir, goal, ph):
                 ok, detail = False, "the independent reviewer is still running"
-                fix = f"wait for it: `{rv._wait_gesture(sdlc_dir, goal, ph, live.get('run_id'))}`"
+                fix = f"wait for it: `{rv.wait_gesture(sdlc_dir, goal, ph, live.get('run_id'))}`"
             else:
                 detail = f"verdict {v.get('verdict')} via {v.get('route') or 'unknown'} route" + (
                     f", agent {v['agent_id']} ({v.get('verified') or 'unverified'})" if v.get("agent_id") else "")

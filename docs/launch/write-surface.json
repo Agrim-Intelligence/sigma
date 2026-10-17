@@ -1261,7 +1261,7 @@
       "function": "sweep",
       "rule": "fs-remove",
       "count": 4,
-      "gate": "goal is terminal (newest action-log internal row is recorded done), nothing of it younger than 7 days, no work record, no live agent marker; regular non-symlink files directly under owned state dirs only; run_stop markers by 30-day age (#458)",
+      "gate": "goal is terminal (newest action-log internal row is recorded done), nothing of it younger than 7 days, no work record, no live agent marker; regular non-symlink files directly under owned state dirs only; run_stop markers by 30-day age (#458); call-runs verify/merge receipts and verify lock of the same terminal goal, kept whole while that verify lock is held (#1650)",
       "risk": "medium"
     },
     {
@@ -1522,7 +1522,7 @@
     },
     {
       "path": "skills/sigma-loop/scripts/loop.py",
-      "function": "verify_goal",
+      "function": "_verify_goal_body",
       "rule": "fs-write",
       "count": 2,
       "gate": "ungated",
@@ -3762,27 +3762,43 @@
     },
     {
       "path": "skills/sigma-loop/scripts/reviewer.py",
-      "function": "_write_receipt",
-      "rule": "fs-remove",
-      "count": 2,
-      "gate": "a receipt of the one reviewer run for this goal and phase, under .sdlc/state/reviewer-runs/; replaced atomically (temp file in the same directory), removed when the goal finishes; a failed run still leaves its failure receipt",
-      "risk": "high"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/reviewer.py",
-      "function": "_write_receipt",
-      "rule": "fs-write",
-      "count": 1,
-      "gate": "a receipt of the one reviewer run for this goal and phase, under .sdlc/state/reviewer-runs/; replaced atomically (temp file in the same directory), removed when the goal finishes; a failed run still leaves its failure receipt",
-      "risk": "medium"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/reviewer.py",
       "function": "clear_receipts",
       "rule": "fs-remove",
       "count": 1,
       "gate": "removes only the two receipt files of the goal being finished, named by the receipt path; called by work.py finish",
       "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/run_receipt.py",
+      "function": "clear",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "removes only the paths it is handed; its one caller is work.py _clear_call_runs at finish, which passes the goal's own verify/merge receipts (skipping one still classified running) and the verify lock only after winning that lock itself (#1650)",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/run_receipt.py",
+      "function": "try_lock",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "creates (O_CREAT, never truncates, no content written) only the one state/call-runs/<goal>.verify.lock file beside the verify receipt, to take a non-blocking flock; callers are loop.py verify, work.py _clear_call_runs and goal_state_prune sweep (#1650)",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/run_receipt.py",
+      "function": "write",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "one receipt per goal and call kind (reviewer.py: state/reviewer-runs/<goal>.<phase>.json; loop.py verify and work.py merge: state/call-runs/<goal>.<verify|merge>.json), path built by receipt_path after the goal is validated (an unsafe goal raises and nothing is joined); replaced atomically (mkstemp in the same directory, fsync, os.replace); the os.replace and the finally-unlink touch only that receipt and the .run-* temp file this call created (#1650)",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/run_receipt.py",
+      "function": "write",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "one receipt per goal and call kind (reviewer.py: state/reviewer-runs/<goal>.<phase>.json; loop.py verify and work.py merge: state/call-runs/<goal>.<verify|merge>.json), path built by receipt_path after the goal is validated (an unsafe goal raises and nothing is joined); replaced atomically (mkstemp in the same directory, fsync, os.replace); bounded: one file per goal and kind, removed by work.py finish or goal_state_prune (#1650)",
+      "risk": "medium"
     },
     {
       "path": "skills/sigma-loop/scripts/feature_rebase.py",
