@@ -539,7 +539,8 @@ plain questions, the plan as a dependency table, any correction to the source st
 Never read by any script — `compile_plan.py` and §7a look only at the main artifact.
 
 `Slice-count estimate` is the row set §7d turns into `compile_plan.py` `issues[]` entries: **`Covers`
-becomes the child body and `Depends on` becomes the `blocked_by` edges.** Whether those rows should
+becomes the child body, `Requirements` (the `FR-n` ids the slice serves; `—` if none) becomes the
+child body's `## Requirements served` block, and `Depends on` becomes the `blocked_by` edges.** Whether those rows should
 also carry a priority is open and deliberately undecided (§12).
 
 **`Depends on` carries slice ids from this same table, and nothing else (#1956).** Comma-separated
@@ -1267,7 +1268,7 @@ and three of them landed somewhere other than where the proposal pointed:
 
 | The proposal left open | What shipped |
 |---|---|
-| the dossier → slices conversion mechanics | §5d's `Slice-count estimate` table is the conversion: `Covers` → child body, `Depends on` → `blocked_by`, compiled by §7d-iii through `compile_plan.py --actionable --json` |
+| the dossier → slices conversion mechanics | §5d's `Slice-count estimate` table is the conversion: `Covers` → child body, `Requirements` (`FR-n` ids; `—` if none) → child body's `## Requirements served`, `Depends on` → `blocked_by`, compiled by §7d-iii through `compile_plan.py --actionable --json` |
 | the Q&A shape — bank vs. free-form | bank-based, and **flat rather than keyed** (§4a), plus a bounded `followup_`/`open_` tail the proposal did not anticipate at all (§4b) |
 | how the retrofit check triggers a design pass | **park-and-defer** (§6), never inline phase insertion |
 | the `goal_design` config shape and the lane rubric | exactly `{enabled, mode}`, off by default, `mode` resolved late, unrecognized → `lane`; the rubric is `discovery.py`'s own `LANES`, plus a sweep budget (§5c) the proposal never mentioned |
