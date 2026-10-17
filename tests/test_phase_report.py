@@ -785,8 +785,12 @@ def test_find_codex_token_totals_parses_rollout_fixture(tmp_path):
                               "payload": {"input_tokens": 300, "output_tokens": 30}}) + "\n")
     totals = pr.find_codex_token_totals("2026-08-25T00:00:00Z", home=home,
                                         session_id=session_id)
-    assert totals == {"tokens_in": 800, "tokens_out": 80, "models": [],
-                      "unknown_model_turns": 2}
+    # #1452: legacy kind reports a zero, unreported split and one row per request.
+    assert totals == {"tokens_in": 800, "tokens_cached_in": 0, "tokens_out": 80,
+                      "tokens_reasoning_out": 0, "models": [], "unknown_model_turns": 2,
+                      "split_reported": False,
+                      "requests": [_row_1452(None, 10, 500, 0, 50, 0, split=False),
+                                   _row_1452(None, 20, 300, 0, 30, 0, split=False)]}
 
 
 def test_codex_retry_credits_growing_usage_and_refuses_unknown_model_turn(tmp_path):
@@ -878,8 +882,13 @@ def test_codex_stale_repeated_event_is_counted_once(tmp_path):
                                 record(100, 10, 3), event(100, 10, 200, 20, 3)])
     assert pr.find_codex_token_totals("2026-08-25T00:00:00Z", home=tmp_path,
                                       session_id=session_id) == {
-                                          "tokens_in": 200, "tokens_out": 20, "models": [],
-                                          "unknown_model_turns": 2}
+                                          "tokens_in": 200, "tokens_cached_in": 0,
+                                          "tokens_out": 20, "tokens_reasoning_out": 0,
+                                          "models": [], "unknown_model_turns": 2,
+                                          "split_reported": False,
+                                          "requests": [
+                                              _row_1452(None, 1, 100, 0, 10, 0, split=False),
+                                              _row_1452(None, 3, 100, 0, 10, 0, split=False)]}
     # A new request can have the same request-sized pair; its cumulative total advances.
     _write_transcript(rollout, [record(100, 10, 1), event(100, 10, 100, 10, 1),
                                 event(100, 10, 200, 20, 2)])
@@ -3731,3 +3740,388 @@ def test_2667_another_claude_session_under_a_reused_pid_is_stale(tmp_path):
     end = _gesture_end(sdlc, "42", "review", env2, pid=_LIVE_PID)
     assert "another Claude Code session" in end.stderr, end.stderr
     _assert_unmeasured_stale(end, sdlc)
+
+
+# --------------------------------------------------------------------------- #1452 Codex usage split
+#
+# Contract for #1666 (see .sdlc/plans/1452.md): `tokens_in` INCLUDES cached input and `tokens_out`
+# INCLUDES reasoning; `tokens_cached_in` / `tokens_reasoning_out` are SUBSETS, reported only when
+# the rollout actually carried `cached_input_tokens` (`split_reported`), never added to the raw
+# `tokens_in + tokens_out` ceiling. Every parser test asserts a WHOLE value, so against code that
+# lacks the split it fails by AssertionError, never by KeyError/TypeError.
+
+_SID_1452 = "01a03637-7800-7000-8000-000000000001"
+_SINCE_1452 = "2026-08-25T00:00:00Z"
+_SPLIT_KEYS_1452 = ("tokens_cached_in", "tokens_reasoning_out")
+
+
+def _usage_1452(tin, cached, tout, reasoning, cache_write=None):
+    usage = {"input_tokens": tin, "output_tokens": tout}
+    for key, value in (("cached_input_tokens", cached), ("reasoning_output_tokens", reasoning),
+                       ("cache_write_input_tokens", cache_write)):
+        if value is not None:
+            usage[key] = value
+    return usage
+
+
+def _stamp_1452(second):
+    return f"2026-08-25T00:00:{second:02d}Z"
+
+
+def _record_1452(second, usage):
+    return {"type": "token_usage_record", "timestamp": _stamp_1452(second),
+            "payload": {"usage": usage}}
+
+
+def _event_1452(second, last, total=None):
+    info = {"last_token_usage": last}
+    if total is not None:
+        info["total_token_usage"] = total
+    return {"type": "event_msg", "timestamp": _stamp_1452(second),
+            "payload": {"type": "token_count", "info": info}}
+
+
+def _legacy_1452(second, usage):
+    return {"type": "token_count", "timestamp": _stamp_1452(second), "payload": usage}
+
+
+def _model_1452(model, second=1):
+    return {"type": "turn_context", "timestamp": _stamp_1452(second), "payload": {"model": model}}
+
+
+def _rollout_1452(home, lines):
+    path = (home / ".codex" / "sessions" / "2026" / "08" / "25"
+            / f"rollout-2026-08-25T00-00-00-{_SID_1452}.jsonl")
+    _write_transcript(path, lines)
+    return path
+
+
+def _totals_1452(home, lines):
+    _rollout_1452(home, lines)
+    return pr.find_codex_token_totals(_SINCE_1452, home=home, session_id=_SID_1452)
+
+
+def _row_1452(model, second, tin, cached, tout, reasoning, cache_write=0, split=True):
+    return {"model": model, "ts": f"2026-08-25 00:00:{second:02d}", "input_tokens": tin,
+            "cached_input_tokens": cached, "output_tokens": tout,
+            "reasoning_output_tokens": reasoning, "cache_write_input_tokens": cache_write,
+            "split_reported": split}
+
+
+def _codex_end_1452(tmp_path, lines, config=None, goal="42"):
+    """Run the documented `end` gesture over a fixture rollout; return (sdlc, proc, phase events)."""
+    sdlc = _sdlc(tmp_path, config)
+    _rollout_1452(tmp_path, lines)
+    pr.write_marker(sdlc, goal, "research", "", now=1787616000, pid=os.getpid(),
+                    codex_thread_id=_SID_1452)
+    env = {**os.environ, "HOME": str(tmp_path), "CODEX_THREAD_ID": _SID_1452,
+           "CLAUDE_CODE_SESSION_ID": ""}
+    env.pop("CODEX_SESSION_ID", None)
+    proc = subprocess.run(
+        [sys.executable, str(S / "phase_report.py"), "end", str(sdlc), goal, "research",
+         "--pid", str(os.getpid())], capture_output=True, text=True, env=env)
+    events = [e for e in journal_events(_mod("ledger"), sdlc)
+              if e.get("kind") == "phase" and e.get("state") == "end" and e.get("goal") == goal]
+    return sdlc, proc, events
+
+
+def test_1452_codex_rollout_keeps_cached_split_and_per_request_rows(tmp_path):
+    totals = _totals_1452(tmp_path, [
+        _model_1452("gpt-5.6-sol"),
+        _record_1452(10, _usage_1452(1000, 900, 200, 150)),
+        _record_1452(20, _usage_1452(300, 100, 30, 10, cache_write=0)),
+    ])
+    assert totals == {
+        "tokens_in": 1300, "tokens_cached_in": 1000, "tokens_out": 230,
+        "tokens_reasoning_out": 160, "models": ["gpt-5.6-sol"], "split_reported": True,
+        "requests": [_row_1452("gpt-5.6-sol", 10, 1000, 900, 200, 150),
+                     _row_1452("gpt-5.6-sol", 20, 300, 100, 30, 10)]}
+
+
+def test_1452_reasoning_recorded_but_never_added_to_output(tmp_path):
+    totals = _totals_1452(tmp_path, [_model_1452("gpt-5.6-sol"),
+                                     _record_1452(10, _usage_1452(1000, 900, 200, 150))])
+    got = {key: (totals or {}).get(key) for key in
+           ("tokens_in", "tokens_cached_in", "tokens_out", "tokens_reasoning_out")}
+    # 200, not 350: reasoning is a subset of output. 1000, not 1900: cached is a subset of input.
+    assert got == {"tokens_in": 1000, "tokens_cached_in": 900, "tokens_out": 200,
+                   "tokens_reasoning_out": 150}
+
+
+def test_1452_cache_write_recorded_per_request_only_not_a_total(tmp_path):
+    totals = _totals_1452(tmp_path, [
+        _model_1452("gpt-5.6-sol"),
+        _record_1452(10, _usage_1452(100, 50, 20, 5, cache_write=40)),
+        _record_1452(20, _usage_1452(100, 50, 20, 5, cache_write=0))])
+    assert [r.get("cache_write_input_tokens") for r in (totals or {}).get("requests", [])] == [40, 0]
+    # Design decision 4: no running total of cache writes exists anywhere in the result.
+    assert [key for key in (totals or {}) if "cache_write" in key] == []
+
+
+def test_1452_modern_kinds_default_absent_split_fields_to_zero(tmp_path):
+    # Pair level: absent fields on the modern shape are zeros, and the pair says nothing was
+    # reported (so a consumer can tell a measured zero from an unreported one).
+    assert pr._codex_usage_pair({"input_tokens": 5, "output_tokens": 2}) == {
+        "input_tokens": 5, "cached_input_tokens": 0, "output_tokens": 2,
+        "reasoning_output_tokens": 0, "cache_write_input_tokens": 0, "split_reported": False}
+    assert pr._codex_usage_pair({"input_tokens": 5, "cached_input_tokens": 0,
+                                 "output_tokens": 2}) == {
+        "input_tokens": 5, "cached_input_tokens": 0, "output_tokens": 2,
+        "reasoning_output_tokens": 0, "cache_write_input_tokens": 0, "split_reported": True}
+    # Record kind, nothing reported: zeros, split_reported False in the row AND the totals.
+    unreported = _totals_1452(tmp_path / "a", [_record_1452(10, _usage_1452(5, None, 2, None))])
+    assert unreported == {
+        "tokens_in": 5, "tokens_cached_in": 0, "tokens_out": 2, "tokens_reasoning_out": 0,
+        "models": [], "unknown_model_turns": 1, "split_reported": False,
+        "requests": [_row_1452(None, 10, 5, 0, 2, 0, split=False)]}
+    # Event kind: cached present, reasoning and cache_write absent -> those two default to zero.
+    event = _totals_1452(tmp_path / "b", [_event_1452(10, _usage_1452(9, 7, 3, None))])
+    assert event == {
+        "tokens_in": 9, "tokens_cached_in": 7, "tokens_out": 3, "tokens_reasoning_out": 0,
+        "models": [], "unknown_model_turns": 1, "split_reported": True,
+        "requests": [_row_1452(None, 10, 9, 7, 3, 0)]}
+    # A phase with at least one reporting row is split_reported; unreported rows add zero.
+    mixed = _totals_1452(tmp_path / "c", [_record_1452(10, _usage_1452(10, None, 2, None)),
+                                          _record_1452(20, _usage_1452(20, 8, 5, None))])
+    assert (mixed or {}).get("split_reported") is True
+    assert (mixed or {}).get("tokens_cached_in") == 8
+    assert [r.get("split_reported") for r in (mixed or {}).get("requests", [])] == [False, True]
+
+
+def test_1452_legacy_kind_reports_zero_split_and_flags_unreported(tmp_path):
+    """Legacy top-level `token_count` never reports a split: even a payload that CARRIES
+    cached/reasoning/cache_write fields is ignored (zeros, split_reported False), and a legacy row
+    is never rejected for lacking them."""
+    carrying = _totals_1452(tmp_path / "a", [_legacy_1452(10, _usage_1452(500, 400, 50, 30, 7))])
+    assert carrying == {
+        "tokens_in": 500, "tokens_cached_in": 0, "tokens_out": 50, "tokens_reasoning_out": 0,
+        "models": [], "unknown_model_turns": 1, "split_reported": False,
+        "requests": [_row_1452(None, 10, 500, 0, 50, 0, split=False)]}
+    bare = _totals_1452(tmp_path / "b", [_legacy_1452(10, _usage_1452(500, None, 50, None)),
+                                         _legacy_1452(20, _usage_1452(300, None, 30, None))])
+    assert (bare or {}).get("split_reported") is False
+    assert [(r.get("input_tokens"), r.get("split_reported"))
+            for r in (bare or {}).get("requests", [])] == [(500, False), (300, False)]
+
+
+@pytest.mark.parametrize("bad", ["5", 1.5, -1, True], ids=["string", "float", "negative", "bool"])
+@pytest.mark.parametrize("field", ["cached_input_tokens", "reasoning_output_tokens",
+                                   "cache_write_input_tokens"])
+def test_1452_malformed_new_field_returns_none_for_pair_and_skips_request(tmp_path, field, bad):
+    usage = _usage_1452(100, 10, 20, 5, 0)
+    usage[field] = bad
+    assert pr._codex_usage_pair(usage) is None
+    totals = _totals_1452(tmp_path, [_model_1452("gpt-5.6-sol"),
+                                     _record_1452(10, _usage_1452(50, 40, 10, 5, 0)),
+                                     _record_1452(20, usage)])
+    got = {key: (totals or {}).get(key) for key in ("tokens_in", "tokens_cached_in", "tokens_out",
+                                                    "tokens_reasoning_out")}
+    got["rows"] = len((totals or {}).get("requests", []))
+    # Only the well-formed first request survives; the bad one is skipped like a bad input_tokens.
+    assert got == {"tokens_in": 50, "tokens_cached_in": 40, "tokens_out": 10,
+                   "tokens_reasoning_out": 5, "rows": 1}
+
+
+@pytest.mark.parametrize("usage", [_usage_1452(100, 101, 20, 5, 0), _usage_1452(100, 10, 20, 21, 0)],
+                         ids=["cached-above-input", "reasoning-above-output"])
+def test_1452_cached_above_input_or_reasoning_above_output_is_malformed(tmp_path, usage):
+    """Each invariant clause is exercised on its own (one fixture violates only `cached <= input`,
+    the other only `reasoning <= output`); equality is the boundary and stays valid."""
+    assert pr._codex_usage_pair(usage) is None
+    totals = _totals_1452(tmp_path, [_record_1452(10, _usage_1452(50, 40, 10, 5, 0)),
+                                     _record_1452(20, usage)])
+    assert len((totals or {}).get("requests", [])) == 1
+    assert pr._codex_usage_pair(_usage_1452(100, 100, 20, 20, 0)) == {
+        "input_tokens": 100, "cached_input_tokens": 100, "output_tokens": 20,
+        "reasoning_output_tokens": 20, "cache_write_input_tokens": 0, "split_reported": True}
+
+
+def test_1452_paired_stream_refusal_still_holds_with_split_fields(tmp_path):
+    """Cross-stream refusal compares (tin, tout, count) only. Three fixtures each differ in ONE
+    clause (tin / tout / count) and must still refuse; the fourth agrees on all three but differs
+    in the split, and must NOT refuse (the stricter whole-row comparison is out of scope), taking
+    the `record` stream. Only that fourth case is red on code without the split; the first three
+    are standing guards on the clauses the split rewrite must not disturb."""
+    def paired(record_usages, event_usages):
+        lines = [_record_1452(10 + i, u) for i, u in enumerate(record_usages)]
+        lines += [_event_1452(10 + i, u) for i, u in enumerate(event_usages)]
+        return lines
+    base = _usage_1452(100, 50, 10, 5, 0)
+    assert _totals_1452(tmp_path / "tin", paired([base], [_usage_1452(101, 50, 10, 5, 0)])) is None
+    assert _totals_1452(tmp_path / "tout", paired([base], [_usage_1452(100, 50, 11, 5, 0)])) is None
+    assert _totals_1452(tmp_path / "count", paired([base, base],
+                                                   [_usage_1452(200, 100, 20, 10, 0)])) is None
+    differing = _totals_1452(tmp_path / "split", paired([_usage_1452(100, 50, 10, 5, 0)],
+                                                        [_usage_1452(100, 60, 10, 6, 0)]))
+    assert differing is not None
+    assert (differing.get("tokens_cached_in"), differing.get("tokens_reasoning_out")) == (50, 5)
+
+
+def test_1452_reemitted_event_is_counted_once_with_split_fields(tmp_path):
+    usage = _usage_1452(100, 90, 10, 5, 0)
+    def total(tin, cached, tout, reasoning):
+        return _usage_1452(tin, cached, tout, reasoning)
+    totals = _totals_1452(tmp_path, [
+        _record_1452(1, usage), _event_1452(1, usage, total(100, 90, 10, 5)),
+        _event_1452(2, usage, total(100, 90, 10, 5)),            # stale repeat of the last request
+        _record_1452(3, usage), _event_1452(3, usage, total(200, 180, 20, 10))])
+    assert totals == {
+        "tokens_in": 200, "tokens_cached_in": 180, "tokens_out": 20, "tokens_reasoning_out": 10,
+        "models": [], "unknown_model_turns": 2, "split_reported": True,
+        "requests": [_row_1452(None, 1, 100, 90, 10, 5), _row_1452(None, 3, 100, 90, 10, 5)]}
+
+
+@pytest.mark.parametrize("extra", [{}, {"cached_input_tokens": "bad"},
+                                   {"cached_input_tokens": -3, "reasoning_output_tokens": True}],
+                         ids=["absent", "string", "negative-and-bool"])
+def test_1452_dedup_survives_total_usage_without_split_fields(tmp_path, extra):
+    """De-dup fingerprints input/output of the request AND `total_token_usage` only: an absent or
+    malformed split field inside `total_token_usage` must not null the fingerprint (which would
+    count the stale repeat twice)."""
+    last = _usage_1452(100, 90, 10, 5, 0)
+    def total(tin, tout):
+        return {"input_tokens": tin, "output_tokens": tout, **extra}
+    totals = _totals_1452(tmp_path, [_event_1452(1, last, total(100, 10)),
+                                     _event_1452(2, last, total(100, 10)),     # stale repeat
+                                     _event_1452(3, last, total(200, 20))])    # advanced: new request
+    got = {key: (totals or {}).get(key) for key in ("tokens_in", "tokens_cached_in", "tokens_out",
+                                                    "tokens_reasoning_out")}
+    got["rows"] = len((totals or {}).get("requests", []))
+    assert got == {"tokens_in": 200, "tokens_cached_in": 180, "tokens_out": 20,
+                   "tokens_reasoning_out": 10, "rows": 2}
+
+
+def test_1452_request_rows_carry_model_and_normalised_timestamp(tmp_path):
+    totals = _totals_1452(tmp_path, [
+        _model_1452("gpt-5.6-sol", 1),
+        _record_1452(10, _usage_1452(10, 5, 2, 1)),
+        _model_1452("gpt-5.6-terra", 15),
+        {"type": "token_usage_record", "timestamp": "2026-08-25T00:00:20.403Z",
+         "payload": {"usage": _usage_1452(20, 6, 4, 2)}}])
+    # `ts` is the `norm_ts` string 'YYYY-MM-DD HH:MM:SS' (millis and the Z/T dropped), not an epoch.
+    assert [(r.get("model"), r.get("ts")) for r in (totals or {}).get("requests", [])] == [
+        ("gpt-5.6-sol", "2026-08-25 00:00:10"), ("gpt-5.6-terra", "2026-08-25 00:00:20")]
+
+
+def test_1452_unknown_model_request_row_has_model_none(tmp_path):
+    totals = _totals_1452(tmp_path, [_record_1452(10, _usage_1452(10, 5, 2, 1)),
+                                     _model_1452("gpt-5.6-sol", 15),
+                                     _record_1452(20, _usage_1452(20, 6, 4, 2))])
+    assert [r.get("model") for r in (totals or {}).get("requests", [])] == [None, "gpt-5.6-sol"]
+    assert (totals or {}).get("unknown_model_turns") == 1
+
+
+def test_1452_block_b_codex_reads_tokens_in_cached_out_reasoning():
+    def codex(**extra):
+        return pr.end_lines("#1", "research", "", "8m11s", {
+            "source": "codex", "cost_usd": None, "models": ["gpt-5.6-sol"], **extra})[1]
+    split = codex(tokens_in=1000, tokens_cached_in=900, tokens_out=200, tokens_reasoning_out=150,
+                  split_reported=True)
+    assert "tokens 1,000 in (900 cached), 200 out (150 reasoning)" in split
+    # A MEASURED zero is printed (not hidden): the rollout reported the split and it was zero.
+    measured_zero = codex(tokens_in=5, tokens_cached_in=0, tokens_out=2, tokens_reasoning_out=0,
+                          split_reported=True)
+    assert "tokens 5 in (0 cached), 2 out (0 reasoning)" in measured_zero
+
+
+def test_1452_block_b_codex_split_suffix_only_when_split_reported():
+    """Replaces the plan's `..._hand_built_result_without_split_keys_reads_zero` (plan-review
+    refinement 2). Fabrication guard: Block B never claims a measured zero for an unreported
+    split. A result lacking the keys, or carrying them with `split_reported` False, reads the OLD
+    `tokens N in, K out`; the same numbers with `split_reported` True read the new form (that
+    positive half is what makes this test red today)."""
+    base = {"source": "codex", "cost_usd": None, "models": [], "tokens_in": 500, "tokens_out": 50}
+    lacking = pr.end_lines("#1", "research", "", "8m11s", base)[1]
+    unreported = pr.end_lines("#1", "research", "", "8m11s", {
+        **base, "tokens_cached_in": 400, "tokens_reasoning_out": 30, "split_reported": False})[1]
+    reported = pr.end_lines("#1", "research", "", "8m11s", {
+        **base, "tokens_cached_in": 400, "tokens_reasoning_out": 30, "split_reported": True})[1]
+    assert "tokens 500 in, 50 out" in lacking and "cached" not in lacking
+    assert "tokens 500 in, 50 out" in unreported and "cached" not in unreported
+    assert "tokens 500 in (400 cached), 50 out (30 reasoning)" in reported
+
+
+def test_1452_raw_codex_ceiling_is_tokens_in_plus_tokens_out_only(tmp_path):
+    """One request in 1000 / cached 900 / out 200 / reasoning 150: the raw ceiling is 1200.
+    Adding cached would read 2100, reasoning 1350, both 2250. The Block B assertion comes first:
+    it proves the split really was parsed from this rollout, so the ceiling equality below is not
+    vacuously true of a parser that ignores the split."""
+    sdlc, proc, events = _codex_end_1452(
+        tmp_path, [_model_1452("gpt-5.6-sol"), _record_1452(10, _usage_1452(1000, 900, 200, 150))],
+        config={"journal": {"enabled": True}, "budget": {"max_codex_raw_tokens": 100000}})
+    assert proc.returncode == 0, proc.stderr
+    assert "tokens 1,000 in (900 cached), 200 out (150 reasoning)" in proc.stdout
+    assert _mod("state").load_cursor(sdlc)["run_codex_raw_tokens"] == 1200
+
+
+def test_1452_phase_event_written_with_split_for_codex_measured_phase(tmp_path):
+    sdlc, proc, events = _codex_end_1452(
+        tmp_path / "reported",
+        [_model_1452("gpt-5.6-sol"), _record_1452(10, _usage_1452(1000, 900, 200, 150))])
+    assert proc.returncode == 0, proc.stderr
+    assert [(e.get("tokens_in"), e.get("tokens_cached_in"), e.get("tokens_out"),
+             e.get("tokens_reasoning_out")) for e in events] == [("1000", "900", "200", "150")]
+    # A reported zero is written as "0" (a measured zero), not omitted.
+    _, proc0, events0 = _codex_end_1452(
+        tmp_path / "zero",
+        [_model_1452("gpt-5.6-sol"), _record_1452(10, _usage_1452(100, 0, 20, 0))])
+    assert proc0.returncode == 0, proc0.stderr
+    assert [(e.get("tokens_cached_in"), e.get("tokens_reasoning_out")) for e in events0] == [
+        ("0", "0")]
+    # Fabrication guard through the real gesture: rows with no `cached_input_tokens` keep the old
+    # Block B and write NO split fields (an unreported split is not a measured zero).
+    _, proc_u, events_u = _codex_end_1452(
+        tmp_path / "unreported",
+        [_model_1452("gpt-5.6-sol"), _record_1452(10, _usage_1452(100, None, 20, None))])
+    assert proc_u.returncode == 0, proc_u.stderr
+    assert "tokens 100 in, 20 out" in proc_u.stdout and "cached" not in proc_u.stdout
+    assert [any(k in e for k in _SPLIT_KEYS_1452) for e in events_u] == [False]
+
+
+def _end_usage_1452(tmp_path, goal, result):
+    """Drive `_record_end_usage` with a hand-built `result` and return that goal's phase and spend
+    events. Hand-built because the real Codex path cannot reach the `spend` gate."""
+    sdlc = tmp_path / ".sdlc"
+    if not sdlc.exists():
+        sdlc = _sdlc(tmp_path)
+    pr.write_marker(sdlc, goal, "research", "sonnet", now=1787616000)
+    pr._record_end_usage(sdlc, goal, "research", pr.read_marker(sdlc, goal), result)
+    events = [e for e in journal_events(_mod("ledger"), sdlc) if e.get("goal") == goal]
+    return ([e for e in events if e.get("kind") == "phase"],
+            [e for e in events if e.get("kind") == "spend"])
+
+
+def test_1452_spend_event_carries_split_fields(tmp_path):
+    """HAND-BUILT result: the real Codex path always has `cost_usd` None, so the `spend` gate
+    (`cost_usd is not None`) never fires for it. A source-'codex' result with a non-None
+    `cost_usd` is the only way to reach the spend write here; the ledger-level whitelist test in
+    tests/test_ledger.py is the real proof that `spend` keeps the fields."""
+    _, spends = _end_usage_1452(tmp_path, "42", {
+        "source": "codex", "cost_usd": 1.25, "models": ["gpt-5.6-sol"], "tokens_in": 1000,
+        "tokens_cached_in": 900, "tokens_out": 200, "tokens_reasoning_out": 150,
+        "split_reported": True})
+    assert [(e.get("tokens_in"), e.get("tokens_cached_in"), e.get("tokens_out"),
+             e.get("tokens_reasoning_out")) for e in spends] == [("1000", "900", "200", "150")]
+
+
+def test_1452_claude_and_unmeasured_phases_write_no_split_fields(tmp_path):
+    """Gating: the split goes only to Codex-measured phases whose rollout reported it. Goal 3 is
+    the positive control (without it the absences below are trivially true of code that never
+    writes the fields, which is what makes this test red today)."""
+    claude_phases, claude_spends = _end_usage_1452(tmp_path, "1", {
+        "source": "claude-code", "cost_usd": 0.5, "models": ["claude-opus-5"], "tokens_in": 10,
+        "tokens_out": 5, "tokens_cached_in": 4, "tokens_reasoning_out": 2, "split_reported": True})
+    unmeasured_phases, _ = _end_usage_1452(tmp_path, "2", {
+        "source": "unavailable", "reason": "no source"})
+    unreported_phases, _ = _end_usage_1452(tmp_path, "4", {
+        "source": "codex", "cost_usd": None, "models": ["gpt-5.6-sol"], "tokens_in": 10,
+        "tokens_out": 5, "tokens_cached_in": 0, "tokens_reasoning_out": 0,
+        "split_reported": False})
+    reported_phases, _ = _end_usage_1452(tmp_path, "3", {
+        "source": "codex", "cost_usd": None, "models": ["gpt-5.6-sol"], "tokens_in": 10,
+        "tokens_out": 5, "tokens_cached_in": 4, "tokens_reasoning_out": 2, "split_reported": True})
+    def carries(events):
+        return [any(k in e for k in _SPLIT_KEYS_1452) for e in events]
+    assert [carries(claude_phases), carries(unmeasured_phases), carries(unreported_phases),
+            carries(reported_phases)] == [[False], [False], [False], [True]]
+    assert [any(k in e for k in _SPLIT_KEYS_1452) for e in claude_spends] == [False]

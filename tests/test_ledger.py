@@ -2450,3 +2450,49 @@ def test_run_gh_missing_binary_propagates(monkeypatch):
     monkeypatch.setattr(subprocess, "run", boom)
     with pytest.raises(FileNotFoundError):
         ledger._run_gh(["api", "user"])
+
+
+# --------------------------------------------------------------------- #1452 Codex usage split
+
+_SPLIT_FIELDS_1452 = ("tokens_cached_in", "tokens_reasoning_out")
+
+
+def test_1452_phase_and_spend_whitelist_the_two_split_fields_as_numeric_non_prose():
+    """`tokens_cached_in` / `tokens_reasoning_out` are SUBSETS of `tokens_in` / `tokens_out`
+    (reporting only, never added). Each must sit in all three tables for BOTH `phase` and `spend`:
+    the field whitelist (else `append` drops it), the non-prose list (else it is scrubbed as
+    prose) and the numeric list (else the import-time typed guard fails). Whole-list comparisons,
+    so a missing entry is an AssertionError naming the (kind, field, table) triple."""
+    tables = {"EVENT_FIELDS": ledger.EVENT_FIELDS,
+              "EVENT_NON_PROSE_FIELDS": ledger.EVENT_NON_PROSE_FIELDS,
+              "EVENT_NUMERIC_FIELDS": ledger.EVENT_NUMERIC_FIELDS}
+    missing = [(kind, field, name) for kind in ("phase", "spend") for field in _SPLIT_FIELDS_1452
+               for name, table in tables.items() if field not in table.get(kind, ())]
+    assert missing == []
+    prose = [(kind, field) for kind in ("phase", "spend") for field in _SPLIT_FIELDS_1452
+             if field in ledger.EVENT_FREE_TEXT_FIELDS.get(kind, ())]
+    assert prose == []
+
+
+def test_1452_split_fields_land_in_the_jsonl_and_reject_non_numeric(tmp_path):
+    """The real proof for the `spend` kind too: the Codex path never prices, so `spend` cannot be
+    reached end to end with these fields; this ledger-level write is what shows `spend` keeps
+    them. A numeric value lands normalised as a string; a secret-bearing non-numeric value is
+    scrubbed and capped, never written raw, and `append` does not raise."""
+    d = _sdlc(tmp_path, ON)
+    ledger.append(d, ON, "phase", "g.md", stream=ledger.EVENTS, phase="plan", state="end",
+                  tokens_in="1000", tokens_cached_in="900", tokens_out="200",
+                  tokens_reasoning_out="150")
+    ledger.append(d, ON, "spend", "g.md", stream=ledger.EVENTS, phase="plan", model="gpt-5.6-sol",
+                  tokens_in="1000", tokens_cached_in="900", tokens_out="200",
+                  tokens_reasoning_out="150", cost_cents="125")
+    SECRET = "AK" "IAIOSFODNN7EXAMPLE"
+    ledger.append(d, ON, "phase", "g.md", stream=ledger.EVENTS, phase="plan", state="end",
+                  tokens_cached_in="leaked key " + SECRET, tokens_reasoning_out="x" * 400)
+    events = _local_events(d)
+    assert [(e["kind"], e.get("tokens_cached_in"), e.get("tokens_reasoning_out"))
+            for e in events[:2]] == [("phase", "900", "150"), ("spend", "900", "150")]
+    leaked = events[2]
+    assert "tokens_cached_in" in leaked and "tokens_reasoning_out" in leaked
+    assert SECRET not in leaked["tokens_cached_in"]
+    assert len(leaked["tokens_reasoning_out"]) <= ledger.NUMERIC_DIGIT_CAP

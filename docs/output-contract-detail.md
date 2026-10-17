@@ -31,6 +31,21 @@ observed rollout. The end block's model field reports the model observed in the 
 via `end_measurements` — the one function both the constructed block and its fallback banner (next
 section) share, so the numbers can never read differently between the two.
 
+A Codex-measured phase's token field (#1452) has two forms. When the rollout reported
+`cached_input_tokens` (`split_reported`), it reads `tokens 1,000 in (900 cached), 200 out (150
+reasoning)`; otherwise it keeps the plain `tokens 1,000 in, 200 out`, so an unreported split is
+never printed as a measured zero (a reported zero does print, as `(0 cached)`). The parentheses are
+SUBSETS, not addends: `in` already includes cached input and `out` already includes reasoning. The
+same gate decides whether the `phase`/`spend` events carry `tokens_cached_in`/`tokens_reasoning_out`.
+The cost field stays `cost: unavailable on this host (Codex model absent from bundled rate card)`.
+Output is priced once, from `tokens_out`; billable uncached input is `tokens_in - tokens_cached_in`.
+`find_codex_token_totals` also returns per-request `requests` rows (`model`, `ts`, the five raw
+fields, `split_reported`) for a pricer (#1666); they are never written to the ledger. Known limits:
+`split_reported` is True if ANY chosen-stream request reported the split, and requests lacking it
+count as 0 (each row's own flag lets a pricer tell them apart); a request whose cached exceeds its
+input, or reasoning its output, is malformed and dropped whole, so it is also missing from the raw
+Codex ceiling.
+
 Two absences in that sample are deliberate, and neither is a slot line going without its axes:
 
 - **The end block carries no §2 marker.** `render.EVENT_FIELDS` has no `marker` key at all —
