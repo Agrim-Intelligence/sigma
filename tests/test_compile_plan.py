@@ -795,20 +795,26 @@ def test_every_id_prefix_the_design_artifact_schema_uses_is_recognised():
     recognised -- a reference to any of them is the same mistake, and an unrecognised family gets
     the generic typo message at exactly the seam this hint exists to name. The schema end is pinned
     generically by `test_sdlc_goal_design_skill.py`, which reads the families out of the fence."""
-    for bad in ("BR-7", "D-3", "B-1", "X-5", "PC-2", "S-4"):
+    for bad in ("BR-7", "D-3", "B-1", "X-5", "PC-2", "S-4", "FR-1"):
         assert compile_plan._DESIGN_ARTIFACT_ID_RE.match(bad), bad
     for fine in ("B1", "b-1", "BRX-1", "B-", "-1", "3", "slice-1", "x-1", "PCX-1", "XY-1",
-                 "s-4", "SX-1", "S-"):
+                 "s-4", "SX-1", "S-", "fr-1", "FRX-1", "FR-"):
         assert not compile_plan._DESIGN_ARTIFACT_ID_RE.match(fine), fine
 
 
 def test_the_hint_names_every_section_whose_ids_it_recognises():
     """The hint's whole job is to say WHERE the reference belongs. A family recognised by the regex
     but absent from the sentence produces a pointer that sends the reader to the wrong heading."""
-    for section in ("Blast radius", "Premise check", "Seeds", "Out of scope", "Doubts",
-                    "Blockers"):
+    for section in ("Blast radius", "Premise check", "Functional requirements", "Seeds",
+                    "Out of scope", "Doubts", "Blockers"):
         assert section in compile_plan._DESIGN_ID_HINT, \
             f"the refusal hint does not name the {section} rows it recognises"
+
+
+def test_a_functional_requirement_id_in_depends_on_is_refused_with_the_design_hint():
+    """#659: `FR-2` in a `Depends on` cell is not a slice; the refusal names the FR rows."""
+    message = _refusal(_issue("a", "One", blocked_by=["FR-2"]))
+    assert "unknown key" in message and "Functional requirements" in message, message
 
 
 def test_a_key_that_merely_looks_like_a_design_id_still_compiles_when_it_is_a_real_slice():

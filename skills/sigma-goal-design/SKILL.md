@@ -76,6 +76,15 @@ material and is not checked here. Give each one `PC-n` (§5), one of exactly thr
 it. A business-stage author gets technical premises wrong routinely and that is not a defect in
 them; a design that inherits one silently is a defect in this pass.
 
+**Then write the numbered functional requirements, under `## Functional requirements`** (#659).
+What the corrected intent obliges the system to do, one behaviour per bullet, `- **FR-n.** <EARS
+sentence>` (`WHEN ..., THE <x> SHALL <y>`), each traced to the slice that delivers it in the slice
+table's `Requirements` column. Proportionate to the lane, never skipped: a one-behaviour `small`
+target still writes `FR-1`; only a design with genuinely none writes `- None.`. Before publishing run
+`python3 "${CLAUDE_SKILL_DIR}/scripts/goal_design.py" requirements .sdlc/design/<n>.md` and fix what
+it prints (exit 2 = violations). The rules are in
+[`references/writing-the-artifact.md`](references/writing-the-artifact.md).
+
 **A falsified premise is not a Doubt and not a Blocker, which is why it needs its own heading.** A
 Doubt is OPEN, a Blocker is UNRESOLVED, and a falsified premise is **settled and different** — the
 question was asked, the repo answered, and the answer was not the one the source assumed. Filing it

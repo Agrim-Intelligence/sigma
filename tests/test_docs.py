@@ -1752,7 +1752,8 @@ def test_the_dossier_contract_pins_the_same_artifact_headings_the_skill_mandates
     skill_skeleton = goal_design.split("```markdown", 1)[1].split("```", 1)[0]
     contract_skeleton = DOSSIER[DOSSIER.index("### 5d."):DOSSIER.index("### 5e.")]
     contract_skeleton = contract_skeleton.split("```markdown", 1)[1].split("```", 1)[0]
-    for heading in ("## Intent", "## Premise check", "## Queries run", "## Seeds",
+    for heading in ("## Intent", "## Premise check", "## Functional requirements", "## Queries run",
+                    "## Seeds",
                     "## Blast radius",
                     "## Components", "## Out of scope", "## Doubts",
                     "## Blockers", "## Detailed design", "## Slice-count estimate", "## Handoff"):
@@ -2465,3 +2466,21 @@ def test_goal_design_py_exists_and_matches_the_contracts_own_numbers():
     assert goal_design.LANE_ROUNDS == {"small": 1, "medium": 2, "large": 3}
 
 
+
+
+def test_the_contract_skeleton_orders_functional_requirements_between_premise_and_queries():
+    """#659. ORDER pin on the contract's own §5d skeleton, mirroring the skill's."""
+    sk = DOSSIER[DOSSIER.index("### 5d."):DOSSIER.index("### 5e.")].split("```markdown", 1)[1].split("```", 1)[0]
+    i = [sk.index(h) for h in ("## Premise check", "## Functional requirements", "## Queries run")]
+    assert i == sorted(i), i
+    assert "Slice | Covers | Requirements | Depends on" in sk
+
+
+def test_docs_state_reject_depends_on_reviewer_obeying_prose():
+    """#659 candour: the machine half (the verb) is delivered; the REJECT verdict is the reviewing
+    model following prose. This is a PIN that the sentence exists, not evidence that REJECT is enforced."""
+    for a, b in (("### 7a.", "### 7b."), ("### 7c.", "### 7d.")):
+        flat = " ".join(DOSSIER[DOSSIER.index(a):DOSSIER.index(b)].split()).replace("*", "")
+        assert "nothing in this kit enforces it" in flat and "reviewing model" in flat, a
+    walk = " ".join(DOSSIER_WALK.split()).replace("*", "")
+    assert "`Requirements`" in walk and "FR-n" in walk

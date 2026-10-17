@@ -98,6 +98,10 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/ears_patterns.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/rulebook_cfg.py",
       "role": "library"
     },
