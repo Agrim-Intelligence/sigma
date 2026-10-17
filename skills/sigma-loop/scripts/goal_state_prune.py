@@ -5,6 +5,7 @@
 
 Owned and removed (repo-local, gitignored, written by Sigma Python; nothing under a host
 configuration root): `state/{verify,landing,propagation,escalation,phase}/<goal>.json`,
+`state/call-runs/<goal>.{verify.json,merge.json,verify.lock}` (#1650; a goal whose verify lock is HELD is kept),
 `state/unit-tracking/<goal>.attempt`, a dead `state/agents/<goal>/`, and `state/run_stop/*.json`
 older than RUN_STOP_KEEP_DAYS. Deliberately NOT touched: `state/work` (the worktree's own record,
 removed by `work.finish`), `state/withheld`, `state/goal-review`, the action log and witness streams.
@@ -33,7 +34,8 @@ _HERE = pathlib.Path(__file__).resolve().parent
 
 #: (state subdirectory, file suffix) of every per-goal file removed once the goal is done.
 FILE_FAMILIES = (("verify", ".json"), ("landing", ".json"), ("propagation", ".json"),
-                 ("escalation", ".json"), ("unit-tracking", ".attempt"), ("phase", ".json"))
+                 ("escalation", ".json"), ("unit-tracking", ".attempt"), ("phase", ".json"),
+                 ("call-runs", ".verify.json"), ("call-runs", ".merge.json"), ("call-runs", ".verify.lock"))
 MIN_AGE_SECONDS = 7 * 86400
 RUN_STOP_KEEP_DAYS = 30
 DEFAULT_LIMIT = 200
@@ -190,10 +192,21 @@ def sweep(sdlc_dir, limit=DEFAULT_LIMIT, now=None, dry_run=False, agent_alive=No
             if not _agents_dir_dead(sdlc_dir, stem, config, agent_alive):
                 keep("live-agent")                 # registered since the scan
                 continue
-            for path in files:
-                if not dry_run:
-                    path.unlink(missing_ok=True)
-                result["removed"].append(str(path))
+            held = None
+            lock = state_dir / "call-runs" / f"{stem}.verify.lock"
+            if _regular(lock):
+                held = _load("run_receipt").try_lock(lock)
+                if held is None:                   # a verify is running (#1650): never unlink a held lock
+                    keep("live-call")
+                    continue
+            try:
+                for path in files:
+                    if not dry_run:
+                        path.unlink(missing_ok=True)
+                    result["removed"].append(str(path))
+            finally:
+                if isinstance(held, int):
+                    os.close(held)
             marker_dir = agents / stem
             if _real_dir(marker_dir):
                 if not dry_run:
