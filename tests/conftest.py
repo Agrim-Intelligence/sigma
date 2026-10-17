@@ -36,6 +36,7 @@ rot" property this buys is that no NEW call site through the shared, already-uni
 API is covered.
 """
 import os
+import pathlib
 import resource
 import subprocess
 import sys
@@ -90,6 +91,11 @@ def pytest_collection_finish(session):
     _script_cache.fresh = True   # collection is over: from here every load is a fresh module
     peak, n = _rss_mb(), len(session.items)
     session.config._collect_rss_mb, session.config._collect_n = peak, n
+    if n > 200:
+        worst = _script_cache.worst_live_copies(pathlib.Path(__file__).resolve().parent.parent)
+        if worst and worst[0][1] > _script_cache.MAX_COPIES:
+            pytest.exit(f"{worst[0][1]} live copies of one script module after collection (max "
+                        f"{_script_cache.MAX_COPIES}): {worst}; see tests/test_script_cache.py", returncode=3)
     if n > 200 and peak > _script_cache.rss_bound_mb(n):   # a partial run (-k, one file) is too small to judge
         pytest.exit(f"collection peaked at {peak:.0f} MB for {n} tests (bound "
                     f"{_script_cache.rss_bound_mb(n):.0f}): a script is being loaded uncached; "
