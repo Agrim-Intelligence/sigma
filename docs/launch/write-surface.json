@@ -161,6 +161,70 @@
       "risk": "medium"
     },
     {
+      "path": "evals/regression/layer1.py",
+      "function": "_build",
+      "rule": "git-push",
+      "count": 1,
+      "gate": "operator-run Layer 1 scenario builder (slice 2 of #812, never starts a model, no network, no spend): the one push is a non-forced `_git` call of the initial commit to a LOCAL bare remote inside its own scratch root; never a real remote",
+      "risk": "high"
+    },
+    {
+      "path": "evals/regression/layer1.py",
+      "function": "_make_dirs",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "operator-run Layer 1 scenario builder (slice 2 of #812, never starts a model, no network, no spend): creates only the two per-session run directories inside the scratch root it made",
+      "risk": "medium"
+    },
+    {
+      "path": "evals/regression/layer1.py",
+      "function": "_replace",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "operator-run Layer 1 scenario builder (slice 2 of #812, never starts a model, no network, no spend): os.replace of the temp config onto .sdlc/config.json inside the scratch clone (the atomic half of the read-modify-write)",
+      "risk": "high"
+    },
+    {
+      "path": "evals/regression/layer1.py",
+      "function": "_write_gh",
+      "rule": "fs-write",
+      "count": 5,
+      "gate": "operator-run Layer 1 scenario builder (slice 2 of #812, never starts a model, no network, no spend): writes the fake gh shim (mode 0755), its seeded state and two empty logs inside the scratch root only",
+      "risk": "medium"
+    },
+    {
+      "path": "evals/regression/layer1.py",
+      "function": "_write_initial_tree",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "operator-run Layer 1 scenario builder (slice 2 of #812, never starts a model, no network, no spend): writes the fixed GOAL.md and a stub README.md into the scratch clone only",
+      "risk": "medium"
+    },
+    {
+      "path": "evals/regression/layer1.py",
+      "function": "_write_rows",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "operator-run Layer 1 scenario builder (slice 2 of #812, never starts a model, no network, no spend): copies result rows to the operator-given artifact directory (atomic temp then replace, temp removed in finally; refused when that directory is inside the scratch root)",
+      "risk": "high"
+    },
+    {
+      "path": "evals/regression/layer1.py",
+      "function": "_write_rows",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "operator-run Layer 1 scenario builder (slice 2 of #812, never starts a model, no network, no spend): creates the operator-given artifact directory and writes the one rows file there (atomic temp then replace)",
+      "risk": "medium"
+    },
+    {
+      "path": "evals/regression/layer1.py",
+      "function": "write_run_config",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "operator-run Layer 1 scenario builder (slice 2 of #812, never starts a model, no network, no spend): writes the temp config next to .sdlc/config.json inside the scratch clone only, then reads it back after the replace",
+      "risk": "medium"
+    },
+    {
       "path": "evals/regression/control.py",
       "function": "_rmtree",
       "rule": "fs-rmtree",
