@@ -420,10 +420,11 @@ def _row_text(row):
     return "\t".join(row)
 
 
-def _verdict(rows, any_unknown, plan):
-    """over: a restructure with no intent (a plan has no line count: naming a legacy file is the
-    measure). unknown: any intent or state unknown. Else within."""
-    if any((plan or r[3] == "restructure") and r[4] == "intent: no" for r in rows):
+def _verdict(rows, any_unknown):
+    """over (`--diff` only): a restructure with no intent. A plan has no line count, so plan mode
+    never prints over (#1542): it names the legacy files, and `--diff` measures them at review.
+    unknown: any intent or state unknown. Else within."""
+    if any(r[3] == "restructure" and r[4] == "intent: no" for r in rows):
         return "over"
     if any_unknown or any(r[4] == "intent: unknown" for r in rows):
         return "unknown"
@@ -485,7 +486,7 @@ def check(goal, plan, diff, base, cwd):
     if not known:
         unknown = True                  # AC-4: no usable record is never `within`, rows or no rows
     head = [] if rows or known else ["intent: unknown"]
-    return head + [_row_text(r) for r in rows] + ["verdict: " + _verdict(rows, unknown, plan is not None)], (
+    return head + [_row_text(r) for r in rows] + ["verdict: " + _verdict(rows, unknown)], (
         why if plan is None and odd else None)
 
 
