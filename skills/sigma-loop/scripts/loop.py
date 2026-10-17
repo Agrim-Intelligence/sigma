@@ -5313,7 +5313,7 @@ _done_refusal = state.done_refusal         # evidence without loop.py and work.p
 def _flake_verdict(sdlc_dir, goal, root, passed):
     """#1933: re-run this goal's CHANGED tests 3x with varied order and a fresh temp dir.
 
-    -> the dict `flake_check.check` returns, always. Never raises, never gates verify_goal.
+    -> `flake_check.check`'s dict, + `scope` once a check ran (#1571). Never raises, never gates verify_goal.
 
     SCOPED TO CHANGED TESTS (done_when 3). Running the whole suite 3x would triple every goal's
     verify cost for no added signal on tests that have already proven stable. `changed_test_files`
@@ -5334,27 +5334,47 @@ def _flake_verdict(sdlc_dir, goal, root, passed):
     if not passed:
         return empty
     try:
-        planned = _planned_tests(sdlc_dir, goal, root)
-        if planned is not None:
-            return flake_check.check(root, sorted({n.split("::")[0] for n in planned}), node_ids=planned)
-        rec = work._record(sdlc_dir, goal) or {}
-        base = rec.get("base") or "HEAD"
-        diff = subprocess.run(["git", "diff", "%s...HEAD" % base], cwd=root,
-                               capture_output=True, text=True).stdout
-        changed = tamper_scan.changed_test_files(diff)
-        return flake_check.check(root, changed) if changed else empty
+        scope = _planned_scope(sdlc_dir, goal, root)
+        if scope is not None:
+            selectors, nodes = scope
+            files = sorted({n.split("::")[0] for n in nodes})
+            # Exact only when every selector IS a collected id; a class, file or parametrized function widens.
+            kind = "planned node ids" if set(selectors) == set(nodes) else "planned files/classes"
+            result = flake_check.check(root, files, node_ids=nodes)
+            selectors, nodes = len(selectors), len(nodes)
+        else:
+            rec = work._record(sdlc_dir, goal) or {}
+            base = rec.get("base") or "HEAD"
+            diff = subprocess.run(["git", "diff", "%s...HEAD" % base], cwd=root,
+                                   capture_output=True, text=True).stdout
+            files = tamper_scan.changed_test_files(diff)
+            if not files:
+                return empty
+            result = flake_check.check(root, files)
+            kind, selectors, nodes = "changed files", None, None
+        print("loop: flake check scope: %s -- %s node id(s) in %d file(s), %s run(s) at a time"
+              % (kind, "?" if nodes is None else nodes, len(files), result.get("workers", "?")),
+              file=sys.stderr)
+        return dict(result, scope={"kind": kind, "selectors": selectors, "nodes": nodes,
+                                   "files": len(files)})
     except Exception as exc:              # noqa: BLE001 - advisory; must never break a verify
         print(f"loop: flake check skipped (non-fatal): {exc}", file=sys.stderr)
         return empty
 
 
-def _planned_tests(sdlc_dir, goal, root):
-    """One strict planned scope for observation, flake and witness; absent legacy plans use diff."""
+def _planned_scope(sdlc_dir, goal, root):
     plan = work.verification_plan(sdlc_dir, goal, root)
     if plan is None or "## Tests" not in plan.read_text().splitlines():
         return None
     proof = _load("red_green")
-    return proof.collect(root, proof.selectors(plan))
+    selectors = proof.selectors(plan)
+    return selectors, proof.collect(root, selectors)
+
+
+def _planned_tests(sdlc_dir, goal, root):
+    """One strict planned scope for observation, flake and witness; absent legacy plans use diff."""
+    scope = _planned_scope(sdlc_dir, goal, root)
+    return None if scope is None else scope[1]
 
 
 def _changed_tests(sdlc_dir, goal, root):
