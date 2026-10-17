@@ -89,7 +89,7 @@ plugin in a real host is unmeasured.
 
 ## Measurements
 
-Measured on a Mac16,8 with 24 GiB of memory (25,769,803,776 bytes), 2026-10-17, system python3 3.9.6,
+Measured on a Mac16,8 with 24 GiB of memory (25,769,803,776 bytes), 2026-10-17, the macOS system python3 (a 3.9-series interpreter),
 `/usr/bin/time -l python3 skills/sigma-kg/scripts/sysgraph.py validate <file>`, three runs per size, on
 generated valid fragments (a quarter as many nodes as edges, one or two evidence entries per edge):
 
