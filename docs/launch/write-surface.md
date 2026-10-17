@@ -176,7 +176,7 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/loop.py | agent_start | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/loop.py | reclaim_stale_claim_lock | fs-remove | 1 | ungated | high |
 | skills/sigma-loop/scripts/loop.py | session_start | fs-write | 1 | ungated | medium |
-| skills/sigma-loop/scripts/loop.py | verify_goal | fs-write | 2 | ungated | medium |
+| skills/sigma-loop/scripts/loop.py | _verify_goal_body | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/loop.py | write_session_heartbeat | fs-remove | 2 | ungated | high |
 | skills/sigma-loop/scripts/loop.py | write_session_heartbeat | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/managed_settings.py | record_enrolment | fs-remove | 1 | enrolment marker: unique tmp file renamed over (os.replace) or cleaned up; written only after a valid policy file was parsed, best-effort, never raises | low |

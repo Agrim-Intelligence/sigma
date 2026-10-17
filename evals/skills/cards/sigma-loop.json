@@ -442,6 +442,10 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/run_receipt.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/risk-detect.sh",
       "role": "gesture"
     },

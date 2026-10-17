@@ -55,6 +55,7 @@ import shutil
 import subprocess
 import tempfile
 import urllib.parse
+import uuid
 
 try:                    # portable output: force UTF-8 so the plugin's own non-ASCII (arrows, em-dashes)
     import sys as _sys  # doesn't garble to '?' or crash on a non-UTF-8 console (the Windows cp1252
@@ -76,6 +77,7 @@ def _load(name):
 
 
 state = _load("state")
+_rr = _load("run_receipt")          # #1650: running/final call receipts, bound ONCE (see merge_with_receipt)
 ledger = _load("ledger")
 hsg = _load("hard_stop_guard")      # rulebook slice 10: a no-op until hard_stops.enabled is true
 legacy = _load("legacy")             # #239: PR directives/markers written under the previous name
@@ -6866,6 +6868,65 @@ def _emit_test_trust(sdlc_dir, config, goal, rec, run, actionlog):
     actionlog.safe_append(sdlc_dir, goal, "gate", gate="test_trust", verdict=verdict, why=why)
 
 
+#: #1650: slack on the merge receipt's deadline for the untimed `gh`/`git` calls inside `merge()` (D-4, deferred:
+#: a hung `gh` can outlive the deadline, and the receipt then reads failed while the merge still lives).
+MERGE_RECEIPT_SLACK = 600
+
+
+def merge_budget_seconds():
+    """The merge receipt's deadline, DERIVED at call time from `gate()`/`merge()`'s retry constants (never the
+    documented figure, which drifts): one gate worst case = its UNKNOWN backoff waits + PENDING_ATTEMPTS flat
+    re-reads; a merge gates once plus once per BEHIND rebase, each rebase also polling with exponential
+    backoff; then the RECONCILE reads and a fixed slack. Capped at the shared MAX_RUN_SECONDS. DERIVED from the
+    constants, not a measurement of any real merge."""
+    one_gate = (sum(UNKNOWN_BACKOFF * 2 ** i for i in range(UNKNOWN_ATTEMPTS - 1))
+                + PENDING_ATTEMPTS * PENDING_INTERVAL)
+    behind_poll = sum(min(BEHIND_BACKOFF * 2 ** i, BEHIND_BACKOFF_MAX) for i in range(BEHIND_ATTEMPTS))
+    total = (one_gate * (BEHIND_REBASES + 1) + BEHIND_REBASES * behind_poll
+             + RECONCILE_ATTEMPTS * RECONCILE_PAUSE + MERGE_RECEIPT_SLACK)
+    return int(min(total, _rr.MAX_RUN_SECONDS))
+
+
+def merge_with_receipt(sdlc_dir, config, goal, **kw):
+    """`merge()` wrapped in a running/final call receipt (#1650), used by the CLI only so the 773+ direct unit
+    calls of `merge()` write nothing. Returns `merge()`'s string UNCHANGED (its first word is the router);
+    the `wait-call` hint goes to stderr. No concurrency refusal: a second merge is idempotent by the documented
+    contract and the run-id nonce keeps receipts honest -- a live prior receipt only WARNS."""
+    try:
+        path = _rr.receipt_path(sdlc_dir, goal, "call-runs", "merge")
+    except ValueError:
+        return merge(sdlc_dir, config, goal, **kw)          # an unsafe goal: merge() refuses it as before
+    seen, got = _rr.read(path, _rr.CALL_GRACE)
+    if seen == "ok" and got.get("outcome") == "running":
+        print(f"work.py merge: a merge for goal {goal} already has a live receipt (pid {got.get('pid')}); "
+              "proceeding (merge is idempotent)", file=sys.stderr)
+    run_id = uuid.uuid4().hex
+    try:
+        _rr.write(path, outcome="running", pid=os.getpid(), started_at=int(time.time()),
+                  timeout_seconds=merge_budget_seconds(), run_id=run_id, run=state.run_identity(),
+                  kind="merge", goal=str(goal))
+    except OSError as exc:
+        print(f"work.py merge: could not write the running receipt ({exc}); `wait-call` will not see "
+              "this call", file=sys.stderr)
+        return merge(sdlc_dir, config, goal, **kw)
+
+    def final(**fields):
+        try:
+            _rr.finish(path, run_id, "work.py merge", kind="merge", goal=str(goal),
+                       run=state.run_identity(), **fields)
+        except Exception as exc:        # noqa: BLE001 - a receipt failure never replaces the merge's own outcome
+            print(f"work.py merge: could not record the final receipt ({exc})", file=sys.stderr)
+    print("work.py merge: running; if this call is cut off, do not re-run blindly -- wait with "
+          f"`{_rr.wait_call_gesture(sdlc_dir, goal, 'merge', run_id)}`", file=sys.stderr)
+    try:
+        result = merge(sdlc_dir, config, goal, **kw)
+    except BaseException:
+        final(outcome="failed", failure="not_completed", detail="the runner raised")
+        raise
+    final(outcome="ok", result=str(result)[:500])
+    return result
+
+
 def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     """Three questions in the order that matters: may we merge, should we, and is anything actually
     enforcing the answer.
@@ -7425,6 +7486,29 @@ def _pr_merged(sdlc_dir, rec, run):
     return isinstance(data, dict) and data.get("state") == "MERGED"
 
 
+def _clear_call_runs(sdlc_dir, goal):
+    """Remove a goal's verify/merge call receipts and the verify lock with its work record (#1650) -- EXCEPT a
+    receipt that still classifies `running` (live pid, unexpired) and a lock somebody holds: a merge's own
+    post-land steps can reach `finish`, and deleting the receipt would drop its final write so `wait-call`
+    reads missing after a SUCCESSFUL merge. Prune clears what is left once it is final or dead."""
+    try:
+        goal_stem = stem(goal)
+        paths = {tag: _rr.receipt_path(sdlc_dir, goal_stem, "call-runs", tag) for tag in ("verify", "merge")}
+    except ValueError:
+        return
+    for path in paths.values():
+        seen, got = _rr.read(path, _rr.CALL_GRACE)
+        if seen == "ok" and got.get("outcome") == "running":
+            continue
+        _rr.clear([path])
+    lock = paths["verify"].with_suffix(".lock")
+    if lock.exists():
+        fd = _rr.try_lock(lock)
+        if isinstance(fd, int):
+            _rr.clear([lock])                   # unlinked while held: a racing acquirer's inode re-check retries
+            os.close(fd)
+
+
 def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
     """Drop the worktree once the goal is done. Not optional housekeeping: one leaked checkout per
     goal is a slow disk leak that also makes `git worktree list` unreadable. Refuses when the tree
@@ -7520,6 +7604,7 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
     record_path(sdlc_dir, goal).unlink(missing_ok=True)
     plan_review_record_path(sdlc_dir, goal).unlink(missing_ok=True)   # #258: the work record's lifetime
     _load("reviewer").clear_receipts(sdlc_dir, goal)                  # F02: same lifetime
+    _clear_call_runs(sdlc_dir, goal)                                  # #1650: verify/merge receipts, same lifetime
     _clear_completed_merge_deliveries(sdlc_dir, goal)
     branch = rec.get("branch")
     # `force` skips the PR read entirely (same contract `_open_pr_refusal` already has above) --
@@ -8373,7 +8458,8 @@ def main(argv):
                 print("work: post-review requires --evidence from review-evidence", file=sys.stderr)
                 return 2
         try:
-            result = _COMMANDS[argv[1]](sdlc_dir, config, goal, **kwargs)
+            command = merge_with_receipt if argv[1] == "merge" else _COMMANDS[argv[1]]   # #1650
+            result = command(sdlc_dir, config, goal, **kwargs)
             print(result)
         except Exception as exc:            # noqa: BLE001 - report, never traceback at a user
             print(f"work: {exc}", file=sys.stderr)

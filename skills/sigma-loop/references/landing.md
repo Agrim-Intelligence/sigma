@@ -2,44 +2,47 @@
 
 ## Context-efficient inspection
 
-Locate before opening: use `rg --files` for paths and `rg -n` for symbols or claims.
-Read only the relevant lines with a bounded range; expand outward only when the
-boundary is unclear. Do not dump whole files or broad search output into context.
+Locate before opening: `rg --files` for paths, `rg -n` for symbols or claims. Read only
+the relevant lines in a bounded range; expand only when the boundary is unclear. Do not
+dump whole files or broad search output into context.
 For bulky tests or diagnostics, save full output to a scratch file, then inspect
-its exit status and focused matches or a bounded tail. Do not hide failures, and
-keep secrets out of the scratch file. This is guidance, not a measured savings claim.
+its exit status and focused matches or a bounded tail. Do not hide failures; keep
+secrets out of the scratch file. This is guidance, not a measured savings claim.
 
-Details behind step 6 of [`../SKILL.md`](../SKILL.md): blocking calls, fresh verification,
-safe commits, secret refusal, review, and `work.py merge`.
+Details behind step 6 of [`../SKILL.md`](../SKILL.md): blocking calls, verification,
+safe commits, secret refusal, review, `work.py merge`.
 
 ---
 
 **REQUIRED PATTERN — blocking on `loop.py verify`, `work.py merge`, a dispatched review-gate
 subagent, or any other long-running call a phase must wait on before continuing: issue it as ONE
 foreground call, in this same turn, then READ THE LITERAL RESPONSE before deciding what happened.
-Never assume a timeout means "killed," and never assume it means "still running" either — this
-environment has been directly observed doing BOTH for the identical test, in the same session
-(#1889): sometimes the response names a tracked background id and a real notification follows
-later; sometimes it is a plain kill (exit 143) with nothing left running and nothing to wait for.
-Read which one you actually got, every time — including on a session where you've seen one
-behavior before; it is not guaranteed to repeat.**
+Never assume a timeout means "killed," nor "still running" — this environment has been observed
+doing BOTH for the identical test (#1889): sometimes the response names a tracked background id and
+a real notification follows; sometimes it is a plain kill (exit 143) with nothing left running.
+Read which one you got, every time.**
 
 - **Response names a tracked id** ("moved to the background (ID: ...), you will be notified", or
   your own explicit background request)? That work may still be alive. Wait on / check THAT id.
-  Do not re-invoke the same command — for `loop.py verify` (the adopting project's own arbitrary
-  command, no concurrency guard of any kind) a second concurrent copy is a real correctness risk,
-  not just wasted work.
+  Do not re-invoke it — for `loop.py verify` (the project's own arbitrary
+  command) a second concurrent copy is a real risk; a second verify of a running goal is REFUSED (exit `6`).
+- **Cut off or yielded, state unknown?** `verify` and `merge` print a `wait-call` line on stderr:
+  run it, never re-run. Exit `0` finished (not passed: read the first word or `exit=`), `1` did not
+  complete, `3` still running, `2` no receipt (check the PR). Unmeasured on real hosts.
 - **Response is a plain error/exit naming no id at all** (e.g. "Command timed out after Ns", exit
-  143)? Nothing is left running. A clean re-run is correct for a command whose own documentation
-  establishes that — as `loop.py verify` and `work.py merge`'s paragraphs below both do.
+  143)? Nothing is left running. A clean re-run is correct where the command's own documentation
+  says so — as `loop.py verify` and `work.py merge`'s paragraphs below both do.
 - **Never** shell-background it yourself (`&`, `nohup`) and end your turn believing a notification
   will resume you. That path detaches for real, with no id and no notification, ever — a
-  confirmed, repeated failure (#1889): a phase-subagent backgrounds a long command, ends its turn
-  on a "wait" backed by nothing, and the goal silently stalls until a human notices.
+  confirmed, repeated failure (#1889): a subagent backgrounds a long command, ends its turn
+  on a "wait" backed by nothing, and the goal silently stalls.
 
 ```
 # REQUIRED — one foreground call, same turn, then read what it actually says:
 python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" verify .sdlc "$goal"
+
+# Cut off? Run the printed line, do not re-run:
+python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" wait-call "<abs .sdlc>" "$goal" verify|merge
 
 # NEVER — detaches for real; no id, no notification, ever:
 python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" verify .sdlc "$goal" &
@@ -48,13 +51,12 @@ nohup python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" verify .sdlc "$goal" > verif
 ```
 
 **The same call shape covers a dispatched review-gate subagent** (plan-review, pre-PR/code-review,
-post-PR/pr-review — see the maker≠checker rule, step 3): your very next action depends on its
-verdict and nothing else is happening meanwhile, so dispatch it foreground/blocking (e.g. Claude
-Code's `Agent`/Task tool `run_in_background: false`) — no separate "wait" step, and no response to
-read either way: the call itself does not return until the review is done.
+post-PR/pr-review — see the maker≠checker rule, step 3): your next action depends on its verdict,
+so dispatch it foreground/blocking (e.g. the `Agent`/Task tool `run_in_background: false`) — no
+separate "wait" step; the call does not return until the review is done.
 
-**Honest limit**: this is self-applied. Read the response: treating a live process as killed races
-it; treating a kill as live wastes a turn.
+**Honest limit**: this is self-applied. Treating a live process as killed races it; treating a
+kill as live wastes a turn.
 
 With `config.verify.enforce` on, a `done` needs FRESH machine evidence first —
 `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" verify .sdlc "$goal"` runs the goal's proving
@@ -188,7 +190,7 @@ by hand: if the evidence marker is there, `reconcile-review-post`; if not, delet
 Then `work.py merge .sdlc "$goal"`. **This call can block for minutes — raise your tool-call
 timeout before running it, not after it times out** (the REQUIRED PATTERN above `loop.py verify`
 applies here unchanged: read the literal response, never shell-background this and wait on
-nothing). Its internal gate (`gate()`) carries a
+nothing; if yielded, run its `wait-call ... merge` line). Its internal gate (`gate()`) carries a
 deliberate patience budget: `PENDING_ATTEMPTS` (10) re-reads at `PENDING_INTERVAL` (45s) apart —
 450s, roughly **7.5 minutes** — spent re-polling a required check that has attached but not yet
 answered, before gate() gives up and reports it still pending. On the BEHIND-rebase path (`main`
