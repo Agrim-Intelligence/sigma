@@ -58,6 +58,9 @@ At `scope: full` the **code** is graphed too; at `scope: research` the code is s
    (declines silently if that name is already archived — the note stays live and is re-proposed next
    run; move or remove the archived copy). Paths are relative to where you ran `maintain`.
 
+6. **Validate a system graph fragment** (read-only, no network): `python3 "${CLAUDE_SKILL_DIR}/scripts/sysgraph.py" validate <file>`.
+   The format and its evidence rules are in `docs/system-graph.md`.
+
 ## Web-capture retention (`web_retention_enabled`, opt-in)
 
 `research/web/` gains a file per `WebSearch`/`WebFetch` and nothing pruned it — one machine measured
