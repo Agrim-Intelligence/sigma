@@ -180,7 +180,7 @@ def test_rebase_deferred_keeps_its_prefix_and_names_the_manual_rebase(tmp_path):
 
 # --- opt-in auto_merge parks and the plan-sync refusal --------------------------------------------
 
-from test_work import _landing_cfg, _landing_pr, _merge_run     # noqa: E402
+from test_work import _landing_cfg, _landing_pr, _merge_run, _seq     # noqa: E402
 
 
 def test_a_refused_direct_merge_says_what_to_do_next(tmp_path):
@@ -188,7 +188,7 @@ def test_a_refused_direct_merge_says_what_to_do_next(tmp_path):
     goal = _started(d, goal="1642.md")
     _evidence(d, goal)
     run = _merge_run(RuntimeError("HTTP 409: Head branch was modified. Review and try the merge again."),
-                     landing=_landing_pr("MERGED"))
+                     landing=_seq(_landing_pr("OPEN"), _landing_pr("MERGED")))   # #1647: entry read sees OPEN
     out = work.merge(d, _landing_cfg(), goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: direct merge of PR #7 was refused (")
     assert "fix the cause on the PR" in out and f"`work.py merge {d} {goal}`" in out
@@ -198,9 +198,11 @@ def test_a_pr_closed_without_merging_says_to_reopen_or_open_a_new_one(tmp_path):
     d = _sdlc(tmp_path, _landing_cfg())
     goal = _started(d, goal="1642.md")
     _evidence(d, goal)
-    run = _merge_run(RuntimeError("HTTP 502: Server Error"), landing=_landing_pr("CLOSED"))
+    run = _merge_run(RuntimeError("HTTP 502: Server Error"),
+                     landing=_seq(_landing_pr("OPEN"), _landing_pr("CLOSED")))   # #1647: entry read, then reconcile
     out = work.merge(d, _landing_cfg(), goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: PR #7 was closed without merging")
+    assert "the merge call failed" in out, out
     assert "reopen it" in out and f"`work.py pr {d} {goal}`" in out
 
 

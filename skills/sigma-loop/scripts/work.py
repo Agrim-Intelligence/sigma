@@ -6629,8 +6629,8 @@ def _delete_remote_branch(cwd, branch, run, config=None, base=None, sdlc_dir=Non
     here whenever this runs from a goal's own worktree, since the primary checkout normally holds
     `main` (project memory: gh-pr-merge-fails-loudly-from-a-worktree). A plain REST call has no
     local-checkout step to fail on, and matches this file's existing preference for REST over `gh
-    pr` subcommands generally (see `pr()`'s own docstring above). Called from two sites -- eagerly
-    in `merge()` right after a direct landing, and again (redundant but harmless there; load-bearing
+    pr` subcommands generally (see `pr()`'s own docstring above). Called from `merge()`'s shared
+    `_post_landing` (right after a direct landing, and for a PR GitHub had already merged, #1647) and again (redundant but harmless there; load-bearing
     for a goal that was armed and landed asynchronously instead) from `finish()` once it
     independently confirms MERGED -- so this never raises: every caller's own success must never
     depend on this cleanup nicety succeeding too.
@@ -6750,8 +6750,11 @@ def _close_issue_the_base_cannot(config, rec, goal, run):
     issue that this call cannot prove, only what it observed (open, or unconfirmed) and did (sent a
     close request that succeeded).
 
-    ONE CALL SITE, AND IT IS THE EVIDENCE THAT PICKS IT. This runs only after `gh pr merge` returned
-    success — the same moment, and the same proof, the honest `merged` ledger entry is written from.
+    ONE CALL SITE, AND IT IS THE EVIDENCE THAT PICKS IT. Its one call site is `_post_landing`, reached
+    on exactly two proofs: the direct REST merge returned merged (or its ambiguous outcome was read
+    back as merged), or `merge()`'s entry read (`pr_landing_state`, REST) found the PR already merged
+    elsewhere (#1647) — the same moment, and the same proof, the honest `merged` ledger entry is
+    written from.
     Not the arm: `--auto` only ARMS GitHub's auto-merge and returns immediately, which is why that
     path writes `merge-armed` rather than `merged` (F26/#344), and a later-failing check or a
     cancelled auto-merge means it may never land at all. Not `PR #N opened` (a fork PR nobody here
@@ -6956,7 +6959,12 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     parks, still OPEN/UNKNOWN returns `merge outcome unknown for PR #N (...)`, which the caller records
     as `review` (NOT a park: the merge-reconcile pass sweeps awaiting_merge goals). Without GraphQL a
     still-pending required check is not armed: it parks after gate()'s own bounded wait (no extra wait,
-    so the documented 22.5-minute worst case is unchanged)."""
+    so the documented 22.5-minute worst case is unchanged).
+
+    #1647: one REST landing read comes first, before test trust and every gate: a PR already MERGED
+    elsewhere returns `PR #N merged (already merged; outcome reconciled)` through the same post-landing
+    effects, a CLOSED one parks with no side effects and is the one exception to the test-trust rule
+    (no landing to give provenance to), and OPEN/UNKNOWN fall through unchanged."""
     run = run or _run
     # Loaded lazily (see start()'s own comment on why: actionlog.py loads work.py for stem(), so an
     # eager module-level `_load("actionlog")` here would cycle) — once per call, reused below for
@@ -6966,10 +6974,29 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     if not rec or not rec.get("pr"):
         return "PARK: no PR for this goal — run `work.py pr` first"
 
+    # #1647: ONE REST read of the PR's landing state, before every gate below. Never raises (an
+    # unreadable PR is UNKNOWN) and is never retried here; OPEN and UNKNOWN fall through unchanged.
+    landing, _why = pr_landing_state(sdlc_dir, rec, run)
+    if landing == CLOSED_PR:
+        return (f"PARK: PR #{rec['pr']} was closed without merging; reopen it on GitHub, or run "
+                f"`work.py pr {sdlc_dir} {goal}` to open a new one")
+
     # #1937: emitted HERE, before merge_rights and before every `return PARK` below, so a diff that
     # weakened a pre-existing test still reaches the change record when this merge parks for some
     # entirely unrelated reason. Advisory only -- see _emit_test_trust; it cannot stop the merge.
-    _emit_test_trust(sdlc_dir, config, goal, rec, run, actionlog)
+    # The closed-unmerged park above is the one return before it: there is no landing to give
+    # provenance to. A vanished worktree emits nothing, never the false `pass` an unreadable diff
+    # would record (#1647).
+    wt = rec.get("worktree")
+    if wt and pathlib.Path(wt).is_dir():
+        _emit_test_trust(sdlc_dir, config, goal, rec, run, actionlog)
+
+    if landing == MERGED:
+        # Merged elsewhere (a human, an earlier cut-off call): report it as merged, not parked, and
+        # run the same post-landing effects as the direct path. No method is known for it.
+        closed = _post_landing(sdlc_dir, config, goal, rec, run, actionlog,
+                               f"PR #{rec['pr']} merged (already merged)")
+        return f"PR #{rec['pr']} merged (already merged; outcome reconciled){closed}"
 
     may, why_not = merge_rights(sdlc_dir, config, goal, run=run)
     if not may:                                      # permission, before anything it could gate on
@@ -7164,6 +7191,25 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
                     f"#{rec['pr']} awaiting merge: the merge-reconcile pass records done if it landed, "
                     "doctor's stuck-merge alarm covers it if not")
         reconciled = " (outcome reconciled: the merge call failed ambiguously, a REST read shows the PR merged)"
+    # The first HONEST write site `merged` has ever had from the place that actually performed the
+    # landing (F26/#344 only ever wrote `merge-armed` here; `done_refusal`'s own out-of-band write
+    # is the only other one). Fail-open: a ledger problem must never turn a successful merge into a
+    # reported failure.
+    closed = _post_landing(sdlc_dir, config, goal, rec, run, actionlog,
+                           f"PR #{rec['pr']} merged ({method})")
+    # The clause goes at the END, after `gate_detail`: SKILL.md's decision table routes on the
+    # `PR #N merged (<method>) — …` opening, which stays exactly as it was.
+    return f"PR #{rec['pr']} merged ({method}) — {gate_detail}{closed}{reconciled}"
+
+
+def _post_landing(sdlc_dir, config, goal, rec, run, actionlog, merged_why):
+    """Every effect that follows a POSITIVELY CONFIRMED landing, in order, shared by `merge()`'s two
+    landing paths (#1647) so they cannot drift: the direct REST PUT that returned merged, and the
+    entry read (`pr_landing_state`) that found the PR already merged elsewhere. -> the issue-close
+    clause for the caller's line.
+
+    NOT never-raise, exactly as the inline tail it replaced: `_record_confirmed_merge` raises on a
+    delivery-receipt key conflict, and that propagates on both paths alike."""
     if rec.get("branch"):                   # defensive: `start()` always sets it, but never assume
         _delete_remote_branch(rec["worktree"], rec["branch"], run, config=config,
                               base=rec.get("base"), sdlc_dir=sdlc_dir, goal=goal)
@@ -7173,11 +7219,6 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # only when that read finds the issue already closed; otherwise (open, or unreadable) it sends
     # a close request and posts the audit comment. Returns a clause, never raises.
     closed = _close_issue_the_base_cannot(config, rec, goal, run)
-    # The first HONEST write site `merged` has ever had from the place that actually performed the
-    # landing (F26/#344 only ever wrote `merge-armed` here; `done_refusal`'s own out-of-band write
-    # is the only other one). Fail-open: a ledger problem must never turn a successful merge into a
-    # reported failure.
-    merged_why = f"PR #{rec['pr']} merged ({method})"
     _record_confirmed_merge(sdlc_dir, config, goal, rec, run, merged_why)
     if _receipt_sharing_enabled(config):
         try:
@@ -7185,10 +7226,8 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
         except Exception as exc:
             print("merge observation pending: %s" % exc, file=sys.stderr)
     actionlog.safe_append(sdlc_dir, goal, "merged", pr=rec["pr"])
-    _upkeep_merge_trigger(sdlc_dir, config)         # #1225: LAST effect; own guard, never alters the line below
-    # The clause goes at the END, after `gate_detail`: SKILL.md's decision table routes on the
-    # `PR #N merged (<method>) — …` opening, which stays exactly as it was.
-    return f"PR #{rec['pr']} merged ({method}) — {gate_detail}{closed}{reconciled}"
+    _upkeep_merge_trigger(sdlc_dir, config)         # #1225: LAST effect; own guard, never alters the caller's line
+    return closed
 
 
 def _invocation_refusal(sdlc_dir, goal, pr, head_sha, brief_sha256, evidence):

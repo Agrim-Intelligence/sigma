@@ -440,8 +440,8 @@ with `merged: true`. Every failure carries an outcome flag, decided by the `WRIT
   only have merged that head (a human or an earlier arm could still have merged a different one).
 - A host that cuts the tool call mid-PUT leaves nothing recorded locally and the PR may or may not have merged.
   The lever is `loop.py record review` (sets awaiting_merge; the merge-reconcile pass records `done` once a REST
-  read shows MERGED, and `record done` stays refused until then). Re-running `work.py merge` is not the lever: how it reads an already-merged
-  PR was not changed or measured here and it may park a PR that did land. The sha guard only proves no different head can land.
+  read shows MERGED, and `record done` stays refused until then). Re-running `work.py merge` after an out-of-band merge now reads the PR first and prints
+  `PR #N merged (already merged; outcome reconciled)` (#1647; unmeasured against a live out-of-band merge), but `record review` stays the lever for a cut PUT. The sha guard only proves no different head can land.
 
 No GraphQL, pending required check: `--auto` is GraphQL and REST has no auto-merge, so when
 `graphql_available()` is false (`SIGMA_GH_GRAPHQL=off` or `CLAUDE_CODE_REMOTE`; env/override only, no probe) a
@@ -457,8 +457,8 @@ Since slice 4b-2 the permission and protection reads that used to stop a cloud m
 (next section); what a cloud session still cannot do is stated there. Under `SIGMA_GH_GRAPHQL=off` the
 `graphql_available()` branches above are exercised without a cloud session.
 
-Cost (Scalability): 1 REST PUT per landing (was 1 GraphQL `gh pr merge`), + at most 1 CLI fallback, + at most 3
-REST reads on an unknown outcome: a hard ceiling of 5 GitHub calls for the landing step, independent of repo
+Cost (Scalability): 1 REST PUT per landing (was 1 GraphQL `gh pr merge`), + at most 1 CLI fallback, + 1 REST entry read of the PR (#1647), at most 3
+REST reads on an unknown outcome: a hard ceiling of 6 GitHub calls for the landing step, independent of repo
 size, per goal with no shared lock, so 10x/100x merges scale linearly against the REST core budget (5,000/h per
 token, documented, UNMEASURED here). The PUT and the reads have no per-call timeout of their own (`_run` sets
 none; existing ceiling).

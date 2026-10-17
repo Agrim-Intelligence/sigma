@@ -1111,10 +1111,15 @@ def test_section_13a_names_the_moment_the_close_happens_and_the_code_still_picks
     assert "at the moment it confirms the merge landed" in section
     assert "was still open after the merge" in section and "sent a close request" in section
     assert "could not close #N" in section
+    # #1647: the close moved into `_post_landing`, the one tail both landing paths share. The arm
+    # check is made against the DIRECT path's call (the last in source): the already-merged
+    # short-circuit's call precedes the arm, so `index` would select the wrong one.
+    post = _function(WORK, "_post_landing")
+    assert "closed = _close_issue_the_base_cannot(config, rec, goal, run)" in post
     merge = _function(WORK, "merge")
-    assert "closed = _close_issue_the_base_cannot(config, rec, goal, run)" in merge
-    armed = merge[:merge.index("_close_issue_the_base_cannot")]
-    assert '"--auto"' in armed, "the arm branch must still precede and return before the close"
+    assert "_post_landing(" in merge
+    direct = merge.rindex("_post_landing(")
+    assert '"--auto"' in merge[:direct], "the arm branch must still precede and return before the close"
 
 
 def test_section_13a_explains_why_the_close_is_what_releases_a_dependent():

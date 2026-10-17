@@ -3025,7 +3025,7 @@ def test_merge_refuses_without_fresh_local_evidence(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     run = _runner([(prfake.merge_put(7), prfake.rest_merged())] + _view() + _perm() + _protected()
-                  + [("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
+                  + [("api repos/{owner}/{repo}/pulls/7", _seq(_landing_pr("OPEN"), _merged_pr()))])
     assert work.merge(d, ALWAYS_VERIFIED, goal, run=run, sleep=NOSLEEP).startswith("PARK: no fresh verify")
     assert not prfake.merge_calls(run.calls)
 
@@ -3160,7 +3160,7 @@ def test_an_unknown_merge_outcome_that_reads_merged_lands_normally(tmp_path, put
     """The PUT answered ambiguously (empty 2xx, `merged: false`, 5xx, timeout): ONE REST read says MERGED,
     so the post-landing steps run, and the line still opens `PR #7 merged (squash) —`."""
     d = _sdlc(tmp_path, _landing_cfg()); goal = _started(d, goal="1642.md"); _evidence(d, goal)
-    run = _merge_run(put, landing=_landing_pr("MERGED"))
+    run = _merge_run(put, landing=_seq(_landing_pr("OPEN"), _landing_pr("MERGED")))   # #1647: entry read, then reconcile
     out = work.merge(d, _landing_cfg(), goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged (squash) — ") and "outcome reconciled" in out, out
     assert any("DELETE" in c for c in run.calls)
@@ -3188,9 +3188,12 @@ def test_an_unknown_merge_outcome_that_does_not_read_merged_is_left_awaiting_mer
 
 def test_an_unknown_merge_outcome_that_reads_closed_parks(tmp_path):
     d = _sdlc(tmp_path, _landing_cfg()); goal = _started(d, goal="1642.md"); _evidence(d, goal)
-    run = _merge_run(RuntimeError("HTTP 502: Server Error"), landing=_landing_pr("CLOSED"))
+    run = _merge_run(RuntimeError("HTTP 502: Server Error"),
+                     landing=_seq(_landing_pr("OPEN"), _landing_pr("CLOSED")))   # #1647: entry read, then reconcile
     out = work.merge(d, _landing_cfg(), goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: PR #7 was closed without merging"), out
+    assert "the merge call failed" in out, out          # the closed-after-a-failed-PUT park, not #1647's entry park
+    assert sum(prfake.merge_put(7) in c for c in run.calls) == 1
     _no_landing_side_effects(run, d, goal)
 
 
@@ -3199,11 +3202,12 @@ def test_the_reconcile_read_rides_out_a_short_lag(tmp_path):
     d = _sdlc(tmp_path, _landing_cfg()); goal = _started(d, goal="1642.md"); _evidence(d, goal)
     slept = []
     run = _merge_run(RuntimeError("HTTP 502: Server Error"),
-                     landing=_seq(_landing_pr("OPEN"), _landing_pr("OPEN"), _landing_pr("MERGED")))
+                     landing=_seq(_landing_pr("OPEN"), _landing_pr("OPEN"), _landing_pr("OPEN"),
+                                  _landing_pr("MERGED")))           # #1647: the entry read, then the reconcile reads
     out = work.merge(d, _landing_cfg(), goal, run=run, sleep=slept.append)
     assert out.startswith("PR #7 merged (squash) — ") and "outcome reconciled" in out, out
     reads = [c for c in run.calls if c == "gh api repos/{owner}/{repo}/pulls/7"]
-    assert len(reads) == 3 and slept.count(work.RECONCILE_PAUSE) == 2
+    assert len(reads) == 4 and slept.count(work.RECONCILE_PAUSE) == 2     # #1647: +1, the entry read
 
 
 def test_the_reconcile_read_is_bounded(tmp_path):
@@ -3213,7 +3217,8 @@ def test_the_reconcile_read_is_bounded(tmp_path):
     out = work.merge(d, _landing_cfg(), goal, run=run, sleep=slept.append)
     assert out.startswith("merge outcome unknown")
     assert work.RECONCILE_ATTEMPTS == 3
-    assert sum(c == "gh api repos/{owner}/{repo}/pulls/7" for c in run.calls) == work.RECONCILE_ATTEMPTS
+    # #1647: +1, merge()'s entry landing read before the gate; the reconcile reads stay bounded.
+    assert sum(c == "gh api repos/{owner}/{repo}/pulls/7" for c in run.calls) == work.RECONCILE_ATTEMPTS + 1
     assert slept.count(work.RECONCILE_PAUSE) == work.RECONCILE_ATTEMPTS - 1
 
 
@@ -3234,19 +3239,22 @@ def test_a_moved_head_409_parks_without_a_reconcile_read(tmp_path):
     """409 `Head branch was modified`: a definite refusal. Park; never read-and-land, never merge the new head."""
     d = _sdlc(tmp_path, _landing_cfg()); goal = _started(d, goal="1642.md"); _evidence(d, goal)
     run = _merge_run(RuntimeError("HTTP 409: Head branch was modified. Review and try the merge again."),
-                     landing=_landing_pr("MERGED"))
+                     landing=_seq(_landing_pr("OPEN"), _landing_pr("MERGED")))   # #1647: entry read sees OPEN
     out = work.merge(d, _landing_cfg(), goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: direct merge of PR #7 was refused ("), out
     assert sum(prfake.merge_put(7) in c for c in run.calls) == 1
-    assert not any(c == "gh api repos/{owner}/{repo}/pulls/7" for c in run.calls)
+    # #1647: the entry read is the ONLY bare read -- still no reconcile read after the 409.
+    assert sum(c == "gh api repos/{owner}/{repo}/pulls/7" for c in run.calls) == 1
     _no_landing_side_effects(run, d, goal)
 
 
 def test_a_5xx_merge_is_reconciled_not_parked(tmp_path):
     """C7's other half: 5xx is outcome-unknown, so it READS (and here lands) instead of parking."""
     d = _sdlc(tmp_path, _landing_cfg()); goal = _started(d, goal="1642.md"); _evidence(d, goal)
-    run = _merge_run(RuntimeError("HTTP 503: Service Unavailable"), landing=_landing_pr("MERGED"))
+    run = _merge_run(RuntimeError("HTTP 503: Service Unavailable"),
+                     landing=_seq(_landing_pr("OPEN"), _landing_pr("MERGED")))   # #1647: entry read, then reconcile
     out = work.merge(d, _landing_cfg(), goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PR #7 merged (squash) — "), out     # the reconcile path, not #1647's short-circuit
     assert "outcome reconciled" in out and any(c == "gh api repos/{owner}/{repo}/pulls/7" for c in run.calls)
 
 
@@ -3962,7 +3970,7 @@ def test_merge_logs_a_merged_entry_to_the_ledger_on_a_direct_landing(tmp_path):
     _evidence(d, goal)
     ledger.reset_actor_cache()
     run = _runner([(prfake.merge_put(7), prfake.rest_merged())] + _view() + _perm() + _protected()
-                  + [("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
+                  + [("api repos/{owner}/{repo}/pulls/7", _seq(_landing_pr("OPEN"), _merged_pr()))])
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged") and "outcome reconciled" not in out, out   # #895 4b-1: the PUT, not the read
     entries = [(e["kind"], e.get("pr")) for e in ledger.read_all(d)]
@@ -3975,7 +3983,7 @@ def test_known_direct_merge_emits_core_facts_when_receipt_sharing_is_disabled(tm
     cfg = {**ALWAYS, **JOURNAL_ON}
     d = _sdlc(tmp_path, cfg); goal = _started(d); _evidence(d, goal)
     run = _runner([(prfake.merge_put(7), prfake.rest_merged())] + _view() + _perm() + _protected()
-                  + [("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
+                  + [("api repos/{owner}/{repo}/pulls/7", _seq(_landing_pr("OPEN"), _merged_pr()))])
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged") and "outcome reconciled" not in out, out
     entries = [event for event in ledger.read_all(d) if event["kind"] == "merged"]
@@ -4060,7 +4068,7 @@ def test_merge_then_done_refusal_writes_merged_only_once(tmp_path):
     _evidence(d, goal)
     ledger.reset_actor_cache()
     run = _runner([(prfake.merge_put(7), prfake.rest_merged())] + _view() + _perm() + _protected()
-                  + [("api repos/{owner}/{repo}/pulls/7", _merged_pr())])
+                  + [("api repos/{owner}/{repo}/pulls/7", _seq(_landing_pr("OPEN"), _merged_pr()))])
     out = work.merge(d, cfg, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 merged") and "outcome reconciled" not in out, out   # #895 4b-1: the PUT, not the read
 

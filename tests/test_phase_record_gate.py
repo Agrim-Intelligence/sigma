@@ -304,7 +304,7 @@ def test_merge_is_parked_by_the_same_gate(tmp_path):
     (p / ".sdlc/state/work/0001-x.json").write_text(json.dumps({"pr": 5, "worktree": str(p), "branch": "b"}))
     work.merge_rights = lambda *a, **k: (True, "")
     work._emit_test_trust = lambda *a, **k: None
-    out = work.merge(sdlc, cfg, GOAL)
+    out = work.merge(sdlc, cfg, GOAL, run=lambda cwd, argv: "")   # #1647: the entry landing read stays hermetic
     assert out.startswith("PARK: the SDLC phase record is incomplete"), out
 
 

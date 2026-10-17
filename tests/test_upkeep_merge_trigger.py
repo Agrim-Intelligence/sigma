@@ -70,18 +70,33 @@ def test_no_trigger_when_the_merge_is_not_a_landing(tmp_path, monkeypatch):
 
 
 def test_control_the_trigger_call_is_in_merge_and_removing_it_is_seen():
-    """Mutation control: the same test, run against merge() with the call removed, must fail."""
+    """Mutation control: the same test, run against merge() with the call removed, must fail.
+
+    #1647: the trigger lives in `_post_landing`, which BOTH of merge()'s landing paths call (the
+    already-merged short-circuit and the direct PUT), so the chain merge -> _post_landing -> trigger is
+    what is checked, with each edge removed alone. Exactly 2 calls, not membership: membership would
+    stay green with either landing path's call removed."""
     src = (SCRIPTS / "work.py").read_text(encoding="utf-8")
-    tree = ast.parse(src)
-    merge = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "merge")
 
-    def calls_trigger(fn):
-        return any(isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_upkeep_merge_trigger" for n in ast.walk(fn))
+    def fn(tree, name):
+        return next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name)
 
-    assert calls_trigger(merge)
-    stripped = ast.parse(src.replace("_upkeep_merge_trigger(", "_unrelated_name("))
-    mutant = next(n for n in stripped.body if isinstance(n, ast.FunctionDef) and n.name == "merge")
-    assert not calls_trigger(mutant)                       # the detector is not blind
+    def count(f, name):
+        return sum(isinstance(n, ast.Call) and getattr(n.func, "id", "") == name for n in ast.walk(f))
+
+    def reaches(tree):
+        return (count(fn(tree, "merge"), "_post_landing") == 2
+                and count(fn(tree, "_post_landing"), "_upkeep_merge_trigger") == 1)
+
+    assert reaches(ast.parse(src))
+    # A: the trigger edge (also renames the trigger's own def, harmlessly)
+    assert not reaches(ast.parse(src.replace("_upkeep_merge_trigger(", "_unrelated_name(")))
+    # B: the first merge edge (the already-merged short-circuit's call)
+    assert not reaches(ast.parse(src.replace("closed = _post_landing(", "closed = _unrelated_name(", 1)))
+    # C: the last merge edge (the direct PUT's call)
+    head, sep, tail = src.rpartition("closed = _post_landing(")
+    assert sep, "merge() no longer writes its landing calls as `closed = _post_landing(`"
+    assert not reaches(ast.parse(head + "closed = _unrelated_name(" + tail))   # the detector is not blind
 
 
 # ------------------------------------------------------------------------------------------ the scheduler side
