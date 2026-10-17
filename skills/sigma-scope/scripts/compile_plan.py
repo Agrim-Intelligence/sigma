@@ -150,7 +150,7 @@ _ORIGINATES_FROM_TMPL = "Originates from Story #{n}."
 
 #: The id shapes a `.sdlc/design/<n>.md` write-up uses for its own NON-SLICE rows -- `BR-n` (Blast
 #: radius), `D-n` (Doubts), `B-n` (Blockers), since #1975/#1976 `X-n` (Out of scope) and `PC-n`
-#: (Premise check), and since #2028 `S-n` (Seeds). A `Seeds` row is the likeliest of the family to
+#: (Premise check), since #2028 `S-n` (Seeds), and since #659 `FR-n` (Functional requirements). A `Seeds` row is the likeliest of the family to
 #: be miswritten as an edge -- it is the one row type that names an unfinished piece of work, so
 #: "slice 4 depends on S-2 being swept" is a sentence a pass can reach for; it is still not a
 #: ticket. None of them is a slice, so none of them can ever be a
@@ -162,14 +162,14 @@ _ORIGINATES_FROM_TMPL = "Originates from Story #{n}."
 #: the `Depends on` column at the source; `skills/sigma-goal-review/SKILL.md` step 4b adjudicates one
 #: rather than dropping it. Behaviour is unchanged either way: the same `ValueError`, raised before
 #: any `gh` call, with zero side effects.
-_DESIGN_ARTIFACT_ID_RE = re.compile(r"^(?:BR|PC|D|B|X|S)-\d+$")
+_DESIGN_ARTIFACT_ID_RE = re.compile(r"^(?:BR|PC|D|B|X|S|FR)-\d+$")
 
 #: Appended to the unknown-key refusal when, and only when, at least one unknown key has that
 #: shape. Kept separate from the generic sentence so a plain typo is not buried under advice about
 #: a document it has nothing to do with.
 _DESIGN_ID_HINT = (
     " -- {ids!r} is the shape a `.sdlc/design/<n>.md` write-up gives its own Blast radius / Premise "
-    "check / Seeds / Out of scope / Doubts "
+    "check / Functional requirements / Seeds / Out of scope / Doubts "
     "/ Blockers rows, which are NOT slices: a slice's `Depends on` cell carries slice ids only, and "
     "a Blocker that gates a slice is recorded in that design's own Blockers entry, naming the slice "
     "it gates")

@@ -44,6 +44,11 @@ means, and the exact commands that re-verify `Seeds`' count and `Budget`'s fetch
 the artifact's own claim — is in
 [`references/reading-the-target.md`](references/reading-the-target.md).
 
+**Then run the requirements check** (#659) — `python3 "${CLAUDE_SKILL_DIR}/../sigma-goal-design/scripts/goal_design.py" requirements .sdlc/design/<n>.md`
+— and report every violation it prints, verbatim, before building the brief: a requirement in no
+slice row, a non-EARS sentence, a malformed slice table, a missing `## Functional requirements`
+heading. An uncovered `FR-n` is a REJECT ground (2b). **Be honest about the guarantee:** the verb makes the violation unmissable and names each offending requirement, but that the verdict then becomes REJECT depends on the reviewing model following this prose; nothing in this kit enforces it (a hard refusal in `loop.py mark-designed` is deferred). The end-to-end run of a real `/sigma-goal-review` with a model is unmeasured.
+
 ## 2. Assemble the independent brief and dispatch a fresh reviewer
 
 **The maker is never the checker.** Dispatch a genuinely fresh reviewer with no shared context to

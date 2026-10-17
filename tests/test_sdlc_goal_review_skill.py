@@ -1128,3 +1128,39 @@ def test_the_priority_block_mints_no_phantom_blocker():
     real = block.replace("#N", "#1826").replace("<n>", "1826")
     hits = blocker_scan._BLOCK_RE.findall(blocker_scan.strip_unpark_qa(real))
     assert hits == [], f"the new feature-priority prose mints a phantom blocker: {hits!r}"
+
+
+# --------------------------------------------------------------- #659: functional requirements
+
+def _flat(t):
+    return " ".join(t.split()).replace("*", "")
+
+
+def test_goal_review_step1_runs_requirements_verb():
+    gesture = 'goal_design.py" requirements .sdlc/design/<n>.md'
+    assert gesture in READING_TARGET
+    assert "goal_design.py requirements" in _flat(_BODY) or gesture in _flat(_BODY)
+
+
+def test_reading_the_target_states_the_unenforced_reject_candidly():
+    flat = _flat(READING_TARGET)
+    assert "nothing in this kit enforces it" in flat and "reviewing model" in flat
+    assert "pre-#659" in flat or "before #659" in flat
+
+
+def test_adjudication_lists_uncovered_fr_as_reject_ground():
+    import re as _re
+    flat = _flat(ADJUDICATION)
+    assert _re.search(r"An `FR-n` that appears in no slice row.{0,200}REJECT ground", flat)
+    assert "nothing in this kit enforces it" in flat
+
+
+def test_confirm_md_pastes_served_block():
+    flat = _flat(CONFIRM)
+    assert "goal_design.py" in CONFIRM and " served " in CONFIRM
+    assert "## Requirements served" in CONFIRM
+    assert "`## Requirements served` heading, then" in flat
+    assert "requirements .sdlc/design/<n>.md --plan" in CONFIRM
+    assert "key" in flat and "slice number" in flat
+    # the plan check runs BEFORE compile_plan.py is invoked
+    assert CONFIRM.index("--plan .sdlc/state/goal-review/<n>.plan.json\n") < CONFIRM.index('scripts/compile_plan.py"')

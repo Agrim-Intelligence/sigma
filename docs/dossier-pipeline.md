@@ -453,6 +453,7 @@ language, no citations.
 
 ## Intent
 ## Premise check         (`- **PC-1.** … — **verified** | **falsified** | **unverifiable**: …`)
+## Functional requirements  (`- **FR-1.** <EARS sentence>`, or a single `- None.`)
 ## Queries run
 ## Seeds                 (table: ID | Seed | Found in round | Swept in round | Status | Carried as)
 ## Blast radius          (table: ID | Component | Site | What it is | Why affected)
@@ -461,7 +462,7 @@ language, no citations.
 ## Doubts                (`- **D-1.** …`)
 ## Blockers              (`- **B-1.** …`)
 ## Detailed design
-## Slice-count estimate  (table: Slice | Covers | Depends on)
+## Slice-count estimate  (table: Slice | Covers | Requirements | Depends on)
 ## Handoff               (must include a `<n>-in-brief.md` pointer — see below)
 ```
 
@@ -503,6 +504,15 @@ The rules about that skeleton, each of which a real run got wrong before it was 
   evidence. A `falsified` row obliges a rewrite rather than a note: §7a checks that `Intent` states
   the corrected premise and that the SLICES were rebuilt on it rather than annotated with it,
   because if the problem statement is wrong every slice derived from it inherits the error.
+- **`Functional requirements` numbers what the design promises and traces each to a slice**
+  (#659). `- **FR-n.** <sentence>`, EARS form only (`WHEN|IF|WHILE|WHERE ..., THE <x> SHALL <y>`),
+  never an issue number, ids rising and never renumbered, a single `- None.` where there are none.
+  The EARS test matches the leading clause pattern (`prd_lint.py` verbatim, a match from the start,
+  not a full match): it checks form, not that the text is a single sentence. The slice table's `Requirements` column names the `FR-n` each slice delivers (`—` for none) and is
+  read by header name. `python3 skills/sigma-goal-design/scripts/goal_design.py requirements
+  .sdlc/design/<n>.md` checks all of it and exits 2 naming each offender: an FR in no slice row, an
+  undeclared token, an `FR-n` in `Depends on`, a duplicate slice label, a non-EARS sentence, a short or empty row, a missing section. Designs written
+  before #659 have no such heading; they are not re-reviewed and not rewritten.
 - **`Out of scope` is what makes the `converged` verdict auditable** (#1975). Every excluded hit as
   `X-n` with its round and its reason, per §5c; one entry may cover a group under a stated rule with
   a count, since a broad query otherwise makes the section unwritable. §7b reads the exclusions of
@@ -529,7 +539,8 @@ plain questions, the plan as a dependency table, any correction to the source st
 Never read by any script — `compile_plan.py` and §7a look only at the main artifact.
 
 `Slice-count estimate` is the row set §7d turns into `compile_plan.py` `issues[]` entries: **`Covers`
-becomes the child body and `Depends on` becomes the `blocked_by` edges.** Whether those rows should
+becomes the child body, `Requirements` (the `FR-n` ids the slice serves; `—` if none) becomes the
+child body's `## Requirements served` block, and `Depends on` becomes the `blocked_by` edges.** Whether those rows should
 also carry a priority is open and deliberately undecided (§12).
 
 **`Depends on` carries slice ids from this same table, and nothing else (#1956).** Comma-separated
@@ -730,6 +741,14 @@ same number twice: a disagreement between them is reported, never adjudicated, b
 cannot tell from here which of the two is right. And the exclusions of the round the sweep ended on
 are read first (§5c), because `converged` is an assertion about precisely that round.
 
+**`Functional requirements` is checked by running the `requirements` verb** (#659):
+`goal_design.py requirements .sdlc/design/<n>.md`. Every violation it prints is reported verbatim
+before the brief is built, and an `FR-n` that appears in no slice row is a §7c REJECT ground. **Be
+honest about the guarantee:** the script makes the violation unmissable; that the verdict becomes
+REJECT depends on the reviewing model following this prose, and nothing in this kit enforces it
+(`loop.py mark-designed` does not refuse; a hard gate is deferred). The end-to-end run of a real
+`/sigma-goal-review` with a model is unmeasured.
+
 **`Budget` is a claim you check by RE-RUNNING `sweep-budget`, not by reading it** (#2032). The field
 is self-reported — a pass that skips the verb and writes `3` from memory produces an artifact
 indistinguishable from a correct one — so this stage runs `goal_design.py sweep-budget` itself, with
@@ -768,7 +787,8 @@ disproved, and the comment is the only place the correction lands beside it.
 - **CONFIRM** — the mapping holds against the real repo, blast radius and components are accurate,
   the slice count is plausible, and **nothing was adjudicated blocking**. Open-but-not-blocking
   items do not bar CONFIRM.
-- **REJECT** — with concrete findings (`file:line` where applicable). Comment them on `#<n>`, write
+- **REJECT** — also where an `FR-n` appears in no slice row (§7a; the reviewing model obeys this,
+  nothing in this kit enforces it). With concrete findings (`file:line` where applicable). Comment them on `#<n>`, write
   **no** label, and stop. Re-running Stage 1 against those findings is a human's next move or a
   later pick, not this skill's job. A target the retrofit gate parked **stays parked**. **§7g is
   that branch in full** — what it writes, what it deliberately does not, why zero tickets is the
@@ -820,9 +840,17 @@ which one it means depends on the path** (#1954).
   **2 tickets**, where the six-component run cost 7.
 
 **iii. Otherwise, build the plan and compile it.** One `issues[]` entry per slice — `key`, `title`,
-`body` (the slice's `Covers` scope plus the two pointers, worded per §7e), `blocked_by` edges from
+`body` (the slice's `Covers` scope, then the `## Requirements served` block pasted verbatim from
+`goal_design.py served .sdlc/design/<n>.md --slice <slice>`, then the two pointers, worded per §7e;
+the plan key is the slice number), `blocked_by` edges from
 the design's stated sequencing **plus §7c's open-item edges** — and one `epic` object with `title`,
 `body`, and **`originates_from: <n>`**. Write it to `.sdlc/state/goal-review/<n>.plan.json`, then:
+
+Before compiling, `goal_design.py requirements .sdlc/design/<n>.md --plan
+.sdlc/state/goal-review/<n>.plan.json` checks that every child carries, inside its `## Requirements
+served` block, a `- **FR-n.**` bullet whose sentence is exactly the one its slice claims (the bullet
+`served` prints, compared after the same whitespace normalisation), and refuses duplicate slice
+labels or plan keys, a non-string body, and a plan file it cannot load (#659).
 
 ```
 compile_plan.py .sdlc --plan .sdlc/state/goal-review/<n>.plan.json --actionable --json \
@@ -1242,7 +1270,7 @@ and three of them landed somewhere other than where the proposal pointed:
 
 | The proposal left open | What shipped |
 |---|---|
-| the dossier → slices conversion mechanics | §5d's `Slice-count estimate` table is the conversion: `Covers` → child body, `Depends on` → `blocked_by`, compiled by §7d-iii through `compile_plan.py --actionable --json` |
+| the dossier → slices conversion mechanics | §5d's `Slice-count estimate` table is the conversion: `Covers` → child body, `Requirements` (`FR-n` ids; `—` if none) → child body's `## Requirements served`, `Depends on` → `blocked_by`, compiled by §7d-iii through `compile_plan.py --actionable --json` |
 | the Q&A shape — bank vs. free-form | bank-based, and **flat rather than keyed** (§4a), plus a bounded `followup_`/`open_` tail the proposal did not anticipate at all (§4b) |
 | how the retrofit check triggers a design pass | **park-and-defer** (§6), never inline phase insertion |
 | the `goal_design` config shape and the lane rubric | exactly `{enabled, mode}`, off by default, `mode` resolved late, unrecognized → `lane`; the rubric is `discovery.py`'s own `LANES`, plus a sweep budget (§5c) the proposal never mentioned |
