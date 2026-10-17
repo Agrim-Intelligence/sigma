@@ -49,7 +49,7 @@ INTERNAL_ENV = frozenset({"SIGMA_RUN_ID", "SIGMA_AUTOWATCH_HOP", "SIGMA_SESSION_
 #: previous-prefix spelling means nothing and is never consulted. `SIGMA_ALLOW_COEXIST` (#240) now
 #: only silences the one-line coexistence notice (#314) -- adopting it from a stale previous-prefix
 #: export would hide that notice by accident.
-POST_RENAME_ENV = frozenset({"SIGMA_ALLOW_COEXIST", "SIGMA_HOST", "SIGMA_CODEX_CMD", "SIGMA_GH_GRAPHQL",
+POST_RENAME_ENV = frozenset({"SIGMA_ALLOW_COEXIST", "SIGMA_HOST", "SIGMA_CODEX_CMD", "SIGMA_CODEX_BIN", "SIGMA_GH_GRAPHQL",
                              "SIGMA_GH_BREAKER_COOLDOWN",
                              "SIGMA_UPKEEP_JOB", "SIGMA_LEAK_PATTERNS"})   # #801, #895, #917, #375
 

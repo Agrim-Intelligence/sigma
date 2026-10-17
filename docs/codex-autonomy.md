@@ -58,6 +58,16 @@ worker. A newly launched Claude worker can still race with a Codex supervisor
 because the historic Claude path does not take this new lock; do not run both
 supervisors for the same checkout at once.
 
+Finding the Codex CLI (#1648): one resolver, `codex_cli.py` in the sigma-loop scripts directory, is used by the
+supervisor, `/sigma-doctor` and the reviewer. Order: `SIGMA_CODEX_BIN` (an absolute path to an executable
+file; an invalid value refuses and never falls through), then `codex` on `PATH`, then, on macOS only, the
+ChatGPT app's bundled CLI. Two copies with different real paths refuse as ambiguous and name both; set
+`SIGMA_CODEX_BIN` to choose. `SIGMA_CODEX_BIN` chooses WHICH binary; `SIGMA_CODEX_CMD` is still the launch
+argv, and when its first word is exactly `codex` the supervisor runs the resolved binary in its place (an
+absolute first word is respected as written). The supervisor also refuses to start when the Codex-enabled
+Sigma and the running Sigma differ in major.minor.patch ("update the older host"); `/sigma-doctor` only
+warns about the same difference (`sigma versions:` row).
+
 `SIGMA_CODEX_CMD` must accept Codex's `--output-last-message` option and write
 the final agent message there; a zero-exit worker with no final message is
 refused. That transient, size-capped message is used for stop/refusal decisions
