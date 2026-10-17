@@ -40,7 +40,8 @@ it does not force. It parks on:
 It halts on the **per-run budgets** (`config.json` → `budget`) — `max_iterations`, `max_minutes`
 (wall-clock from the session's own `start`), `max_tokens` (cost-equivalent tokens from fully priced
 Claude phase reports or explicit `loop.py spend`), and `max_codex_raw_tokens` (measured Codex phase
-input + output tokens, including cached input). The two token counters use different units and never
+input + output tokens, including cached input; the reported cached and reasoning subsets are
+already inside those two and are never added again). The two token counters use different units and never
 mix. Codex's token ceiling is a **phase-boundary admission stop**, not a quota or billing cap: it
 checks the next pick after measured phases finish and does not include orchestrator or unmeasured
 turns. Keep `max_minutes` and a goal-count ceiling for those gaps. A run, and so every budget, belongs
