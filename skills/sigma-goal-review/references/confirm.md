@@ -32,6 +32,17 @@ today (contract §8: the markers are code-written and trigger-word-free), never 
   — `mkdir -p .sdlc/state/goal-review` first, and see "Where those two files live" below for why
   there and not beside the design write-up.
 
+- **Each child's body carries `## Requirements served`, pasted from the verb, never retyped
+  (#659).** For every slice, run
+  `python3 "${CLAUDE_SKILL_DIR}/../sigma-goal-design/scripts/goal_design.py" served .sdlc/design/<n>.md --slice <slice>`
+  and paste its stdout into that child's `body` verbatim: the `## Requirements served` heading, then
+  one `- **FR-n.** <sentence>` line per requirement the slice's `Requirements` cell claims (or a
+  single `- None.`). The verb refuses (exit 2, nothing printed) when a sentence contains an issue
+  number, which is the one shape that could mint a phantom blocker from pasted text. **The plan key
+  of a child is the slice number as a string** (`"key": "2"` for slice 2); a child whose key is not a
+  slice number is refused by the check below. Put the block after the scope text and before the
+  `Design:` / `Story #` pointer lines.
+
 - **`Depends on` → `blocked_by`, and a token that is not a slice id is a schema violation —
   adjudicate it, never drop it (#1956).** Read each cell by splitting on commas and stripping the
   tokens; every one of them must be a `Slice` value from that same table. `goal-design` §5 forbids
@@ -123,6 +134,16 @@ own docstring); the bodies YOU write here get no such care by default.
   on #1830 landing first"* in an outcome comment mints the same confident edge. The control below
   reads the plan FILE, and a comment has no file to scan — for comments the wording is the only
   guard, so re-read each one before posting it.
+
+Then run the requirements plan check, BEFORE `compile_plan.py` and before the phantom-blocker
+control (#659): every child must carry the heading and, INSIDE that block (from the heading to the
+next `## ` or `Design:` line), every `FR-n` sentence its slice row claims; a sentence only in the scope
+text does not count. It also refuses duplicate keys or slice labels and non-object entries. It exits 2
+naming the slice and the FR for each child that lacks one:
+
+```
+python3 "${CLAUDE_SKILL_DIR}/../sigma-goal-design/scripts/goal_design.py" requirements .sdlc/design/<n>.md --plan .sdlc/state/goal-review/<n>.plan.json
+```
 
 Then run the control before compiling anything — a guard nobody has watched fail is decoration
 (`AGENTS.md`). Scan the plan's INPUT bodies, i.e. the file as you wrote it, before `compile_plan.py`

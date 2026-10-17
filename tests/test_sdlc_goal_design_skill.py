@@ -1274,3 +1274,35 @@ def test_goal_design_py_exists_and_the_documented_verb_is_real():
 def test_goal_design_scripts_directory_is_where_the_skill_points():
     assert (ROOT / "skills" / "sigma-goal-design" / "scripts" / "goal_design.py").is_file(), \
         "the engine script §2 points at does not exist on disk"
+
+
+# --------------------------------------------------------------- #659: functional requirements
+
+def test_functional_requirements_heading_order():
+    """`## Functional requirements` sits after Premise check and before Queries run. ORDER, not
+    membership: plain `in` stays green when the two headings are swapped."""
+    fence = _schema_fence()
+    i = [fence.index(h) for h in ("## Premise check", "## Functional requirements", "## Queries run")]
+    assert i == sorted(i), "the skeleton's Functional requirements section is out of order: %r" % i
+
+
+def test_slice_table_has_requirements_column():
+    fence = _schema_fence()
+    assert "| Slice | Covers | Requirements | Depends on |" in fence
+
+
+def test_depends_on_rule_excludes_fr_ids():
+    rule = _depends_on_rule()
+    assert "Functional requirements" in rule and "`FR-2`" in rule
+
+
+def test_the_artifact_rule_runs_the_requirements_verb_and_is_candid():
+    flat = " ".join(ARTIFACT.split()).replace("*", "")
+    assert 'goal_design.py" requirements .sdlc/design/<n>.md' in flat
+    assert "nothing in this kit enforces it" in flat
+    assert "never renumbered" in flat and "EARS" in flat
+
+
+def test_skill_md_tells_the_designer_to_write_and_check_requirements():
+    flat = " ".join(SKILL.split())
+    assert "Functional requirements" in flat and 'goal_design.py" requirements' in flat

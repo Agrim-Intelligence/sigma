@@ -38,6 +38,9 @@ premise below was falsified, say so in one clause and state the corrected one>
 - **PC-1.** <the material claim, as the source states it> — **verified** | **falsified** |
   **unverifiable**: <the evidence — `file:line`, or the query that found nothing>
 
+## Functional requirements
+- **FR-1.** <one EARS sentence: [WHEN|IF|WHILE|WHERE <condition>, ]THE <system> SHALL [NOT] <behaviour>>
+
 ## Queries run
 - `<the exact command>`        <!-- §2's verbatim record; this is the re-scan guarantee -->
 
@@ -75,9 +78,9 @@ premise below was falsified, say so in one clause and state the corrected one>
 <§4's shape, sequencing and tradeoffs>
 
 ## Slice-count estimate
-| Slice | Covers | Depends on |
-| --- | --- | --- |
-| 1 | … | — |
+| Slice | Covers | Requirements | Depends on |
+| --- | --- | --- | --- |
+| 1 | … | FR-1 | — |
 
 ## Handoff
 - **Reading this as a person?** Start with [`<n>-in-brief.md`](<n>-in-brief.md) — the same design
@@ -123,10 +126,11 @@ artifact is deliberately exempt from:
 
 `Doubts` and `Blockers` stay two headings, matching §3's own five-item list — "none" under either
 is a real answer and must be written, because an absent heading and an empty one are not the same
-claim. The same holds for `Premise check` and `Out of scope`: both are written on every artifact,
-and where there is genuinely nothing to say the answer is a single `- None.` bullet, which takes no
-id. The `Slice-count estimate` rows are what `goal-review` step 4b turns into `compile_plan.py`
-`issues[]` entries: `Covers` becomes the body and `Depends on` becomes the `blocked_by` edges.
+claim. The same holds for `Premise check`, `Functional requirements` and `Out of scope`: all three are
+written on every artifact, and where there is genuinely nothing to say the answer is a single
+`- None.` bullet, which takes no id. The `Slice-count estimate` rows are what `goal-review` step 4b turns into `compile_plan.py`
+`issues[]` entries: `Covers` becomes the body, `Requirements` becomes the child's `## Requirements served` block and
+`Depends on` becomes the `blocked_by` edges.
 (#1922 settled the half that was a defect — `goal-review` demanding a priority these rows never
 carried — by omitting it, and is closed; whether they should carry one at all is the residual
 question, tracked by nothing open.) `Handoff` is where §6's `goal-review`-presence statement goes; it is a heading in the
@@ -233,11 +237,42 @@ slices below are derived from the corrected intent — if the source's problem s
 every slice derived from it inherits the error, and this stage is the last one that can see the
 original claim beside the code that disproves it.
 
+**`Functional requirements` is the numbered list of behaviours this design promises, and every one
+is traced to a slice** (#659). One bullet per behaviour, `- **FR-n.** <sentence>`, each sentence in
+EARS form (`[WHEN|IF|WHILE|WHERE <condition>, ]THE <system> SHALL [NOT] <behaviour>`) and nothing
+else — a `MEASURED:`/`DOC:`/`PROCESS:` line is a goal's acceptance criterion, not a functional
+requirement, and "Add support for X" is not a requirement at all. The check is a form check, not a
+grammar check: it matches the leading clause pattern exactly as the PRD linter (`prd_lint`, outside this repo) does (a match from
+the start, not a full match), so it confirms the sentence opens `[WHEN ..., ]THE <x> SHALL [NOT] <y>`
+and does not confirm it is a single sentence or that nothing odd follows. A sentence may wrap across lines
+(continuation lines are indented; an indented line opening with a list marker -- `- `, `* `, `+ `, `1. ` -- is a nested bullet, never wrapped text, and is a violation); it never cites an issue number (`#<n>`), because the sentence is
+pasted into child ticket bodies verbatim and a hand-written `#N` near a word like "after" mints a
+blocker edge. Ids rise in document order and are **never renumbered**: a dropped requirement leaves
+a gap, which is fine; a duplicate, `FR-0` or a non-integer is not. Even a target with one obvious
+behaviour writes `FR-1` — the light path (SKILL.md §4) shortens the sweep, never the shape; a
+design that genuinely has none writes the single `- None.` bullet, and then every `Requirements`
+cell is `—`. The slice table's `Requirements` column carries the `FR-n` ids that slice delivers,
+comma-separated, or `—` for none; it is read BY HEADER NAME, so the column order is not
+load-bearing, but a row with a different number of cells than the header, an empty cell (write `—`),
+or a second `Requirements` column is a violation, and so is an `FR-n` that appears in no row or a
+cell naming an `FR` that is not declared. An unescaped `|` inside a code span in a cell splits the
+cell and is reported as a cell-count violation: escape it as `\|`. Run
+`python3 "${CLAUDE_SKILL_DIR}/scripts/goal_design.py" requirements .sdlc/design/<n>.md` before
+publishing: it prints the violations and exits 2 on any. **Be honest about the guarantee** — the
+script makes a missing or untraced requirement unmissable and machine-named; that `goal-review` then
+returns REJECT rests on the reviewing model following its prose, and nothing in this kit enforces
+it. The check is cheap and linear in the FR count n and slice rows m (measured: 0.9 ms at 100 FRs /
+50 rows, 4.6 ms at 1000 / 500, 0.6 ms on the largest existing artifact), reads at most 1 MiB, refuses
+a sentence over 2000 characters before any pattern runs, and warns above 50 FRs as a hint to
+decompose the target (that threshold is a judgement, not a measurement). FR bullets anywhere outside `## Functional requirements` are not read, so they are neither checked nor traced. A token repeated within one `Requirements` cell (`FR-1, FR-1`) is a violation. Designs written before #659 have no such heading; they are read without being re-reviewed and
+are not rewritten.
+
 **`Depends on` carries slice ids from this same table, and nothing else** (#1956). One or more of
 this table's own `Slice` values, comma-separated — the cell is read by splitting on commas and
 stripping each token — or `—` when there are none. Never a `Blockers` id (`B-1`), never a `Doubts`
 id (`D-3`), never a `Blast radius` id (`BR-7`), never a `Premise check` id (`PC-2`), never an
-`Out of scope` id (`X-5`), never a `Seeds` id (`S-2`), never an issue number, never prose. The
+`Out of scope` id (`X-5`), never a `Seeds` id (`S-2`), never a `Functional requirements` id (`FR-2`
+belongs in the `Requirements` column), never an issue number, never prose. The
 column is machine-read: `goal-review` step 4b turns each token into a `compile_plan.py` `blocked_by` key, and
 a `blocked_by` key may only name another issue **in the same plan** — a Blocker is a paragraph in
 this document, not a ticket, so there is nothing for such a key to resolve to. A real pass wrote
