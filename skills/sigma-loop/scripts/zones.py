@@ -358,22 +358,22 @@ def _intent_tokens(criteria):
 
 
 def _intent(top, goal):
-    """The goal's declared-intent reader: a function path -> yes|no|unknown. Reads the MAIN
-    checkout's record. A missing, malformed, unreadable or undated record is `unknown`; a record the
-    agent drafted (`drafted: true`) never grants intent."""
+    """(reader, known). The reader maps path -> yes|no|unknown from the MAIN checkout's record;
+    `known` is False when the record is missing, malformed, unreadable or undated. A drafted record
+    (`drafted: true`) never grants intent."""
     try:
         root = _main_root(top)
         if root is None:
             raise ValueError("no project root")
         rec = _load("acceptance").read(root / ".sdlc", goal)
     except (OSError, ValueError):
-        return lambda rel: "unknown"
+        return (lambda rel: "unknown"), False
     if rec.get("drafted") is None:
-        return lambda rel: "unknown"
+        return (lambda rel: "unknown"), False
     if rec["drafted"] is True:
-        return lambda rel: "no"
+        return (lambda rel: "no"), True
     tokens = _intent_tokens(rec["criteria"])
-    return lambda rel: "yes" if any(rel == t or rel.startswith(t + "/") for t in tokens) else "no"
+    return (lambda rel: "yes" if any(rel == t or rel.startswith(t + "/") for t in tokens) else "no"), True
 
 
 def _plan_paths(plan, top):
@@ -452,7 +452,7 @@ def check(goal, plan, diff, base, cwd):
     fork = _fork_point(top, ref) if ref is not None else None
     if fork is None:
         return ["verdict: unknown"], "verdict unknown: " + (why or "merge-base unresolved")
-    intent = _intent(top, goal)
+    intent, known = _intent(top, goal)
     odd = []
     if plan is not None:
         if paths is None:
@@ -482,7 +482,10 @@ def check(goal, plan, diff, base, cwd):
                 restructure = n == "binary" or n > limit
                 rows.append((path, "legacy", str(n), "restructure" if restructure else "-",
                              "intent: " + intent(path)))
-    return [_row_text(r) for r in rows] + ["verdict: " + _verdict(rows, unknown, plan is not None)], (
+    if not known:
+        unknown = True                  # AC-4: no usable record is never `within`, rows or no rows
+    head = [] if rows or known else ["intent: unknown"]
+    return head + [_row_text(r) for r in rows] + ["verdict: " + _verdict(rows, unknown, plan is not None)], (
         why if plan is None and odd else None)
 
 

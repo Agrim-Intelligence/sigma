@@ -114,10 +114,13 @@ untracked files, never do.
   that names the file or one of its directories, matched on a **component boundary** (`src/leg` does not
   match `src/legacy/a.py`; a trailing `/` and a leading `./` are ignored). A missing, unreadable,
   malformed or undated record (written before this existed) reads `intent: unknown`: the change is
-  **forward-only**, nothing back-fills older records, and the honest verdict is `unknown`, never `within`.
+  **forward-only**, nothing back-fills older records, and the honest verdict is `unknown`, never `within`: a goal whose record predates the `drafted` marker
+  reads `unknown` until its record is written again.
 - **Verdict (`--diff`).** `over` if any row is a restructure with `intent: no`; else `unknown` if any
   row is `intent: unknown` or the fork point, config or a git call could not be resolved (the reason is
-  on stderr); else `within`. A diff that touches no legacy file is `within` even with no record.
+  on stderr); else `within`. With no usable acceptance record the verdict is `unknown`, never `within`, even when no legacy file was
+  touched: `check` then prints a line `intent: unknown` (there is no row to carry it) before the verdict.
+  `within` needs a dated record (`drafted` true or false) and no row left open.
 - **Verdict (`--plan`).** The paths are the backticked spans in the plan's `## Files` (or
   `## File structure`) section that are files at the fork point; NEW or EDIT words are ignored. A plan
   naming an existing legacy file without intent reads `over`, even for a one-line seam edit, because a

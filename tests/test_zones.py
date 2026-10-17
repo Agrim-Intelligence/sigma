@@ -1183,12 +1183,28 @@ def test_check_absent_or_undated_record_is_intent_unknown_never_within(tmp_path)
             assert verdict == "verdict: unknown" and "Traceback" not in p.stderr, setup.__name__
 
 
-def test_check_no_legacy_file_touched_is_within_with_unknown_record(tmp_path):
+def test_check_no_legacy_file_touched_with_unknown_record_is_unknown_never_within(tmp_path):
+    """AC-4 literally: no usable record prints `intent: unknown` and never `verdict: within`, even
+    when no legacy file was touched (so there is no row to carry the intent)."""
     repo, wt = _cf(tmp_path, files={LEG: _hundred(), "other/u.py": _hundred()})
     _edit(wt, "other/u.py", 100)
+    rec = repo / ".sdlc/acceptance/1541.md"
+    for setup in ("absent", "undated", "malformed"):
+        if setup == "undated":
+            _acceptance(repo, "1541", ["Nothing here."], None)
+        elif setup == "malformed":
+            rec.write_text("not a record\n", encoding="utf-8")
+        p = _check(wt, "--goal", "1541", "--diff")
+        assert p.returncode == 0, p.stderr
+        assert p.stdout == "intent: unknown\nverdict: unknown\n", (setup, p.stdout)
+        plan = tmp_path / "plan.md"
+        plan.write_text("## Files\n- `other/u.py`\n", encoding="utf-8")
+        p = _check(wt, "--goal", "1541", "--plan", str(plan))
+        assert p.returncode == 0, p.stderr
+        assert p.stdout == "intent: unknown\nverdict: unknown\n", (setup, p.stdout)
+    _acceptance(repo, "1541", ["Nothing here."], False)       # a dated record: within again
     p = _check(wt, "--goal", "1541", "--diff")
-    assert p.returncode == 0, p.stderr
-    assert p.stdout == "verdict: within\n", p.stdout
+    assert p.returncode == 0 and p.stdout == "verdict: within\n", p.stdout
 
 
 _PLAN = """# Plan
@@ -1233,8 +1249,8 @@ def test_check_plan_unreadable_or_oversize_refused(tmp_path):
         _refused(_check(wt, "--goal", "1541", "--plan", str(target)), str(target))
     ok = tmp_path / "ok.md"
     ok.write_bytes(b"## Files\n" + b"x" * (256 * 1024 - 9))
-    p = _check(wt, "--goal", "1541", "--plan", str(ok))
-    assert p.returncode == 0 and p.stdout == "verdict: unknown\n", (p.stdout, p.stderr)
+    p = _check(wt, "--goal", "1541", "--plan", str(ok))      # no record here: the AC-4 line, then unknown
+    assert p.returncode == 0 and p.stdout == "intent: unknown\nverdict: unknown\n", (p.stdout, p.stderr)
 
 
 def test_check_writes_nothing(tmp_path):
