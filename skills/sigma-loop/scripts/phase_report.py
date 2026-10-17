@@ -690,15 +690,51 @@ def _codex_agent_id(value):
     return value.lower()
 
 
-def _codex_usage_pair(usage):
-    """Return a real request's token pair, never a cumulative turn or thread total."""
+def _codex_count(value):
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+_CODEX_SPLIT_FIELDS = ("cached_input_tokens", "reasoning_output_tokens", "cache_write_input_tokens")
+
+
+def _codex_usage_pair(usage, modern=True):
+    """Return a real request's usage dict, never a cumulative turn or thread total.
+
+    #1452: `{"input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens",
+    "cache_write_input_tokens", "split_reported"}`. `cached_input_tokens` is a SUBSET of
+    `input_tokens` and `reasoning_output_tokens` a SUBSET of `output_tokens`; neither is added.
+    On the modern kinds (`record`, `event`) an ABSENT split field is 0 and `split_reported` is True
+    only when `cached_input_tokens` was present, so a consumer can tell a measured zero from an
+    unreported one. A PRESENT split field that is not a non-bool int >= 0, or that breaks
+    `cached <= input` / `reasoning <= output`, makes the whole request malformed (None), exactly
+    like a bad `input_tokens`. `modern=False` (legacy top-level `token_count`) ignores the split
+    fields even when present: zeros, `split_reported` False, never rejected for them.
+    """
     if not isinstance(usage, dict):
         return None
     tin, tout = usage.get("input_tokens"), usage.get("output_tokens")
-    if not all(isinstance(value, int) and not isinstance(value, bool) and value >= 0
-               for value in (tin, tout)):
+    if not (_codex_count(tin) and _codex_count(tout)):
         return None
-    return tin, tout
+    pair = {"input_tokens": tin, "cached_input_tokens": 0, "output_tokens": tout,
+            "reasoning_output_tokens": 0, "cache_write_input_tokens": 0, "split_reported": False}
+    if not modern:
+        return pair
+    for key in _CODEX_SPLIT_FIELDS:
+        if key in usage:
+            if not _codex_count(usage[key]):
+                return None
+            pair[key] = usage[key]
+    if pair["cached_input_tokens"] > tin or pair["reasoning_output_tokens"] > tout:
+        return None
+    pair["split_reported"] = "cached_input_tokens" in usage
+    return pair
+
+
+def _codex_io(usage):
+    """`(input_tokens, output_tokens)` only, or None: the de-dup fingerprint's view (#1452), so an
+    absent or malformed split field in `total_token_usage` never disables de-dup."""
+    pair = _codex_usage_pair(usage, modern=False)
+    return None if pair is None else (pair["input_tokens"], pair["output_tokens"])
 
 
 def find_codex_token_totals(since_ts, home=None, session_id=None):
@@ -710,13 +746,22 @@ def find_codex_token_totals(since_ts, home=None, session_id=None):
     `turn_token_usage`, `thread_token_usage`, and
     `total_token_usage` are cumulative and must never be summed. A request without an observed
     model is counted in usage but flagged as `unknown_model_turns` for model verification.
+
+    #1452 return keys: `tokens_in` (INCLUDES cached), `tokens_cached_in` (subset), `tokens_out`
+    (INCLUDES reasoning), `tokens_reasoning_out` (subset), `models`, optional
+    `unknown_model_turns`, `split_reported` (True when ANY chosen-stream row reported
+    `cached_input_tokens`; rows lacking it count 0) and `requests`: per-request rows in file order
+    from the chosen stream, `{"model" (None when unknown), "ts" (norm_ts string), the five raw
+    fields, "split_reported"}`. The rows are returned, never written to the ledger. The
+    cross-stream refusal still compares only (tokens_in, tokens_out, count).
     """
     rollout = _codex_rollout(session_id, home=home)
     if rollout is None:
         return None
     since_norm = norm_ts(since_ts)
-    streams = {"record": [0, 0, 0, [], 0], "event": [0, 0, 0, [], 0],
-               "legacy": [0, 0, 0, [], 0]}
+    streams = {kind: {"tin": 0, "tout": 0, "count": 0, "models": [], "unknown": 0,
+                      "cached": 0, "reasoning": 0, "split": False, "rows": []}
+               for kind in ("record", "event", "legacy")}
     current_model = None
     previous_event = None
     try:
@@ -751,36 +796,51 @@ def find_codex_token_totals(since_ts, home=None, session_id=None):
                     kind, usage = "legacy", payload
                 if kind is None:
                     continue
-                pair = _codex_usage_pair(usage)
+                pair = _codex_usage_pair(usage, modern=kind != "legacy")
                 if pair is None:
                     continue
                 if kind == "event":
                     # Codex may re-emit the last request while the cumulative total is
                     # unchanged. The same request-sized pair with an advanced total is a
-                    # new request, so only discard an identical pair AND total.
-                    cumulative = _codex_usage_pair(info.get("total_token_usage"))
-                    fingerprint = (pair, cumulative) if cumulative is not None else None
+                    # new request, so only discard an identical pair AND total. The
+                    # fingerprint reads input/output only (#1452).
+                    cumulative = _codex_io(info.get("total_token_usage"))
+                    request_io = (pair["input_tokens"], pair["output_tokens"])
+                    fingerprint = (request_io, cumulative) if cumulative is not None else None
                     if fingerprint is not None and fingerprint == previous_event:
                         continue
                     previous_event = fingerprint
                 stream = streams[kind]
-                stream[0] += pair[0]
-                stream[1] += pair[1]
-                stream[2] += 1
-                if current_model and current_model not in stream[3]:
-                    stream[3].append(current_model)
+                stream["tin"] += pair["input_tokens"]
+                stream["tout"] += pair["output_tokens"]
+                stream["count"] += 1
+                stream["cached"] += pair["cached_input_tokens"]
+                stream["reasoning"] += pair["reasoning_output_tokens"]
+                stream["split"] = stream["split"] or pair["split_reported"]
+                stream["rows"].append({"model": current_model or None, "ts": norm_ts(ts), **pair})
+                if current_model and current_model not in stream["models"]:
+                    stream["models"].append(current_model)
                 if not current_model:
-                    stream[4] += 1
+                    stream["unknown"] += 1
     except OSError:
         return None
-    if streams["record"][2] and streams["event"][2] and streams["record"][:3] != streams["event"][:3]:
+
+    def refusal_key(stream):
+        return (stream["tin"], stream["tout"], stream["count"])
+
+    if (streams["record"]["count"] and streams["event"]["count"]
+            and refusal_key(streams["record"]) != refusal_key(streams["event"])):
         return None
     for kind in ("record", "event", "legacy"):
-        tin, tout, count, models, unknown_models = streams[kind]
-        if count:
-            totals = {"tokens_in": tin, "tokens_out": tout, "models": models}
-            if unknown_models:
-                totals["unknown_model_turns"] = unknown_models
+        stream = streams[kind]
+        if stream["count"]:
+            totals = {"tokens_in": stream["tin"], "tokens_cached_in": stream["cached"],
+                      "tokens_out": stream["tout"], "tokens_reasoning_out": stream["reasoning"],
+                      "models": stream["models"]}
+            if stream["unknown"]:
+                totals["unknown_model_turns"] = stream["unknown"]
+            totals["split_reported"] = stream["split"]
+            totals["requests"] = stream["rows"]
             return totals
     return None
 
@@ -1230,7 +1290,7 @@ def end_measurements(elapsed, result, totals=None, no_elapsed="no phase-start ma
         fields.append(f"{models}{precision}")
     elif source == "codex":
         fields.append("cost: unavailable on this host (Codex model absent from bundled rate card)")
-        fields.append(f"tokens {result['tokens_in']:,} in, {result['tokens_out']:,} out")
+        fields.append(_codex_tokens_field(result))
         fields.append(",".join(result.get("models") or []) or "model: unavailable")
     else:
         fields.append(f"cost: unavailable on this host ({result.get('reason', 'unknown reason')})")
@@ -1240,6 +1300,25 @@ def end_measurements(elapsed, result, totals=None, no_elapsed="no phase-start ma
         if active and effort:
             fields.append(f"goal so far: active {active} · effort {effort}")
     return " · ".join(fields)
+
+
+def _codex_tokens_field(result):
+    """#1452: `tokens N in (M cached), K out (R reasoning)` only when the rollout reported the
+    split (`split_reported`); otherwise the old `tokens N in, K out`, so an unreported split is
+    never shown as a measured zero. Cached and reasoning are SUBSETS of in and out, never added."""
+    if result.get("split_reported"):
+        return (f"tokens {result['tokens_in']:,} in ({result.get('tokens_cached_in', 0):,} cached), "
+                f"{result['tokens_out']:,} out ({result.get('tokens_reasoning_out', 0):,} reasoning)")
+    return f"tokens {result['tokens_in']:,} in, {result['tokens_out']:,} out"
+
+
+def _codex_split_fields(result):
+    """#1452: the two subset fields for a `phase`/`spend` event -- only for a Codex result whose
+    rollout reported the split, as strings ("0" is a measured zero). Empty otherwise."""
+    if result.get("source") != "codex" or not result.get("split_reported"):
+        return {}
+    return {"tokens_cached_in": str(result.get("tokens_cached_in", 0)),
+            "tokens_reasoning_out": str(result.get("tokens_reasoning_out", 0))}
 
 
 def start_lines(ref, phase, model, title, host_model=""):
@@ -2017,8 +2096,11 @@ def _record_end_usage(sdlc_dir, goal, phase, marker, result, agent_id=None,
         measured = result["source"] in ("claude-code", "claude-code-inline", "codex")
         ledger = _load("ledger")
         budget_tokens = result.get("cost_equivalent_tokens")
+        # #1452: the raw ceiling stays tokens_in + tokens_out. Cached input and reasoning output
+        # are already INSIDE those two and must never be added again.
         codex_raw_tokens = (result["tokens_in"] + result["tokens_out"]
                             if result["source"] == "codex" else None)
+        split = _codex_split_fields(result)
         # The marker-to-end interval is measured once in cmd_end. Omit it when no matching
         # marker exists; zero would claim an instantaneous phase that was not measured.
         timing = {"ms": interval_ms} if interval_ms is not None else {}
@@ -2047,7 +2129,7 @@ def _record_end_usage(sdlc_dir, goal, phase, marker, result, agent_id=None,
             ledger.safe_append(
                 sdlc_dir, "phase", goal, stream=ledger.EVENTS, phase=phase, state="end",
                 tokens_in=str(result["tokens_in"]), tokens_out=str(result["tokens_out"]),
-                attempt_id=attempt_id, **timing, **rate_coverage,
+                attempt_id=attempt_id, **timing, **rate_coverage, **split,
             )
         elif "phase" not in recorded:
             ledger.safe_append(sdlc_dir, "phase", goal, stream=ledger.EVENTS, phase=phase,
@@ -2070,7 +2152,7 @@ def _record_end_usage(sdlc_dir, goal, phase, marker, result, agent_id=None,
                 sdlc_dir, "spend", goal, stream=ledger.EVENTS, phase=phase,
                 model=",".join(result.get("models") or []),
                 tokens_in=str(result["tokens_in"]), tokens_out=str(result["tokens_out"]),
-                cost_cents=str(round(cost_usd * 100)), attempt_id=attempt_id,
+                cost_cents=str(round(cost_usd * 100)), attempt_id=attempt_id, **split,
             )
 
         # #2515 (Decision 2): budget credit is local and independent of `journal.enabled`; an
