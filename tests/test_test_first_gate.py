@@ -597,3 +597,42 @@ def test_refusal_text_names_loop_py_red(case, monkeypatch):
 
 def test_red_is_listed_in_usage():
     assert 'red <dir> <goal>' in load('loop').USAGE
+
+
+def _scoped_flake(case, monkeypatch, capsys):
+    """`_flake_verdict` with `check` stubbed to a 3-worker verified result -> (result, stderr)."""
+    lp = load('loop')
+    monkeypatch.setattr(lp.flake_check, 'check',
+                        lambda root, files, **kw: {'verdict': 'verified', 'workers': 3})
+    result = lp._flake_verdict(case[1], '42', case[0], True)
+    return result, capsys.readouterr().err
+
+
+def test_flake_scope_says_planned_node_ids(case, monkeypatch, capsys):
+    """#1571: a plan of exact node ids is labelled as such, with counts and the run concurrency."""
+    result, err = _scoped_flake(case, monkeypatch, capsys)
+    assert 'scope' in result
+    assert result['scope']['kind'] == 'planned node ids'
+    assert (result['scope']['nodes'], result['scope']['files']) == (1, 1)
+    assert ('loop: flake check scope: planned node ids -- 1 node id(s) in 1 file(s), '
+            '3 run(s) at a time') in err
+
+
+def test_flake_scope_says_planned_files_or_classes_for_a_bare_file_or_class(case, monkeypatch, capsys):
+    """#1571: a bare file or a class selector widens to many node ids, and the label says so."""
+    root, sdlc, plan = case
+    plan.write_text('# Plan\n\n## Tests\n- `tests/test_x.py`\n')
+    result, err = _scoped_flake(case, monkeypatch, capsys)
+    assert 'scope' in result
+    assert result['scope']['kind'] == 'planned files/classes'
+    assert (result['scope']['nodes'], result['scope']['files']) == (2, 1)
+    assert ('loop: flake check scope: planned files/classes -- 2 node id(s) in 1 file(s), '
+            '3 run(s) at a time') in err
+    with (root / 'tests/test_x.py').open('a') as f:
+        f.write('\n\nclass TestK:\n    def test_m(self):\n        assert True\n')
+    plan.write_text('# Plan\n\n## Tests\n- `tests/test_x.py::TestK`\n')
+    result, err = _scoped_flake(case, monkeypatch, capsys)
+    assert result['scope']['kind'] == 'planned files/classes'
+    assert (result['scope']['nodes'], result['scope']['files']) == (1, 1)
+    assert ('loop: flake check scope: planned files/classes -- 1 node id(s) in 1 file(s), '
+            '3 run(s) at a time') in err

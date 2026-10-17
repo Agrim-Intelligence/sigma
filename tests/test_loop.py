@@ -8775,6 +8775,25 @@ def test_a_failing_verify_does_not_also_run_the_flake_check():
         lp.flake_check.check = real_check
 
 
+def test_flake_scope_says_changed_files_on_the_diff_path(monkeypatch, capsys):
+    """#1571: with no planned ## Tests the scope is the goal's diff, and the label says so.
+
+    The node count is not known here (`check` collects it), so only the kind and the file COUNT
+    are pinned; the stderr line names the kind either way."""
+    lp = _loop()
+    monkeypatch.setattr(lp.tamper_scan, "changed_test_files", lambda _diff: ["tests/test_x.py"])
+    monkeypatch.setattr(lp.flake_check, "check",
+                        lambda *a, **k: {"verdict": "verified", "workers": 3})
+    with tempfile.TemporaryDirectory() as d:
+        base = _verify_base(d, command="true")
+        result = lp._flake_verdict(base, "42", d, passed=True)
+    assert "scope" in result
+    assert result["scope"]["kind"] == "changed files"
+    assert result["scope"]["files"] == 1
+    assert result["verdict"] == "verified"
+    assert "loop: flake check scope: changed files -- " in capsys.readouterr().err
+
+
 def test_verify_evidence_carries_the_witness_verdict_alongside_the_flake_one():
     """#1934: `unverified` must be a DISTINCT, VISIBLE state in the evidence -- never silently
     equivalent to a passing test. Asserted positively, because the write goes through a fail-open
