@@ -36,11 +36,16 @@ rot" property this buys is that no NEW call site through the shared, already-uni
 API is covered.
 """
 import os
+import resource
 import subprocess
+import sys
 
 import pytest
 
 import resource_mode
+import _script_cache
+
+_script_cache.install()   # at import, before any test module loads a script; see tests/test_script_cache.py
 
 
 def _first_token(cmd):
@@ -77,7 +82,52 @@ def _is_gh_argv(cmd):
     return name in ("gh", "gh.exe")
 
 
+def _rss_mb():
+    r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return r / (1024 * 1024 if sys.platform == "darwin" else 1024)
+
+
+def pytest_collection_finish(session):
+    peak, n = _rss_mb(), len(session.items)
+    session.config._collect_rss_mb, session.config._collect_n = peak, n
+    if n > 200 and peak > _script_cache.rss_bound_mb(n):   # a partial run (-k, one file) is too small to judge
+        pytest.exit(f"collection peaked at {peak:.0f} MB for {n} tests (bound "
+                    f"{_script_cache.rss_bound_mb(n):.0f}): a script is being loaded uncached; "
+                    "see tests/test_script_cache.py", returncode=3)
+
+
+def _ram_mb():
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) // 1024
+    except OSError:
+        pass
+    return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") // (1024 * 1024)
+
+
+def pytest_xdist_auto_num_workers(config):
+    """`-n auto` = as many workers as fit in a quarter of this machine's RAM at SIGMA_TEST_WORKER_MB each
+    (default 2000, the measured test-time peak of a worker before the script cache), capped by CPUs. A
+    constant `-n 4` copied from a laptop OOM-killed a 24 GB Mac."""
+    per = int(os.environ.get("SIGMA_TEST_WORKER_MB", "2000"))
+    return max(1, min(os.cpu_count() or 1, _ram_mb() // 4 // per))
+
+
+@pytest.fixture(autouse=True)
+def _fresh_scripts_when_marked(request):
+    _script_cache.fresh = request.node.get_closest_marker("fresh_scripts") is not None
+    yield
+    _script_cache.fresh = False
+
+
 def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "fresh_scripts: load scripts uncached for this test (the suite shares one module per script "
+        "path; use when the test mutates a script's globals directly).",
+    )
     config.addinivalue_line(
         "markers",
         "live_gh: this test is allowed to invoke the real `gh` CLI (network, live GitHub "
