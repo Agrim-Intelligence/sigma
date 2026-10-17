@@ -77,6 +77,64 @@ In both cases the safe reading is that `new` for such a spelling may be wrong; p
 tracks (`git ls-files` shows it). The zone glob match is case-sensitive for the same reason. This is
 a documented limit, not handled; a test pins the current behaviour so a change is noticed.
 
+## Measure legacy change and refactor intent
+
+```
+python3 skills/sigma-loop/scripts/zones.py check --goal 1541 --diff
+```
+
+`check` answers one question: how much of the legacy code that already existed at the fork point
+does this goal change, and did the goal's acceptance record say it meant to? Use `--diff` for the
+**working tree** against the fork point (uncommitted Implement-time edits count, so a half-done
+restructure never reads `within`) or `--plan FILE` for a plan before any edit. Exactly one of the
+two is required, plus `--goal N` (a bad goal, `--base` starting with a dash, an unreadable or
+over-256-KiB plan, or a bad `design.restructure_lines` is refused: exit 2, empty stdout).
+The fork point comes from the goal's work record (`.sdlc/state/work/<goal>.json`, which must be for
+the checked-out branch); `--base REF` pins another ref.
+
+One row per legacy file, tab-separated: `<path>`, `legacy`, `<changed|binary|->`, `<restructure|->`,
+`intent: yes|no|unknown`, for example `src/a.py<TAB>legacy<TAB>41<TAB>restructure<TAB>intent: no`.
+Then `verdict: over`, `verdict: within` or `verdict: unknown`; all three exit 0. Only files that
+existed at the fork point and whose zone is `legacy` get a row; new, modern and undeclared files, and
+untracked files, never do.
+
+- **Threshold.** `design.restructure_lines` (an integer >= 1, default 40; a `0`, a negative, a
+  string, a boolean, a float or `null` is refused). A file is a `restructure` when its changed lines are
+  **strictly** greater than the threshold: 40 is not, 41 is.
+- **Counting.** Changed lines are **added plus deleted**, so one edited line counts 2, a deletion
+  counts its lines, a rename counts once and is keyed on the old path, a mode-only change is 0, a
+  binary file reads `binary` and is a restructure, and a submodule bump counts 2 (it can print a
+  legacy row for the submodule path; paths inside a submodule are not read). Counting options are
+  pinned against your own git diff configuration.
+- **Intent** comes from the goal's acceptance record in the main checkout, read through the shared
+  reader. A record with `drafted: true` (criteria the agent wrote itself) never grants intent: `no`.
+  With `drafted: false` the intent is `yes` when a criterion has a backticked, whitespace-free path span
+  that names the file or one of its directories, matched on a **component boundary** (`src/leg` does not
+  match `src/legacy/a.py`; a trailing `/` and a leading `./` are ignored). A missing, unreadable,
+  malformed or undated record (written before this existed) reads `intent: unknown`: the change is
+  **forward-only**, nothing back-fills older records, and the honest verdict is `unknown`, never `within`.
+- **Verdict (`--diff`).** `over` if any row is a restructure with `intent: no`; else `unknown` if any
+  row is `intent: unknown` or the fork point, config or a git call could not be resolved (the reason is
+  on stderr); else `within`. A diff that touches no legacy file is `within` even with no record.
+- **Verdict (`--plan`).** The paths are the backticked spans in the plan's `## Files` (or
+  `## File structure`) section that are files at the fork point; NEW or EDIT words are ignored. A plan
+  naming an existing legacy file without intent reads `over`, even for a one-line seam edit, because a
+  plan has no line count; the fix is to declare the intent. A plan with no such section reads `unknown`.
+
+Documented gaps, each pinned by a test: **negation** is not parsed, so a criterion such as
+`src/legacy/a.py` stays unchanged still grants `intent: yes`; a span containing whitespace never matches
+(a file with spaces gets intent only through its directory); a suffix such as `:12` or `::test` makes a
+span never match, which fails toward `over`; matching is **case-sensitive**; `drafted: false` is the
+recorder's own claim, not proof; untracked files are not seen by `--diff`.
+
+It reads only, through `git diff-index` (never `git diff`, which rewrites a stale `.git/index`), and
+runs a constant number of git processes: one `merge-base`, one `diff-index`, one `cat-file`. Measured
+(macOS, git 2.55, Python 3.9 system interpreter): `check --goal 1541 --diff` in this repository with
+a small diff and no zones declared took 0.22 s wall (median of 3); a fixture with 1,500 changed legacy
+files took 0.68 s (median of 3) and printed 1,500 rows. Not measured: beyond 1,500 changed files, a
+networked filesystem, or a repository with large history. The ceilings are the 10 s git timeout (a
+timeout reads `unknown`), a 256 KiB plan and a 32 KiB acceptance record.
+
 ## Sprout and wrap
 
 In legacy code, extend by **sprout** or **wrap** at one seam rather than editing through it.

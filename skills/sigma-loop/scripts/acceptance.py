@@ -103,10 +103,13 @@ def parse(text, goal_stem):
     command = metadata.get('verify_command')
     if command is not None and (not isinstance(command, str) or not command.strip() or '\0' in command):
         raise ValueError('acceptance verify_command must be a nonempty string or null')
+    drafted = metadata.get('drafted')
+    if drafted is not None and not isinstance(drafted, bool):
+        raise ValueError('acceptance drafted must be true or false')
     items = criteria(match.group(2))
     if items is None:
         raise ValueError('acceptance Done when is missing')
-    return {'text': text, 'criteria': items, 'verify_command': command}
+    return {'text': text, 'criteria': items, 'verify_command': command, 'drafted': drafted}
 
 
 def digest(sdlc_dir, goal):
@@ -148,7 +151,7 @@ def record(sdlc_dir, goal, config=None, source=None, draft=None, verify_command=
         verify_command = _load('frontmatter').get(_text(goal), 'verify_command')
         if verify_command and not verify_command.strip().strip('\'"').strip():
             verify_command = None
-    metadata = {'kind': 'acceptance', 'goal': file.stem, 'verify_command': verify_command}
+    metadata = {'kind': 'acceptance', 'goal': file.stem, 'verify_command': verify_command, 'drafted': drafted}
     text = ('---\n' + '\n'.join(k + ': ' + json.dumps(v, ensure_ascii=False) for k, v in metadata.items())
             + '\n---\n## Done when\n' + ''.join('- [ ] ' + item + '\n' for item in items))
     if len(text.encode('utf-8')) > MAX_BYTES:
