@@ -238,7 +238,8 @@ ENFORCEMENT_GATES = (
                   "observed green; pytest runs with `COLUMNS=4000` (the caller's value overridden), "
                   "so a long node id does not lose its assertion reason to pytest's summary trim; "
                   "an explicit `--no-tests <reason>` bypasses only this test-first "
-                  "proof and carries the reason verbatim into the PR body",
+                  "proof and carries the reason verbatim into the PR body; `loop.py red` records "
+                  "the planned reds without the full verify",
      "condition": "local evidence is not tamper-proof; legacy advisory witnesses do not qualify; "
                   "external fixture/helper bytes are not part of red's test-file identity; the "
                   "wide `COLUMNS` also reaches the tests under proof, so width-sensitive output "
@@ -3847,7 +3848,7 @@ def verification_plan(sdlc_dir, goal, root):
     branch = rc.phase_doc_file(pathlib.Path(root) / pathlib.Path(sdlc_dir).name, goal, "plans")
     if main and branch and main.read_bytes() != branch.read_bytes():
         raise ValueError(f"main and worktree plans differ ({main} vs {branch}); copy the one you want "
-                         "over the other, then re-run `loop.py verify`")
+                         "over the other, then re-run `loop.py red` or `loop.py verify`")
     return branch or main
 
 
@@ -3872,8 +3873,8 @@ def _test_first_refusal(sdlc_dir, config, rec, goal, run, no_tests=None):
         except (OSError, ValueError, TypeError, AttributeError) as exc:
             refused = "planned test proof is unavailable: " + str(exc)
     if refused:
-        return ("TEST-FIRST REFUSED: " + refused + "; run `loop.py verify` on the planned tests "
-                "while red, then green; or supply --no-tests <reason> for an explicit exception (nothing pushed)")
+        return ("TEST-FIRST REFUSED: " + refused + "; record red with `loop.py red <sdlc> <goal>` "
+                "while the planned tests fail, then run `loop.py verify` when green; or supply --no-tests <reason> for an explicit exception (nothing pushed)")
     return ""
 
 

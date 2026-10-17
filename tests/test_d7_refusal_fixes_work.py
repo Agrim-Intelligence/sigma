@@ -215,4 +215,29 @@ def test_differing_plans_name_both_copies_and_the_rerun(tmp_path):
     msg = str(exc.value)
     assert "main and worktree plans differ" in msg
     assert str(sdlc / "plans" / "0001-x.md") in msg and str(wt / ".sdlc" / "plans" / "0001-x.md") in msg
-    assert "copy the one you want over the other" in msg and "re-run `loop.py verify`" in msg
+    assert "copy the one you want over the other" in msg and "re-run `loop.py red` or `loop.py verify`" in msg
+
+
+def test_red_unsafe_goal_is_stopped_by_its_own_clause_not_by_a_missing_plan(tmp_path, monkeypatch, capsys):
+    """#1673 control: every later refusal in `red_goal` is satisfied (tree, shell consent, a plan that
+    EXISTS for the traversed id), and `red_green.observe` is a tripwire, so only the
+    `state.unsafe_goal_reason` clause can yield exit 2 here. (tests/test_test_first_gate.py's
+    unsafe-goal cases also exit 2 for 'no plan', so they stay green without that clause.)"""
+    loop = work._load("loop")
+    plan = tmp_path / "evil.md"
+    plan.write_text("## Tests\n- tests/test_x.py::test_a\n")
+    ran = []
+
+    class _Tripwire:
+        PROVENANCE = "x"
+
+        def observe(self, *a, **k):
+            ran.append(a)
+            return {"error": "observed"}
+
+    monkeypatch.setattr(loop, "_verified_tree", lambda *a, **k: (str(tmp_path), "h", False))
+    monkeypatch.setattr(loop.shell_policy, "repository_shell_commands_allowed", lambda root: True)
+    monkeypatch.setattr(loop.work, "verification_plan", lambda *a, **k: plan)
+    monkeypatch.setattr(loop, "_load", lambda name: _Tripwire() if name == "red_green" else work._load(name))
+    assert loop.red_goal(str(tmp_path / ".sdlc"), "../evil") == 2
+    assert not ran and "unsafe goal" in capsys.readouterr().err
