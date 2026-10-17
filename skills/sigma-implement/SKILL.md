@@ -16,15 +16,14 @@ Detailed selection triggers: [selection](references/selection.md).
 
 ## Context-efficient inspection
 
-Locate before opening: use `rg --files` for paths and `rg -n` for symbols or claims.
-Read only the relevant lines with a bounded range; expand outward only when the
-boundary is unclear. Do not dump whole files or broad search output into context.
-For bulky tests or diagnostics, save full output to a scratch file, then inspect
-its exit status and focused matches or a bounded tail. Do not hide failures, and
-keep secrets out of the scratch file. This is guidance, not a measured savings claim.
+Locate first: `rg --files` for paths, `rg -n` for symbols or claims. Read only the
+relevant lines in a bounded range, widening only when the boundary is unclear; never
+dump whole files or broad search output. Save bulky test or diagnostic output to a
+scratch file and inspect its exit status and focused matches or a bounded tail. Do
+not hide failures; keep secrets out of the scratch file. Guidance, not a measured savings claim.
 
-This file is the whole Implement phase. Three sections further down are part of it, not optional
-extras: **`## Security defaults (fail-closed, untrusted input)`**, **`## Mutation testing (prove the
+This file is the whole Implement phase. Three sections further down are part of it:
+**`## Security defaults (fail-closed, untrusted input)`**, **`## Mutation testing (prove the
 guard, don't assert it)`** and **`## Announce each step`** (Sigma's console banner). Read them before
 you start, not after.
 
@@ -49,7 +48,9 @@ it tests the right thing. Wrote code before the test? Delete it and re-derive fr
    is the same list `sigma-review` axis 6 will judge by. Long Method, Large Class, Long Parameter List,
    Primitive Obsession (a unit doing too much) · Feature Envy, Inappropriate Intimacy, Message Chains,
    Middle Man (units too entangled) · Duplicate Code, Dead Code, Speculative Generality (code that
-   should not exist). Fix it now, while the context is in your head and the diff is yours.
+   should not exist). Fix it now, unless `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/zones.py" check --goal "$goal" --diff`
+   prints the file as a legacy row without `intent: yes`: there change only what the goal needs.
+   With no such row, or if it could not run, this rule holds.
 
 After writing the plan's `## Tests` entries, record both stages through Sigma (a companion TDD skill never replaces this):
 
@@ -81,8 +82,7 @@ Cheapest at write time, expensive at review, and the one thing a passing test ca
   thing you tried that did not work.
 - **Nothing you wrote is now false.** Before finishing a step, check the comments, docstrings and
   README the change touched — a comment that lies is worse than no comment, and the diff is where it
-  became a lie. This is `sigma-review` axis 7, and it is the finding that most often reaches review
-  because nobody looked here first.
+  became a lie. This is `sigma-review` axis 7.
 
 ## Execute the plan, step by step
 1. **Load** the plan and **review it critically** — raise any concern *before* starting (last cheap
@@ -145,7 +145,7 @@ the mutant, and looked like coverage until it was retargeted.
 
 The pattern is "Revert fix → Run (MUST FAIL) → Restore → Run (pass)": a live revert against the
 running suite, never a mental exercise.
-It applies to any non-trivial guard and is required, not optional.
+It is required, not optional.
 
 ## Security defaults (fail-closed, untrusted input)
 This repo already has standing rules for this — they stay undiscovered until Review unless you read

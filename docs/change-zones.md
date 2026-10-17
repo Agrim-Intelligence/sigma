@@ -122,9 +122,13 @@ untracked files, never do.
   touched: `check` then prints a line `intent: unknown` (there is no row to carry it) before the verdict.
   `within` needs a dated record (`drafted` true or false) and no row left open.
 - **Verdict (`--plan`).** The paths are the backticked spans in the plan's `## Files` (or
-  `## File structure`) section that are files at the fork point; NEW or EDIT words are ignored. A plan
-  naming an existing legacy file without intent reads `over`, even for a one-line seam edit, because a
-  plan has no line count; the fix is to declare the intent. A plan with no such section reads `unknown`.
+  `## File structure`) section that are files at the fork point; NEW or EDIT words are ignored. Plan
+  mode is informational and **never prints `over`** (#1542): a plan has no line count, and a seam edit
+  to a legacy file must still be named there, so it lists each named legacy file with its intent and
+  reads `within` when the record is dated (has a `drafted` line), else `unknown` (with an
+  `intent: unknown` line when no row carries it). Size is measured only at review, by `--diff` against
+  `design.restructure_lines`. A plan with no such section, or a `## Files` section that names no
+  backticked path, reads `unknown`.
 
 Documented gaps, each pinned by a test: **negation** is not parsed, so a criterion such as
 `src/legacy/a.py` stays unchanged still grants `intent: yes`; a span containing whitespace never matches
@@ -157,6 +161,39 @@ In legacy code, extend by **sprout** or **wrap** at one seam rather than editing
   example a new `billing/tax_v2.py` called from the single line in `billing/legacy_calc.py`.
 - **Wrap:** leave the legacy function untouched and put a new function around it that handles the
   new case, for example `price_with_discount()` calling the legacy `price()`.
+
+## How the phases use zones
+
+Five phase rules defer to `zones.py` (#1542):
+
+- **Research** recommends reconcile-now in a legacy file only where a non-drafted acceptance
+  criterion names the path (what `check` reads as `intent: yes`): it has no plan or diff to check.
+- **Plan** lists its files under `## Files`, follows the rule `classify` prints for each, and never
+  restructures an existing file unilaterally; a legacy file without intent is extended by sprout or
+  wrap, sending dropped improvements to retro's `Deferred roots`.
+- **Plan-review** runs `check --plan`. It rejects on `verdict: over` (only `--diff` prints it, so at
+  plan time that clause is dormant) and holds every legacy row without `intent: yes` to a seam edit
+  (sprout or wrap), rejecting a plan that restructures one. A bare `verdict: unknown` never rejects: every
+  acceptance record written before #1541 reads `intent: unknown`.
+- **Implement** refactors in passing, except a file `check --diff` lists as a legacy row without
+  `intent: yes`.
+- **Review** asks whether the change breaks the rule `classify` prints, reports `unrequested legacy
+  restructure` on `check --diff` `verdict: over`, never reports a new file's difference from legacy
+  neighbours, and holds the numbered north-star architecture rules in every zone.
+
+When `classify` prints `unknown` or `unreachable`, or cannot run, the fallback is today's rule:
+follow the surrounding code (research and implement keep their own default). With no zones declared,
+every existing file prints `follow the surrounding code` and `check` prints no legacy row, so nothing
+changes for existing files; a new file now prints `follow sound design` (PRD-0007 D-3).
+
+**Interactive runs.** `/sigma-goal` never runs `work.py start`, so with no work record `classify`
+rows read `unknown` and `check` reads `verdict: unknown`: zones therefore do not bind interactive
+runs, nor a reviewer checkout with no record. To resolve the fork point without a record, pass
+`--base <remote>/<base>` to both verbs (on a clone with no record, `classify --base` read `existing`
+and `check --diff --base` printed legacy rows); the phase rules do not pass it yet.
+
+The effect of these phase rules on model behaviour is UNMEASURED: issue #1544 is the deferred
+baseline (PRD-0007 D-7: not a merge gate).
 
 ## Per-machine caveat
 
