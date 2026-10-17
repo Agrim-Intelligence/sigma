@@ -3,6 +3,7 @@
 All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
+- **Plan-review asks which force an abstraction answers; review reports `missing structure` (#1543).** An interface, factory, layer or indirection naming no force is over-built (a legacy sprout or wrap excepted), and a new or modern-zone diff adding a third or later case to a type conditional is a follow-up Concern. The effect on model behaviour is UNMEASURED; #1544 is the deferred baseline.
 
 ## 1.0.16 — 2026-10-17 — the resource guard: machine-derived limits, admission for verify and model sessions, a lease table, holds and shedding, calibrated on macOS and Linux; label drains with blockers and up-front questions; Rulebook learning by label kind; and the filing-triage and upkeep fixes
 - **The verify shed follows the one resource-mode resolver (#1794).** `SIGMA_RESOURCE_MODE=observe` no longer lets a critical machine stop a verify, and `enforce` in the environment arms the shed even when the config says `off`.

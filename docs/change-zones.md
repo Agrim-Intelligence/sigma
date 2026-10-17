@@ -180,6 +180,8 @@ Five phase rules defer to `zones.py` (#1542):
 - **Review** asks whether the change breaks the rule `classify` prints, reports `unrequested legacy
   restructure` on `check --diff` `verdict: over`, never reports a new file's difference from legacy
   neighbours, and holds the numbered north-star architecture rules in every zone.
+  It reports `missing structure`, a follow-up, only where `classify` prints `follow sound design`:
+  new and modern-zone files, never a legacy one (#1543).
 
 When `classify` prints `unknown` or `unreachable`, or cannot run, the fallback is today's rule:
 follow the surrounding code (research and implement keep their own default). With no zones declared,
@@ -194,6 +196,17 @@ and `check --diff --base` printed legacy rows); the phase rules do not pass it y
 
 The effect of these phase rules on model behaviour is UNMEASURED: issue #1544 is the deferred
 baseline (PRD-0007 D-7: not a merge gate).
+
+**Forces-first (#1543).** Plan-review calls an interface, factory, layer or indirection that names
+no force over-built, a legacy sprout or wrap excepted. The four forces:
+
+- a second real variant in this goal;
+- an unreliable dependency;
+- a boundary crossing;
+- a quality scenario goal-design names, inert until the goal-design checklist exists (#660).
+
+The effect of the forces-first rule on model behaviour is UNMEASURED: issue #1544 is the deferred
+baseline.
 
 ## Per-machine caveat
 

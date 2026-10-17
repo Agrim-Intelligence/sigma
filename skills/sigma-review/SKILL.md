@@ -114,7 +114,8 @@ Where an axis's boundary is unclear, decide by the harm it names. Canon: [axes](
    Speculative Generality (dispensables). And: does it break the rule `zones.py classify` prints per
    file (`unknown`, `unreachable` or could not run: follow the surrounding code)? On `verdict: over` from
    `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/zones.py" check --goal "<goal>" --diff`,
-   report `unrequested legacy restructure`.
+   report `unrequested legacy restructure`. In a new or modern-zone file, never a legacy one, a diff adding the
+   third or later case to a conditional on a type or kind is `missing structure`: a follow-up Concern.
 7. **Intelligibility** — *correct but unreadable, so the next change breaks it.* Do names say what the
    thing does and what it mutates? Do comments explain WHY, not restate WHAT? Is any comment, docstring
    or README now FALSE because of this diff.
