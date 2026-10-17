@@ -45,7 +45,7 @@ AC1_LINE = ("live.py: REFUSED [no-credential]: "
 CHILD_ENV_KEYS = {"PATH", "HOME", "LANG"}
 ROW_KEYS = {"schema", "commit", "cell", "credential_basis", "permission_mode", "status", "code",
             "reason", "also_failing", "representative", "model", "belt", "cap", "tokens", "cost",
-            "cost_basis", "started", "finished"}
+            "cost_basis", "started", "finished", "ledger_id", "spent", "exit_code", "timed_out"}
 
 
 def _load(name, path):
@@ -162,7 +162,8 @@ def test_row_has_exactly_the_contract_fields(tmp):
     assert row["status"] == "NOT RUN"
     assert row["permission_mode"] == "not-applicable"
     assert row["representative"] is False
-    for k in ("model", "belt", "cap", "tokens", "cost", "cost_basis"):
+    for k in ("model", "belt", "cap", "tokens", "cost", "cost_basis", "ledger_id", "spent", "exit_code",
+              "timed_out"):
         assert row[k] is None
     assert re.fullmatch(r"live/\w+/py\d+\.\d+", row["cell"])
     assert row["commit"] == "unknown"
@@ -210,10 +211,12 @@ def test_ladder_first_failing_code(live, tmp, capsys, name, change, code, also):
 
 def test_ladder_order_is_the_documented_one(live):
     assert tuple(live.CODES[:7]) == ("no-credential", "no-opt-in", "no-cap", "unsupported-platform",
-                                     "pull-request-event", "subscription-in-gated-mode", "not-implemented")
+                                     "pull-request-event", "subscription-in-gated-mode", "no-run-requested")
     assert set(live.CODES) == {"no-credential", "no-opt-in", "no-cap", "unsupported-platform",
-                               "pull-request-event", "subscription-in-gated-mode", "not-implemented",
-                               "bad-usage", "scrubber-unavailable"}
+                               "pull-request-event", "subscription-in-gated-mode", "no-run-requested",
+                               "bad-usage", "scrubber-unavailable", "launcher-api-key-unsupported",
+                               "launcher-precondition", "launcher-latch", "spend-ledger", "run-refused",
+                               "run-signalled", "run-error"}
 
 
 CAP_REJECTED = ["nan", "inf", "-1", "0", "0x10", "1e3", "1e999", "True", "", "9" * 400, " ", "5 5", "+5"]
@@ -229,7 +232,7 @@ def test_cap_belt_and_opt_in_parsing(live, tmp, capsys, text):
 def test_cap_belt_accepts_and_precedence(live, tmp, capsys):
     base = valid_env(SIGMA_REGRESSION_CAP_USD=None)
     for ok in ("5", "0.5", "  5  "):
-        assert call(live, tmp, capsys, base, ["--cap-usd=" + ok]).row["code"] == "not-implemented"
+        assert call(live, tmp, capsys, base, ["--cap-usd=" + ok]).row["code"] == "no-run-requested"
     # the two-token negative form: argparse reads '-1' as the VALUE, so it reaches the grammar
     assert call(live, tmp, capsys, base, ["--cap-usd", "-1"]).row["code"] == "no-cap"
     # a value argparse reads as a flag is a usage error, not a refusal on the cap
@@ -237,19 +240,19 @@ def test_cap_belt_accepts_and_precedence(live, tmp, capsys):
         r = call(live, tmp, capsys, base, ["--cap-usd", bad])
         assert r.rc == 2 and r.lines[0].startswith("live.py: REFUSED [bad-usage]: ")
     assert call(live, tmp, capsys, base, ["--cap-usd=5", "--belt-usd=6"]).row["code"] == "no-cap"
-    assert call(live, tmp, capsys, base, ["--cap-usd=5", "--belt-usd=5"]).row["code"] == "not-implemented"
+    assert call(live, tmp, capsys, base, ["--cap-usd=5", "--belt-usd=5"]).row["code"] == "no-run-requested"
     assert call(live, tmp, capsys, base, ["--cap-usd=5", "--belt-usd=x"]).row["code"] == "no-cap"
     assert call(live, tmp, capsys, base, ["--cap-usd=5", "--belt-usd=0.5"]).row["belt"] == 0.5
     # flag beats env, both directions
     assert call(live, tmp, capsys, valid_env(SIGMA_REGRESSION_CAP_USD="x"),
-                ["--cap-usd=5"]).row["code"] == "not-implemented"
+                ["--cap-usd=5"]).row["code"] == "no-run-requested"
     assert call(live, tmp, capsys, valid_env(), ["--cap-usd=x"]).row["code"] == "no-cap"
     assert call(live, tmp, capsys, valid_env(SIGMA_REGRESSION_BELT_USD="9"), []).row["code"] == "no-cap"
     r = call(live, tmp, capsys, valid_env())
     assert r.row["cap"] == 5.0
     # opt-in allowlist: only 1/true/yes/on (any case, stripped)
     for v in ("1", "true", "YES", " on ", "True"):
-        assert call(live, tmp, capsys, valid_env(SIGMA_REGRESSION_LIVE=v)).row["code"] == "not-implemented"
+        assert call(live, tmp, capsys, valid_env(SIGMA_REGRESSION_LIVE=v)).row["code"] == "no-run-requested"
     for v in ("enable", "2", "", " ", "0", "no", "y"):
         assert call(live, tmp, capsys, valid_env(SIGMA_REGRESSION_LIVE=v)).row["code"] == "no-opt-in", v
 
@@ -263,9 +266,9 @@ def test_event_rung(live, tmp, capsys):
         assert r.row["code"] == "pull-request-event"
     for ev in ("schedule", "workflow_dispatch"):
         r = call(live, tmp, capsys, valid_env(GITHUB_ACTIONS="true", GITHUB_EVENT_NAME=ev))
-        assert r.row["code"] == "not-implemented", ev
+        assert r.row["code"] == "no-run-requested", ev
     # outside Actions a blank event is fine
-    assert call(live, tmp, capsys, valid_env()).row["code"] == "not-implemented"
+    assert call(live, tmp, capsys, valid_env()).row["code"] == "no-run-requested"
 
 
 def test_subscription_in_gated_mode(live, tmp, capsys):
@@ -281,13 +284,13 @@ def test_subscription_in_gated_mode(live, tmp, capsys):
     assert r.row["code"] == "subscription-in-gated-mode"
     # ungated subscription passes the ladder and records its basis
     r = call(live, tmp, capsys, only_oauth)
-    assert r.row["code"] == "not-implemented" and r.row["credential_basis"] == "subscription"
+    assert r.row["code"] == "no-run-requested" and r.row["credential_basis"] == "subscription"
     # a falsy gate value does not gate
     r = call(live, tmp, capsys, dict(only_oauth, CI="false"))
-    assert r.row["code"] == "not-implemented"
+    assert r.row["code"] == "no-run-requested"
     # API key alone passes while gated
     r = call(live, tmp, capsys, valid_env(CI="true", **ev))
-    assert r.row["code"] == "not-implemented" and r.row["credential_basis"] == "api-key"
+    assert r.row["code"] == "no-run-requested" and r.row["credential_basis"] == "api-key"
     # both set: gated refuses, ungated records api-key and notes both
     both = valid_env(CLAUDE_CODE_OAUTH_TOKEN=oauth)
     assert call(live, tmp, capsys, dict(both, CI="true", **ev)).row["code"] == "subscription-in-gated-mode"
@@ -311,9 +314,91 @@ def test_platform_rung_via_seam(live, tmp, capsys):
 def test_terminal_not_implemented_after_ladder_passes(live, tmp, capsys):
     r = call(live, tmp, capsys, valid_env())
     assert r.rc == 2 and r.out == ""
-    assert r.lines == ["live.py: REFUSED [not-implemented]: " + live.DETAILS["not-implemented"]]
-    assert r.row["code"] == "not-implemented" and r.row["also_failing"] == []
+    assert r.lines == ["live.py: REFUSED [no-run-requested]: " + live.DETAILS["no-run-requested"]]
+    assert r.row["code"] == "no-run-requested" and r.row["also_failing"] == []
     assert r.row["status"] == "NOT RUN" and r.row["cap"] == 5.0
+
+
+def test_old_terminal_code_is_gone(live):
+    assert "not-implemented" not in live.CODES and "not-implemented" not in live.DETAILS
+    assert "no-run-requested" in live.CODES
+
+
+RUN_REQUIRED = ["--prompt-file", "--workdir", "--model", "--permission-mode", "--launcher", "--claude",
+                "--timeout-s"]
+RUN_OPTIONAL = ["--plugin-dir", "--ledger-dir", "--commit", "--cell"]
+
+
+def run_argv(tmp, omit=(), extra=()):
+    """A full, syntactically valid `run` command line (paths need not exist for ladder/usage tests)."""
+    vals = {"--prompt-file": str(tmp / "prompt.txt"), "--workdir": str(tmp / "workdir"),
+            "--model": "claude-test", "--permission-mode": "acceptEdits",
+            "--launcher": str(tmp / "launcher" / "live-launcher.py"), "--claude": str(tmp / "bin" / "claude"),
+            "--timeout-s": "30"}
+    argv = ["run"]
+    for flag in RUN_REQUIRED:
+        if flag not in omit:
+            argv += [flag, vals[flag]]
+    return argv + list(extra)
+
+
+@pytest.mark.parametrize("flag,value", [("--prompt-file", "x"), ("--workdir", "x"), ("--model", "x"),
+                                        ("--permission-mode", "x"), ("--timeout-s", "1"),
+                                        ("--launcher", "x"), ("--claude", "x"), ("--plugin-dir", "x"),
+                                        ("--ledger-dir", "x"), ("--commit", "x"), ("--cell", "x")])
+def test_run_options_without_run_are_bad_usage(live, tmp, capsys, flag, value):
+    r = call(live, tmp, capsys, valid_env(), [flag, value])
+    assert r.rc == 2 and r.out == ""
+    assert r.row["code"] == "bad-usage"
+    assert r.lines == ["live.py: REFUSED [bad-usage]: " + live.DETAILS["bad-usage"]]
+
+
+def test_run_missing_required_options_is_bad_usage(live, tmp, capsys):
+    r = call(live, tmp, capsys, valid_env(), ["run"])
+    assert r.rc == 2 and r.row["code"] == "bad-usage"
+    for flag in RUN_REQUIRED:
+        r = call(live, tmp, capsys, valid_env(), run_argv(tmp, omit=(flag,)))
+        assert r.rc == 2 and r.row["code"] == "bad-usage", flag
+        assert r.out == ""
+
+
+def test_run_unknown_subcommand_is_bad_usage(live, tmp, capsys):
+    r = call(live, tmp, capsys, valid_env(), ["walk"])
+    assert r.rc == 2 and r.row["code"] == "bad-usage"
+
+
+def test_run_with_api_key_refuses_launcher_api_key_unsupported(live, tmp, capsys):
+    for extra in ({}, {"CLAUDE_CODE_OAUTH_TOKEN": fake()}):
+        r = call(live, tmp, capsys, valid_env(**extra), run_argv(tmp))
+        assert r.rc == 2 and r.out == "", extra
+        assert r.row["code"] == "launcher-api-key-unsupported" and r.row["status"] == "NOT RUN", extra
+        assert r.lines == ["live.py: REFUSED [launcher-api-key-unsupported]: "
+                           + live.DETAILS["launcher-api-key-unsupported"]]
+        assert r.row["credential_basis"] == "api-key"
+
+
+@posix_only
+def test_run_with_api_key_spawns_nothing(tmp):
+    tree = make_tree(tmp)
+    marker = tmp / "claude-ran"
+    fakebin = tmp / "fakebin"
+    fakebin.mkdir()
+    exe = fakebin / "claude"
+    exe.write_text("#!/bin/sh\necho ran > '%s'\n" % marker)
+    exe.chmod(0o755)
+    r = run_live(tree, tmp, run_argv(tmp), ANTHROPIC_API_KEY=fake(), SIGMA_REGRESSION_LIVE="1",
+                 SIGMA_REGRESSION_CAP_USD="5")
+    assert r.returncode == 2 and r.stdout == ""
+    assert "[launcher-api-key-unsupported]" in r.stderr
+    assert not marker.exists()
+
+
+def test_run_ladder_failures_win_over_api_key_refusal(live, tmp, capsys):
+    r = call(live, tmp, capsys, valid_env(SIGMA_REGRESSION_CAP_USD=None), run_argv(tmp))
+    assert r.row["code"] == "no-cap"
+    assert r.row["also_failing"] == []
+    r = call(live, tmp, capsys, valid_env(SIGMA_REGRESSION_LIVE=None), run_argv(tmp))
+    assert r.row["code"] == "no-opt-in"
 
 
 @posix_only
@@ -407,9 +492,9 @@ def test_final_exact_value_passes_cover_each_line_and_the_row(live, tmp, capsys,
     """Seam: the fixed detail text is made to carry the held value, so only the two final whole-text
     passes (printed line; serialised row) can remove it. The echo path never sees this text."""
     planted = fake(24)
-    monkeypatch.setitem(live.DETAILS, "not-implemented", "leak " + planted)
+    monkeypatch.setitem(live.DETAILS, "no-run-requested", "leak " + planted)
     r = call(live, tmp, capsys, valid_env(ANTHROPIC_API_KEY=planted))
-    assert r.row["code"] == "not-implemented"
+    assert r.row["code"] == "no-run-requested"
     assert planted not in r.err, "printed-line pass missing"
     assert "[REDACTED]" in r.err
     assert planted not in json.dumps(r.row), "serialised-row pass missing"
@@ -434,7 +519,7 @@ def test_blank_belt_env_is_unset_but_a_blank_belt_flag_refuses(live, tmp, capsys
     typed deliberately and malformed, so it refuses no-cap. A blank cap is unset and refuses (cap required)."""
     for blank in ("", "   "):
         r = call(live, tmp, capsys, valid_env(SIGMA_REGRESSION_BELT_USD=blank))
-        assert r.row["code"] == "not-implemented" and r.row["belt"] is None, repr(blank)
+        assert r.row["code"] == "no-run-requested" and r.row["belt"] is None, repr(blank)
     assert call(live, tmp, capsys, valid_env(), ["--belt-usd="]).row["code"] == "no-cap"
     assert call(live, tmp, capsys, valid_env(SIGMA_REGRESSION_CAP_USD="")).row["code"] == "no-cap"
     assert call(live, tmp, capsys, valid_env(SIGMA_REGRESSION_BELT_USD="x")).row["code"] == "no-cap"
@@ -448,7 +533,7 @@ EXPECTED_SCENARIOS = {
     "pull-request-event": (lambda: valid_env(GITHUB_EVENT_NAME="pull_request"), {}, True),
     "subscription-in-gated-mode": (lambda: valid_env(ANTHROPIC_API_KEY=None, CLAUDE_CODE_OAUTH_TOKEN=fake(),
                                                     CI="true"), {}, True),
-    "not-implemented": (valid_env, {}, True),
+    "no-run-requested": (valid_env, {}, True),
     "bad-usage": (lambda: {}, {"argv": ["--bogus"]}, True),
     "scrubber-unavailable": (valid_env, {"scrubber": None}, True),
 }
@@ -543,8 +628,8 @@ def _imports(tree):
     return names
 
 
-ALLOWED_IMPORTS = {"__future__", "argparse", "base64", "datetime", "importlib.util", "json", "math", "os",
-                   "pathlib", "re", "secrets", "shlex", "sys", "urllib.parse"}
+ALLOWED_IMPORTS = {"__future__", "argparse", "base64", "datetime", "decimal", "importlib.util", "json", "math",
+                   "os", "pathlib", "re", "secrets", "shlex", "sys", "tempfile", "time", "urllib.parse"}
 DENIED_ROOTS = {"subprocess", "pty", "multiprocessing", "ctypes", "shutil", "socket", "http"}
 
 
@@ -553,15 +638,150 @@ def test_live_py_imports_only_allowlisted_modules():
     assert extra == []
 
 
+def _functions(tree):
+    return [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+
+
+def bench_strings_outside(src, allowed_function="load_arms"):
+    """String constants (docstrings excluded) naming the benchmark helpers, found anywhere EXCEPT inside the
+    one function allowed to name them. Scope-aware: a nested function inside it is still inside it."""
+    tree = ast.parse(src)
+    docs = _docstring_nodes(tree)
+    inside = set()
+    for fn in _functions(tree):
+        if fn.name == allowed_function:
+            inside.update(id(n) for n in ast.walk(fn))
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docs \
+                and id(node) not in inside:
+            if "evals/bench" in node.value or re.search(r"\barms\b", node.value):
+                found.append(node.value)
+    return found
+
+
 def test_live_py_imports_no_process_spawning_or_bench_arms():
     tree = ast.parse(_source())
     for m in _imports(tree):
         assert m.split(".")[0] not in DENIED_ROOTS, m
         assert m != "urllib.request" and "bench" not in m and "arms" not in m, m
-    docs = _docstring_nodes(tree)
+    assert bench_strings_outside(_source()) == []
+    # the allowance is narrow: the path parts live in load_arms and nowhere else
+    assert bench_strings_outside("def load_arms():\n    return 'evals/bench'\n") == []
+    assert bench_strings_outside("def other():\n    return 'evals/bench'\n") == ["evals/bench"]
+    assert bench_strings_outside("def other():\n    return 'the arms'\n") == ["the arms"]
+    assert bench_strings_outside("def load_arms():\n    def inner():\n        return 'arms'\n") == []
+
+
+SPAWN_OWNERS = {"run_bounded": {"precheck_launcher"}, "run_claude": {"_run"}, "command_passed": set(),
+                "claude_version": set()}
+PROCESS_ATTRS = {"Popen", "run", "call", "check_call", "check_output", "getoutput", "getstatusoutput"}
+
+
+def spawn_site_findings(src):
+    """Every call of a spawning helper must sit lexically inside its ONE permitted function; any process API
+    attribute call anywhere fails."""
+    tree = ast.parse(src)
+    found = []
+
+    def visit(node, fn):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            fn = node.name
+        if isinstance(node, ast.Call):
+            f = node.func
+            name = f.attr if isinstance(f, ast.Attribute) else (f.id if isinstance(f, ast.Name) else None)
+            if name in SPAWN_OWNERS and fn not in SPAWN_OWNERS[name]:
+                found.append("%s in %s" % (name, fn))
+            if isinstance(f, ast.Attribute) and f.attr in PROCESS_ATTRS:
+                found.append("." + f.attr)
+        for child in ast.iter_child_nodes(node):
+            visit(child, fn)
+
+    visit(tree, None)
+    return found
+
+
+def test_spawns_only_via_arms_in_two_functions():
+    assert spawn_site_findings(_source()) == []
+    assert spawn_site_findings("def precheck_launcher():\n    common.run_bounded(a)\n") == []
+    assert spawn_site_findings("def _run():\n    common.run_claude(a)\n") == []
+    assert spawn_site_findings("def third():\n    common.run_bounded(a)\n") == ["run_bounded in third"]
+    assert spawn_site_findings("def precheck_launcher():\n    common.run_claude(a)\n") == \
+        ["run_claude in precheck_launcher"]
+    assert spawn_site_findings("def _run():\n    common.run_bounded(a)\n") == ["run_bounded in _run"]
+    assert spawn_site_findings("def _run():\n    common.command_passed(a)\n") == ["command_passed in _run"]
+    assert spawn_site_findings("def _run():\n    claude_version(a)\n") == ["claude_version in _run"]
+    assert spawn_site_findings("def _run():\n    subprocess.Popen(a)\n") == [".Popen"]
+    assert spawn_site_findings("def _run():\n    subprocess.run(a)\n") == [".run"]
+    assert spawn_site_findings("x = run_claude(a)\n") == ["run_claude in None"]
+
+
+def reserved_order_findings(src, fn_name="_run"):
+    """`run_claude` must (1) sit inside a `with <x>.reserved(...)` of the SAME function, (2) whose first body
+    statement is the `isinstance(res, <x>.Reservation)` guard, and (3) come AFTER that guard, in position order
+    (a hoisted call, or one placed before the guard, or a reserve in a sibling function, is flagged)."""
+    tree = ast.parse(src)
+    parents = {}
     for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docs:
-            assert "evals/bench" not in node.value and not re.search(r"\barms\b", node.value), node.value
+        for child in ast.iter_child_nodes(node):
+            parents[child] = node
+    findings = []
+    funcs = [f for f in _functions(tree) if f.name == fn_name]
+    if not funcs:
+        return ["no function " + fn_name]
+    for fn in funcs:
+        calls = [c for c in ast.walk(fn) if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)
+                 and c.func.attr == "run_claude"]
+        if not calls:
+            findings.append("no run_claude call")
+        for call in calls:
+            node, with_node = call, None
+            while node in parents and node is not fn:
+                node = parents[node]
+                if isinstance(node, ast.With) and any(
+                        isinstance(i.context_expr, ast.Call) and isinstance(i.context_expr.func, ast.Attribute)
+                        and i.context_expr.func.attr == "reserved" for i in node.items):
+                    with_node = node
+                    break
+            if with_node is None:
+                findings.append("run_claude outside a reserved() block")
+                continue
+            guard = with_node.body[0]
+            is_guard = isinstance(guard, ast.If) and any(
+                isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id == "isinstance"
+                and len(c.args) == 2 and isinstance(c.args[1], ast.Attribute) and c.args[1].attr == "Reservation"
+                for c in ast.walk(guard.test))
+            if not is_guard:
+                findings.append("first statement of the reserved() block is not the Reservation guard")
+            elif (call.lineno, call.col_offset) <= (guard.end_lineno, guard.end_col_offset):
+                findings.append("run_claude before the end of the Reservation guard")
+    return findings
+
+
+GOOD = ("def _run(led, sl):\n    with led.reserved(1) as res:\n        if not isinstance(res, sl.Reservation):\n"
+        "            raise X\n        common.run_claude(a)\n")
+
+
+def test_run_claude_is_inside_a_reserved_block_and_after_the_reservation_check():
+    assert reserved_order_findings(_source()) == []
+
+
+def test_reserved_order_checker_flags_each_synthetic_misorder():
+    assert reserved_order_findings(GOOD) == []
+    hoisted = ("def _run(led, sl):\n    common.run_claude(a)\n    with led.reserved(1) as res:\n"
+               "        if not isinstance(res, sl.Reservation):\n            raise X\n")
+    before_guard = ("def _run(led, sl):\n    with led.reserved(1) as res:\n        common.run_claude(a)\n"
+                    "        if not isinstance(res, sl.Reservation):\n            raise X\n")
+    sibling = ("def _reserve(led, sl):\n    with led.reserved(1) as res:\n"
+               "        if not isinstance(res, sl.Reservation):\n            raise X\n"
+               "def _run(led, sl):\n    common.run_claude(a)\n")
+    inside_guard = ("def _run(led, sl):\n    with led.reserved(1) as res:\n"
+                    "        if not isinstance(res, sl.Reservation):\n            common.run_claude(a)\n")
+    other_with = ("def _run(led, sl):\n    with open(p) as res:\n        if not isinstance(res, sl.Reservation):\n"
+                  "            raise X\n        common.run_claude(a)\n")
+    for name, bad in (("hoisted", hoisted), ("before-guard", before_guard), ("sibling", sibling),
+                      ("inside-guard", inside_guard), ("other-with", other_with)):
+        assert reserved_order_findings(bad) != [], name
 
 
 def _banned_os_name(name):
@@ -622,6 +842,7 @@ WRITE_ATTRS = {"write_text", "write_bytes", "mkdir", "touch", "rename", "unlink"
                "hardlink_to", "writelines"}
 BARE_BANNED = {"open", "compile", "exec", "eval", "__import__"}
 OS_ALWAYS = {"open", "fdopen", "pwrite", "truncate", "ftruncate", "sendfile"}
+TEMPFILE_WRITERS = {"mkstemp", "NamedTemporaryFile", "TemporaryDirectory", "TemporaryFile", "SpooledTemporaryFile"}
 
 
 def walk_violations(src):
@@ -639,6 +860,10 @@ def walk_violations(src):
                 recv_os = isinstance(f.value, ast.Name) and f.value.id == "os"
                 if f.attr in ("open", "write"):
                     found.append("." + f.attr)
+                elif f.attr in TEMPFILE_WRITERS:
+                    found.append("." + f.attr)
+                elif f.attr == "mkdtemp" and fn != "_run":
+                    found.append(".mkdtemp")
                 elif recv_os and (f.attr in OS_ALWAYS or f.attr.startswith("write")):
                     found.append("os." + f.attr)
                 elif f.attr in WRITE_ATTRS and fn != "write_row":
@@ -661,11 +886,23 @@ BANNED_FORMS = ['open(p, "a")', 'Path(p).open("a")', "io.open(p)", "os.open(p, 0
                 'sys.stderr.write("")', 'compile(s, "", "exec")', "exec(s)", "eval(s)", "__import__(s)"]
 PERMITTED_FORMS = ['re.compile(r"x")', "re.sub(re.escape(v), f, t)", 'print("x", file=sys.stderr)',
                    "json.dumps(o)"]
+TEMPFILE_FORMS = ["tempfile.mkstemp()", "tempfile.NamedTemporaryFile()", "tempfile.TemporaryDirectory()",
+                  "tempfile.mkdtemp()"]
 
 
 @pytest.mark.parametrize("form", BANNED_FORMS)
 def test_scanner_walker_flags_append_open_and_os_write(form):
     assert walk_violations(form) != [], form
+
+
+@pytest.mark.parametrize("form", TEMPFILE_FORMS)
+def test_scanner_walker_pins_tempfile_creation_by_owner(form):
+    assert walk_violations(form) != [], form
+    if form == "tempfile.mkdtemp()":                       # the one profile-dir creation, owned by _run
+        assert walk_violations("def _run():\n    " + form + "\n") == []
+        assert walk_violations("def other():\n    " + form + "\n") != []
+    else:
+        assert walk_violations("def _run():\n    " + form + "\n") != []
 
 
 def test_scanner_walker_permits_the_allowed_forms():
@@ -695,7 +932,9 @@ def test_write_methods_only_in_write_row():
 
 
 @posix_only
-@pytest.mark.parametrize("scenario", ["bare", "no-opt-in", "no-cap", "pr-event", "sub-gated", "terminal"])
+@pytest.mark.parametrize("scenario", ["bare", "no-opt-in", "no-cap", "pr-event", "sub-gated", "terminal",
+                                      "run-no-cap", "run-no-opt-in", "run-launcher-env", "run-pr-event",
+                                      "run-sub-gated"])
 def test_fake_claude_on_path_is_never_run(tmp, scenario):
     tree = make_tree(tmp)
     marker = tmp / "claude-ran"
@@ -714,12 +953,31 @@ def test_fake_claude_on_path_is_never_run(tmp, scenario):
         "sub-gated": {"CLAUDE_CODE_OAUTH_TOKEN": key, "SIGMA_REGRESSION_LIVE": "1",
                       "SIGMA_REGRESSION_CAP_USD": "5", "CI": "true"},
         "terminal": {"ANTHROPIC_API_KEY": key, "SIGMA_REGRESSION_LIVE": "1", "SIGMA_REGRESSION_CAP_USD": "5"},
+        "run-no-cap": {"CLAUDE_CODE_OAUTH_TOKEN": key, "SIGMA_REGRESSION_LIVE": "1"},
+        "run-no-opt-in": {"CLAUDE_CODE_OAUTH_TOKEN": key, "SIGMA_REGRESSION_CAP_USD": "5"},
+        "run-launcher-env": {"ANTHROPIC_API_KEY": key, "SIGMA_REGRESSION_LIVE": "1", "SIGMA_REGRESSION_CAP_USD": "5"},
+        "run-pr-event": {"CLAUDE_CODE_OAUTH_TOKEN": key, "SIGMA_REGRESSION_LIVE": "1",
+                         "SIGMA_REGRESSION_CAP_USD": "5", "GITHUB_EVENT_NAME": "pull_request"},
+        "run-sub-gated": {"CLAUDE_CODE_OAUTH_TOKEN": key, "SIGMA_REGRESSION_LIVE": "1",
+                          "SIGMA_REGRESSION_CAP_USD": "5", "CI": "true"},
     }
-    r = run_live(tree, tmp, **envs[scenario])
+    launcher_marker = tmp / "launcher-ran"
+    launcher = tmp / "launcher.sh"
+    launcher.write_text("#!/bin/sh\necho ran > '%s'\n" % launcher_marker)
+    launcher.chmod(0o755)
+    argv = run_argv(tmp)[:] if scenario.startswith("run-") else []
+    if argv:
+        argv[argv.index("--launcher") + 1] = str(launcher)
+        argv[argv.index("--claude") + 1] = str(exe)
+    r = run_live(tree, tmp, argv, **envs[scenario])
     assert r.returncode == 2
-    assert not marker.exists()
+    assert not marker.exists() and not launcher_marker.exists()
     if scenario == "terminal":
-        assert "[not-implemented]" in r.stderr
+        assert "[no-run-requested]" in r.stderr
+    if scenario.startswith("run-"):
+        expected = {"run-no-cap": "no-cap", "run-no-opt-in": "no-opt-in", "run-launcher-env": "launcher-api-key-unsupported",
+                    "run-pr-event": "pull-request-event", "run-sub-gated": "subscription-in-gated-mode"}[scenario]
+        assert "[%s]" % expected in r.stderr
 
 
 # --------------------------------------------------------------------------- Task 6

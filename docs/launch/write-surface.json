@@ -149,7 +149,7 @@
       "function": "write_row",
       "rule": "fs-remove",
       "count": 2,
-      "gate": "operator-run live regression entrypoint (slice 1, never starts a model): writes only one NOT RUN result row per refusal under the results directory (atomic temp then replace, temp removed in finally) and creates that directory; the exact-value redaction pass runs before the write",
+      "gate": "operator-run live regression entrypoint: writes one result row per invocation (NOT RUN, RAN or RUN-FAILED) under the results directory (atomic temp then replace, temp removed in finally) and creates that directory; the exact-value redaction pass runs before the write; the spend ledger and its directory are written only by spend_ledger.py, documented in tests/test_regression_ledger.py DOCUMENTED_WRITES because write_surface.py cannot see open/os.write",
       "risk": "high"
     },
     {
@@ -157,7 +157,7 @@
       "function": "write_row",
       "rule": "fs-write",
       "count": 2,
-      "gate": "operator-run live regression entrypoint (slice 1, never starts a model): writes only one NOT RUN result row per refusal under the results directory (atomic temp then replace, temp removed in finally) and creates that directory; the exact-value redaction pass runs before the write",
+      "gate": "operator-run live regression entrypoint: writes one result row per invocation (NOT RUN, RAN or RUN-FAILED) under the results directory (atomic temp then replace, temp removed in finally) and creates that directory; the exact-value redaction pass runs before the write; the spend ledger and its directory are written only by spend_ledger.py, documented in tests/test_regression_ledger.py DOCUMENTED_WRITES because write_surface.py cannot see open/os.write",
       "risk": "medium"
     },
     {
