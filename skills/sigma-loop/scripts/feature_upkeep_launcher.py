@@ -1,14 +1,13 @@
 """The resolver launcher: one capped, confined, headless model session for a unit conflict (upkeep part B, slice 8).
 
-A library, loaded by path; no command line, nothing at import time, and NOTHING CALLS IT YET: the caller is the upkeep
-pass, behind its gate. While the gate is closed (the default) `launch` returns `closed` having read nothing, written
+A library, loaded by path; no command line, nothing at import time. The caller is the upkeep
+level 2 plan in `feature_rebase.py`, behind its gate. While the gate is closed (the default) `launch` returns `closed` having read nothing, written
 nothing and spawned nothing.
 
 THE ORDER of `launch(request)` (it returns a `Result` and raises only for a programming error):
   1. the gate: the project block must be on and `conflicts.resolve` must be `agent`, else `closed`;
   2. the platform: no process groups (Windows) -> `refused`, naming the platform;
-  3. the model: an id outside the catalog, or the placeholder id, -> `refused` (the shipped catalog holds only the
-     placeholder, so the resolver stays closed until a validated override is supplied);
+  3. the model: an id outside the catalog, or the placeholder id, -> `refused` (the shipped catalog holds real ids; the placeholder id is never accepted);
   4. the flags: any requested flag not in CONFIRMED_FLAGS -> `refused`, naming it UNVERIFIED, BEFORE anything is spawned;
   5. the directory: an ancestor holding an instruction file, or a location inside the real home or the repository ->
      `refused`; the credential route: an unchosen or unknown route -> `refused`;
@@ -71,26 +70,43 @@ def _sibling(name):
     return _LOADED[name]
 
 
+def _guard():
+    """resource_guard (#1603): the one place a model session asks for admission."""
+    return _sibling("resource_guard")
+
+
 CLOSED, REFUSED, OK, DISCARDED, KILLED, FAILED = "closed", "refused", "ok", "discarded", "killed", "failed"
 OUTCOMES = (CLOSED, REFUSED, OK, DISCARDED, KILLED, FAILED)
 Result = collections.namedtuple("Result", "outcome charged_usd changed reason", defaults=(0.0, (), ""))
 
-#: Flags the tree already uses. "In use in the tree, not probed here": nothing in this change ran the real CLI.
+#: Flags confirmed. The first three are in use in the tree; the rest were each used in one real headless call by the
+#: probe in docs/launch/evidence/resolver-cli-probe.md (tool 2.1.296) and re-checked against the installed help in
+#: docs/launch/evidence/resolver-flags-confirmation-2026-10-16.md. Neither covers Windows or Linux.
+_PROBED = "probed in resolver-cli-probe.md (tool 2.1.296)"
 CONFIRMED_FLAGS = {
     "-p": "headless print mode; in use in the tree, not probed here",
     "--output-format": "output shape; in use in the tree, not probed here",
-    "--model": "model choice, as an alias only; in use in the tree, not probed here",
+    "--model": "model choice, as an alias or a full id; " + _PROBED,
+    "--max-budget-usd": "runaway guard checked between turns, not a hard ceiling; " + _PROBED,
+    "--permission-mode": "permission mode; " + _PROBED,
+    "--allowedTools": "tool allow list; " + _PROBED,
+    "--disallowedTools": "tool deny list; " + _PROBED,
+    "--tools": "tool set, empty turns all off; " + _PROBED,
+    "--settings": "settings as a JSON string; " + _PROBED,
+    "--setting-sources": "empty stops hooks and instruction files; " + _PROBED,
+    "--strict-mcp-config": "only the given MCP config; " + _PROBED,
+    "--no-session-persistence": "no transcript written; " + _PROBED,
+    "--add-dir": "extra directory; " + _PROBED,
+    "--append-system-prompt": "appended system prompt; " + _PROBED,
 }
-#: Design flags no one has probed. UNVERIFIED: each is refused by name until a probe (B7) confirms it.
-UNVERIFIED_FLAGS = ("--max-budget-usd", "--permission-mode", "--allowedTools", "--disallowedTools", "--tools",
-                    "--settings", "--setting-sources", "--strict-mcp-config", "--no-session-persistence", "--add-dir",
-                    "--bare", "--append-system-prompt")
+#: Design flags still UNVERIFIED, refused by name: `--bare` did not authenticate with the subscription login in the probe.
+UNVERIFIED_FLAGS = ("--bare",)
 #: The argument list the launcher itself builds: only confirmed flags.
 BASE_ARGV = ("-p", "--output-format", "json")
 
-#: Shipped placeholder: keeps the resolver closed until the model id is settled (D-16).
+#: A value an override may never take. The shipped catalog no longer holds it.
 PLACEHOLDER_MODEL = "UNSET-PLACEHOLDER-MODEL-ID"
-CATALOG = {"haiku": PLACEHOLDER_MODEL, "sonnet": PLACEHOLDER_MODEL, "opus": PLACEHOLDER_MODEL, "fable": PLACEHOLDER_MODEL}
+CATALOG = {"haiku": "claude-haiku-5-5", "sonnet": "claude-sonnet-5-5", "opus": "claude-opus-5-5", "fable": "claude-fable-5-1"}
 _MODEL_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")
 
 INSTRUCTION_FILES = _sibling("judge_isolation").INSTRUCTION_FILES   # #1472: one list, shared with the judge path
@@ -111,8 +127,8 @@ OUT_KEEP = 4096
 Request = collections.namedtuple(
     "Request",
     "config sdlc_dir state_dir repo_root directory conflicted binary prompt blocks timeout cap_usd "
-    "model flags credential_var scratch_parent rates ceiling_machine_usd ceiling_team_usd budget_seconds home",
-    defaults=(None,) * 20)
+    "model flags credential_var scratch_parent rates ceiling_machine_usd ceiling_team_usd budget_seconds home session net_prefix",
+    defaults=(None,) * 22)
 
 
 # ------------------------------------------------------------------------------------------ small helpers
@@ -165,6 +181,48 @@ def resolve_model(config, override):
     return model, None
 
 
+# ------------------------------------------------------------------------------------------ the session network wall (#1573)
+
+#: Directories under the account home that hold credentials; the macOS wall denies reads of them.
+CREDENTIAL_DIRS = (".ssh", ".config/gh", ".git-credentials", ".gitconfig", ".netrc", "Library/Keychains", ".aws")
+SESSION_TOOLS = "Read,Edit,Write,Glob,Grep"
+
+
+def session_argv(walled):
+    """The session permission flags: Bash only when a wall confines it; without one the tool is removed (#1693)."""
+    return ("--permission-mode", "acceptEdits", "--allowedTools", SESSION_TOOLS + (",Bash" if walled else ""))
+
+
+def _quote(text):
+    return '"%s"' % str(text).replace("\\", "\\\\").replace('"', '\\"')
+
+
+def wall_profile(home, writable):
+    """macOS sandbox profile text: no reads of credential dirs, writes only under `writable` (and the device files),
+    network out only to port 443. The profile cannot filter by host name, so any host on 443 stays reachable."""
+    home = str(home).rstrip("/")
+    reads = " ".join("(subpath %s)" % _quote(home + "/" + d) for d in CREDENTIAL_DIRS)
+    allowed = " ".join("(subpath %s)" % _quote(w) for w in list(writable) + ["/dev", "/private/tmp", "/private/var/folders"])
+    return ("(version 1)(allow default)(deny file-read* %s)(deny file-write* (require-not (require-any %s)))"
+            "(deny network*)(allow network-outbound (remote tcp \"*:443\") (literal \"/private/var/run/mDNSResponder\"))"
+            % (reads, allowed))
+
+
+def session_wall(platform, which, home, session_dir, extra_writable=()):
+    """-> (argv prefix, label) confining the session, or (None, None) when this platform has no verified wall.
+    macOS only (`sandbox-exec`, UNVERIFIED against a live session: owner-gated). Linux has none, so no Bash there."""
+    if platform == "darwin":
+        exe = which("sandbox-exec")
+        if exe and home and session_dir:
+            return [exe, "-p", wall_profile(home, [str(session_dir)] + [str(w) for w in extra_writable])], "sandbox-exec"
+    return None, None
+
+
+def network_prefix(platform, which, home=None, session_dir=None):
+    """Kept name: the wall for this platform, see session_wall."""
+    return session_wall(platform, which, home, session_dir)
+
+
 # ------------------------------------------------------------------------------------------ the scratch tree
 
 def make_scratch(parent, prompt_text):
@@ -198,6 +256,29 @@ def build_env(scratch, credential_var, environ):
     if credential_var:
         env[credential_var] = environ[credential_var]
     return env
+
+
+NOT_LOGGED_IN = "resolver cli is not logged in in the scrubbed environment"
+AUTH_PROBE_SECONDS = 15.0
+
+
+def auth_status(env, binary, cwd, timeout=AUTH_PROBE_SECONDS, prefix=None):
+    """-> True (logged in) or False, from `<binary> auth status` run bounded in `env`. No model call. Logged out is a non-zero exit
+    or a JSON `loggedIn` that is false; any run that did not finish is False. UNVERIFIED against a real CLI (#1691): exit 0 with
+    text that is not JSON counts as logged in, since only the exit code is relied on. `prefix` is the session wall's argv (#1713):
+    the probe runs inside the same confinement as the session where one exists, plain where none does."""
+    bounded = _sibling("bounded_run")
+    try:
+        done = bounded.run_group([str(a) for a in (prefix or ())] + [binary, "auth", "status"], cwd, timeout, env=env)
+    except Exception:                                       # noqa: BLE001 - a probe that could not run is not a login
+        return False
+    if done.outcome != bounded.OK or (done.code or 0) != 0:
+        return False
+    try:
+        parsed = json.loads(done.out)
+    except ValueError:
+        return True
+    return not (isinstance(parsed, dict) and parsed.get("loggedIn") is False)
 
 
 # ------------------------------------------------------------------------------------------ confinement
@@ -484,55 +565,92 @@ def launch(request, environ=None, clock=time.time):
         why = "the chosen credential variable is not set; no credential route is configured"
     if not why and not req.scratch_parent:
         why = "no scratch root was given"
-    if not why and (req.cap_usd is None or req.cap_usd <= 0 or req.ceiling_machine_usd is None or req.ceiling_team_usd is None):
-        why = "the per-run cap and both ceilings must be set"
+    if not why and not _logged_in(req, binary, environ):
+        why = NOT_LOGGED_IN
+    if not why and ((req.cap_usd is not None and req.cap_usd <= 0) or (req.ceiling_machine_usd is not None and req.ceiling_machine_usd <= 0)
+                    or (req.ceiling_team_usd is not None and req.ceiling_team_usd <= 0)):
+        why = "a cap or ceiling that is set must be a positive amount"
+    if not why and req.cap_usd is None and (req.ceiling_machine_usd is not None or req.ceiling_team_usd is not None):
+        why = "a daily ceiling needs a per-run cap: without one an unmetered run would charge nothing against it"
     if why:
         return Result(REFUSED, 0.0, (), why)
 
+    with _guard().session_lease("resolver", "launcher", repo=req.repo_root, ttl=(req.timeout or 600) * 2 + 60,
+                                config=(req.config or {}).get("resource")) as lease:        # #1603
+        if lease is not None and hasattr(lease, "reason"):
+            return Result(REFUSED, 0.0, (), "deferred: a model session is held (%s)" % lease.reason)
+        return _reserve_and_run(req, model, binary, environ, clock)
+
+
+def _reserve_and_run(req, model, binary, environ, clock):
     now = clock()
     run_id = secrets.token_hex(6)
-    ok, why = reserve_machine(req.state_dir, req.ceiling_machine_usd, req.cap_usd, run_id, now)
+    # an unset cap reserves nothing and an unset ceiling is not checked; the run is still recorded for what it metered
+    ok, why = reserve_machine(req.state_dir, float("inf") if req.ceiling_machine_usd is None else req.ceiling_machine_usd,
+                              req.cap_usd or 0.0, run_id, now)
     if not ok:
         return Result(REFUSED, 0.0, (), why)
     budget = req.budget_seconds if req.budget_seconds else DEFAULT_BUDGET_SECONDS
-    total, why = team_spent(req.sdlc_dir, req.ceiling_team_usd, budget, now)
-    if total is None or total + req.cap_usd > req.ceiling_team_usd:
-        settle_machine(req.state_dir, run_id, 0.0, clock())      # nothing ran: release the reservation
-        return Result(REFUSED, 0.0, (), why or "the team 24-hour ceiling would be passed by this run")
+    if req.ceiling_team_usd is not None:
+        total, why = team_spent(req.sdlc_dir, req.ceiling_team_usd, budget, now)
+        if total is None or total + (req.cap_usd or 0.0) > req.ceiling_team_usd:
+            settle_machine(req.state_dir, run_id, 0.0, clock())      # nothing ran: release the reservation
+            return Result(REFUSED, 0.0, (), why or "the team 24-hour ceiling would be passed by this run")
     return _run(req, model, binary, environ, run_id, clock)
+
+
+def _logged_in(req, binary, environ):
+    """The #1691 preflight, before any spend is reserved: the same scrubbed environment the run gets, one bounded `auth status`."""
+    scratch = None
+    try:
+        scratch, _ = make_scratch(req.scratch_parent, "")
+        return auth_status(build_env(scratch, req.credential_var, environ), binary, str(scratch),
+                           prefix=list(req.net_prefix) if req.net_prefix else None)
+    except Exception:                                       # noqa: BLE001
+        return False
+    finally:
+        if scratch is not None:
+            remove_scratch(scratch, req.scratch_parent)
 
 
 def _run(req, model, binary, environ, run_id, clock):
     bounded = _sibling("bounded_run")
     secret = environ.get(req.credential_var) if req.credential_var else None
-    cap = float(req.cap_usd)
+    cap = None if req.cap_usd is None else float(req.cap_usd)
+    killed_charge = cap or 0.0            # a killed run with no cap is charged what was metered, or nothing when unmetered
     scratch = None
-    charge, outcome, changed, reason = cap, KILLED, (), ""
+    charge, outcome, changed, reason = killed_charge, KILLED, (), ""
     try:
         text = build_prompt(req.prompt, req.blocks, secrets.token_hex(8))
         scratch, prompt_path = make_scratch(req.scratch_parent, text)
-        argv = [binary] + list(BASE_ARGV) + ["--model", model]
+        argv = [binary] + list(BASE_ARGV) + (["--max-budget-usd", "%g" % cap] if cap is not None else []) + ["--model", model]
+        env = build_env(scratch, req.credential_var, environ)
+        if req.session:
+            argv.extend(session_argv(bool(req.net_prefix)))
+            env["GIT_CONFIG_NOSYSTEM"], env["GIT_CONFIG_GLOBAL"] = "1", os.devnull
         for item in req.flags or ():
             argv.extend(item if isinstance(item, (tuple, list)) else (item,))
-        before = snapshot(req.directory)
-        done = bounded.run_group(argv, req.directory, req.timeout, env=build_env(scratch, req.credential_var, environ),
-                                 stdin_path=str(prompt_path))
-        after = snapshot(req.directory)
-        changed = tuple(violations(before, after, req.conflicted))
+        if req.net_prefix:
+            argv = [str(a) for a in req.net_prefix] + argv
+        # session mode (#1573): the directory is a throwaway copy the model may edit freely, so no before/after discard
+        before = None if req.session else snapshot(req.directory)
+        done = bounded.run_group(argv, req.directory, req.timeout, env=env, stdin_path=str(prompt_path))
+        changed = () if req.session else tuple(violations(before, snapshot(req.directory), req.conflicted))
         reason = _scrub(done.out, secret)
         killed = done.outcome in (bounded.TIMEOUT, bounded.STOPPED, bounded.ERROR, bounded.REFUSED) or (done.code or 0) < 0
         if killed:
-            outcome, charge = KILLED, cap
+            cost = None if cap is not None else metered_cost(scratch / "config", req.rates)
+            outcome, charge = KILLED, (cap if cap is not None else (cost or 0.0))
         else:
             cost = metered_cost(scratch / "config", req.rates)
-            charge = cap if cost is None else cost
+            charge = (cap or 0.0) if cost is None else cost
             outcome = OK if done.outcome == bounded.OK else FAILED
-            if cost is not None and cost > cap:
+            if cost is not None and cap is not None and cost > cap:
                 outcome = DISCARDED
         if changed:
             outcome = DISCARDED
     except Exception as exc:                                # noqa: BLE001 - a run that broke is charged the cap
-        outcome, charge, reason = KILLED, cap, "the run broke (%s)" % type(exc).__name__
+        outcome, charge, reason = KILLED, killed_charge, "the run broke (%s)" % type(exc).__name__
     finally:
         if scratch is not None:
             remove_scratch(scratch, req.scratch_parent)

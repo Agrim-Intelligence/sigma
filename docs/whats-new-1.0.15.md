@@ -39,7 +39,7 @@ applier is on, do these steps in order. `<dir>` is your `.sdlc` directory. Scrip
    - `rulebook.rules.reask_days`: choose it (default 90).
    - `rulebook.autonomy.applier.window_minutes` 1440, `max_auto_applied_per_day` 3, `allow_silent` `[]`.
 9. **Dry-run the applier.** `python3 applier.py <dir> --dry-run` prints each planned action with its rule, level and
-   window, and writes nothing (#1499). Review every line.
+   window, and writes nothing (#1499); with the applier off it prints one line saying so, then the same plan as if it were on, still writing nothing (#1545, #1695). Review every line.
 10. **Clear or re-arm the old pending asks** from before the upgrade, so none is applied the moment its pair reaches
     level 3. An ask opened below level 3 is now armed with one notice comment and a fresh window (#1499).
 11. **Re-enable the applier** (`rulebook.autonomy.applier.enabled` `true`). Watch the first applied asks for a week:
@@ -118,7 +118,7 @@ What stays unchanged:
 - **A deny word holds only in an action clause (#1519).** A clause that describes redaction, detection, gating or
   documentation before the deny word no longer parks, and the park reason quotes the matched clause. Secret-shaped
   text and spend amounts still hold.
-- **A plain money amount for compute is spend (#1511).** A body that names a dollar amount near GPU, instance,
+- **A plain money amount for compute is spend (#1511).** A body that names a money amount near GPU, instance,
   cluster, credits, compute, pod or run time (in digits or words, either order) parks with the spend class.
   Amounts inside fenced blocks stay a miss. An empty `triage.spend_phrases` still disables the check.
 - **A hand-typed blocker on a third-party issue is reported, not raised (#1468).** With hard stops on, the
@@ -187,6 +187,9 @@ What stays unchanged:
   `release`, action-log `released`). A dead session's entry does the same on the next pick or start after
   `session_release.grace_minutes` (default 15). Started and live-session goals, a mismatched generation and the
   local source are untouched.
+- **A live session can no longer sit on claimed goals it never starts (#1531).** Any pick on a GitHub source releases
+  a goal a live session has held longer than `session_release.hold_minutes` (default 30, `0` turns it off) with no
+  work record and no agent marker. A started goal is never released.
 - **Blocker repair respects state and edges (#1475).** The four blocker-priority writers drop any blocker that is not
   OPEN and never raise a pull request. Whole-body scans use only blocked by, depends on and depends upon. The dry
   pass writes nothing, and outside blockers beyond the 10-read cap are reported on stderr and in the result
@@ -247,4 +250,6 @@ What stays unchanged:
   refuse the delete and says it cannot be turned off.
 - **The Rulebook and upkeep enable steps (#1510)** say to remove a leftover `.sdlc/state/watch.stop` before starting
   the watcher.
+- **The `archive_after_days` note (#1508)** says `archive` is a library function nothing calls automatically, not a
+  command.
 - **Import docs and help (#1503)** show one folder per flag, or a quoted array.

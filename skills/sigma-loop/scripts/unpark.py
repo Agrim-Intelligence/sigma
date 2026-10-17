@@ -35,7 +35,9 @@ comment (prefix-stripped), and `decision_tier.classify` -- the UNGATED, pure cla
 `resolve`. The ledger, when a repo has it on, is optional enrichment and nothing more.
 
     python3 unpark.py list <sdlc_dir> [--assignee X] [--undeclared] [--json]
+    python3 unpark.py report <sdlc_dir> [--json]
     python3 unpark.py declare <sdlc_dir> <issue> <kind>
+    python3 unpark.py declare <sdlc_dir> --from-suggestions [--kind K] [--dry-run]
     python3 unpark.py brief <sdlc_dir> <issue> [--json]
     python3 unpark.py resolve <sdlc_dir> <issue> --answers <file.json>
                               --decision keep-parked|unpark [--dry-run]
@@ -143,6 +145,14 @@ QUESTIONS = {
          "options": ["keep going", "look into it first"],
          "gestures": {"keep going": "unpark", "look into it first": "keep-parked"}},
     ],
+    # #1579: like "handoff", a run-level run_stop reason (a `--label` drain that stopped with open
+    # members it cannot pick), never written by a real `park`.
+    "label-held": [
+        {"id": "route", "ask": "This run stopped with goals still open in its label. Look at what "
+                               "holds them, or leave them for now?",
+         "options": ["look into it first", "leave them"],
+         "gestures": {"look into it first": "keep-parked", "leave them": "keep-parked"}},
+    ],
     # #1005: the gate-hold kinds. Releasing either without the registry edit sends the goal back for
     # exactly one pick, so `resolve` refuses until the registry allows it.
     "scope_hold": [
@@ -172,6 +182,20 @@ QUESTIONS = {
                                "copy, then work.py abandon-review-post)?",
          "options": ["the comment is there", "it is not there"],
          "gestures": {"the comment is there": "none", "it is not there": "none"}},
+    ],
+    # #1578: asked once per run label by `label_drain.py plan`, never by a park. The first slot is the
+    # route question; the other two are the pulled-blocker questions the same plan asks.
+    "label_set": [
+        {"id": "route", "ask": "Arm the unarmed issues in this set?",
+         "options": ["arm them", "arm only the ones that can start", "leave them"],
+         "gestures": {"arm them": "none", "arm only the ones that can start": "none", "leave them": "none"}},
+        {"id": "taken", "ask": "Another person has this issue and this set waits on it: take it over, or "
+                               "leave it and wait?", "options": ["take it over", "leave it and wait"],
+         "gestures": {"take it over": "none", "leave it and wait": "none"}},
+        {"id": "upper", "ask": "This set waits on a larger piece of work that is never picked directly: "
+                               "close that dependency, or replace it?",
+         "options": ["close the dependency", "replace the dependency"],
+         "gestures": {"close the dependency": "none", "replace the dependency": "none"}},
     ],
     "unknown": [
         {"id": "next", "ask": "Here is what it stopped on: {reason} What should happen next?"},
@@ -240,6 +264,11 @@ def bank_option(kind, text):
         if opt.lower() == want:
             return opt
     return None
+
+
+# #1547: the routes that WAIT for the park to clear on its own; a keep-parked on one posts no sweep
+# opt-out marker, so the automatic sweep still resumes the goal. Every other route posts it.
+WAITING_ROUTES = {"dependency": "wait for it", "quota": "wait it out"}
 
 
 def route_answer(kind, answers):
@@ -380,7 +409,7 @@ def brief(sdlc_dir, config, number, source=None, run=None):
     if not declared and "kind" not in answered:         # #1498: ask for the kind first, suggestion on top
         guess = loop._suggest_kind(reason)
         questions.insert(0, {"id": "kind", "ask": "Which kind of question is this?",
-                             "options": [guess] + [k for k in qkind.QKINDS if k != guess]})
+                             "options": [guess] + [k for k in qkind.QKINDS if k not in (guess, "label_set")]})
     learning = _load("autonomy").learning_line(sdlc_dir, reason_class, config)
     extra = _recommendation(sdlc_dir, config, declared, data.get("labels"))
     return {"number": str(number), "title": data.get("title") or "",
@@ -568,7 +597,7 @@ def _replace_block(body, block):
 
 
 def resolve(sdlc_dir, config, number, answers, decision, source=None, run=None, apply=True,
-            questions_asked=(), kind=None, rule_id=None):
+            questions_asked=(), kind=None, rule_id=None, extra=None):
     """Record the answers, then either keep the park or undo it.
 
     `kind` (#1498): a kind to declare; its machine line rides inside the decision comment and the
@@ -649,14 +678,16 @@ def resolve(sdlc_dir, config, number, answers, decision, source=None, run=None, 
         # reimplemented, and not approximated by pasting its marker. A human deciding "leave it
         # parked" here is making exactly the decision that comment exists to record, so the
         # automatic sweep must see it in the form it already knows how to read.
-        # F-02(4): "wait for it" on a dependency park posts NO opt-out marker, so the blocker sweep
-        # still resumes the goal when its blocker closes.
-        waits = (_declared_kind(data) == "dependency"
-                 and route_answer("dependency", answers) == "wait for it")
-        err = _comment_decision(sdlc_dir, config, source, n, block + ("" if waits else "\n\n"
+        # F-02(4) / #1547: a waiting route (`WAITING_ROUTES`) posts NO opt-out marker, so the sweep
+        # still resumes a dependency park when its blocker closes; a quota park has no blocker
+        # refs, so the sweep skips it and it stays parked until unparked by hand. #1549: a
+        # dependency wait also posts the waiting note, which is what lets the sweep resume a park.
+        declared = _declared_kind(data)
+        waits = declared in WAITING_ROUTES and route_answer(declared, answers) == WAITING_ROUTES[declared]
+        err = _comment_decision(sdlc_dir, config, source, n, block + (("\n\n" + auto_unpark.WAITING_NOTE if declared == "dependency" else "") if waits else "\n\n"
                                 + auto_unpark.keep_parked_comment(_one_line(
                                     PRIVATE_VALUE if _keys_only(config) else _substantive_reason(answers)))),
-                                "keep-parked", answers, data, kind, rule_id)
+                                "keep-parked", answers, data, kind, rule_id, extra)
         _append_block(source, n, data.get("body") or "", block)
         return {"number": n, "decision": decision, "outcome": "kept-parked",
                 "detail": "answers recorded; the automatic sweep will leave it alone" + err}
@@ -676,7 +707,7 @@ def resolve(sdlc_dir, config, number, answers, decision, source=None, run=None, 
     if not source._set_board_status(n, source.col["ready"]) and source.board_active:
         detail += ("; the label landed but the board card did not move to %r — move it by hand if "
                    "this repo picks from the board" % source.col["ready"])
-    detail += _comment_decision(sdlc_dir, config, source, n, block, "unpark", answers, data, kind, rule_id)
+    detail += _comment_decision(sdlc_dir, config, source, n, block, "unpark", answers, data, kind, rule_id, extra)
     _append_block(source, n, data.get("body") or "", block)
     return {"number": n, "decision": decision, "outcome": "unparked", "detail": detail}
 
@@ -686,7 +717,8 @@ def _declared_kind(data):
     return qkind.resolve(data.get("comments") or [], goal=data.get("number")) or "unknown"
 
 
-def _comment_decision(sdlc_dir, config, source, number, text, gesture, answers, data, kind=None, rule_id=None):
+def _comment_decision(sdlc_dir, config, source, number, text, gesture, answers, data, kind=None, rule_id=None,
+                      extra=None):
     """Post `text`. With the records part open it is posted WITH the decision record's id and the
     record is stored; closed, this is exactly `_comment` (byte-identical). Returns "" or a
     "; <error>" suffix for the caller's detail."""
@@ -716,6 +748,8 @@ def _comment_decision(sdlc_dir, config, source, number, text, gesture, answers, 
             if rule_id:
                 shown = next((r for r in _load("rulebook").load(sdlc_dir, config) if r.get("id") == rule_id), None)
                 rec["accepted"] = bool(shown) and decision_record.key_of(rec) == shown.get("option")
+            if isinstance(extra, dict):                 # #1580: fields a caller adds (`scope`, `qid`)
+                rec.update({k: v for k, v in extra.items() if k not in rec})
             park = park_stamp(data.get("comments"))
             if park:
                 rec["park"] = park
@@ -742,6 +776,8 @@ def declare(sdlc_dir, config, number, kind, source=None, run=None):
     machine line. Changes no label, writes no ledger event. -> (ok, detail)."""
     if kind not in qkind.QKINDS:
         return False, "unknown kind %r (expected one of %s)" % (kind, ", ".join(qkind.QKINDS))
+    if kind == "label_set":
+        return False, "label_set is the up-front route question for a run label, never declared on a park"
     source = source or sources.GitHubSource(config, run=run)
     if not _github(source):
         return False, "unparking needs github discovery mode"
@@ -757,6 +793,33 @@ def declare(sdlc_dir, config, number, kind, source=None, run=None):
     except Exception as exc:                            # noqa: BLE001
         return False, "the declaration comment did not post: %s" % sources._fx(exc)
     return True, "declared %s on #%s" % (kind, number)
+
+
+#: #1562: kinds a bulk declare never writes: a hard stop is a human's call, never a guess.
+BULK_NEVER = ("irreversible", "unknown", "scope_hold", "owner_hold", "reviewer_down", "review_post_ambiguous")
+
+
+def declare_from_suggestions(sdlc_dir, config, only=None, apply=True, run=None):
+    """Declare every undeclared park whose suggestion is a confident kind, through `declare` (one comment
+    each). `only` restricts to parks suggesting that kind. -> (lines, failed): `[declared] #N: kind` or
+    `[skipped] #N: reason`; `apply=False` prints the same lines and writes nothing."""
+    listing = list_parked(sdlc_dir, config, run=run, undeclared=True)
+    lines, failed = [], bool(listing.get("degraded"))
+    for row in listing["issues"]:
+        number, kind = row["number"], row.get("suggested") or "unknown"
+        if kind in BULK_NEVER:
+            why = "hard-stop kind %s is never bulk-declared" % kind if kind == "irreversible" else \
+                "no confident suggestion (%s)" % kind
+            lines.append("[skipped] #%s: %s" % (number, why))
+        elif only and kind != only:
+            lines.append("[skipped] #%s: suggestion %s is not --kind %s" % (number, kind, only))
+        elif not apply:
+            lines.append("[declared] #%s: %s" % (number, kind))
+        else:
+            ok, detail = declare(sdlc_dir, config, number, kind, run=run)
+            failed = failed or not ok
+            lines.append("[declared] #%s: %s" % (number, kind) if ok else "[skipped] #%s: %s" % (number, detail))
+    return lines, failed
 
 
 def _comment(source, number, text):
@@ -781,6 +844,109 @@ def _append_block(source, number, body, block):
         except Exception:
             pass
         return False
+
+
+def _applier_verdict(sdlc_dir, config, ap, number, kind, declared, area, comments, now, asks, used):
+    """(rule, option, gesture, verdict, why) for one park, in the order `applier.open_for_park` and
+    `applier.tick` decide: what would stop the applier first is named. Nothing is written."""
+    hs, rb = _load("hard_stop"), _load("rulebook")
+    if not ap.enabled(config):
+        return None, None, None, "never", "the applier is off"
+    if not declared:
+        return None, None, None, "never", "kind not declared (a suggested kind never acts)"
+    if hs.is_hardstop_kind(kind, None, config):
+        return None, None, None, "never", "hard-stop kind"
+    if kind in ("unknown", "scope_hold", "owner_hold"):
+        return None, None, None, "never", "kind %s is never applied automatically" % kind
+    rules = rb.load(sdlc_dir, config)
+    ask = next((a for a in asks if ap._issue_key(a.get("issue")) == ap._issue_key(number)
+                and a.get("state") == "pending" and a.get("answer") is None), None)
+    # tick's own call (the pending ask's options, no config); open_for_park's when there is no ask yet
+    m = (rb.match(kind, area, ask.get("options"), rules) if ask is not None
+         else rb.match(kind, area, None, rules, config))
+    if m is None:
+        return None, None, None, "never", "no approved rule for %s / %s" % (kind, area)
+    gesture = ap.option_gesture(kind, m.option)
+    if gesture not in ap.GESTURES:
+        return m.rule_id, m.option, gesture or "none", "never", "the rule only recommends"
+    out = (m.rule_id, m.option, gesture)
+    park = park_stamp(comments)
+    if park and decision_record.answered_park(sdlc_dir, config, number, park):
+        return (*out, "never", "a person already answered this park")
+    auto_rule = ap._auto_rule(rules, m.rule_id, config)       # #1555: tick's order, veto then level
+    if auto_rule is not None and ap._vetoed(sdlc_dir, config, kind, area, auto_rule):
+        return (*out, "never", "held: an owner vetoed this auto-approved rule; it waits for a hand reconfirmation")
+    level = ap._level(sdlc_dir, kind, area, config)
+    if not ap._level_ok(sdlc_dir, config, kind, area, auto_rule):
+        return (*out, "never", "the pair is at level %s, below 3" % level)
+    if m.rule_id in set(rb.due_for_reask(rules, now, config)):
+        return (*out, "never", "the rule is due to be reconfirmed by an owner")
+    rule = next((r for r in rules if r.get("id") == m.rule_id), None)
+    if auto_rule is None and not ap._rule_has_own_support(sdlc_dir, kind, area, rule, config):
+        return (*out, "never", "the rule lacks its own live comparisons")
+    if ask is None:
+        return (*out, "later", "no ask yet: it opens at the next sync, then waits its window")
+    if "armed_at" in ask and ask.get("armed_at") is None:
+        return (*out, "later", "arms at the next tick, then waits its window")
+    if ap.window_open(ask, config, now):
+        return (*out, "later", "inside the window, an answer or no still wins")
+    if ap._quota_wait_pending(ask, m, now):
+        return (*out, "later", "waiting for the quota to reset")
+    if used >= ap.settings(config)["max_auto_applied_per_day"]:
+        return (*out, "later", "the daily cap is used up")
+    return (*out, "now", "window passed")
+
+
+def report(sdlc_dir, config, source=None, run=None, assignee=None, now=None):
+    """Every parked or blocked issue and what the applier would do with it. READ-ONLY: the same two
+    label queries as `list`, then one REST read per park (as `list --undeclared` does); no gesture,
+    comment, label or file is written. `totals` counts the outcomes now, later and never."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    source = source or sources.GitHubSource(config, run=run)
+    listed = list_parked(sdlc_dir, config, source=source, assignee=assignee)
+    ap = _load("applier")
+    asks = ap._asks(sdlc_dir) if ap.enabled(config) else []
+    used = ap._applied_in_last_day(asks, now) if asks else 0
+    au = _load("autonomy")
+    rows = []
+    for it in listed["issues"]:
+        number = it["number"]
+        row = {"number": number, "title": it["title"], "state": it["state"]}
+        try:
+            data = _fetch_issue(source, number)
+            raw = data.get("comments") or []
+            declared = qkind.resolve(raw, goal=number)
+            reason, _ = _park_reason([sources.defuse_body(c.get("body") or "", c.get("authorAssociation"),
+                                                          (c.get("author") or {}).get("login"), number)
+                                      for c in raw])
+            kind = declared or loop._suggest_kind(qkind.strip_line(reason) or it["title"])
+            area = decision_record.area_of(data.get("labels"))
+            rule, option, gesture, verdict, why = _applier_verdict(
+                sdlc_dir, config, ap, number, kind, bool(declared), area, raw, now, asks, used)
+            row.update(kind=kind, declared=bool(declared), area=area, rule=rule, option=option,
+                       gesture=gesture, level=au.level(sdlc_dir, kind, area, config), verdict=verdict, why=why)
+        except Exception as exc:                        # noqa: BLE001 - one unreadable park never hides the rest
+            row.update(kind=None, declared=False, area=None, rule=None, option=None, gesture=None,
+                       level=None, verdict="never", why="could not be read: %s" % sources._fx(exc))
+        rows.append(row)
+    totals = {k: sum(1 for r in rows if r["verdict"] == k) for k in ("now", "later", "never")}
+    return {"issues": rows, "totals": totals, "complete": listed["complete"], "degraded": listed["degraded"]}
+
+
+def render_report(result):
+    lines = []
+    for r in result["issues"]:
+        kind = "%s" % r["kind"] if r["declared"] else "not declared (suggested: %s)" % r["kind"]
+        rule = ("rule %s -> %s" % (r["rule"], r["gesture"])) if r["rule"] else "no rule"
+        lines.append("#%s [%s] %s" % (r["number"], r["state"], r["title"]))
+        lines.append("  kind: %s; area: %s; %s; level %s" % (kind, r["area"], rule, r["level"]))
+        lines.append("  applier: %s -- %s" % (r["verdict"], r["why"]))
+    if not result["issues"]:
+        lines.append("none parked")
+    for note in result.get("degraded") or []:
+        lines.append("NOTE: %s" % note)
+    lines += ["%s: %d" % (k, result["totals"][k]) for k in ("now", "later", "never")]
+    return "\n".join(lines)
 
 
 def render_list(result):
@@ -832,7 +998,9 @@ def render_brief(b):
 
 
 _USAGE = ("usage: unpark.py list <sdlc_dir> [--assignee X] [--undeclared] [--json]\n"
+          "       unpark.py report <sdlc_dir> [--json]\n"
           "       unpark.py declare <sdlc_dir> <issue> <kind>\n"
+          "       unpark.py declare <sdlc_dir> --from-suggestions [--kind K] [--dry-run]\n"
           "       unpark.py brief <sdlc_dir> <issue> [--json]\n"
           "       unpark.py resolve <sdlc_dir> <issue> --answers <file.json> "
           "--decision keep-parked|unpark [--qkind K] [--dry-run]")
@@ -868,6 +1036,28 @@ def _main(argv, run=None):
                              undeclared="--undeclared" in tail)
         print(json.dumps(result, indent=2) if "--json" in tail else render_list(result))
         return 0 if result["complete"] else 1
+    if len(argv) >= 3 and argv[1] == "report":
+        sdlc_dir, tail = argv[2], argv[3:]
+        blocked = triage.needs_github(triage.config_strict(sdlc_dir), "unparking", 1, run, None)
+        if blocked is not None:
+            return blocked
+        result = report(sdlc_dir, triage.config_strict(sdlc_dir), run=run)
+        print(json.dumps(result, indent=2) if "--json" in tail else render_report(result))
+        return 0 if result["complete"] else 1
+    if len(argv) >= 4 and argv[1] == "declare" and "--from-suggestions" in argv[3:]:
+        sdlc_dir, tail = argv[2], argv[3:]
+        only = _value(tail, "--kind")
+        if only is not None and only not in qkind.QKINDS:
+            print("unpark.py declare: unknown --kind %r (expected one of %s)" % (only, ", ".join(qkind.QKINDS)),
+                  file=sys.stderr)
+            return 2
+        blocked = triage.needs_github(triage.config_strict(sdlc_dir), "unparking", 1, run, None)
+        if blocked is not None:
+            return blocked
+        lines, failed = declare_from_suggestions(sdlc_dir, triage.config_strict(sdlc_dir), only=only,
+                                                 apply="--dry-run" not in tail, run=run)
+        print("\n".join(lines))
+        return 1 if failed else 0
     if len(argv) >= 5 and argv[1] == "declare":
         sdlc_dir, number, kind = argv[2], argv[3], argv[4]
         if kind not in qkind.QKINDS:

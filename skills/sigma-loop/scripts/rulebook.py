@@ -35,7 +35,7 @@ import uuid
 _HERE = pathlib.Path(__file__).resolve().parent
 DEFAULT_PATH = ".sdlc/rulebook.json"
 DEFAULT_REASK_DAYS = 90
-FIELDS = ("id", "qkind", "area", "option", "reason", "status", "created", "confirmed", "seal")
+FIELDS = ("id", "qkind", "area", "option", "reason", "status", "created", "confirmed", "seal", "approved_by", "auto")
 _REQUIRED = ("id", "qkind", "area", "option", "status")
 _SEALED = ("id", "qkind", "area", "option", "reason", "created", "confirmed")
 STATUSES = ("proposed", "approved")
@@ -110,8 +110,19 @@ def _bank():
     return _BANK[0]
 
 
+def auto_approve_on(config):
+    """#1555: the JSON boolean true of `rulebook.rules.auto_approve` (default false) with the rules part open."""
+    return enabled(config) and _sub(config).get("auto_approve") is True
+
+
+def is_auto(rule):
+    """True for a sealed approved rule that the watcher approved on an owner's behalf (`auto: true`)."""
+    return _acts(rule) and rule.get("auto") is True
+
+
 def _seal(rule):
-    body = json.dumps({k: rule.get(k) for k in _SEALED}, sort_keys=True)
+    keys = _SEALED + (("approved_by", "auto") if rule.get("auto") is True else ())     # closed: legacy bytes
+    body = json.dumps({k: rule.get(k) for k in keys}, sort_keys=True)
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
@@ -128,6 +139,10 @@ def validate(rule):
     for k in ("reason", "created", "confirmed", "seal"):
         if k in rule and not isinstance(rule[k], str):
             return False, "rule field %s must be a string" % k
+    if "auto" in rule and rule["auto"] is not True:
+        return False, "rule field auto must be true when present"
+    if "approved_by" in rule and (not isinstance(rule["approved_by"], str) or not rule["approved_by"].strip()):
+        return False, "rule field approved_by must be a non-empty string"
     if rule["qkind"] not in _load("qkind").QKINDS:
         return False, "unknown question kind %r" % rule["qkind"]
     if rule["status"] not in STATUSES:
@@ -149,6 +164,32 @@ def _read_raw(path):
         return [r for r in rules if isinstance(r, dict)] if isinstance(rules, list) else []
     except (OSError, ValueError):
         return []
+
+
+def _read_tombs(path):
+    """Raw `retired_pairs` (#1696): only `{qkind, area}` string pairs survive; anything else is dropped."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        raw = data.get("retired_pairs") if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        return []
+    out = []
+    for t in raw if isinstance(raw, list) else []:
+        if isinstance(t, dict) and isinstance(t.get("qkind"), str) and isinstance(t.get("area"), str):
+            pair = {"qkind": t["qkind"], "area": t["area"]}
+            if pair not in out:
+                out.append(pair)
+    return out
+
+
+def retired_pairs(sdlc_dir, config):
+    """#1696: the (qkind, area) pairs whose auto-approved rule an owner retired; the auto path must not
+    redraft them. Cleared by a hand draft (`propose`) or an `approve`. Unsealed: it only restricts the
+    auto path. [] when closed."""
+    if not enabled(config):
+        return []
+    return _read_tombs(_file(sdlc_dir, config))
 
 
 def _effective(rule):
@@ -187,17 +228,25 @@ def retire(sdlc_dir, rule_id, actor, config, only_proposed=False):
     gone = next(r for r in rules if r.get("id") == rule_id)
     if only_proposed and gone.get("status") == "approved":
         raise ValueError(rule_id)
-    _write(path, keep)
+    tombs = _read_tombs(path)
+    if auto_approve_on(config) and is_auto(gone):
+        pair = {"qkind": gone.get("qkind"), "area": gone.get("area")}
+        if all(isinstance(v, str) for v in pair.values()) and pair not in tombs:
+            tombs.append(pair)
+    _write(path, keep, tombs)
     with contextlib.suppress(Exception):
         _load("decision_store").publish(sdlc_dir, config)
 
 
-def _write(path, rules):
+def _write(path, rules, tombs=()):
     folder = os.path.dirname(path)
     if os.path.islink(folder):
         raise OSError("rulebook folder is a link")
     os.makedirs(folder, exist_ok=True)
-    text = json.dumps({"rules": rules}, indent=2, sort_keys=True) + "\n"
+    body = {"rules": rules}
+    if tombs:
+        body["retired_pairs"] = list(tombs)
+    text = json.dumps(body, indent=2, sort_keys=True) + "\n"
     fd, tmp = tempfile.mkstemp(dir=folder, prefix="._rulebook", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -209,6 +258,10 @@ def _write(path, rules):
         except OSError:
             pass
         raise
+
+
+def _without(tombs, rule):
+    return [t for t in tombs if (t["qkind"], t["area"]) != (rule.get("qkind"), rule.get("area"))]
 
 
 def propose(sdlc_dir, draft, config, now=None):
@@ -224,7 +277,7 @@ def propose(sdlc_dir, draft, config, now=None):
     if extra or not ok:
         return None
     path = _file(sdlc_dir, config)
-    _write(path, _read_raw(path) + [rule])
+    _write(path, _read_raw(path) + [rule], _without(_read_tombs(path), rule))
     return path
 
 
@@ -244,10 +297,12 @@ def park_line(rule_id):
     return "Rule %s is proposed in the rulebook and needs owner approval.\n%s" % (rule_id, q.render_line("owner_hold"))
 
 
-def approve(sdlc_dir, rule_id, login, config, now=None):
+def approve(sdlc_dir, rule_id, login, config, now=None, auto=False):
     """Approve a proposed rule. PermissionError unless the closed gate is open and `login` is an owner
-    (`autonomy.is_owner`); KeyError for an unknown or invalid rule. The approver is not recorded."""
-    if not enabled(config) or not _load("autonomy").is_owner(login, config):
+    (`autonomy.is_owner`); KeyError for an unknown or invalid rule. The approver is not recorded, except
+    on an `auto` approval (#1555: needs `rulebook.rules.auto_approve`), which stamps `auto: true` and
+    `approved_by`. A hand reconfirmation of an auto rule keeps `auto` and restamps `approved_by`."""
+    if not enabled(config) or not _load("autonomy").is_owner(login, config) or (auto and not auto_approve_on(config)):
         raise PermissionError("rule approval is refused")
     path = _file(sdlc_dir, config)
     rules = _read_raw(path)
@@ -255,8 +310,10 @@ def approve(sdlc_dir, rule_id, login, config, now=None):
         if r.get("id") == rule_id and validate(r)[0]:
             r["status"] = "approved"
             r["confirmed"] = _now(now).isoformat()
+            if auto or r.get("auto") is True:
+                r["auto"], r["approved_by"] = True, login.strip().lower()
             r["seal"] = _seal(r)
-            _write(path, rules)
+            _write(path, rules, _without(_read_tombs(path), r) if not auto else _read_tombs(path))
             with contextlib.suppress(Exception):        # #1313: commit only, best effort
                 _load("decision_store").publish(sdlc_dir, config)
             return None

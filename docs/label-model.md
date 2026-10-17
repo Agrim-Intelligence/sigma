@@ -4,6 +4,8 @@
 **Status:** shipped in **1.0.0**, the first public release. Every number below was measured, not estimated, and re-verified
 against a live board on the day this was published.
 
+A temporary run label that confines one loop run to a chosen set of goals is a different thing from the `sdlc:*` labels; see `docs/label-drain.md`.
+
 ---
 
 ## 1. The one-paragraph version
@@ -1052,7 +1054,7 @@ leftovers, run `/sigma-promote migrate-confirmation` once.
    alone and the report says `covered N of M`; rerun to finish the rest (a second run changes nothing already done).
 4. Verify: after an apply the command re-reads the labelled set and prints the open issues that still carry the
    retired label. One inside the slice is a failure (non-zero exit); ones outside it are the next slice.
-5. Every `parked` result is a real decision for a person: run `/sigma-unpark` on it. Already-parked issues stay parked.
+5. Every `parked` result is a real decision for a person: run `/sigma-unpark` on it. Already-parked issues stay parked. A question title (`ai_filed.triage.question_patterns`) also parks.
 
 `/sigma-doctor` counts the open issues still carrying the retired label while the triage gate is on.
 

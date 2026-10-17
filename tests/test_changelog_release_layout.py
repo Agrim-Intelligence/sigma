@@ -64,3 +64,43 @@ def test_the_old_window_pin_shape_goes_red_on_two_releases():
     once = simulate_release(base, "9.9.8", "2098-01-01")
     assert len(old_window(base)) == 1
     assert old_window(once) == []
+
+
+def _current_heading(text):
+    """The newest section that holds an entry: `## Unreleased` until a release, then that release's heading.
+    A release commit empties Unreleased (`simulate_release`), so a pin on Unreleased alone goes vacuous or red."""
+    sections = ["## " + s for s in text.split("\n## ")[1:]]
+    return next(s for s in sections if entries_naming(s, "")).splitlines()[0]
+
+
+def _current_lines(text):
+    return text.split("\n%s\n" % _current_heading(text), 1)[1].split("\n## ", 1)[0].splitlines()
+
+
+@pytest.mark.parametrize("name", ["as-committed", "one release", "two releases"])
+def test_each_current_entry_number_appears_on_one_line_only(name):
+    import collections
+    import re
+    lines = _current_lines(_layouts()[name])
+    assert entries_naming("\n".join(lines), "")
+    seen = collections.Counter(n for line in lines for n in set(re.findall(r"\(#(\d+)\)", line)))
+    assert [n for n, k in seen.items() if k > 1] == []
+
+
+@pytest.mark.parametrize("name", ["as-committed", "one release", "two releases"])
+def test_the_changelog_names_the_lease_cli_and_renewer_entries_once(name):
+    text = _layouts()[name]
+    for number in ("(#1733)", "(#1740)"):
+        assert len(entries_naming(text, number)) == 1, number
+
+
+@pytest.mark.parametrize("name", ["as-committed", "one release"])
+def test_the_duplicate_control_goes_red_on_a_repeated_entry(name):
+    import collections
+    import re
+    text = _layouts()[name]
+    heading = _current_heading(text)
+    doubled = text.replace("\n%s\n" % heading, "\n%s\n- A copy (#1733).\n" % heading, 1)
+    assert doubled != text
+    seen = collections.Counter(n for line in _current_lines(doubled) for n in set(re.findall(r"\(#(\d+)\)", line)))
+    assert seen["1733"] == 2

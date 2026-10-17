@@ -1106,6 +1106,43 @@ def _load_loop_script(name):
     return m
 
 
+def _ai_filed_rows(cfg, base):
+    """#1705: name the cause when the filing triage parks every AI-filed issue. Two advisory not-OK rows, each
+    present only when wrong: an invalid `ai_filed` triage/bucket block, and an unreadable counter file. Silent
+    when triage is switched off with the JSON boolean false. Never raises (a load failure reads as no row)."""
+    try:
+        blk = cfg.get("ai_filed")
+        if not isinstance(blk, dict):
+            blk = {}
+            cfg = {**cfg, "ai_filed": blk}
+        tri = blk.get("triage", {})
+        if isinstance(tri, dict) and tri.get("enabled", True) is False:
+            return []
+        ft = _load_loop_script("file_triage")
+        reason = None
+        if not isinstance(tri, dict):
+            reason = "ai_filed.triage must be an object"
+        elif tri.get("enabled", True) is not True:
+            reason = "ai_filed.triage.enabled must be true or false"
+        else:
+            v = ft.validate_buckets(cfg)
+            if not v["ok"]:
+                reason = v["reason"]
+        rows = []
+        if reason:
+            rows.append(_chk("AI-filed triage config is valid", False,
+                             f"{reason}: triage parks every AI-filed issue until this is fixed in .sdlc/config.json."))
+        ac = _load_loop_script("ai_filed_counter")
+        path = pathlib.Path(base) / ac.limits(cfg)["counter_path"]
+        if path.exists() and ac.load(path) is None:
+            rows.append(_chk("AI-filed counter is readable", False,
+                             f"{path} is unreadable or mis-shaped, so every AI-filed filing is parked: "
+                             "fix the file or delete it (it is rebuilt on the next filing)."))
+        return rows
+    except Exception:
+        return []
+
+
 def _graphql_capability_rows(base, cfg, env=None):
     """#801 slice 1: ONE advisory row when GitHub GraphQL looks unavailable (Claude Code cloud proxy).
 
@@ -1168,6 +1205,89 @@ def _landing_rows(base, cfg, run, which):
             rows.append({"name": "branch-creation rulesets: could not check", "ok": True, "fix": reason})
         return rows
     except Exception:                        # noqa: BLE001 - a detector that cannot run says nothing
+        return []
+
+
+def _resource_rows(cfg, sdlc_dir, now=None, sampler=None, env=None):
+    """#1604 LIVENESS: seven rows on the resource guard, present only when it is in play (`parallel.goals.enabled`, or
+    the resolved resource mode is not off, #1786), so a repo that turned the guard off sees no row. Facts come
+    from sigma-loop's `resource_liveness` (the one reader of hold.json / last.json); this only words them. Age is the
+    tell: a sampler that died reports no error, so row 4 reads the age of last.json against the watcher-derived
+    bound while a loop heartbeat is fresh. `sampler` is DI for tests. Never raises."""
+    import time as _time
+    env = os.environ if env is None else env
+    try:
+        goals = _block(_block(cfg, "parallel"), "goals")
+        live = _load_loop_script("resource_liveness")
+        if goals.get("enabled") is not True and live.effective_mode(cfg, env) == "off":     # #1786: the resolved mode
+            return []
+        now = _time.time() if now is None else now
+        rows = []
+        try:
+            snap = live.snapshot(cfg, env=env, now=now, sampler=sampler)
+        except Exception as exc:                 # noqa: BLE001 - the typed reason is the whole answer here
+            why = getattr(exc, "reason", None) or type(exc).__name__
+            return [_chk("resource platform: unsupported (%s)" % why, False,
+                         "the resource guard cannot read this machine (%s): it refuses rather than guessing, so set "
+                         "resource.mode to \"off\" and cap parallel.goals.max_concurrent by hand" % why)]
+        limits, sample = snap["limits"], snap["sample"]
+        rows.append(_chk("resource platform: supported", True, ""))
+        mode = live.effective_mode(cfg, env)
+        rows.append(_chk("resource mode: %s" % mode, not (mode == "off" and goals.get("enabled") is True),
+                         "resource.mode is off while parallel.goals.enabled is true: nothing limits concurrent goals by "
+                         "memory. Set resource.mode to \"enforce\" (or \"observe\" to watch first) in .sdlc/config.json."))
+        mib = lambda n: "%d MiB" % (max(n, 0) // (1024 * 1024))     # noqa: E731
+        hold, minutes = snap["hold"], live.alert_minutes(cfg)
+        if hold is None:
+            rows.append(_chk("resource admission: open, headroom %s, reserve %s" % (mib(limits.headroom), mib(limits.reserve)),
+                             True, ""))
+        else:
+            age = int(hold["age"] // 60)
+            if snap["live"]:
+                who = "held with %d Sigma leases" % snap["live"]
+                tip = "wait for the leased work to finish; its leases free the memory on release"
+            else:
+                who = "held with 0 leases: memory is used by other software, Sigma cannot release it"
+                tip = "close other applications or processes using memory, then the hold lifts on its own"
+            rows.append(_chk("resource admission: HELD %dm (%s)%s; %s; headroom %s, reserve %s" % (
+                age, hold.get("reason"), " (observe: not enforced)" if mode == "observe" else "", who,
+                mib(limits.headroom), mib(limits.reserve)), age < minutes,
+                "admission has been held over hold_alert_minutes (%d): %s" % (minutes, tip)))
+        bound = live.sample_stale_after(cfg)
+        beat = live.newest_heartbeat(sdlc_dir)
+        at = snap["last_at"]
+        # The watcher's resource_step samples under every resolved mode but off (#1759), so only off has no age row.
+        if mode != "off":
+            rows.append(_chk("resource sample age: %s" % ("never sampled" if at is None else "%dm" % max(0, (now - at) // 60)),
+                             live.sample_age_ok(at, beat, now, bound),
+                             "the loop is running but the resource sampler has not run within %dm: start the watcher "
+                             "(a loop trigger starts one) or run `python3 skills/sigma-loop/scripts/resource_guard.py sample "
+                             "--record .sdlc`" % (bound // 60)))
+        rows.append(_chk("resource stale leases: %d" % snap["stale"], snap["stale"] == 0,
+                         "%d lease(s) belong to dead or expired processes and count against headroom until reclaimed: "
+                         "run `python3 skills/sigma-loop/scripts/resource_guard.py sample --record .sdlc`" % snap["stale"]))
+        if goals.get("enabled") is True:
+            cap = live.goal_cap(snap, cfg)
+            try:
+                want = int(goals.get("max_concurrent", 3))
+            except (TypeError, ValueError):
+                want = 3
+            rows.append(_chk("resource max_concurrent: %d (derived cap %d)" % (want, cap), want <= cap,
+                             "parallel.goals.max_concurrent (%d) is above what this machine supports (%d): lower it "
+                             "to %d or less in .sdlc/config.json." % (want, cap, cap)))
+        command = _block(cfg, "verify").get("command")
+        if isinstance(command, str) and command.strip():
+            pin = live.verify_pin(command)
+            workers = live.verify_workers(snap)
+            over = pin == "auto" or (pin is not None and pin > workers)
+            rows.append(_chk("resource verify workers: %s against %d derived" % (
+                "no -n pin" if pin is None else "-n %s" % pin, workers), not over,
+                "verify.command pins -n %s but this machine derives %d workers: write `-n {workers}` so "
+                "Sigma substitutes the granted count. Note: the PYTEST_XDIST_AUTO_NUM_WORKERS lever "
+                "lowers only `-n auto`, never a literal count, and only where the installed xdist reads it."
+                % (pin, workers)))
+        return rows
+    except Exception:                            # noqa: BLE001 - a diagnostic never raises
         return []
 
 
@@ -1238,8 +1358,16 @@ def _blocker_rank_row(cfg, sdlc_dir, now=None):
         n = int(st.get("violations") or 0)
         last = st.get("last_repair")
         when = ("last repair %s ago" % _age_words(now - float(last))) if last else "no repair yet"
+        unread = int(st.get("unread") or 0)
+        if unread:                  # #1706: a count that did not read every blocker is not a clean one
+            when = "%s; %d not read" % (when, unread)
         if n == 0:
             return _chk("blockers ranked below what they block: 0 (%s)" % when, True, "")
+        refused = int(st.get("refused") or 0)
+        if refused and refused >= n:    # #1707: every remaining one is an ownership refusal, by design
+            return _chk("blockers ranked below what they block: %d (%s); %d not raised: not a Sigma issue"
+                        % (n, when, refused), True,
+                        "give the blocker the Sigma labels, or leave it: the hard-stop rule is working as designed")
         since = float(st.get("first_seen_nonzero") or now)
         limit = 2 * loop._reconcile_ttl_minutes(cfg) * 60
         stale = (now - since) > limit
@@ -1468,6 +1596,20 @@ def _unmaintained_row(sched, base, cfg):
                 " name in upkeep.units.exclude; see docs/upkeep.md")
 
 
+def _prune_row(base, now=None):
+    """#1557: the automatic backup prune's last result, from the sweep's local file (no network)."""
+    try:
+        doc = json.loads(base.joinpath("state/upkeep/prune.json").read_text())
+        at, word = int(doc["at"]), str(doc["outcome"])[:20]
+        age = max(0, int((time.time() if now is None else now) - at))
+        ago = "%dd" % (age // 86400) if age >= 86400 else "%dh" % (age // 3600) if age >= 3600 else "%dm" % (age // 60)
+        ok = word in ("pruned", "nothing")
+        return _chk("upkeep backups: %d listed, last prune %s ago (%s)" % (int(doc.get("listed") or 0), ago, word), ok,
+                    "the last automatic backup prune did not finish; the next sweep retries it, or run `feature_rebase.py prune`")
+    except (OSError, ValueError, KeyError, TypeError):
+        return _chk("upkeep backups: last prune never", True, "")
+
+
 def _upkeep_rows(base, cfg, run, which, injected, cheap_only, now=None):
     """The background upkeep scheduler's liveness and readiness rows (never a pass for something that did not run). Silent
     unless the opt-in block is on or invalid, decided by the gate's own reader, not by looking for the block here. The git
@@ -1479,6 +1621,7 @@ def _upkeep_rows(base, cfg, run, which, injected, cheap_only, now=None):
         rows = [_chk(f"{label}: {detail}", ok, "see docs/branching-model.md for the opt-in and the stop file")
                 for label, ok, detail in sched.health(cfg, base, now)]
         rows.append(_unmaintained_row(sched, base, cfg))
+        rows.append(_prune_row(base, now))
         if not cheap_only:
             pf = _load_init_script("preflight")
             runner = None
@@ -1538,7 +1681,31 @@ def _newest_resolution(store, suffix, limit=200):
         return None
 
 
-def _resolver_rows(base, cfg, which, cheap_only, now=None):
+def _resolver_auth_row(launcher, binary, var, runner=None, which=None):
+    """#1691: `<cli> auth status` (no model call) in the launcher's own scrubbed environment; names the route (variable name or none)."""
+    import tempfile
+    route = var or "none"
+    fix = ("set conflicts.agent.credential_var to the NAME of one environment variable holding the model login and export it; "
+           "the default (unset) parks until it is set, every agent-level launch refused as not logged in; "
+           "the live run against a real CLI is Awaiting (owner-gated)")
+    try:
+        if var and not os.environ.get(var):
+            return _chk("resolver auth: variable %s is not set (route: %s)" % (var, route), False, fix)
+        parent = tempfile.gettempdir()
+        scratch, _ = launcher.make_scratch(parent, "")       # the launcher's own scratch tree, removed by its own remover
+        try:
+            wall = launcher.session_wall(sys.platform, which or shutil.which, os.path.expanduser("~"), str(scratch), [parent])[0]
+            kw = {"prefix": wall} if wall else {}                # #1713: the session's own confinement where one exists
+            ok = (runner or launcher.auth_status)(launcher.build_env(scratch, var, os.environ), binary, str(scratch), **kw)
+        finally:
+            launcher.remove_scratch(scratch, parent)
+    except Exception:                       # noqa: BLE001 - a probe that could not run is not a login
+        ok = False
+    return _chk("resolver auth: " + ("logged in in the scrubbed environment" if ok else "not logged in in the scrubbed environment")
+                + " (route: %s)" % route, bool(ok), fix)
+
+
+def _resolver_rows(base, cfg, which, cheap_only, now=None, auth_runner=None):
     """Resolver and reviewer readiness rows for the bounded conflict resolver (upkeep part B). EMPTY unless the upkeep
     gate (read through its one reader, never the raw block) is open and `conflicts.resolve` is `agent`: a closed gate
     leaves the doctor output byte-identical. Probes are bounded (`_bounded_run`, a short limit) and skipped under
@@ -1567,10 +1734,19 @@ def _resolver_rows(base, cfg, which, cheap_only, now=None):
             res = _bounded_run([binary, "--version"], timeout=RESOLVER_PROBE_SECONDS)
             rows.append(_chk("resolver cli: " + ("answers a version probe" if res else "did not answer a bounded version probe"),
                              bool(res), "check the CLI runs by hand; the probe is limited to %gs" % RESOLVER_PROBE_SECONDS))
+        if binary and not cheap_only:                                                                # #1691
+            rows.append(_resolver_auth_row(launcher, binary, settings.get("conflicts.agent.credential_var"), auth_runner, which))
         unverified = list(getattr(launcher, "UNVERIFIED_FLAGS", ()))
-        rows.append(_chk("resolver flags: %d design flags UNVERIFIED (refused until probed)" % len(unverified) if unverified
-                         else "resolver flags: all design flags confirmed", not unverified,
-                         "the resolver stays closed until the launch flags are probed against the real CLI"))
+        # The flags the launcher itself puts on the command line; the resolver passes no extra flag (#1694).
+        requested = set(getattr(launcher, "BASE_ARGV", ())) | set(launcher.session_argv(True)) | {"--model", "--max-budget-usd"}
+        blocking = [f for f in unverified if f in requested]
+        if blocking:
+            flags_name = "resolver flags: %d requested design flag%s still UNVERIFIED (refused by name)" % (len(blocking), "" if len(blocking) == 1 else "s")
+        elif unverified:
+            flags_name = "resolver flags: %d unverified design flag%s not requested by the resolver (refused by name)" % (len(unverified), "" if len(unverified) == 1 else "s")
+        else:
+            flags_name = "resolver flags: all design flags confirmed"
+        rows.append(_chk(flags_name, not blocking, "a flag that did not pass the probe stays refused; do not request it"))
         placeholder = launcher.PLACEHOLDER_MODEL
         models = set(launcher.CATALOG.values())
         rows.append(_chk("resolver model: " + ("catalog holds only the placeholder id" if models <= {placeholder}
@@ -1583,12 +1759,21 @@ def _resolver_rows(base, cfg, which, cheap_only, now=None):
         on_placeholder = why_off is None and launcher.CATALOG.get(settings["conflicts.agent.model"], placeholder) == placeholder
         rows.append(_chk("resolver configured: " + ("model %s resolves to the placeholder id, so every launch is refused" % settings["conflicts.agent.model"]
                                                     if on_placeholder else
-                                                    "model %s, up to $%g per unit, $%g per day" % (settings["conflicts.agent.model"], budget, ceiling)
+                                                    "model %s, %s" % (settings["conflicts.agent.model"], (
+                                                        "no spend limit" if not (budget is not None or ceiling is not None) else
+                                                        "%s, %s" % ("up to $%g per unit" % budget if budget is not None else "no per-unit limit",
+                                                                    "$%g per day" % ceiling if ceiling is not None else "no daily limit")))
                                                     if why_off is None else "behaves as off (%s)" % why_off), why_off is None and not on_placeholder,
                          "supply a validated model id override" if on_placeholder else
-                         "set conflicts.agent.max_budget_usd_per_unit and conflicts.agent.spend_ceiling_usd_per_day in .sdlc/config.json"))
-        rows.append(_chk("resolver spend: " + ("finite caps configured" if finite else "no finite spend cap in the upkeep settings"),
-                         finite, "the launcher refuses a launch without finite per-run, per-machine and team caps"))
+                         "check conflicts.agent in .sdlc/config.json"))
+        rows.append(_chk("resolver spend: " + ("finite caps configured" if finite else "no spend limit configured (each run bounded by timeout_minutes only)"),
+                         True, "optional: set conflicts.agent.max_budget_usd_per_unit and spend_ceiling_usd_per_day to cap spend"))
+        wall_label = launcher.session_wall(sys.platform, which, os.path.expanduser("~"), "session")[1]       # #1693
+        rows.append(_chk("resolver session confinement: " + (
+            "%s (reads of credential directories denied, writes only in the session, network only to port 443 and not filtered by host; PROVISIONAL, live run owner-gated)" % wall_label
+            if wall_label else
+            "none on this platform, so the session runs WITHOUT the Bash tool (edit tools only; nothing else can reach credentials or the network)"),
+            True, "informational"))
         spent = _resolver_spend_today(pathlib.Path(base).joinpath(*rebase.LEVEL2_SPEND_REL.split("/")), launcher, now)
         if spent is None:
             rows.append(_chk("resolver spend today: unreadable", False, "check the spend store under .sdlc/state/upkeep/spend; the launcher stays closed on it"))
@@ -3597,10 +3782,14 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     if _block(cfg, "work").get("enabled") is True:
         out.append(_awaiting_merge_row(sdlc_dir))
 
+    out.extend(_resource_rows(cfg, sdlc_dir))  # #1604: silent unless the resource guard is in play
+
     # #1410: blockers ranked below what they block. Local state read only; silent unless github + rule on.
     _br = _blocker_rank_row(cfg, sdlc_dir)
     if _br is not None:
         out.append(_br)
+
+    out.extend(_ai_filed_rows(cfg, base))  # #1705
 
     # #1555: BEFORE the loop ever commits. `work.commit()` stages with `git add -A`, which honours
     # .gitignore and nothing else, so "is this repo's `.env` ignored?" decides whether an unattended
@@ -5515,6 +5704,8 @@ def _rulebook_state_core(cfg, sdlc_dir=None, run=None):
                     extra.append(public_msg)
             else:
                 real = _real_repo_public(cfg, run, sdlc_dir)
+                if real is False and warn in extra:
+                    extra.remove(warn)  # the heuristic guessed public; the real read says private (#1548)
                 if real is True:
                     extra.append(public_msg + " (read from GitHub)")
                 elif real is None:
@@ -5556,6 +5747,18 @@ def _rulebook_state_core(cfg, sdlc_dir=None, run=None):
                 if due:
                     extra.append("%d approved rule(s) due for confirmation (older than reask_days): %s"
                                  % (len(due), ", ".join(str(i) for i, _ in due)))
+                if rbm.auto_approve_on(cfg):        # #1555: approval without a person is a warning, never silent
+                    extra.append("WARNING: rules: auto-approve ON (rulebook.rules.auto_approve): the watcher approves "
+                                 "learned rules on an owner's behalf and the applier acts on them at any level"
+                                 + ("" if _load_loop_script("autonomy").owners(cfg)
+                                    else "; no owner is configured, so nothing is approved"))
+                rdr = _load_loop_script("rule_draft").approved_rows(sdlc_dir, cfg)
+                if rdr:
+                    counts = {}
+                    for x in rdr:
+                        counts[x["action"]] = counts.get(x["action"], 0) + 1
+                    extra.append("actions: %s (list them: rule_draft.py rules <dir>)" % ", ".join(
+                        "%d %s" % (n, a) for a, n in counts.items()))
                 bad = rbm.invalid(sdlc_dir, cfg)
                 if bad:
                     extra.append("%d invalid rule(s) in the rulebook, never acting (retire them with "
@@ -5611,6 +5814,9 @@ def _autonomy_state(cfg, sdlc_dir=None):
                     lines.append("%s / %s: level %d unreachable: needs %d comparisons, %d recorded in the last %d days"
                                  % (r["qkind"], r["area"] or "-", r["next_level"], need, recent, days))
         lines += _load_loop_script("autonomy").category_notes(sdlc_dir if sdlc_dir is not None else ".sdlc", cfg)
+        for k in _load_loop_script("label_drain").kind_summary(sdlc_dir if sdlc_dir is not None else ".sdlc", cfg):
+            lines.append("run label kind %s: %d answer(s), level %d, rule covers: %s"
+                         % (k["kind"], k["answers"], k["level"], "yes" if k["covered"] else "no"))
         return head + "".join("\n      " + l for l in lines)
     except Exception as exc:  # a readout never fails the dashboard
         return "unreadable (%s)" % type(exc).__name__
@@ -5641,7 +5847,9 @@ def _applier_state(cfg, sdlc_dir=None, now=None):
             return ("on, WARNING: the applier tick looks dead (%s); parked questions stay parked until the "
                     "watcher runs again" % ("never ran" if beat is None else "last tick " + beat.isoformat())
                     + _no_owners_clause(cfg))
-        return "on: last tick " + beat.isoformat() + _no_owners_clause(cfg)
+        held = mod.read_hold(sdlc_dir if sdlc_dir is not None else ".sdlc")
+        return ("on: last tick " + beat.isoformat() + (", HELD: " + held if held else "")
+                + _no_owners_clause(cfg))
     except Exception as exc:  # a readout never fails the dashboard
         return "unreadable (%s)" % type(exc).__name__
 

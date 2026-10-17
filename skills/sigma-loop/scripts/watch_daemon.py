@@ -682,6 +682,30 @@ def applier_step(p, sdlc_dir, call_timeout, config=None):
         return ""
 
 
+def resource_step(p, sdlc_dir, call_timeout, config=None):
+    """#1604: one more bounded call AFTER the applier step, in its own guard: `resource_guard.py sample --record`,
+    which refreshes last.json/hold.json and reclaims stale leases. Through `run_call`, so through
+    `run_with_timeout.py` like every other tick call; no new daemon and no process outlives the call. Nothing is
+    spawned, touched or logged unless the resolved resource mode (#1759) is "enforce" or "observe". -> the summary line (only while held) or ""."""
+    try:
+        config = read_config(sdlc_dir) if config is None else config
+        import resource_guard
+        mode = resource_guard.resolve_mode(config)     # #1759: the one rule
+        if mode not in ("enforce", "observe"):
+            return ""
+    except Exception:                                # noqa: BLE001 - any shape but the opted-in one is closed
+        return ""
+    try:
+        touch_heartbeat(p)
+        summary = run_call(p, sdlc_dir, call_timeout, "resource_guard.py", ("sample", "--record"), "summary")
+        if summary:
+            tee(p, f"watch: {summary}")
+        return summary
+    except Exception as exc:                         # noqa: BLE001 - never abort the tick
+        log_line(p, f"watch: resource step failed (non-fatal): {type(exc).__name__}")
+        return ""
+
+
 def cleanup(p, my_pid):
     """B-28/B-29. Registered ONLY on the takeover path, after the mutex is released -- a process
     that exits as a sibling or as "already running" removes nothing.
@@ -881,6 +905,7 @@ def tick(p, sdlc_dir, call_timeout, n, config=None, interval=None):
                 tee(p, f"watch: {summary}")
         scheduler_step(p, sdlc_dir, call_timeout)
         applier_step(p, sdlc_dir, call_timeout)
+        resource_step(p, sdlc_dir, call_timeout, config)
     except Exception as exc:                         # noqa: BLE001 - B-1/B-36: absorb, never abort
         log_line(p, f"watch: tick failed (non-fatal): {type(exc).__name__}")
         print(traceback.format_exc(), file=sys.stderr, flush=True)
