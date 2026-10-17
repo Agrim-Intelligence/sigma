@@ -390,3 +390,21 @@ def test_readme_defaults_match_the_template():
         assert needle in budget[0], (needle, budget[0])
     assert "Everything optional ships OFF" not in text
     assert "won't ship work that fights your strategy" not in text
+
+
+def test_quality_ratchet_row_is_registered_and_the_page_says_the_waiver_is_unauthenticated():
+    """#1637 AC-7: the ratchet's row exists with its exact facts, and the generated page carries it and
+    says the waiver is not authenticated (an audit trail, not access control)."""
+    import ast
+    tree = ast.parse((ROOT / "skills" / "sigma-loop" / "scripts" / "work.py").read_text(encoding="utf-8"))
+    node = next((n for n in tree.body if isinstance(n, ast.Assign)
+                 and any(getattr(t, "id", None) == "ENFORCEMENT_GATES" for t in n.targets)), None)
+    assert node is not None
+    gates = ast.literal_eval(node.value)
+    row = next((g for g in gates if g.get("function") == "_quality_ratchet_refusal"), None)
+    assert row is not None, "no ENFORCEMENT_GATES row for _quality_ratchet_refusal"
+    assert (row.get("kind"), row.get("hosts"), row.get("enabled_by")) == \
+        ("python-gate", "all", ("work.enabled", "gates.quality_ratchet.enabled"))
+    assert "auto_merge: off" in row.get("condition", "") and "not authenticated" in row.get("condition", "")
+    page = DOC.read_text(encoding="utf-8")
+    assert row["control"] in page and "not authenticated" in page

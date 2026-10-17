@@ -34,6 +34,7 @@ REGISTERED_CALLERS = (
     # quality.metrics commands (argv, no shell, credential-filtered env). It arms no claim and loads nothing else.
     # The gate is the operator-authored `quality.metrics` read from the MERGE-BASE config, never the head's, so a
     # goal cannot add a command to itself; with none configured it starts no process.
+    # Its one in-process caller is `work._quality_ratchet_refusal`, behind `gates.quality_ratchet.enabled` (#1637).
     "skills/sigma-loop/scripts/quality_delta.py",
 )
 #: Registered callers that run only behind the upkeep gate: `feature_upkeep_prove.py` is loaded by `feature_rebase.py`
