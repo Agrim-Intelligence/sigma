@@ -615,7 +615,7 @@ def _run(goal, cwd, committed, head_only, deadline, probe, git, runner, pid_aliv
     if head_only is not None:
         cfg = cfg._replace(metrics=tuple(m for m in cfg.metrics if m.name in head_only))
     if head is None:
-        return _everything_unmeasured(fork, None, "the goal worktree has no commit")
+        return _all_metrics(fork, None, cfg, "the goal worktree has no commit")
     if not committed:
         code, dirty, err = git(wt, ["status", "--porcelain", "--untracked-files=normal", "--", ".",
                                     ":(exclude).sdlc"])

@@ -1284,6 +1284,22 @@ def test_run_reports_whole_run_unmeasured_and_refusal(tmp_path):
     assert empty.no_metrics is True and empty.code == 0 and qd.render(empty).out == ["no metrics configured"]
 
 
+def test_a_run_with_no_head_commit_still_names_its_metrics(tmp_path):
+    """AC-4 needs rows: once the config is read, requiredness is known, so a no-commit run carries one
+    unmeasured row per metric instead of a whole-run unmeasured that the merge gate must fail closed on."""
+    r = build(tmp_path, metrics=[metric(name="opt"), metric(name="req", required=True)])
+    real = qd._git
+
+    def no_head(root, argv, timeout=30):
+        if argv[:2] == ["rev-parse", "HEAD"]:
+            return 128, "", "no commit"
+        return real(root, argv, timeout)
+
+    got = qd.run(r.goal, r.wt, committed=True, probe=PLENTY, git=no_head, runner=ok_runner())
+    assert got.unmeasured is None and [(x.name, x.required, x.verdict) for x in got.rows] == [
+        ("opt", False, "unmeasured"), ("req", True, "unmeasured")], got
+
+
 def test_committed_mode_ignores_clutter_but_the_default_does_not(tmp_path):
     assert _has_run(), "quality_delta.run does not exist yet"
     r = build(tmp_path)

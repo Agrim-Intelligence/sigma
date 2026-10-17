@@ -278,6 +278,15 @@ def test_ratchet_required_unmeasured_parks(tmp_path, monkeypatch, case):
             "whole-run": "no readable work record"}[case] in out
 
 
+def test_ratchet_second_reading_worse_but_within_tolerance_does_not_park(tmp_path, monkeypatch):
+    """AC-1 is 'beyond its tolerance on two measurements': a second reading inside the tolerance clears it."""
+    fake = FakeQD(_result(_row("m", 10, 12, tolerance=1)), _result(_row("m", None, 10.5, tolerance=1)))
+    d, out, _loads = _gate(tmp_path, monkeypatch, fake)
+    assert out == "" and len(fake.calls) == 2, out
+    (why,) = _why(d)
+    assert "head2=10.5" in why and why.endswith("-> pass"), why
+
+
 def test_ratchet_optional_unmeasured_or_worse_records_and_continues(tmp_path, monkeypatch):
     fake = FakeQD(_result(_row("opt", None, None, required=False, reason="no number"),
                           _row("opt2", 3, 9, required=False), _row("req", 3, 3)))
