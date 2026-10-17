@@ -37,7 +37,6 @@ API is covered.
 """
 import os
 import pathlib
-import resource
 import subprocess
 import sys
 
@@ -84,6 +83,10 @@ def _is_gh_argv(cmd):
 
 
 def _rss_mb():
+    try:
+        import resource   # POSIX only: on Windows the RSS bound is inert (0 MB), the copies ceiling still runs
+    except ImportError:
+        return 0.0
     r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     return r / (1024 * 1024 if sys.platform == "darwin" else 1024)
 
