@@ -43,9 +43,11 @@ def install():
 
 
 def rss_bound_mb(n_tests):
-    """Measured: 252 MB for 17,875 tests with the cache, 1,094 MB without (~61 KB/test). 120 MB base +
-    25 KB/test is 567 MB here: red for the unfixed code, 2x headroom over the fixed."""
-    return 120 + 0.025 * n_tests
+    """Measured: 252 MB for 17,875 tests with the cache, 1,094 MB without (~61 KB/test); the CI smoke set
+    (1,958 tests) peaks at 176 MB with the cache, so a 120 MB base was too tight for a small run (its own
+    guard failed the smoke job at 169 MB). 250 MB base + 25 KB/test is 752 MB for the 20,090-test suite
+    (fixed: ~280 MB; unfixed: ~1,290 MB, still red) and 299 MB for the smoke set."""
+    return 250 + 0.025 * n_tests
 
 
 #: Collection measured at most 13 live copies of one script with the cache (1,460 without). A script is
