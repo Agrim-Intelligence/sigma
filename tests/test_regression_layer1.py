@@ -206,7 +206,7 @@ def test_repo_identity_is_repo_local_only(tmp_path, source_repo, monkeypatch):
     poison.write_text("[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = false\n[user]\n\tname = leaked\n")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(poison))
     monkeypatch.setenv("GIT_AUTHOR_NAME", "leaked-env")
-    monkeypatch.setenv("GIT_COMMITTER_EMAIL", "leaked@env.invalid")
+    monkeypatch.setenv("GIT_COMMITTER_EMAIL", "leaked-env-committer-email")
     sp = make_spec(tmp_path, source_repo)
     sc = layer1.build_scenario(sp)
     try:
