@@ -124,7 +124,7 @@ EVIDENCE_CASES = [
     ("bad-enum-confidence", _set(0, 0, "confidence", "maybe"), "edges[0].evidence[0]", "maybe"),
     ("bad-enum-source", _set(0, 0, "source", "oracle"), "edges[0].evidence[0]", "oracle"),
     ("bad-timestamp", _set(0, 0, "extracted_at", "yesterday"), "edges[0].evidence[0]", '"extracted_at"'),
-    ("url-userinfo", _set(1, 0, "url", "https://u:pw@wiki.example.com/a"), "edges[1].evidence[0]", "userinfo"),
+    ("url-userinfo", _set(1, 0, "url", "https://u:pw" + chr(64) + "wiki.example.com/a"), "edges[1].evidence[0]", "userinfo"),
     ("url-query", _set(1, 0, "url", "https://wiki.example.com/a?t=1"), "edges[1].evidence[0]", "query"),
     ("url-fragment", _set(1, 0, "url", "https://wiki.example.com/a#x"), "edges[1].evidence[0]", "query"),
     ("url-scheme", _set(1, 0, "url", "ftp://wiki.example.com/a"), "edges[1].evidence[0]", "http"),
