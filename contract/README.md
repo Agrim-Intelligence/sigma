@@ -15,7 +15,7 @@ The contract enables downstream readers to read, validate, and ingest core recor
 
 ## Versioning
 
-**Contract Version:** 1.3.0 (defined in `VERSION` file)
+**Contract Version:** 1.4.0 (defined in `VERSION` file)
 
 **Versioning Rules:**
 
@@ -75,7 +75,7 @@ The entries stream carries 11 record kinds:
     (64 lowercase hexadecimal characters). Ledger opt-in controls this metadata only; the local
     Markdown record is written regardless. Commands and criteria are never copied into the ledger.
 
-### Acceptance records (1.3.0)
+### Acceptance records
 
 Run `python3 skills/sigma-loop/scripts/acceptance.py record .sdlc <goal>` before code.
 `<goal>` is an issue number or a local goal Markdown path. The source must contain a
@@ -104,6 +104,16 @@ Keep the record with plan/research when committing a goal so future clones retai
 If the main-checkout copy is lost, restore that file from the goal branch before verification
 or publication; do not redraft from a subsequently edited issue. Review briefs can read the
 committed local/remote goal branch directly when the main-checkout file is absent.
+
+### Codex usage split (1.4.0)
+
+The `phase` and `spend` events gain two optional numeric fields, written as strings:
+`tokens_cached_in` and `tokens_reasoning_out`. They are SUBSETS, never addends:
+`tokens_in` already includes cached input and `tokens_out` already includes reasoning, so
+billable uncached input is `tokens_in - tokens_cached_in` and output is priced once, from
+`tokens_out`. Both are written only for a Codex-measured phase whose rollout reported
+`cached_input_tokens`; `"0"` is a measured zero, while an absent field means the split was not
+reported (Claude, unmeasured, or a rollout without the split). Old readers ignore them.
 
 ### Events Kind Vocabulary
 
