@@ -361,7 +361,7 @@ def _runner(handlers):
         if prfake.merge_put(7) in line:
             return prfake.rest_merged()
         if "remote get-url" in line:
-            return "git@github.com:acme/app.git"
+            return "https://github.com/acme/app.git"
         return ""
     run.calls = calls
     return run
