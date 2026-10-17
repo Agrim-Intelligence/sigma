@@ -18,6 +18,9 @@ import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 S = ROOT / "skills" / "sigma-loop" / "scripts"
+#: The version the RUNNING supervisor reports (the same file the supervisor subprocess reads). The
+#: fixture install models "Codex runs the same Sigma as this supervisor" by defaulting to it (#1648).
+RUNNING_VERSION = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"]
 
 
 def _runtime():
@@ -34,15 +37,32 @@ def _daemon():
     return module
 
 
-def _git_install(tmp_path):
+def _bump(version):
+    major, minor, patch = (int(p) for p in version.split(".")[:3])
+    return f"{major}.{minor}.{patch + 1}"
+
+
+def _outcome(fn):
+    """("ok", value) or ("refused", text): a refusal is data, so a guard that stops refusing fails by
+    AssertionError rather than by pytest's `Failed`."""
+    try:
+        return ("ok", fn())
+    except ValueError as exc:
+        return ("refused", str(exc))
+
+
+def _git_install(tmp_path, version=None):
+    # The version appears in the cache directory name, the manifest and the inventory entry; all three
+    # change together (resolve_install globs cache/*/sigmaloop/<entry version>).
+    version = version or RUNNING_VERSION
     home = tmp_path / "custom-codex-home"
-    plugin = home / "plugins" / "cache" / "sigmaloop" / "sigmaloop" / "1.0.3"
+    plugin = home / "plugins" / "cache" / "sigmaloop" / "sigmaloop" / version
     skill = plugin / "skills" / "sigma-loop" / "SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("---\nname: sigma-loop\n---\nRun the loop.\n")
     manifest = plugin / ".claude-plugin" / "plugin.json"
     manifest.parent.mkdir()
-    manifest.write_text(json.dumps({"name": "sigmaloop", "version": "1.0.3"}))
+    manifest.write_text(json.dumps({"name": "sigmaloop", "version": version}))
     script = plugin / "skills" / "sigma-loop" / "scripts" / "loop.py"
     script.parent.mkdir()
     script.write_text("print('safe')\n")
@@ -56,7 +76,7 @@ def _git_install(tmp_path):
     sha = subprocess.run(["git", "-C", str(plugin), "rev-parse", "HEAD"],
                          capture_output=True, text=True, check=True).stdout.strip()
     entry = {"pluginId": "sigmaloop@sigmaloop", "name": "sigmaloop",
-             "marketplaceName": "sigmaloop", "version": "1.0.3", "installed": True,
+             "marketplaceName": "sigmaloop", "version": version, "installed": True,
              "enabled": True, "source": {"source": "git", "url": "https://example.test/sigmaloop.git",
                                           "sha": sha}}
     return home, plugin, skill, {"installed": [entry], "available": []}
@@ -227,7 +247,7 @@ def test_git_marketplace_ignores_inherited_git_directory(tmp_path, monkeypatch):
 def test_codex_supervisor_does_not_dirty_install_with_linux_style_pycache(tmp_path):
     scripts = tmp_path / "scripts"
     scripts.mkdir()
-    for name in ("supervise_daemon.py", "legacy.py", "logroll.py", "codex_runtime.py"):
+    for name in ("supervise_daemon.py", "legacy.py", "logroll.py", "codex_runtime.py", "codex_cli.py"):
         shutil.copy2(S / name, scripts / name)
     entry = scripts / "supervise_daemon.py"
     runner = ("import runpy,sys; sys.pycache_prefix=None; "
@@ -244,7 +264,7 @@ def test_codex_supervisor_does_not_dirty_install_with_linux_style_pycache(tmp_pa
 def test_claude_supervisor_keeps_historical_bytecode_behavior(tmp_path):
     scripts = tmp_path / "scripts"
     scripts.mkdir()
-    for name in ("supervise_daemon.py", "legacy.py", "logroll.py", "codex_runtime.py"):
+    for name in ("supervise_daemon.py", "legacy.py", "logroll.py", "codex_runtime.py", "codex_cli.py"):
         shutil.copy2(S / name, scripts / name)
     entry = scripts / "supervise_daemon.py"
     runner = ("import runpy,sys; sys.pycache_prefix=None; "
@@ -447,7 +467,7 @@ def test_two_codex_supervisors_cannot_launch_two_workers(tmp_path):
     env = {**os.environ, "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", ""),
            "CODEX_HOME": str(home), "SIGMA_HOST": "codex", "FAKE_INVENTORY": str(inv_path),
            "FAKE_MARKER": str(marker), "SIGMA_SUPERVISE_MAX_RUNS": "1",
-           "SIGMA_SUPERVISE_SLEEP_SCALE": "0"}
+           "SIGMA_SUPERVISE_SLEEP_SCALE": "0", "SIGMA_CODEX_BIN": str(fake)}
     argv = [sys.executable, str(S / "supervise_daemon.py"), str(sdlc)]
     first = subprocess.Popen(argv, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
@@ -503,7 +523,7 @@ def test_codex_exit_and_output_cannot_fake_success(tmp_path, output, final, exit
            "CODEX_HOME": str(home), "SIGMA_HOST": "codex", "CLAUDECODE": "1",
            "FAKE_INVENTORY": str(inv_path), "FAKE_OUTPUT": output, "FAKE_FINAL": final,
            "FAKE_EXIT": str(exit_code), "SIGMA_SUPERVISE_MAX_RUNS": "1",
-           "SIGMA_SUPERVISE_SLEEP_SCALE": "0"}
+           "SIGMA_SUPERVISE_SLEEP_SCALE": "0", "SIGMA_CODEX_BIN": str(fake)}
     if use_override:
         env["SIGMA_CODEX_CMD"] = "codex exec"
     result = subprocess.run([sys.executable, str(S / "supervise_daemon.py"), str(sdlc)],
@@ -542,8 +562,172 @@ def test_bad_codex_command_override_refuses_without_traceback(tmp_path, override
     (sdlc / "config.json").write_text("{}")
     env = {**os.environ, "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", ""),
            "CODEX_HOME": str(home), "SIGMA_HOST": "codex", "FAKE_INVENTORY": str(inv_path),
-           "SIGMA_CODEX_CMD": override, "SIGMA_SUPERVISE_MAX_RUNS": "1"}
+           "SIGMA_CODEX_CMD": override, "SIGMA_SUPERVISE_MAX_RUNS": "1",
+           "SIGMA_CODEX_BIN": str(fake)}
     result = subprocess.run([sys.executable, str(S / "supervise_daemon.py"), str(sdlc)],
                             env=env, capture_output=True, text=True, timeout=20)
     assert result.returncode == 2 and "SIGMA_CODEX_CMD" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+# ---- #1648: one shared Codex CLI resolver, and Sigma version-skew refusal in the supervisor ---------------
+
+def _fake_cli(path, name, *, exec_marks=True):
+    """A tmp stand-in for the Codex CLI. `plugin list --json` answers from $FAKE_INVENTORY; `exec` appends
+    `name` to $FAKE_MARKER (so a test can tell WHICH binary was launched) and writes a clean final message.
+    The shebang is the test interpreter so it runs with an empty PATH. It never starts a model."""
+    body = (f"#!{sys.executable}\n"
+            "import os, pathlib, sys\n"
+            "if sys.argv[1:4] == ['plugin', 'list', '--json']:\n"
+            " print(pathlib.Path(os.environ['FAKE_INVENTORY']).read_text()); raise SystemExit(0)\n"
+            "if len(sys.argv) > 1 and sys.argv[1] == 'exec':\n"
+            f" with open(os.environ['FAKE_MARKER'], 'a') as out: out.write({name!r} + '\\n')\n"
+            " pathlib.Path(sys.argv[sys.argv.index('--output-last-message') + 1]).write_text('LOOP STOP: backlog-empty\\n')\n"
+            " print('LOOP STOP: backlog-empty'); raise SystemExit(0)\n"
+            "raise SystemExit(2)\n")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body)
+    path.chmod(0o755)
+    return path
+
+
+def _decoy_cli(path):
+    """A `codex` on PATH that must NOT be the one launched: it records itself and fails."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"#!{sys.executable}\n"
+                    "import os\n"
+                    "with open(os.environ['FAKE_MARKER'], 'a') as out: out.write('decoy\\n')\n"
+                    "raise SystemExit(9)\n")
+    path.chmod(0o755)
+    return path
+
+
+def _supervise(tmp_path, home, inventory, extra_env, path_dirs=()):
+    inv_path = tmp_path / "inventory.json"
+    inv_path.write_text(json.dumps(inventory))
+    sdlc = tmp_path / "repo" / ".sdlc"
+    sdlc.mkdir(parents=True)
+    (sdlc / "config.json").write_text(json.dumps({"discovery": {"source": "local-goals"}}))
+    marker = tmp_path / "launches"
+    path = os.pathsep.join([*(str(d) for d in path_dirs), os.environ.get("PATH", "")])
+    env = {**os.environ, "PATH": path, "CODEX_HOME": str(home), "SIGMA_HOST": "codex",
+           "FAKE_INVENTORY": str(inv_path), "FAKE_MARKER": str(marker),
+           "SIGMA_SUPERVISE_MAX_RUNS": "1", "SIGMA_SUPERVISE_SLEEP_SCALE": "0", **extra_env}
+    env.pop("CLAUDECODE", None)
+    result = subprocess.run([sys.executable, str(S / "supervise_daemon.py"), str(sdlc)],
+                            env=env, capture_output=True, text=True, timeout=30)
+    launches = marker.read_text().splitlines() if marker.exists() else []
+    return result, launches
+
+
+def test_1648_installed_skill_uses_the_resolver_when_codex_is_not_on_path(tmp_path):
+    runtime = _runtime()
+    home, _, skill, inventory = _git_install(tmp_path)
+    fake = _fake_cli(tmp_path / "elsewhere" / "mycodex", "resolved")
+    inv_path = tmp_path / "inventory.json"
+    inv_path.write_text(json.dumps(inventory))
+    (tmp_path / "emptypath").mkdir()
+    env = {"PATH": str(tmp_path / "emptypath"), "CODEX_HOME": str(home),
+           "FAKE_INVENTORY": str(inv_path), "SIGMA_CODEX_BIN": str(fake)}
+    got = _outcome(lambda: runtime.installed_skill(env))
+    assert got == ("ok", (str(fake), skill))
+
+
+def test_1648_installed_skill_refuses_on_version_skew_in_both_directions(tmp_path):
+    runtime = _runtime()
+    home, _, skill, inventory = _git_install(tmp_path)
+    fake = _fake_cli(tmp_path / "bin" / "codex", "resolved")
+    inv_path = tmp_path / "inventory.json"
+    inv_path.write_text(json.dumps(inventory))
+    env = {**os.environ, "CODEX_HOME": str(home), "FAKE_INVENTORY": str(inv_path)}
+
+    def call(own):
+        return _outcome(lambda: runtime.installed_skill(env, codex_executable=str(fake), own_version=own))
+
+    running_newer = call(_bump(RUNNING_VERSION))          # the supervisor is ahead of the Codex install
+    running_older = call("0.0.1")                          # the supervisor is behind it
+    assert running_newer[0] == "refused" and "version skew" in running_newer[1]
+    assert running_older[0] == "refused" and "version skew" in running_older[1]
+    assert RUNNING_VERSION in running_newer[1] and _bump(RUNNING_VERSION) in running_newer[1]
+
+
+def test_1648_installed_skill_accepts_matching_versions_and_refuses_an_unparsable_one(tmp_path):
+    runtime = _runtime()
+    home, _, skill, inventory = _git_install(tmp_path)
+    fake = _fake_cli(tmp_path / "bin" / "codex", "resolved")
+    inv_path = tmp_path / "inventory.json"
+    inv_path.write_text(json.dumps(inventory))
+    env = {**os.environ, "CODEX_HOME": str(home), "FAKE_INVENTORY": str(inv_path)}
+
+    def call(own):
+        return _outcome(lambda: runtime.installed_skill(env, codex_executable=str(fake), own_version=own))
+
+    assert call(RUNNING_VERSION) == ("ok", (str(fake), skill))
+    # own_version=None means "no check", for callers that are not the supervisor.
+    assert call(None) == ("ok", (str(fake), skill))
+    # A side that cannot be parsed cannot prove there is no skew, so it refuses.
+    unparsable = call("garbage")
+    assert unparsable[0] == "refused" and "skew" in unparsable[1]
+
+
+def test_1648_running_version_reads_the_running_copys_manifest(tmp_path):
+    assert _runtime().running_version() == RUNNING_VERSION
+    # A copy of the scripts reports ITS OWN checkout's version, not the repo's and not the inventory's.
+    scripts = tmp_path / "skills" / "sigma-loop" / "scripts"
+    scripts.mkdir(parents=True)
+    for name in ("codex_runtime.py", "codex_cli.py"):
+        shutil.copy2(S / name, scripts / name)
+    manifest = tmp_path / ".claude-plugin" / "plugin.json"
+    manifest.parent.mkdir()
+    manifest.write_text(json.dumps({"name": "sigmaloop", "version": "7.8.9"}))
+    spec = importlib.util.spec_from_file_location("codex_runtime_copy", scripts / "codex_runtime.py")
+    copy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(copy)
+    assert _outcome(copy.running_version) == ("ok", "7.8.9")
+    manifest.unlink()
+    gone = _outcome(copy.running_version)
+    assert gone[0] == "refused" and "no readable plugin.json version" in gone[1]
+
+
+def test_1648_supervisor_refuses_skew_before_launching_a_worker(tmp_path):
+    if os.name != "posix":
+        pytest.skip("fake CLI is a POSIX script")
+    major, minor, patch = (int(p) for p in RUNNING_VERSION.split(".")[:3])
+    assert patch > 0, "needs a lower version at or above the 1.0.0 floor; extend this when patch is 0"
+    # Both directions, each above the floor so the refusal is the skew one: the enabled install is ahead
+    # of, and behind, the running copy.
+    for direction, skewed in (("enabled-above", _bump(RUNNING_VERSION)),
+                              ("enabled-below", f"{major}.{minor}.{patch - 1}")):
+        base = tmp_path / direction
+        home, _, _, inventory = _git_install(base, version=skewed)
+        fake = _fake_cli(base / "bin" / "codex", "worker")
+        result, launches = _supervise(base, home, inventory, {"SIGMA_CODEX_BIN": str(fake)},
+                                      path_dirs=[fake.parent])
+        assert result.returncode == 2, (direction, result.stdout, result.stderr)
+        assert "version skew" in result.stderr, direction
+        assert launches == [], direction
+
+
+def test_1648_cmd_override_with_bare_codex_runs_the_resolved_binary(tmp_path):
+    if os.name != "posix":
+        pytest.skip("fake CLI is a POSIX script")
+    home, _, _, inventory = _git_install(tmp_path)
+    resolved = _fake_cli(tmp_path / "app-only" / "codex", "resolved")      # NOT on PATH
+    decoy = _decoy_cli(tmp_path / "decoy" / "codex")                       # the bare word would find THIS
+    result, launches = _supervise(tmp_path, home, inventory,
+                                  {"SIGMA_CODEX_BIN": str(resolved), "SIGMA_CODEX_CMD": "codex exec"},
+                                  path_dirs=[decoy.parent])
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert launches == ["resolved"]
+
+
+def test_1648_cmd_override_with_absolute_argv0_is_respected(tmp_path):
+    if os.name != "posix":
+        pytest.skip("fake CLI is a POSIX script")
+    home, _, _, inventory = _git_install(tmp_path)
+    resolved = _fake_cli(tmp_path / "app-only" / "codex", "resolved")      # answers the inventory, NOT on PATH
+    named = _fake_cli(tmp_path / "operator" / "mycodex", "operator-named")
+    result, launches = _supervise(tmp_path, home, inventory,
+                                  {"SIGMA_CODEX_BIN": str(resolved), "SIGMA_CODEX_CMD": f"{named} exec"})
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert launches == ["operator-named"]

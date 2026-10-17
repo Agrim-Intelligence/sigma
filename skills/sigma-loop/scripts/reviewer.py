@@ -87,9 +87,21 @@ def _out(mechanism, host, reason, command=None, verified=True, timeout=900):
 shell_policy = _load("shell_policy")      # #707
 
 
+def _codex_cli(injected_which, env):
+    """#1648: the one shared Codex resolver. -> (path, None) or (None, reason). An injected `which` is the
+    unit tests' stand-in for "this machine", so it never also consults the real ChatGPT-app path."""
+    cli = _load("codex_cli")
+    try:
+        return cli.resolve(env=env, which=injected_which,
+                           app_path=None if injected_which is not None else cli.APP_PATH), None
+    except cli.CodexCliError as exc:
+        return None, str(exc)           # not-found keeps the words "not on PATH"
+
+
 def resolve(sdlc_dir, env=None, which=None):
     """-> the dict the SKILL prose branches on. Never raises; never returns an unknown mechanism."""
     env = os.environ if env is None else env
+    injected_which = which              # #1648: kept before the rebind below, for the Codex resolver
     which = shutil.which if which is None else which
     cfg = _config(sdlc_dir)
     review = cfg.get("review") if isinstance(cfg, dict) else None
@@ -132,21 +144,27 @@ def resolve(sdlc_dir, env=None, which=None):
                     verified=False, timeout=timeout)
     if host in _HOST_COMMANDS:
         argv, verified = _HOST_COMMANDS[host]
-        if not which(argv[0]):
+        command = list(argv)
+        if host == "codex":
+            path, why = _codex_cli(injected_which, env)
+            if path is None:
+                return _out("inline", host, "review.host is codex but %s" % why, timeout=timeout)
+            command[0] = path
+        elif not which(argv[0]):
             return _out("inline", host,
                         "review.host is %s but %s is not on PATH" % (host, argv[0]),
                         timeout=timeout)
         return _out("process", host, "%s resolved on PATH" % argv[0],
-                    command=list(argv), verified=verified, timeout=timeout)
+                    command=command, verified=verified, timeout=timeout)
     if env.get("CLAUDECODE") or env.get("CLAUDE_CODE_SESSION_ID"):
         return _out("subagent", "claude", "host dispatches its own subagents", timeout=timeout)
     if host == "auto" and (env.get("CODEX_SESSION_ID") or env.get("CODEX_THREAD_ID")):
         argv, verified = _HOST_COMMANDS["codex"]
-        if not which(argv[0]):
-            return _out("inline", "codex", "Codex session detected but codex is not on PATH",
-                        timeout=timeout)
+        path, why = _codex_cli(injected_which, env)
+        if path is None:
+            return _out("inline", "codex", "Codex session detected but %s" % why, timeout=timeout)
         return _out("process", "codex", "Codex session marker and codex CLI resolved",
-                    command=list(argv), verified=verified, timeout=timeout)
+                    command=[path] + list(argv[1:]), verified=verified, timeout=timeout)
     if host == "claude":
         # Symmetric with the PATH check above: an explicit host that cannot actually be reached
         # degrades loudly. Handing back `subagent` where none can be spawned produces an inline

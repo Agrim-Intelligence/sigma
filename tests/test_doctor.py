@@ -459,7 +459,7 @@ def _codex_plugin_runner(installed, *, latest="1.4.13"):
 
     def run(args):
         calls.append(args)
-        if args == ["codex", "plugin", "list", "--json"]:
+        if args[1:] == ["plugin", "list", "--json"] and args[0].endswith("codex"):
             return json.dumps({"installed": installed, "available": []}) if installed is not None else "not json"
         if args[:2] == ["gh", "api"] and any("contents/.claude-plugin/marketplace.json" in a for a in args):
             return base64.b64encode(json.dumps({"plugins": [{"name": "sigmaloop", "version": latest}]}).encode()).decode()
@@ -7841,3 +7841,134 @@ def test_doctor_flags_unreachable_project_rules(tmp_path):
 def test_doctor_has_no_project_rules_row_when_absent(tmp_path):
     _sdlc(tmp_path, {})
     assert "project rules reachable" not in _ns_reachable_rows(tmp_path)
+
+
+# ---- #1648: doctor reads Codex through the one resolver, and WARNS (never refuses) on version skew ---------
+
+def _skew_rows(checks):
+    return [c for c in checks if c["name"].startswith("sigma versions:")]
+
+
+def _real_cli_resolve(tmp_path, on_path, app):
+    """A resolver callable over the REAL codex_cli, aimed at tmp fakes so /Applications is never read."""
+    spec = importlib.util.spec_from_file_location("codex_cli_for_doctor", D.parent.parent.parent / "sigma-loop" / "scripts" / "codex_cli.py")
+    cc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(cc)
+    return lambda: cc.resolve(env={"PATH": str(on_path.parent)}, app_path=str(app), platform="darwin")
+
+
+def test_1648_codex_doctor_lists_plugins_through_the_resolved_path(monkeypatch, tmp_path):
+    monkeypatch.setenv("CODEX_SESSION_ID", "session")
+    d = _doc()
+    v = _one_above(d._agents_floor())
+    resolved = "/opt/resolved/codex"
+    run, calls = _codex_plugin_runner([_codex_entry("sigmaloop", v)], latest=v)
+    checks = d.check(_sdlc(tmp_path, {}), run=run, codex_resolver=lambda: resolved)
+    assert [resolved, "plugin", "list", "--json"] in calls
+    assert ["codex", "plugin", "list", "--json"] not in calls
+    row = next(c for c in checks if c["name"].startswith("sigma Codex install:"))
+    assert row["ok"] is True and v in row["name"]
+    # An unreadable list names the SAME binary in its remedy, not a bare `codex` that may not be on PATH.
+    unreadable, _ = _codex_plugin_runner(None)
+    row = next(c for c in d.check(_sdlc(tmp_path / "b", {}), run=unreadable, codex_resolver=lambda: resolved)
+               if c["name"].startswith("sigma Codex install:"))
+    assert row["ok"] is False and "unverified" in row["name"]
+    assert f"{resolved} plugin list --json" in row["fix"]
+
+
+def test_1648_codex_doctor_names_ambiguity_and_still_reports_unverified(monkeypatch, tmp_path):
+    monkeypatch.setenv("CODEX_SESSION_ID", "session")
+    d = _doc()
+    on_path = tmp_path / "pathdir" / "codex"
+    app = tmp_path / "app" / "codex"
+    for i, f in enumerate((on_path, app)):
+        f.parent.mkdir(parents=True)
+        f.write_text("#!/bin/sh\necho %d\n" % i)
+        f.chmod(0o755)
+    run, calls = _codex_plugin_runner([_codex_entry("sigmaloop")])
+    checks = d.check(_sdlc(tmp_path / "repo", {}), run=run, codex_resolver=_real_cli_resolve(tmp_path, on_path, app))
+    cli_rows = [c for c in checks if c["name"].startswith("sigma Codex CLI:")]
+    assert len(cli_rows) == 1 and cli_rows[0]["ok"] is False
+    assert str(on_path) in cli_rows[0]["fix"] and str(app) in cli_rows[0]["fix"]
+    install = next(c for c in checks if c["name"].startswith("sigma Codex install:"))
+    assert install["ok"] is False and "unverified" in install["name"]
+    assert not any(c[1:3] == ["plugin", "list"] for c in calls)         # no binary was chosen, none was run
+    # A Claude session does not use Codex, so the same resolver error stays silent there.
+    monkeypatch.delenv("CODEX_SESSION_ID")
+    claude = d.check(_sdlc(tmp_path / "claude", {}), run=_runner(), codex_resolver=_real_cli_resolve(tmp_path, on_path, app))
+    assert not any(c["name"].startswith("sigma Codex CLI:") for c in claude)
+
+
+def test_1648_doctor_warns_not_refuses_when_claude_and_codex_versions_differ(monkeypatch, tmp_path):
+    monkeypatch.setenv("CODEX_SESSION_ID", "session")
+    d = _doc()
+    claude_plugins = _plugins_file(tmp_path, [_entry("user", "1.0.9")])
+    run, _ = _codex_plugin_runner([_codex_entry("sigmaloop", "1.0.2")])
+    checks = d.check(_sdlc(tmp_path / "repo", {}), run=run, installed_plugins_path=claude_plugins)
+    rows = _skew_rows(checks)
+    assert len(rows) == 1 and rows[0]["ok"] is False
+    assert "1.0.9" in rows[0]["name"] and "1.0.2" in rows[0]["name"]
+    assert "claude plugin" in rows[0]["fix"] and "Codex" in rows[0]["fix"]      # both update gestures
+    # The same versions on both hosts read as an all-clear row.
+    same_run, _ = _codex_plugin_runner([_codex_entry("sigmaloop", "1.0.9")])
+    same = _skew_rows(d.check(_sdlc(tmp_path / "repo2", {}), run=same_run, installed_plugins_path=claude_plugins))
+    assert len(same) == 1 and same[0]["ok"] is True
+
+
+@pytest.mark.parametrize("case", ["claude-file-missing", "claude-version-unparsable", "codex-unreadable", "cheap-only"])
+def test_1648_doctor_skew_row_is_silent_when_a_side_is_unreadable_or_cheap_only(monkeypatch, tmp_path, case):
+    monkeypatch.setenv("CODEX_SESSION_ID", "session")
+    d = _doc()
+    healthy_file = _plugins_file(tmp_path, [_entry("user", "1.0.9")])
+    healthy_run, _ = _codex_plugin_runner([_codex_entry("sigmaloop", "1.0.2")])
+    # Control: the same setup with nothing broken DOES warn, so silence below is not a missing feature.
+    control = d.check(_sdlc(tmp_path / "control", {}), run=healthy_run, installed_plugins_path=healthy_file)
+    assert len(_skew_rows(control)) == 1
+    other = tmp_path / "other"
+    other.mkdir()
+    file, run, kwargs = healthy_file, healthy_run, {}
+    if case == "claude-file-missing":
+        file = str(other / "nope.json")
+    elif case == "claude-version-unparsable":
+        file = _plugins_file(other, [_entry("user", "not-a-version")])
+    elif case == "codex-unreadable":
+        run, _ = _codex_plugin_runner(None)
+    else:
+        run, calls = _codex_plugin_runner([_codex_entry("sigmaloop", "1.0.2")])
+        kwargs = {"cheap_only": True}
+    checks = d.check(_sdlc(other / "repo", {}), run=run, installed_plugins_path=file, **kwargs)
+    assert _skew_rows(checks) == []
+    if case == "cheap-only":
+        assert not any(a[:2] == ["codex", "plugin"] for a in calls)
+
+
+def test_1648_claude_session_reads_codex_through_the_resolver_for_the_skew_row(monkeypatch, tmp_path):
+    d = _doc()
+    claude_plugins = _plugins_file(tmp_path, [_entry("user", "1.0.9")])
+    resolved = "/opt/resolved/codex"
+    bounded = []
+
+    def fake_bounded(args, timeout=None):
+        bounded.append(list(args))
+        return json.dumps({"installed": [_codex_entry("sigmaloop", "1.0.2")], "available": []})
+
+    monkeypatch.setattr(d, "_bounded_run", fake_bounded)
+    injected = []
+
+    def run(args):
+        injected.append(list(args))
+        return _runner()(args)
+
+    checks = d.check(_sdlc(tmp_path / "repo", {}), run=run, installed_plugins_path=claude_plugins,
+                     codex_resolver=lambda: resolved)
+    rows = _skew_rows(checks)
+    assert len(rows) == 1 and rows[0]["ok"] is False
+    # The new spawn is BOUNDED (it goes through _bounded_run, not the uncapped local runner) and uses the
+    # resolved binary; the injected runner never sees a Codex call.
+    assert bounded == [[resolved, "plugin", "list", "--json"]]
+    assert not any(a and "codex" in str(a[0]) for a in injected)
+    # No resolver passed and `run` injected: a Claude session still never calls Codex (the existing contract).
+    bounded.clear()
+    quiet = d.check(_sdlc(tmp_path / "repo2", {}), run=run, installed_plugins_path=claude_plugins)
+    assert bounded == [] and _skew_rows(quiet) == []
+

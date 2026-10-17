@@ -70,6 +70,10 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/codex_cli.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/codex_runtime.py",
       "role": "library"
     },
