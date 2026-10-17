@@ -115,6 +115,8 @@ still uncalibrated: two records are evidence, not a basis for changing them. Tre
 - **Small guard fixes (#1714).** A hold keeps its original start on repeat ticks, an empty history reads as open,
   `hold.json` is written through a per-process temporary name removed on failure, and a `cpu_reserve_cores` at or
   above the core count reads as derived plus a note.
+- **The verify shed follows the same mode resolver (#1794).** With `SIGMA_RESOURCE_MODE=observe` a critical machine
+  no longer stops a verify; the shed reads the mode the same way as every other surface.
 
 ## Label drains
 
@@ -232,6 +234,8 @@ A run label confines a run to the goals that carry it. See [label drain](label-d
 - **The doctor reports an unreadable AI-filed counter without an `ai_filed` block (#1731).** A missing or non-object
   `ai_filed` counts as empty for the "AI-filed counter is readable" and "AI-filed triage config is valid" rows.
   JSON-false triage stays silent.
+- **A nationality before "dollars" is spend (#1795).** `40 US dollars`, `40 Canadian dollars` and `forty US dollars`
+  next to a compute word now park like the other currency forms.
 
 ## Upkeep
 
