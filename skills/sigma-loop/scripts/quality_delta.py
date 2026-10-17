@@ -362,8 +362,23 @@ def _run_group(argv, cwd, timeout, env):
                                  term_grace=_TERM_GRACE)
 
 
+def _redact_home(text):
+    """Print the home directory as `~`: a printed reason can carry an absolute path (a git error naming the
+    scratch worktree), and on a repo under the home that path is the user's home. Both the literal and the
+    resolved form; a boundary on each side so a path that merely contains the home mid-way (a bare
+    match would turn `/x<home>` into `/x~`) or only starts like it is left alone, which also makes the order of the two forms irrelevant.
+    An empty or root home is left alone: it would redact every slash."""
+    home = os.path.expanduser("~")
+    if home in ("", "/", "~"):
+        return text
+    for prefix in {home, os.path.realpath(home)}:
+        text = re.sub(r"(?<![\w.~/-])" + re.escape(prefix) + r"(?![\w.-])", "~", text)
+    return text
+
+
 def _one_line(text, limit=200):
-    return " ".join(str(text).split())[:limit]
+    """Redact, collapse, then cap: capping first could cut a home path in half and leak its start."""
+    return " ".join(_redact_home(str(text)).split())[:limit]
 
 
 #: The structured outcome of one run; `render` turns it into the CLI text. `refusal` is the whole
