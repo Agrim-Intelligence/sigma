@@ -88,7 +88,9 @@ does this goal change, and did the goal's acceptance record say it meant to? Use
 **working tree** against the fork point (uncommitted Implement-time edits count, so a half-done
 restructure never reads `within`) or `--plan FILE` for a plan before any edit. Exactly one of the
 two is required, plus `--goal N` (a bad goal, `--base` starting with a dash, an unreadable or
-over-256-KiB plan, or a bad `design.restructure_lines` is refused: exit 2, empty stdout).
+over-256-KiB plan, a bad `design.restructure_lines`, or a changed legacy path containing a tab or
+carriage return is refused: exit 2, empty stdout; a newline in such a path is instead named on stderr
+and the other rows still print).
 The fork point comes from the goal's work record (`.sdlc/state/work/<goal>.json`, which must be for
 the checked-out branch); `--base REF` pins another ref.
 
