@@ -16,12 +16,11 @@ Detailed selection triggers: [selection](references/selection.md).
 
 ## Context-efficient inspection
 
-Locate before opening: use `rg --files` for paths and `rg -n` for symbols or claims.
-Read only the relevant lines with a bounded range; expand outward only when the
-boundary is unclear. Do not dump whole files or broad search output into context.
-For bulky tests or diagnostics, save full output to a scratch file, then inspect
-its exit status and focused matches or a bounded tail. Do not hide failures, and
-keep secrets out of the scratch file. This is guidance, not a measured savings claim.
+Locate first: `rg --files` for paths, `rg -n` for symbols or claims. Read only the
+relevant lines in a bounded range, widening only when the boundary is unclear; never
+dump whole files or broad search output. Save bulky test or diagnostic output to a
+scratch file and inspect its exit status and focused matches or a bounded tail. Do
+not hide failures; keep secrets out of the scratch file. Guidance, not a measured savings claim.
 
 **The reviewer must not be the author** — and that is a property of how this review is RUN, not a
 claim you can make about yourself. Resolve it before judging anything:
@@ -68,8 +67,8 @@ content: a reviewer must see the diff, its artifact. A non-zero `check` blocks d
 **A diff-only review misses blast radius:** the diff is the *change*, the codebase is
 the *impact surface*. Before judging any change, read the code around it and grep every caller.
 
-**Executor:** this skill is the review. On Claude Code with the optional `code-review` plugin
-installed, `/code-review` is an extra pass; it does not replace this one or satisfy any of its gates.
+**Executor:** this skill is the review; the optional `/code-review` plugin pass never replaces it
+or satisfies its gates.
 
 Pick the mode from the request:
 - **Diff review** (default before a merge) — review the branch's changes vs base.
@@ -112,8 +111,10 @@ Where an axis's boundary is unclear, decide by the harm it names. Canon: [axes](
 6. **Structure & Maintainability** — *the next change is unsafe to make.* Name the smell: Long Method, Large Class, Long Parameter List, Primitive Obsession
    (cohesion) · Feature Envy, Inappropriate Intimacy, Message Chains, Middle Man (coupling) · Shotgun
    Surgery, Divergent Change (change amplification) · Dead Code, Duplicate Code,
-   Speculative Generality (dispensables). And: does the change fight the existing design, or diverge
-   from the surrounding patterns?
+   Speculative Generality (dispensables). And: does it break the rule `zones.py classify` prints per
+   file (`unknown`, `unreachable` or could not run: follow the surrounding code)? On `verdict: over` from
+   `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/zones.py" check --goal "<goal>" --diff`,
+   report `unrequested legacy restructure`.
 7. **Intelligibility** — *correct but unreadable, so the next change breaks it.* Do names say what the
    thing does and what it mutates? Do comments explain WHY, not restate WHAT? Is any comment, docstring
    or README now FALSE because of this diff.
@@ -122,7 +123,7 @@ Where an axis's boundary is unclear, decide by the harm it names. Canon: [axes](
 
 Two gates run alongside the axes:
 - **Project-rule violations** — anything breaking the project's rules: the **north-star Architecture
-  Rules** + governing **`CLAUDE.md`** conventions. Quote it. **Never open the north-star by its
+  Rules** (numbered, binding in every zone) + governing **`CLAUDE.md`** conventions. Quote it. **Never open the north-star by its
   path** — `.sdlc/` is gitignored, so it is absent from the goal worktree.
   The brief either carries a north-star section or names it as a gap: **check which**.
   If it is a gap — or you are reviewing with no brief at all — resolve it yourself with
@@ -146,8 +147,7 @@ operator command | inline, author self-review` — then an **overall verdict** (
 category, most-severe first:
 **Bug** (will misbehave) · **Concern** (design risk) · **Coverage** (untested behavior) · **Missing**
 (a required piece absent) · **Good** (worth keeping) · **Minor / Nit** (style). Each: what, where
-(`file:line`), why it matters, and the fix. If you didn't try to break it, you
-didn't review it. Only the owners named in the repository's CODEOWNERS may waive a finding, of any class; you report it and never waive it. A waiver is their decision, recorded with their stated reason. Unattended, a finding that would need one parks for a human.
+(`file:line`), why it matters, and the fix. Only the owners named in the repository's CODEOWNERS may waive a finding, of any class; you report it and never waive it. A waiver is their decision, recorded with their stated reason. Unattended, a finding that would need one parks for a human.
 
 ### Before you report it
 **A finding is a claim in prose, and a claim in prose is not evidence** (north-star Standing Rule 1). Before reporting one, state its
@@ -159,7 +159,7 @@ write that case you do not have a **Bug**, you have a question — ask it as a *
   A latent bug the diff just made reachable is this review's finding, not the last one's.
 - Anything a linter, type-checker or the test run will certainly stop — not a failure you saw in §1.
 - A style preference not written down in `CLAUDE.md` or the north-star. Quote the rule, or drop it.
-- A behaviour change that is the change's point.
+- A behaviour change that is the change's point, or a new file's difference from legacy neighbours.
 - Something deliberately silenced in the code (a `noqa`, a documented waiver) — argue the waiver, not the line.
 
 ### Blocking, or follow-up
@@ -173,7 +173,7 @@ blocking finding costs a full fix -> push -> re-review round, and `work.max_revi
   observability, that resists a probeable check). File it with `--label sdlc:followup` instead of blocking.
 
 Reporting a real finding as follow-up is a judgement you may make, except for a project-rule violation: that blocks unless the owners waive it. The failing-case rule binds this general review's findings; a dedicated risk review's `critical`/`high`
-blocks without one. Blocking on a finding you could not write a failing case for is the failure this section exists to prevent. A
+blocks without one. A
 **Missing** with no constructible failing case is Follow-up per the bullet above, never dropped.
 
 ## Counter-review

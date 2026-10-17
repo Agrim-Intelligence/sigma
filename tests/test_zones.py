@@ -1228,7 +1228,7 @@ def test_check_plan_mode_paths_from_files_section(tmp_path):
     assert rows == [want + ["intent: unknown"]] and verdict == "verdict: unknown"
     _acceptance(repo, "1541", ["Nothing here names a path."], False)
     rows, verdict = _ok(_check(wt, "--goal", "1541", "--plan", str(plan)))
-    assert rows == [want + ["intent: no"]] and verdict == "verdict: over"
+    assert rows == [want + ["intent: no"]] and verdict == "verdict: within"
     _acceptance(repo, "1541", ["Seam edit in `src/legacy/a.py`."], False)
     rows, verdict = _ok(_check(wt, "--goal", "1541", "--plan", str(plan)))
     assert rows == [want + ["intent: yes"]] and verdict == "verdict: within"
@@ -1335,3 +1335,25 @@ def test_check_unmeasurable_newline_path_is_named_on_stderr_and_keeps_other_rows
     rows, verdict = _ok(p)
     assert rows == [_row(LEG, 50, True, "yes")] and verdict == "verdict: unknown"
     assert "newline" in p.stderr, p.stderr
+
+
+def test_check_plan_mode_never_prints_over_for_a_named_legacy_file_without_intent(tmp_path):
+    """#1542: a seam edit to a legacy file must appear in the plan's Files section, and acceptance is
+    frozen, so plan mode only names legacy files; size is measured by `--diff` at review."""
+    repo, wt = _cf(tmp_path)
+    plan = tmp_path / "plan.md"
+    plan.write_text("## Files\n- EDIT `src/legacy/a.py`: one seam line\n", encoding="utf-8")
+    _acceptance(repo, "1541", ["Nothing here names a path."], False)
+    rows, verdict = _ok(_check(wt, "--goal", "1541", "--plan", str(plan)))
+    assert rows == [[LEG, "legacy", "-", "-", "intent: no"]], rows
+    assert verdict == "verdict: within", verdict
+
+
+def test_check_plan_mode_with_a_drafted_record_reads_within_not_over(tmp_path):
+    repo, wt = _cf(tmp_path)
+    plan = tmp_path / "plan.md"
+    plan.write_text("## Files\n- EDIT `src/legacy/a.py`\n", encoding="utf-8")
+    _acceptance(repo, "1541", ["Seam edit in `src/legacy/a.py`."], True)
+    rows, verdict = _ok(_check(wt, "--goal", "1541", "--plan", str(plan)))
+    assert rows == [[LEG, "legacy", "-", "-", "intent: no"]], rows
+    assert verdict == "verdict: within", verdict
