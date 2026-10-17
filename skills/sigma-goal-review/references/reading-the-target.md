@@ -84,6 +84,26 @@ everything but name: run it through **2a**'s three buckets. An artifact with **n
 heading has not answered the question at all — report it as a schema violation, exactly as you would
 a missing `Sweep`, and never read the silence as "the source was right".
 
+**`Functional requirements` is checked by RUNNING the verb, not by reading the list** (#659).
+`goal-design` §5 writes each behaviour as `- **FR-n.** <EARS sentence>` and traces it to a slice in
+the slice table's `Requirements` column. Run, from the repo root:
+
+```
+python3 "${CLAUDE_SKILL_DIR}/../sigma-goal-design/scripts/goal_design.py" requirements .sdlc/design/<n>.md
+```
+
+It exits 0 and prints `"ok": true`, or exits 2 and prints one `VIOLATION:` line per problem, each
+naming its FR id or slice: an FR that appears in no slice row, a `Requirements` token that is not a
+declared FR, a sentence that is not EARS or cites an issue number, an id that is duplicated,
+`FR-0`, non-integer or not increasing, a slice row with the wrong number of cells (a cell was
+removed) or an empty `Requirements` cell, a duplicate `Requirements` column, or a **missing**
+`## Functional requirements` heading. Report each verbatim as a schema violation before building the
+2a brief and never adjudicate it away; a missing heading is the absence of the record, never "no
+requirements" (the honest empty answer is a single `- None.` bullet with `—` in every cell).
+Designs written before #659 have no such heading and are not re-reviewed or rewritten: the verb
+reports the missing heading, and a reviewer reading one says so rather than inventing requirements.
+**Be honest about the guarantee:** the verb makes the violation unmissable and names each offending requirement, but that the verdict then becomes REJECT depends on the reviewing model following this prose; nothing in this kit enforces it (a hard refusal in `loop.py mark-designed` is deferred). The end-to-end run of a real `/sigma-goal-review` with a model is unmeasured.
+
 **`Out of scope` is where you check the verdict `Sweep` reports** (#1975). `converged` is the design
 asserting its last sweep round found nothing new **in scope**, and until #1975 that word was the
 author's own after-the-fact call with nothing recording it — a pass could quiet its final round by

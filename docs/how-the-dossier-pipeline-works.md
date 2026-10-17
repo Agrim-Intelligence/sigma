@@ -137,7 +137,10 @@ resolve against the real code and say how, or hand on still open
 
 The write-up's headings are not the author's choice. Its consumer is Stage 2, which reads it section
 by section — so the layout is pinned, `Doubts` and `Blockers` stay two separate headings even when
-one is empty, and the slice table's two columns become two different things downstream.
+one is empty, and the slice table's columns (`Covers`, `Requirements`, `Depends on`) become different
+things downstream: `Requirements` carries the numbered `FR-n` behaviours the design promises, and a
+check run by goal-review reports any that no slice delivers (the REJECT that follows is the reviewing
+model obeying the docs; nothing in the kit enforces it).
 [§5d](dossier-pipeline.md#5d-the-artifact--sdlcdesignnmd-and-its-headings-are-a-contract) is the
 schema and the rules about it that real runs got wrong before they were pinned.
 
