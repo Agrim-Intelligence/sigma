@@ -1203,3 +1203,199 @@ def test_right_branch_but_other_worktree_path_is_unmeasured(tmp_path):
     calls = []
     got = measure(r, runner=ok_runner(calls=calls))
     assert calls == [] and got.out[1].startswith("unmeasured") and "worktree" in got.out[1]
+
+
+# =============================================================================================
+# #1637 (PRD-0008 R-02): the merge gate's seams. Each test first asserts its seam exists and wraps
+# anything that can raise at base, so its first red is an AssertionError, never an import or a crash.
+# =============================================================================================
+
+def _parse_or_refusal(text):
+    """-> (Config|None, refusal text|None). Never raises ConfigRefused, so a missing key reads red."""
+    try:
+        return qd.parse_config(text), None
+    except qd.ConfigRefused as exc:
+        return None, str(exc)
+
+
+def test_tolerance_is_carried_but_never_applied():
+    cfg, refused = _parse_or_refusal(qd.json.dumps({"quality": {"metrics": [dict(GOOD, tolerance=5)]}}))
+    assert refused is None, refused
+    assert getattr(cfg.metrics[0], "tolerance", None) == 5.0
+    plain, refused = _parse_or_refusal(qd.json.dumps({"quality": {"metrics": [GOOD]}}))
+    assert refused is None and getattr(plain.metrics[0], "tolerance", None) == 0
+    # the verdict stays RAW: tolerance is the gate's business, never the printed row's
+    assert qd.verdict("lower", D(10), D(11)) == "worse"
+    assert qd.verdict("higher", D(10), D(9)) == "worse"
+
+
+@pytest.mark.parametrize("value", [-1, "1", True, float("nan")])
+def test_tolerance_and_gate_timeout_refusals_name_where(value):
+    _cfg_ok, refused = _parse_or_refusal(_cfg(tolerance=value))
+    assert refused is not None and refused.startswith("metrics[1]: tolerance"), refused
+    for bad in (0, 3601, "5", True, -3):
+        text = qd.json.dumps({"quality": {"metrics": [GOOD], "gate_timeout_seconds": bad}})
+        _cfg_ok, refused = _parse_or_refusal(text)
+        assert refused is not None and refused.startswith("quality.gate_timeout_seconds"), (bad, refused)
+    good, refused = _parse_or_refusal(qd.json.dumps({"quality": {"metrics": [GOOD], "gate_timeout_seconds": 60}}))
+    assert refused is None and getattr(good, "gate_timeout", None) == 60.0
+    edge, refused = _parse_or_refusal(qd.json.dumps({"quality": {"metrics": [GOOD], "gate_timeout_seconds": 3600}}))
+    assert refused is None and getattr(edge, "gate_timeout", None) == 3600.0
+    none, refused = _parse_or_refusal(qd.json.dumps({"quality": {"metrics": [GOOD]}}))
+    assert refused is None and getattr(none, "gate_timeout", "missing") is None
+
+
+def _has_run():
+    return callable(getattr(qd, "run", None)) and callable(getattr(qd, "render", None))
+
+
+def test_run_returns_structured_rows(tmp_path):
+    assert _has_run(), "quality_delta.run / render do not exist yet"
+    r = build(tmp_path, metrics=[metric(name="grows", required=True, tolerance=1),
+                                 metric(name="up", direction="higher")])
+    got = qd.run(r.goal, r.wt, probe=PLENTY)
+    assert (got.code, got.refusal, got.unmeasured, got.no_metrics) == (0, None, None, False), got
+    assert (got.base_sha, got.head_sha) == (r.fork, r.head)
+    assert got.budget_seconds is None and got.deadline is None, "the CLI default has no gate budget"
+    grows, up = got.rows
+    assert (grows.name, grows.direction, grows.required, grows.tolerance) == ("grows", "lower", True, 1.0)
+    assert (up.name, up.direction, up.required, up.tolerance) == ("up", "higher", False, 0.0)
+    assert (grows.base, grows.head, grows.delta) == (D(3), D(5), D(2))
+    assert all(isinstance(v, qd.decimal.Decimal) for v in (grows.base, grows.head, grows.delta))
+    assert (grows.verdict, up.verdict) == ("worse", "better"), "the verdict is RAW: tolerance never applied"
+    assert grows.reason == "" and up.reason == ""
+    assert qd.render(got) == qd.measure(r.goal, r.wt, probe=PLENTY)
+
+
+def test_run_reports_whole_run_unmeasured_and_refusal(tmp_path):
+    assert _has_run(), "quality_delta.run / render do not exist yet"
+    r = build(tmp_path, record=False)
+    got = qd.run(r.goal, r.wt, probe=PLENTY, runner=ok_runner())
+    assert got.code == 0 and got.rows == () and got.head_sha == r.head and got.base_sha is None
+    assert got.unmeasured == "no readable work record for this goal", got
+    assert qd.render(got).out == ["base=- head=%s" % r.head, "unmeasured: no readable work record for this goal"]
+    bad = build(tmp_path / "bad", base_config={"quality": {"metrics": [metric(), metric(name="two", direction="up")]}})
+    refused = qd.run(bad.goal, bad.wt, probe=PLENTY, runner=ok_runner())
+    assert refused.code == 2 and refused.rows == ()
+    assert refused.refusal == "quality_delta.py: REFUSED [bad-metric] metrics[1]: direction must be lower or higher"
+    assert qd.render(refused) == qd.Report(2, [], [refused.refusal])
+    none = build(tmp_path / "none", base_config={"quality": {"_comment": "x"}})
+    empty = qd.run(none.goal, none.wt, probe=PLENTY, runner=ok_runner())
+    assert empty.no_metrics is True and empty.code == 0 and qd.render(empty).out == ["no metrics configured"]
+
+
+def test_committed_mode_ignores_clutter_but_the_default_does_not(tmp_path):
+    assert _has_run(), "quality_delta.run does not exist yet"
+    r = build(tmp_path)
+    (r.wt / "build").mkdir()
+    (r.wt / "build" / "out.txt").write_text("verify left this behind\n")
+    (r.wt / "data.txt").write_text("a b c d e f g h i\n")             # modified, NOT committed: 9 words
+    try:
+        gated = qd.run(r.goal, r.wt, committed=True, probe=PLENTY)
+    except TypeError as exc:
+        gated = exc
+    assert isinstance(gated, qd.Result), "run() takes no committed= keyword yet: %s" % gated
+    (row,) = gated.rows
+    assert (row.verdict, row.base, row.head) == ("worse", D(3), D(5)), "the head value is the COMMITTED content"
+    (plain,) = qd.run(r.goal, r.wt, probe=PLENTY).rows
+    assert plain.verdict == "unmeasured" and "uncommitted" in plain.reason
+
+
+def _counting_git(adds, clock=None, add_code=None):
+    """A real-git spy that counts `worktree add`; with `clock`, an add costs its whole timeout (and fails
+    with `add_code`), which is how a slow checkout looks to the budget."""
+    real = qd._git
+
+    def spy(root, argv, timeout=30):
+        if argv[:2] == ["worktree", "add"]:
+            adds.append(timeout)
+            if clock is not None:
+                clock[0] += timeout
+                if add_code is not None:
+                    return add_code, "", "fatal: slow checkout"
+        return real(root, argv, timeout)
+    return spy
+
+
+def _named_runner(calls, values, clock=None, cost=None):
+    """Runner spy: the metric is the command's last argv element; `cost` advances the fake clock."""
+    def run(argv, cwd, timeout, env):
+        name = argv[-1]
+        calls.append({"name": name, "cwd": pathlib.Path(cwd), "timeout": timeout})
+        if clock is not None and cost:
+            clock[0] += cost.pop(0) if cost else 0
+        return qd.bounded_run.Result(qd.bounded_run.OK, 0, values.get(name, "1") + "\n")
+    return run
+
+
+def _cmd(name):
+    return [sys.executable, "-c", "pass", name]
+
+
+def test_head_only_builds_one_scratch_and_runs_named_metrics_once(tmp_path):
+    assert _has_run(), "quality_delta.run does not exist yet"
+    r = build(tmp_path, metrics=[metric(name="a", command=_cmd("a"), required=True),
+                                 metric(name="b", command=_cmd("b"))])
+    adds, calls = [], []
+    try:
+        got = qd.run(r.goal, r.wt, committed=True, head_only=("a",), probe=PLENTY,
+                     git=_counting_git(adds), runner=_named_runner(calls, {"a": "7", "b": "9"}))
+    except TypeError as exc:
+        got = exc
+    assert isinstance(got, qd.Result), "run() takes no head_only= keyword yet: %s" % got
+    assert len(adds) == 1, "one scratch, at HEAD only: %s" % adds
+    assert [c["name"] for c in calls] == ["a"], calls
+    assert calls[0]["cwd"] == qd.scratch_paths(r.sdlc, "1635")[1], "the head scratch, never the base one"
+    (row,) = got.rows
+    assert (row.name, row.base, row.head, row.delta) == ("a", None, D(7), None)
+    assert got.head_sha == r.head and no_scratch(r)
+
+
+def test_deadline_clips_timeouts_and_marks_the_rest_unmeasured(tmp_path):
+    assert _has_run(), "quality_delta.run does not exist yet"
+    r = build(tmp_path, metrics=[metric(name="m1", command=_cmd("m1"), required=True, timeout_seconds=300),
+                                 metric(name="m2", command=_cmd("m2"), timeout_seconds=300)])
+    clock, calls = [1000.0], []
+    # B = min(1800, 300*3 + 300*2 + 3*120) = 1800; R = min(900, 120 + 300) = 420; work until 1000 + 1380
+    try:
+        got = qd.run(r.goal, r.wt, committed=True, probe=PLENTY, clock=lambda: clock[0],
+                     runner=_named_runner(calls, {}, clock, cost=[1200, 180]))
+    except TypeError as exc:
+        got = exc
+    assert isinstance(got, qd.Result), "run() takes no clock= keyword yet: %s" % got
+    assert (got.budget_seconds, got.deadline) == (1800, 2800.0), got
+    assert [c["timeout"] for c in calls] == [300, 180], "the second command is clipped to the time left: %s" % calls
+    m1, m2 = got.rows
+    assert m1.verdict == "same"
+    assert m2.verdict == "unmeasured" and "the gate's time budget of 1800 s ran out" in m2.reason, m2
+    # a slow checkout in the first run still leaves the second reading its reservation
+    slow = build(tmp_path / "slow", metrics=[metric(name="m1", command=_cmd("m1"), required=True)],
+                 quality_extra={"gate_timeout_seconds": 400})
+    clock2, adds = [0.0], []
+    # B = 400 (explicit); R = min(200, 120 + 300) = 200; the add is clipped to 200 s, not its 600 s ceiling
+    first = qd.run(slow.goal, slow.wt, committed=True, probe=PLENTY, clock=lambda: clock2[0],
+                   git=_counting_git(adds, clock2, add_code=128), runner=ok_runner())
+    assert adds == [200.0], adds
+    assert first.deadline - clock2[0] >= 200, (first.deadline, clock2[0])
+    # the second reading works to the deadline it is given, with no reservation of its own
+    clock3, calls3 = [0.0], []
+    again = qd.run(r.goal, r.wt, committed=True, head_only=("m1",), deadline=10.0, probe=PLENTY,
+                   clock=lambda: clock3[0], runner=_named_runner(calls3, {}))
+    assert [c["timeout"] for c in calls3] == [10.0] and again.deadline == 10.0
+
+
+def test_gate_budget_is_derived_and_capped():
+    assert callable(getattr(qd, "gate_budget_seconds", None)) and callable(getattr(qd, "gate_reserve_seconds", None))
+
+    def cfg(*entries, **block):
+        return qd.parse_config(qd.json.dumps({"quality": dict({"metrics": list(entries)}, **block)}))
+    mixed = cfg(dict(GOOD, name="r", required=True, timeout_seconds=300), dict(GOOD, name="o", timeout_seconds=100))
+    assert qd.gate_budget_seconds(mixed) == 1460                                # 900 + 200 + 360
+    assert qd.gate_reserve_seconds(mixed, 1460) == 420                          # 120 + 300, under 730
+    ten = cfg(*[dict(GOOD, name="r%d" % i, required=True, timeout_seconds=300) for i in range(10)])
+    assert qd.gate_budget_seconds(ten) == 1800                                  # the default cap
+    assert qd.gate_reserve_seconds(ten, 1800) == 900                            # half the budget at most
+    explicit = cfg(dict(GOOD, required=True), gate_timeout_seconds=3000)
+    assert qd.gate_budget_seconds(explicit) == 3000
+    one_optional = cfg(dict(GOOD, name="o", timeout_seconds=10))
+    assert qd.gate_budget_seconds(one_optional) == 380                          # 20 + 360

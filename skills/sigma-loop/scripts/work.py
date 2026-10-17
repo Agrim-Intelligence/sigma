@@ -42,6 +42,7 @@ merge, so it is stated here rather than left to be found: without it every issue
 feature branch stays open, and every goal declaring `Blocked by: #N` stays held behind it.
 """
 import contextlib
+import decimal
 import importlib.util
 import hashlib
 import io
@@ -320,6 +321,22 @@ ENFORCEMENT_GATES = (
      "mechanism": "refuses `work.py finish` (worktree removal) while the goal's PR is still open, "
                   "since the state file it would delete is the only record of that PR; fails open "
                   "when GitHub cannot be read"},
+    {"control": "Required quality metrics may not get worse", "function": "_quality_ratchet_refusal",
+     "kind": "python-gate", "hosts": "all",
+     "enabled_by": ("work.enabled", "gates.quality_ratchet.enabled"),
+     "settings": ("quality.metrics", "quality.gate_timeout_seconds"),
+     "mechanism": "`work.py merge` measures each `quality.metrics` entry (merge-base config) at the committed "
+                  "head before a direct merge or an arm; a required metric worse beyond its tolerance is "
+                  "measured at the head once more and parks with failing_check only if that reading is also "
+                  "worse; a required metric that is unmeasured, a refusal or a crash parks with no_evidence; "
+                  "a non-required metric is logged and never parks; one action-log row per metric",
+     "condition": "runs only on the merge that will happen: `auto_merge: off` and an unguarded `protected` "
+                  "say `quality ratchet not run (no merge here)`; not in `reconcile-merges`, `merge_design` "
+                  "or `record done`; the waiver (`work.py quality-waive`) is an audit trail, not access "
+                  "control, and is not authenticated: the loop can run the verb, it just never does; a "
+                  "waiver binds to the measured head, so any new commit voids it; adds up to the gate budget "
+                  "(1800 s by default, 3600 s at most) plus git reads to `merge()`, unmeasured on a real "
+                  "project; not org-lockable"},
 )
 ENFORCEMENT_EXEMPT = (
     ("effective_hard_plan_gate", "resolver for the gate's value; `_hard_plan_gate_refusal` refuses"),
@@ -6861,6 +6878,221 @@ def _emit_test_trust(sdlc_dir, config, goal, rec, run, actionlog):
     actionlog.safe_append(sdlc_dir, goal, "gate", gate="test_trust", verdict=verdict, why=why)
 
 
+# --------------------------------------------------------------- quality ratchet (#1637, R-02)
+
+_QUALITY_WAIVE_USAGE = ("usage: work.py quality-waive <sdlc_dir> <goal> --metric <name> --reason \"<why>\"  "
+                        "(an OWNER's lever: the loop never runs this)")
+_QUALITY_REASON_MAX = 500
+_QUALITY_CONTROL = re.compile(r"[\x00-\x1f\x7f]+")
+_QUALITY_HEAD = re.compile(r"[0-9a-f]{40}([0-9a-f]{24})?")
+
+
+_QUALITY_DELTA = []
+
+
+def _quality_delta():
+    """The ONE loader of quality_delta.py (lazy: the ratchet is opt-in, and with it off this is never
+    called, so nothing of quality_delta is even imported), loaded once per process. The tests' spy."""
+    if not _QUALITY_DELTA:
+        _QUALITY_DELTA.append(_load("quality_delta"))
+    return _QUALITY_DELTA[0]
+
+
+def quality_waiver_path(sdlc_dir, goal, metric, head):
+    """`<sdlc>/state/gates/quality-waivers/<stem>/<metric>-<head>.json`, beside the plan-review record.
+    A ValueError for an unsafe goal, a metric that is not a metric name, or a head that is not a sha:
+    all three become path components, so none is trusted."""
+    goal_stem = stem(goal)
+    reason = state.unsafe_goal_reason(goal_stem)
+    if reason:
+        raise ValueError(f"unsafe goal {goal!r} for a quality waiver: {reason}")
+    if not isinstance(metric, str) or not _quality_delta()._NAME.fullmatch(metric):
+        raise ValueError(f"--metric {metric!r} is not a metric name ([A-Za-z0-9][A-Za-z0-9._-]{{0,63}})")
+    if not isinstance(head, str) or not _QUALITY_HEAD.fullmatch(head):
+        raise ValueError(f"{head!r} is not a commit sha")
+    return pathlib.Path(sdlc_dir) / "state" / "gates" / "quality-waivers" / goal_stem / f"{metric}-{head}.json"
+
+
+def _quality_waiver_valid(sdlc_dir, goal, metric, head):
+    """True only for a waiver file at the exact path whose goal, metric AND head each match (#1637 AC-5).
+    Each field is checked on its own (the shape of reviewer._waiver_valid): a file copied to another
+    path, or edited, does not lift a park. Never raises."""
+    try:
+        data = json.loads(quality_waiver_path(sdlc_dir, goal, metric, head).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(data, dict):
+        return False
+    if data.get("goal") != stem(goal):
+        return False
+    if data.get("metric") != metric:
+        return False
+    if data.get("head") != head:
+        return False
+    return True
+
+
+def quality_waive(sdlc_dir, goal, metric, reason, run=None):
+    """Record an owner's waiver for one required metric at the goal worktree's CURRENT head (#1637).
+
+    An AUDIT TRAIL, NOT ACCESS CONTROL: nothing authenticates the caller, and a maker that can run
+    commands can run this too, exactly as with reviewer.accept_inline. The loop never runs it; the
+    usage line and docs say so. The head is read (`git rev-parse HEAD` in the recorded worktree), never
+    typed, and any later commit -- a BEHIND rebase on the next merge attempt included -- voids it.
+    Create-only (`_create_exclusive`): a second call for the same metric and head refuses, and the first
+    reason stands. -> the recorded dict; ValueError on any refusal."""
+    run = run or _run
+    rec = _record(sdlc_dir, goal)
+    if not rec or not rec.get("worktree"):
+        raise ValueError(f"no work record for {goal}: a waiver binds to the recorded worktree's head")
+    text = " ".join(_QUALITY_CONTROL.sub(" ", str(reason or "")).split())
+    if not text:
+        raise ValueError("--reason is required: the owner's choice is recorded, never silent")
+    if len(text) > _QUALITY_REASON_MAX:
+        raise ValueError(f"--reason is {len(text)} characters; the limit is {_QUALITY_REASON_MAX}")
+    head = str(run(rec["worktree"], ["git", "rev-parse", "HEAD"]) or "").strip()
+    path = quality_waiver_path(sdlc_dir, goal, metric, head)
+    data = {"goal": stem(goal), "metric": metric, "head": head, "reason": text, "recorded_at": int(time.time())}
+    if not _create_exclusive(path, (json.dumps(data, sort_keys=True) + "\n").encode("utf-8")):
+        raise ValueError(f"a waiver for {metric} at {head} is already recorded: the first one stands")
+    _load("actionlog").safe_append(sdlc_dir, goal, "gate", gate="merge", verdict="warn",
+                                   why=f"quality ratchet waiver recorded: metric={metric} head={head} "
+                                       f"reason={text}")
+    return data
+
+
+def _quality_num(value):
+    """A Decimal (or None) for a gate row: plain decimal as quality_delta prints it, `-` for none."""
+    if value is None:
+        return "-"
+    return "0" if value == 0 else format(value, "f")
+
+
+def _quality_tol(tolerance):
+    return "%g" % tolerance
+
+
+def _quality_bad(direction, base, head):
+    """How much WORSE head is than base, in the metric's unit (negative when better)."""
+    return head - base if direction == "lower" else base - head
+
+
+def _quality_ratchet_refusal(sdlc_dir, config, goal, rec, vetted_head, actionlog):
+    """The quality ratchet merge gate (#1637, PRD-0008 R-02). "" to proceed, else a PARK detail.
+
+    OFF unless `gates.quality_ratchet.enabled` (read through `hard_plan_gate_on`, total over a scalar):
+    off returns before quality_delta is ever loaded (AC-2). On, it measures the goal at its committed
+    head (`committed=True`), and the ORDER below is the contract:
+
+    - a refusal or a raised exception parks (`could not measure`); it never passes silently;
+    - no metrics configured passes, logged; a whole-run `unmeasured` parks when any metric is required,
+      or when the metrics are unknown because the run stopped before the config was read (fail closed);
+    - a measured head that is not `vetted_head` makes every required metric unmeasured;
+    - per row, worse-beyond means `bad > tolerance`, strictly (bad = head - base for `lower`, base -
+      head for `higher`); a required, worse-beyond metric is measured AT THE HEAD ONCE MORE
+      (`head_only`, inside the first run's deadline) and parks only if that reading is also worse
+      beyond tolerance against the FIRST base, or unmeasured; a second head sha that differs is
+      unmeasured; a required unmeasured metric parks; a non-required metric is logged, never parks;
+    - a park candidate with a valid waiver for (goal, metric, measured head) is logged `waived`.
+
+    Every metric gets one action-log `gate` row (gate `merge`, verdict pass/block/warn; the why names
+    base, both heads, the tolerance and the raw verdict). A worse park carries `--qkind failing_check`;
+    every could-not-measure park `--qkind no_evidence`; when both occur, the worse text alone is emitted."""
+    if not hard_plan_gate_on(_gate_block(config, "quality_ratchet")):
+        return ""
+
+    def log(verdict, why):
+        actionlog.safe_append(sdlc_dir, goal, "gate", gate="merge", verdict=verdict, why=why)
+
+    def cannot(reasons):
+        log("block", "quality ratchet could not measure: " + "; ".join(reasons))
+        return ("quality ratchet could not measure: " + "; ".join(reasons)
+                + ". Record with --qkind no_evidence")
+
+    try:
+        qd = _quality_delta()
+        first = qd.run(goal, rec["worktree"], committed=True)
+    except Exception as exc:                # noqa: BLE001 - a crash fails CLOSED into a park, never a pass
+        return cannot([f"{type(exc).__name__}: {_first_line(exc)}"])
+    if first.code == 2:
+        return cannot([first.refusal or "quality_delta refused"])
+    if first.no_metrics:
+        log("pass", "quality ratchet: no metrics configured")
+        return ""
+    if first.unmeasured:
+        if not first.rows or any(row.required for row in first.rows):
+            return cannot([first.unmeasured])
+        log("pass", f"quality ratchet: whole run unmeasured ({first.unmeasured}); no metric is required -> pass")
+        return ""
+
+    readings = {}                           # name -> dict(row=..., head2=..., outcome=..., why=...)
+    remeasure = []
+    for row in first.rows:
+        entry = readings[row.name] = {"row": row, "head2": None, "unmeasured": None, "worse": False}
+        if row.required and first.head_sha != vetted_head:
+            entry["unmeasured"] = f"measured {first.head_sha} but the PR head is {vetted_head}"
+        elif row.base is None or row.head is None:
+            entry["unmeasured"] = row.reason or "unmeasured"
+        elif _quality_bad(row.direction, row.base, row.head) > decimal.Decimal(str(row.tolerance)):
+            entry["worse"] = True
+            if row.required:
+                remeasure.append(row.name)
+    if remeasure:
+        try:
+            second = qd.run(goal, rec["worktree"], committed=True, head_only=tuple(remeasure),
+                            deadline=first.deadline)
+            problem = (second.refusal or "quality_delta refused") if second.code == 2 else second.unmeasured
+            if not problem and second.head_sha != first.head_sha:
+                problem = f"the head moved between readings ({first.head_sha} then {second.head_sha})"
+        except Exception as exc:            # noqa: BLE001 - fails CLOSED, as above
+            second, problem = None, f"{type(exc).__name__}: {_first_line(exc)}"
+        again = {} if problem else {row.name: row for row in second.rows}
+        for name in remeasure:
+            entry, row2 = readings[name], again.get(name)
+            if problem or row2 is None or row2.head is None:
+                entry["unmeasured"] = problem or (row2.reason if row2 is not None else "not re-measured")
+                continue
+            entry["head2"] = row2.head
+            first_row = entry["row"]
+            entry["worse"] = (_quality_bad(first_row.direction, first_row.base, row2.head)
+                              > decimal.Decimal(str(first_row.tolerance)))
+
+    worse, unmeasured = [], []
+    for name, entry in readings.items():
+        row = entry["row"]
+        candidate = row.required and (entry["unmeasured"] or entry["worse"])
+        outcome = "pass"
+        if candidate and first.head_sha == vetted_head and _quality_waiver_valid(sdlc_dir, goal, name,
+                                                                                 first.head_sha):
+            outcome = "waived"
+        elif candidate:
+            outcome = "park"
+            if entry["unmeasured"]:
+                unmeasured.append(f"{name}: {entry['unmeasured']}")
+            else:
+                worse.append(f"required metric {name} worse beyond tolerance {_quality_tol(row.tolerance)} on "
+                             f"two measurements (base={_quality_num(row.base)} head={_quality_num(row.head)}, "
+                             f"then head={_quality_num(entry['head2'])}; head {first.head_sha})")
+        raw = "unmeasured" if entry["unmeasured"] else (row.verdict or "unmeasured")
+        log({"pass": "pass", "park": "block", "waived": "warn"}[outcome],
+            f"quality ratchet: metric={name} base={_quality_num(row.base)} head={_quality_num(row.head)} "
+            f"head2={_quality_num(entry['head2'])} tolerance={_quality_tol(row.tolerance)} raw={raw} -> {outcome}")
+    if worse:
+        # The WORSE text wins a mixed park, so its class (failing_check) is the one the needles see.
+        names = [text.split(" ")[2] for text in worse]
+        also = f"; also unmeasured: {'; '.join(unmeasured)}" if unmeasured else ""
+        metric = names[0] if len(names) == 1 else "<name>"
+        return ("quality ratchet: " + "; ".join(worse) + also + "; fix the regression. An owner may record a "
+                "waiver (the loop never runs this): "
+                f"work.py quality-waive {sdlc_dir} {goal} --metric {metric} --reason \"<why>\""
+                + ("" if len(names) == 1 else f" (once per metric: {', '.join(names)})")
+                + ". Record with --qkind failing_check")
+    if unmeasured:
+        return ("quality ratchet could not measure: " + "; ".join(unmeasured)
+                + ". Record with --qkind no_evidence")
+    return ""
+
+
 def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     """Three questions in the order that matters: may we merge, should we, and is anything actually
     enforcing the answer.
@@ -7007,13 +7239,17 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
                               verdict=("pass" if rok else "block"), why=None if rok else rverdict)
     if not rok:
         return f"PARK: {rverdict}"
+    # #1637: the quality ratchet measures only before a merge or arm that will really happen, so the
+    # two returns below that perform neither say it did not run (the gate is on but measured nothing).
+    ratchet_skipped = (" — quality ratchet not run (no merge here)"
+                       if hard_plan_gate_on(_gate_block(config, "quality_ratchet")) else "")
     if chosen == OFF:
         # The ENDING stays `leaving PR #N for a human` (SKILL.md routes on it -> `record review`);
         # the middle clause makes the review gate's run visible on the line itself.
         reviewed = (f"review gate passed (require_review: {effective_mode})"
                     if effective_mode != REVIEW_OFF else "review gate off (require_review: off)")
         return (f"{verdict} — {reviewed} — auto_merge is off (to let Sigma merge, set work.auto_merge "
-                f"to \"protected\" or \"always\" in .sdlc/config.json), "
+                f"to \"protected\" or \"always\" in .sdlc/config.json){ratchet_skipped}, "
                 f"leaving PR #{rec['pr']} for a human")
     # #1474's both-green check is DELIBERATELY NOT CALLED HERE. See `sibling_gate`'s own docstring
     # for the full reasoning; the short form is that every merge this function can perform is a
@@ -7022,7 +7258,7 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # #1478. Nothing about `merge()` changed for #1474, and that absence is pinned by a test.
     guarded, detail = protection(sdlc_dir, config, goal, run=run)
     if chosen == PROTECTED and not guarded:
-        return (f"PR #{rec['pr']} {verdict}, but {detail} — merging it is yours to make "
+        return (f"PR #{rec['pr']} {verdict}, but {detail}{ratchet_skipped} — merging it is yours to make "
                 f'(auto_merge: "protected")')
     method = settings(config)["merge_method"]
     # #638: GitHub merges only if the PR head is still the one `gate()` verified, so a push that
@@ -7031,6 +7267,12 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     vetted_head = (ci["head_sha"] or "").strip()
     if not vetted_head:
         return f"PARK: {_PARK_NO_REMOTE_HEAD}"
+    # #1637: HERE and nowhere else -- after verify, the phase record, gate() and its BEHIND rebase, the
+    # review gate and both no-merge returns, outside gate()'s REST wait, on the head the merge will
+    # carry. Off (the default) it returns "" without loading quality_delta.
+    ratchet = _quality_ratchet_refusal(sdlc_dir, config, goal, rec, vetted_head, actionlog)
+    if ratchet:
+        return "PARK: " + ratchet
     gate_detail = detail if guarded else f"WARNING: {detail}; local verify was the only gate"
 
     # #1212: arm ONLY when there is a real reason a direct merge would be refused right now (a
@@ -7514,6 +7756,8 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
     run(project_root(sdlc_dir), ["git", "worktree", "prune"])
     record_path(sdlc_dir, goal).unlink(missing_ok=True)
     plan_review_record_path(sdlc_dir, goal).unlink(missing_ok=True)   # #258: the work record's lifetime
+    # #1637: this goal's quality waivers share that lifetime (bounded growth); never another goal's.
+    shutil.rmtree(pathlib.Path(sdlc_dir) / "state" / "gates" / "quality-waivers" / stem(goal), ignore_errors=True)
     _load("reviewer").clear_receipts(sdlc_dir, goal)                  # F02: same lifetime
     _clear_completed_merge_deliveries(sdlc_dir, goal)
     branch = rec.get("branch")
@@ -8095,6 +8339,7 @@ def main(argv):
             "reconcile-review-post": "usage: work.py reconcile-review-post <sdlc_dir> <goal> --evidence <path>",
             "post-review": "usage: work.py post-review <sdlc_dir> <goal> --verdict approve|block|unblock --evidence <path> [--reason <text>]",
             "record-plan-review": _RECORD_PLAN_REVIEW_USAGE,
+            "quality-waive": _QUALITY_WAIVE_USAGE,
             "record-review": _RECORD_REVIEW_USAGE,
             "line-hash": _LINE_HASH_USAGE,
         }
@@ -8214,6 +8459,17 @@ def main(argv):
             print(f"work: {exc}", file=sys.stderr)
             return 2
         print(json.dumps(result, sort_keys=True))
+        return 0
+    if len(argv) >= 2 and argv[1] == "quality-waive":           # #1637: an owner's lever, never the loop's
+        if len(argv) < 4 or "--metric" not in argv or "--reason" not in argv:
+            print(_QUALITY_WAIVE_USAGE, file=sys.stderr)
+            return 2
+        try:
+            row = quality_waive(argv[2], argv[3], _flag(argv, "--metric"), _flag(argv, "--reason"))
+        except (OSError, ValueError, RuntimeError) as exc:
+            print(f"work: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(row, sort_keys=True))
         return 0
     if len(argv) >= 2 and argv[1] == "record-review":           # #684
         if len(argv) < 4 or "--verdict" not in argv:
@@ -8388,6 +8644,8 @@ def main(argv):
           "         post-review --verdict approve|block|unblock --evidence <path> [--reason \"<changes>\"]\n"
           "       work.py record-plan-review <sdlc_dir> <goal> --verdict SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST "
           "--plan-sha256 <hex> [--reason \"<text>\"]\n"
+          "       work.py quality-waive <sdlc_dir> <goal> --metric <name> --reason \"<why>\"   "
+          "(an owner's lever; the loop never runs it)\n"
           "       work.py root <sdlc_dir> <goal>\n"
           "       work.py line-hash <file> <line>\n"
           "       work.py merge-design|close-design <sdlc_dir> <goal>   "

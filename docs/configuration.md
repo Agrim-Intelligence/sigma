@@ -45,6 +45,7 @@ Defaults below are what `/sigma-init` scaffolds (`config.json.tmpl`). Not everyt
 | `knowledge_graph.enabled` | off | research capture + the self-improving graph |
 | `SIGMA_GATE_GLOBAL=1` (env) | unset | restores the always-on prompt gate (the reminder in every repository, adopted or not) |
 | `quality.metrics` | absent | a list of metric commands `quality_delta.py <goal>` measures at the merge-base and at the head and compares; nothing runs while it is absent. See [quality metrics](quality-delta.md) |
+| `gates.quality_ratchet.enabled` | off | `work.py merge` parks a goal whose `required` quality metric got worse beyond its `tolerance` on two readings, or could not be measured; the owner's waiver verb is not authenticated and the loop never runs it. Adds up to the gate budget to the merge call (60.5 min worst case by default, unmeasured on a real project). See [the merge gate](quality-delta.md#the-merge-gate) |
 
 > For any zero-touch / unattended multi-issue run, turn `backlog_check.enabled: true` on — it is
 > what makes a human-authored, comment-only dependency marker (bypassing `hand_off()`) actually
@@ -111,10 +112,13 @@ doctor autonomy row show the matched category and the thresholds in force once t
 ## Quality metrics
 
 `quality.metrics` is opt-in and absent from a fresh config, so nothing measures anything until you add it.
-Each entry is `{name, command, direction, scope}` plus an optional `required` and `timeout_seconds`;
-`quality.memory_floor_fraction` and `quality.env_drop` are optional block-level keys.
+Each entry is `{name, command, direction, scope}` plus an optional `required`, `timeout_seconds` and `tolerance`
+(read only by the merge gate); `quality.memory_floor_fraction`, `quality.env_drop` and
+`quality.gate_timeout_seconds` (the merge gate's budget) are optional block-level keys.
 `python3 <installed-sigma>/skills/sigma-loop/scripts/quality_delta.py <goal>` reads the block from `.sdlc/config.json` **as
 committed at the merge-base**, never the head's file, runs each command once at the merge-base and once at the
 head in scratch worktrees, one at a time, and prints base, head, delta and `better`, `same`, `worse` or
 `unmeasured`. A command that fails or times out is `unmeasured`, never `same`. The schema, the number grammar,
 the command environment, the limits and the recovery lever are in [quality-delta.md](quality-delta.md).
+With `gates.quality_ratchet.enabled`, `work.py merge` acts on `required` metrics; that section of the same page
+gives the budget, the worst case and the owner-only `work.py quality-waive` verb.

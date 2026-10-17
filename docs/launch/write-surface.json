@@ -1666,10 +1666,10 @@
     },
     {
       "path": "skills/sigma-loop/scripts/quality_delta.py",
-      "function": "measure",
+      "function": "_run",
       "rule": "fs-write",
       "count": 3,
-      "gate": "opt-in; runs only when quality.metrics is set in the merge-base config and a person or a loop slot runs quality_delta.py <goal>; writes only under the main checkout's .sdlc/state/quality_delta/ (the state directory, created, one owner marker per scratch worktree, one changed-file list inside each scratch worktree), and the scratch worktrees and markers are removed through diff_revert.cleanup in a finally; a crash leaves them for the next run to reclaim by dead pid",
+      "gate": "opt-in; runs only when quality.metrics is set in the merge-base config and a person or a loop slot runs quality_delta.py <goal>, or work.py merge runs it with gates.quality_ratchet.enabled; writes only under the main checkout's .sdlc/state/quality_delta/ (the state directory, created, one owner marker per scratch worktree, one changed-file list inside each scratch worktree), and the scratch worktrees and markers are removed through diff_revert.cleanup in a finally; a crash leaves them for the next run to reclaim by dead pid",
       "risk": "medium"
     },
     {
@@ -2716,7 +2716,7 @@
       "path": "skills/sigma-loop/scripts/work.py",
       "function": "finish",
       "rule": "fs-rmtree",
-      "count": 1,
+      "count": 2,
       "gate": "ungated",
       "risk": "high"
     },

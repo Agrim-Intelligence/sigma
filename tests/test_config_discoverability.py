@@ -75,6 +75,19 @@ def test_plan_review_gate_ships_off_and_says_how_it_is_turned_on():
         assert needed in gates["_plan_review"], needed
 
 
+def test_quality_ratchet_gate_ships_off_and_says_how_it_is_turned_on():
+    """#1637: `gates.quality_ratchet` is read through `_gate_block(config, "quality_ratchet")`, which
+    `_GATE_READ` cannot see, so it is pinned by name. It ships OFF, and its comment names what it needs,
+    the owner's waiver verb, and that the waiver is not authenticated and never run by the loop."""
+    import json
+    gates = json.loads(TMPL).get("gates", {})
+    assert gates.get("quality_ratchet") == {"enabled": False}
+    comment = gates.get("_quality_ratchet", "")
+    for needed in ("work.enabled", "quality.metrics", "quality-waive", "not authenticated", "the loop never runs"):
+        assert needed in comment, needed
+    assert not re.search(r"(?i)(token|secret|password)\s*[=:]", comment)
+
+
 def test_template_is_valid_json_once_comments_are_stripped():
     """The `_name` comment convention means a stray quote breaks EVERY adopter's scaffold, and the
     added entry embeds escaped quotes — exactly where that goes wrong."""
