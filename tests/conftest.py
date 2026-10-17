@@ -88,6 +88,7 @@ def _rss_mb():
 
 
 def pytest_collection_finish(session):
+    _script_cache.fresh = True   # collection is over: from here every load is a fresh module
     peak, n = _rss_mb(), len(session.items)
     session.config._collect_rss_mb, session.config._collect_n = peak, n
     if n > 200 and peak > _script_cache.rss_bound_mb(n):   # a partial run (-k, one file) is too small to judge
@@ -116,17 +117,20 @@ def pytest_xdist_auto_num_workers(config):
 
 
 @pytest.fixture(autouse=True)
-def _fresh_scripts_when_marked(request):
-    _script_cache.fresh = request.node.get_closest_marker("fresh_scripts") is not None
+def _scripts_load_fresh_at_test_time(request):
+    """The script cache serves COLLECTION only (module-level and import-time loads, which pytest keeps alive).
+    Loads made while a test runs are fresh, as before: a first full run with the cache on for those too failed
+    933 tests (modules cached while a test had pathlib/sys.modules stubbed, then reused by others)."""
+    _script_cache.fresh = request.node.get_closest_marker("shared_scripts") is None
     yield
-    _script_cache.fresh = False
+    _script_cache.fresh = True
 
 
 def pytest_configure(config):
     config.addinivalue_line(
         "markers",
-        "fresh_scripts: load scripts uncached for this test (the suite shares one module per script "
-        "path; use when the test mutates a script's globals directly).",
+        "shared_scripts: for tests/test_script_cache.py only -- turns the collection-time script cache "
+        "on for this test so the cache itself can be tested.",
     )
     config.addinivalue_line(
         "markers",

@@ -10,7 +10,7 @@ that mutates a script's globals directly (not via monkeypatch) is visible to lat
 process. Mark such a test `@pytest.mark.fresh_scripts` to get uncached loads for its duration.
 
 Each clause below was broken on its own and seen red (see the PR): no cache; key on name only; key on
-path only; the copies ceiling; the RSS ceiling.
+path only; cache left on at test time; the copies ceiling; the RSS ceiling.
 """
 import gc
 import importlib.util
@@ -33,26 +33,29 @@ def _load(name, as_name=None, path=None):
     return mod
 
 
+@pytest.mark.shared_scripts
 def test_same_name_and_path_is_one_module():
     assert _load("legacy", "memo_a") is _load("legacy", "memo_a")
 
 
+@pytest.mark.shared_scripts
 def test_different_name_is_a_different_module():
     assert _load("legacy", "memo_a") is not _load("legacy", "memo_b")
 
 
+@pytest.mark.shared_scripts
 def test_different_path_is_a_different_module(tmp_path):
     other = tmp_path / "legacy.py"
     other.write_text("MARK = 1\n")
     assert _load("legacy", "memo_c", other) is not _load("legacy", "memo_c")
 
 
+@pytest.mark.shared_scripts
 def test_siblings_of_a_reloaded_script_are_shared():
     assert _load("feature_registry", "memo_r1").legacy is _load("feature_registry", "memo_r2").legacy
 
 
-@pytest.mark.fresh_scripts
-def test_fresh_scripts_marker_restores_isolation():
+def test_test_time_loads_are_fresh():
     assert _load("legacy", "memo_d") is not _load("legacy", "memo_d")
 
 
