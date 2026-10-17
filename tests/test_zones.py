@@ -1285,3 +1285,37 @@ def test_check_doc_template_and_configuration(tmp_path):
     rows = [ln for ln in (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8").splitlines()]
     assert len([r for r in rows if r.startswith("| `design.restructure_lines")]) == 1
     assert len([r for r in rows if r.startswith("| `design.zones")]) == 1
+
+
+def test_check_stale_binary_is_not_a_change_but_a_real_binary_change_is(tmp_path):
+    """`diff-index --numstat` prints `-\t-` for a stat-stale binary whose bytes did not change; the
+    measure must compare content with the fork blob, and never refresh the index to do it."""
+    repo, wt = _cf(tmp_path, files={"src/legacy/bin.dat": "ab\0cd\n"})
+    _acceptance(repo, "1541", ["Nothing here names a path."], False)
+    stale = 1577836860                                      # 2020-01-01: differs from the index stat
+    os.utime(str(wt / "src/legacy/bin.dat"), (stale, stale))
+    p = _check(wt, "--goal", "1541", "--diff")
+    assert p.returncode == 0, p.stderr
+    assert p.stdout == "verdict: within\n", p.stdout
+    (wt / "src/legacy/bin.dat").write_bytes(b"ab\0ce\n")    # same length, different bytes, still stale
+    os.utime(str(wt / "src/legacy/bin.dat"), (stale + 1, stale + 1))
+    rows, verdict = _ok(_check(wt, "--goal", "1541", "--diff"))
+    assert rows == [["src/legacy/bin.dat", "legacy", "binary", "restructure", "intent: no"]]
+    assert verdict == "verdict: over"
+
+
+def test_check_unmeasurable_newline_path_is_named_on_stderr_and_keeps_other_rows(tmp_path):
+    nl = "src/legacy/n\nl.py"
+    repo, wt = _cf(tmp_path, files={LEG: _hundred(), nl: _hundred()})
+    _edit(wt, LEG, 50)
+    (wt / nl).write_text(_hundred() + "x\n", encoding="utf-8")
+    _acceptance(repo, "1541", ["Nothing here names a path."], False)
+    p = _check(wt, "--goal", "1541", "--diff")
+    rows, verdict = _ok(p)
+    assert rows == [_row(LEG, 50, True, "no")] and verdict == "verdict: over"
+    assert "newline" in p.stderr and "cannot be measured" in p.stderr, p.stderr
+    _acceptance(repo, "1541", ["Rework `src/legacy/`."], False)
+    p = _check(wt, "--goal", "1541", "--diff")
+    rows, verdict = _ok(p)
+    assert rows == [_row(LEG, 50, True, "yes")] and verdict == "verdict: unknown"
+    assert "newline" in p.stderr, p.stderr

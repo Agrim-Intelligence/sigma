@@ -125,13 +125,22 @@ Documented gaps, each pinned by a test: **negation** is not parsed, so a criteri
 `src/legacy/a.py` stays unchanged still grants `intent: yes`; a span containing whitespace never matches
 (a file with spaces gets intent only through its directory); a suffix such as `:12` or `::test` makes a
 span never match, which fails toward `over`; matching is **case-sensitive**; `drafted: false` is the
-recorder's own claim, not proof; untracked files are not seen by `--diff`.
+recorder's own claim, not proof; untracked files are not seen by `--diff`; and a criterion that names a
+top-level directory (`tests/`, `docs`, `src`) grants intent for that whole tree by the directory rule.
+A binary file that is only stat-stale (same bytes as the fork) is compared by content and dropped, never
+read as a restructure. A changed path containing a newline cannot go through the line-based lookup:
+it is skipped, the verdict cannot be `within` (`over` still wins when a measured row is over), and one line on stderr names it; the other
+rows still print.
 
 It reads only, through `git diff-index` (never `git diff`, which rewrites a stale `.git/index`), and
-runs a constant number of git processes: one `merge-base`, one `diff-index`, one `cat-file`. Measured
+runs a constant number of git processes, including one `merge-base`, one `diff-index` and one
+`cat-file` (eight in total under `GIT_TRACE`, with the `rev-parse` and `symbolic-ref` lookups; a diff
+with binary files adds one more `cat-file` and one `hash-object`). Measured
 (macOS, git 2.55, Python 3.9 system interpreter): `check --goal 1541 --diff` in this repository with
 a small diff and no zones declared took 0.22 s wall (median of 3); a fixture with 1,500 changed legacy
-files took 0.68 s (median of 3) and printed 1,500 rows. Not measured: beyond 1,500 changed files, a
+files printed 1,500 rows in 490 to 560 ms (5 runs) on a loaded machine (load average about 13) and
+0.68 s median earlier on a quieter one; an independent run under swap pressure took 1.12 to 1.28 s, so
+plan for roughly a second rather than the quiet-machine figure. Not measured: beyond 1,500 changed files, a
 networked filesystem, or a repository with large history. The ceilings are the 10 s git timeout (a
 timeout reads `unknown`), a 256 KiB plan and a 32 KiB acceptance record.
 

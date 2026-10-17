@@ -313,7 +313,29 @@ def _diff_counts(top, fork):
             found.append((path, int(added) + int(deleted)))
         else:
             return None
-    return found
+    return _drop_unchanged_binaries(top, fork, found)
+
+
+def _drop_unchanged_binaries(top, fork, found):
+    """`diff-index --numstat` prints `-\\t-` for a binary file that is merely stat-stale (its bytes equal
+    the fork blob), where a text file prints nothing. Drop each such entry by comparing content: one
+    `cat-file --batch-check` for the fork oids and one read-only `hash-object --stdin-paths` (no `-w`,
+    so nothing is written and the index is untouched). Hashing WITH filters, the default, matches
+    what diff-index compares (the clean-filtered worktree bytes). Entries that cannot be compared
+    (deleted, not a regular file, newline in the path, any git failure) are kept: fail toward over."""
+    cand = [p for p, n in found if n == "binary" and "\n" not in p
+            and os.path.isfile(os.path.join(top, p)) and not os.path.islink(os.path.join(top, p))]
+    if not cand:
+        return found
+    rc, out = _git(["cat-file", "--batch-check"], top, stdin="".join("%s:%s\n" % (fork, p) for p in cand))
+    lines = out.split("\n")[:-1]
+    rc2, out2 = _git(["hash-object", "--stdin-paths"], top, stdin="".join(p + "\n" for p in cand))
+    hashes = out2.split("\n")[:-1]
+    if rc != 0 or rc2 != 0 or len(lines) != len(cand) or len(hashes) != len(cand):
+        return found
+    same = set(p for p, line, h in zip(cand, lines, hashes)
+               if line.split()[:1] == [h] and line.split()[1:2] == ["blob"])
+    return [(p, n) for p, n in found if p not in same]
 
 
 def _spans(text):
@@ -429,8 +451,9 @@ def check(goal, plan, diff, base, cwd):
     ref, why = (base, None) if base is not None else _goal_base(top, goal)
     fork = _fork_point(top, ref) if ref is not None else None
     if fork is None:
-        return ["verdict: unknown"], why or "merge-base unresolved"
+        return ["verdict: unknown"], "verdict unknown: " + (why or "merge-base unresolved")
     intent = _intent(top, goal)
+    odd = []
     if plan is not None:
         if paths is None:
             return ["verdict: unknown"], "the plan has no `## Files` section"
@@ -444,16 +467,23 @@ def check(goal, plan, diff, base, cwd):
         found = _diff_counts(top, fork)
         if found is None:
             return ["verdict: unknown"], "git diff-index failed"
-        state = _newness(top, fork, [p for p, _n in found])
+        odd = [p for p, _n in found if "\n" in p]      # a newline breaks the line-based batch below
+        state = _newness(top, fork, [p for p, _n in found if "\n" not in p])
         rows, unknown = [], False
+        if odd:
+            unknown = True
+            why = "%d changed path(s) contain a newline and cannot be measured, e.g. %r" % (len(odd), odd[0])
         for path, n in found:
+            if path in odd:
+                continue
             if state[path] == "unknown":
                 unknown = True
             elif state[path] == "existing" and _match(zones, path) == "legacy":
                 restructure = n == "binary" or n > limit
                 rows.append((path, "legacy", str(n), "restructure" if restructure else "-",
                              "intent: " + intent(path)))
-    return [_row_text(r) for r in rows] + ["verdict: " + _verdict(rows, unknown, plan is not None)], None
+    return [_row_text(r) for r in rows] + ["verdict: " + _verdict(rows, unknown, plan is not None)], (
+        why if plan is None and odd else None)
 
 
 def main(argv):
@@ -472,7 +502,7 @@ def main(argv):
         if args.cmd == "check":
             lines, why = check(args.goal, args.plan, args.diff, args.base, os.getcwd())
             if why:
-                print("zones.py: unknown: %s" % why, file=sys.stderr)
+                print("zones.py: note: %s" % why, file=sys.stderr)
             sys.stdout.buffer.write(os.fsencode("".join(ln + "\n" for ln in lines)))
             return 0
         rows = classify(args.paths, os.getcwd(), args.base)
