@@ -3,6 +3,7 @@
 All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
+- **Spend triage recognises a dollar sign and more currency codes after the number (#1756).** `40$`, `40 $`, `40 AUD`, `500 JPY` and similar three-letter codes next to a compute word now park as a spend phrase; non-money units such as `40 MB` and amounts inside a fenced block still arm.
 - **The lease CLI reads the `resource` config block (#1733).** `resource_lease.py admit|release|status|wait` takes its mode, ttl and limits from the project's `resource` block, like the other resource callers, instead of its built-in defaults only.
 - **The session lease is renewed while its session runs (#1740).** `resource_guard.session_lease` starts a daemon renewer thread (default every ttl/3, stopped before the release), so a long session is no longer reclaimed as expired.
 - **The autowatch drive now takes a `session` lease (#1758).** A driven `claude -p` session asks for admission like the other model-session spawns; a hold records a `deferred` note, starts nothing and does not count a hop. The spawn ratchet also matches string commands such as `claude -p`. Off unless `resource.mode` or `SIGMA_RESOURCE_MODE` is `observe` or `enforce`.
