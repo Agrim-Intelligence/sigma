@@ -155,6 +155,11 @@ _WORD = re.compile(r"[a-z']+")
 
 _NAMING = frozenset("make call name label term mention list rename".split())
 _FILLER = frozenset("the a an this that these those just please now also then".split())
+_NOUN_HEAD = frozenset(("command commands word words phrase phrases term terms rule rules flag flags string strings "
+                        "text name names keyword keywords token tokens verb verbs").split())
+_BE = frozenset("is are was were be being".split())
+_NEGATION = frozenset("not never no don't dont without doesn't isn't aren't".split())
+_DESCRIBING = frozenset("for of about first second third again other another same called named".split())
 _MODAL = frozenset("should must will can could next now let's i'll we'll you'll ok okay afterwards afterward".split())
 
 
@@ -171,7 +176,11 @@ def _quoted_holds(clause, at, span_at):
     last = before[-1]
     if last in _NAMING:
         return False
-    return last in _ACTION or last in _HANDOFF or last in _MODAL
+    if last in _ACTION or last in _HANDOFF or last in _MODAL:     # before the determiners: "when" and "if" are both
+        return True
+    if last in _NOUN_HEAD or last in _NEGATION or last in _DETERMINER or last in _BE:
+        return False
+    return last not in _DESCRIBING     # an unrecognised word before the span holds (#1755)
 
 
 def _descriptive(clause, at, deny):
