@@ -77,8 +77,7 @@ each backed by a `file:line`. "The plan says X" is not evidence; the file showin
 - **Loopholes:** where can invalid state enter without hitting the new guard (defaults, alternate code paths, deserialization, trust boundaries)?
 
 ## 3. Scope & fit
-Does each step serve the goal? What's over-built (YAGNI)? Does it contradict the project's own
-rules, conventions, or stated direction? Quote the specific rule if so. Run
+Does each step serve the goal? What's over-built (YAGNI)? An interface, factory, layer or indirection naming no force (a legacy sprout or wrap excepted) is over-built; the four forces: a second real variant in this goal, an unreliable dependency, a boundary crossing, a quality scenario goal-design names. Does it contradict the project's rules, conventions or direction? Quote the rule. Run
 `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/zones.py" check --goal "<goal>" --plan <plan>`: FIX-FIRST on
 `verdict: over`, quoting it. Each legacy row without `intent: yes` must be a seam edit (sprout or
 wrap), else FIX-FIRST. A bare `verdict: unknown` never rejects.
@@ -157,23 +156,22 @@ wrong one. Each disposition needs its own `file:line`; "the review seems right" 
 - **Partially accept** — the concern is real but the suggested fix isn't. Adapt it; cite both the
   concern and why the adjusted approach is better.
 
-**The review can also be wrong.** It is a hypothesis exactly like the plan was in §1. A finding that
+**The review can also be wrong.** It is a hypothesis, as the plan was in §1. A finding that
 claims a file or function doesn't exist gets checked against the filesystem before it is accepted —
-the reviewer misreads code too, and a plan patched to satisfy a false finding is worse than the
+a plan patched to satisfy a false finding is worse than the
 original.
 
 **Structural over patchwork**, except in a legacy file without `intent: yes`, where the seam patch is
 the scope. If a finding proposes a one-site patch where a shared fix is feasible, reject the approach
-and propose the structural one. If patchwork is genuinely the right scope, say so explicitly and leave a tracked item
+and propose the structural one. If patchwork is the right scope, say so and leave a tracked item
 for the structural fix; never let it pass unnamed.
 
 **Regen threshold.** If more than half the findings are substantive (not surface corrections like a
 stale line number or a renamed symbol), the plan has structural problems — say so and recommend
 regenerating it from the goal rather than patching.
 
-Carry the dispositions with the revised plan so the next review round starts from what was already
-settled. When a later round contradicts an earlier decision, re-read the code, pick one direction on
-the evidence, and record the reversal — don't flip-flop.
+Carry the dispositions with the revised plan so the next review round starts from what was settled. When a later round contradicts an earlier decision, re-read the code, pick one direction on
+the evidence, and record the reversal.
 
 **Under `/sigma-loop`, a revision the current model tier cannot finish is escalated, not parked** —
 token budget and tier size are not park reasons (#2828). Run

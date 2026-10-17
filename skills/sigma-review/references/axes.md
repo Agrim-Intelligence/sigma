@@ -1,7 +1,5 @@
 # Review axes
 
-The review axis set Sigma reviews against, and what each axis is *for*.
-
 Derived by merging four canonical frames and de-duplicating every overlap, so each concern has
 exactly one home. Partitioned by a single principle — **what kind of harm does this cause** — which
 is what makes the set MECE: an axis is not a topic, it is a failure mode with a distinct victim.
@@ -63,8 +61,7 @@ the author is structurally blind on is the reason review exists at all.
 governs what it *reports*. A general-review finding must carry a written failing case before it may block (a risk review's `critical`/`high` excepted), five
 false-positive classes are never reported at all, and a real-but-not-blocking finding is filed as
 `sdlc:followup` rather than spending one of the three review cycles that would otherwise park the
-goal. The gate is the north-star's own Standing Rule 1 — a claim in prose is not evidence — turned on
-the reviewer.
+goal.
 
 The one carve-out is deliberately narrow: a pre-existing problem is not this review's finding *unless
 the change puts it on a live path*. An unqualified "ignore pre-existing issues" rule would cancel the
