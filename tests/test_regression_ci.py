@@ -62,9 +62,14 @@ def test_control_step_without_its_event_guard_is_rejected():
 
 
 def test_control_step_cannot_write_or_spend():
+    # The break ADDS a recording run beside the nightly one, so every earlier clause still holds and the
+    # `--record` clause is the one that fires. Rewriting the nightly line instead tripped the nightly-row
+    # clause first, and this passed only while pytest's repr of the job text happened to contain "--record".
     text = WORKFLOW.read_text(encoding="utf-8")
-    with pytest.raises(AssertionError, match="--record"):
-        validate_job(text.replace("control.py run\n", "control.py run --record\n"))
+    broken = text.replace("control.py run\n", "control.py run\n          python3 evals/regression/control.py run --record\n")
+    assert broken != text
+    with pytest.raises(AssertionError, match="must not write the matrix"):
+        validate_job(broken)
 
 
 def _control():
