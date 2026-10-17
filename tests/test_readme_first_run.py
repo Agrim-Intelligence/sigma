@@ -506,7 +506,7 @@ VERSION_ALLOW = {
     ("docs/whats-new-1.0.15.md", "1.0.14"): "the previous release, named as the baseline this page describes changes from",
     ("contract/README.md", "1.0.0"): "the first plugin release the event contract was frozen in: a historical fact, not the current version",
     ("skills/sigma-init/templates/config.json.tmpl", "1.0.0"): "the first release that carries the documented default: a minimum, not the current version",
-    ("contract/README.md", "1.3.0"): "the event contract's own semver (contract/VERSION)",
+    ("contract/README.md", "1.4.0"): "the event contract's own semver (contract/VERSION)",
     ("contract/README.md", "1.1.0"): "the event contract's own semver history",
     ("contract/README.md", "1.1"): "the event contract's own planned version (`in v1.1 or later`)",
     ("docs/launch/evidence/330-control.md", "3.12.13"): "the measured Python interpreter version",

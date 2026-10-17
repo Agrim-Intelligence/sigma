@@ -872,3 +872,466 @@ def test_doc_states_the_nfd_and_case_limits_and_refusals():
     for term in ("Unicode normalisation", "NFD", "NFC", "Case (case-insensitive", "may be wrong",
                  "pass the spelling git", "carriage return or tab", "never a separator"):
         assert term in t, term
+
+
+# --- goal #1541: `check`, the legacy-change and refactor-intent measure ------------------------
+# Each guard below was broken once and seen red; the record is `.sdlc/evidence/1541-controls.md`.
+
+LEG = "src/legacy/a.py"
+
+
+def _hundred():
+    return "".join("line %d\n" % i for i in range(100))
+
+
+def _cf(tmp_path, restructure=None, files=None):
+    """A goal-1541 worktree over origin/main. Zones: src/legacy/* legacy, src/modern/* modern."""
+    repo = _repo(tmp_path / "p")
+    for rel, text in (files or {LEG: _hundred()}).items():
+        _commit(repo, rel, text)
+    cfg = _zones(("src/legacy/*", "legacy"), ("src/modern/*", "modern"))
+    if restructure is not None:
+        cfg["design"]["restructure_lines"] = restructure
+    _config(repo, cfg)
+    _with_origin(repo, tmp_path)
+    return repo, _worktree(repo, goal="1541")
+
+
+def _check(cwd, *args, env=None):
+    return subprocess.run([sys.executable, str(SCRIPT), "check", *args], cwd=str(cwd), env=env,
+                          capture_output=True, text=True, timeout=60)
+
+
+def _ok(p):
+    """(rows, verdict line). Asserts the return code and a non-empty stdout BEFORE indexing it."""
+    assert p.returncode == 0, p.stderr
+    assert p.stdout.endswith("\n"), repr(p.stdout)
+    lines = p.stdout.splitlines()
+    assert lines[-1].startswith("verdict: "), lines
+    return [ln.split("\t") for ln in lines[:-1]], lines[-1]
+
+
+def _refused(p, *needles):
+    assert p.returncode == 2 and p.stdout == "", (p.returncode, p.stdout, p.stderr)
+    assert p.stderr.startswith("zones.py: REFUSED: "), p.stderr
+    for n in needles:
+        assert n in p.stderr, (n, p.stderr)
+
+
+def _acceptance(repo, goal, criteria, drafted, where=None):
+    items = list(criteria)
+    while len(items) < 3:
+        items.append("Filler criterion %d." % len(items))
+    meta = ['kind: "acceptance"', "goal: %s" % json.dumps(str(goal)), "verify_command: null"]
+    if drafted is not None:
+        meta.append("drafted: " + json.dumps(drafted))
+    text = "---\n" + "\n".join(meta) + "\n---\n## Done when\n" + "".join("- [ ] %s\n" % i for i in items)
+    d = pathlib.Path(where or repo) / ".sdlc" / "acceptance"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / ("%s.md" % goal)).write_text(text, encoding="utf-8")
+
+
+def _edit(wt, rel, n):
+    """The base text plus n ADDED lines, uncommitted: n changed lines against the fork."""
+    (pathlib.Path(wt) / rel).write_text(_hundred() + "".join("added %d\n" % i for i in range(n)),
+                                       encoding="utf-8")
+
+
+def _row(path, changed, restructure, intent):
+    return [path, "legacy", str(changed), "restructure" if restructure else "-", "intent: " + intent]
+
+
+def test_check_output_shape_and_exit_codes(tmp_path):
+    repo, wt = _cf(tmp_path)
+    h = _check(wt, "--help")
+    assert h.returncode == 0 and "usage" in h.stdout.lower()
+    for flag in ("--goal", "--plan", "--diff", "--base"):
+        assert flag in h.stdout, flag
+    _edit(wt, LEG, 41)
+    rows, verdict = _ok(_check(wt, "--goal", "1541", "--diff"))
+    assert rows == [_row(LEG, 41, True, "unknown")] and verdict == "verdict: unknown"
+    _refused(_check(wt, "--diff"), "--goal")
+    _refused(_check(wt, "--goal", "1541"), "--plan", "--diff")
+    _refused(_check(wt, "--goal", "1541", "--diff", "--plan", "x.md"), "--plan", "--diff")
+    _refused(_check(wt, "--goal", "../x", "--diff"), "goal")
+    _refused(_check(wt, "--goal", "1541", "--diff", "--base=-x"), "base")
+    # a NEW file whose name has a tab is never a row, so it never refuses the run
+    _commit(wt, "src/legacy/n\tew.py", "n\n")
+    _edit(wt, LEG, 3)
+    rows, verdict = _ok(_check(wt, "--goal", "1541", "--diff"))
+    assert [r[0] for r in rows] == [LEG]
+    # an EXISTING legacy path with a tab would print a row, and the row would break the format
+    tmp2 = tmp_path / "second"
+    tmp2.mkdir()
+    _repo2, wt2 = _cf(tmp2, files={"src/legacy/t\tab.py": _hundred()})
+    (wt2 / "src/legacy/t\tab.py").write_text(_hundred() + "x\n", encoding="utf-8")
+    _refused(_check(wt2, "--goal", "1541", "--diff"), "tab")
+
+
+def test_restructure_lines_validation_refused(tmp_path):
+    repo, wt = _cf(tmp_path)
+    for value, shown in ((0, "0"), (-1, "-1"), ("40", "'40'"), (True, "True"), (1.5, "1.5"), (None, "None")):
+        cfg = _zones(("src/legacy/*", "legacy"))
+        cfg["design"]["restructure_lines"] = value
+        _config(repo, cfg)
+        p = _check(wt, "--goal", "1541", "--diff")
+        _refused(p, "design.restructure_lines must be an integer >= 1, got %s" % shown)
+    _config(repo, {"design": "x"})
+    _refused(_check(wt, "--goal", "1541", "--diff"), "design must be an object")
+    cfg = _zones(("src/legacy/*", "legacy"))
+    cfg["design"]["restructure_lines"] = 5
+    _config(repo, cfg)
+    _ok(_check(wt, "--goal", "1541", "--diff"))
+
+
+def test_check_over_when_changed_lines_exceed_threshold_without_intent(tmp_path):
+    """AC-1: a large UNCOMMITTED legacy edit, no declared intent, reads over."""
+    repo, wt = _cf(tmp_path)
+    _acceptance(repo, "1541", ["Nothing here names a path."], False)
+    _edit(wt, LEG, 41)
+    rows, verdict = _ok(_check(wt, "--goal", "1541", "--diff"))
+    assert rows == [_row(LEG, 41, True, "no")] and verdict == "verdict: over"
+
+
+def test_check_threshold_boundary_is_strictly_greater(tmp_path):
+    repo, wt = _cf(tmp_path)
+    _acceptance(repo, "1541", ["Nothing here names a path."], False)
+    big = wt / "src/legacy/big.py"
+    big.write_text("x\n" * 500, encoding="utf-8")        # untracked: never in the diff
+    cfgfile = tmp_path / "gitconfig"
+    cfgfile.write_text("[diff]\n\talgorithm = patience\n\trenames = false\n", encoding="utf-8")
+    env = dict(os.environ, GIT_CONFIG_GLOBAL=str(cfgfile))
+    for n, over in ((40, False), (41, True)):
+        _edit(wt, LEG, n)
+        for e in (None, env):
+            rows, verdict = _ok(_check(wt, "--goal", "1541", "--diff", env=e))
+            assert rows == [_row(LEG, n, over, "no")], (n, rows)
+            assert verdict == ("verdict: over" if over else "verdict: within")
+    cfg = _zones(("src/legacy/*", "legacy"))
+    cfg["design"]["restructure_lines"] = 5
+    _config(repo, cfg)
+    for n, over in ((5, False), (6, True)):
+        _edit(wt, LEG, n)
+        rows, _v = _ok(_check(wt, "--goal", "1541", "--diff"))
+        assert rows == [_row(LEG, n, over, "no")], (n, rows)
+    # one edited line is one deleted plus one added: it counts 2
+    cfg["design"]["restructure_lines"] = 1
+    _config(repo, cfg)
+    (wt / LEG).write_text(_hundred().replace("line 7\n", "changed 7\n"), encoding="utf-8")
+    rows, _v = _ok(_check(wt, "--goal", "1541", "--diff"))
+    assert rows == [_row(LEG, 2, True, "no")]
+
+
+def test_check_new_modern_and_undeclared_files_never_over(tmp_path):
+    files = {LEG: _hundred(), "src/modern/m.py": _hundred(), "other/u.py": _hundred()}
+    repo, wt = _cf(tmp_path, files=files)
+    _acceptance(repo, "1541", ["Nothing here names a path."], False)
+    _edit(wt, "src/modern/m.py", 100)
+    _edit(wt, "other/u.py", 100)
+    _commit(wt, "src/legacy/fresh.py", "n\n" * 500)       # new on this branch, in a legacy zone
+    p = _check(wt, "--goal", "1541", "--diff")
+    assert p.returncode == 0, p.stderr
+    assert p.stdout == "verdict: within\n", p.stdout
+
+
+def test_check_binary_legacy_file_counts_as_restructure(tmp_path):
+    repo, wt = _cf(tmp_path, files={"src/legacy/b.bin": "ab\0cd\n"})
+    _acceptance(repo, "1541", ["Nothing here names a path."], False)
+    (wt / "src/legacy/b.bin").write_bytes(b"ab\0ce\n\0\0")
+    rows, verdict = _ok(_check(wt, "--goal", "1541", "--diff"))
+    assert rows == [["src/legacy/b.bin", "legacy", "binary", "restructure", "intent: no"]]
+    assert verdict == "verdict: over"
+
+
+def test_check_counts_deleted_lines_and_renames_once(tmp_path):
+    src = _repo(tmp_path / "subsrc")
+    repo = _repo(tmp_path / "p")
+    for rel in ("src/legacy/del.py", "src/legacy/ren.py", "src/legacy/mode.py"):
+        _commit(repo, rel, _hundred())
+    _git(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(src), "src/legacy/sub")
+    _git(repo, "commit", "-q", "-m", "submodule")
+    _config(repo, _zones(("src/legacy/*", "legacy")))
+    _with_origin(repo, tmp_path)
+    wt = _worktree(repo, goal="1541")
+    _acceptance(repo, "1541", ["Nothing here names a path."], False)
+    (wt / "src/legacy/del.py").write_text("".join("line %d\n" % i for i in range(55)), encoding="utf-8")
+    _git(wt, "mv", "src/legacy/ren.py", "src/legacy/ren2.py")
+    (wt / "src/legacy/ren2.py").write_text(_hundred().replace("line 1\n", "x1\n").replace("line 2\n", "x2\n")
+                                          .replace("line 3\n", "x3\n").replace("line 4\n", "x4\n")
+                                          .replace("line 5\n", "x5\n"), encoding="utf-8")
+    _git(wt, "add", "-A", "src/legacy")
+    _git(wt, "commit", "-q", "-m", "rename")
+    os.chmod(str(wt / "src/legacy/mode.py"), 0o755)
+    _commit(src, "more.txt", "m\n")                        # a newer commit of the submodule
+    second = _git(src, "rev-parse", "HEAD").strip()
+    _git(wt, "update-index", "--cacheinfo", "160000,%s,src/legacy/sub" % second)
+    _git(wt, "commit", "-q", "-m", "bump submodule")
+    cfgfile = tmp_path / "gitconfig"
+    cfgfile.write_text("[diff]\n\talgorithm = patience\n\trenames = false\n", encoding="utf-8")
+    want = {
+        "src/legacy/del.py": _row("src/legacy/del.py", 45, True, "no"),     # a deletion counts
+        "src/legacy/ren.py": _row("src/legacy/ren.py", 10, False, "no"),    # one row, the OLD path
+        "src/legacy/mode.py": _row("src/legacy/mode.py", 0, False, "no"),   # mode-only: 0 lines
+        "src/legacy/sub": _row("src/legacy/sub", 2, False, "no"),           # a gitlink bump counts 2
+    }
+    for env in (None, dict(os.environ, GIT_CONFIG_GLOBAL=str(cfgfile))):
+        rows, verdict = _ok(_check(wt, "--goal", "1541", "--diff", env=env))
+        assert len(rows) == 4 and {r[0]: r for r in rows} == want, rows
+        assert verdict == "verdict: over"
+
+
+def test_check_counts_against_fork_not_base_tip(tmp_path):
+    repo, wt = _cf(tmp_path, files={LEG: _hundred(), "src/legacy/y.py": _hundred()})
+    _acceptance(repo, "1541", ["Nothing here names a path."], False)
+    _edit(repo, LEG, 100)                                   # main moves on after the fork
+    _git(repo, "commit", "-q", "-am", "main edits a")
+    _git(repo, "push", "-q", "origin", "main")
+    _git(repo, "fetch", "-q", "origin")
+    _edit(wt, "src/legacy/y.py", 3)
+    rows, verdict = _ok(_check(wt, "--goal", "1541", "--diff"))
+    assert rows == [_row("src/legacy/y.py", 3, False, "no")] and verdict == "verdict: within"
+
+
+def test_check_unresolved_fork_point_is_unknown_never_within(tmp_path):
+    repo, wt = _cf(tmp_path)
+    _edit(wt, LEG, 100)
+    for args in (("--base", "no-such-ref"),):
+        p = _check(wt, "--goal", "1541", "--diff", *args)
+        assert p.returncode == 0 and p.stdout == "verdict: unknown\n", (p.stdout, p.stderr)
+        assert "unknown" in p.stderr.lower() and p.stderr.strip()
+    (repo / ".sdlc/state/work/1541.json").unlink()          # no work record, no --base
+    p = _check(wt, "--goal", "1541", "--diff")
+    assert p.returncode == 0 and p.stdout == "verdict: unknown\n", (p.stdout, p.stderr)
+    assert p.stderr.strip()
+    _worktree(repo, goal="1542")                            # a record for a DIFFERENT branch
+    rec = repo / ".sdlc/state/work/1541.json"
+    rec.write_text(json.dumps({"branch": "sdlc/other", "base": "main", "remote": "origin"}))
+    p = _check(wt, "--goal", "1541", "--diff")
+    assert p.returncode == 0 and p.stdout == "verdict: unknown\n", (p.stdout, p.stderr)
+    rec.write_text(json.dumps({"branch": "sdlc/1541", "base": "main", "remote": "origin"}))
+    (repo / ".sdlc/config.json").unlink()                   # config unreachable
+    p = _check(wt, "--goal", "1541", "--diff")
+    assert p.returncode == 0 and p.stdout == "verdict: unknown\n", (p.stdout, p.stderr)
+
+
+def test_check_drafted_true_record_never_grants_intent(tmp_path):
+    """AC-2: criteria the agent drafted itself prove no intent, even when they name the file."""
+    repo, wt = _cf(tmp_path)
+    _acceptance(repo, "1541", ["Rework `%s` fully." % LEG], True)
+    _edit(wt, LEG, 41)
+    rows, verdict = _ok(_check(wt, "--goal", "1541", "--diff"))
+    assert rows == [_row(LEG, 41, True, "no")] and verdict == "verdict: over"
+
+
+def test_check_directory_prefix_grants_intent(tmp_path):
+    """AC-3. Also pins the documented gap: negation is not parsed."""
+    repo, wt = _cf(tmp_path)
+    _edit(wt, LEG, 41)
+    for crit in ("Rework `src/legacy/` fully.", "Rework `src/legacy` fully.", "Rework `./src/legacy/a.py`.",
+                 "Rework `docs/x.md` and `%s` together." % LEG,
+                 "`%s` stays unchanged." % LEG):
+        _acceptance(repo, "1541", [crit], False)
+        rows, verdict = _ok(_check(wt, "--goal", "1541", "--diff"))
+        assert rows == [_row(LEG, 41, True, "yes")] and verdict == "verdict: within", crit
+
+
+def test_check_intent_match_is_component_boundary_not_substring_or_glob(tmp_path):
+    repo, wt = _cf(tmp_path)
+    _edit(wt, LEG, 41)
+    for span in ("src/leg", "src/*", "../src", "/abs/src/legacy", "src/legacy/a.py and more",
+                 "src/legacy/a.py:12", "src/legacy/a.py::test", "SRC/legacy/a.py", "src/legacy/a.p",
+                 "src/legacy/../legacy", "src/l?gacy", ".", ""):
+        _acceptance(repo, "1541", ["Touch `%s` here." % span], False)
+        rows, verdict = _ok(_check(wt, "--goal", "1541", "--diff"))
+        assert rows == [_row(LEG, 41, True, "no")] and verdict == "verdict: over", span
+
+
+def test_check_absent_or_undated_record_is_intent_unknown_never_within(tmp_path):
+    """AC-4: no usable record is intent unknown, never `yes` and never a silent within."""
+    repo, wt = _cf(tmp_path)
+    rec = repo / ".sdlc/acceptance/1541.md"
+    named = ["Rework `src/legacy/` fully."]
+
+    def absent():
+        pass
+
+    def undated():
+        _acceptance(repo, "1541", named, None)
+
+    def malformed():
+        rec.parent.mkdir(parents=True, exist_ok=True)
+        rec.write_text("not a record\n", encoding="utf-8")
+
+    def directory():
+        rec.parent.mkdir(parents=True, exist_ok=True)
+        rec.mkdir()
+
+    def worktree_copy_only():
+        _acceptance(wt, "1541", named, False, where=wt)
+
+    for setup in (absent, undated, malformed, directory, worktree_copy_only):
+        if rec.is_dir():
+            rec.rmdir()
+        elif rec.exists():
+            rec.unlink()
+        setup()
+        for n, over in ((41, True), (3, False)):
+            _edit(wt, LEG, n)
+            p = _check(wt, "--goal", "1541", "--diff")
+            rows, verdict = _ok(p)
+            assert rows == [_row(LEG, n, over, "unknown")], (setup.__name__, rows)
+            assert verdict == "verdict: unknown" and "Traceback" not in p.stderr, setup.__name__
+
+
+def test_check_no_legacy_file_touched_with_unknown_record_is_unknown_never_within(tmp_path):
+    """AC-4 literally: no usable record prints `intent: unknown` and never `verdict: within`, even
+    when no legacy file was touched (so there is no row to carry the intent)."""
+    repo, wt = _cf(tmp_path, files={LEG: _hundred(), "other/u.py": _hundred()})
+    _edit(wt, "other/u.py", 100)
+    rec = repo / ".sdlc/acceptance/1541.md"
+    for setup in ("absent", "undated", "malformed"):
+        if setup == "undated":
+            _acceptance(repo, "1541", ["Nothing here."], None)
+        elif setup == "malformed":
+            rec.write_text("not a record\n", encoding="utf-8")
+        p = _check(wt, "--goal", "1541", "--diff")
+        assert p.returncode == 0, p.stderr
+        assert p.stdout == "intent: unknown\nverdict: unknown\n", (setup, p.stdout)
+        plan = tmp_path / "plan.md"
+        plan.write_text("## Files\n- `other/u.py`\n", encoding="utf-8")
+        p = _check(wt, "--goal", "1541", "--plan", str(plan))
+        assert p.returncode == 0, p.stderr
+        assert p.stdout == "intent: unknown\nverdict: unknown\n", (setup, p.stdout)
+    _acceptance(repo, "1541", ["Nothing here."], False)       # a dated record: within again
+    p = _check(wt, "--goal", "1541", "--diff")
+    assert p.returncode == 0 and p.stdout == "verdict: within\n", p.stdout
+
+
+_PLAN = """# Plan
+## Files
+- NEW `src/legacy/newf.py` (not at the fork)
+- EDIT `src/legacy/a.py`: change the `foo bar` seam, see `src/legacy/`
+- `src/modern/m.py` is modern, so no row
+- `src/legacy/a.py` named twice
+## Notes
+- `src/legacy/z.py` is outside the Files section
+"""
+
+
+def test_check_plan_mode_paths_from_files_section(tmp_path):
+    files = {LEG: _hundred(), "src/legacy/z.py": _hundred(), "src/modern/m.py": _hundred()}
+    repo, wt = _cf(tmp_path, files=files)
+    plan = tmp_path / "plan.md"
+    plan.write_text(_PLAN, encoding="utf-8")
+    want = ["src/legacy/a.py", "legacy", "-", "-"]
+    rows, verdict = _ok(_check(wt, "--goal", "1541", "--plan", str(plan)))
+    assert rows == [want + ["intent: unknown"]] and verdict == "verdict: unknown"
+    _acceptance(repo, "1541", ["Nothing here names a path."], False)
+    rows, verdict = _ok(_check(wt, "--goal", "1541", "--plan", str(plan)))
+    assert rows == [want + ["intent: no"]] and verdict == "verdict: over"
+    _acceptance(repo, "1541", ["Seam edit in `src/legacy/a.py`."], False)
+    rows, verdict = _ok(_check(wt, "--goal", "1541", "--plan", str(plan)))
+    assert rows == [want + ["intent: yes"]] and verdict == "verdict: within"
+    plan.write_text("## File structure\n- `src/legacy/a.py`\n", encoding="utf-8")
+    rows, verdict = _ok(_check(wt, "--goal", "1541", "--plan", str(plan)))
+    assert rows == [want + ["intent: yes"]]
+    for text in ("# Plan\nno section, but `src/legacy/a.py`\n", "## Files\nprose only, `two words`\n"):
+        plan.write_text(text, encoding="utf-8")
+        p = _check(wt, "--goal", "1541", "--plan", str(plan))
+        assert p.returncode == 0 and p.stdout == "verdict: unknown\n", (text, p.stdout, p.stderr)
+
+
+def test_check_plan_unreadable_or_oversize_refused(tmp_path):
+    repo, wt = _cf(tmp_path)
+    big = tmp_path / "big.md"
+    big.write_bytes(b"x" * (256 * 1024 + 1))
+    for target in (tmp_path / "missing.md", tmp_path, big):
+        _refused(_check(wt, "--goal", "1541", "--plan", str(target)), str(target))
+    ok = tmp_path / "ok.md"
+    ok.write_bytes(b"## Files\n" + b"x" * (256 * 1024 - 9))
+    p = _check(wt, "--goal", "1541", "--plan", str(ok))      # no record here: the AC-4 line, then unknown
+    assert p.returncode == 0 and p.stdout == "intent: unknown\nverdict: unknown\n", (p.stdout, p.stderr)
+
+
+def test_check_writes_nothing(tmp_path):
+    """AC-5. The index is made STALE (a tracked file's mtime moved to a different past time each
+    round), because a plain `git diff` rewrites a stale index and only `diff-index` does not."""
+    repo, wt = _cf(tmp_path)
+    plan = tmp_path / "plan.md"
+    plan.write_text(_PLAN, encoding="utf-8")
+    _edit(wt, LEG, 41)
+    # Warm the interpreter WITHOUT running the measure: a warm-up `--diff` run would already have
+    # written any stray file, and the snapshot below would then contain it (control C-17 was green).
+    assert _check(wt, "--help").returncode == 0
+    subprocess.run([sys.executable, "-c", "pass"], check=True)
+    index = pathlib.Path(wt) / _git(wt, "rev-parse", "--git-path", "index").strip()
+    tracked = [pathlib.Path(wt) / f for f in _git(wt, "ls-files").split("\n") if f]
+    import hashlib
+    for round_no, args in enumerate((("--diff",), ("--plan", str(plan)))):
+        past = 1500000000 + 1000 * round_no                          # a DIFFERENT past time each round
+        for f in tracked:
+            os.utime(str(f), (past, past))
+        sha = hashlib.sha256(index.read_bytes()).hexdigest()
+        before = _snapshot(repo, wt)
+        p = _check(wt, "--goal", "1541", *args)
+        assert p.returncode == 0 and "verdict: " in p.stdout, p.stderr
+        assert (round_no == 1) or "src/legacy/a.py" in p.stdout, p.stdout     # the diff run measured something
+        assert hashlib.sha256(index.read_bytes()).hexdigest() == sha, args
+        after = _snapshot(repo, wt)
+        assert after == before, sorted(set(after.items()) ^ set(before.items()))[:4]
+
+
+def test_check_doc_template_and_configuration(tmp_path):
+    t = DOC.read_text(encoding="utf-8")
+    for term in ("design.restructure_lines", "restructure", "verdict: over", "intent: unknown", "drafted",
+                 "component boundary", "forward-only", "strictly", "working tree", "added plus deleted",
+                 "negation", "case-sensitive"):
+        assert term in t, term
+    gesture = [ln.strip() for ln in t.splitlines()
+               if ln.strip().startswith("python3 skills/sigma-loop/scripts/zones.py check")]
+    assert gesture, "no runnable `check` gesture in docs/change-zones.md"
+    repo, wt = _cf(tmp_path)
+    argv = gesture[0].split()
+    argv[1] = str(SCRIPT)
+    p = subprocess.run(argv, cwd=str(wt), capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, p.stderr
+    assert p.stdout.splitlines()[-1].startswith("verdict: "), p.stdout
+    cfg = json.loads(TEMPLATE.read_text(encoding="utf-8"))
+    assert cfg["design"] == {} and "design.restructure_lines" in cfg["_design"]
+    rows = [ln for ln in (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8").splitlines()]
+    assert len([r for r in rows if r.startswith("| `design.restructure_lines")]) == 1
+    assert len([r for r in rows if r.startswith("| `design.zones")]) == 1
+
+
+def test_check_stale_binary_is_not_a_change_but_a_real_binary_change_is(tmp_path):
+    """`diff-index --numstat` prints `-\t-` for a stat-stale binary whose bytes did not change; the
+    measure must compare content with the fork blob, and never refresh the index to do it."""
+    repo, wt = _cf(tmp_path, files={"src/legacy/bin.dat": "ab\0cd\n"})
+    _acceptance(repo, "1541", ["Nothing here names a path."], False)
+    stale = 1577836860                                      # 2020-01-01: differs from the index stat
+    os.utime(str(wt / "src/legacy/bin.dat"), (stale, stale))
+    p = _check(wt, "--goal", "1541", "--diff")
+    assert p.returncode == 0, p.stderr
+    assert p.stdout == "verdict: within\n", p.stdout
+    (wt / "src/legacy/bin.dat").write_bytes(b"ab\0ce\n")    # same length, different bytes, still stale
+    os.utime(str(wt / "src/legacy/bin.dat"), (stale + 1, stale + 1))
+    rows, verdict = _ok(_check(wt, "--goal", "1541", "--diff"))
+    assert rows == [["src/legacy/bin.dat", "legacy", "binary", "restructure", "intent: no"]]
+    assert verdict == "verdict: over"
+
+
+def test_check_unmeasurable_newline_path_is_named_on_stderr_and_keeps_other_rows(tmp_path):
+    nl = "src/legacy/n\nl.py"
+    repo, wt = _cf(tmp_path, files={LEG: _hundred(), nl: _hundred()})
+    _edit(wt, LEG, 50)
+    (wt / nl).write_text(_hundred() + "x\n", encoding="utf-8")
+    _acceptance(repo, "1541", ["Nothing here names a path."], False)
+    p = _check(wt, "--goal", "1541", "--diff")
+    rows, verdict = _ok(p)
+    assert rows == [_row(LEG, 50, True, "no")] and verdict == "verdict: over"
+    assert "newline" in p.stderr and "cannot be measured" in p.stderr, p.stderr
+    _acceptance(repo, "1541", ["Rework `src/legacy/`."], False)
+    p = _check(wt, "--goal", "1541", "--diff")
+    rows, verdict = _ok(p)
+    assert rows == [_row(LEG, 50, True, "yes")] and verdict == "verdict: unknown"
+    assert "newline" in p.stderr, p.stderr

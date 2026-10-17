@@ -157,7 +157,7 @@ def test_documented_cli_local_capture(tmp_path):
 def test_contract_acceptance_entry_and_golden(tmp_path):
     ledger = load('ledger')
     assert 'acceptance' in ledger.KINDS
-    assert (ROOT / 'contract/VERSION').read_text().strip() == '1.3.0'
+    assert (ROOT / 'contract/VERSION').read_text().strip() == '1.4.0'
     entry = ledger.append(tmp_path, {'ledger': {'enabled': True, 'actor': 'test'}},
                           'acceptance', '42', ref='acceptance/42.md', acceptance_sha256='a' * 64)
     assert entry['acceptance_sha256'] == 'a' * 64
@@ -254,3 +254,54 @@ def test_paragraph_cannot_hide_later_acceptance_criteria(tmp_path):
 def test_empty_checkboxes_are_not_acceptance_statements(tmp_path):
     with pytest.raises(ValueError):
         capture(tmp_path, source=Source('## Done when\n- [ ]\n- [ ]\n- [ ]\n'))
+
+
+def test_record_writes_drafted_false_for_copied_criteria(tmp_path):
+    sdlc, a = capture(tmp_path)
+    file = sdlc / 'acceptance/42.md'
+    first = file.read_bytes()
+    lines = first.decode().split('---\n')[1].splitlines()
+    assert 'drafted: false' in lines
+    assert lines.index('drafted: false') == 3  # the 4th metadata line
+    a.record(sdlc, '42', source=Source('## Done when\n- [ ] Changed.\n- [ ] Changed 2.\n- [ ] Changed 3.\n'), config={})
+    assert file.read_bytes() == first  # create-only: a retry never rewrites
+
+
+def test_record_writes_drafted_true_for_draft_file(tmp_path):
+    draft = tmp_path / 'draft.md'
+    draft.write_text(CRITERIA)
+    sdlc = tmp_path / '.sdlc'
+    sdlc.mkdir()
+    a = load('acceptance')
+    a.record(sdlc, '42', source=Source('no section here'), config={}, draft=draft)
+    lines = (sdlc / 'acceptance/42.md').read_text().split('---\n')[1].splitlines()
+    assert 'drafted: true' in lines
+
+
+def test_parse_returns_drafted_and_old_record_stays_valid(tmp_path):
+    import hashlib
+    a = load('acceptance')
+    old = '---\nkind: "acceptance"\ngoal: "42"\nverify_command: null\n---\n' + CRITERIA
+    got = a.parse(old, '42')
+    assert got.get('drafted') is None
+    sdlc = tmp_path / '.sdlc'
+    (sdlc / 'acceptance').mkdir(parents=True)
+    (sdlc / 'acceptance/42.md').write_text(old)
+    assert a.digest(sdlc, '42') == hashlib.sha256(old.encode()).hexdigest()
+    golden = (ROOT / 'contract/golden/acceptance/42.md').read_text()
+    assert 'drafted' not in golden
+    proc = subprocess.run([sys.executable, str(ROOT / 'contract/validate.py'),
+                           str(ROOT / 'contract/golden/acceptance/42.md')], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    new = old.replace('verify_command: null\n', 'verify_command: null\ndrafted: true\n')
+    assert a.parse(new, '42').get('drafted') is True
+    bad = old.replace('verify_command: null\n', 'verify_command: null\ndrafted: "yes"\n')
+    with pytest.raises(ValueError, match='drafted'):
+        a.parse(bad, '42')
+
+
+def test_contract_1_4_0_documents_drafted():
+    assert (ROOT / 'contract/VERSION').read_text().strip() == '1.4.0'
+    assert json.loads((ROOT / 'contract/vocabulary.json').read_text())['contract_version'] == '1.4'
+    readme = (ROOT / 'contract/README.md').read_text()
+    assert 'drafted' in readme and '1.4.0' in readme and '(1.3.0)' not in readme
