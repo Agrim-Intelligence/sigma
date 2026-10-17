@@ -406,6 +406,10 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/quality_delta.py",
+      "role": "gesture"
+    },
+    {
       "path": "skills/sigma-loop/scripts/reconcile.py",
       "role": "gesture"
     },
