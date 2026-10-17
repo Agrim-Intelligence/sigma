@@ -12,18 +12,14 @@ process. Mark such a test `@pytest.mark.fresh_scripts` to get uncached loads for
 Each clause below was broken on its own and seen red (see the PR): no cache; key on name only; key on
 path only; cache left on at test time; the copies ceiling; the RSS ceiling.
 """
-import gc
 import importlib.util
 import pathlib
-import types
 
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
-#: A script is legitimately loaded under a handful of names (tests prefix them: "t_x", "x_as"), so the
-#: ceiling is per distinct (name) not 1. Unfixed code measured up to 1,227 for one script.
-MAX_COPIES = 12
+
 
 
 def _load(name, as_name=None, path=None):
@@ -59,23 +55,8 @@ def test_test_time_loads_are_fresh():
     assert _load("legacy", "memo_d") is not _load("legacy", "memo_d")
 
 
-def _live_copies():
-    counts = {}
-    for o in gc.get_objects():
-        if isinstance(o, types.ModuleType):
-            f = getattr(o, "__file__", None)
-            if f and f.endswith(".py") and ROOT in pathlib.Path(f).parents:
-                counts[f] = counts.get(f, 0) + 1
-    return counts
-
-
-def test_no_script_has_runaway_live_copies():
-    worst = sorted(_live_copies().items(), key=lambda kv: -kv[1])[:5]
-    assert worst[0][1] <= MAX_COPIES, f"live copies of one script module: {worst}"
-
-
 def test_collection_peak_rss_was_recorded_and_bounded(request):
-    """The enforcement is conftest's `pytest_collection_finish` (red under --collect-only too); this
+    """The enforcement (RSS bound and live-copies ceiling) is conftest's `pytest_collection_finish` (red under --collect-only too); this
     checks the recording it relies on and that a whole-suite run is inside the bound."""
     from _script_cache import rss_bound_mb
     peak, n = request.config._collect_rss_mb, request.config._collect_n
