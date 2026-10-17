@@ -438,6 +438,22 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/resource_guard.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/resource_lease.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/resource_liveness.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/resource_verify.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/retention.py",
       "role": "gesture"
     },
