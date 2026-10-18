@@ -42,19 +42,23 @@ and watches `True` get silently accepted.
 
 THE QUALITY CHECKLIST. A design that names no quality targets (latency, availability, privacy,
 cost) leaves them to be discovered in production, and a model asked to "consider non-functional
-requirements" writes a paragraph nobody can check. `nfr-bank` prints the eleven categories (the
-eight of the nine ISO/IEC 25010:2023 characteristics, functional suitability being covered by the functional requirements section, plus observability, data retention and privacy, and cost) as DATA, once,
-so the skill prose and the checker never hold two copies of the names. `quality` checks the
+requirements" writes a paragraph nobody can check. `nfr-bank` prints the eleven categories (eight
+of the nine ISO/IEC 25010:2023 characteristics, functional suitability being covered by the
+functional requirements section, plus observability, data retention and privacy, and cost) as DATA,
+once, so the skill prose and the checker never hold two copies of the names. `quality` checks the
 artifact's `## Quality requirements` table against it: one row per category, each either a filled
 scenario (source, stimulus, environment, response, measure) with evidence, `N/A: <reason>`, or
 `open: D-<n>`. Missing, duplicate and misspelt rows, empty fields, placeholder reasons, evidence
 that cites an id the artifact does not have, and (in the large lane) an absent or incomplete
-STRIDE table are violations; each line starts with the category slug or a reserved prefix (lane, quality_requirements). Exit 0 clean, 2 on any violation, a
-refusal or a usage error; the JSON result is on stdout, the lines on stderr; nothing is written.
+STRIDE table are violations; each line starts with the category slug or a reserved prefix (lane, quality_requirements). Exit 0 clean,
+2 on any violation, a refusal or a usage error; the JSON result is on stdout, the lines on stderr;
+nothing is written.
 
 HONEST LIMITS. The checks are on FORM, not truth: a response measure passes on any digit (or a
 `test:` pointer), and an evidence id passes if the artifact itself has it, so a meaningless digit
-or a wrong-but-existing id gets through; judging that is the reviewer's job. Nothing here gates
+or a wrong-but-existing id gets through; filler such as `N/A: x x x`, a scenario field of `-` or
+`TBD`, or repeated tokens also passes the FORM check (it proves form, not truth); judging that is
+the reviewer's job. Nothing here gates
 the `designed` label: a reviewing model that skips the verb is not stopped by code, so the
 rejection downstream rests on that model following the review prose (unmeasured end to end).
 """
@@ -532,7 +536,9 @@ _STRIDE_LETTERS = (("S", "Spoofing"), ("T", "Tampering"), ("R", "Repudiation"),
 _ANSWER_FORMS = ("scenario", "N/A: <reason>", "open: D-<n>")
 _DASH = "—"
 
-_LANE_HEADER = re.compile(r"\*\*Lane\*\*:\s*(\w+)")
+# The lane word must be the WHOLE value: end of line, ` ·` (the header separator) or ` **`. Group 1 is None
+# when the mention is there but the value is not (`small | medium | large`, `small/medium`).
+_LANE_HEADER = re.compile(r"\*\*Lane\*\*:\s*(?:(\w+)(?=\s*$|\s+·|\s+\*\*))?")
 _OPEN_ANSWER = re.compile(r"^open: D-(\d+)$")
 _BR_TOKEN = re.compile(r"^BR-(\d+)$")
 _D_TOKEN = re.compile(r"^D-(\d+)$")
@@ -591,7 +597,7 @@ def _has_separator(group):
 
 
 def _lane_from_header(text):
-    """The first `**Lane**: <word>` on a line BEFORE the first `## ` heading, outside code fences, or
+    """The first `**Lane**: <word>` (the word being the whole value) on a line BEFORE the first `## ` heading, outside code fences, or
     None. Only the first mention counts, so a later one cannot rescue an unrecognised first."""
     fence = False
     for ln in text.splitlines():
@@ -604,7 +610,7 @@ def _lane_from_header(text):
             return None
         m = _LANE_HEADER.search(ln)
         if m:
-            return m.group(1)
+            return m.group(1) or ""  # "" = mentioned but unrecognised; never a lane
     return None
 
 

@@ -276,7 +276,8 @@ def _check_malformed(case):
 
 _LANE_HEADER_CASES = ["missing", "huge", "capitalised", "later_section_only", "fenced",
                       "first_wins", "first_wins_next_line", "valid", "override_wins",
-                      "override_missing_still_reported", "missing_runs_medium_rules"]
+                      "override_missing_still_reported", "missing_runs_medium_rules",
+                      "unfilled_template", "slash_value", "real_header", "end_of_line", "bold_follows"]
 
 
 def test_lane_header_rules():
@@ -320,6 +321,23 @@ def _check_lane_header(case):
         # never weaker: the missing header runs MEDIUM rules, where `N/A: small lane` is illegal
         v = V(art(header_line="", overrides={"cost": row("cost", "N/A: small lane")}))
         assert has(v, "lane: missing") and has(v, "cost:") and has(v, "only legal in the small lane")
+    elif case == "unfilled_template":  # the skeleton line must NOT read as `small` (the weakest lane)
+        r = gd.check_quality(art(header_line="**Lane**: small | medium | large"))
+        only(r["violations"], "lane: missing or not one of")
+        assert r["lane"] == "medium"
+    elif case == "slash_value":
+        r = gd.check_quality(art(header_line="**Lane**: small/medium"))
+        only(r["violations"], "lane: missing or not one of")
+        assert r["lane"] == "medium"
+    elif case == "real_header":
+        r = gd.check_quality(art(header_line="**Target**: x · **Lane**: medium · **Budget**: 2"))
+        assert r["violations"] == [] and r["lane"] == "medium"
+    elif case == "end_of_line":
+        r = gd.check_quality(art(header_line="**Lane**: large", stride=stride_rows(["Alpha", "Beta"])))
+        assert r["violations"] == [] and r["lane"] == "large"
+    elif case == "bold_follows":
+        r = gd.check_quality(art(header_line="**Lane**: large **Budget**: 2", stride=stride_rows(["Alpha", "Beta"])))
+        assert r["violations"] == [] and r["lane"] == "large"
 
 
 # ------------------------------------------------------------------------------------ Task 3: rows
@@ -358,8 +376,7 @@ def test_answered_row_scenario_fields():
 def _check_answered_row_field(idx, value):
     v = V(art(overrides={"reliability": with_field("reliability", idx, value)}))
     assert has(v, "reliability: scenario field %s is" % FIELD_NAMES[idx])
-    assert not any(FIELD_NAMES[j] in x for x in v for j in range(5) if j != idx and
-                   ("field %s is" % FIELD_NAMES[j]) in x)
+    assert len(v) == 1, v  # exactly this field's violation, no other field and no extra line
 
 
 _MEASURE_CASES = [
@@ -523,6 +540,9 @@ def test_small_lane_rules():
     only(v, "cost: small lane needs at least one BR-<n> evidence token")
     assert V(art(lane="small", overrides={"cost": row("cost", evid="agent-proposed, BR-1")})) == []
     assert V(art(lane="medium", overrides=one)) == []  # lane gating: medium does not require it
+    # `not problems` clause: a bad token is reported ALONE, not doubled with the missing-BR line
+    only(V(art(lane="small", overrides={"cost": row("cost", evid="nonsense")})), "cost: ")
+    assert not has(V(art(lane="small", overrides={"cost": row("cost", evid="nonsense")})), "needs at least one BR")
     r = gd.check_quality(art(lane="small", slices=2))
     assert r["ok"] is True and r["warnings"] == ["lane: small lane but 2 slice rows"]
     for lane, n in (("small", 1), ("small", 0), ("medium", 2), ("large", 2)):
