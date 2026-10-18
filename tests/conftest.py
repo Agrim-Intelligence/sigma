@@ -117,6 +117,7 @@ def _ram_mb():
     return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") // (1024 * 1024)
 
 
+@pytest.hookimpl(optionalhook=True)   # xdist's hook: without pytest-xdist installed it is unknown and aborts pytest (exit 3)
 def pytest_xdist_auto_num_workers(config):
     """`-n auto` = as many workers as fit in a quarter of this machine's RAM at SIGMA_TEST_WORKER_MB each
     (default 2000, the measured test-time peak of a worker before the script cache), capped by CPUs. A
