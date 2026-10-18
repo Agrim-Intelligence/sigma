@@ -6102,6 +6102,7 @@ class _CallGuard:
         self.sdlc_dir, self.goal, self.kind, self.timeout = sdlc_dir, goal, kind, timeout
         self.fd = self.path = self.run_id = None
         self.won = False
+        self.hold = False        # set by the verify body when exit 5 means RESOURCE-HOLD (#1601), not UNVERIFIED
 
     def _name_holder(self, path):
         got_state, got = _rr.read(path, _CALL_GRACE)
@@ -6159,7 +6160,9 @@ class _CallGuard:
             self.fd = None
 
 
-def _verify_result(code, sdlc_dir, goal):
+def _verify_result(code, sdlc_dir, goal, hold=False):
+    if hold:    # exit 5 is shared: RESOURCE-HOLD ran nothing and wrote no evidence
+        return f"RESOURCE-HOLD exit={code}"
     word = {0: "VERIFIED", 1: "FAILED", 2: "REFUSED", 4: "STALE", 5: "UNVERIFIED"}.get(code, "EXIT")
     text = f"{word} exit={code}"
     if code in (0, 1, 5):
@@ -6194,7 +6197,7 @@ def verify_goal(sdlc_dir, goal):
         guard.finish(outcome="failed", failure="not_completed", detail="the runner raised")
         guard.close()
         raise
-    guard.finish(outcome="ok", exit=code, result=_verify_result(code, sdlc_dir, goal_stem))
+    guard.finish(outcome="ok", exit=code, result=_verify_result(code, sdlc_dir, goal_stem, guard.hold))
     guard.close()
     return code
 
@@ -6379,6 +6382,7 @@ def _verify_goal_body(sdlc_dir, goal, guard):
                   f"({_what})", file=sys.stderr)
             ledger.safe_append(sdlc_dir, "verify", goal, config=config, stream=ledger.EVENTS, exit=5)
             actionlog.safe_append(sdlc_dir, goal, "verify_run", exit=5)
+            guard.hold = True
             return 5
         outputs.extend(guarded.outputs)
         proc = subprocess.CompletedProcess(commands, guarded.returncode, "\n".join(guarded.outputs), "")
