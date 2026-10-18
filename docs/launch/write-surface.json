@@ -4263,6 +4263,14 @@
       "count": 1,
       "gate": "one atomic write of `.sdlc/state/chain-active.json` (chain numbers, pid, heartbeat, issue numbers only), under the lock; reached only when `chain.parallel` or `chain.max_active` is configured, off by default",
       "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sealed_tests.py",
+      "function": "seal",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "library only, no CLI or caller until the gated work.py verb ships; writes only inside a tempfile.TemporaryDirectory it created (copytree of the sealed files into the extracted base tree) and the one seal record under .sdlc/state/sealed/ via state.atomic_write_text, last",
+      "risk": "medium"
     }
   ]
 }

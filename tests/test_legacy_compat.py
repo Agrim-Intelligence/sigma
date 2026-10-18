@@ -391,6 +391,7 @@ _NOT_MARKERS = ("sigma-doctor", "sigma-doctor:", "sigma-init", "sigma-init:", "s
                 "<!-- sigma-park:",   # new with #1495: names the park a body block answers, no legacy spelling
                 "sigma-judge-",   # new with #1472: a tempfile prefix for the isolated judge cwd, not a marker
                 "sigma-upkeep-",   # new with #1085: a tempfile prefix for the replay worktree parent, not a marker
+                "sigma-sealed", "sigma-sealed-",   # new with #847: a state-record schema id and a tempdir prefix, not markers
                 "sigma-reset-at:")   # new with #1563: a plain park-comment line, no legacy spelling
 
 

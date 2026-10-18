@@ -235,3 +235,61 @@ def refusal(sdlc_dir, goal, root, plan, proof):
         return ''
     except (OSError, ValueError, TypeError, AttributeError) as exc:
         return 'cannot validate planned test proof: ' + str(exc)
+
+
+SEALED_PROVENANCE = 'sealed-pytest-v1'  # #847: red = ANY test-body failure on base content (see classify_sealed)
+
+
+def classify_sealed(collect_rc, collect_out, run_rc, run_out, nodes):
+    """Pure classifier for the sealed-pytest-v1 proof. -> {collection_errors, red, passed, other, error}.
+
+    Unlike `observe`, ANY `FAILED` node counts as red once collection was clean and the run exited 1,
+    including an ImportError raised inside the test body (D-1; that proves "symbol missing", not
+    "assertion meaningful", and the exception class is returned per red so a reader can see it). Never
+    red: a collection error (exit 2 or `ERROR <file>`), fixture `ERROR <node>`, skip, xfail, xpass,
+    exit 3/4/5, a missing summary. Nodes are matched by collected id (never by splitting on ' - ').
+    `red` maps node -> ('assertion'|'other', ExceptionClass-or-''). `run_rc=None` classifies the
+    collect-only step alone. `witness.classify` is deliberately not used: it labels an in-body
+    ImportError a collection error."""
+    out = {'collection_errors': [], 'red': {}, 'passed': [], 'other': [], 'error': ''}
+    files = []
+    for line in (collect_out or '').splitlines():
+        line = line.strip()
+        if line.startswith('ERROR '):
+            files.append(line[len('ERROR '):].partition(' - ')[0].replace('collecting ', '', 1).strip())
+    if files or collect_rc == 2:
+        out['collection_errors'] = files or ['<file not named by pytest>']
+        return out
+    if collect_rc == 5 or (collect_rc == 0 and not nodes):
+        out['error'] = 'pytest collected no tests (exit %s)' % collect_rc
+        return out
+    if collect_rc != 0:
+        out['error'] = 'pytest --collect-only exited %s' % collect_rc
+        return out
+    if run_rc is None:
+        return out
+    if run_rc not in (0, 1):
+        out['error'] = 'pytest run exited %s (not 0 or 1)' % run_rc
+        return out
+    parts = re.split(r'^=+ short test summary info =+\s*$', run_out or '', flags=re.M)
+    if len(parts) < 2:
+        out['error'] = 'pytest run printed no short test summary'
+        return out
+    lines = parts[-1].splitlines()
+    for node in nodes:
+        failed = [ln for ln in lines if ln == 'FAILED ' + node or ln.startswith('FAILED ' + node + ' - ')]
+        if failed:
+            rest = failed[0][len('FAILED ' + node):]
+            reason = rest[3:] if rest.startswith(' - ') else ''
+            if re.match(r'(AssertionError\b|assert\b)', reason):
+                out['red'][node] = ('assertion', 'AssertionError')
+            else:
+                match = re.match(r'[A-Za-z_][\w.]*', reason)
+                out['red'][node] = ('other', match[0].rstrip('.') if match else '')
+        elif 'PASSED ' + node in lines:
+            out['passed'].append(node)
+        else:
+            out['other'].append(node)
+    if run_rc == 0 and out['red']:
+        out.update(red={}, error='pytest exited 0 but the summary lists FAILED nodes')
+    return out
