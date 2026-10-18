@@ -3,6 +3,9 @@
 All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
+
+## 1.0.17 — 2026-10-18 — the stored dependency map and Sigma Chain: a map of what waits on what, a longest-chain plan, an approved and capped chain run; plus the 1.0.16 follow-ups to the resource guard and label drains
+- **A resource-guard hold is no longer recorded as UNVERIFIED in the final receipt (#1875).** Exit 5 is shared by the guard's hold (no evidence written) and the flake UNVERIFIED verdict; the receipt printed a hold as `UNVERIFIED exit=5 evidence=<path>`. `_CallGuard` now carries a hold flag set in the hold branch and `_verify_result` honours it. An autouse fixture in `tests/conftest.py` restores `sys.modules` between tests, so the resource tests no longer fail when the verify tests run first in a process.
 - **The resource-guard tests leave `sys.modules` as they found it (#1833).** `tests/test_resource_verify_1601.py` popped and reloaded four guard modules and never put them back, so `test_resource_hold` and the picker rows failed when they ran after it (or after the shed file) in one process; the `env` fixture and an autouse restore now put each name back, and a test pins the restore.
 - **The label history line test now fails without its kind guard (#1798).** `test_history_is_for_the_label_set_question_only` records a member-level answer on the same label and asserts that question shows no history line, so removing the guard turns it red.
 - The doctor's observe wording, the `start` hold case and the doctor resource-row condition are now guarded by tests and the configuration page (#1799).
