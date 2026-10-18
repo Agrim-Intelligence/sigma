@@ -3,6 +3,7 @@
 All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
+- **The chain has an offline end-to-end scenario test with four guard controls (#1595).** `tests/e2e/test_chain_scenario.py` drives plan, sheet, answer, approve, arm, run and status through `chain.py` argv on a stateful fake host, and `docs/chain.md` records what it measured and what it did not (no live run). The false "status verb not available" sentence is corrected.
 
 - chain run: the `max_reasks` stop releases the parallel pool lock, and a prerequisite answered `leave it out` is reported as declined, not as waiting (#1866).
 - **`chain.py status` edge cases (#1864).** `--rebuild` on a running or armed chain now refuses unless `--force` is given; a planned, never-armed chain is no longer listed as a leftover; `--json` reports unreadable or malformed records as `{file, state: unreadable}`; a record with a malformed member list prints the unreadable line instead of raising. The flag name `--force` is provisional (owner to ratify); a resumed chain's heartbeat is not refreshed here.
