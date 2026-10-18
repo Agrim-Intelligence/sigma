@@ -8,6 +8,10 @@
     {
       "path": "skills/sigma-kg/scripts/kg.py",
       "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-kg/scripts/sysgraph.py",
+      "role": "gesture"
     }
   ],
   "artifacts": [
