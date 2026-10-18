@@ -36,6 +36,7 @@ import time
 import types
 
 import pytest
+import resource_mode
 
 from test_goal_state_prune import _done, _files, _sweep, sdlc  # noqa: F401  (`sdlc` is the fixture)
 from test_reviewer_failure_parks import GOAL as RV_GOAL, _project as _rv_project, _rv
@@ -52,6 +53,14 @@ def _env(monkeypatch):
               "SIGMA_RUN_ID", "CLAUDE_CODE_REMOTE", "SIGMA_GH_GRAPHQL"):
         monkeypatch.delenv(k, raising=False)
     monkeypatch.setenv("SIGMA_ALLOW_COEXIST", "1")
+
+
+def _after_undo(m):
+    """`monkeypatch.undo()` also reverts conftest's autouse `SIGMA_RESOURCE_MODE` pin (#1600); an unset mode
+    resolves to `enforce` (#1759), so verify would run through resource_guard and bypass the `subprocess.run`
+    spy these tests arm. Re-pin it with the coexist switch."""
+    m.setenv("SIGMA_ALLOW_COEXIST", "1")
+    m.setenv(resource_mode.KEY, resource_mode.DEFAULT)
 
 
 def _mod(name):
@@ -222,7 +231,7 @@ def test_verify_final_write_is_single_and_carries_exit(tmp_path, monkeypatch):
         assert str(final.get("result", "")).split(" ")[0] == word and ("exit=%d" % code) in final["result"], final
         assert len(final["result"]) <= 500
         monkeypatch.undo()
-        monkeypatch.setenv("SIGMA_ALLOW_COEXIST", "1")
+        _after_undo(monkeypatch)
 
 
 def test_verify_runner_exception_finalises_not_completed(tmp_path, monkeypatch, capsys):
@@ -241,7 +250,7 @@ def test_verify_runner_exception_finalises_not_completed(tmp_path, monkeypatch, 
     assert isinstance(raw.get("run_id"), str) and raw["run_id"], raw
     assert _lock_held(sd) is False
     monkeypatch.undo()
-    monkeypatch.setenv("SIGMA_ALLOW_COEXIST", "1")
+    _after_undo(monkeypatch)
 
     real = rr.write
 
@@ -263,7 +272,7 @@ def test_verify_runner_exception_finalises_not_completed(tmp_path, monkeypatch, 
     assert len(seen["child"]) == 1
     assert "receipt" in capsys.readouterr().err.lower()                     # ...with a stderr advisory
     monkeypatch.undo()
-    monkeypatch.setenv("SIGMA_ALLOW_COEXIST", "1")
+    _after_undo(monkeypatch)
 
     sd = _project(tmp_path / "c")
     _arm(monkeypatch, lp, sd, code=0)
@@ -273,7 +282,7 @@ def test_verify_runner_exception_finalises_not_completed(tmp_path, monkeypatch, 
     assert "receipt" in capsys.readouterr().err.lower()
     assert _lock_held(sd) is False
     monkeypatch.undo()
-    monkeypatch.setenv("SIGMA_ALLOW_COEXIST", "1")
+    _after_undo(monkeypatch)
 
     sd = _project(tmp_path / "d")
     _arm(monkeypatch, lp, sd, exc=RuntimeError("boom"))
