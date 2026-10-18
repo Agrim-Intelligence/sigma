@@ -6,6 +6,10 @@
   ],
   "scripts": [
     {
+      "path": "skills/sigma-init/scripts/architecture_doc.py",
+      "role": "gesture"
+    },
+    {
       "path": "skills/sigma-init/scripts/board_layout.py",
       "role": "gesture"
     },

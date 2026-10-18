@@ -103,12 +103,13 @@
   {
    "compatible": true,
    "pattern": ".sdlc/config.json",
-   "reason": "Key sets differ; each side's setup.py configure, run over a config the other side wrote, lost no top-level key in either order (probe). Vetted #1604 and #1733: resource_guard.py::_record and resource_lease.py::load_config only READ config.json (open for reading, then json.loads/json.load); the literal backstop flags them for their sys.stdout.write / sys.stderr.write status lines. Neither writes config.json; _record's own state writes go through resource_liveness.refresh to the resource state directory.",
+   "reason": "Key sets differ; each side's setup.py configure, run over a config the other side wrote, lost no top-level key in either order (probe). Vetted #1604 and #1733: resource_guard.py::_record and resource_lease.py::load_config only READ config.json (open for reading, then json.loads/json.load); the literal backstop flags them for their sys.stdout.write / sys.stderr.write status lines. Neither writes config.json; _record's own state writes go through resource_liveness.refresh to the resource state directory. Vetted #1783: architecture_doc.py::_read_config only READS config.json (open rb, then json.loads), same false positive.",
    "verdict": "different-format",
    "vetted_writers": [
     "skills/sigma-define/scripts/define.py::main",
     "skills/sigma-doctor/scripts/migrate.py::_plan_config",
     "skills/sigma-doctor/scripts/migrate.py::_plan_schemas",
+    "skills/sigma-init/scripts/architecture_doc.py::_read_config",
     "skills/sigma-init/scripts/sdlc_init.py::main",
     "skills/sigma-init/scripts/sdlc_init.py::scaffold",
     "skills/sigma-init/scripts/sdlc_init.py::scaffold_extras",
