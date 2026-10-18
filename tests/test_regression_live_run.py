@@ -31,6 +31,8 @@ import urllib.parse
 
 import pytest
 
+import git_identity_support
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LIVE = ROOT / "evals" / "regression" / "live.py"
 LEDGER = ROOT / "evals" / "regression" / "spend_ledger.py"
@@ -277,6 +279,7 @@ def world(tmp_path, monkeypatch):
     w = World(tmp_path / "w")
     monkeypatch.setenv("TMPDIR", str(w.tmpdir))
     monkeypatch.setattr(tempfile, "tempdir", None)               # re-read TMPDIR
+    git_identity_support.scoped_git_identity(tmp_path / "git-identity", monkeypatch)   # #1572: tests below override HOME
     return w
 
 
