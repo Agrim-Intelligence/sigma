@@ -35,10 +35,12 @@ rot" property this buys is that no NEW call site through the shared, already-uni
 `subprocess.run` seam can silently reach the network either, not that every conceivable process
 API is covered.
 """
+import gc
 import os
 import pathlib
 import subprocess
 import sys
+import types
 
 import pytest
 
@@ -124,6 +126,23 @@ def pytest_xdist_auto_num_workers(config):
     constant `-n 4` copied from a laptop OOM-killed a 24 GB Mac."""
     per = int(os.environ.get("SIGMA_TEST_WORKER_MB", "2000"))
     return max(1, min(os.cpu_count() or 1, _ram_mb() // 4 // per))
+
+
+def pytest_runtest_teardown(item, nextitem):
+    """Release per-file script caches when the run leaves a test file. A collected script copy that is a
+    test-module global (`RB = _mod("rulebook")`) keeps `_BANK`, a fresh `unpark` tree loaded at test time, for
+    the whole session: ~79 `legacy.py` copies per file, 99.7% of what survives gc (see
+    tests/test_release_file_caches.py). Cleared at the file boundary, not per test, so a file loads it once."""
+    if nextitem is not None and nextitem.module is item.module:
+        return
+    cleared = False
+    for v in list(vars(item.module).values()):
+        bank = getattr(v, "_BANK", None) if isinstance(v, types.ModuleType) else None
+        if isinstance(bank, list) and bank:
+            bank.clear()
+            cleared = True
+    if cleared:
+        gc.collect()
 
 
 @pytest.fixture(autouse=True)
