@@ -3,7 +3,7 @@
 -> gh auth + project scope; KG enabled -> the builder; vision-first -> the north-star; always -> the
 .sdlc layer — and report each check with the exact one-line fix. The command runner is injectable so
 the logic is hermetically testable. Zero-dep."""
-import sys, json, math, time, os, pathlib, re, shutil, subprocess, importlib.util, importlib.metadata
+import sys, json, math, time, calendar, os, pathlib, re, shutil, subprocess, importlib.util, importlib.metadata
 
 try:                    # portable output: force UTF-8 so the plugin's own non-ASCII (arrows, em-dashes)
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")   # doesn't garble to '?' or
@@ -1328,6 +1328,145 @@ def _awaiting_merge_row(sdlc_dir, now=None):
     return _chk(f"goals {line} -- {'; '.join(parts)}", False, fix)
 
 
+def _dag_cycles_row(cfg, sdlc_dir):
+    """#1615: `dag cycles: #A, #B; #C, #D, #E` -- every member of every distinct cycle in the stored map,
+    not OK, with the one fix. None when there is none, when `discovery.dag.mode` is `off`, or when the
+    map cannot be read. One file read, no network. Never raises."""
+    try:
+        dc = _load_loop_script("dag_cycles")
+        found = dc.find(sdlc_dir, cfg)
+        if not found:
+            return None
+        return _chk("dag cycles: " + "; ".join(dc.members(c) for c in found), False,
+                    "remove one `Blocked by` line in each cycle so one goal can be picked; the "
+                    "pick output and the comment on the lowest open member say the same")
+    except Exception:                        # noqa: BLE001
+        return None
+
+
+def _dag_history_row(cfg, sdlc_dir, now=None):
+    """#1622: `dag history: <bytes> in <month>`, not OK above 1 MB in the current month (a burst; Sigma
+    never prunes history). None when `discovery.dag.mode` is `off` or no history exists. One `stat`,
+    no network. Never raises."""
+    try:
+        dh = _load_loop_script("dag_history")
+        h = dh.health(sdlc_dir, time.time() if now is None else now, cfg)
+        if h is None:
+            return None
+        name = "dag history: %d bytes in %s" % (h["bytes"], h["month"])
+        if not h["warn"]:
+            return _chk(name, True, "")
+        return _chk(name, False,
+                    "history is append-only and Sigma never deletes it; once the month is closed, compress "
+                    "or move `.sdlc/state/dag-history/%s.jsonl` out of the tree yourself" % h["month"])
+    except Exception:                        # noqa: BLE001
+        return None
+
+
+def _dag_ledger_row(cfg, sdlc_dir, now=None):
+    """#1624 LIVENESS: `dag ledger: N writers, newest record <age>` from the dag stream on the ledger
+    branch. Always OK (age is information, not a verdict). None when `ledger.enabled` is not true,
+    `discovery.dag.mode` is `off`, or no dag file exists. Reads the files, no network. Never raises."""
+    try:
+        led, sync, dh = _load_loop_script("ledger"), _load_loop_script("sync"), _load_loop_script("dag_history")
+        if not led.enabled(cfg) or dh._load("dag_store").mode(cfg) == "off" or not sync.is_worktree(sdlc_dir):
+            return None
+        writers, newest = dh.contributors(sync.worktree(sdlc_dir))
+        if not writers:
+            return None
+        age = "unknown"
+        if newest:
+            secs = (time.time() if now is None else now) - calendar.timegm(time.strptime(newest, "%Y-%m-%dT%H:%M:%SZ"))
+            age = "%d min" % max(0, int(secs // 60)) if secs < 7200 else "%.1f h" % (secs / 3600) if secs < 172800 else "%d d" % int(secs // 86400)
+        return _chk("dag ledger: %d writer%s, newest record %s" % (writers, "" if writers == 1 else "s", age), True, "")
+    except Exception:                        # noqa: BLE001
+        return None
+
+
+def _chain_row(cfg, sdlc_dir, now=None):
+    """#1594 LIVENESS: `chain: #N <state> (<age of last progress>)` from the local chain records
+    (`.sdlc/state/chains/`), no network. Informational ok, except a STALE running chain or a stuck one, which
+    fails with the fix. None when no readable record exists. Never raises."""
+    try:
+        got = _load_loop_script("chain_status").doctor_summary(sdlc_dir, cfg, now)
+        if got is None:
+            return None
+        text, ok = got
+        return _chk(text, ok, "run `python3 skills/sigma-loop/scripts/chain.py status .sdlc` for the "
+                              "root cause; a stale chain has no live driver, a stuck one needs the named decision")
+    except Exception:                        # noqa: BLE001
+        return None
+
+
+def _dag_shadow_row(cfg, sdlc_dir, now=None):
+    """#1619: the pick-time shadow comparison between the board mirror and the stored map. Local files
+    only (`state/dag-shadow.jsonl` and its rotated `.1`). Absent (None) when `discovery.dag.mode` is
+    `off` or no log exists; always OK, since it measures and gates nothing. Never raises."""
+    try:
+        dp = _load_loop_script("dag_pick")
+        if dp.dag_store.mode(cfg) == "off":
+            return None
+        st = dp.shadow_stats(sdlc_dir, time.time() if now is None else now)
+        if st is None:
+            return None
+        c = st["causes"]
+        return _chk("dag shadow: %d compared picks, %d disagreements (pr %d, comment-only %d, "
+                    "cross-repo %d, unknown %d), %d days in shadow, flip criterion %s (needs >=%d "
+                    "days, >=%d distinct picks, 0 unknown)"
+                    % (st["compared"], st["disagreements"], c["pr"], c["comment-only"],
+                       c["cross-repo"], c["unknown"], st["days"],
+                       "met" if st["flip"] else "not met", dp.FLIP_DAYS, dp.FLIP_PICKS), True, "")
+    except Exception:                        # noqa: BLE001
+        return None
+
+
+def _dag_map_row(cfg, sdlc_dir, now=None):
+    """#1612 LIVENESS: the stored dependency map's row. Reads the config, the map file and the small
+    refresh record; no network. Absent (None) when `discovery.dag.mode` is `off`, and when the operator
+    never opted in and no map exists. Not OK in two separate cases: the last good stamp is over three
+    TTLs old while a watcher heartbeat or loop session is live (the refresh died quietly), or the last
+    two refreshes errored. Never raises."""
+    try:
+        dr = _load_loop_script("dag_refresh")
+        now = time.time() if now is None else now
+        if dr.dag_store.mode(cfg) == "off":
+            return None
+        if not dr.active(cfg) and dr.dag_store.load(sdlc_dir, cfg)[0] is None:
+            return None
+        live = False
+        try:
+            sync = _load_loop_script("sync")
+            bound = sync.stale_after_seconds(sync.watch_interval_seconds(cfg))
+            beat = _load_loop_script("resource_liveness").newest_heartbeat(sdlc_dir)
+            live = beat is not None and 0 <= now - beat <= bound
+            if not live:
+                live = 0 <= now - sync.heartbeat_path(pathlib.Path(sdlc_dir)).stat().st_mtime <= bound
+        except Exception:                    # noqa: BLE001 - no heartbeat to read is not live
+            pass
+        h = dr.health(sdlc_dir, cfg, now=now, live=live)
+        age = "no map yet" if h["age"] is None else "age %s" % dr._age(h["age"])
+        name = "dag map: mode %s, %s, %d nodes, %d edges, %d cycles" % (
+            h["mode"], age, h["nodes"], h["edges"], h["cycles"])
+        try:                                 # #1614: stuck decision roots, from the same local map
+            stuck = len(_load_loop_script("dag_stuck").roots(sdlc_dir, now=now))
+        except Exception:                    # noqa: BLE001 - a count that cannot be made adds nothing
+            stuck = 0
+        if stuck:
+            name += ", %d stuck root%s" % (stuck, "" if stuck == 1 else "s")
+        why = []
+        if h["stale"]:
+            why.append("last good refresh is over %d TTLs old while the loop or watcher is live" % dr.STALE_TTLS)
+        if h["erroring"]:
+            why.append("the last %d refreshes errored" % h["errors"])
+        if not why:
+            return _chk(name, True, "")
+        return _chk(name + " -- " + "; ".join(why), False,
+                    "run `python3 skills/sigma-loop/scripts/dag.py refresh --force --sdlc .sdlc` and read its "
+                    "last_error; the reconcile tick and the first pick retry on their own")
+    except Exception as exc:                 # noqa: BLE001 - a detector that cannot run says so
+        return _chk(f"dag map: could not check ({type(exc).__name__})", True, "")
+
+
 def _blocker_rank_row(cfg, sdlc_dir, now=None):
     """#1410: one row for blockers ranked below what they block. Reads only the small state file the
     reconcile tick writes (count, last repair, when the count first went above zero); no gh call.
@@ -1492,6 +1631,32 @@ def _preflight_fix(check):
 
 _REGISTRY_COMMIT_CMD = 'git add .sdlc/features && git commit -m "registry: record unit membership"'   # branching-model s15
 _STALE_RECORD_DIRS = ("acceptance", "plans", "research")
+
+
+_CHAIN_NEEDLE = "do not walk the blockers one by one"      # a sentence of the docs/chain.md block, not its heading
+
+
+def _chain_block_rows(base):
+    """#1593: one row, whether an agent file in the repo root (AGENTS.md, CLAUDE.md, .cursor/rules/*.mdc)
+    carries the chain block from docs/chain.md. Read only: it never edits the file. No row when the
+    state directory does not exist (nothing is initialised to advise)."""
+    if not base.is_dir():
+        return []
+    root = base.parent
+    files = [root / "AGENTS.md", root / "CLAUDE.md"]
+    try:
+        files.extend(sorted((root / ".cursor" / "rules").glob("*.mdc")))
+    except OSError:
+        pass
+    for f in files:
+        try:
+            if _CHAIN_NEEDLE in f.read_text(encoding="utf-8", errors="replace"):
+                return [_chk("chain block in an agent file", True, "")]
+        except OSError:
+            continue
+    return [_chk("chain block in an agent file", False,
+                 "paste the block under 'Solving a whole dependency chain' from docs/chain.md into "
+                 "AGENTS.md or CLAUDE.md (doctor never edits it)")]
 
 
 def _stale_record_rows(base, run, now=None):
@@ -1916,6 +2081,14 @@ def _list(run, gh_cfg, fields, labels, state="open", cap=200, sort="created", re
         return None
 
 
+_FENCED_BLOCK = re.compile(r"```.*?(?:```|\Z)", re.DOTALL)
+#: #1810: kinds a machine writes for its own park (a conflict, a failing check, ...). A deny word in such
+#: an issue is quoted log or diff text, not a request for an irreversible action.
+_MACHINE_PARK_KINDS = frozenset({"merge_conflict", "failing_check", "no_evidence", "dependency",
+                                 "review_cap", "quota", "reviewer_down", "review_post_ambiguous"})
+_REBASE_PARK_MARKER = "Rebase parked:"
+
+
 def _mis_kinded_hardstop_parks(cfg, gh_cfg, run, cap=20):
     """#1498: open parked issues whose title or body matches the filing deny-list (a hard stop) but whose
     declared kind is not a hard-stop kind. -> a list of issue numbers (empty = none), or None when the
@@ -1933,11 +2106,16 @@ def _mis_kinded_hardstop_parks(cfg, gh_cfg, run, cap=20):
             return None
         found = []
         for it in rows:
-            d = ft.decide(it.get("title") or "", it.get("body") or "", {}, {})
+            # #1810: fenced blocks are quoted output, not the filer's words; the upkeep marker is a machine park.
+            if (it.get("title") or "").startswith(_REBASE_PARK_MARKER):
+                continue
+            d = ft.decide(_FENCED_BLOCK.sub("", it.get("title") or ""), _FENCED_BLOCK.sub("", it.get("body") or ""), {}, {})
             if d.kind != "park" or not d.matched:
                 continue
             data = src._read_issue(it["number"], ["number", "comments", "state"])
             kind = qk.resolve(data.get("comments") or [], goal=it["number"])
+            if kind in _MACHINE_PARK_KINDS:
+                continue
             if not hs.is_hardstop_kind(kind, None, cfg) and not qk.resolve_hardstop(data.get("comments") or []):
                 found.append(it["number"])
             if len(found) >= cap:
@@ -3298,6 +3476,7 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     _progress("unit records")
     out.extend(_unit_record_rows(base, run, cheap_only))
     out.extend(_stale_record_rows(base, run))      # #1474
+    out.extend(_chain_block_rows(base))            # #1593
     if disc.get("source") == "github":
         gh_disc = _block(disc, "github")
         if _block(gh_disc, "project").get("enabled"):
@@ -3376,7 +3555,9 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
                 out.append(_chk("deny-list parks are declared a hard-stop kind", False,
                                 "parked issue(s) match the filing deny-list but are not declared a hard-stop kind: #"
                                 + ", #".join(str(n) for n in mk[:10])
-                                + " -- run `unpark.py declare .sdlc <issue> irreversible`."))
+                                + " -- review each; if it really is an irreversible action, declare it with "
+                                "`unpark.py declare .sdlc <issue> irreversible`; a machine park (conflict, "
+                                "failing check) needs no change."))
 
             # #389: NOT gated on backlog_check.enabled (nor on the `project` block above) -- a repo with
             # backlog_check OFF has zero auto-skip happening at all, so this is arguably more useful
@@ -3831,6 +4012,28 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     _br = _blocker_rank_row(cfg, sdlc_dir)
     if _br is not None:
         out.append(_br)
+
+    _dm = _dag_map_row(cfg, sdlc_dir)  # #1612: absent when mode is off
+    if _dm is not None:
+        out.append(_dm)
+    _dsh = _dag_shadow_row(cfg, sdlc_dir)  # #1619: absent with no log or mode off
+    if _dsh is not None:
+        out.append(_dsh)
+    _dcy = _dag_cycles_row(cfg, sdlc_dir)  # #1615: absent with no cycle or mode off
+    if _dcy is not None:
+        out.append(_dcy)
+
+    _dhr = _dag_history_row(cfg, sdlc_dir)  # #1622: absent with no history or mode off
+    if _dhr is not None:
+        out.append(_dhr)
+
+    _dlr = _dag_ledger_row(cfg, sdlc_dir)  # #1624: absent with the ledger or the map off, or no dag file
+    if _dlr is not None:
+        out.append(_dlr)
+
+    _chr = _chain_row(cfg, sdlc_dir)  # #1594: absent when no chain record exists
+    if _chr is not None:
+        out.append(_chr)
 
     out.extend(_ai_filed_rows(cfg, base))  # #1705
 

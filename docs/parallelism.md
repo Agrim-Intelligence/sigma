@@ -151,6 +151,13 @@ constant copied from a laptop, and nothing here ever pauses a process.
   verify process group Sigma itself started (TERM, a grace, then KILL). The result is `RESOURCE-HOLD (shed)`,
   exit 5, no evidence, the goal not failed; rerun once admission reopens. The shed run's measured footprint is learned like any other run's, so when it
   was large the rerun of the same goal is admitted with fewer workers; when it was small the count can be the same. A session is never signalled.
+- **Cold start.** Until a kind's ring holds one measured unit, a `verify` or `goal` admits one unit at a time. A
+  model session admits up to the room above the reserve divided by the derived session cost, never fewer than one,
+  so several supervisors on one machine each get a session. A session lease is taken around each launched session
+  and released when it ends; the ring then gets one observation of the session tree (the supervisor, the model
+  process and what it started, without a verify that holds its own lease). To seed a ring by hand, write
+  `{"session": [<bytes>]}` into `observed.json` in the resource state directory (`SIGMA_RESOURCE_DIR`) while no
+  session is running; the bound then follows the measured size.
 - **What the guard cannot cover.** Tests you run by hand outside the verify wrapper; memory used by other
   programs; a host's own subagent fan-out; Windows (the guard refuses there rather than guess).
 - **Measured or not.** The macOS and Linux calibration runs are recorded in
@@ -179,3 +186,16 @@ like any other fresh identity, since the old entries are dropped rather than kep
 possible return. The cap must also exceed the working corpus, or it never converges: a backlog even
 one issue bigger than the cap re-embeds the overflow (`corpus − cap` calls) on every run instead of
 settling down, so raise the cap rather than let it thrash.
+
+## Measuring a pick (opt-in, #1607)
+
+When a pick is slow, turn the trace on for it:
+`SIGMA_PICK_TRACE=1` in the environment, or `loop.py next .sdlc --trace`. Off by default, and
+off it writes nothing and adds no `gh` call. On, each pick appends one JSON line to
+`.sdlc/state/pick-trace.jsonl`: per named stage (reconcile sweep, auto-unpark sweep, stale-claim
+reclaim, release of unstarted claims, pending fetch, dependency hold, the unit/scope/owner gates,
+claim writes, and `other` for the rest) the number of `gh` calls by class (list, read, write,
+graphql, project) and the seconds. Calls are counted once, at the single transport seam, retries
+included; no issue text is recorded. The file rotates at 1 MB to `pick-trace.jsonl.1` (one
+generation, so about 2 MB at most). `loop.py pick-trace-report .sdlc` prints each stage's median and
+p90 calls and seconds across the recorded picks. The trace measures; it does not change a pick.

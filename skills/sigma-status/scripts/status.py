@@ -75,6 +75,21 @@ def _load_sources():
         return None
 
 
+def _stuck_lines(sdlc_dir):
+    """#1614: `["stuck chains: N", "  <root-cause line>", ...]` (top five) from the stored dependency
+    map, or `[]`. Local file only, no `gh`; mode `off`, no usable map or any failure gives `[]`, so the
+    status output is unchanged."""
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "dag_stuck", _HERE.parent.parent / "sigma-loop" / "scripts" / "dag_stuck.py")
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        found = m.lines(sdlc_dir)
+    except Exception:
+        return []
+    return ["stuck chains: %d" % len(found)] + ["  " + t for t in found[:5]] if found else []
+
+
 _FENCE = re.compile(r"^---\n(.*?)\n---", re.DOTALL)
 
 
@@ -414,6 +429,20 @@ def _board_skipped_segment(sdlc_dir):
         return ""
 
 
+def _dag_cycles_segment(sdlc_dir):
+    """#1615: ` | `-joined `dependency cycle: #A, #B -> remove one Blocked by line`, one per distinct cycle
+    in the stored map. "" with none, with `discovery.dag.mode` `off` and with no usable map (the line
+    stays as it was). One file read, no network; fail-open."""
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "dag_cycles", _HERE.parent.parent / "sigma-loop" / "scripts" / "dag_cycles.py")
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return " | ".join(m.lines(sdlc_dir))
+    except Exception:
+        return ""
+
+
 def _legacy_delta_segment(sdlc_dir):
     """#327 LIVENESS: `legacy delta records: N (M would be refused): <repair command>` -- unit
     records the previous plugin wrote after the conversion, which Sigma merges but never applies.
@@ -461,7 +490,12 @@ def main(argv):
     deltas = _legacy_delta_segment(argv[1] if len(argv) > 1 else ".sdlc")
     if deltas:                                  # #327: silent unless a legacy delta record is live
         line += f" | {deltas}"
+    cycles = _dag_cycles_segment(argv[1] if len(argv) > 1 else ".sdlc")
+    if cycles:                                  # #1615: silent unless a stored dependency cycle exists
+        line += f" | {cycles}"
     print(line)
+    for extra in _stuck_lines(argv[1] if len(argv) > 1 else ".sdlc"):   # #1614: silent unless stuck
+        print(extra)
     return 0
 
 

@@ -67,7 +67,7 @@ PUSH_ATTEMPTS = 5
 #: line in their own `.gitattributes`; that is harmless (it matches nothing new) and deliberately
 #: NOT cleaned up — see `BRANCH_README` and the CHANGELOG. Removing a line here is not retroactive:
 #: `_ensure_gitattributes` below is additive by design and never deletes.
-GITATTRIBUTES_LINES = (f"{ledger.ENTRIES}/*.jsonl merge=union",)
+GITATTRIBUTES_LINES = (f"{ledger.ENTRIES}/*.jsonl merge=union", f"{ledger.DAG}/**/*.jsonl merge=union")
 BRANCH_README = """\
 # SDLC ledger — ops branch
 
@@ -1012,7 +1012,10 @@ def publish(sdlc_dir, config, run=None, attempts=PUSH_ATTEMPTS, channel=LEDGER):
     try:
         who = ledger.actor(config)
         mine = _staged_paths(path, ledger.ENTRIES, who)
-        if not mine:
+        # #1623: the dependency map's history stream rides along. A change that is only there must
+        # still push, so the early return waits for both.
+        dag_mine = [str(p.relative_to(path)) for p in ledger.dag_files_for(path, who)]
+        if not mine and not dag_mine:
             return "nothing to publish"
         # #2574/S1-G3: THE EVENTS STREAM IS NO LONGER STAGED. It used to be
         # `to_stage += _staged_paths(path, ledger.EVENTS, who)`, which published a machine's events to
@@ -1020,11 +1023,13 @@ def publish(sdlc_dir, config, run=None, attempts=PUSH_ATTEMPTS, channel=LEDGER):
         # publishing: the journal is local-only, at `.sdlc/events/`, which is not in this worktree at
         # all. Nothing already on the branch is removed — a teammate's clone still pulls it, and it is
         # still read for one release.
-        to_stage = list(mine)
+        to_stage = list(mine) + dag_mine
         if _ensure_gitattributes(path):
             to_stage.append(".gitattributes")
         _write_team(sdlc_dir, path)
         to_stage.append("TEAM.md")
+        if _write_dag(path, config):                # #1624: only when the ledger and the map are on
+            to_stage.append("DAG.md")
         git(path, ["add", *to_stage])
         if git(path, ["diff", "--cached", "--name-only"]):
             git(path, ["commit", "-m", f"ledger: {who}"])      # a new commit: pushed, as always
@@ -1035,8 +1040,9 @@ def publish(sdlc_dir, config, run=None, attempts=PUSH_ATTEMPTS, channel=LEDGER):
 
     def regenerate_team():                      # entries union-merge; TEAM.md -> theirs, then
         _write_team(sdlc_dir, path)             # regenerate from the merged entries
+        regen = ["TEAM.md"] + (["DAG.md"] if _write_dag(path, config) else [])
         if git(path, ["diff", "--name-only"]):
-            git(path, ["add", "TEAM.md"])
+            git(path, ["add", *regen])
             git(path, ["commit", "--amend", "--no-edit"])
 
     return _push_with_retry(git, path, rem, name, attempts, rebase_args=("-X", "theirs"),
@@ -1047,6 +1053,26 @@ def _write_team(sdlc_dir, path):
     """Regenerate the rolled-up team view from every author's entries. A pure function of the
     entries on disk, so it is always safe to overwrite (that is what makes a race resolvable)."""
     (path / "TEAM.md").write_text(ledger.render(ledger.read_all(sdlc_dir)), encoding="utf-8")
+
+
+def _write_dag(path, config):
+    """#1624: regenerate DAG.md at the root of the ledger worktree `path` from every writer's dag history
+    (a pure function of those files, so overwriting is always safe and a race is resolved by re-running).
+    Returns True when it wrote. Nothing, and False, when `ledger.enabled` is not true, `discovery.dag.mode`
+    is `off`, or the worktree holds no dag history record (no empty file is ever created). Never raises."""
+    try:
+        if not ledger.enabled(config):
+            return False
+        dag_history, dag_render = _load("dag_history"), _load("dag_render")
+        if dag_history._load("dag_store").mode(config) == "off":
+            return False
+        recs = dag_history.read_all(path)
+        if not recs:
+            return False
+        (pathlib.Path(path) / "DAG.md").write_text(dag_render.render(recs), encoding="utf-8")
+        return True
+    except Exception:                            # noqa: BLE001 - DAG.md is a view; it never fails a publish
+        return False
 
 
 def _append_missing_lines(local, published_text):
