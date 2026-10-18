@@ -417,9 +417,14 @@ CONTROL_ROWS = [
     ("unclosed_block_checked", "_keep_unclosed", "return False", ("edit", "unclosed_bad_block"),
      (1, ("[unclosed-fence]", "[no-keyword]")), (1, ("[unclosed-fence]",), ("[no-keyword]",))),
     ("node_trailing_dash", "_node_id",
-     'cut = run.rfind("--")\nif cut >= 0:\n    run = run[cut + 2:]\nfor i, ch in enumerate(run):\n'
-     '    if ch == "_" or ch.isalpha():\n        return run[i:]\nreturn None',
+     'cut = run.rfind("--")\nif cut >= 0:\n    run = run[cut + 2:]\nrun = run.lstrip("-")\nreturn run or None',
      ("edit", "dash_run"), (0,), (1, ("[container-no-inventory]", "Ghost"))),
+    # code review 3: an id may start with a digit (`1[...]`, `7[...]` on an edge, `2a[...]`); the
+    # mutant restores the rule that an id starts at a letter or `_`
+    ("node_digit_id", "_node_id",
+     'if run.endswith("-"):\n    return None\ncut = run.rfind("--")\nif cut >= 0:\n    run = run[cut + 2:]\n'
+     'for i, ch in enumerate(run):\n    if ch == "_" or ch.isalpha():\n        return run[i:]\nreturn None',
+     ("edit", "digit_ids"), (1, ("[container-no-inventory]", "'Ledger'", "'Vault'", "'Queue'")), (0,)),
     ("slant_label", "_skip_slant", "return i", ("edit", "slant_label"),
      (0,), (1, ("[container-no-inventory]", "'\"Queue'"))),
     ("exempt_case", "_is_exempt", 'return technology in ("Person", "External system")', ("edit", "exempt_case"),
@@ -432,6 +437,31 @@ CONTROL_ROWS = [
      (0,), (1, ("[container-no-inventory]", "Web UI"))),
     ("cell_link", "_unwrap_link", "return cell", ("edit", "link_cells"),
      (0,), (1, ("[container-no-inventory]", "Web UI"))),
+    ("url_hint", "_url_like", "return False", ("root", "upper_url"),
+     (1, ("[system-root]", "does not exist", "a repository URL must start with")),
+     (1, ("does not exist",), ("a repository URL must start with",))),
+    ("end_semicolon", "_first_word", 'parts = line.split()\nreturn parts[0] if parts else ""',
+     ("edit", "end_semicolon"), (0,), (1, ("[unbalanced-subgraph]",))),
+    ("empty_technology", "_extract_label_parts",
+     'label = _strip_line_breaks(label)\nclose = label.rfind("]")\n'
+     'opening = label.rfind("[", 0, close) if close >= 0 else -1\nif opening < 0:\n'
+     '    return (label.strip(), None)\nreturn (label[:opening].strip(), label[opening + 1:close].strip())',
+     ("edit", "empty_technology"), (1, ("[node-no-technology]", "'Thing'")),
+     (1, ("[container-no-inventory]", "'Thing'"), ("[node-no-technology]",))),
+    ("flowchart_only", "_containers",
+     'found = []\nfor block in blocks:\n    if block.heading != _BUILDING:\n        continue\n'
+     '    for number, line in block.lines:\n        if _skip_in_scan(line) or _is_excluded_line(line):\n'
+     '            continue\n        for node_id, label in _scan_nodes(line):\n'
+     '            found.append((node_id, label, number))\nout = []\n'
+     'for _, label, number in _unique_nodes(found):\n    name, technology = _extract_label_parts(label)\n'
+     '    out.append((name, technology, number))\nreturn out',
+     ("edit", "sequence_in_building"), (0,), (1, ("[node-no-technology]", "'y'"))),
+    ("root_itself", "_refuse_symlink_escape",
+     'root = os.path.realpath(repo_root)\nreal = os.path.realpath(os.path.join(repo_root, value))\n'
+     'if not real.startswith(root + os.sep):\n'
+     '    return "architecture.system_root: resolves outside the repository (%s -> %s)" % (value, real)\n'
+     'return None',
+     ("root", "dot"), (0,), (1, ("[system-root]", "outside the repository"))),
 ]
 
 # ("edit", key) control inputs: the `clean` fixture with these literal (old, new) replacements, each
@@ -472,6 +502,12 @@ EDITS = {
                      '    user["Customer [PERSON]"]\n    ext["Payments [external SYSTEM]"]\n    web[')],
     "bold_cells": [("| Web UI | TypeScript |", "| **Web UI** | TypeScript |")],
     "link_cells": [("| Web UI | TypeScript |", "| [Web UI](web.md) | TypeScript |")],
+    "digit_ids": [(NODE, NODE + '    1["Ledger [Go]"]\n    user --> 7["Vault [Go]"]\n'
+                   '    1a["Web UI [TypeScript]"]\n    2a["Queue [Go]"]\n')],
+    "end_semicolon": [(NODE, NODE + "    subgraph g\n        web\n    end;\n")],
+    "empty_technology": [(NODE, NODE + '    x["Thing []"]\n')],
+    "sequence_in_building": [("The containers.\n",
+                              "The containers.\n\n```mermaid\nsequenceDiagram\n    A->>B: call x[y]\n```\n")],
 }
 
 
@@ -505,7 +541,8 @@ def build_input(base, spec):
              "url_ctrl": "https" + "://" + "example.invalid/a\x01b",
              "url_badhost": "https" + "://" + "exa_mple.invalid/x",
              "url_nopath": "https" + "://" + "example.invalid/",
-             "newline_folder": "docs/a\nb", "del_folder": "docs/a\x7fb"}.get(arg)
+             "newline_folder": "docs/a\nb", "del_folder": "docs/a\x7fb",
+             "upper_url": "HTTPS" + "://" + "example.invalid/r", "dot": "."}.get(arg)
     config = {"architecture": {"system_root": value}}
     if arg == "empty_config":
         config = {}

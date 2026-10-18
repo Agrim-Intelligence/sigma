@@ -80,25 +80,32 @@ read-only, so recovery from any failure is "run it again".
 Measured 2026-10-18 on arm64 macOS 26.6.2, warm cache, best of 5, wall time of the full
 documented gesture including interpreter start, on Python 3.12.13 and on the system Python 3.9.6
 (bare interpreter start on that host: 17 ms and 19 ms). "1 MiB of such lines" is as many whole
-lines as fit under READ_CAP (1,045,582 to 1,046,408 bytes), inside a valid document. Re-measured
-after code review 2 (which added the inventory-cell unwrapping and the URL and folder checks):
-  * a valid document of 1 MiB (18,013 containers, one inventory row each) lints clean in 89 ms on
-    3.12.13 and 126 ms on 3.9.6 (60 ms and 91 ms of it in-process; 84 ms and 116 ms before that
-    review);
+lines as fit under READ_CAP (1,045,582 to 1,047,706 bytes), inside a valid document. Re-measured
+after code review 3 (which made digit-led ids count, stopped re-walking a block for its keyword and
+dropped blank lines from a block's body):
+  * a valid document of 1 MiB (18,013 containers, one inventory row each) lints clean in 88 ms on
+    3.12.13 and 122 ms on 3.9.6 (59 ms and 89 ms of it in-process);
+  * 1 MiB of blank lines before `flowchart` in the Building blocks diagram: 146 ms and 230 ms
+    (115 ms and 200 ms in-process; linear: 84, 133 and 233 ms on 3.9.6 at a quarter, half and all
+    of it; 1,045 ms and 1,695 ms before that review, when every check walked the block again for
+    its keyword); the same lines in another mermaid block: 145 ms and 236 ms; outside any block,
+    the slowest case measured: 185 ms and 286 ms; 1 MiB of `%%` comment lines before `flowchart`:
+    60 ms and 83 ms;
   * a 4096-character adversarial mermaid line (repeated `["a [b`) is reported in 28 ms and 32 ms;
   * a file of READ_CAP + 1 bytes is refused in 28 ms and 31 ms;
   * one prose line of 3,000 `~` then a backtick: 28 ms and 31 ms; 1 MiB of 4,000-`~`-then-backtick
-    lines: 29 ms and 34 ms;
+    lines: 28 ms and 33 ms;
   * one 4096-character identifier run (`aaa...`, no opener) in the container flowchart: 28 ms and
-    31 ms; 1 MiB of such lines: 50 ms and 57 ms; 1 MiB of 4095-character `a-a-a-...` runs: 53 ms
-    and 61 ms;
-  * one heading line `## ` + 2,000 ` #` + `x`: 27 ms and 31 ms; 1 MiB of such lines: 31 ms and
-    36 ms.
+    31 ms; 1 MiB of such lines: 51 ms and 57 ms; 1 MiB of 4095-character `a-a-a-...` runs: 53 ms
+    and 60 ms;
+  * one heading line `## ` + 2,000 ` #` + `x`: 28 ms and 32 ms; 1 MiB of such lines: 30 ms and
+    37 ms.
 The patterns these replaced, measured once on the same inputs on 3.12.13: the one tilde line took
 15.6 s, the 1 MiB identifier file 45.2 s, the hyphenated file 10.6 s, the heading file 9.8 s, and the
 1 MiB tilde file was killed unfinished at 120 s; the valid 1 MiB document took 73 ms (16 ms less
-than now; the difference was not attributed). The inventory is a set: with a tuple the earlier 1 MiB
-file took 725 ms (quadratic lookups), which is why it is not one. Unmeasured: Windows (drive-letter
+than the 89 ms measured after code review 2; the difference was not attributed). The inventory is
+a set: with a tuple the earlier 1 MiB file took 725 ms (quadratic lookups), which is why it is not
+one. Unmeasured: Windows (drive-letter
 and UNC values are refused by shape only, not measured on Windows), and any cold-cache read.
 """
 from __future__ import annotations
@@ -166,7 +173,8 @@ class Resolved(NamedTuple):
 class Block(NamedTuple):
     start: int                      # line number of the opening fence
     heading: Optional[str]          # normalised level-2 heading the block sits under
-    lines: List[Tuple[int, str]]    # content lines (front matter and over-cap lines dropped)
+    lines: List[Tuple[int, str]]    # content lines (front matter, blank and over-cap lines dropped)
+    first: Optional[str]            # the keyword: first word of the first non-comment line, else None
 
 
 class Doc(NamedTuple):
@@ -307,6 +315,21 @@ def _heading_text(raw: str) -> str:
     return raw.rstrip(" \t#")
 
 
+def _leading_token(lines: List[Tuple[int, str]]) -> Optional[str]:
+    for _, line in lines:
+        s = line.strip()
+        if s and not s.startswith("%%"):
+            return _first_word(s)
+    return None
+
+
+def _block(start: int, heading: Optional[str], body: List[Tuple[int, str]]) -> Block:
+    """A mermaid block, its keyword read once here (every check asks for it; a block of a million
+    lines must not be walked once per check to find it)."""
+    lines = _strip_front_matter(body)
+    return Block(start, heading, lines, _leading_token(lines))
+
+
 def _keep_unclosed(fence: Optional[Tuple[str, int, bool, int]]) -> bool:
     """A mermaid block still open at the end of the file is kept and checked like any other."""
     return fence is not None and fence[2]
@@ -326,10 +349,10 @@ def _parse(lines: List[str]) -> Doc:
         if fence is not None:
             if found and _closes(fence, found[0], line):
                 if fence[2]:
-                    blocks.append(Block(fence[3], heading, _strip_front_matter(body)))
+                    blocks.append(_block(fence[3], heading, body))
                 fence, body = None, []
-            elif fence[2]:
-                body.append((number, line))
+            elif fence[2] and line.strip():
+                body.append((number, line))     # a blank line holds nothing any check reads
             continue
         if found:
             fence = (found[0][0], len(found[0]), found[1] == "mermaid", number)
@@ -344,18 +367,14 @@ def _parse(lines: List[str]) -> Doc:
             inventory_lines.append(line)
     unclosed = fence[3] if fence is not None else None
     if _keep_unclosed(fence):
-        blocks.append(Block(fence[3], heading, _strip_front_matter(body)))
+        blocks.append(_block(fence[3], heading, body))
     inventory = frozenset(_cell_name(row.strip("|").split("|")[0])
                           for row in _body_rows(_first_table(inventory_lines)))
     return Doc(headings, blocks, inventory, unclosed)
 
 
 def _first_token(block: Block) -> Optional[str]:
-    for _, line in block.lines:
-        s = line.strip()
-        if s and not s.startswith("%%"):
-            return _first_word(s)
-    return None
+    return block.first
 
 
 # ---------------------------------------------------------------------------------- the clauses
@@ -564,18 +583,17 @@ def _strip_edge_text(line: str) -> str:
 
 
 def _node_id(run: str) -> Optional[str]:
-    """The identifier at the end of an identifier run before an opener, or None. An identifier
-    starts with a letter or `_` and holds single hyphens only, so the edge in `A---B[` is cut off
-    (`B`); a run ending in `-` has none. Read by hand, one pass."""
+    """The identifier at the end of an identifier run before an opener, or None. An identifier is
+    word characters (letters, digits, `_`, so `1["..."]` and `2a["..."]` are ids) joined by single
+    hyphens, so the edge in `A---B[` is cut off (`B`) and a leading `-` is dropped; a run ending in
+    `-` has none. Read by hand, one pass."""
     if run.endswith("-"):
         return None
     cut = run.rfind("--")
     if cut >= 0:
         run = run[cut + 2:]
-    for i, ch in enumerate(run):
-        if ch == "_" or ch.isalpha():
-            return run[i:]
-    return None
+    run = run.lstrip("-")
+    return run or None
 
 
 def _skip_slant(text: str, i: int) -> int:
@@ -843,12 +861,20 @@ def _root_missing(resolved: Resolved, explicit_key: bool) -> bool:
     return resolved.form == "folder" and explicit_key and not resolved.path.is_dir()
 
 
+def _url_like(value: str) -> bool:
+    """A folder value that looks like a URL (`http://...`, `HTTPS://...`): its missing-folder
+    message says which URL forms are read as URLs."""
+    return "://" in value
+
+
 def _check_system_root(resolved: Resolved, explicit_key: bool) -> list:
     if _root_invalid(resolved):
         return [(0, "system-root", resolved.error)]
     if _root_missing(resolved, explicit_key):
-        return [(0, "system-root", "architecture.system_root: folder %s does not exist (%s)"
-                 % (resolved.value, resolved.path))]
+        hint = ("; a repository URL must start with lowercase https://, ssh:// or git@"
+                if _url_like(resolved.value) else "")
+        return [(0, "system-root", "architecture.system_root: folder %s does not exist (%s)%s"
+                 % (resolved.value, resolved.path, hint))]
     return []
 
 

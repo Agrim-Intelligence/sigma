@@ -183,3 +183,11 @@ private-name guard rejects.
   which is never opened, so it cannot hang the lint, and one larger than 1 MiB, which is not
   parsed.
 - A line longer than 4,096 characters is a finding and is not otherwise checked.
+- Only a table whose rows start with `|` is read as the inventory. A table written without leading
+  pipes (`Container | Technology`) is not read, so every container is reported as having no row;
+  start each row with `|`.
+- Only `##` headings are read. A Setext heading (the text on one line, `---` under it) is not, so
+  `Constraints` underlined that way is reported as a missing heading; write `## Constraints`.
+- Only a value starting with lowercase `https://`, `ssh://` or `git@` is a repository URL. Any other
+  value, `http://...` or `HTTPS://...` included, is read as a folder, so it is reported as a folder
+  that does not exist, with a reminder of the URL forms.
