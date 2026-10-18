@@ -35,7 +35,7 @@ _HERE = pathlib.Path(__file__).resolve().parent
 #: (state subdirectory, file suffix) of every per-goal file removed once the goal is done.
 FILE_FAMILIES = (("verify", ".json"), ("landing", ".json"), ("propagation", ".json"),
                  ("escalation", ".json"), ("unit-tracking", ".attempt"), ("phase", ".json"),
-                 ("call-runs", ".verify.json"), ("call-runs", ".merge.json"), ("call-runs", ".verify.lock"))
+                 ("call-runs", ".verify.json"), ("call-runs", ".merge.json"), ("call-runs", ".verify.lock"), ("sealed", ".json"))
 MIN_AGE_SECONDS = 7 * 86400
 RUN_STOP_KEEP_DAYS = 30
 DEFAULT_LIMIT = 200

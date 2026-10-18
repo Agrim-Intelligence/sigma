@@ -1344,6 +1344,7 @@
     "skills/sigma-loop/scripts/loop.py::_diff_revert_verdict",
     "skills/sigma-loop/scripts/loop.py::_witness_verdict",
     "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
+    "skills/sigma-loop/scripts/sealed_tests.py::seal",
     "skills/sigma-loop/scripts/witness.py::record"
    ]
   },
@@ -1357,6 +1358,7 @@
     "skills/sigma-loop/scripts/loop.py::_diff_revert_verdict",
     "skills/sigma-loop/scripts/loop.py::_witness_verdict",
     "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
+    "skills/sigma-loop/scripts/sealed_tests.py::seal",
     "skills/sigma-loop/scripts/witness.py::record"
    ]
   },
