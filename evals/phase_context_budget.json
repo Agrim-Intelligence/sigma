@@ -5,10 +5,10 @@
     "than five percent above the current measurement. To shrink a ceiling, change this record only",
     "after the corresponding prompt/reference reduction is measured. Do not raise it to absorb growth."
   ],
-  "measured_at": "2026-10-11",
-  "commit": "cdd7deb1800c408e5a045f27d1cd112d59c2e6e3",
+  "measured_at": "2026-10-18",
+  "commit": "2ed837a6988dfc0614cc9c5bf150899c9b0df6ac",
   "phases": {
-    "orchestrator": {"ceiling": {"words": 19527, "est_tokens": 32403}},
+    "orchestrator": {"ceiling": {"words": 19527, "est_tokens": 32422}},
     "goal-slot": {"ceiling": {"words": 7456, "est_tokens": 12437}},
     "research": {"ceiling": {"words": 1958, "est_tokens": 3012}},
     "plan": {"ceiling": {"words": 778, "est_tokens": 1260}},
