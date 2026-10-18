@@ -100,7 +100,8 @@ def test_the_duplicate_control_goes_red_on_a_repeated_entry(name):
     import re
     text = _layouts()[name]
     heading = _current_heading(text)
-    doubled = text.replace("\n%s\n" % heading, "\n%s\n- A copy (#1733).\n" % heading, 1)
+    number = re.findall(r"\(#(\d+)\)", "\n".join(_current_lines(text)))[0]
+    doubled = text.replace("\n%s\n" % heading, "\n%s\n- A copy (#%s).\n" % (heading, number), 1)
     assert doubled != text
     seen = collections.Counter(n for line in _current_lines(doubled) for n in set(re.findall(r"\(#(\d+)\)", line)))
-    assert seen["1733"] == 2
+    assert seen[number] == 2

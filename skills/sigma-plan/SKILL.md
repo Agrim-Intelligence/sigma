@@ -3,18 +3,23 @@ name: sigma-plan
 description: Write a bite-sized implementation plan with files, tests, and done criteria before edits. Use in Plan or /sigma-plan.
 ---
 
+## Codex path resolution
+
+Codex has no `CLAUDE_SKILL_DIR`. In each command, replace `${CLAUDE_SKILL_DIR}` with the
+absolute directory of this installed `SKILL.md` (shown in the skill catalog); never run an
+empty path. Claude keeps its provided value.
+
 # sigma-plan
 
 Detailed selection triggers: [selection](references/selection.md).
 
 ## Context-efficient inspection
 
-Locate before opening: use `rg --files` for paths and `rg -n` for symbols or claims.
-Read only the relevant lines with a bounded range; expand outward only when the
-boundary is unclear. Do not dump whole files or broad search output into context.
-For bulky tests or diagnostics, save full output to a scratch file, then inspect
-its exit status and focused matches or a bounded tail. Do not hide failures, and
-keep secrets out of the scratch file. This is guidance, not a measured savings claim.
+Locate first: `rg --files` for paths, `rg -n` for symbols or claims. Read only the
+relevant lines in a bounded range, widening only when the boundary is unclear; never
+dump whole files or broad search output. Save bulky test or diagnostic output to a
+scratch file and inspect its exit status and focused matches or a bounded tail. Do
+not hide failures; keep secrets out of the scratch file. Guidance, not a measured savings claim.
 
 Write plans before code: concrete, testable steps; then `sigma-plan-review` (never skipped).
 
@@ -24,8 +29,11 @@ subsystem, each producing working, testable software on its own.
 
 ## 2. File structure (decide decomposition first)
 Map which files are **created / modified** and each one's single responsibility. Small, focused files;
-files that change together live together (split by responsibility, not by layer); **follow the
-codebase's existing patterns** — don't unilaterally restructure.
+files that change together live together (split by responsibility, not by layer). List them
+under `## Files`; follow the rule `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/zones.py" classify <path>` prints for each (`unknown`,
+`unreachable` or could not run: follow the surrounding code). Never restructure an existing file
+unilaterally (legacy: only on `intent: yes`, a non-drafted acceptance criterion naming it, else
+extend it by sprout or wrap at one seam, sending dropped improvements to retro's `Deferred roots`).
 
 ## 3. Tasks — right-sized + bite-sized
 - A **task** is the smallest unit that carries its own test cycle and is worth a reviewer's gate; it
@@ -53,19 +61,16 @@ conversation:
 
 - **`sigma-plan-review` is asked to run author-blind** (`review.independent`) — a fresh reviewer that
   never saw this session opens the plan from disk; code cannot prove it did. A plan that exists only in chat cannot be independently
-  reviewed at all; the reviewer arrives with nothing to read.
+  reviewed at all.
 - **The hard plan-gate** (`gates.hard_plan_gate`) refuses unplanned source at two points. On Claude
   Code the `PreToolUse` hook denies the EDIT unless a plan under `.sdlc/plans/` is fresher than
   `plan_freshness_hours`. On **every** host — Claude Code, Cursor, Codex — `work.py pr` refuses the
-  PUSH unless **this goal** has a plan there at all (no freshness window: a goal that legitimately
-  ran longer than one still planned properly). Skip this step with the gate on and, at best, the
-  goal cannot open its pull request. **With `work.enabled` off** there is no push to refuse, so only
-  the Claude Code hook applies and the gate is Claude-Code-only on that checkout — `/sigma-doctor`
-  and `loop.py record done` both say so rather than reporting it as enforced.
-- **Implement** works from the written steps, so a flushed context window doesn't lose the plan.
+  PUSH unless **this goal** has a plan there at all. With the gate on, an unplanned goal cannot open its
+  pull request. **With `work.enabled` off** only the Claude Code hook applies;
+  `/sigma-doctor` and `loop.py record done` say so.
+- **Implement** works from the written steps.
 - **The reviewer of the PR** checks the change against it — so the plan has to reach the goal's
-  BRANCH too, not just this directory (the loop's landing step copies it into the worktree, and
-  `work.py pr` refuses to push a branch missing it — #1548).
+  BRANCH too, not just this directory (`work.py pr` refuses to push a branch missing it — #1548).
 
 ## Hand off
 The finished plan goes to **`sigma-plan-review`** (never skipped) before any edit — it verifies each

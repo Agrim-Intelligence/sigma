@@ -10,12 +10,11 @@ Detailed selection triggers: [selection](references/selection.md).
 
 ## Context-efficient inspection
 
-Locate before opening: use `rg --files` for paths and `rg -n` for symbols or claims.
-Read only the relevant lines with a bounded range; expand outward only when the
-boundary is unclear. Do not dump whole files or broad search output into context.
-For bulky tests or diagnostics, save full output to a scratch file, then inspect
-its exit status and focused matches or a bounded tail. Do not hide failures, and
-keep secrets out of the scratch file. This is guidance, not a measured savings claim.
+Locate first: `rg --files` for paths, `rg -n` for symbols or claims. Read only the
+relevant lines in a bounded range, widening only when the boundary is unclear; never
+dump whole files or broad search output. Save bulky test or diagnostic output to a
+scratch file and inspect its exit status and focused matches or a bounded tail. Do
+not hide failures; keep secrets out of the scratch file. Guidance, not a measured savings claim.
 
 ## The rule
 **Evidence before claims — always.** Claiming work is complete without verifying it isn't efficiency,

@@ -15,12 +15,11 @@ Detailed selection triggers: [selection](references/selection.md).
 
 ## Context-efficient inspection
 
-Locate before opening: use `rg --files` for paths and `rg -n` for symbols or claims.
-Read only the relevant lines with a bounded range; expand outward only when the
-boundary is unclear. Do not dump whole files or broad search output into context.
-For bulky tests or diagnostics, save full output to a scratch file, then inspect
-its exit status and focused matches or a bounded tail. Do not hide failures, and
-keep secrets out of the scratch file. This is guidance, not a measured savings claim.
+Locate first: `rg --files` for paths, `rg -n` for symbols or claims. Read only the
+relevant lines in a bounded range, widening only when the boundary is unclear; never
+dump whole files or broad search output. Save bulky test or diagnostic output to a
+scratch file and inspect its exit status and focused matches or a bounded tail. Do
+not hide failures; keep secrets out of the scratch file. Guidance, not a measured savings claim.
 
 The last gate before code. Review the active plan with two lenses; finish with one verdict.
 
@@ -63,9 +62,8 @@ python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/reviewer.py" run .sdlc /tmp/b
 ```
 
 `check` and `run` exit non-zero if the brief NAMES a shared scratch path (`check` also if it cannot be read) — a file the maker can write and the
-reviewer would read is a maker→reviewer channel whatever the artifact is. It deliberately does **not**
-flag implementation content: a breaker must never see the implementation, but a reviewer must — the
-diff is the artifact under review. A non-zero `check` blocks dispatch on every mechanism, `subagent` included: fix the brief, dispatch only after `check` exits 0.
+reviewer would read is a maker→reviewer channel. It does not flag implementation content: a
+reviewer must see the diff, its artifact. A non-zero `check` blocks dispatch on every mechanism, `subagent` included: fix the brief, dispatch only after `check` exits 0.
 
 ## 1. Forensic verification
 Every claim in the plan is a hypothesis. For each file path, function, line, or behavior the plan
@@ -79,8 +77,10 @@ each backed by a `file:line`. "The plan says X" is not evidence; the file showin
 - **Loopholes:** where can invalid state enter without hitting the new guard (defaults, alternate code paths, deserialization, trust boundaries)?
 
 ## 3. Scope & fit
-Does each step serve the goal? What's over-built (YAGNI)? Does it contradict the project's own
-rules, conventions, or stated direction? Quote the specific rule if so.
+Does each step serve the goal? What's over-built (YAGNI)? An interface, factory, layer or indirection naming no force (a legacy sprout or wrap excepted) is over-built; the four forces: a second real variant in this goal, an unreliable dependency, a boundary crossing, a quality scenario goal-design names. Does it contradict the project's rules, conventions or direction? Quote the rule. Run
+`python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/zones.py" check --goal "<goal>" --plan <plan>`: FIX-FIRST on
+`verdict: over`, quoting it. Each legacy row without `intent: yes` must be a seam edit (sprout or
+wrap), else FIX-FIRST. A bare `verdict: unknown` never rejects.
 
 ## 4. Strategic & architectural alignment (vision-first projects)
 **Never test for the file yourself.** `.sdlc/` is gitignored, so inside a goal worktree — where the
@@ -156,24 +156,22 @@ wrong one. Each disposition needs its own `file:line`; "the review seems right" 
 - **Partially accept** — the concern is real but the suggested fix isn't. Adapt it; cite both the
   concern and why the adjusted approach is better.
 
-**The review can also be wrong.** It is a hypothesis exactly like the plan was in §1. A finding that
+**The review can also be wrong.** It is a hypothesis, as the plan was in §1. A finding that
 claims a file or function doesn't exist gets checked against the filesystem before it is accepted —
-the reviewer misreads code too, and a plan patched to satisfy a false finding is worse than the
+a plan patched to satisfy a false finding is worse than the
 original.
 
-**Structural over patchwork.** If a finding proposes a one-site patch where a shared fix is feasible,
-reject the approach and propose the structural one — the same root-cause discipline §2's caller-site
-sweep applies. If patchwork is genuinely the right scope, say so explicitly and leave a tracked item
+**Structural over patchwork**, except in a legacy file without `intent: yes`, where the seam patch is
+the scope. If a finding proposes a one-site patch where a shared fix is feasible, reject the approach
+and propose the structural one. If patchwork is the right scope, say so and leave a tracked item
 for the structural fix; never let it pass unnamed.
 
 **Regen threshold.** If more than half the findings are substantive (not surface corrections like a
 stale line number or a renamed symbol), the plan has structural problems — say so and recommend
-regenerating it from the goal rather than patching. Counting matters here: three real defects in five
-findings is a different situation from three in twenty.
+regenerating it from the goal rather than patching.
 
-Carry the dispositions with the revised plan so the next review round starts from what was already
-settled. When a later round contradicts an earlier decision, re-read the code, pick one direction on
-the evidence, and record the reversal — don't flip-flop.
+Carry the dispositions with the revised plan so the next review round starts from what was settled. When a later round contradicts an earlier decision, re-read the code, pick one direction on
+the evidence, and record the reversal.
 
 **Under `/sigma-loop`, a revision the current model tier cannot finish is escalated, not parked** —
 token budget and tier size are not park reasons (#2828). Run
@@ -185,6 +183,5 @@ Record the rejections in the goal's audit trail —
 Run `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" note .sdlc "<goal>" - <<'SIGMA_NOTE'` with body `plan-review: <what was rejected and why>` (stdin, quoted heredoc; #713).
 — which comments the issue in github mode and appends to `.sdlc/journey/` locally. A *rejected*
 finding is the one worth writing down: the accepted ones are visible in the revised plan, while the
-reasoning for overruling a reviewer exists nowhere else, and it is the first thing anyone asks when
-the same objection comes back a month later.
+reasoning for overruling a reviewer exists nowhere else.
 
