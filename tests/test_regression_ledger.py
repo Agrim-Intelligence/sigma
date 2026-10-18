@@ -850,6 +850,7 @@ DOCUMENTED_WRITES = {
     ("evals/regression/control.py", "_rmtree.retry", "os.chmod"): (2, "makes a read-only entry of that same temp directory removable"),
     ("evals/regression/control.py", "main", "open"): (1, "writes the marker file inside the control's own freshly made temp directory"),
     ("evals/regression/layer1.py", "_make_dirs", ".mkdir"): (1, "creates the two per-session run directories inside the scratch root layer1 made"),
+    ("evals/regression/layer1.py", "_make_root", "tempfile.mkdtemp"): (1, "creates the per-run scratch root (0700, prefix-named, removed in the same run; swept by age if the run is killed)"),
     ("evals/regression/layer1.py", "_make_root", "open"): (1, "writes the marker file inside the freshly made scratch root"),
     ("evals/regression/layer1.py", "_make_root", "os.chmod"): (1, "sets the scratch root to 0700"),
     ("evals/regression/layer1.py", "_replace", "os.replace"): (1, "atomic rename of the temp config onto .sdlc/config.json inside the scratch clone"),
