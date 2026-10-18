@@ -223,8 +223,8 @@ Then repeat until the helper says stop:
    - **Unblock (same revision)** → fresh generation, `--verdict unblock`.
 
    Then `work.py merge .sdlc "$goal"`. **This call can block for minutes — raise your tool-call
-   timeout before running it, not after it times out**: the safe minimum is the full worst case,
-   **~1,350,000ms (22.5 minutes)**. **Read its first word and record accordingly — never merge past
+   timeout before running it**: the safe minimum is **~1,350,000ms (22.5 minutes)**, more
+   with the quality ratchet on. **Read its first word and record accordingly — never merge past
    it by hand:** `PARK: …` → `record parked` (but a **failing required check** is a fix → `record
    failed`); `PR #N merged …` → **`record done`**; any other line → **`record review`** (done
    means merged; `record done` is REFUSED until then). Every ending, and why **`record done`

@@ -449,7 +449,7 @@ required check still pending after gate()'s own bounded REST wait (`PENDING_ATTE
 450s) is not armed, `allow_auto_merge` is not read, and no merge is sent: `PARK: required checks still pending
 after 450s and auto-merge cannot be armed without GraphQL; re-run work.py merge once they finish`. Checks that
 turn green inside gate()'s wait reach the REST merge with the vetted sha. No extra wait is added, so the
-documented 22.5-minute worst case does not move. Liveness cost: an UNSTABLE PR whose pending checks are NOT
+documented 22.5-minute worst case (quality ratchet off; docs/quality-delta.md) does not move. Liveness cost: an UNSTABLE PR whose pending checks are NOT
 required (GitHub would merge it) also parks in a no-GraphQL session. With GraphQL available the arm path is
 byte-identical to before.
 

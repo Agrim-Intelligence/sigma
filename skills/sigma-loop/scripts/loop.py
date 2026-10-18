@@ -3995,6 +3995,12 @@ def _autowatch_setup_warnings(config):
 # create-seam detail below (both map to the same class, so the overlap is harmless) — the ordering
 # is otherwise defensive rather than load-bearing.
 _REASON_CLASS_RULES = (
+    # #1637: work.py's quality ratchet park texts, FIRST: "could not measure" is no_evidence, and the
+    # worse-metric park's own opening is failing_check, so a reason they quote ("rate limit",
+    # "irreversible") can never reclassify either. The needles are the gate's exact openings, not the
+    # bare phrase, so an unrelated park that merely names `quality ratchet` keeps its own class.
+    ("quality ratchet could not measure", "no_evidence"),
+    ("quality ratchet: required metric", "failing_check"),
     ("irreversible", "irreversible"),                       # SKILL.md's own park-for-irreversible
                                                               # prose — best-effort only, see _reason_class's docstring.
                                                               # This rule firing first used to make the

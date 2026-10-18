@@ -27,6 +27,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 
 _HERE = pathlib.Path(__file__).resolve().parent
 
@@ -179,12 +180,14 @@ class ConfigUnreadable(ValueError):
     """The config bytes are not a JSON object we can read."""
 
 
-Metric = collections.namedtuple("Metric", "name command direction scope required timeout")
-Config = collections.namedtuple("Config", "metrics floor_fraction env_drop")
+Metric = collections.namedtuple("Metric", "name command direction scope required timeout tolerance")
+Config = collections.namedtuple("Config", "metrics floor_fraction env_drop gate_timeout")
 
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
-_ENTRY_KEYS = frozenset(("name", "command", "direction", "scope", "required", "timeout_seconds"))
-_BLOCK_KEYS = frozenset(("metrics", "memory_floor_fraction", "env_drop"))
+_ENTRY_KEYS = frozenset(("name", "command", "direction", "scope", "required", "timeout_seconds", "tolerance"))
+_BLOCK_KEYS = frozenset(("metrics", "memory_floor_fraction", "env_drop", "gate_timeout_seconds"))
+#: The merge gate's whole-run ceiling an operator may set (`quality.gate_timeout_seconds`), seconds.
+MAX_GATE_TIMEOUT_SECONDS = 3600.0
 
 
 def decode_config(raw):
@@ -230,9 +233,14 @@ def _entry(index, raw, seen):
     if not _number(timeout) or not 0 < timeout <= MAX_TIMEOUT_SECONDS:
         raise ConfigRefused("%s: timeout_seconds must be a number above 0 and at most %d"
                             % (where, MAX_TIMEOUT_SECONDS))
+    # Carried, never applied here: the printed verdict stays raw, and only the merge gate (#1637) reads
+    # it, as an absolute amount in the metric's own unit.
+    tolerance = raw.get("tolerance", 0)
+    if not _number(tolerance) or not tolerance >= 0:
+        raise ConfigRefused("%s: tolerance must be a number at or above 0" % where)
     seen.add(name)
     return Metric(name, tuple(command), raw["direction"], raw["scope"], bool(raw.get("required", False)),
-                  float(timeout))
+                  float(timeout), float(tolerance))
 
 
 def parse_config(text):
@@ -259,7 +267,13 @@ def parse_config(text):
     if not (isinstance(drop, list) and all(isinstance(n, str) and n and "=" not in n and "\0" not in n
                                            for n in drop)):
         raise ConfigRefused("quality.env_drop: must be a list of variable names")
-    return Config(metrics, None if "memory_floor_fraction" not in block else float(fraction), tuple(drop))
+    gate_timeout = block.get("gate_timeout_seconds")
+    if "gate_timeout_seconds" in block and (
+            not _number(gate_timeout) or not 0 < gate_timeout <= MAX_GATE_TIMEOUT_SECONDS):
+        raise ConfigRefused("quality.gate_timeout_seconds: must be a number above 0 and at most %d"
+                            % MAX_GATE_TIMEOUT_SECONDS)
+    return Config(metrics, None if "memory_floor_fraction" not in block else float(fraction), tuple(drop),
+                  None if gate_timeout is None else float(gate_timeout))
 
 
 # ------------------------------------------------------------------------------------------------ git
@@ -352,16 +366,54 @@ def _one_line(text, limit=200):
     return " ".join(str(text).split())[:limit]
 
 
+#: The structured outcome of one run; `render` turns it into the CLI text. `refusal` is the whole
+#: stderr line of an exit-2 refusal; `unmeasured` is a whole-run reason (rows then say nothing).
+Result = collections.namedtuple("Result", "code refusal base_sha head_sha unmeasured no_metrics budget_seconds "
+                                          "deadline rows")
+#: One metric. base/head/delta are Decimal or None; verdict is RAW (better, same, worse, unmeasured),
+#: tolerance never applied; reason is "" when measured.
+MetricRow = collections.namedtuple("MetricRow", "name direction required tolerance base head delta verdict reason")
+
+
+def _result(base=None, head=None, rows=(), *, code=0, refusal=None, unmeasured=None, no_metrics=False):
+    return Result(code, refusal, base, head, unmeasured, no_metrics, None, None, tuple(rows))
+
+
+def _refused(line):
+    return _result(code=2, refusal=line)
+
+
 def _everything_unmeasured(base, head, reason):
-    reason = _one_line(reason)
-    return Report(0, ["base=%s head=%s" % (base or "-", head or "-"), "unmeasured: %s" % reason],
-                  ["quality_delta.py: unmeasured: %s" % reason])
+    return _result(base, head, unmeasured=_one_line(reason))
+
+
+def _unmeasured_row(metric, reason, base=None):
+    return MetricRow(metric.name, metric.direction, metric.required, metric.tolerance, base, None, None,
+                     UNMEASURED, _one_line(reason))
 
 
 def _all_metrics(base, head, cfg, reason):
-    reason = _one_line(reason)
-    return Report(0, ["base=%s head=%s" % (base, head)] + ["%s: unmeasured (%s)" % (m.name, reason)
-                                                           for m in cfg.metrics], [])
+    return _result(base, head, [_unmeasured_row(m, reason) for m in cfg.metrics])
+
+
+def _row_line(row):
+    if row.verdict == UNMEASURED:
+        return "%s: unmeasured (%s)" % (row.name, row.reason)
+    return "%s: base=%s head=%s delta=%s %s" % (row.name, format_number(row.base), format_number(row.head),
+                                                 format_number(row.delta), row.verdict)
+
+
+def render(result):
+    """Result -> Report(code, stdout lines, stderr lines): the CLI's text, byte-identical to #1635's."""
+    if result.code == 2:
+        return Report(2, [], [result.refusal])
+    if result.no_metrics:
+        return Report(0, ["no metrics configured"], [])
+    header = "base=%s head=%s" % (result.base_sha or "-", result.head_sha or "-")
+    if result.unmeasured:
+        return Report(0, [header, "unmeasured: %s" % result.unmeasured],
+                      ["quality_delta.py: unmeasured: %s" % result.unmeasured])
+    return Report(0, [header] + [_row_line(row) for row in result.rows], [])
 
 
 def read_record(sdlc, stem):
@@ -436,11 +488,12 @@ def _changed_files(git, wt, fork):
     return "".join(name + "\0" for name in names).encode("utf-8", "surrogateescape")
 
 
-def _side(runner, label, metric, scratch, env, files):
-    """-> (Decimal|None, reason) for one command at one commit."""
+def _side(runner, label, metric, scratch, env, files, timeout=None):
+    """-> (Decimal|None, reason) for one command at one commit. `timeout` is the metric's own, or less
+    when the gate's budget clips it."""
     if files is not None:
         env = dict(env, SIGMA_QUALITY_FILES=str(scratch / _FILES_NAME))
-    result = runner(list(metric.command), scratch, metric.timeout, env)
+    result = runner(list(metric.command), scratch, metric.timeout if timeout is None else timeout, env)
     if result.outcome != bounded_run.OK:
         why = result.detail or ("exited %s" % result.code if result.outcome == bounded_run.FAILED
                                 else result.outcome)
@@ -456,17 +509,73 @@ def _side(runner, label, metric, scratch, env, files):
 def measure(goal, cwd=".", *, probe=None, git=None, runner=None, pid_alive=None):
     """-> Report(code, stdout lines, stderr lines). Exit 0 for every measured or unmeasured outcome, 2 for a
     refusal (empty stdout). `probe`, `git`, `runner` and `pid_alive` are injectable for the tests."""
+    return render(run(goal, cwd, probe=probe, git=git, runner=runner, pid_alive=pid_alive))
+
+
+#: The budget share for each of up to three `worktree add` calls (base and head, then the re-measure's
+#: head), seconds. A judgement, unmeasured; each add still keeps its own _WORKTREE_ADD_TIMEOUT ceiling.
+_CHECKOUT_ALLOWANCE = 120
+#: The gate's default whole-budget cap, seconds, when `quality.gate_timeout_seconds` is not set.
+DEFAULT_GATE_BUDGET_CAP = 1800
+
+
+def gate_budget_seconds(cfg):
+    """The merge gate's whole time budget B (seconds): `quality.gate_timeout_seconds` when set (at most
+    3600 by the schema), else min(1800, sum(timeout x 3 per required metric, x 2 per other) + 3 x 120).
+    Three runs for a required metric (base, head, the head again), two for the rest."""
+    if cfg.gate_timeout is not None:
+        return cfg.gate_timeout
+    commands = sum(m.timeout * (3 if m.required else 2) for m in cfg.metrics)
+    return min(DEFAULT_GATE_BUDGET_CAP, commands + 3 * _CHECKOUT_ALLOWANCE)
+
+
+def gate_reserve_seconds(cfg, budget):
+    """R: the slice of B the first reading leaves for the second (one checkout plus one run per required
+    metric), at most half of B, so a slow first checkout can never starve the re-measure."""
+    return min(budget // 2, _CHECKOUT_ALLOWANCE + sum(m.timeout for m in cfg.metrics if m.required))
+
+
+def _budget_reason(budget):
+    return "the gate's time budget of %d s ran out" % budget
+
+
+def run(goal, cwd=".", *, committed=False, head_only=None, deadline=None, probe=None, git=None, runner=None,
+        pid_alive=None, clock=None):
+    """-> Result: the measurement as data. `measure` renders it; the merge gate (work.py, #1637) reads it.
+
+    `committed=True` is the gate's mode and skips ONE rule, the dirty-worktree one: at merge time only the
+    committed, pushed head merges, and the scratch worktrees are built from committed HEAD anyway, so
+    clutter a verify run left behind must not read as unmeasured. The CLI never sets it. With it and no
+    `deadline`, the run computes the gate budget B, keeps R of it back for a re-measure, works until
+    `start + B - R` (command and checkout timeouts clipped to the time left; past it a metric reads
+    unmeasured) and returns `Result.deadline = start + B`.
+
+    `head_only=("name", ...)` is that re-measure: ONE scratch worktree at HEAD, only the named metrics, once
+    each, `base` None (a row's verdict is None: there is nothing here to compare with). `deadline` (a
+    `clock()` value) is then the hard end, with no reservation of its own. Git reads (30 s each) and memory
+    probes (10 s each) are not clipped. `clock` is injectable for the tests (default time.monotonic)."""
+    if isinstance(head_only, (str, bytes, bytearray)):
+        raise TypeError("head_only must be a collection of metric names, not one string")
+    clock = time.monotonic if clock is None else clock
+    timing = {"budget": None, "end": None}
+    result = _run(goal, cwd, committed, None if head_only is None else frozenset(head_only), deadline,
+                  probe, git, runner, pid_alive, clock, timing)
+    return result._replace(budget_seconds=timing["budget"], deadline=timing["end"])
+
+
+def _run(goal, cwd, committed, head_only, deadline, probe, git, runner, pid_alive, clock, timing):
+    started = clock()
     probe = probe_memory if probe is None else probe
     git = _git if git is None else git
     runner = _run_group if runner is None else runner
     pid_alive = diff_revert._pid_alive if pid_alive is None else pid_alive
     refusal = bounded_run.group_refusal()
     if refusal:
-        return Report(2, [], ["quality_delta.py: REFUSED [not-supported-here]: not supported here (%s)" % refusal])
+        return _refused("quality_delta.py: REFUSED [not-supported-here]: not supported here (%s)" % refusal)
     stem = _stem(goal)
     unsafe = state.unsafe_goal_reason(stem) or (None if stem else "must not be empty")
     if unsafe:
-        return Report(2, [], ["quality_delta.py: REFUSED [unsafe-goal]: %s" % unsafe])
+        return _refused("quality_delta.py: REFUSED [unsafe-goal]: %s" % unsafe)
     code, top, _err = git(cwd, ["rev-parse", "--show-toplevel"])
     wt = top.strip() if code == 0 and top.strip() else None
     code, sha, _err = git(wt, ["rev-parse", "HEAD"]) if wt else (None, "", "")
@@ -488,76 +597,107 @@ def measure(goal, cwd=".", *, probe=None, git=None, runner=None, pid_alive=None)
     try:
         cfg, problem = _read_config_at(git, wt, fork)
     except ConfigRefused as exc:
-        return Report(2, [], ["quality_delta.py: REFUSED [bad-metric] %s" % exc])
+        return _refused("quality_delta.py: REFUSED [bad-metric] %s" % exc)
     if cfg is None and problem == "":
-        return Report(0, ["no metrics configured"], [])
+        return _result(no_metrics=True)
     if cfg is None:
         return _everything_unmeasured(fork, head, problem)
     if not cfg.metrics:
-        return Report(0, ["no metrics configured"], [])
+        return _result(no_metrics=True)
+    work_until = None
+    if committed or deadline is not None:
+        timing["budget"] = gate_budget_seconds(cfg)
+        if deadline is None:
+            timing["end"] = started + timing["budget"]
+            work_until = timing["end"] - gate_reserve_seconds(cfg, timing["budget"])
+        else:
+            timing["end"] = work_until = deadline
+    if head_only is not None:
+        cfg = cfg._replace(metrics=tuple(m for m in cfg.metrics if m.name in head_only))
     if head is None:
         return _everything_unmeasured(fork, None, "the goal worktree has no commit")
-    code, dirty, err = git(wt, ["status", "--porcelain", "--untracked-files=normal", "--", ".", ":(exclude).sdlc"])
-    if code != 0:
-        return _all_metrics(fork, head, cfg, "could not read the goal worktree status: %s" % _one_line(err))
-    if dirty.strip():
-        return _all_metrics(fork, head, cfg, "uncommitted work in the goal worktree is not measured: commit first")
+    if not committed:
+        code, dirty, err = git(wt, ["status", "--porcelain", "--untracked-files=normal", "--", ".",
+                                    ":(exclude).sdlc"])
+        if code != 0:
+            return _all_metrics(fork, head, cfg, "could not read the goal worktree status: %s" % _one_line(err))
+        if dirty.strip():
+            return _all_metrics(fork, head, cfg, "uncommitted work in the goal worktree is not measured: commit first")
     ok, why = _memory_ok(probe(), cfg.floor_fraction)
     if not ok:
         return _all_metrics(fork, head, cfg, why)
     wants_files = any(m.scope == "changed-files" for m in cfg.metrics)
     files = _changed_files(git, wt, fork) if wants_files else None
     git2 = _git2_for(git)
-    scratch_paths_pair = scratch_paths(sdlc, stem)
+    base_scratch, head_scratch = scratch_paths(sdlc, stem)
+    sides = [("head", head_scratch, head)] if head_only is not None else [
+        ("base", base_scratch, fork), ("head", head_scratch, head)]
     _scratch_root(sdlc).mkdir(parents=True, exist_ok=True)
-    for scratch in scratch_paths_pair:
+    for _label, scratch, _rev in sides:
         if not diff_revert._reclaim_stale(wt, scratch, pid_alive, git2):
             return _all_metrics(fork, head, cfg, "the scratch worktree has a live owner (another run); abstaining")
     created = []
     try:
-        for scratch, rev in zip(scratch_paths_pair, (fork, head)):
+        for _label, scratch, rev in sides:
+            add_timeout = _WORKTREE_ADD_TIMEOUT
+            if work_until is not None:
+                left = work_until - clock()
+                if left <= 0:
+                    return _all_metrics(fork, head, cfg, _budget_reason(timing["budget"]))
+                add_timeout = min(add_timeout, left)
             diff_revert._owner_path(scratch).write_text(str(os.getpid()), encoding="ascii")
             created.append(scratch)
-            code, _out, err = git(wt, ["worktree", "add", "-q", "--detach", str(scratch), rev], _WORKTREE_ADD_TIMEOUT)
+            code, _out, err = git(wt, ["worktree", "add", "-q", "--detach", str(scratch), rev], add_timeout)
             if code != 0:
                 return _all_metrics(fork, head, cfg, "could not create a scratch worktree: %s" % _one_line(err))
             if files is not None:
                 (scratch / _FILES_NAME).write_bytes(files)
-        return Report(0, ["base=%s head=%s" % (fork, head)] + _measure_all(
-            cfg, probe, runner, scratch_paths_pair, files), [])
+        return _result(fork, head, _measure_all(cfg, probe, runner, [(label, scratch) for label, scratch, _rev in sides],
+                                                files, work_until, clock, timing["budget"]))
     finally:
         for scratch in created:
             remove_scratch(git2, wt, sdlc, scratch)
 
 
-def _measure_all(cfg, probe, runner, scratches, files):
+def _measure_all(cfg, probe, runner, sides, files, work_until=None, clock=None, budget=None):
+    """One row per metric over `sides` [(label, scratch)]: base then head, or head alone (head_only)."""
     env = drop_credentials(bounded_run.unattended_env(), cfg.env_drop)
     env.pop("SIGMA_QUALITY_FILES", None)
     rows, dipped = [], None
     for metric in cfg.metrics:
         if dipped:
-            rows.append("%s: unmeasured (%s)" % (metric.name, dipped))
+            rows.append(_unmeasured_row(metric, dipped))
             continue
         if metric.scope == "changed-files" and not files:
-            rows.append("%s: unmeasured (no changed files present at both commits)" % metric.name)
+            rows.append(_unmeasured_row(metric, "no changed files present at both commits"))
             continue
         scoped = files if metric.scope == "changed-files" else None
         values = []
-        for label, scratch in zip(("base", "head"), scratches):
-            ok, why = _memory_ok(probe(), cfg.floor_fraction)
-            if not ok:
-                dipped, number, reason = why, None, why
+        for label, scratch in sides:
+            timeout = metric.timeout
+            if work_until is not None:
+                left = work_until - clock()
+                timeout = min(timeout, left)
+            if timeout <= 0:
+                dipped, number, reason = _budget_reason(budget), None, _budget_reason(budget)
             else:
-                number, reason = _side(runner, label, metric, scratch, env, scoped)
+                ok, why = _memory_ok(probe(), cfg.floor_fraction)
+                if not ok:
+                    dipped, number, reason = why, None, why
+                else:
+                    number, reason = _side(runner, label, metric, scratch, env, scoped, timeout)
             if number is None:
-                rows.append("%s: unmeasured (%s)" % (metric.name, _one_line(reason)))
+                rows.append(_unmeasured_row(metric, reason, values[0] if len(sides) == 2 and values else None))
                 break
             values.append(number)
         else:
+            if len(values) == 1:                       # head_only: nothing to compare with here
+                rows.append(MetricRow(metric.name, metric.direction, metric.required, metric.tolerance, None,
+                                      values[0], None, None, ""))
+                continue
             base, head = values
-            rows.append("%s: base=%s head=%s delta=%s %s" % (
-                metric.name, format_number(base), format_number(head), format_delta(base, head),
-                verdict(metric.direction, base, head)))
+            rows.append(MetricRow(metric.name, metric.direction, metric.required, metric.tolerance, base, head,
+                                  _PRECISE.subtract(head, base), verdict(metric.direction, base, head), ""))
     return rows
 
 
