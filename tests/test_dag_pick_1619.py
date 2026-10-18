@@ -35,6 +35,7 @@ dp = _mod("dag_pick")
 ds = dp.dag_store
 doctor = _mod("doctor", ROOT / "skills" / "sigma-doctor" / "scripts")
 NOW = time.time()
+FRESH = object()   # "a minute ago, read when called": an import-time stamp ages out of the 600 s change check (#1883)
 BLOCKER, A, B = 8, 9, 10                      # fixture issues: A and B wait on BLOCKER
 SEED = [pg._blocked_by(A, BLOCKER), pg._blocked_by(B, BLOCKER), pg._issue(BLOCKER)]
 
@@ -47,8 +48,10 @@ def _node(number, state="open", kind="issue", life="goal"):
     return {"number": number, "kind": kind, "state": state, "life": life, "prio": None, "in_corpus": True}
 
 
-def _store(base, nodes, edges, checked=NOW - 60, built=NOW - 60, partial=False):
+def _store(base, nodes, edges, checked=FRESH, built=FRESH, partial=False):
     """The stored map, saved through the real writer. `edges` are (blocker, blocked[, source])."""
+    checked = time.time() - 60 if checked is FRESH else checked
+    built = time.time() - 60 if built is FRESH else built
     h = {"repo": "owner/repo", "built_at": _iso(built), "refreshed_at": _iso(built),
          "last_ok_at": _iso(built), "last_error": None, "partial": partial}
     if checked is not None:

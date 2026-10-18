@@ -18,6 +18,7 @@ au = base._mod("auto_unpark")
 qkind = base._mod("qkind")
 ds = base._mod("dag_store")
 NOW = time.time()
+FRESH = object()   # a change check stamped when called, not at import (#1883)
 _REAL_FETCH, _REAL_OPEN = au.backlog_check._fetch_scrubbed_comments, au._ref_is_open
 
 
@@ -30,7 +31,8 @@ def _node(number, state="open"):
             "in_corpus": True}
 
 
-def _store(sdlc, nodes, edges, checked=NOW - 60, built=NOW - 60):
+def _store(sdlc, nodes, edges, checked=FRESH, built=NOW - 60):
+    checked = time.time() - 60 if checked is FRESH else checked
     h = {"repo": "acme/widget", "built_at": _iso(built), "refreshed_at": _iso(built),
          "last_ok_at": _iso(built), "last_error": None, "partial": False}
     if checked is not None:
