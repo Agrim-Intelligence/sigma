@@ -89,8 +89,12 @@ dropped blank lines from a block's body):
     (115 ms and 200 ms in-process; linear: 84, 133 and 233 ms on 3.9.6 at a quarter, half and all
     of it; 1,045 ms and 1,695 ms before that review, when every check walked the block again for
     its keyword); the same lines in another mermaid block: 145 ms and 236 ms; outside any block,
-    the slowest case measured: 185 ms and 286 ms; 1 MiB of `%%` comment lines before `flowchart`:
-    60 ms and 83 ms;
+    185 ms and 286 ms; 1 MiB of `%%` comment lines before `flowchart`: 60 ms and 83 ms;
+  * the slowest case found, by the code review after the one above (not re-run here; its numbers
+    are that reviewer's, best of 5 with /usr/bin/time): 1 MiB of 2-byte non-blank lines (`x`) inside
+    the Building blocks flowchart, 0.58 s on 3.12 and 0.86-0.88 s on 3.9.6, still linear; a slower
+    machine could cross 1 s. Output is NOT capped: a 1 MiB input can print tens of MB of findings
+    (about 42 MB measured by that reviewer from 185,400 finding lines), linear in the input;
   * a 4096-character adversarial mermaid line (repeated `["a [b`) is reported in 28 ms and 32 ms;
   * a file of READ_CAP + 1 bytes is refused in 28 ms and 31 ms;
   * one prose line of 3,000 `~` then a backtick: 28 ms and 31 ms; 1 MiB of 4,000-`~`-then-backtick
