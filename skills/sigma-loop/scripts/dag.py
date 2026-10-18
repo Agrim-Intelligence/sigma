@@ -9,7 +9,7 @@
   dag.py line [--sdlc DIR]      one line, the map's age and size; reads one file, no network, and
                                 prints nothing when mode is off or there is no map
 
-  dag.py history [--month YYYY-MM | --all] [--sdlc DIR]
+  dag.py history [--month YYYY-MM] [--all] [--sdlc DIR]
                                 that month's history records, one JSON line each (default: the current
                                 month); opens only that month's file, no network (#1622). `--all` reads every
                                 writer's files in the ledger worktree, any month (#1624)
@@ -171,7 +171,8 @@ def _query(verb, args, sdlc):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(prog="dag.py", description="The dependency map's command line.")
+    ap = argparse.ArgumentParser(prog="dag.py", description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="verb", required=True)
     sp = sub.add_parser("show", help="print mode, age and counts of the stored map")
     sp.add_argument("--sdlc", default=None, help="the .sdlc directory (default: ./.sdlc)")
