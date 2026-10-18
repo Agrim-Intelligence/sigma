@@ -566,6 +566,10 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/deps.py",
+      "role": "gesture"
+    },
+    {
       "path": "skills/sigma-loop/scripts/rule_draft.py",
       "role": "gesture"
     },

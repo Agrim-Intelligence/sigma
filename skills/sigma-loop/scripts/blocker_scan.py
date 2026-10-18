@@ -99,8 +99,8 @@ legacy = _load_legacy()
 #: sentence of English past character 500 would stall a real goal AND mutate a third, unrelated
 #: issue, unattended.
 #:
-#: So the FETCH-TIME scan uses `EXPLICIT_TRIGGERS` -- the three phrases whose shape carries the
-#: dependency and not just the vocabulary. On that same corpus the narrowing keeps 21 of 21 genuine
+#: So the FETCH-TIME scan uses `EXPLICIT_TRIGGERS` -- the phrases whose shape carries the
+#: dependency and not just the vocabulary (three then; #1885 added the forms below). On that same corpus the narrowing keeps 21 of 21 genuine
 #: edges and drops the phantom, and it costs nothing this repo generates: `compile_plan`,
 #: `handoff` and `triage` all write the same `**Blocked by:** #N` marker. The CHECK-TIME scan keeps
 #: the full `TRIGGERS` set exactly as #1393 left it -- MATCHING moves for nobody, a weak trigger
@@ -112,11 +112,48 @@ legacy = _load_legacy()
 #: no truncation required. `_explicit_blockers` now sets `confident` only for an `EXPLICIT_TRIGGERS`
 #: phrase, so presence is unchanged (this docstring's claim still holds) but a weak-trigger match is
 #: advisory, never acted on.
-TRIGGERS = ("blocked by", "depends on", "depends upon", "needs", "after", "requires", "waiting on")
+#:
+#: #1885: THREE MORE EXPLICIT FORMS, each one whose SHAPE carries the dependency, so it is safe at
+#: whole-body width. Entries are regex fragments now, not literal phrases; the three original
+#: entries are still literal and still first, so a marker that matched before matches the same way.
+#: Measured over the last 1000 issues of this repository (title + body): `follow-up to|of|from #N`
+#: 83 hits in 57 issues, every one naming the issue this one comes after; `blocked on` and
+#: `blocked until` 0 hits (added because they are `blocked by` in other words). Each form:
+#:
+#:     Blocked on #12 / blocked until #12           same window as `blocked by`
+#:     Follow-up to #12 / follow-up of|on|from #12  TIGHT: only spaces (or `issue`) before `#N`
+#:     follows up #12 / following up on #12         TIGHT, as above
+#:
+#: The follow-up forms are tight because their loose versions are not: "filed a follow-up to cover
+#: the cap, tracked in #13" names the CHILD, so a 40-character window would point the edge backwards.
+#: Left out on purpose: `follow-up for #N` and a bare `follow-up #N` (a parent's own list of its
+#: children reads exactly like that); `Prerequisites: #N` (all 11 measured hits sat in one epic
+#: body, each naming a CHILD's prerequisite, so every one would have been a phantom edge on the
+#: epic); `after #N lands` and `needs #N to land first`, the documented residue above (0 hits in
+#: bodies, and in a review comment they are usually a remark, not this goal's dependency); and
+#: `builds on`, `see #N`, which carry no direction at all.
+#:
+#: In a COMMENT the follow-up forms are advisory, never confident (#1885 review): a comment on one goal
+#: often narrates another issue ("filed #40 as a follow-up to #12"), and a confident check-time finding
+#: writes to the referenced issue. `is_explicit` takes `body_end` for exactly that.
+_TIGHT_REF = r"(?=[ \t]+(?:issue[ \t]+)?#\d)"
+FOLLOW_UP_TRIGGERS = (
+    r"follow[- ]?ups?[ \t]+(?:to|of|on|from)" + _TIGHT_REF,
+    r"follow(?:s|ing)[ \t]+up(?:[ \t]+on)?" + _TIGHT_REF,
+)
+EXPLICIT_TRIGGERS = ("blocked by", "depends on", "depends upon",
+                     r"blocked[ \t]+(?:on|until)") + FOLLOW_UP_TRIGGERS
+#: The weak words: prose-shaped, check time only, advisory when matched (see above).
+WEAK_TRIGGERS = ("needs", "after", "requires", "waiting on")
 
-#: The high-precision subset, for a scan over a whole body. A PREFIX of `TRIGGERS`, not a separate
-#: list, so the narrow pattern can only ever match where the full one also matches.
-EXPLICIT_TRIGGERS = TRIGGERS[:3]
+#: The full check-time vocabulary. `EXPLICIT_TRIGGERS` is its PREFIX, not a separate list, so the
+#: narrow pattern can only ever match where the full one also matches.
+TRIGGERS = EXPLICIT_TRIGGERS + WEAK_TRIGGERS
+
+#: One readable name per `TRIGGERS` entry, in the same order, for prose that must name every live
+#: trigger (the goal-review warning is pinned against this tuple).
+TRIGGER_NAMES = ("blocked by", "depends on", "depends upon", "blocked on|until",
+                 "follow-up to|of|on|from", "follows up / following up on") + WEAK_TRIGGERS
 
 
 def _compile(triggers):
@@ -138,6 +175,27 @@ def is_cross_repo(text, match):
 
 _BLOCK_RE = _compile(TRIGGERS)                    # check time: the excerpt + comment text
 _EXPLICIT_BLOCK_RE = _compile(EXPLICIT_TRIGGERS)  # fetch time: a whole issue body
+_FOLLOW_UP_RE = re.compile(r"(?i)\b(?:" + "|".join(FOLLOW_UP_TRIGGERS) + r")")
+
+
+def phrase_of(match):
+    """The captured trigger phrase, lowercased with its whitespace collapsed, so a stored phrase
+    (`follow-up\tto`) stays one of a closed set of spellings."""
+    return " ".join(match.group(1).lower().split())
+
+
+def is_explicit(text, match, body_end=None):
+    """#1885: True when `match` (a `_BLOCK_RE` match over `text`) is an explicit form: the explicit
+    pattern matches at the same position. Decided by matching, not by comparing the captured phrase
+    with `EXPLICIT_TRIGGERS`, because those entries are regex fragments now and the captured text
+    (`Follow-up to`) is not one of them. The two patterns share their tail and the explicit forms
+    come first in `TRIGGERS`, so a match at the same position always names the same `#N`.
+
+    `body_end` (optional): where the issue's own title and body end inside `text`. A follow-up form
+    at or past it sits in a comment and is not explicit (see `FOLLOW_UP_TRIGGERS`)."""
+    if not _EXPLICIT_BLOCK_RE.match(text, match.start()):
+        return False
+    return body_end is None or match.start() < body_end or not _FOLLOW_UP_RE.match(text, match.start())
 
 
 #: #1392: the fenced span `/sigma-unpark` writes into an issue BODY when a human answers the
@@ -264,7 +322,7 @@ def extract_refs(text, self_ref=None):
         if ref in seen or (self_ref is not None and ref == str(self_ref)):
             continue
         seen.add(ref)
-        out.append({"phrase": m.group(1).lower(), "ref": ref})
+        out.append({"phrase": phrase_of(m), "ref": ref})
     return out
 
 
@@ -288,7 +346,7 @@ def extract_local_refs(text):
     found = []
     for m in _EXPLICIT_BLOCK_RE.finditer(t):
         foreign = is_cross_repo(t, m)
-        found.append((m.group(1).lower(), "foreign" if foreign else "id",
+        found.append((phrase_of(m), "foreign" if foreign else "id",
                       m.group(2) if foreign else str(int(m.group(2)))))
     for m in _MARKER_LINE_RE.finditer(t):
         for item in m.group(1).split(","):

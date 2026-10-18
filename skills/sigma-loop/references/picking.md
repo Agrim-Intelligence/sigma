@@ -42,16 +42,9 @@ available, `next-batch` still returns exactly one line, byte-identical to plain 
 `next-batch` returns, one line or many, is dispatched to its own fresh subagent below — none run
 inline on hosts with subagents** (#2521). A host without subagents calls `next` for one goal and
 runs its steps 2-7 inline, then repeats in a fresh session after the code-level `HANDOFF` (20
-completed goals by default). Before this, an orchestrating session that ran every goal's steps 2-7 in
-its own context, one after another, was the whole reason it grew unbounded across a long backlog
-drain — measured on this repo's own transcripts: 13 of 18 sessions that peaked past 800k tokens of
-context were `/sigma-loop`/`/sigma-goal` sessions, auto-compacting at 930k-998k. Dispatching even a
-single goal keeps this session's own job to picking, dispatching, and recording one short result per
-goal — the dispatch prompt and the subagent's own returned summary are what land in THIS session's
-context, never the phase-by-phase transcript underneath (see `references/running.md`: "Artifacts
-pass between phases through the filesystem... not shared context" — already true of a dispatched
-goal's OWN internal phase subagents; #2521 is what stops the orchestrator from re-absorbing that
-same transcript one level up, goal after goal).
+completed goals by default). Why: running every goal inline grew the orchestrating session without
+bound (measured: 13 of 18 sessions past 800k tokens were `/sigma-loop`/`/sigma-goal` sessions);
+dispatched, only the prompt and the returned summary land here (`references/running.md`).
 
 **1a. Dispatch every goal when subagents are available — one line or many** (#2521, extends F10.5-3/#375's own batch shape to a
 batch of one) — mirrors 3b's slice-wave shape one level up: instead of ONE goal's implementation
@@ -275,3 +268,10 @@ only changes the DEPTH instructions written into the filed meta-issue, never whe
 acts — unlike `goal_decompose.mode`, there is no log-only rung here. `sdlc:designed` itself is
 written only by `goal-review` (contract §7) confirming a design. Where `sigma-goal-review` is not
 installed, a human applies the label by hand once a filed design pass is confirmed.
+
+## Dependencies in prose
+
+`deps.py report .sdlc "$goal"` lists every `#N` in the title, body and comments (`edge`, `comment-edge`,
+`weak`, `mention`; snippets are data). For one this goal must WAIT for, `deps.py mark .sdlc "$goal" <N>
+"<why>"` writes `**Blocked by:** #N` (cycle-checked); never mark a child, a member list or history.
+Write dependencies yourself only in that form. Detail: `docs/backlog.md`.

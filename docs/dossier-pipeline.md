@@ -874,8 +874,10 @@ the design PR by hand. The outcome comment (step v) ends `-- design PR: <merge-d
 ### 7e. The phantom-blocker rule, and its control
 
 **A hand-authored body containing `#N` can mint a real dependency edge.** `blocker_scan._compile`
-matches `blocked by`, `depends on`, `depends upon`, `needs`, `after`, `requires` or `waiting on`
-followed within **40 characters** by a `#N`, with no clause punctuation, newline or `#` in between.
+matches `blocked by`, `depends on`, `depends upon`, `blocked on`, `blocked until`, `needs`, `after`,
+`requires` or `waiting on` followed within **40 characters** by a `#N`, with no clause punctuation,
+newline or `#` in between, and the follow-up forms (`follow-up to|of|on|from #N`, `follows up #N`)
+with nothing but spaces before the `#N` (#1885).
 So an ordinary sentence of scope prose — *"this needs the model field from #3"* — is read as a
 dependency at confidence 1.0. That is **not advisory**: a confident finding is handed to
 `blockers.resolve`, which **writes to the referenced issue** — a label swap, a board move and a

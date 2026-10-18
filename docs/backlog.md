@@ -411,9 +411,13 @@ strict filing order still gets it.
 priority is at least the priority of what it blocks: a lower-priority blocker is raised to match when
 the blocked and blocking marks are assigned, and again whenever the reconcile tick finds the graph
 changed. Nothing is ever lowered. It is on by default, with no config key to set. Edges are read only
-from `Blocked by:` / `depends on` / `depends upon` markers (text inside an unpark Q&A block is ignored)
-and ledger hand-offs. Prose such as "after #N lands" or "needs #N" never writes; it is reported on
-stderr as ignored, and writing `Blocked by: #N` makes it count.
+from `Blocked by:` / `depends on` / `depends upon` markers and, since #1885, from `blocked on #N`,
+`blocked until #N` and the follow-up forms (`follow-up to|of|on|from #N`, `follows up #N`, `following up
+on #N`, with nothing but spaces before the `#N`); text inside an unpark Q&A block is ignored, and ledger
+hand-offs count too. Prose such as "after #N lands" or "needs #N" never writes; it is reported on
+stderr as ignored, and writing `**Blocked by:** #N` makes it count. `deps.py report` lists every
+reference in a ticket, body and comments, so an agent can turn a prose dependency into that line with
+`deps.py mark` (see "Dependencies stated in prose" below).
 
 Worked cases:
 
@@ -444,11 +448,24 @@ and the board field write is skipped when the GraphQL budget is low; the label w
    `Blocked by: #N`. It also removes the blocking mark from a closed blocker or one that blocks nothing.
    Cycles are handled: every member of a blocking cycle that transitively blocks something more urgent is
    raised, whichever member the walk enters through, and the cycle is reported once.
-   Whole-body scans here use only the explicit phrases (blocked by, depends on, depends upon), so prose such as
+   Whole-body scans here use only the explicit forms (blocked by, depends on, depends upon, blocked on|until and
+   the follow-up forms, #1885), so prose such as
    "after #N" makes no edge. A blocker that is merged, closed or a pull request is never written to, and the dry
    pass writes nothing. At most 10 outside blockers are read per pass, newest first; one read and found at its required rank is not read
    again for ten minutes, so the next passes reach the older ones. Blockers not yet read are counted as unread
    in the repair state and in the doctor row, never as a clean zero.
+
+**Dependencies stated in prose (#1885).** The loop reads a ticket's dependencies before its pre-checks:
+`deps.py report <sdlc_dir> <goal>` prints every `#N` in the title, the body and every comment as JSON,
+each with the sentence it sits in and how the machinery reads it today: `edge` (an explicit form in the
+body, enforced and in the map), `comment-edge` (explicit, but only in a comment: the gate reads it, the
+map does not), `weak` (a weak word before it: advisory only) or `mention` (read by nothing). The agent
+judges each one, and for a real dependency runs `deps.py mark <sdlc_dir> <goal> <N> "<why>"`, which writes
+`**Blocked by:** #N` into the body through the same guarded writer filing uses (a cycle is refused before
+anything is written, and the edge enters the stored map), then leaves a note whose text carries no `#`.
+An edge the body already holds is `ALREADY` and nothing is written. Cost: one issue read plus its comment
+pages per goal. GitHub mode only (`UNSUPPORTED` on local goal files). Going forward, write a dependency only
+as a `**Blocked by:** #N` line in the issue body.
 
 **Picker order.** With `discovery.order` at `"priority"` and `discovery.blocking_priority_override` on (the
 default), the picker orders by priority tier first, then a goal that also carries `sdlc:blocking` ahead of

@@ -397,8 +397,9 @@ def _explicit_blockers(goal_doc, docs, extra_text=""):
     Sigma's own quoted park-comment boilerplate ("needs human review") both trip it on real
     board text, and `_resolve_blockers_for_park` hands a `confident` finding straight to
     `blockers.resolve`, which WRITES TO the referenced issue. So the finding still stays PRESENT —
-    evidence, never silently discarded — but only a canonical marker (`blocker_scan.
-    EXPLICIT_TRIGGERS`: "blocked by" / "depends on" / "depends upon") sets `confident=True`; a weak
+    evidence, never silently discarded — but only an explicit form (`blocker_scan.
+    EXPLICIT_TRIGGERS`: "blocked by" / "depends on" / "depends upon" and #1885's forms, decided by
+    `blocker_scan.is_explicit`) sets `confident=True`; a weak
     trigger downgrades to advisory, exactly like a human-dismissed finding (`_apply_dismissal`
     below) or an exempted decomposition child. `decide()` never parks or resolves on an advisory
     finding alone, but still surfaces it in the proceed note, so a human still sees it.
@@ -408,6 +409,7 @@ def _explicit_blockers(goal_doc, docs, extra_text=""):
     prose mention of the same issue."""
     open_refs = {d["ref"] for d in docs if d["open"]}
     haystack = _blocker_haystack(goal_doc, extra_text)
+    body_end = len(_strip_unpark_qa(goal_doc.get("raw", "")))   # #1885: comment text starts here
     matched = {}                                    # ref -> (confident, phrase) -- OR across matches
     for m in _BLOCK_RE.finditer(haystack):
         n = m.group(2)
@@ -416,7 +418,7 @@ def _explicit_blockers(goal_doc, docs, extra_text=""):
         if n == goal_doc["ref"] or n not in open_refs:
             continue
         phrase = m.group(1).lower()
-        confident = phrase in blocker_scan.EXPLICIT_TRIGGERS
+        confident = blocker_scan.is_explicit(haystack, m, body_end)   # #1885: by match, not by phrase
         cur = matched.get(n)
         if cur is None or (confident and not cur[0]):
             matched[n] = (confident, phrase)

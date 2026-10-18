@@ -90,7 +90,8 @@ def normalize_issue(raw):
     here costs nothing at check time and keeps the excerpt at the size it was chosen for.
 
     The scan is NARROWER than the check-time one, deliberately: `blocker_scan.extract_refs` uses
-    `EXPLICIT_TRIGGERS` (`blocked by` / `depends on` / `depends upon`), not the full `TRIGGERS` set.
+    `EXPLICIT_TRIGGERS` (`blocked by` / `depends on` / `depends upon`, and since #1885 `blocked on|until`
+    and the tight follow-up forms), not the full `TRIGGERS` set.
     The weak triggers were calibrated against the 500-character excerpt and 395 of 400 real issues
     exceed it, so pointing them at whole bodies emitted a confident `blocked-by` edge off narrative
     prose ("...a real user hit it after Phase 2 (#1396) went live") -- and a confident edge is not

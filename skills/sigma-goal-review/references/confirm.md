@@ -98,9 +98,10 @@ today (contract §8: the markers are code-written and trigger-word-free), never 
   quietly restore the honour system.
 
 **Warning — a hand-authored body containing `#N` can mint a phantom blocker (#1920).**
-`blocker_scan._compile` matches any of `blocked by`, `depends on`, `depends upon`, `needs`, `after`,
-`requires`, `waiting on` followed within **40 characters** by a `#N`, with no clause punctuation
-(`, ; . ! ?`), newline or `#` in between. So an ordinary sentence of scope prose — *"this needs the
+`blocker_scan._compile` matches any of `blocked by`, `depends on`, `depends upon`, `blocked on|until`,
+`needs`, `after`, `requires`, `waiting on` followed within **40 characters** by a `#N`, with no clause
+punctuation (`, ; . ! ?`), newline or `#` in between, and `follow-up to|of|on|from` or
+`follows up / following up on` with nothing but spaces before the `#N` (#1885). So an ordinary sentence of scope prose — *"this needs the
 model field from #3"* — is read as a dependency edge at confidence 1.0. That is not advisory:
 `loop.py`'s `_resolve_blockers_for_park` hands a confident finding to `blockers.resolve`, which
 **writes to the referenced issue** — an `sdlc:proposed` → `sdlc:goal` label swap, a board move and a
@@ -111,7 +112,7 @@ own docstring); the bodies YOU write here get no such care by default.
 
 - **Write the pointers in that same shape** — `Design: .sdlc/design/<n>.md` and `Story #<n>.`, each
   on its own line. Never *"needs … #N"*, *"after #N"*, *"requires #N"*, *"waiting on #N"*,
-  *"depends on #N"*, *"blocked by #N"*.
+  *"depends on #N"*, *"blocked by #N"*, *"blocked on #N"*, *"follow-up to #N"*.
 - **Express a real dependency as a `blocked_by` edge, never as a sentence.** `compile_plan.py`
   writes the canonical `**Blocked by:** #N` marker itself, one per line, from the edge — that marker
   is SUPPOSED to match, and it is the one form the machinery reads correctly.

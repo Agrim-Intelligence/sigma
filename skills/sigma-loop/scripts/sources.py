@@ -220,7 +220,7 @@ _backlog_check_module = None         # lazily filled by _get_backlog_check() bel
 def _explicit_text_edges(item):
     """#1467: the ONLY text a blocker WRITER may read an edge from. -> (haystack, explicit matches,
     weak-only ref count). Explicit means `blocker_scan._EXPLICIT_BLOCK_RE` ("blocked by", "depends
-    on", "depends upon") over the title+body with `/sigma-unpark` Q&A spans stripped; the weak words
+    on", "depends upon", and #1885's "blocked on|until" and follow-up forms) over the title+body with `/sigma-unpark` Q&A spans stripped; the weak words
     ("needs", "after", "requires", "waiting on") match in prose and would write a priority label, a
     board field and a comment on an unrelated third issue, so they are only counted for an advisory."""
     bs = _get_backlog_check().blocker_scan
@@ -237,7 +237,7 @@ def _warn_weak_blocker_mentions(count):
     if count:
         try:
             sys.stderr.write("sigma: %d prose mention(s) ignored as blocker edges; write `Blocked by: #N` "
-                             "to make one count\n" % count)
+                             "to make one count (deps.py report lists them)\n" % count)
         except Exception:
             pass
 

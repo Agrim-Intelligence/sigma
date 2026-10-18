@@ -1,5 +1,7 @@
 # The dependency map
 
+The full reference for the dependency map, Sigma Chain and how dependencies are read from issue text is [the dependency map and Sigma Chain](dependency-map-and-chain.md); this page keeps the detail it links to.
+
 Sigma keeps one stored map of which goals and pull requests wait on which. This page says what the map
 is, what it is not, how to switch it on, how to ask it questions, what it costs and where it is blind.
 Every key and default is in the [configuration reference](configuration.md); the research on the host's
@@ -159,7 +161,9 @@ whole-sweep call count falls only by the unpark pass.
 ## Limits
 
 - Edges that exist only in a comment, and weak phrases, are not in the map; they show up as `comment-only`
-  disagreements in shadow.
+  disagreements in shadow. `deps.py report` lists them per goal, and `deps.py mark` writes one into the body as
+  a `Blocked by` line, which the map reads. The map also reads `blocked on` and `blocked until`, and the
+  follow-up forms (`follow-up to` and its variants, with nothing but spaces before the number), from a body.
 - A priority change made only on the board is seen only by the hourly read.
 - Each label list is read up to 2,000 issues. Reaching the cap marks the map partial, and the picker
   ignores a partial map.
