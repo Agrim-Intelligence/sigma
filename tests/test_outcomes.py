@@ -82,7 +82,8 @@ ON = {"action_log": {"enabled": True}}
 class World:
     """A repo with a `.sdlc` inside it (never committed) and a real action log."""
 
-    def __init__(self, tmp_path, config=ON, name="repo"):
+    def __init__(self, tmp_path, config=ON, name="repo", now=NOW):
+        self.now = now
         self.repo = tmp_path / name
         self.repo.mkdir(parents=True)
         self.git("init", "-q", "-b", "main")
@@ -117,7 +118,7 @@ class World:
         for old, new in renames:
             (self.repo / new).parent.mkdir(parents=True, exist_ok=True)
             self.git("mv", old, new)
-        stamp = f"{int(NOW - ago * DAY) if at is None else int(at)} +0000"
+        stamp = f"{int(self.now - ago * DAY) if at is None else int(at)} +0000"
         msg = [subject] + ([body] if body else [])
         args = ["commit", "-q", "--allow-empty"]
         for m in msg:
@@ -126,7 +127,7 @@ class World:
         return self.git("rev-parse", "HEAD")
 
     def log(self, goal, kind, ago, **fields):
-        return actionlog.append(str(self.sdlc), str(goal), kind, "loop", now=NOW - ago * DAY, **fields)
+        return actionlog.append(str(self.sdlc), str(goal), kind, "loop", now=self.now - ago * DAY, **fields)
 
     def log_at(self, goal, kind, at, **fields):
         return actionlog.append(str(self.sdlc), str(goal), kind, "loop", now=at, **fields)
@@ -736,10 +737,21 @@ def _isolated_copy(tmp_path):
 
 def _run_copy(scripts, repo, home, *args):
     """PYTHONDONTWRITEBYTECODE deliberately UNSET: with it set, a bytecode write could never show."""
+    return subprocess.run([sys.executable, str(scripts / "outcomes.py"), "report", *args], cwd=str(repo),
+                          capture_output=True, text=True, env=_copy_env(home), timeout=60)
+
+
+def _copy_env(home):
     env = {k: v for k, v in os.environ.items() if k != "PYTHONDONTWRITEBYTECODE"}
     env["HOME"] = str(home)
-    return subprocess.run([sys.executable, str(scripts / "outcomes.py"), "report", *args], cwd=str(repo),
-                          capture_output=True, text=True, env=env, timeout=60)
+    return env
+
+
+def _child_now(home):
+    """The clock a `_run_copy` child reads: fixtures for a subprocess run are stamped from it, not from NOW."""
+    out = subprocess.run([sys.executable, "-c", "import time; print(time.time())"], capture_output=True,
+                         text=True, env=_copy_env(home), timeout=60)
+    return float(out.stdout)
 
 
 def test_fixture_repos_disable_background_maintenance(tmp_path):
@@ -750,13 +762,14 @@ def test_fixture_repos_disable_background_maintenance(tmp_path):
 
 
 def test_a_run_writes_nothing_anywhere(tmp_path):
-    measured = World(tmp_path / "m")
-    measured.mature_goals(10)
-    measured.commit("fix: a (#1)", ["g100.txt"], 20)
-    unmeasured = World(tmp_path / "u", config={"action_log": {"enabled": False}})
-    unmeasured.commit("feat: a (#1)")
     scripts, home = _isolated_copy(tmp_path), tmp_path / "home"
     home.mkdir()
+    now = _child_now(home)
+    measured = World(tmp_path / "m", now=now)
+    measured.mature_goals(10)
+    measured.commit("fix: a (#1)", ["g100.txt"], 20)
+    unmeasured = World(tmp_path / "u", config={"action_log": {"enabled": False}}, now=now)
+    unmeasured.commit("feat: a (#1)")
     # Warm the interpreter once, unmeasured: Apple's /usr/bin/python3 writes its OWN bytecode caches
     # under $HOME/Library/Caches on first use, which is the interpreter and not outcomes.py (the
     # planned-test proof runs under that interpreter). The pyc assertion below still catches any
