@@ -26,3 +26,20 @@ def test_every_test_named_in_the_controls_table_exists():
     text = (EVID / "resource-guard-controls.md").read_text()
     for path, name in re.findall(r"(tests/test_\w+\.py)::(\w+)", text):
         assert ("def %s(" % name) in (ROOT / path).read_text(), (path, name)
+
+
+def test_no_controls_table_row_says_not_run():
+    """#1797: every row is covered by the runner or says why it cannot be patched."""
+    text = (EVID / "resource-guard-controls.md").read_text()
+    rows = [l for l in text.splitlines() if l.startswith("| ") and "tests/test_" in l]
+    assert rows and not [r for r in rows if "not run" in r.lower()]
+
+
+def test_parallelism_says_the_rerun_after_a_shed_learns_the_measured_footprint():
+    """#1796: the claim is the one test_resource_shed_1602 shows: a large measured footprint lowers the rerun's workers."""
+    text = (ROOT / "docs" / "parallelism.md").read_text()
+    section = text[text.index("- **Shed.**"):]
+    section = section[:section.index("- **What the guard cannot cover.**")]
+    assert "fewer workers" in section and "measured" in section
+    shed_test = (ROOT / "tests" / "test_resource_shed_1602.py").read_text()
+    assert "def test_after_a_shed_with_a_large_measured_footprint_the_rerun_admits_fewer_workers" in shed_test
