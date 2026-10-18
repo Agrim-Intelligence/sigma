@@ -113,6 +113,19 @@ def only(v, sub):
     assert len(v) == 1 and sub in v[0], v
 
 
+def _each(cases, check):
+    """Run `check(*args)` for every (case_id, args); one failing case never hides the others. The plan's
+    selectors name ONE node per function (red_green.py credits a red only for an unambiguous node), so
+    these tests loop instead of using pytest.mark.parametrize."""
+    failures = []
+    for cid, args in cases:
+        try:
+            check(*args)
+        except Exception as e:  # AssertionError from a check, or any crash: report it against its case
+            failures.append("[%s] %s: %s" % (cid, type(e).__name__, e))
+    assert not failures, "\n".join(failures)
+
+
 def run(*args, cwd=_ROOT):
     return subprocess.run([sys.executable, str(_SCRIPT), *args], capture_output=True, text=True, cwd=cwd)
 
@@ -168,8 +181,11 @@ def test_nfr_bank_returns_copies():
 
 # ---------------------------------------------------------------------------- Task 2: skeleton/shape
 
-@pytest.mark.parametrize("lane", ["small", "medium", "large"])
-def test_clean_fixture_passes_in_every_lane(lane):
+def test_clean_fixture_passes_in_every_lane():
+    _each([(l, (l,)) for l in ("small", "medium", "large")], _check_clean_fixture)
+
+
+def _check_clean_fixture(lane):
     r = gd.check_quality(art(lane=lane))
     assert r["ok"] is True and r["violations"] == [] and r["warnings"] == []
     assert r["lane"] == lane and len(r["rows"]) == 11
@@ -201,11 +217,17 @@ def _cells9():
     return "| cost | scenario | a user | submits | normal load || the system replies | p95 under 200 ms | BR-1 |"
 
 
-@pytest.mark.parametrize("case", [
+_MALFORMED_CASES = [
     "wrong_header", "seven_cells", "doubled_pipe", "cell_2001", "cell_2000_ok", "measure_2001_digit",
     "fenced_heading", "duplicate_heading", "no_category_table", "missing_section", "no_separator",
-])
-def test_malformed_table_shapes(case):
+]
+
+
+def test_malformed_table_shapes():
+    _each([(c, (c,)) for c in _MALFORMED_CASES], _check_malformed)
+
+
+def _check_malformed(case):
     if case == "wrong_header":
         text = art(header="| Category | Answer | Source |")
         only(V(text), "header")
@@ -252,10 +274,16 @@ def test_malformed_table_shapes(case):
         assert "separator" in v[0]
 
 
-@pytest.mark.parametrize("case", ["missing", "huge", "capitalised", "later_section_only", "fenced",
-                                  "first_wins", "first_wins_next_line", "valid", "override_wins", "override_missing_still_reported",
-                                  "missing_runs_medium_rules"])
-def test_lane_header_rules(case):
+_LANE_HEADER_CASES = ["missing", "huge", "capitalised", "later_section_only", "fenced",
+                      "first_wins", "first_wins_next_line", "valid", "override_wins",
+                      "override_missing_still_reported", "missing_runs_medium_rules"]
+
+
+def test_lane_header_rules():
+    _each([(c, (c,)) for c in _LANE_HEADER_CASES], _check_lane_header)
+
+
+def _check_lane_header(case):
     if case == "missing":
         r = gd.check_quality(art(header_line=""))
         only(r["violations"], "lane: missing or not one of small, medium, large; proceeding as medium")
@@ -301,8 +329,11 @@ def test_row_key_clauses_missing(cat):
     only(V(art(drop=(cat,))), "%s: missing row" % cat)
 
 
-@pytest.mark.parametrize("case", ["duplicate", "misspelt", "empty_slug", "wrong_case"])
-def test_row_key_clauses(case):
+def test_row_key_clauses():
+    _each([(c, (c,)) for c in ("duplicate", "misspelt", "empty_slug", "wrong_case")], _check_row_key)
+
+
+def _check_row_key(case):
     if case == "duplicate":
         only(V(art(extra=[row("cost")])), "cost: duplicate row")
     elif case == "misspelt":
@@ -319,20 +350,29 @@ def test_row_key_clauses(case):
         assert has(v, "observability: missing row") and len(v) == 2
 
 
-@pytest.mark.parametrize("idx", range(5), ids=FIELD_NAMES)
-@pytest.mark.parametrize("value", ["", DASH], ids=["blank", "dash"])
-def test_answered_row_scenario_fields(idx, value):
+def test_answered_row_scenario_fields():
+    _each([("%s-%s" % (FIELD_NAMES[i], vid), (i, v)) for i in range(5)
+           for vid, v in (("blank", ""), ("dash", DASH))], _check_answered_row_field)
+
+
+def _check_answered_row_field(idx, value):
     v = V(art(overrides={"reliability": with_field("reliability", idx, value)}))
     assert has(v, "reliability: scenario field %s is" % FIELD_NAMES[idx])
     assert not any(FIELD_NAMES[j] in x for x in v for j in range(5) if j != idx and
                    ("field %s is" % FIELD_NAMES[j]) in x)
 
 
-@pytest.mark.parametrize("measure,ok", [
+_MEASURE_CASES = [
     ("99.9% over 30d", True), ("p95 under 200 ms", True), ("test: tests/x.py::t", True), ("test:x", True),
     ("test:", False), ("test:   ", False), ("fast", False), ("test", False), ("Test: x", False),
-])
-def test_response_measure_forms(measure, ok):
+]
+
+
+def test_response_measure_forms():
+    _each([(repr(m), (m, ok)) for m, ok in _MEASURE_CASES], _check_response_measure)
+
+
+def _check_response_measure(measure, ok):
     v = V(art(overrides={"safety": with_field("safety", 4, measure)}))
     if ok:
         assert v == []
@@ -358,7 +398,7 @@ def test_blocklist_constant_is_the_pinned_set():
     assert gd._REASON_BLOCKLIST == frozenset(BLOCKLIST) and len(BLOCKLIST) == 18
 
 
-@pytest.mark.parametrize("answer,sub", [
+_NA_REASON_CASES = [
     ("N/A: two words", "fewer than 3 words"),
     ("N/A: one", "fewer than 3 words"),
     ("N/A: tbd.", "placeholder reason"),           # rejected via the punctuation-stripped form
@@ -369,8 +409,14 @@ def test_blocklist_constant_is_the_pinned_set():
     ("n/a: three word reason", "malformed Answer"), ("N/A:three word reason", "malformed Answer"),
     ("NA: x", "malformed Answer"), ("N/A: three word reason", None),
     ("N/A:   spaced   out   reason", None),
-])
-def test_na_reason_rules(answer, sub):
+]
+
+
+def test_na_reason_rules():
+    _each([(repr(a), (a, sb)) for a, sb in _NA_REASON_CASES], _check_na_reason)
+
+
+def _check_na_reason(answer, sub):
     if sub is None:
         assert _na(answer) == []
     else:
@@ -379,7 +425,7 @@ def test_na_reason_rules(answer, sub):
         assert sub in v[0]
 
 
-@pytest.mark.parametrize("lane,answer,sub", [
+_NA_LANE_CASES = [
     ("small", "N/A: small lane", None),
     ("small", "N/A: Small   Lane", None),
     ("small", "N/A: valid three word reason", None),  # small does not force the literal
@@ -389,8 +435,14 @@ def test_na_reason_rules(answer, sub):
     ("small", "N/A: big lane", "fewer than 3 words"),
     ("medium", "N/A: big lane", "fewer than 3 words"),
     ("large", "N/A: big lane", "fewer than 3 words"),
-])
-def test_na_small_lane_literal(lane, answer, sub):
+]
+
+
+def test_na_small_lane_literal():
+    _each([("%s/%r" % (l, a), (l, a, sb)) for l, a, sb in _NA_LANE_CASES], _check_na_small_lane)
+
+
+def _check_na_small_lane(lane, answer, sub):
     v = V(art(lane=lane, overrides={"cost": row("cost", answer)}))
     if sub is None:
         assert v == []
@@ -399,11 +451,17 @@ def test_na_small_lane_literal(lane, answer, sub):
         assert sub in v[0]
 
 
-@pytest.mark.parametrize("case", [
+_OPEN_ROW_CASES = [
     "open_missing_d", "open_ok", "open_no_digit_sep", "open_no_space", "open_capital",
     *["na_field_%d" % i for i in range(5)], *["open_field_%d" % i for i in range(5)],
-])
-def test_open_row_and_dash_cell_rules(case):
+]
+
+
+def test_open_row_and_dash_cell_rules():
+    _each([(c, (c,)) for c in _OPEN_ROW_CASES], _check_open_row)
+
+
+def _check_open_row(case):
     if case == "open_missing_d":
         only(V(art(overrides={"cost": row("cost", "open: D-9")})), "cost: open: D-9 is not a bullet id in ## Doubts")
     elif case == "open_ok":
@@ -418,7 +476,7 @@ def test_open_row_and_dash_cell_rules(case):
         only(v, "cost: scenario field %s must be '—'" % FIELD_NAMES[int(idx)])
 
 
-@pytest.mark.parametrize("evid,sub", [
+_EVIDENCE_CASES = [
     ("BR-1", None), ("BR-99", "evidence token 'BR-99' is not a row id in ## Blast radius"),
     ("D-1", None), ("D-99", "evidence token 'D-99' is not a bullet id in ## Doubts"),
     ("Dossier:constraints", None), ("Dossier:", "evidence token 'Dossier:'"),
@@ -428,8 +486,14 @@ def test_open_row_and_dash_cell_rules(case):
     ("agent-proposed", None), ("Agent-Proposed", "evidence token 'Agent-Proposed'"),
     (DASH, "evidence is empty"), ("", "evidence is empty"),
     ("BR-1, agent-proposed", None), ("BR-1, nonsense", "evidence token 'nonsense'"),
-])
-def test_evidence_forms(evid, sub):
+]
+
+
+def test_evidence_forms():
+    _each([(repr(e), (e, sb)) for e, sb in _EVIDENCE_CASES], _check_evidence)
+
+
+def _check_evidence(evid, sub):
     v = V(art(overrides={"reliability": row("reliability", evid=evid)}))
     if sub is None:
         assert v == []
@@ -489,12 +553,18 @@ def test_stride_row_rules_each_threat_required(letter):
          "security: STRIDE container 'Alpha' is missing threat(s) %s" % letter)
 
 
-@pytest.mark.parametrize("case", [
+_STRIDE_CASES = [
     "not_in_components", "duplicate", "bad_letter", "empty_mitigation", "ruled_out_two_words",
     "ruled_out_ok", "ruled_out_tbd", "ruled_out_empty", "wrong_header", "wrong_cell_count", "medium_reported",
     "medium_clean_accepted", "cell_cap", "order_free", "stride_first", "adjacent_tables", "container_dash_only",
-])
-def test_stride_row_rules(case):
+]
+
+
+def test_stride_row_rules():
+    _each([(c, (c,)) for c in _STRIDE_CASES], _check_stride_row)
+
+
+def _check_stride_row(case):
     base = stride_rows(["Alpha", "Beta"])
     if case == "not_in_components":
         only(V(art(lane="large", stride=base + stride_rows(["Gamma"]))),
