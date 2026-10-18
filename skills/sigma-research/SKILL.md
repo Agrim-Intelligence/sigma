@@ -16,12 +16,11 @@ Detailed selection triggers: [selection](references/selection.md).
 
 ## Context-efficient inspection
 
-Locate before opening: use `rg --files` for paths and `rg -n` for symbols or claims.
-Read only the relevant lines with a bounded range; expand outward only when the
-boundary is unclear. Do not dump whole files or broad search output into context.
-For bulky tests or diagnostics, save full output to a scratch file, then inspect
-its exit status and focused matches or a bounded tail. Do not hide failures, and
-keep secrets out of the scratch file. This is guidance, not a measured savings claim.
+Locate first: `rg --files` for paths, `rg -n` for symbols or claims. Read only the
+relevant lines in a bounded range, widening only when the boundary is unclear; never
+dump whole files or broad search output. Save bulky test or diagnostic output to a
+scratch file and inspect its exit status and focused matches or a bounded tail. Do
+not hide failures; keep secrets out of the scratch file. Guidance, not a measured savings claim.
 
 The **Research** phase executor — the step between restating a goal and planning it. A goal states an
 intention; this grounds it in the code: what the change will actually touch, what debt already lives
@@ -38,8 +37,7 @@ are the only outputs — except the one-line `lane:` write-back in step 5.
 Research is a cost, not a virtue. Before starting, ask whether this goal earns it: a typo fix, a
 rename, or a one-file change does **not** — record a one-line radius in the goal's journey note, run
 `loop.py waive-phases <dir> <goal> research --reason "<why>"` (`record done` is refused without it), and go straight to Plan. Run the full pass when the goal touches a contract, crosses a module boundary,
-changes shared state, or you cannot yet name every file it will touch. Skipping it is legitimate;
-say so rather than producing a ceremonial dossier.
+changes shared state, or you cannot yet name every file it will touch.
 
 ## 1. Seed
 Start from the goal text (`.sdlc/goals/NNNN-*.md` or the issue body) plus, if the knowledge graph is
@@ -79,8 +77,10 @@ against the real diff at Review (§Review wires it); here you flag it so the Pla
 ## 3. Tech debt already in the radius
 Within the blast radius only — this is not a whole-repo audit — find the debt the goal is about to
 build on: duplicated sources of truth that disagree, hard-coded assumptions, dead branches, swallowed
-errors, declared-but-unenforced constraints. Per item recommend **reconcile-now** (default — carrying a
-known structural defect through a change usually costs more than fixing it), **defer-with-ticket**
+errors, declared-but-unenforced constraints. Per item recommend **reconcile-now** (default; in an
+existing file `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/zones.py" classify <path>` marks legacy, only where a non-drafted
+acceptance criterion names the path, `check`'s `intent: yes`, else sprout or wrap at one seam;
+`unknown`, `unreachable` or could not run keeps the default), **defer-with-ticket**
 (out of reach, but tracked — never silent), or **out-of-scope**.
 
 You propose; the user owns the scope call.
@@ -174,7 +174,7 @@ Run `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" note .sdlc "<go
 The note routes itself — it comments the **issue timeline** in github mode and appends to
 `.sdlc/journey/` in local mode — so make it carry what a *teammate* needs without opening your working
 copy: **the lane, the site count, and every blocking question.** The full dossier stays a local file
-either way (it's a working artifact, like the radar digest); the note is what makes it visible on a
+either way; the note is what makes it visible on a
 shared backlog. In github mode a research pass that leaves no comment is invisible to everyone but you.
 
 Keep the dossier out of `.sdlc/plans/` — the plan gate treats any recent file there as a fresh plan,
@@ -182,7 +182,7 @@ and a research note is not a plan.
 
 ## Constraints (non-negotiable)
 - **No fabrication.** Every row cites a real `file:line`. If you can't cite it, drop it. A
-  confident-but-wrong dossier is worse than a thin one, because Plan and Plan-Review both trust it.
+  confident-but-wrong dossier is worse than a thin one.
 - **Store the queries verbatim.** The coverage guarantee is the re-scan; without the query there is
   no re-scan.
 - **Surface, don't resolve.** Tensions and blocking questions go to the user. Don't pick a

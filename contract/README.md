@@ -33,7 +33,7 @@ The contract enables downstream readers to read, validate, and ingest core recor
 | **events** | `.sdlc/events/*.jsonl` | `journal.enabled`, or a managed-settings lock | Core | `{id, actor, ts, kind, goal, ...per-kind}` |
 | **verify** | `.sdlc/state/verify/*.json` | Always (kept at least 7 days after the goal's `done`, then pruned by `goal_state_prune.py`; #458) | Core | `{goal_id, result, ...}` |
 | **witness** | `.sdlc/state/witness/*.jsonl` | Always | Core | `{goal_id, witness_line, ...}` |
-| **acceptance** | `.sdlc/acceptance/*.md` | P1 GOAL, explicitly captured | Core | JSON-valued frontmatter `{kind, goal, verify_command}` plus 3–7 checklist statements |
+| **acceptance** | `.sdlc/acceptance/*.md` | P1 GOAL, explicitly captured | Core | JSON-valued frontmatter `{kind, goal, verify_command, drafted}` (`drafted` optional) plus 3–7 checklist statements |
 | **plans** | `.sdlc/plans/*.md` | Always (hash only, body excluded) | Core | `{id, hash, frontmatter, ...}` |
 | **goal_frontmatter** | `.sdlc/goals/*.md` | Always (frontmatter only) | Core | `{id, title, phase, ...}` |
 | **config** | `.sdlc/config.json` | Always | User/operator | `{goal_default_model, ledger, ...}` |
@@ -75,7 +75,7 @@ The entries stream carries 11 record kinds:
     (64 lowercase hexadecimal characters). Ledger opt-in controls this metadata only; the local
     Markdown record is written regardless. Commands and criteria are never copied into the ledger.
 
-### Acceptance records
+### Acceptance records (1.4.0)
 
 Run `python3 skills/sigma-loop/scripts/acceptance.py record .sdlc <goal>` before code.
 `<goal>` is an issue number or a local goal Markdown path. The source must contain a
@@ -87,7 +87,10 @@ Never put credentials in a command or criterion. Existing records are returned u
 
 Each statement is at most 1024 characters and the whole UTF-8 file at most 32 KiB, including
 frontmatter. `kind` is `"acceptance"`, `goal` is the filename stem, and `verify_command` is null
-or a nonempty string. Values in the flat frontmatter are JSON literals. See
+or a nonempty string. `drafted` (added in 1.4.0, optional) is `true` when the agent drafted the
+criteria (no `## Done when` in the source) and `false` when they were copied from the source;
+records written before 1.4.0 have no `drafted` line, stay valid, and read as unknown.
+Values in the flat frontmatter are JSON literals. See
 `golden/acceptance/42.md`; validate with `python3 contract/validate.py contract/golden/acceptance/42.md`.
 The writer uses atomic create-only hard links; a filesystem without that support refuses.
 Retry the same capture after an outage or crash. Draft-comment retries first check the complete

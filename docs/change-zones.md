@@ -79,6 +79,82 @@ In both cases the safe reading is that `new` for such a spelling may be wrong; p
 tracks (`git ls-files` shows it). The zone glob match is case-sensitive for the same reason. This is
 a documented limit, not handled; a test pins the current behaviour so a change is noticed.
 
+## Measure legacy change and refactor intent
+
+```
+python3 skills/sigma-loop/scripts/zones.py check --goal 1541 --diff
+```
+
+`check` answers one question: how much of the legacy code that already existed at the fork point
+does this goal change, and did the goal's acceptance record say it meant to? Use `--diff` for the
+**working tree** against the fork point (uncommitted Implement-time edits count, so a half-done
+restructure never reads `within`) or `--plan FILE` for a plan before any edit. Exactly one of the
+two is required, plus `--goal N` (a bad goal, `--base` starting with a dash, an unreadable or
+over-256-KiB plan, a bad `design.restructure_lines`, or a changed legacy path containing a tab or
+carriage return is refused: exit 2, empty stdout; a newline in such a path is instead named on stderr
+and the other rows still print).
+The fork point comes from the goal's work record (`.sdlc/state/work/<goal>.json`, which must be for
+the checked-out branch); `--base REF` pins another ref.
+
+One row per legacy file, tab-separated: `<path>`, `legacy`, `<changed|binary|->`, `<restructure|->`,
+`intent: yes|no|unknown`, for example `src/a.py<TAB>legacy<TAB>41<TAB>restructure<TAB>intent: no`.
+Then `verdict: over`, `verdict: within` or `verdict: unknown`; all three exit 0. Only files that
+existed at the fork point and whose zone is `legacy` get a row; new, modern and undeclared files, and
+untracked files, never do.
+
+- **Threshold.** `design.restructure_lines` (an integer >= 1, default 40; a `0`, a negative, a
+  string, a boolean, a float or `null` is refused). A file is a `restructure` when its changed lines are
+  **strictly** greater than the threshold: 40 is not, 41 is.
+- **Counting.** Changed lines are **added plus deleted**, so one edited line counts 2, a deletion
+  counts its lines, a rename counts once and is keyed on the old path, a mode-only change is 0, a
+  binary file reads `binary` and is a restructure, and a submodule bump counts 2 (it can print a
+  legacy row for the submodule path; paths inside a submodule are not read). Counting options are
+  pinned against your own git diff configuration.
+- **Intent** comes from the goal's acceptance record in the main checkout, read through the shared
+  reader. A record with `drafted: true` (criteria the agent wrote itself) never grants intent: `no`.
+  With `drafted: false` the intent is `yes` when a criterion has a backticked, whitespace-free path span
+  that names the file or one of its directories, matched on a **component boundary** (`src/leg` does not
+  match `src/legacy/a.py`; a trailing `/` and a leading `./` are ignored). A missing, unreadable,
+  malformed or undated record (written before this existed) reads `intent: unknown`: the change is
+  **forward-only**, nothing back-fills older records, and the honest verdict is `unknown`, never `within`: a goal whose record predates the `drafted` marker
+  reads `unknown` until its record is written again.
+- **Verdict (`--diff`).** `over` if any row is a restructure with `intent: no`; else `unknown` if any
+  row is `intent: unknown` or the fork point, config or a git call could not be resolved (the reason is
+  on stderr); else `within`. With no usable acceptance record the verdict is `unknown`, never `within`, even when no legacy file was
+  touched: `check` then prints a line `intent: unknown` (there is no row to carry it) before the verdict.
+  `within` needs a dated record (`drafted` true or false) and no row left open.
+- **Verdict (`--plan`).** The paths are the backticked spans in the plan's `## Files` (or
+  `## File structure`) section that are files at the fork point; NEW or EDIT words are ignored. Plan
+  mode is informational and **never prints `over`** (#1542): a plan has no line count, and a seam edit
+  to a legacy file must still be named there, so it lists each named legacy file with its intent and
+  reads `within` when the record is dated (has a `drafted` line), else `unknown` (with an
+  `intent: unknown` line when no row carries it). Size is measured only at review, by `--diff` against
+  `design.restructure_lines`. A plan with no such section, or a `## Files` section that names no
+  backticked path, reads `unknown`.
+
+Documented gaps, each pinned by a test: **negation** is not parsed, so a criterion such as
+`src/legacy/a.py` stays unchanged still grants `intent: yes`; a span containing whitespace never matches
+(a file with spaces gets intent only through its directory); a suffix such as `:12` or `::test` makes a
+span never match, which fails toward `over`; matching is **case-sensitive**; `drafted: false` is the
+recorder's own claim, not proof; untracked files are not seen by `--diff`; and a criterion that names a
+top-level directory (`tests/`, `docs`, `src`) grants intent for that whole tree by the directory rule.
+A binary file that is only stat-stale (same bytes as the fork) is compared by content and dropped, never
+read as a restructure. A changed path containing a newline cannot go through the line-based lookup:
+it is skipped, the verdict cannot be `within` (`over` still wins when a measured row is over), and one line on stderr names it; the other
+rows still print.
+
+It reads only, through `git diff-index` (never `git diff`, which rewrites a stale `.git/index`), and
+runs a constant number of git processes, including one `merge-base`, one `diff-index` and one
+`cat-file` (eight in total under `GIT_TRACE`, with the `rev-parse` and `symbolic-ref` lookups; a diff
+with binary files adds one more `cat-file` and one `hash-object`). Measured
+(macOS, git 2.55, Python 3.9 system interpreter): `check --goal 1541 --diff` in this repository with
+a small diff and no zones declared took 0.22 s wall (median of 3); a fixture with 1,500 changed legacy
+files printed 1,500 rows in 490 to 560 ms (5 runs) on a loaded machine (load average about 13) and
+0.68 s median earlier on a quieter one; an independent run under swap pressure took 1.12 to 1.28 s, so
+plan for roughly a second rather than the quiet-machine figure. Not measured: beyond 1,500 changed files, a
+networked filesystem, or a repository with large history. The ceilings are the 10 s git timeout (a
+timeout reads `unknown`), a 256 KiB plan and a 32 KiB acceptance record.
+
 ## Sprout and wrap
 
 In legacy code, extend by **sprout** or **wrap** at one seam rather than editing through it.
@@ -87,6 +163,52 @@ In legacy code, extend by **sprout** or **wrap** at one seam rather than editing
   example a new `billing/tax_v2.py` called from the single line in `billing/legacy_calc.py`.
 - **Wrap:** leave the legacy function untouched and put a new function around it that handles the
   new case, for example `price_with_discount()` calling the legacy `price()`.
+
+## How the phases use zones
+
+Five phase rules defer to `zones.py` (#1542):
+
+- **Research** recommends reconcile-now in a legacy file only where a non-drafted acceptance
+  criterion names the path (what `check` reads as `intent: yes`): it has no plan or diff to check.
+- **Plan** lists its files under `## Files`, follows the rule `classify` prints for each, and never
+  restructures an existing file unilaterally; a legacy file without intent is extended by sprout or
+  wrap, sending dropped improvements to retro's `Deferred roots`.
+- **Plan-review** runs `check --plan`. It rejects on `verdict: over` (only `--diff` prints it, so at
+  plan time that clause is dormant) and holds every legacy row without `intent: yes` to a seam edit
+  (sprout or wrap), rejecting a plan that restructures one. A bare `verdict: unknown` never rejects: every
+  acceptance record written before #1541 reads `intent: unknown`.
+- **Implement** refactors in passing, except a file `check --diff` lists as a legacy row without
+  `intent: yes`.
+- **Review** asks whether the change breaks the rule `classify` prints, reports `unrequested legacy
+  restructure` on `check --diff` `verdict: over`, never reports a new file's difference from legacy
+  neighbours, and holds the numbered north-star architecture rules in every zone.
+  It reports `missing structure`, a follow-up, only where `classify` prints `follow sound design`:
+  new and modern-zone files, never a legacy one (#1543).
+
+When `classify` prints `unknown` or `unreachable`, or cannot run, the fallback is today's rule:
+follow the surrounding code (research and implement keep their own default). With no zones declared,
+every existing file prints `follow the surrounding code` and `check` prints no legacy row, so nothing
+changes for existing files; a new file now prints `follow sound design` (PRD-0007 D-3).
+
+**Interactive runs.** `/sigma-goal` never runs `work.py start`, so with no work record `classify`
+rows read `unknown` and `check` reads `verdict: unknown`: zones therefore do not bind interactive
+runs, nor a reviewer checkout with no record. To resolve the fork point without a record, pass
+`--base <remote>/<base>` to both verbs (on a clone with no record, `classify --base` read `existing`
+and `check --diff --base` printed legacy rows); the phase rules do not pass it yet.
+
+The effect of these phase rules on model behaviour is UNMEASURED: issue #1544 is the deferred
+baseline (PRD-0007 D-7: not a merge gate).
+
+**Forces-first (#1543).** Plan-review calls an interface, factory, layer or indirection that names
+no force over-built, a legacy sprout or wrap excepted. The four forces:
+
+- a second real variant in this goal;
+- an unreliable dependency;
+- a boundary crossing;
+- a quality scenario goal-design names, inert until the goal-design checklist exists (#660).
+
+The effect of the forces-first rule on model behaviour is UNMEASURED: issue #1544 is the deferred
+baseline.
 
 ## Per-machine caveat
 
