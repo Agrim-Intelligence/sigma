@@ -169,6 +169,22 @@ def _resource_guard_off_by_default(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _restore_sibling_modules():
+    """test_resource_verify_1601.py (and 1768, which imports its `env` fixture) re-import the resource modules.
+    Unrestored, a later test in the same process (test_resource_hold.py patches the module objects it imported at
+    collection) patches stale objects while loop.py loads the fresh ones, so its fake machine never applies and 7
+    hold tests fail (reproduced on a clean origin/main with 1601 then hold)."""
+    names = ("resource_guard", "resource_lease", "bounded_run", "resource_verify")
+    saved = {n: sys.modules.get(n) for n in names}
+    yield
+    for n, mod in saved.items():
+        if mod is None:
+            sys.modules.pop(n, None)
+        else:
+            sys.modules[n] = mod
+
+
+@pytest.fixture(autouse=True)
 def _no_live_gh(request, monkeypatch):
     """#1495: fail loud, naming the call site, on any `subprocess.run` that would invoke the real
     `gh` CLI -- unless this test is marked `@pytest.mark.live_gh`."""
