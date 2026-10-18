@@ -25,3 +25,16 @@ jobs:
       - run: python -m pip install --upgrade pip pytest
       - name: Watcher primitives, for real
         run: python -m pytest tests/test_windows_real.py -v --no-header
+      - name: Live regression entrypoint refuses on Windows (no model, no network)
+        shell: bash
+        env:
+          SIGMA_REGRESSION_LIVE: "1"
+          SIGMA_REGRESSION_CAP_USD: "1"
+          GITHUB_EVENT_NAME: workflow_dispatch
+          ANTHROPIC_API_KEY: windows-probe
+        run: |
+          set +e
+          env -u ANTHROPIC_API_KEY -u SIGMA_REGRESSION_LIVE -u SIGMA_REGRESSION_CAP_USD python evals/regression/live.py >out1.txt 2>err1.txt; rc1=$?
+          python evals/regression/live.py >out2.txt 2>err2.txt; rc2=$?
+          test "$rc1" -eq 2 && grep -q 'REFUSED \[no-credential\]' err1.txt && test ! -s out1.txt || exit 1
+          test "$rc2" -eq 2 && grep -q 'REFUSED \[unsupported-platform\]' err2.txt && test ! -s out2.txt || exit 1

@@ -842,6 +842,8 @@ DOCUMENTED_WRITES = {
     ("evals/regression/live.py", "write_row", ".write_text"): (1, "writes the temp file of the atomic row write"),
     ("evals/regression/live.py", "write_row", "os.replace"): (1, "atomic rename of the temp file onto the row"),
     ("evals/regression/live.py", "write_row", ".unlink"): (1, "removes its own leftover temp file"),
+    ("evals/regression/live.py", "_run", "tempfile.mkdtemp"): (1, "creates the per-run scratch profile directory under the system temp dir; removed in finally through the benchmark helpers' remove_tree (live.py has no rmtree)"),
+    ("evals/regression/control.py", "main", "tempfile.mkdtemp"): (1, "creates the control's own temp directory (recorded by path, removed by _rmtree); surfaced when the detector learned the tempfile module (#810)"),
     ("evals/regression/mutators.py", "_write_text", ".write_text"): (1, "the one write of a mutated file, only under the --root copy it is told"),
     ("evals/regression/control.py", "_control", "shutil.copytree"): (1, "copies the extracted archive into the control's own temp directory, one fresh copy per row; never the working tree"),
     ("evals/regression/control.py", "_rmtree", "shutil.rmtree"): (1, "the one removal: the control's own temp directory (or a marked stale one), recorded by path"),
@@ -869,6 +871,8 @@ def _call_label(node):
             return "os." + f.attr
         if base == "shutil":
             return "shutil." + f.attr
+        if base == "tempfile" and f.attr in {"mkdtemp", "mkstemp", "NamedTemporaryFile", "TemporaryDirectory"}:
+            return "tempfile." + f.attr
         if base == "io" and f.attr == "open":
             return "io.open" if _write_mode(node, 1) else None
         if f.attr == "open" and base != "os":
@@ -939,12 +943,14 @@ def test_write_detector_sees_what_write_surface_py_cannot(tmp_path):
         "import os\n"
         "def a(p):\n    with open(p, 'a') as fh:\n        fh.write('x')\n"
         "def b(fd):\n    os.write(fd, b'x')\n    os.fsync(fd)\n    os.open(p, os.O_RDONLY)\n"
-        "def c(p):\n    open(p)\n    open(p, 'rb')\n    os.open(p, os.O_WRONLY)\n")
+        "def c(p):\n    open(p)\n    open(p, 'rb')\n    os.open(p, os.O_WRONLY)\n"
+        "def d():\n    tempfile.mkdtemp()\n")
     found = find_writes(tmp_path)
     assert found == {("evals/regression/x.py", "a", "open"): 1, ("evals/regression/x.py", "b", "os.write"): 1,
-                     ("evals/regression/x.py", "b", "os.fsync"): 1, ("evals/regression/x.py", "c", "os.open"): 1}
+                     ("evals/regression/x.py", "b", "os.fsync"): 1, ("evals/regression/x.py", "c", "os.open"): 1,
+                     ("evals/regression/x.py", "d", "tempfile.mkdtemp"): 1}
     msgs = undocumented_writes(tmp_path, {})
-    assert len(msgs) == 4 and all("undocumented write" in m for m in msgs)
+    assert len(msgs) == 5 and all("undocumented write" in m for m in msgs)
 
 
 def test_ledger_writes_are_all_documented_by_name():
@@ -972,7 +978,24 @@ def test_ledger_starts_no_model_and_no_network():
 
 
 def test_ledger_imports_only_stdlib_and_nothing_from_slice_one():
-    stdlib = set(sys.stdlib_module_names)
+    # sys.stdlib_module_names is 3.10+; the planned-test run may use an older interpreter.
+    names = getattr(sys, "stdlib_module_names", None)
+    if names is None:
+        import importlib.util
+        import sysconfig
+        lib = os.path.realpath(sysconfig.get_paths()["stdlib"])
+
+        def _is_stdlib(mod):
+            if mod in sys.builtin_module_names:
+                return True
+            spec = importlib.util.find_spec(mod)
+            origin = getattr(spec, "origin", None) or ""
+            return bool(spec) and (origin == "built-in" or os.path.realpath(origin).startswith(lib + os.sep))
+    else:
+        stdlib = set(names)
+
+        def _is_stdlib(mod):
+            return mod in stdlib
     for node in ast.walk(_ledger_tree()):
         mods = []
         if isinstance(node, ast.Import):
@@ -981,7 +1004,7 @@ def test_ledger_imports_only_stdlib_and_nothing_from_slice_one():
             assert node.level == 0, "relative import"
             mods = [(node.module or "").split(".")[0]]
         for mod in mods:
-            assert mod in stdlib, "non-stdlib import %s" % mod
+            assert _is_stdlib(mod), "non-stdlib import %s" % mod
             assert mod not in {"record", "check", "live"}
 
 
