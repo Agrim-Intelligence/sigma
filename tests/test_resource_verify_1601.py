@@ -319,6 +319,23 @@ def test_end_to_end_hold_gives_exit_5_no_evidence_events_and_done_still_refuses(
     assert loop.state.done_refusal(sdlc, goal)             # no evidence: record done refuses
 
 
+def test_hold_final_receipt_says_resource_hold_not_unverified(tmp_path, monkeypatch, capsys):
+    """Exit 5 is shared: UNVERIFIED (flake disagreement, #1650 receipts) vs RESOURCE-HOLD (#1601). The #1650 final
+    receipt's `result` must say RESOURCE-HOLD (no evidence exists), never `UNVERIFIED ... evidence=<path>`."""
+    monkeypatch.delenv("SIGMA_RESOURCE_MODE", raising=False)
+    sdlc, goal = _repo(tmp_path, {"resource": {"mode": "enforce"}})
+    rstate = tmp_path / "rstate"
+    rstate.mkdir()
+    (rstate / "observed.json").write_text(json.dumps({"verify": [4 * GIB]}))
+    loop = _loop(monkeypatch, tmp_path, available=3 * GIB)
+    assert loop.verify_goal(sdlc, goal) == 5
+    capsys.readouterr()
+    receipt = json.loads((pathlib.Path(sdlc) / "state" / "call-runs" / "0001.verify.json").read_text())
+    assert receipt["outcome"] == "ok" and receipt["exit"] == 5, receipt
+    assert receipt["result"].startswith("RESOURCE-HOLD exit=5"), receipt
+    assert "UNVERIFIED" not in receipt["result"] and "evidence=" not in receipt["result"], receipt
+
+
 def test_end_to_end_admitted_run_writes_the_same_evidence_shape_as_off(tmp_path, monkeypatch):
     monkeypatch.delenv("SIGMA_RESOURCE_MODE", raising=False)    # #1759: the environment outranks the config key
     """mode off vs enforce: the evidence file has the same keys, and for the off run the exact historical shape."""
