@@ -54,6 +54,10 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/sealed_tests.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/breaker.py",
       "role": "library"
     },

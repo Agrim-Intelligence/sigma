@@ -404,3 +404,12 @@ def test_a_symlinked_agents_directory_is_never_followed_or_deleted_through(sdlc,
     mod.sweep(sdlc, agent_alive=lambda *a, **k: ("dead", None))
     assert marker.exists() and precious.exists() and (outside / "72").is_dir()
     assert all(p.exists() for p in made)        # an agents dir we cannot trust keeps the goal
+
+
+def test_sealed_record_is_pruned_via_the_file_families_entry(sdlc, tmp_path):
+    """#847: an expired sealed/<stem>.json goes with its goal; red if ("sealed", ".json") leaves FILE_FAMILIES."""
+    _done(sdlc, "10")
+    made = _files(sdlc, "10", families=("sealed/{g}.json",))
+    out = _sweep(tmp_path)
+    assert not made[0].exists()
+    assert len(out["removed"]) == 1

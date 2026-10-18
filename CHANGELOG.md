@@ -4,6 +4,7 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 - **Plan-review asks which force an abstraction answers; review reports `missing structure` (#1543).** An interface, factory, layer or indirection naming no force is over-built (a legacy sprout or wrap excepted), and a new or modern-zone diff adding a third or later case to a type conditional is a follow-up Concern. The effect on model behaviour is UNMEASURED; #1544 is the deferred baseline.
+- **Sealed-test record and red-on-base proof (#847, slice 2 of #558).** `sealed_tests.py` seals `tests/acceptance/<goal>/` against the base commit (`sealed-pytest-v1`: any test-body failure is red, a collection error is refused, a pass needs a recorded reason) and `check()` re-hashes the sealed files read-only. Library only; no verb or gate yet.
 
 ## 1.0.17 — 2026-10-18 — the stored dependency map and Sigma Chain: a map of what waits on what, a longest-chain plan, an approved and capped chain run; plus the 1.0.16 follow-ups to the resource guard and label drains
 - **A resource-guard hold is no longer recorded as UNVERIFIED in the final receipt (#1875).** Exit 5 is shared by the guard's hold (no evidence written) and the flake UNVERIFIED verdict; the receipt printed a hold as `UNVERIFIED exit=5 evidence=<path>`. `_CallGuard` now carries a hold flag set in the hold branch and `_verify_result` honours it. An autouse fixture in `tests/conftest.py` restores `sys.modules` between tests, so the resource tests no longer fail when the verify tests run first in a process.
