@@ -1445,3 +1445,20 @@ def test_a_missing_target_directory_says_how_to_create_the_repository(tmp_path, 
     assert flow.main(["init_flow.py", str(target)]) == 2
     err = capsys.readouterr().err
     assert "does not exist" in err and "mkdir" in err and "git init" in err and "re-run /sigma-init" in err
+
+
+@posix_only
+def test_architecture_doc_flag_is_accepted_and_scaffolds(tmp_path):
+    """#1784 (P-1): `/sigma-init --architecture-doc` must not fail `unknown option` while SKILL.md
+    lists the flag. A typo (`--architecture`) is still refused here; `sdlc_init.py` alone ignores it."""
+    flow = _load_flow()
+    opts, _target, error = flow.parse(["--architecture-doc"])
+    assert error is None, error
+    assert opts.get("architecture-doc") is True, opts
+    _opts, _target, error = flow.parse(["--architecture"])
+    assert error and "unknown option" in error, error
+    w = _world(tmp_path, origin=None)
+    p = _run(w, [FLOW, w["repo"], "--mode", "local-goals", "--local-only", "--no-verify",
+                 "--architecture-doc"])
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert (w["repo"] / "docs" / "architecture" / "architecture.md").is_file(), p.stdout

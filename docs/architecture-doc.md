@@ -124,6 +124,34 @@ The numbered architecture rules belong to the product north-star, not to this do
 live in the north-star: keep the numbered architecture rules in the north-star, link this document
 in one line, copy neither; nothing can detect copying, so this is a convention.
 
+## The scaffold gesture
+
+```sh
+python3 skills/sigma-init/scripts/sdlc_init.py . --architecture-doc
+```
+
+Opt-in, run by the operator (`/sigma-vision` and `/sigma-init --architecture-doc` run the same
+scaffold); the loop never runs it. It writes the skeleton above, the system document only (no
+second skeleton per service), to `<architecture.system_root>/architecture.md` with the repository
+name as the title. The outcomes:
+
+- **Created**: it prints `+ <path>`, and two commands for you to run, not Sigma:
+  `git add <path>`, then commit it through your normal goal or branch flow (never commit directly
+  on a feature branch), and `rm <path>` to undo. An untracked file can make `git pull` or
+  `git checkout` refuse when the same path arrives from upstream or from the branch you switch to;
+  adding it or removing it clears that.
+- **Kept**: a file, a symlink (even a dangling one) or a directory already at the path is never
+  overwritten; it prints `= <path> (exists, kept)`. The create is exclusive, so a file that appears
+  between the check and the write is kept too.
+- **Refused**, exit `2`, nothing written (not even a folder): a repository URL, any value holding
+  `://`, `..`, an absolute path, a backslash, `.` (the repository root), or a folder inside `.git`
+  or `.sdlc`, including through a symlink. A path component that is a file is refused the same way.
+- A failed write removes the one file it created, so no partial file is left; an empty new folder
+  may remain. Rerun to recover.
+
+Fill the placeholders, then run the lint gesture below: a clean lint on the untouched skeleton
+means the structure is right, not that the content is true. Not measured on Windows.
+
 ## The lint gesture
 
 ```sh

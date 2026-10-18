@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Deterministic, idempotent scaffolder for the per-project .sdlc/ layer.
 Copies templates/**/<x>.tmpl -> <target>/.sdlc/<x>, skip-if-exists. Zero deps."""
-import sys, json, pathlib, os, subprocess, tempfile
+import sys, json, pathlib, os, shlex, subprocess, tempfile
 
 # script is at skills/sigma-init/scripts/sdlc_init.py; templates sit beside scripts/
 TEMPLATES = pathlib.Path(__file__).resolve().parent.parent / "templates"
 GITHUB_TEMPLATES = pathlib.Path(__file__).resolve().parent.parent / "github-templates"
+# NEVER under templates/: every file there is copied to .sdlc/ on every init, flag or not.
+ARCH_TEMPLATES = pathlib.Path(__file__).resolve().parent.parent / "architecture-templates"
 
 # script is at skills/sigma-init/scripts/sdlc_init.py; the sibling sigma-setup skill sits beside it
 SETUP_SCRIPT = pathlib.Path(__file__).resolve().parent.parent.parent / "sigma-setup" / "scripts" / "setup.py"
@@ -534,6 +536,79 @@ def scaffold_github(target_dir):
     return created, skipped
 
 
+def _architecture_doc():
+    """The sibling architecture_doc.py (slice 1 engine), loaded by path like `_verify_detect`."""
+    import importlib.util
+    path = pathlib.Path(__file__).resolve().parent / "architecture_doc.py"
+    spec = importlib.util.spec_from_file_location("architecture_doc", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _write_text(fh, text):
+    """The one write of the architecture scaffold; a named seam so a test can make it fail."""
+    fh.write(text)
+
+
+def _refuse_scaffold_root(resolved, repo_real):
+    """#1784: the refusals the scaffold adds to the resolver's. `form` is checked first, so a
+    url or invalid root never reaches the path arithmetic (`resolved.path` is None for both)."""
+    if resolved.form == "url":
+        raise ValueError(f"architecture.system_root is a repository URL ({resolved.value}); the scaffold "
+                         "writes a folder in this repository only. Set it to a repository-relative folder")
+    if resolved.form == "invalid":
+        raise ValueError(str(resolved.error))
+    value = resolved.value
+    if "://" in value:
+        raise ValueError(f"architecture.system_root looks like a URL ({value}); set a repository-relative folder")
+    if "\\" in value:
+        raise ValueError(f"architecture.system_root must use forward slashes, not a backslash ({value})")
+    for candidate in (resolved.path, pathlib.Path(os.path.realpath(str(resolved.path)))):
+        try:
+            parts = candidate.relative_to(repo_real).parts
+        except ValueError:
+            raise ValueError(f"architecture.system_root resolves outside the repository ({value})")
+        if not parts:
+            raise ValueError("architecture.system_root is the repository root ('.'); name a folder such as docs/architecture")
+        if parts[0].casefold() in (".git", ".sdlc"):
+            raise ValueError(f"architecture.system_root may not point inside {parts[0]} ({value})")
+
+
+def scaffold_architecture_doc(target):
+    """Write the architecture document skeleton at `architecture.system_root`/architecture.md,
+    exclusive-create: an existing file, symlink (even dangling) or directory there is KEPT, never
+    overwritten. Opt-in via --architecture-doc. Returns (created, repo-relative posix path).
+    Raises ValueError on a refused root (nothing written, not even a folder) and OSError on a failed
+    write (the one file this run created is removed; an empty new folder may remain).
+    Known limit: a repo-writer could swap a path component for a symlink between the resolve and the
+    create; that actor already has repo write access and O_EXCL still protects the final file."""
+    target = pathlib.Path(target)
+    ad = _architecture_doc()
+    resolved = ad.resolve_system_root(str(target / ".sdlc"), str(target))
+    repo_real = pathlib.Path(os.path.realpath(str(target)))
+    _refuse_scaffold_root(resolved, repo_real)
+    dest = resolved.path / ad.DOC_NAME
+    rel = dest.relative_to(repo_real).as_posix()
+    text = (ARCH_TEMPLATES / "architecture.md.tmpl").read_text(encoding="utf-8").replace(
+        "{{PROJECT_NAME}}", repo_real.name)
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fh = open(dest, "x", encoding="utf-8", newline="\n")
+    except FileExistsError:
+        return False, rel
+    try:
+        with fh:
+            _write_text(fh, text)
+    except BaseException:
+        try:
+            os.unlink(dest)
+        except OSError:
+            pass
+        raise
+    return True, rel
+
+
 def bootstrap_github_labels(target_dir):
     """#230: github mode creates the `sdlc:*` and `priority:P0`-`P3` labels NOW, before the first
     pick -- a repo without `sdlc:goal` reads as an empty backlog forever. Shells out to the sibling
@@ -655,7 +730,7 @@ def extras_refusal_lines(exc):
 
 
 def scaffold_extras(target, flags):
-    """The opt-in scaffolds (`--demo`, `--vision`, `--cursor`, `--codex`), each skip-if-exists and
+    """The opt-in scaffolds (`--demo`, `--vision`, `--cursor`, `--codex`, `--architecture-doc`), each skip-if-exists and
     each reporting one line. Shared by `main()` and `init_flow.py` (#236), so the one entry point
     and this low-level scaffolder never diverge on what a flag writes."""
     if "--demo" in flags:
@@ -703,9 +778,21 @@ def scaffold_extras(target, flags):
             print("\nsigma-init: Codex adapter written to `AGENTS.md` (other rules preserved).")
         else:
             print("\nsigma-init: Codex rule already present (kept).")
+    if "--architecture-doc" in flags:     # LAST: the opt-in scaffolds stop at the first failure
+        created, rel = scaffold_architecture_doc(target)
+        q = shlex.quote(rel)
+        if created:
+            print("\nsigma-init: architecture document skeleton written - replace the placeholders, then lint "
+                  "it (docs/architecture-doc.md).")
+            print(f"  + {rel}")
+            print(f"  To keep it: git add {q}, then commit it through your normal goal or branch flow.")
+            print(f"  To undo: rm {q}")
+        else:
+            print("\nsigma-init: architecture document already present.")
+            print(f"  = {rel} (exists, kept)")
 
 
-USAGE = "usage: sdlc_init.py [target_dir] [--github] [--codex] [--cursor] [--vision] [--demo]"
+USAGE = "usage: sdlc_init.py [target_dir] [--github] [--codex] [--cursor] [--vision] [--demo] [--architecture-doc]"
 
 
 def missing_target_message(target):

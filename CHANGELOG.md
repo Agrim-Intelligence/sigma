@@ -3,6 +3,7 @@
 All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
+- **`/sigma-init --architecture-doc` scaffolds the architecture document (#1784).** Opt-in, exclusive create at `architecture.system_root`: an existing file, symlink or directory is kept, never overwritten; a URL, `..`, absolute, backslash, `.`, `.git` or `.sdlc` root is refused with exit 2 and nothing written. `sdlc_init.py` and `init_flow.py` both accept the flag. Tested on macOS only; Windows is unmeasured.
 - **Plan-review asks which force an abstraction answers; review reports `missing structure` (#1543).** An interface, factory, layer or indirection naming no force is over-built (a legacy sprout or wrap excepted), and a new or modern-zone diff adding a third or later case to a type conditional is a follow-up Concern. The effect on model behaviour is UNMEASURED; #1544 is the deferred baseline.
 
 ## 1.0.17 — 2026-10-18 — the stored dependency map and Sigma Chain: a map of what waits on what, a longest-chain plan, an approved and capped chain run; plus the 1.0.16 follow-ups to the resource guard and label drains
