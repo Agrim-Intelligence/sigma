@@ -265,3 +265,14 @@ def _hermetic_upkeep_machine_env(monkeypatch):
     """#917: a developer shell that exports SIGMA_UPKEEP_JOB must not open the machine door of an upkeep gate under
     test. Tests that want the variable set it (or inject an `environ`)."""
     monkeypatch.delenv("SIGMA_UPKEEP_JOB", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_codex_cli_resolution(monkeypatch, tmp_path_factory):
+    """#1648: the shared Codex CLI resolver also looks in the ChatGPT app bundle on darwin, so on a developer
+    Mac a test that resolves with the real environment would silently find /Applications. Every test starts
+    with SIGMA_CODEX_BIN pointing at an absolute path that does not exist (an invalid override REFUSES, it
+    never falls through to PATH or the app); a test that needs a Codex binary sets its own, and the resolver's
+    own tests pass `env=` explicitly."""
+    monkeypatch.setenv("SIGMA_CODEX_BIN", str(tmp_path_factory.mktemp("no-codex") / "codex"))
+

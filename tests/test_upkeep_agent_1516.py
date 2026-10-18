@@ -2,7 +2,10 @@
 tests/test_upkeep_level2.py (found through PATH); no real model, no network. The launcher's UNVERIFIED_FLAGS and the
 placeholder catalog are untouched: the catalog is patched in these tests only. Control: break the cap check in
 `_default_level2_plan` or the ceiling mapping in `resolve_stop` and `test_a_reached_spend_ceiling_*` goes red.
-The documented gesture: `python -m pytest tests/test_upkeep_agent_1516.py -q`."""
+The documented gesture: `python -m pytest tests/test_upkeep_agent_1516.py -q`. The no-identity gesture (#1572), which
+must pass too because `wired` gives git its identity through `git_identity_support.scoped_git_identity`:
+`env -u GIT_AUTHOR_NAME -u GIT_AUTHOR_EMAIL -u GIT_COMMITTER_NAME -u GIT_COMMITTER_EMAIL GIT_CONFIG_GLOBAL=/dev/null
+GIT_CONFIG_SYSTEM=/dev/null python -m pytest tests/test_upkeep_agent_1516.py -q -p no:cacheprovider -rf`."""
 import copy
 import json
 import os
@@ -12,6 +15,7 @@ import time
 
 import pytest
 
+import git_identity_support
 import test_feature_rebase as base
 import test_upkeep_level1 as l1
 from test_upkeep_level2 import APP, FEATURE, RESOLVER_CAP, UNIT, conflict_world, mk, rig  # noqa: F401  (rig is a fixture)
@@ -36,6 +40,7 @@ def wired(rig, monkeypatch):  # noqa: F811
     """The shipped factory, no monkeypatched seam: the fake claude on PATH, a catalog id, HOME and the temp root in the rig."""
     monkeypatch.setenv("PATH", str(rig.fake) + os.pathsep + os.environ.get("PATH", ""))
     monkeypatch.setenv("HOME", str(rig.tmp / "home"))
+    git_identity_support.scoped_git_identity(rig.tmp / "git-identity", monkeypatch)  # #1572
     monkeypatch.setattr(tempfile, "tempdir", str(mk(rig.tmp / "tmp")))
     m = l1.mod()
     monkeypatch.setitem(m._launcher().CATALOG, "sonnet", "test-model-id-1")

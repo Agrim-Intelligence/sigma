@@ -406,7 +406,7 @@ def _codex_main(sdlc_dir, max_runs, scale, run_id):
     state.mkdir(parents=True, exist_ok=True)
     try:
         held_lock = codex_runtime.lock_file(state / "codex-supervisor.lock")
-        executable, skill = codex_runtime.installed_skill()
+        executable, skill = codex_runtime.installed_skill(own_version=codex_runtime.running_version())
     except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
         print(f"supervisor: Codex preflight refused: {exc}", file=sys.stderr)
         return 2
@@ -464,6 +464,8 @@ def _codex_main(sdlc_dir, max_runs, scale, run_id):
                 if not argv_cmd:
                     print("supervisor: SIGMA_CODEX_CMD is empty", file=sys.stderr)
                     return 2
+                if argv_cmd[0] == "codex":   # #1648: the bare word means "the resolved binary", not PATH
+                    argv_cmd[0] = executable
                 argv_cmd.extend(["--output-last-message", str(final_path),
                                  codex_runtime.build_codex_command(executable, repo, skill)[-1]])
             else:

@@ -2407,10 +2407,11 @@ def _plugin_host():
     return "claude"
 
 
-def _codex_plugins(run):
-    """Codex's installed plugin records, or None if its CLI output cannot be trusted."""
+def _codex_plugins(run, binary="codex"):
+    """Codex's installed plugin records, or None if its CLI output cannot be trusted. `binary` is the
+    shared resolver's answer (#1648); the bare word only when an injected runner stands in for every binary."""
     try:
-        payload = json.loads(run(["codex", "plugin", "list", "--json"]) or "")
+        payload = json.loads(run([binary, "plugin", "list", "--json"]) or "")
         entries = payload.get("installed") if isinstance(payload, dict) else None
         return entries if isinstance(entries, list) and all(isinstance(e, dict) for e in entries) else None
     except Exception:
@@ -2424,7 +2425,7 @@ def _codex_enabled(plugins, name):
         and matches[0].get("enabled") is True else None
 
 
-def _plugin_versions(run, host="claude", codex_plugins=_CODEX_PLUGINS_UNREAD):
+def _plugin_versions(run, host="claude", codex_plugins=_CODEX_PLUGINS_UNREAD, binary="codex"):
     """(installed, latest) version tuples for the sigma plugin itself, or None for either side
     that could not be determined — never raises; a can't-tell must never read as a false alarm (nor
     a false all-clear — see `check()`, which adds no entry at all unless BOTH sides resolve).
@@ -2450,7 +2451,7 @@ def _plugin_versions(run, host="claude", codex_plugins=_CODEX_PLUGINS_UNREAD):
     installed = None
     repo = _MARKETPLACE_REPO
     if host == "codex":
-        plugins = _codex_plugins(run) if codex_plugins is _CODEX_PLUGINS_UNREAD else codex_plugins
+        plugins = _codex_plugins(run, binary) if codex_plugins is _CODEX_PLUGINS_UNREAD else codex_plugins
         entry = _codex_enabled(plugins, _PLUGIN) if plugins is not None else None
         installed = _version_tuple(entry.get("version")) if entry else None
         if entry:
@@ -2508,12 +2509,13 @@ def _agents_floor(agents_md=None):
     return _version_tuple(m.group(1)) if m else None
 
 
-def _codex_install_floor_row(plugins, agents_md=None):
+def _codex_install_floor_row(plugins, agents_md=None, binary="codex"):
     """Judge the active Codex install against the shipped floor, never Claude's scope file."""
     floor = _agents_floor(agents_md)
     if plugins is None or floor is None:
         return _chk("sigma Codex install: unverified", False,
-                    "cannot verify the Codex plugin list or AGENTS.md floor; run `codex plugin list --json` "
+                    "cannot verify the Codex plugin list or AGENTS.md floor; run `%s plugin list --json` "
+                    % binary +
                     "and inspect the installed, enabled Sigma version before starting the loop")
     entry = _codex_enabled(plugins, _PLUGIN)
     if entry is None:
@@ -2522,14 +2524,41 @@ def _codex_install_floor_row(plugins, agents_md=None):
     version = _version_tuple(entry.get("version"))
     if version is None:
         return _chk("sigma Codex install: version unverified", False,
-                    "Codex reports no parseable installed Sigma version; check `codex plugin list --json` "
-                    "before starting the loop")
+                    "Codex reports no parseable installed Sigma version; check `%s plugin list --json` "
+                    "before starting the loop" % binary)
     if version < floor:
         return _chk(f"sigma Codex install: {_vstr(version)} below AGENTS.md floor {_vstr(floor)}",
                     False, "refresh the Sigma Codex marketplace and reinstall or update the "
                     "Codex plugin before starting the loop")
     return _chk(f"sigma Codex install: {_vstr(version)} at or above AGENTS.md floor {_vstr(floor)}",
                 True, "")
+
+
+def _codex_cli_row(reason_text):
+    """#1648: the resolver refused (not found, bad override, or two different copies): say why, once."""
+    return _chk("sigma Codex CLI: %s" % (reason_text.split(";")[0] or "unresolved"), False, reason_text)
+
+
+def _claude_user_version(installed_plugins_path=None):
+    """The single user-scope Sigma version Claude records, as a string, or None (zero, several, unreadable)."""
+    users = [e[2] for e in (_install_scopes(installed_plugins_path) or []) if e[1] == "user"]
+    return _vstr(users[0]) if len(users) == 1 and users[0] is not None else None
+
+
+def _codex_skew_row(claude_ver, codex_ver):
+    """#1648: a WARNING when the Claude and Codex installs differ. Dropped (None) when either side is
+    unreadable or unparsable; never raises, never refuses (the supervisor is the one that refuses)."""
+    try:
+        differ = _load_loop_script("codex_cli").skew(claude_ver, codex_ver)
+    except Exception:                        # noqa: BLE001 - a check that cannot run says nothing
+        return None
+    if differ is None:
+        return None
+    if not differ:
+        return _chk("sigma versions: Claude and Codex both %s" % claude_ver, True, "")
+    return _chk("sigma versions: Claude %s and Codex %s differ" % (claude_ver, codex_ver), False,
+                "update the older host so both run one Sigma: `claude plugin update %s@%s` for Claude, or "
+                "refresh the Sigma Codex marketplace and reinstall or update the Codex plugin" % (_PLUGIN, _PLUGIN))
 
 
 def _default_installed_plugins_path():
@@ -3088,7 +3117,8 @@ def _progress(label):
 
 
 def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_dirs=None,
-          installed_plugins_path=None, agents_md=None, cheap_only=False, which=None):
+          installed_plugins_path=None, agents_md=None, cheap_only=False, which=None,
+          codex_resolver=None):
     """Return the setup checks relevant to this project's config; each is {name, ok, fix}.
 
     `site_packages_dirs` is DI for tests (mirrors `scheduled_tasks_dir`) — default `None` scans the
@@ -3120,7 +3150,20 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     which = which or ((lambda name: name) if injected else shutil.which)
     run = run or _real_run
     plugin_host = _plugin_host()
-    codex_plugins = _codex_plugins(run) if plugin_host == "codex" and not cheap_only else None
+    # #1648: the Codex binary comes from the shared resolver. An injected `run` stands in for every binary, so
+    # without an injected resolver it answers the bare word and a Claude session never calls Codex.
+    codex_bin, codex_cli_row = "codex", None
+    if codex_resolver is None and not injected:
+        codex_resolver = lambda: _load_loop_script("codex_cli").resolve()   # noqa: E731
+    if codex_resolver is not None:
+        try:
+            codex_bin = codex_resolver()
+        except Exception as exc:             # noqa: BLE001 - a refusal is a row, in a Codex session only
+            codex_bin = None
+            if plugin_host == "codex" and not cheap_only:
+                codex_cli_row = _codex_cli_row(str(exc))
+    codex_plugins = (_codex_plugins(run, codex_bin) if codex_bin else None) \
+        if plugin_host == "codex" and not cheap_only else None
     base = pathlib.Path(sdlc_dir)
     cfg = _cfg(sdlc_dir)
     disc = _block(cfg, "discovery")
@@ -3834,7 +3877,7 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     # function, and a version nudge is not a first-run setup gap — see this function's own
     # docstring.
     if not cheap_only:
-        installed, latest = _plugin_versions(run, plugin_host, codex_plugins)
+        installed, latest = _plugin_versions(run, plugin_host, codex_plugins, codex_bin or "codex")
         if installed is not None and latest is not None:
             inst_s, latest_s = ".".join(map(str, installed)), ".".join(map(str, latest))
             fix = (f"{latest_s} is available (you're on {inst_s}) — run: claude plugin update {_PLUGIN}@{_PLUGIN}"
@@ -3857,11 +3900,28 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     # AGENTS.md), and a below-floor install is a SETUP GAP, not an awareness nudge — which is
     # precisely what the wizard exists to surface before a first run.
     if plugin_host == "codex":
-        scope_row = _codex_install_floor_row(codex_plugins, agents_md) if not cheap_only else None
+        scope_row = _codex_install_floor_row(codex_plugins, agents_md, codex_bin or "codex") if not cheap_only else None
     else:
         scope_row = _install_scope_row(base.parent, installed_plugins_path, agents_md)
     if scope_row is not None:
         out.append(scope_row)
+    if codex_cli_row is not None:
+        out.append(codex_cli_row)
+    # #1648: a WARNING (never a refusal) when Claude and Codex run different Sigma versions. Skipped under
+    # cheap_only (it can spawn a CLI). In a Claude session the Codex read is one extra bounded call, made only
+    # for a real runner or an injected resolver, so an injected `run` still never reaches Codex.
+    if not cheap_only:
+        codex_seen = codex_plugins
+        if plugin_host != "codex" and codex_bin and (codex_resolver is not None or not injected) \
+                and _claude_user_version(installed_plugins_path):
+            codex_seen = _codex_plugins(_bounded_run, codex_bin)
+        entry = _codex_enabled(codex_seen, _PLUGIN) if codex_seen is not None else None
+        claude_ver = _claude_user_version(installed_plugins_path)
+        skew_row = _codex_skew_row(claude_ver, _vstr(_version_tuple(entry.get("version")))
+                                   if entry and _version_tuple(entry.get("version")) else None) \
+            if claude_ver and entry else None
+        if skew_row is not None:
+            out.append(skew_row)
     # #524: an install recorded under the pre-launch plugin id stopped updating when the plugin was
     # renamed. Claude: a local JSON read, like the scope row. Codex: the list `check()` already fetched
     # (a subprocess), so the cheap pass skips it exactly as it skips the Codex floor row.

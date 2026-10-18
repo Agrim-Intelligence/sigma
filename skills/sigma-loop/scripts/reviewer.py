@@ -35,7 +35,6 @@ import shutil
 import stat
 import subprocess
 import sys
-import tempfile
 import time
 import uuid
 
@@ -63,6 +62,11 @@ def _load(name):
     spec = importlib.util.spec_from_file_location(
         name, pathlib.Path(__file__).resolve().parent / (name + ".py"))
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+
+
+#: #1650: the shared running-receipt helper, bound ONCE (`_load` has no module cache, so a per-call load
+#: would give every call a fresh copy and defeat patching). Every receipt wrapper below calls `_rr.<fn>`.
+_rr = _load("run_receipt")
 
 
 _GUARD = []
@@ -93,9 +97,21 @@ def _out(mechanism, host, reason, command=None, verified=True, timeout=900):
 shell_policy = _load("shell_policy")      # #707
 
 
+def _codex_cli(injected_which, env):
+    """#1648: the one shared Codex resolver. -> (path, None) or (None, reason). An injected `which` is the
+    unit tests' stand-in for "this machine", so it never also consults the real ChatGPT-app path."""
+    cli = _load("codex_cli")
+    try:
+        return cli.resolve(env=env, which=injected_which,
+                           app_path=None if injected_which is not None else cli.APP_PATH), None
+    except cli.CodexCliError as exc:
+        return None, str(exc)           # not-found keeps the words "not on PATH"
+
+
 def resolve(sdlc_dir, env=None, which=None):
     """-> the dict the SKILL prose branches on. Never raises; never returns an unknown mechanism."""
     env = os.environ if env is None else env
+    injected_which = which              # #1648: kept before the rebind below, for the Codex resolver
     which = shutil.which if which is None else which
     cfg = _config(sdlc_dir)
     review = cfg.get("review") if isinstance(cfg, dict) else None
@@ -138,21 +154,27 @@ def resolve(sdlc_dir, env=None, which=None):
                     verified=False, timeout=timeout)
     if host in _HOST_COMMANDS:
         argv, verified = _HOST_COMMANDS[host]
-        if not which(argv[0]):
+        command = list(argv)
+        if host == "codex":
+            path, why = _codex_cli(injected_which, env)
+            if path is None:
+                return _out("inline", host, "review.host is codex but %s" % why, timeout=timeout)
+            command[0] = path
+        elif not which(argv[0]):
             return _out("inline", host,
                         "review.host is %s but %s is not on PATH" % (host, argv[0]),
                         timeout=timeout)
         return _out("process", host, "%s resolved on PATH" % argv[0],
-                    command=list(argv), verified=verified, timeout=timeout)
+                    command=command, verified=verified, timeout=timeout)
     if env.get("CLAUDECODE") or env.get("CLAUDE_CODE_SESSION_ID"):
         return _out("subagent", "claude", "host dispatches its own subagents", timeout=timeout)
     if host == "auto" and (env.get("CODEX_SESSION_ID") or env.get("CODEX_THREAD_ID")):
         argv, verified = _HOST_COMMANDS["codex"]
-        if not which(argv[0]):
-            return _out("inline", "codex", "Codex session detected but codex is not on PATH",
-                        timeout=timeout)
+        path, why = _codex_cli(injected_which, env)
+        if path is None:
+            return _out("inline", "codex", "Codex session detected but %s" % why, timeout=timeout)
         return _out("process", "codex", "Codex session marker and codex CLI resolved",
-                    command=list(argv), verified=verified, timeout=timeout)
+                    command=[path] + list(argv[1:]), verified=verified, timeout=timeout)
     if host == "claude":
         # Symmetric with the PATH check above: an explicit host that cannot actually be reached
         # degrades loudly. Handing back `subagent` where none can be spawned produces an inline
@@ -526,19 +548,9 @@ def _receipt_path(sdlc_dir, goal, phase):
 def _write_receipt(sdlc_dir, goal, phase, **fields):
     """ONE file per goal+phase, atomically replaced: the LATEST run's outcome is the only one that
     counts, so a later success clears a failure and a later failure overwrites a success. Bounded by
-    construction (no log to prune); `work.py finish` removes a goal's receipts with its record."""
-    path = _receipt_path(sdlc_dir, goal, phase)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fields.update(at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), goal=str(goal), phase=phase)
-    fd, tmp = tempfile.mkstemp(prefix=".run-", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(fields, handle, sort_keys=True); handle.write("\n"); handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp, path)
-    finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
+    construction (no log to prune); `work.py finish` removes a goal's receipts with its record. The
+    mechanism is `run_receipt.write` (#1650); this adds the reviewer's own goal+phase stamp."""
+    _rr.write(_receipt_path(sdlc_dir, goal, phase), **{**fields, "goal": str(goal), "phase": phase})
 
 
 def clear_receipts(sdlc_dir, goal):
@@ -592,13 +604,13 @@ def configured_reviewer_unavailable(cfg, route):
 #: covers the runner's post-reviewer work: `_stop_review_process` (<= 4 s) and, on `review`, `_content_key`'s
 #: four sequential git calls at `_KEY_SECONDS` each, plus the hashing tail and fsync.
 _RUN_GRACE = 4 * int(_KEY_SECONDS) + 60
-_MAX_RUN_SECONDS = 86400
-_CLOCK_SKEW = 60
-_MAX_PID = 2 ** 31 - 1              # os.kill raises OverflowError (not OSError) above this
+_MAX_RUN_SECONDS = _rr.MAX_RUN_SECONDS
+_CLOCK_SKEW = _rr.CLOCK_SKEW
+_MAX_PID = _rr.MAX_PID
 _FINDINGS_CAP = 32768               # encoded JSON bytes of the persisted findings
 #: Below the one measured Codex `exec_command` yield (30.2 s), so a `wait` call is not itself yielded.
-WAIT_DEFAULT_SECONDS = 20
-_MISSING_RETRY = 5                  # a wait issued at launch may arrive before the running write
+WAIT_DEFAULT_SECONDS = _rr.WAIT_DEFAULT_SECONDS
+_MISSING_RETRY = _rr.MISSING_RETRY
 
 
 def _posix():
@@ -606,47 +618,28 @@ def _posix():
 
 
 def _pid_alive(pid):
-    """Whether `pid` exists on this machine. Off POSIX nothing is probed (the deadline bounds it). Fails
-    toward ALIVE on anything but "no such process": the derived deadline is the backstop. An unreaped
-    zombie runner reads alive until that deadline."""
+    """Whether `pid` exists on this machine. Off POSIX nothing is probed (the deadline bounds it); the
+    platform gate lives HERE (through this module's `os`) and the probe is `run_receipt.pid_alive`."""
     if not _posix():
         return True
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except OSError:
-        return True
-    return True
+    return _rr.pid_alive(pid)
 
 
 def _int(x):
-    return isinstance(x, int) and not isinstance(x, bool)
+    return _rr._int(x)
 
 
 def _classify(got, now=None):
-    """A `running` receipt stays running only while its runner is provably live; otherwise it reads
-    `failed/not_completed`, KEEPING every other field (route, plan_sha256, content_key, run_id), so every
-    existing fail-closed path applies unchanged. Any other outcome is returned as written."""
-    if got.get("outcome") != "running":
-        return got
-    now = time.time() if now is None else now
-    pid, started, span = got.get("pid"), got.get("started_at"), got.get("timeout_seconds")
-    if not (_int(pid) and 0 < pid <= _MAX_PID and _int(started) and _int(span) and span <= _MAX_RUN_SECONDS
-            and started <= now + _CLOCK_SKEW):
-        detail = "malformed running receipt"
-    elif not now < started + span + _RUN_GRACE:
-        detail = "deadline passed"
-    elif not _pid_alive(pid):
-        detail = "runner pid %d gone" % pid
-    else:
-        return got
-    return {**got, "outcome": "failed", "failure": "not_completed", "detail": detail}
+    """The ONE classifier, `run_receipt.classify`, with this module's grace and platform-gated probe."""
+    return _rr.classify(got, _RUN_GRACE, now=now, alive=_pid_alive)
 
 
 def _wait_gesture(sdlc_dir, goal, phase, run_id):
     return ("reviewer.py wait %s --goal %s --phase %s --max-seconds %d --run-id %s"
             % (shlex.quote(str(sdlc_dir)), goal, phase, WAIT_DEFAULT_SECONDS, run_id))
+
+
+wait_gesture = _wait_gesture            # public name (phase_gate.py used the private one)
 
 
 def _wait_text(sdlc_dir, goal, phase, receipt):
@@ -672,33 +665,28 @@ def running_receipt(sdlc_dir, goal, phase):
 def wait_review(sdlc_dir, goal, phase, max_seconds, run_id=None, sleep=time.sleep, clock=time.monotonic):
     """Poll the receipt once a second for at most `max_seconds` -> (code, text): 0 FINISHED (any verdict;
     finished is not approved), 1 FAILED, 2 usage / unreadable / another run / still missing after a short
-    retry, 3 RUNNING. The path is resolved once (it costs a state.py load); each poll is classified."""
+    retry, 3 RUNNING. The wait loop is `run_receipt.poll`; this turns its state into text and a code."""
     try:
         path = _receipt_path(sdlc_dir, goal, phase)
     except ValueError as exc:
         return 2, "reviewer wait: %s" % exc
-    start = clock()
-    while True:
-        state, got = _read_receipt_at(path)
-        elapsed = clock() - start
-        if state == "unreadable":
-            return 2, "reviewer wait: the receipt for %s %s is unreadable (%s)" % (goal, phase, got)
-        if state == "missing":
-            if elapsed >= min(_MISSING_RETRY, max_seconds):
-                return 2, "reviewer wait: no reviewer run is on record for %s %s" % (goal, phase)
-        elif run_id and got.get("run_id") != run_id:
-            return 2, "reviewer wait: a different run is on record: %s" % got.get("run_id")
-        elif got.get("outcome") == "ok":
-            return 0, ("FINISHED verdict=%s (finished is not approved; only verdict=approve is)\n%s"
-                       % (got.get("verdict"), got.get("findings") or ""))
-        elif got.get("outcome") != "running":
-            return 1, "FAILED %s: %s" % (got.get("failure") or got.get("outcome") or "unknown", got.get("detail") or "")
-        elif elapsed >= max_seconds:
-            now = time.time()
-            return 3, ("RUNNING pid=%s run_id=%s elapsed=%ds deadline_in=%ds"
-                       % (got["pid"], got.get("run_id"), now - got["started_at"],
-                          got["started_at"] + got["timeout_seconds"] + _RUN_GRACE - now))
-        sleep(1)
+    state, got = _rr.poll(path, max_seconds, _RUN_GRACE, run_id=run_id, sleep=sleep, clock=clock,
+                          alive=_pid_alive)
+    if state == "unreadable":
+        return 2, "reviewer wait: the receipt for %s %s is unreadable (%s)" % (goal, phase, got)
+    if state == "missing":
+        return 2, "reviewer wait: no reviewer run is on record for %s %s" % (goal, phase)
+    if state == "other_run":
+        return 2, "reviewer wait: a different run is on record: %s" % got.get("run_id")
+    if state == "final":
+        return 0, ("FINISHED verdict=%s (finished is not approved; only verdict=approve is)\n%s"
+                   % (got.get("verdict"), got.get("findings") or ""))
+    if state == "failed":
+        return 1, "FAILED %s: %s" % (got.get("failure") or got.get("outcome") or "unknown", got.get("detail") or "")
+    now = time.time()
+    return 3, ("RUNNING pid=%s run_id=%s elapsed=%ds deadline_in=%ds"
+               % (got["pid"], got.get("run_id"), now - got["started_at"],
+                  got["started_at"] + got["timeout_seconds"] + _RUN_GRACE - now))
 
 
 def _read_receipt(sdlc_dir, goal, phase):
@@ -709,13 +697,7 @@ def _read_receipt(sdlc_dir, goal, phase):
 
 
 def _read_receipt_at(path):
-    try:
-        got = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return "missing", None
-    except (OSError, ValueError) as exc:
-        return "unreadable", str(exc)
-    return ("ok", _classify(got)) if isinstance(got, dict) else ("unreadable", "not a JSON object")
+    return _rr.read(path, _RUN_GRACE, alive=_pid_alive)
 
 
 def _route_tag(route):
@@ -1130,24 +1112,11 @@ def run_review(sdlc_dir, brief_path, scratch_paths, goal=None, phase=None, hint=
 
 def _finish_receipt(sdlc_dir, goal, phase, run_id, **fields):
     """Write a run's final receipt ONLY if the on-disk receipt is still this run's (`run_id`): a cleared
-    receipt (`work.py finish`) is not resurrected, and a newer run's is not clobbered. Reads the RAW file,
-    not `_classify`. -> whether it wrote. The check-then-replace window is one atomic rename, unlocked:
-    two concurrent runs for one goal+phase are not a supported flow."""
+    receipt (`work.py finish`) is not resurrected, and a newer run's is not clobbered
+    (`run_receipt.finish`, which writes through the module-level `write`; this adds the goal+phase stamp
+    by writing through `_write_receipt`). -> whether it wrote."""
     path = _receipt_path(sdlc_dir, goal, phase)
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        print("reviewer run: the receipt was cleared while the reviewer ran; this outcome is not recorded",
-              file=sys.stderr)
-        return False
-    except (OSError, ValueError):
-        raw = None
-    if not isinstance(raw, dict) or raw.get("run_id") != run_id:
-        print("reviewer run: a different run (%s) is on record; this outcome is not recorded"
-              % (raw.get("run_id") if isinstance(raw, dict) else "unreadable"), file=sys.stderr)
-        return False
-    _write_receipt(sdlc_dir, goal, phase, run_id=run_id, **fields)
-    return True
+    return _rr.finish(path, run_id, "reviewer run", **{**fields, "goal": str(goal), "phase": phase})
 
 
 def _cap_findings(text):

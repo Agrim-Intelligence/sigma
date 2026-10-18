@@ -82,7 +82,8 @@ def test_codex_session_auto_resolves_a_read_only_fresh_process():
         got = _r().resolve(base, env={"CODEX_SESSION_ID": "real-session"},
                            which=lambda b: "/usr/bin/" + b)
         assert got["mechanism"] == "process" and got["host"] == "codex"
-        assert got["command"] == ["codex", "exec", "--sandbox", "read-only",
+        # #1648: argv[0] is whatever the resolver answered (here the injected `which`); the flags are fixed.
+        assert got["command"] == ["/usr/bin/codex", "exec", "--sandbox", "read-only",
                                   "--ephemeral", "-"]
 
 
@@ -428,3 +429,61 @@ def test_resolver_carries_the_timeout_the_prose_tells_the_agent_to_apply():
         assert _r().resolve(base, env={}, which=lambda b: "/x/" + b)["timeout_seconds"] == 120
         base = _sdlc(d, {"host": "cursor"})
         assert _r().resolve(base, env={}, which=lambda b: "/x/" + b)["timeout_seconds"] == 900
+
+
+def _pretend_app_cli(monkeypatch, app):
+    """Make `app` LOOK like an executable regular file to the stat/access calls, without /Applications
+    existing: the test is deterministic on a machine with or without the ChatGPT app installed."""
+    real_stat, real_access = os.stat, os.access
+
+    def stat(path, *a, **k):
+        if str(path) == app:
+            return os.stat_result((0o100755, 1, 1, 1, 0, 0, 1, 0, 0, 0))
+        return real_stat(path, *a, **k)
+
+    def access(path, mode, *a, **k):
+        return True if str(path) == app else real_access(path, mode, *a, **k)
+
+    monkeypatch.setattr(os, "stat", stat)
+    monkeypatch.setattr(os, "access", access)
+
+
+def test_1648_reviewer_finds_codex_through_the_single_resolver(tmp_path, monkeypatch):
+    r = _r()
+    tail = ["exec", "--sandbox", "read-only", "--ephemeral", "-"]
+    fake = tmp_path / "bin" / "mycodex"
+    fake.parent.mkdir()
+    fake.write_text("#!/bin/sh\nexit 0\n")
+    fake.chmod(0o755)
+    # Both launch sites (explicit review.host=codex, and the auto-detected Codex session) take argv[0]
+    # from the resolver: SIGMA_CODEX_BIN names a binary that is on no PATH.
+    for name, review, env in (("explicit", {"host": "codex"}, {"SIGMA_CODEX_BIN": str(fake)}),
+                              ("auto", {"host": "auto"}, {"CODEX_SESSION_ID": "s", "SIGMA_CODEX_BIN": str(fake)})):
+        base = _sdlc(tmp_path / name, review)
+        got = r.resolve(base, env=env, which=None)
+        assert got["mechanism"] == "process" and got["host"] == "codex", (name, got)
+        assert got["command"] == [str(fake), *tail], (name, got)
+    # `cursor` keeps the plain PATH lookup and its bare argv[0].
+    base = _sdlc(tmp_path / "cursor", {"host": "cursor"})
+    got = r.resolve(base, env={}, which=lambda b: "/usr/bin/" + b)
+    assert got["command"][:2] == ["cursor-agent", "-p"]
+    # The app rung is reached only through the real PATH seam: an injected `which` (the unit tests' stand-in
+    # for "this machine") never forwards the real app path, whether or not the app exists here.
+    if sys.platform == "darwin":
+        app = _r_codex_cli().APP_PATH
+        _pretend_app_cli(monkeypatch, app)
+        empty = tmp_path / "emptypath"
+        empty.mkdir()
+        base = _sdlc(tmp_path / "app", {"host": "auto"})
+        real = r.resolve(base, env={"CODEX_SESSION_ID": "s", "PATH": str(empty)}, which=None)
+        assert real["mechanism"] == "process" and real["command"] == [app, *tail], real
+        seen = []
+        injected = r.resolve(base, env={"CODEX_SESSION_ID": "s"}, which=lambda b: seen.append(b) or None)
+        assert injected["mechanism"] == "inline" and "not on PATH" in injected["reason"], injected
+        assert "codex" in seen
+
+
+def _r_codex_cli():
+    spec = importlib.util.spec_from_file_location("codex_cli_for_reviewer_test", S / "codex_cli.py")
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+

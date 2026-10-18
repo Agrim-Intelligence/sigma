@@ -159,7 +159,7 @@
     "skills/sigma-loop/scripts/loop.py::_claim",
     "skills/sigma-loop/scripts/loop.py::_dispatch",
     "skills/sigma-loop/scripts/loop.py::main",
-    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
     "skills/sigma-loop/scripts/phase_report.py::cmd_start",
     "skills/sigma-loop/scripts/spend_approval.py::_check",
@@ -186,7 +186,7 @@
     "skills/sigma-loop/scripts/loop.py::_claim",
     "skills/sigma-loop/scripts/loop.py::_dispatch",
     "skills/sigma-loop/scripts/loop.py::main",
-    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
     "skills/sigma-loop/scripts/phase_report.py::cmd_start",
     "skills/sigma-loop/scripts/spend_approval.py::_check",
@@ -385,7 +385,7 @@
     "skills/sigma-loop/scripts/loop.py::_claim",
     "skills/sigma-loop/scripts/loop.py::_dispatch",
     "skills/sigma-loop/scripts/loop.py::main",
-    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
     "skills/sigma-loop/scripts/phase_report.py::cmd_start",
     "skills/sigma-loop/scripts/spend_approval.py::_check",
@@ -412,7 +412,7 @@
     "skills/sigma-loop/scripts/loop.py::_claim",
     "skills/sigma-loop/scripts/loop.py::_dispatch",
     "skills/sigma-loop/scripts/loop.py::main",
-    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
     "skills/sigma-loop/scripts/phase_report.py::cmd_start",
     "skills/sigma-loop/scripts/spend_approval.py::_check",
@@ -439,7 +439,7 @@
     "skills/sigma-loop/scripts/loop.py::_claim",
     "skills/sigma-loop/scripts/loop.py::_dispatch",
     "skills/sigma-loop/scripts/loop.py::main",
-    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
     "skills/sigma-loop/scripts/phase_report.py::cmd_start",
     "skills/sigma-loop/scripts/spend_approval.py::_check",
@@ -808,7 +808,7 @@
     "skills/sigma-loop/scripts/loop.py::_claim",
     "skills/sigma-loop/scripts/loop.py::_dispatch",
     "skills/sigma-loop/scripts/loop.py::main",
-    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/phase_gate.py::record_verdict",
     "skills/sigma-loop/scripts/phase_gate.py::waive"
    ]
@@ -824,7 +824,7 @@
     "skills/sigma-loop/scripts/loop.py::_claim",
     "skills/sigma-loop/scripts/loop.py::_dispatch",
     "skills/sigma-loop/scripts/loop.py::main",
-    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/phase_gate.py::record_verdict",
     "skills/sigma-loop/scripts/phase_gate.py::waive"
    ]
@@ -1157,7 +1157,7 @@
    "vetted_writers": [
     "hooks/time_track.py::handle",
     "hooks/time_track.py::main",
-    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/timing_store.py::_prune_if_due",
     "skills/sigma-loop/scripts/timing_store.py::_record_script",
     "skills/sigma-loop/scripts/timing_store.py::append",
@@ -1174,7 +1174,7 @@
    "vetted_writers": [
     "hooks/time_track.py::handle",
     "hooks/time_track.py::main",
-    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/timing_store.py::_record_script",
     "skills/sigma-loop/scripts/timing_store.py::append",
     "skills/sigma-loop/scripts/timing_store.py::append_session",
@@ -1188,7 +1188,7 @@
    "verdict": "same-format",
    "vetted_writers": [
     "skills/sigma-loop/scripts/ledger.py::_maybe_prune_journal",
-    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/timing_store.py::_prune_if_due",
     "skills/sigma-loop/scripts/timing_store.py::append",
     "skills/sigma-loop/scripts/timing_store.py::append_session",
@@ -1204,7 +1204,7 @@
    "vetted_writers": [
     "hooks/time_track.py::handle",
     "hooks/time_track.py::main",
-    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/timing_store.py::_record_script",
     "skills/sigma-loop/scripts/timing_store.py::append",
     "skills/sigma-loop/scripts/timing_store.py::append_session",
@@ -1219,7 +1219,7 @@
    "vetted_writers": [
     "hooks/time_track.py::handle",
     "hooks/time_track.py::main",
-    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/timing_store.py::_record_script",
     "skills/sigma-loop/scripts/timing_store.py::append",
     "skills/sigma-loop/scripts/timing_store.py::append_session",
@@ -1235,7 +1235,7 @@
    "vetted_writers": [
     "hooks/time_track.py::handle",
     "hooks/time_track.py::main",
-    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/timing_store.py::_record_script",
     "skills/sigma-loop/scripts/timing_store.py::append",
     "skills/sigma-loop/scripts/timing_store.py::append_session",
@@ -1251,7 +1251,7 @@
    "vetted_writers": [
     "hooks/time_track.py::handle",
     "hooks/time_track.py::main",
-    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/timing_store.py::_record_script",
     "skills/sigma-loop/scripts/timing_store.py::append",
     "skills/sigma-loop/scripts/timing_store.py::append_session",
@@ -1316,7 +1316,7 @@
    "vetted_writers": [
     "skills/sigma-loop/scripts/loop.py::_diff_revert_verdict",
     "skills/sigma-loop/scripts/loop.py::_witness_verdict",
-    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/witness.py::record"
    ]
   },
@@ -1329,7 +1329,7 @@
    "vetted_writers": [
     "skills/sigma-loop/scripts/loop.py::_diff_revert_verdict",
     "skills/sigma-loop/scripts/loop.py::_witness_verdict",
-    "skills/sigma-loop/scripts/loop.py::verify_goal",
+    "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/witness.py::record"
    ]
   },

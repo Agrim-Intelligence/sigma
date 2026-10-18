@@ -70,6 +70,10 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/codex_cli.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/codex_runtime.py",
       "role": "library"
     },
@@ -464,6 +468,10 @@
     {
       "path": "skills/sigma-loop/scripts/reviewer.py",
       "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/run_receipt.py",
+      "role": "library"
     },
     {
       "path": "skills/sigma-loop/scripts/risk-detect.sh",

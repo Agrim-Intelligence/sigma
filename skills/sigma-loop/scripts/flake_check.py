@@ -25,11 +25,18 @@ unmodified origin/main and passed on the next commit with no fix in between.
 NAMED CEILING, because a guard that oversells itself is worse than none: three runs catch a ~50%
 flake with probability 0.75, not 1.0, and a 5%-of-the-time flake will usually pass all three and be
 credited. This raises the cost of shipping a flake; it does not eliminate it.
+CONCURRENCY (#1571): up to `_workers` runs at once (free cores; 1 when loaded = the old serial check),
+same runs and orders; a test unsafe twice at once is `unverified`. CEILING: memory is not in the bound.
 """
+import concurrent.futures
+import functools
+import math
+import os
 import random
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 #: pytest exit codes that mean NOTHING WAS MEASURED, as opposed to a test result: 2 interrupted,
@@ -63,9 +70,80 @@ def _measured(exit_code):
 DEFAULT_RUNS = 3
 
 
-def _run(cwd, argv):
-    p = subprocess.run(argv, cwd=cwd, capture_output=True, text=True)
-    return (p.returncode, (p.stdout or "") + (p.stderr or ""))
+def _workers(runs, cpus=None, load1=None):
+    """Runs at a time: free cores (affinity/cpu_count minus ceil(load1)), 1..runs; unknown cpu or load
+    fails toward serial. CEILING: counts top-level pytests, not children or RSS (~w x peak: 3x at runs=3)."""
+    if cpus is None:
+        try:
+            cpus = len(os.sched_getaffinity(0))
+        except (OSError, AttributeError):
+            cpus = os.cpu_count()
+    if load1 is None:
+        try:
+            load1 = os.getloadavg()[0]
+        except (OSError, AttributeError):
+            return 1
+    return max(1, min(runs, (cpus or 1) - math.ceil(load1)))
+
+
+class _Live:
+    """One check's children, so an interrupt terminates all. CEILING: a second Ctrl-C in close()'s
+    grace aborts it part-way; a terminal SIGINT still reaches children (caller's process group)."""
+    def __init__(self):
+        self.closing, self._procs, self._lock = False, set(), threading.Lock()
+
+    def register(self, p):
+        with self._lock:
+            if not self.closing:
+                self._procs.add(p)
+            return not self.closing
+
+    def discard(self, p):
+        with self._lock:
+            self._procs.discard(p)
+
+    def close(self, grace=5.0):
+        """Terminate EVERY child first, then one shared deadline; kill whatever outlives it."""
+        with self._lock:
+            self.closing, procs = True, list(self._procs)
+        for p in procs:
+            p.terminate()
+        deadline = time.monotonic() + grace
+        for p in procs:
+            try:
+                p.wait(timeout=max(0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                p.kill()
+                p.wait()
+
+
+def _run(cwd, argv, live=None):
+    if live is not None and live.closing:
+        return (-15, "")
+    p = subprocess.Popen(argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        if live is not None and not live.register(p):   # born after close(): never let it run on
+            p.terminate()
+            p.wait()
+            return (-15, "")
+        try:
+            out, err = p.communicate()
+        except BaseException:
+            p.kill()
+            p.wait()
+            raise
+        return (p.returncode, (out or "") + (err or ""))
+    finally:
+        if live is not None:
+            live.discard(p)
+
+
+def _has_xdist(root):
+    """Whether the run interpreter imports xdist; an unrunnable probe counts as absent."""
+    try:
+        return not subprocess.run(["python3", "-c", "import xdist"], cwd=root, capture_output=True).returncode
+    except OSError:
+        return False
 
 
 def _collect(root, test_files, run):
@@ -102,10 +180,21 @@ def _failed_ids(output):
     return sorted(out)
 
 
-def check(root, test_files, runs=DEFAULT_RUNS, run=None, seed=None, node_ids=None):
+def _judge(results):
+    if any(not _measured(r["exit"]) for r in results):
+        return ("absent", None)
+    observations = [(r["exit"] == 0, tuple(r["failed"])) for r in results]
+    if len(set(observations)) == 1:
+        return ("verified", None)
+    disagreed = sorted({t for _ok, failed in observations for t in failed})
+    return ("unverified", "runs disagreed on: " + (", ".join(disagreed) or "pass/fail status"))
+
+
+def check(root, test_files, runs=DEFAULT_RUNS, run=None, seed=None, node_ids=None, workers=None, xdist=None):
     """Run `test_files` `runs` times with varied order and a fresh basetemp; judge agreement.
 
-    -> {"verdict": "verified"|"unverified"|"absent", "runs": [...], "disagreement": str|None, "ms"}
+    -> {"verdict": "verified"|"unverified"|"absent", "runs", "disagreement": str|None, "ms", "workers"}
+    Each run's cache is empty: --lf/--ff no-ops, --sw per run. CEILING: --nf sorts by mtime, same each run.
 
     DISAGREEMENT IS THE SIGNAL, NOT FAILURE. Three consistent failures are `verified` here: a
     deterministically red test is not flaky, and calling it `unverified` would hide a real red
@@ -120,7 +209,8 @@ def check(root, test_files, runs=DEFAULT_RUNS, run=None, seed=None, node_ids=Non
     matching work.py's own `_runner` convention. A fake-runner green is NOT evidence this catches a
     real flake -- see the executed real-runner controls on the PR.
     """
-    run = run or _run
+    probe, live = run is None, _Live()
+    run = run or functools.partial(_run, live=live)
     started = time.perf_counter()
     absent = {"verdict": "absent", "runs": [], "disagreement": None, "ms": 0}
     if not test_files:
@@ -137,8 +227,12 @@ def check(root, test_files, runs=DEFAULT_RUNS, run=None, seed=None, node_ids=Non
     if not ids:
         return dict(absent, ms=int((time.perf_counter() - started) * 1000))
 
+    w = min(_workers(runs), runs if workers is None else max(1, int(workers)))   # explicit only LOWERS it
+    # `-p xdist` first: -n needs it registered (addopts -p no:xdist, autoload off); -p no:X: --ff/-n 2 exit 4.
+    xdist = (probe and _has_xdist(root)) if xdist is None else xdist   # once; a fake `run` never probes
+    # Orders are drawn HERE before any submit: Random isn't thread-safe, a seed must fix them at any width.
     rng = random.Random(seed)
-    observations, results = [], []
+    argvs = []
     for i in range(runs):
         order = list(ids)
         rng.shuffle(order)
@@ -146,21 +240,22 @@ def check(root, test_files, runs=DEFAULT_RUNS, run=None, seed=None, node_ids=Non
         # assumption pass every time. pytest creates the directory lazily, only when a test actually
         # requests a tmp fixture, so an unused one costs nothing.
         base = tempfile.mkdtemp(prefix="sigma-flake-%d-" % i)
-        code, out = run(root, ["python3", "-m", "pytest", "-q", "--basetemp=" + base, *order])
-        failed = _failed_ids(out)
-        results.append({"exit": code, "failed": failed})
-        observations.append((code == 0, tuple(failed)))
-
-    ms = int((time.perf_counter() - started) * 1000)
+        argvs.append(["python3", "-m", "pytest", "-q", "-o", "cache_dir=" + base + ".cache",
+                      *(["-p", "xdist", "-n", "0"] if xdist else []), "--basetemp=" + base, *order])
+    ex = concurrent.futures.ThreadPoolExecutor(max_workers=w)   # no `with`: its exit waits for all runs
+    try:
+        futures = [ex.submit(run, root, argv) for argv in argvs]
+        outs = [f.result() for f in futures]      # by index, never completion order
+    except BaseException:
+        ex.shutdown(wait=False, cancel_futures=True)
+        live.close()
+        raise
+    ex.shutdown(wait=True)
+    results = [{"exit": code, "failed": _failed_ids(out)} for code, out in outs]
     # STRUCTURAL GUARD against the masking failure above. ANY run that did not produce a result
     # makes the comparison meaningless -- not only the case where they ALL failed to. `any`, not
     # `all`: one killed run among two passes has nothing to be compared with, and calling that a
     # disagreement blames the suite for the harness (the live 2026-09-01 false `unverified`).
-    if any(not _measured(r["exit"]) for r in results):
-        return {"verdict": "absent", "runs": results, "ms": ms,
-                "disagreement": None}
-    if len(set(observations)) == 1:
-        return {"verdict": "verified", "runs": results, "disagreement": None, "ms": ms}
-    disagreed = sorted({t for _ok, failed in observations for t in failed})
-    return {"verdict": "unverified", "runs": results, "ms": ms,
-            "disagreement": "runs disagreed on: " + (", ".join(disagreed) or "pass/fail status")}
+    verdict, disagreement = _judge(results)
+    return {"verdict": verdict, "runs": results, "disagreement": disagreement,
+            "ms": int((time.perf_counter() - started) * 1000), "workers": w}

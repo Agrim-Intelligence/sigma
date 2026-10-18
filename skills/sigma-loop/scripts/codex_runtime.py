@@ -4,6 +4,7 @@ No process is started and no cache path is trusted until the enabled Codex
 inventory, exact version, and (for Git installs) commit all agree.
 """
 import hashlib
+import importlib.util
 import json
 import os
 import pathlib
@@ -194,11 +195,28 @@ def resolve_install(inventory, codex_home, floor=(1, 0, 0)):
     return skill
 
 
-def installed_skill(env=None, codex_executable=None):
+def _codex_cli():
+    """Load the shared resolver by path WITHOUT writing bytecode: a plain import would put a __pycache__
+    into the verified Git install and fail `_clean_git_head`. Restores the caller's flag."""
+    previous = sys.dont_write_bytecode
+    sys.dont_write_bytecode = True
+    try:
+        path = pathlib.Path(__file__).resolve().with_name("codex_cli.py")
+        spec = importlib.util.spec_from_file_location("codex_cli", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        sys.dont_write_bytecode = previous
+
+
+def installed_skill(env=None, codex_executable=None, own_version=None):
+    """`own_version=None` means "no skew check" and is for non-supervisor callers only. The supervisor
+    passes it at PREFLIGHT; per-launch and post-run calls skip it because a changed enabled version
+    changes the cache directory and so `skill`, which the caller already compares."""
     env = dict(os.environ if env is None else env)
-    executable = codex_executable or shutil.which("codex", path=env.get("PATH"))
-    if not executable:
-        raise ValueError("codex CLI is not on PATH")
+    cli = _codex_cli()
+    executable = codex_executable or cli.resolve(env)
     result = subprocess.run([executable, "plugin", "list", "--json"], env=env,
                             capture_output=True, text=True, timeout=20, check=False)
     if result.returncode:
@@ -208,7 +226,27 @@ def installed_skill(env=None, codex_executable=None):
     except ValueError as exc:
         raise ValueError("codex plugin inventory is not JSON") from exc
     home = env.get("CODEX_HOME") or str(pathlib.Path.home() / ".codex")
-    return executable, resolve_install(inventory, home)
+    skill = resolve_install(inventory, home)
+    if own_version is not None:
+        enabled = _enabled_version(inventory)
+        if cli.skew(enabled, own_version) is not False:
+            raise ValueError(f"Sigma version skew: Codex-enabled install is {enabled}, the running "
+                             f"supervisor is {own_version}; update the older host")
+    return executable, skill
+
+
+def _enabled_version(inventory):
+    for entry in inventory.get("installed", []):
+        if isinstance(entry, dict) and entry.get("pluginId") == "sigmaloop@sigmaloop":
+            return entry.get("version")
+    return None
+
+
+def running_version():
+    version = _codex_cli().own_version()
+    if not version:
+        raise ValueError("running Sigma copy has no readable plugin.json version")
+    return version
 
 
 def build_codex_command(executable, repo, skill, final_path=None):

@@ -551,7 +551,8 @@
     "rule": "email-address",
     "reason": "fixture source string containing a pytest decorator, not an address",
     "lines": [
-      "e268f762018a53209dc35a93ac175f70908ccf127f2b5be358c8bef80900c0e8"
+      "e268f762018a53209dc35a93ac175f70908ccf127f2b5be358c8bef80900c0e8",
+      "3e027d52f975fc33fcb010c6a6624ff73df60afcfc88348ebeeea5b46cdd13f2"
     ]
   },
   {

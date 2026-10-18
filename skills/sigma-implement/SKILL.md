@@ -51,13 +51,15 @@ it tests the right thing. Wrote code before the test? Delete it and re-derive fr
    Middle Man (units too entangled) · Duplicate Code, Dead Code, Speculative Generality (code that
    should not exist). Fix it now, while the context is in your head and the diff is yours.
 
-After writing the plan's `## Tests` entries, record both stages through Sigma (a companion TDD skill never replaces this):
+After writing the plan's `## Tests`, record both through Sigma (companion TDD skills never replace this):
 
 ```sh
-python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" verify .sdlc "$goal"
+loop="${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py"
+python3 "$loop" red .sdlc "$goal"
+python3 "$loop" verify .sdlc "$goal"
 ```
 
-Record assertion-red then green. Plain commands do not; changed tests need red again.
+Plain commands record neither; changed tests need new red.
 Refactors: break, red, restore, green.
 
 Skip TDD only for throwaway prototypes, generated code, or config; name which. With

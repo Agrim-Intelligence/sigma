@@ -134,8 +134,19 @@ EVENT_KINDS = ("phase", "gate", "verify", "slice", "spend", "retro", "park", "sc
 #: OPTIONAL_FIELDS. A closed list per kind, not one shared list, because event kinds do not
 #: share a field namespace (e.g. `gate.verdict` vs `retro.grade`) the way entries kinds do.
 EVENT_FIELDS = {
+    # #1452: `tokens_cached_in` / `tokens_reasoning_out` (phase and spend) are SUBSETS of
+    # `tokens_in` / `tokens_out` -- `tokens_in` already INCLUDES cached input and `tokens_out`
+    # already INCLUDES reasoning. Neither is ever added to its parent (billable uncached input is
+    # `tokens_in - tokens_cached_in`; output is priced once, from `tokens_out`). Written only for a
+    # Codex-measured phase whose rollout actually reported the split (`split_reported`); absent
+    # means unreported, never a measured zero. The raw Codex budget ceiling stays
+    # `tokens_in + tokens_out`. Known limit: `split_reported` is True if ANY request in the phase
+    # reported the split (requests lacking it count 0). The per-request rows
+    # (`find_codex_token_totals`'s `requests`: model, ts, five raw fields, split_reported) are
+    # returned for a pricer (#1666) and never written here. A request with cached > input or
+    # reasoning > output is dropped whole, from these totals and from the raw ceiling.
     "phase": ("phase", "state", "ms", "tokens_in", "tokens_out", "attempt_id",
-              "model", "unpriced_turns"),
+              "model", "unpriced_turns", "tokens_cached_in", "tokens_reasoning_out"),
     # issue #272: `decision_id` joins `why` on `gate` -- the denial's decision id as a REAL,
     # structured field, not only reconstructible by regexing `why`'s free text (the read side had
     # two unfixable failure modes: an id with internal whitespace truncates to its first word, and
@@ -145,7 +156,8 @@ EVENT_FIELDS = {
     "gate": ("gate", "verdict", "cycle", "why", "decision_id"),
     "verify": ("ok", "exit", "ms", "command_sha256", "absent"),
     "slice": ("slice", "wave", "mode", "files_declared", "ms"),
-    "spend": ("phase", "model", "tokens_in", "tokens_out", "cost_cents", "attempt_id"),
+    "spend": ("phase", "model", "tokens_in", "tokens_out", "cost_cents", "attempt_id",
+              "tokens_cached_in", "tokens_reasoning_out"),
     "retro": ("grade", "debt_count", "lessons_count"),
     # #953/#1185: decision_tier is OPTIONAL and additive -- only a park whose reason_class is
     # needs_decision, irreversible, or genuine free-text unknown (loop.py's _record(), gated on
@@ -248,7 +260,7 @@ EVENT_FREE_TEXT_FIELDS = {
 #: earlier, at the CLI, with a usable refusal instead of a silent sanitize.
 EVENT_NON_PROSE_FIELDS = {
     "phase": ("phase", "state", "ms", "tokens_in", "tokens_out", "attempt_id",
-              "unpriced_turns"),
+              "unpriced_turns", "tokens_cached_in", "tokens_reasoning_out"),
     # issue #272: `decision_id` is a bounded-id (EVENT_BOUNDED_ID_FIELDS below), NOT free text --
     # it is the point of this field that it never gets `why`'s FREE_TEXT_CAP prose treatment (a
     # deep repo-relative path prefix can push the id itself past that 200-char cap; the shorter,
@@ -256,7 +268,8 @@ EVENT_NON_PROSE_FIELDS = {
     "gate": ("gate", "verdict", "cycle", "decision_id"),
     "verify": ("ok", "exit", "ms", "command_sha256", "absent"),
     "slice": ("slice", "wave", "mode", "files_declared", "ms"),
-    "spend": ("phase", "tokens_in", "tokens_out", "cost_cents", "attempt_id"),
+    "spend": ("phase", "tokens_in", "tokens_out", "cost_cents", "attempt_id",
+              "tokens_cached_in", "tokens_reasoning_out"),
     "retro": ("grade", "debt_count", "lessons_count"),
     "park": ("reason_class", "decision_tier"),       # #953: decision_tier joins reason_class -- same
                                                        # short, closed-vocabulary shape, so it gets the
@@ -303,6 +316,8 @@ _assert_event_fields_classified(EVENT_KINDS, EVENT_FIELDS, EVENT_FREE_TEXT_FIELD
 #:   - numeric: must parse as a whole number (`_looks_numeric`). Enforced twice: `loop.py`'s
 #:     `_validate_event` refuses a bad value at the CLI (exit 2, nothing written); `append()`
 #:     sanitizes (never raises) for every other call site.
+#:     #1452's `tokens_cached_in`/`tokens_reasoning_out` (phase, spend) are numeric here too: they
+#:     are subset counts of `tokens_in`/`tokens_out`, never addends (see EVENT_FIELDS).
 #:   - bool: must be an actual bool or a recognised spelling (`_looks_bool`). Same two enforcement
 #:     points as numeric.
 #:   - enum: already vocabulary-checked elsewhere — PHASE_KINDS/GATE_KINDS/VERDICTS/RETRO_GRADES in
@@ -315,11 +330,13 @@ _assert_event_fields_classified(EVENT_KINDS, EVENT_FIELDS, EVENT_FREE_TEXT_FIELD
 #:     the same treatment as prose, closing the `slice.slice` gap the review flagged (an agent-
 #:     authored plan `id` landing verbatim with no length/shape check at all).
 EVENT_NUMERIC_FIELDS = {
-    "phase": ("ms", "tokens_in", "tokens_out", "unpriced_turns"),
+    "phase": ("ms", "tokens_in", "tokens_out", "unpriced_turns", "tokens_cached_in",
+              "tokens_reasoning_out"),
     "gate": ("cycle",),
     "verify": ("exit", "ms"),
     "slice": ("wave", "files_declared", "ms"),
-    "spend": ("tokens_in", "tokens_out", "cost_cents"),
+    "spend": ("tokens_in", "tokens_out", "cost_cents", "tokens_cached_in",
+              "tokens_reasoning_out"),
     "retro": ("debt_count", "lessons_count"),
     "scan": ("count",),
     "merge_observed": ("pr",),

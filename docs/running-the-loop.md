@@ -40,7 +40,8 @@ it does not force. It parks on:
 It halts on the **per-run budgets** (`config.json` → `budget`) — `max_iterations`, `max_minutes`
 (wall-clock from the session's own `start`), `max_tokens` (cost-equivalent tokens from fully priced
 Claude phase reports or explicit `loop.py spend`), and `max_codex_raw_tokens` (measured Codex phase
-input + output tokens, including cached input). The two token counters use different units and never
+input + output tokens, including cached input; the reported cached and reasoning subsets are
+already inside those two and are never added again). The two token counters use different units and never
 mix. Codex's token ceiling is a **phase-boundary admission stop**, not a quota or billing cap: it
 checks the next pick after measured phases finish and does not include orchestrator or unmeasured
 turns. Keep `max_minutes` and a goal-count ceiling for those gaps. A run, and so every budget, belongs
@@ -105,6 +106,7 @@ Each phase runs via one of Sigma's own `sigma-*` skills, on every host.
    against your strategy. The skills ask the agent never to skip it. In the loop it is also checked: `gates.phase_record` (on in a fresh `/sigma-init`) makes `loop.py record done` and `work.py merge` refuse a goal with no approved plan-review (recorded through `work.py record-plan-review`, which binds it to the exact plan bytes; the gate needs `action_log.enabled`), and the opt-in `gates.plan_review.enabled` (off by default; needs `work.enabled`) additionally refuses the push in `work.py pr`. Interactive work that never calls `record done` or `work.py merge` is asked, not gated; the record is agent-written, so it proves a verdict was recorded, not who reviewed. Sigma owns this step.
    → *owned by* **`sigma-plan-review`** (Sigma's own).
 5. **Implement** — build test-first and execute the plan step by step.
+   Record the red with `loop.py red <sdlc> <goal>` once the planned tests fail (selector-only, no full verify), then code, then `loop.py verify` for green, then `work.py pr`. Red must be on the final test bytes: edit a test and record red again. `red` exits 1 when nothing is red, no assertion failure was recorded, or only some planned nodes are red (the PR gate needs every node), 2 when refused, 6 while a verify runs. It writes no verify evidence; the full verify is still required for green.
    → *executor:* `sigma-implement`.
 6. **Review** — code-review the diff for real findings, then verify every claim with evidence before
    declaring anything done.

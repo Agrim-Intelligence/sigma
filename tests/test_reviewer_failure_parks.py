@@ -407,11 +407,17 @@ def _stub_host(tmp_path, monkeypatch, name, body):
     bindir = tmp_path / "bin"; bindir.mkdir(exist_ok=True)
     (bindir / name).write_text("#!/bin/sh\n" + body); (bindir / name).chmod(0o755)
     monkeypatch.setenv("PATH", "%s%s%s" % (bindir, os.pathsep, os.environ["PATH"]))
+    if name == "codex":
+        # #1648: "codex present" is the resolver's override, not PATH alone: on a Mac with the ChatGPT app
+        # a PATH-only stub would be a second, different copy (ambiguous) or be shadowed by it.
+        monkeypatch.setenv("SIGMA_CODEX_BIN", str(bindir / name))
     return bindir
 
 
 def _without(bindir):
-    return {**os.environ, "PATH": os.pathsep.join(x for x in os.environ["PATH"].split(os.pathsep) if x != str(bindir))}
+    # "codex gone" likewise names an absolute path that does not exist, so the app copy cannot stand in.
+    return {**os.environ, "SIGMA_CODEX_BIN": str(bindir / "gone" / "codex"),
+            "PATH": os.pathsep.join(x for x in os.environ["PATH"].split(os.pathsep) if x != str(bindir))}
 
 
 def test_a_directory_that_is_not_a_git_checkout_fails_closed_and_names_why(tmp_path, monkeypatch):
@@ -537,9 +543,10 @@ def test_a_failed_receipt_blocks_approval_even_when_the_route_later_resolves_inl
 
 def test_a_configured_host_that_is_not_installed_refuses_approval(tmp_path):
     p = _project(tmp_path, review={"host": "codex"})
-    r = record_review(p, env={**os.environ, "PATH": "/usr/bin:/bin"})
+    gone = {**os.environ, "PATH": "/usr/bin:/bin", "SIGMA_CODEX_BIN": str(tmp_path / "gone" / "codex")}
+    r = record_review(p, env=gone)
     assert r.returncode == 2 and "configured" in r.stderr and "not installed" in r.stderr
-    r = record_plan(p, env={**os.environ, "PATH": "/usr/bin:/bin"})
+    r = record_plan(p, env=gone)
     assert r.returncode == 2 and "not installed" in r.stderr
 
 
@@ -575,6 +582,7 @@ def _work():
 
 def test_the_pr_review_inline_branch_refuses_a_degraded_route_and_a_failed_receipt(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    monkeypatch.setenv("SIGMA_CODEX_BIN", str(tmp_path / "gone" / "codex"))
     p = _project(tmp_path, review={"host": "codex"})
     d = str(p / ".sdlc")
     manifest, resolution = _generation(d)

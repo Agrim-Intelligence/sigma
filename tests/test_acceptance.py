@@ -157,7 +157,7 @@ def test_documented_cli_local_capture(tmp_path):
 def test_contract_acceptance_entry_and_golden(tmp_path):
     ledger = load('ledger')
     assert 'acceptance' in ledger.KINDS
-    assert (ROOT / 'contract/VERSION').read_text().strip() == '1.3.0'
+    assert (ROOT / 'contract/VERSION').read_text().strip() == '1.4.0'
     entry = ledger.append(tmp_path, {'ledger': {'enabled': True, 'actor': 'test'}},
                           'acceptance', '42', ref='acceptance/42.md', acceptance_sha256='a' * 64)
     assert entry['acceptance_sha256'] == 'a' * 64

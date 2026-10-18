@@ -62,6 +62,7 @@ timing_store = _load("timing_store")  # working time; the ONLY store here that i
 decision_tier = _load("decision_tier")   # #953: needs_decision-park tier classifier (config-gated, #952)
 feature_labels = _load("feature_labels") # #1468: attach a declared unit's label at pick, never create one
 shell_policy = _load("shell_policy")
+_rr = _load("run_receipt")        # #1650: running/final call receipts + the kernel lock, bound ONCE
 
 
 def _coexist_notice(sdlc_dir, surface, once=False):
@@ -5589,7 +5590,7 @@ _done_refusal = state.done_refusal         # evidence without loop.py and work.p
 def _flake_verdict(sdlc_dir, goal, root, passed):
     """#1933: re-run this goal's CHANGED tests 3x with varied order and a fresh temp dir.
 
-    -> the dict `flake_check.check` returns, always. Never raises, never gates verify_goal.
+    -> `flake_check.check`'s dict, + `scope` once a check ran (#1571). Never raises, never gates verify_goal.
 
     SCOPED TO CHANGED TESTS (done_when 3). Running the whole suite 3x would triple every goal's
     verify cost for no added signal on tests that have already proven stable. `changed_test_files`
@@ -5610,27 +5611,47 @@ def _flake_verdict(sdlc_dir, goal, root, passed):
     if not passed:
         return empty
     try:
-        planned = _planned_tests(sdlc_dir, goal, root)
-        if planned is not None:
-            return flake_check.check(root, sorted({n.split("::")[0] for n in planned}), node_ids=planned)
-        rec = work._record(sdlc_dir, goal) or {}
-        base = rec.get("base") or "HEAD"
-        diff = subprocess.run(["git", "diff", "%s...HEAD" % base], cwd=root,
-                               capture_output=True, text=True).stdout
-        changed = tamper_scan.changed_test_files(diff)
-        return flake_check.check(root, changed) if changed else empty
+        scope = _planned_scope(sdlc_dir, goal, root)
+        if scope is not None:
+            selectors, nodes = scope
+            files = sorted({n.split("::")[0] for n in nodes})
+            # Exact only when every selector IS a collected id; a class, file or parametrized function widens.
+            kind = "planned node ids" if set(selectors) == set(nodes) else "planned files/classes"
+            result = flake_check.check(root, files, node_ids=nodes)
+            selectors, nodes = len(selectors), len(nodes)
+        else:
+            rec = work._record(sdlc_dir, goal) or {}
+            base = rec.get("base") or "HEAD"
+            diff = subprocess.run(["git", "diff", "%s...HEAD" % base], cwd=root,
+                                   capture_output=True, text=True).stdout
+            files = tamper_scan.changed_test_files(diff)
+            if not files:
+                return empty
+            result = flake_check.check(root, files)
+            kind, selectors, nodes = "changed files", None, None
+        print("loop: flake check scope: %s -- %s node id(s) in %d file(s), %s run(s) at a time"
+              % (kind, "?" if nodes is None else nodes, len(files), result.get("workers", "?")),
+              file=sys.stderr)
+        return dict(result, scope={"kind": kind, "selectors": selectors, "nodes": nodes,
+                                   "files": len(files)})
     except Exception as exc:              # noqa: BLE001 - advisory; must never break a verify
         print(f"loop: flake check skipped (non-fatal): {exc}", file=sys.stderr)
         return empty
 
 
-def _planned_tests(sdlc_dir, goal, root):
-    """One strict planned scope for observation, flake and witness; absent legacy plans use diff."""
+def _planned_scope(sdlc_dir, goal, root):
     plan = work.verification_plan(sdlc_dir, goal, root)
     if plan is None or "## Tests" not in plan.read_text().splitlines():
         return None
     proof = _load("red_green")
-    return proof.collect(root, proof.selectors(plan))
+    selectors = proof.selectors(plan)
+    return selectors, proof.collect(root, selectors)
+
+
+def _planned_tests(sdlc_dir, goal, root):
+    """One strict planned scope for observation, flake and witness; absent legacy plans use diff."""
+    scope = _planned_scope(sdlc_dir, goal, root)
+    return None if scope is None else scope[1]
 
 
 def _changed_tests(sdlc_dir, goal, root):
@@ -5812,6 +5833,89 @@ _VERIFY_SET_HINT = state.verify_set_hint()
 _declared_verify_command = state.declared_verify_command
 
 
+#: #1650: a verify's running receipt deadline is `started_at + VERIFY_RECEIPT_SECONDS + grace`. A CHOSEN bound
+#: (about 4.6x the longest verify seen, 52 min), not a measured one; verify itself gains no timeout here.
+VERIFY_RECEIPT_SECONDS = 14400
+_CALL_GRACE = _rr.CALL_GRACE
+
+
+class _CallGuard:
+    """One verify's receipt + lock (#1650). `begin()` takes the goal's kernel lock BEFORE writing the running
+    receipt; a lock held elsewhere is a REFUSAL (the kernel is the liveness authority -- a dead holder's
+    lock is gone, a reused pid cannot hold it). Where the lock cannot be used (no fcntl, an unopenable
+    file) there is NO refusal, only a loud advisory: a receipt alone cannot tell a live holder from a
+    reused pid. `finish` is a no-op unless `begin` won and wrote, so a refused or early-returned call
+    leaves the holder's receipt byte-identical and creates no file."""
+
+    def __init__(self, sdlc_dir, goal, kind="verify", timeout=VERIFY_RECEIPT_SECONDS):
+        self.sdlc_dir, self.goal, self.kind, self.timeout = sdlc_dir, goal, kind, timeout
+        self.fd = self.path = self.run_id = None
+        self.won = False
+
+    def _name_holder(self, path):
+        got_state, got = _rr.read(path, _CALL_GRACE)
+        if got_state == "ok" and got.get("outcome") == "running":
+            return got
+        return None
+
+    def begin(self):
+        """-> True to proceed (receipt written, or advised and unguarded), False when REFUSED (exit 6)."""
+        self.path = _rr.receipt_path(self.sdlc_dir, self.goal, "call-runs", self.kind)
+        fd = _rr.try_lock(self.path.with_suffix(".lock"))
+        if fd is None:
+            holder = self._name_holder(self.path)
+            who = (f"pid {holder.get('pid')}, run {holder.get('run')}" if holder
+                   else "holder unknown (receipt not yet written)")
+            gesture = _rr.wait_call_gesture(self.sdlc_dir, self.goal, self.kind,
+                                            holder.get("run_id") if holder else None)
+            print(f"REFUSED exit=6 -- a {self.kind} for goal {self.goal} is already running ({who}); "
+                  f"wait with `{gesture}`; do not re-run", file=sys.stderr)
+            return False
+        if fd is _rr.UNAVAILABLE:
+            print(f"loop.py {self.kind}: concurrency guard unavailable here: a second {self.kind} of this "
+                  "goal will NOT be refused", file=sys.stderr)
+        else:
+            self.fd = fd
+        run_id = uuid.uuid4().hex
+        try:
+            _rr.write(self.path, outcome="running", pid=os.getpid(), started_at=int(time.time()),
+                      timeout_seconds=self.timeout, run_id=run_id, run=state.run_identity(),
+                      kind=self.kind, goal=self.goal)
+        except OSError as exc:
+            print(f"loop.py {self.kind}: could not write the running receipt ({exc}); `wait-call` will "
+                  "not see this call", file=sys.stderr)
+            return True
+        self.run_id, self.won = run_id, True
+        print(f"loop.py {self.kind}: running; if this call is cut off, do not re-run -- wait with "
+              f"`{_rr.wait_call_gesture(self.sdlc_dir, self.goal, self.kind, run_id)}`", file=sys.stderr)
+        return True
+
+    def finish(self, **fields):
+        if not self.won:
+            return
+        try:
+            _rr.finish(self.path, self.run_id, f"loop.py {self.kind}", kind=self.kind, goal=self.goal,
+                       run=state.run_identity(), **fields)
+        except Exception as exc:         # noqa: BLE001 - a receipt failure never replaces the call's own outcome
+            print(f"loop.py {self.kind}: could not record the final receipt ({exc})", file=sys.stderr)
+
+    def close(self):
+        if isinstance(self.fd, int):
+            try:
+                os.close(self.fd)
+            except OSError:
+                pass
+            self.fd = None
+
+
+def _verify_result(code, sdlc_dir, goal):
+    word = {0: "VERIFIED", 1: "FAILED", 2: "REFUSED", 4: "STALE", 5: "UNVERIFIED"}.get(code, "EXIT")
+    text = f"{word} exit={code}"
+    if code in (0, 1, 5):
+        text += f" evidence={_evidence_path(sdlc_dir, goal)}"
+    return text[:500]
+
+
 def _resource_verify_on(config):
     """#1601: verify goes through admission unless the resolved mode (#1759) is `off`."""
     if str(_HERE) not in sys.path:
@@ -5826,6 +5930,87 @@ def _verify_timeout_seconds(config):
 
 
 def verify_goal(sdlc_dir, goal):
+    """The receipt/lock wrapper (#1650) around `_verify_goal_body`, whose docstring has the exit codes.
+    Exit 6 (added here): a verify for this goal is ALREADY RUNNING -- refused before running anything, with
+    the `wait-call` gesture on stderr. Every return after the guard begins writes ONE nonce-guarded final
+    receipt (`ok` for ANY verify exit code: finished is not passed); an exception finalises
+    `failed/not_completed` and propagates."""
+    goal_stem = pathlib.Path(str(goal)).stem if str(goal).endswith(".md") else str(goal)
+    guard = _CallGuard(sdlc_dir, goal_stem)
+    try:
+        code = _verify_goal_body(sdlc_dir, goal, guard)
+    except BaseException:
+        guard.finish(outcome="failed", failure="not_completed", detail="the runner raised")
+        guard.close()
+        raise
+    guard.finish(outcome="ok", exit=code, result=_verify_result(code, sdlc_dir, goal_stem))
+    guard.close()
+    return code
+
+
+def red_goal(sdlc_dir, goal):
+    """#1673: record the planned tests' assertion reds WITHOUT the full verify. Separate from verify on
+    purpose: no _CallGuard, lock, evidence, ledger, actionlog or timing write, so it cannot make a goal
+    look verified. Exit: 0 every planned node recorded red; 1 nothing red / none recorded / partial;
+    2 refused (unsafe goal, no shell consent, no plan or `## Tests`); 6 a verify is running."""
+    stem = pathlib.Path(str(goal)).stem if str(goal).endswith(".md") else str(goal)
+    reason = state.unsafe_goal_reason(stem)
+    if reason:
+        print(f"loop.py red: unsafe goal {goal!r}: {reason}", file=sys.stderr)
+        return 2
+    root, _, _ = _verified_tree(sdlc_dir, stem)
+    if not shell_policy.repository_shell_commands_allowed(root):
+        print("loop.py red: " + shell_policy.refusal_message(), file=sys.stderr)
+        return 2
+    try:
+        plan = work.verification_plan(sdlc_dir, stem, root)
+    except ValueError as exc:
+        print("loop.py red: " + str(exc), file=sys.stderr)
+        return 2
+    if plan is None:
+        print(f"loop.py red: no plan for goal {stem}; write the plan with a `## Tests` section first",
+              file=sys.stderr)
+        return 2
+    if "## Tests" not in plan.read_text().splitlines():
+        print(f"loop.py red: plan {plan} has no `## Tests` section; nothing is planned to go red",
+              file=sys.stderr)
+        return 2
+    got_state, got = _rr.read(_rr.receipt_path(sdlc_dir, stem, "call-runs", "verify"), _CALL_GRACE)
+    if got_state == "ok" and got.get("outcome") == "running":
+        print(f"loop.py red: a verify for goal {stem} is running (pid {got.get('pid')}); "
+              f"wait for it with `loop.py wait-call {sdlc_dir} {stem} verify`", file=sys.stderr)
+        return 6
+    rg = _load("red_green")
+    seen = rg.observe(sdlc_dir, stem, root, plan)
+    if "provenance" not in seen:
+        print("loop.py red: " + str(seen.get("error") or "planned tests could not be observed"),
+              file=sys.stderr)
+        return 2
+    nodes = list(seen.get("nodes") or {})
+    done = {r.get("test") for r in witness.witnesses(sdlc_dir, stem)
+            if r.get("kind") == "assertion" and r.get("provenance") == rg.PROVENANCE
+            and r.get("observed_at") == seen.get("completed_at")}
+    recorded = [n for n in nodes if n in done]
+    if seen.get("passed"):
+        print("loop.py red: nothing is red -- every planned test passes, and a test that already "
+              "passes proves nothing", file=sys.stderr)
+        return 1
+    if not recorded:
+        print(f"loop.py red: no assertion red recorded (pytest exit {seen.get('exit')}: "
+              f"{seen.get('error') or 'no detail'}); errors, collection failures and non-assertion "
+              f"failures do not count", file=sys.stderr)
+        return 1
+    if len(recorded) < len(nodes):
+        print("loop.py red: PARTIAL -- the gate needs every planned node red.\n  recorded: "
+              + ", ".join(recorded) + "\n  not recorded: "
+              + ", ".join(n for n in nodes if n not in done), file=sys.stderr)
+        return 1
+    print(f"loop.py red: recorded assertion red for {len(recorded)} planned test(s); make them pass, "
+          f"then run `loop.py verify {sdlc_dir} {stem}` (red must be on the final test bytes)")
+    return 0
+
+
+def _verify_goal_body(sdlc_dir, goal, guard):
     """Run the goal's proving command and persist MACHINE evidence (sigma-verify's
     prose gate, made checkable). With an acceptance record, run the repository command then
     the recorded goal command (local frontmatter fallback), each in its own shell. Without a
@@ -5834,7 +6019,8 @@ def verify_goal(sdlc_dir, goal):
     Exit: 0 verified · 1 the command failed · 2 unsafe goal (refused before running anything) ·
     3 no command declared (honest absence) · 4 worktree behind its base and the auto-rebase could
     not apply cleanly (refused before running anything -- #1890) · 4 also: `verify.enforce` on and no
-    acceptance record (refused before running anything -- #1338)."""
+    acceptance record (refused before running anything -- #1338) · 5 the suite passed but is flaky ·
+    6 a verify for this goal is already running (#1650; returned by `verify_goal`, refused before anything ran)."""
     import hashlib, json as _json, subprocess
     # Checked FIRST, before the subprocess even runs — not just left to _evidence_path()'s own
     # guard further down, which would let an unsafe goal's proving command execute for nothing
@@ -5870,6 +6056,10 @@ def verify_goal(sdlc_dir, goal):
         ledger.safe_append(sdlc_dir, "verify", goal, config=config, stream=ledger.EVENTS, exit=4)
         actionlog.safe_append(sdlc_dir, goal, "verify_run", exit=4)
         return 4
+    # #1650: the concurrency refusal + running receipt, AFTER every cheap early return (so those leave no
+    # receipt and no lock) and BEFORE `ensure_fresh`, which may auto-rebase for minutes.
+    if not guard.begin():
+        return 6
     # #1890: catch a worktree that has drifted behind its own base BEFORE the expensive subprocess
     # below ever runs -- #1617 (78 commits behind) and #1829 both burned a full multi-hundred-second
     # verify against stale code before a human noticed. `ensure_fresh` auto-rebases via the existing
@@ -5962,6 +6152,8 @@ def verify_goal(sdlc_dir, goal):
     ev.parent.mkdir(parents=True, exist_ok=True)
     tail = "\n".join(outputs).strip().splitlines()[-5:]
     this_run = state.run_identity()          # #498: this run's id (SIGMA_RUN_ID) or None
+    # #1650: this block is KEPT alongside the new pre-run flock refusal in `verify_goal` (tests/test_loop.py
+    # pins it); the refusal is the primary guard, this is the after-the-fact heads-up.
     # #498 (suggestion 2): warn loudly before clobbering an evidence file a DIFFERENT run wrote
     # whose writer process is STILL LIVE — i.e. a genuinely concurrent verify on one goal, the setup
     # this issue is about. Gated on pid-liveness so a legitimate SEQUENTIAL re-verify of a reopened
@@ -6545,7 +6737,7 @@ USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> [--se
          "escalate <dir> <goal> <tier> --after plan-review|code-review|pr-review | "
          "escalate <dir> <goal> --show | "
          "lane-tier <dir> <goal> <small|medium|large> <current-tier> | "
-         "verify <dir> <goal>")
+         "verify <dir> <goal> | red <dir> <goal> | wait-call <dir> <goal> verify|merge [--max-seconds N] [--run-id ID]")
 
 
 _ESCALATE_USAGE = ("usage: loop.py escalate <dir> <goal> <current-tier> "
@@ -6742,6 +6934,79 @@ def _lane_tier(sdlc_dir, goal, lane, current):
 
 
 _RECORD_STATUSES = ("done", "review", "parked", "failed")     # `record`'s usage line, #1245
+
+
+_WAIT_CALL_USAGE = "usage: loop.py wait-call <dir> <goal> verify|merge [--max-seconds N] [--run-id ID]"
+
+
+def _wait_call(argv):
+    """`wait-call <dir> <goal> verify|merge [--max-seconds N] [--run-id ID]` (#1650): poll the call's running
+    receipt for at most N seconds (default 20, below the 30.2 s Codex yield; clamped 1..3600). Read-only: it
+    classifies the receipt and NEVER touches the verify lock (a probe that took it would make a real verify's
+    own non-blocking acquire read "held" and refuse falsely). Exit 0 the call FINISHED and returned --
+    whatever its result (finished is not passed: read the first word / `exit=` of the stored result);
+    1 NOT COMPLETED (dead pid, past deadline, malformed, runner raised); 2 no answer to give (no receipt,
+    unreadable, unsafe goal, bad usage, another run's receipt); 3 still running at the bound."""
+    args = argv[2:]
+    if len(args) < 3 or args[2] not in ("verify", "merge"):
+        print(_WAIT_CALL_USAGE, file=sys.stderr)
+        return 2
+    sdlc_dir, goal, kind = args[0], args[1], args[2]
+    bound, run_id, rest = _rr.WAIT_DEFAULT_SECONDS, None, args[3:]
+    while rest:
+        if rest[0] == "--max-seconds" and len(rest) >= 2:
+            try:
+                bound = max(1, min(3600, int(rest[1])))
+            except ValueError:
+                print(_WAIT_CALL_USAGE, file=sys.stderr)
+                return 2
+        elif rest[0] == "--run-id" and len(rest) >= 2:
+            run_id = rest[1]
+        else:
+            print(_WAIT_CALL_USAGE, file=sys.stderr)
+            return 2
+        rest = rest[2:]
+    try:
+        path = _rr.receipt_path(sdlc_dir, goal, "call-runs", kind)
+    except ValueError as exc:
+        print(f"loop.py wait-call: {exc}", file=sys.stderr)
+        return 2
+    got_state, got = _rr.poll(path, bound, _CALL_GRACE, run_id=run_id)
+    if got_state == "unreadable":
+        print(f"loop.py wait-call: the {kind} receipt for {goal} is unreadable ({got}); check the PR / goal "
+              "status before acting; do not re-run blindly", file=sys.stderr)
+        return 2
+    if got_state == "missing":
+        print(f"loop.py wait-call: no {kind} receipt for {goal}: it was never written, or work.py finish "
+              "already cleared it. Check the PR / goal status before acting; do not re-run blindly",
+              file=sys.stderr)
+        return 2
+    if got_state == "other_run":
+        print(f"loop.py wait-call: a different run is on record for {goal} {kind}: {got.get('run_id')}",
+              file=sys.stderr)
+        return 2
+    if got_state == "final":
+        print(str(got.get("result") or "")[:500])
+        if kind == "verify" and got.get("exit") is not None:
+            print(f"exit={got.get('exit')}")
+        return 0
+    if got_state == "failed":
+        why = got.get("failure") or got.get("outcome") or "unknown"
+        print(f"FAILED {why}: {got.get('detail') or ''} ({kind} for {goal}, pid {got.get('pid')})")
+        if kind == "verify":
+            print("loop.py wait-call: the verify did not complete; it is safe to re-run `loop.py verify` "
+                  "(a refusal, exit 6, means one is still holding the lock: wait instead)", file=sys.stderr)
+        else:
+            print("loop.py wait-call: the merge did not complete. Do not re-run blindly: landing.md "
+                  "separates a cut during the gate polling (re-run `work.py merge` is safe) from a cut "
+                  "during the merge call itself (`loop.py record <dir> <goal> review` first, then re-run)",
+                  file=sys.stderr)
+        return 1
+    now = time.time()
+    print("RUNNING pid=%s run_id=%s elapsed=%ds deadline_in=%ds"
+          % (got.get("pid"), got.get("run_id"), now - got["started_at"],
+             got["started_at"] + got["timeout_seconds"] + _CALL_GRACE - now))
+    return 3
 
 
 def main(argv, *, _merge_lock_held=False):
@@ -7487,6 +7752,10 @@ def _dispatch(argv):
         _ensure_watcher(argv[2], _verify_cfg)
         _ensure_ledger_delivery(argv[2], _verify_cfg)    # ...and notices when that flow has stalled (#2393)
         return verify_goal(argv[2], argv[3])
+    if len(argv) >= 4 and argv[1] == "red":         # #1673: record planned-test reds only; no loop trigger
+        return red_goal(argv[2], argv[3])
+    if len(argv) >= 2 and argv[1] == "wait-call":   # #1650: bounded wait on a yielded verify / merge call
+        return _wait_call(argv)
     print(USAGE, file=sys.stderr)
     return 2
 
