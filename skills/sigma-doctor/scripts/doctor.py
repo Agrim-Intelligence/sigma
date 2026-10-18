@@ -3,7 +3,7 @@
 -> gh auth + project scope; KG enabled -> the builder; vision-first -> the north-star; always -> the
 .sdlc layer — and report each check with the exact one-line fix. The command runner is injectable so
 the logic is hermetically testable. Zero-dep."""
-import sys, json, math, time, calendar, os, pathlib, re, shutil, subprocess, importlib.util, importlib.metadata
+import sys, json, math, time, calendar, os, pathlib, re, shutil, stat, subprocess, importlib.util, importlib.metadata
 
 try:                    # portable output: force UTF-8 so the plugin's own non-ASCII (arrows, em-dashes)
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")   # doesn't garble to '?' or
@@ -3110,6 +3110,306 @@ _NORTH_STAR_TIERS = (
 )
 
 
+# --- #662 (R-08): map each numbered north-star architecture rule to the thing that enforces it ------
+# Read-only and local: no model, no network. A rule is a heuristic over prose (a numbered list line
+# inside the `## Architecture` section), so the parser is deliberately small and its limits are stated
+# in docs/architecture-doc.md. Untagged / review-only rules are LISTED, never refused; only a named
+# enforcement that does not hold (a `ci:` file that is gone, a `decide:` id that is absent or
+# superseded) is "broken".
+_ARCH_SECTION_RE = re.compile(r"^(#{1,6})\s+Architecture\b", re.I)
+_ARCH_HEADING_RE = re.compile(r"^(#{1,6})\s")
+_ARCH_RULE_RE = re.compile(r"^\s{0,3}(\d+)[.)]\s+(.*)$")
+#: `Enforced by:` is a suffix only at the start of a line (optionally after a bullet) or right after a
+#: sentence end; a mid-sentence mention is prose. The LAST such occurrence in a rule wins.
+_ARCH_SUFFIX_RE = re.compile(
+    r"(?:^\s*(?:[-*]\s+)?|[.;!?)]\s+|\s[-\u2013\u2014]+\s*|[\u2013\u2014]\s*|[,:]\s+|\(\s*)enforced by:[ \t]*(.*)$", re.I)
+_ARCH_LIST_CAP = 20
+_ARCH_FOOTER = ("note: a `ci:` file exists, not proof CI runs it or that it covers "
+                "the rule; an untracked or gitignored file satisfies `ci:`; on a case-insensitive "
+                "filesystem (macOS) a differently-cased path may be accepted (not checked).")
+
+
+_ARCH_SHARED = None     # the (results, note) of the current `check` run, set by `main` only
+
+
+def architecture_rules(text):
+    """The numbered rules of the `## Architecture` section as `(number, text, specs)`; `specs` is a list
+    of raw spec strings, or None when the rule carries no `Enforced by:` suffix. Pure: no I/O.
+
+    The section runs from the first `Architecture` heading to the next heading of the same or a higher
+    level. A rule is a `N.` / `N)` line plus continuation lines up to the next numbered line, any
+    heading, or a blank line followed by an unindented line. A rule whose text starts with `<` is the
+    unfilled scaffold placeholder and is skipped (the "north-star filled" row already reports it).
+    Several `Enforced by:` suffixes in one rule: the last one wins. A `ci:` path containing a comma
+    cannot be expressed (specs split on commas)."""
+    lines = text.splitlines()
+    level = start = None
+    for i, ln in enumerate(lines):
+        m = _ARCH_SECTION_RE.match(ln)
+        if m:
+            level, start = len(m.group(1)), i + 1
+            break
+    if start is None:
+        return []
+    section = []
+    for ln in lines[start:]:
+        h = _ARCH_HEADING_RE.match(ln)
+        if h and len(h.group(1)) <= level:
+            break
+        section.append(ln)
+    raw = []                                  # [number, [lines]]
+    cur, blank = None, False
+    for ln in section:
+        if not ln.strip():
+            blank = True
+            continue
+        m = _ARCH_RULE_RE.match(ln)
+        if m:
+            cur, blank = [int(m.group(1)), [m.group(2)]], False
+            raw.append(cur)
+        elif _ARCH_HEADING_RE.match(ln):
+            cur, blank = None, False
+        elif cur is not None:
+            if blank and not ln[0].isspace():
+                cur = None
+            else:
+                cur[1].append(ln)
+            blank = False
+    out = []
+    for number, rlines in raw:
+        if rlines[0].lstrip().startswith("<"):
+            continue
+        spec_text = None
+        for ln in rlines:
+            m = _ARCH_SUFFIX_RE.search(ln)
+            if m:
+                spec_text = m.group(1)
+        specs = None
+        if spec_text is not None:
+            parts = [p.strip() for p in spec_text.rstrip(" .;)").split(",")]
+            specs = [p for p in parts if p] or [""]
+        out.append((number, " ".join(" ".join(rlines).split()), specs))
+    return out
+
+
+def _arch_parse_spec(raw):
+    """`(kind, value, problem)` for one spec: kind is "ci" | "decide" | "review" (problem None) or
+    (None, None, reason) when the spec is malformed. Lexical refusals live here, before any file I/O."""
+    s = raw.strip()
+    if len(s) >= 2 and s[0] == s[-1] == "`":
+        s = s[1:-1].strip()
+    low = s.lower()
+    if low == "review":
+        return "review", None, None
+    if low.startswith("ci:"):
+        path = s[3:].split("::", 1)[0].strip()
+        if not path:
+            return None, None, "ci: names no path"
+        if "\0" in path:
+            return None, None, "NUL byte in path"
+        if path.endswith("/"):
+            return None, None, "is a directory, name the file"
+        if "\\" in path:
+            return None, None, "backslash in path (use /)"
+        if path.startswith("~"):
+            return None, None, "not repo-relative: '~' is not expanded"
+        if path.startswith("/") or re.match(r"^[A-Za-z]:", path):
+            return None, None, "not repo-relative: absolute path"
+        return "ci", path, None
+    if low.startswith("decide:"):
+        ident = s[7:]
+        if not ident or re.search(r"[\s:]", ident):
+            return None, None, "decide: id must be a single token (no whitespace or colon)"
+        return "decide", ident, None
+    return None, None, ("unknown enforcement %r (expected ci:<path>, decide:<id> or review)" % s[:60])
+
+
+def _arch_check_ci(path, repo_root):
+    """None when `path` is a regular file inside `repo_root`, else the reason. Containment is decided
+    BEFORE the target is stat'd, so a rule cannot make the doctor probe outside the repository. Never raises."""
+    try:
+        root = pathlib.Path(repo_root).resolve()
+        target = (root / path).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError:
+            return "escapes the repository"
+        if target.is_dir():
+            return "is a directory, name the file"
+        if not target.is_file():
+            return "file not found" if not target.exists() else "not a regular file"
+        return None
+    except (OSError, ValueError, RuntimeError) as exc:       # ENAMETOOLONG, NUL, symlink loop (3.12 raises RuntimeError)
+        return "cannot be checked: %s" % (exc.strerror if isinstance(exc, OSError) and exc.strerror else type(exc).__name__)
+
+
+def check_rule_enforcement(rules, repo_root, decisions, decisions_reason=None):
+    """Classify each `(number, text, specs)` rule. Returns `[{n, text, cls, problems}]` where cls is
+    enforced | broken | review-only | untagged. `decisions` is `{id: status}` or None (then
+    `decisions_reason` says why). A good spec never rescues a bad one."""
+    out = []
+    for n, text, specs in rules:
+        problems, good = [], 0
+        if specs is None:
+            out.append({"n": n, "text": text, "cls": "untagged", "problems": problems})
+            continue
+        for raw in specs:
+            kind, value, why = _arch_parse_spec(raw)
+            if why:
+                problems.append("%s: %s" % (raw or "(empty)", why))
+            elif kind == "ci":
+                why = _arch_check_ci(value, repo_root)
+                if why:
+                    problems.append("ci:%s: %s" % (value, why))
+                else:
+                    good += 1
+            elif kind == "decide":
+                if decisions is None:
+                    problems.append("decide:%s: %s" % (value, decisions_reason or "registry unreadable"))
+                elif value not in decisions:
+                    problems.append("decide:%s: id not in the registry" % value)
+                elif decisions[value] != "active":
+                    problems.append("decide:%s: superseded (status %r)" % (value, decisions[value]))
+                else:
+                    good += 1
+        cls = "broken" if problems else "enforced" if good else "review-only"
+        out.append({"n": n, "text": text, "cls": cls, "problems": problems})
+    return out
+
+
+def _arch_read_ceiling():
+    """Largest file this check will read, DERIVED from the machine: physical RAM // 4096, clamped to
+    [64 KiB, 8 MiB]. The 4096 divisor and the clamp are chosen constants bounding a memory-derived
+    value; RAM is the host's, not a cgroup limit. None when the machine will not say (refuse, do not guess)."""
+    try:
+        pages, size = os.sysconf("SC_PHYS_PAGES"), os.sysconf("SC_PAGE_SIZE")
+        if not (pages > 0 and size > 0):
+            return None
+        return max(64 * 1024, min(8 * 1024 * 1024, pages * size // 4096))
+    except (ValueError, OSError, AttributeError, TypeError):
+        return None
+
+
+def _arch_read_text(path):
+    """`(text, None)` or `(None, reason)`. Regular files only (a FIFO/device is refused, never opened
+    blocking) and at most the derived ceiling: the read itself is bounded (`read(ceiling+1)`), so a file
+    that grows after the stat is still refused. Never raises."""
+    ceiling = _arch_read_ceiling()
+    if ceiling is None:
+        return None, "unreadable: cannot derive a read limit (physical memory size unavailable)"
+    try:
+        st = os.stat(path)
+        if not stat.S_ISREG(st.st_mode):
+            return None, "unreadable: %s is not a regular file" % path
+        if st.st_size > ceiling:
+            return None, ("unreadable: %s exceeds the derived read limit of %d bytes (file is %d bytes)"
+                          % (path, ceiling, st.st_size))
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+        with os.fdopen(fd, "rb") as fh:
+            if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+                return None, "unreadable: %s is not a regular file" % path
+            data = fh.read(ceiling + 1)
+        if len(data) > ceiling:
+            return None, ("unreadable: %s exceeds the derived read limit of %d bytes (file is larger than that)"
+                          % (path, ceiling))
+        return data.decode("utf-8"), None
+    except UnicodeDecodeError:
+        return None, "unreadable: %s is not valid UTF-8" % path
+    except OSError as exc:
+        return None, "unreadable: %s: %s" % (path, exc.strerror or type(exc).__name__)
+
+
+def _arch_load_decisions(reg_path):
+    """`({id: status}, None)` or `(None, reason)`. Active means status absent or "active", the same
+    reading `_decision_gate_state` and the hook use (any other value, including null, is inactive); ids
+    are str-normalised; entries that are not objects or have no id are ignored; a duplicate id is active
+    if ANY entry with it is. Depends only on the file, not on config.json or the gate being enabled."""
+    try:
+        os.stat(reg_path)
+    except FileNotFoundError:
+        return None, "registry missing"
+    except OSError as exc:
+        return None, "registry unreadable: %s" % (exc.strerror or type(exc).__name__)
+    text, why = _arch_read_text(reg_path)
+    if why:
+        return None, "registry unreadable: " + why
+    try:
+        obj = json.loads(text)
+    except ValueError as exc:
+        return None, "registry unreadable: malformed JSON (%s)" % exc
+    if not isinstance(obj, dict):
+        return None, "registry unreadable: top level is not an object"
+    entries = obj.get("decisions") or []
+    if not isinstance(entries, list):
+        return None, "registry unreadable: 'decisions' is not a list"
+    out = {}
+    for d in entries:
+        if not isinstance(d, dict) or d.get("id") in (None, ""):
+            continue
+        ident, status = str(d["id"]), d.get("status", "active")
+        if ident not in out or (out[ident] != "active" and status == "active"):
+            out[ident] = status
+    return out, None
+
+
+def architecture_report(sdlc_dir=".sdlc", repo_root=None):
+    """`(results, note)`. `results` is the classified rules ([] when there is nothing to say: no
+    reachable root, no north-star, no Architecture section, no numbered rules); `note` is a reason when
+    a PRESENT north-star could not be read or the root could not be derived safely. An unreachable root
+    is covered by the existing "north-star reachable" row, so it is silent here.
+
+    SPLIT ON PURPOSE: the north-star and decisions.json are untracked per-owner state in the OWNING
+    checkout (`north_star.project_root`); `ci:` paths are tracked files and resolve against the checkout
+    under check (the `.sdlc` dir's parent), because a goal worktree holds the branch's own copy. A
+    symlinked `.sdlc` is refused when deriving that root: resolve() would follow the link and name the
+    target's parent, which is a guess."""
+    base = pathlib.Path(sdlc_dir)
+    try:
+        ns_mod = _load_loop_script("north_star")
+        root, _why = ns_mod.project_root(base.parent)
+    except Exception as exc:                # noqa: BLE001 - a failing import must be a typed note, never a raise
+        return [], "cannot load the north-star helper: %s: %s" % (type(exc).__name__, exc)
+    if root is None:
+        return [], None
+    ns_path = pathlib.Path(root) / ".sdlc" / ns_mod.REL_PATH
+    try:
+        os.stat(ns_path)
+    except (FileNotFoundError, NotADirectoryError):
+        return [], None
+    except OSError as exc:
+        return [], "unreadable: %s: %s" % (ns_path, exc.strerror or type(exc).__name__)
+    text, why = _arch_read_text(ns_path)
+    if why:
+        return [], why
+    rules = architecture_rules(text)
+    if not rules:
+        return [], None
+    if repo_root is None:
+        if base.is_symlink():
+            return [], "refused: .sdlc is a symlink, so the repository root cannot be derived from it (pass repo_root)"
+        repo_root = base.resolve().parent
+    decisions, dwhy = None, None
+    if any(s and s.strip().lower().startswith("decide:") for _, _, specs in rules for s in (specs or ())):
+        decisions, dwhy = _arch_load_decisions(pathlib.Path(root) / ".sdlc" / "decisions.json")
+    return check_rule_enforcement(rules, repo_root, decisions, dwhy), None
+
+
+def _arch_oneline(s, limit=100):
+    """One printable line: control characters (terminal escapes from a rule file) become spaces."""
+    s = "".join(c if c.isprintable() else " " for c in s)
+    s = " ".join(s.split())
+    return s if len(s) <= limit else s[:limit - 1] + "…"
+
+
+def _arch_line(r, with_problems=False):
+    tag = {"untagged": "untagged", "review-only": "review-only", "broken": "broken", "enforced": "enforced"}[r["cls"]]
+    line = "  [%s] rule %d: %s" % (tag.upper(), r["n"], _arch_oneline(r["text"]))
+    if with_problems:
+        for p in r["problems"]:
+            line += "\n      %s" % _arch_oneline(p, 240)
+    return line
+
+
 def _default_site_packages_dirs():
     """Every site-packages directory the CURRENTLY RUNNING interpreter would search — global +
     user (if enabled). Necessarily sees only ITS OWN interpreter's installs: a different local
@@ -3826,6 +4126,23 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
                         "states real priorities/bets, /sigma-align has nothing to measure drift "
                         "against, so it renders no verdict and any alignment-drift view built on it "
                         "stays permanently dark"))
+
+    # #662: a numbered Architecture rule whose NAMED enforcement does not hold. Computed from the OWNING
+    # checkout's north-star (so a goal worktree with no local context/ still fires), hence outside the
+    # `if ns.exists()` block. Row only when something is broken; untagged / review-only rules are an
+    # advisory section (never a row, never a score change). Local reads only, but it is a new probe
+    # nobody asked the cheap session-start wizard for, so `cheap_only` skips it. `main` computes the report once
+    # and shares it via `_ARCH_SHARED` (so `check`'s signature, which tests wrap, is unchanged).
+    if not cheap_only:
+        results, _note = _ARCH_SHARED if _ARCH_SHARED is not None else architecture_report(sdlc_dir)
+        broken = [r for r in results if r["cls"] == "broken"]
+        if broken:
+            shown = "; ".join("rule %d: %s" % (r["n"], _arch_oneline("; ".join(r["problems"]), 160))
+                              for r in broken[:3])
+            more = " (+%d more)" % (len(broken) - 3) if len(broken) > 3 else ""
+            out.append(_chk("architecture rule enforcement", False,
+                            "%d architecture rule(s) name an enforcement that does not hold — %s%s — fix the "
+                            "path/id or the suffix; run doctor.py rules for all" % (len(broken), shown, more)))
 
     # The ledger is switched on in config but the ops branch has to be created + pushed once per
     # clone; before that a teammate's `init` finds nothing to fetch. Flag it as a real setup gap with
@@ -6397,7 +6714,8 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
     return rows
 
 
-USAGE = "usage: doctor.py check [sdlc_dir] [--progress] | features [sdlc_dir] | hygiene [sdlc_dir] [repo_root]"
+USAGE = ("usage: doctor.py check [sdlc_dir] [--progress] | features [sdlc_dir] | hygiene [sdlc_dir] [repo_root]"
+         " | rules [sdlc_dir] [repo_root]")
 
 
 def main(argv):
@@ -6412,10 +6730,14 @@ def main(argv):
         global _PROGRESS_ON
         _PROGRESS_ON = "--progress" in argv or sys.stderr.isatty()
         argv = [a for a in argv if a != "--progress"]
+        sdlc_arg = argv[2] if len(argv) > 2 else ".sdlc"
+        global _ARCH_SHARED
+        arch = _ARCH_SHARED = architecture_report(sdlc_arg)   # once per run: each call spawns git (project_root)
         try:
-            checks = check(argv[2] if len(argv) > 2 else ".sdlc")
+            checks = check(sdlc_arg)
         finally:
             _PROGRESS_ON = False
+            _ARCH_SHARED = None
         gaps = [c for c in checks if not c["ok"]]
         for c in checks:
             # #1513 review fix: show `fix` whenever it's non-empty, not just when `ok` is False.
@@ -6434,7 +6756,28 @@ def main(argv):
         for name, state, _ in features(argv[2] if len(argv) > 2 else ".sdlc"):
             print(f"  {name}: {state}")
         _print_hygiene(argv[2] if len(argv) > 2 else ".sdlc")
+        _print_arch_advisory(arch)
         return 0
+    if len(argv) >= 2 and argv[1] == "rules":
+        results, note = architecture_report(argv[2] if len(argv) > 2 else ".sdlc",
+                                            argv[3] if len(argv) > 3 else None)
+        if note:
+            print("architecture rules could not be read: " + note)
+        if not results:
+            if not note:
+                print("  no architecture rules found (no north-star, or no Architecture section with numbered rules)")
+            return 1 if note else 0
+        listed = [r for r in results if r["cls"] in ("untagged", "review-only")]
+        broken = [r for r in results if r["cls"] == "broken"]
+        for r in listed:
+            print(_arch_line(r))
+        for r in broken:
+            print(_arch_line(r, with_problems=True))
+        counts = {c: sum(1 for r in results if r["cls"] == c) for c in ("enforced", "broken", "review-only", "untagged")}
+        print("\n%d rule(s): %d enforced, %d broken, %d review-only, %d untagged"
+              % (len(results), counts["enforced"], counts["broken"], counts["review-only"], counts["untagged"]))
+        print(_ARCH_FOOTER)
+        return 1 if (broken or note) else 0
     if len(argv) >= 2 and argv[1] == "hygiene":
         # `None`, not ".", when no repo root is given: let hygiene() derive it from the .sdlc path
         # so the boundary shares an origin with the docs rather than with the caller's cwd (#577).
@@ -6458,6 +6801,20 @@ def _print_hygiene(sdlc_dir):
         print("\nstanding-doc hygiene (doctor.py hygiene for detail):")
         for c in rot:
             print(f"  [STALE] {c['name']}\n      {c['fix']}")
+
+
+def _print_arch_advisory(report):
+    """#662: the untagged / review-only rules, capped, and the could-not-read line. Never a score."""
+    results, note = report
+    if note:
+        print("\narchitecture rules could not be read: " + note)
+    listed = [r for r in results if r["cls"] in ("untagged", "review-only")]
+    if listed:
+        print("\narchitecture rules with no machine enforcement (doctor.py rules for all):")
+        for r in listed[:_ARCH_LIST_CAP]:
+            print(_arch_line(r))
+        if len(listed) > _ARCH_LIST_CAP:
+            print("  and %d more (doctor.py rules for all)" % (len(listed) - _ARCH_LIST_CAP))
 
 
 if __name__ == "__main__":
