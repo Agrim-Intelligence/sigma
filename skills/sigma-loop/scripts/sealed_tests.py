@@ -66,7 +66,7 @@ _DISK_FACTOR = 3
 class SealRefused(ValueError):
     """A seal refusal. `.clause` is one of collection-error, pass-on-base, not-red, exemption-reason,
     exemption-stale, exemption-unknown, all-exempt, unexpected-entry, bad-files, bad-plan-hash,
-    base-unresolved, runner-unusable, timeout, disk, no-tests-in-file, evidence-unpersisted."""
+    base-unresolved, runner-unusable, timeout, disk, no-tests-in-file, evidence-unpersisted, bad-route."""
 
     def __init__(self, clause, detail):
         super().__init__("sealed_tests: REFUSED [%s]: %s" % (clause, detail))
@@ -88,6 +88,25 @@ def _sha256(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def is_debris(d, name):
+    """Cache debris a verify run leaves inside the sealed dir, which is neither sealed nor unexpected.
+    Strict rule: a REAL (non-symlink) `.pytest_cache` directory, or a REAL `__pycache__` directory holding
+    only regular `*.pyc` files. A symlink, a non-pyc file or a subdirectory inside `__pycache__` makes the
+    whole entry unexpected. lstat only; nothing is followed."""
+    import stat as _stat
+    p = pathlib.Path(d) / name
+    try:
+        if not _stat.S_ISDIR(os.lstat(p).st_mode):
+            return False
+        if name == ".pytest_cache":
+            return True
+        if name != "__pycache__":
+            return False
+        return all(_stat.S_ISREG(os.lstat(p / n).st_mode) and n.endswith(".pyc") for n in os.listdir(p))
+    except OSError:
+        return False
+
+
 def _scan(root, stem):
     """-> ({relpath: bytes}, [unexpected entry names]); lstat only, nothing is followed."""
     d = pathlib.Path(root) / _rel(stem)
@@ -98,6 +117,8 @@ def _scan(root, stem):
         return files, odd
     import stat as _stat
     for name in names:
+        if is_debris(d, name):
+            continue
         mode = os.lstat(d / name).st_mode
         ok = _stat.S_ISREG(mode) and name.endswith(".py") and name not in ("conftest.py", "__init__.py")
         if not ok:
@@ -178,7 +199,12 @@ def seal(root, sdlc_dir, stem, *, base_ref, plan_hash, route, timeout, exemption
     """Seal `tests/acceptance/<stem>/` against `base_ref`. -> the record dict; raises SealRefused."""
     state, witness, breaker, rg, bounded = (_load(n) for n in ("state", "witness", "breaker", "red_green",
                                                                "bounded_run"))
+    sdlc_dir = os.path.abspath(sdlc_dir)
     path = seal_path(sdlc_dir, stem)
+    try:   # before any side effect: a witness row appended then a failed record write is unrecoverable
+        json.dumps({"route": route, "exemptions": dict(exemptions or {})}, sort_keys=True)
+    except (TypeError, ValueError) as exc:
+        raise SealRefused("bad-route", "route/exemptions are not JSON-serialisable: %s" % exc)
     if not (isinstance(plan_hash, str) and _HEX64.fullmatch(plan_hash)):
         raise SealRefused("bad-plan-hash", "plan_hash must be 64 lowercase hex characters")
     try:
@@ -247,7 +273,8 @@ def seal(root, sdlc_dir, stem, *, base_ref, plan_hash, route, timeout, exemption
         dest = os.path.join(tree, *_rel(stem).split("/"))
         if os.path.lexists(dest):
             raise SealRefused("unexpected-entry", "the base commit already contains %s/" % _rel(stem))
-        shutil.copytree(os.path.join(str(root), *_rel(stem).split("/")), dest, symlinks=True, dirs_exist_ok=True)
+        shutil.copytree(os.path.join(str(root), *_rel(stem).split("/")), dest, symlinks=True, dirs_exist_ok=True,
+                        ignore=lambda src, names: [n for n in names if is_debris(src, n)])
         for rel, meta in hashes.items():
             copied = pathlib.Path(tree, *rel.split("/"))
             if copied.is_symlink() or not copied.is_file() or _sha256(copied.read_bytes()) != meta["sha256"]:
@@ -321,6 +348,7 @@ def seal(root, sdlc_dir, stem, *, base_ref, plan_hash, route, timeout, exemption
 def check(root, sdlc_dir, stem):
     """Read-only. -> {"sealed": bool, "problems": [{"path", "kind"}]}, kind missing|differs|unexpected|record.
     An absent, unparseable or foreign record is `sealed: False` with a `record` problem, never "ok"."""
+    sdlc_dir = os.path.abspath(sdlc_dir)
     path = seal_path(sdlc_dir, stem)
     rec = _existing(path)
     if rec is None:
@@ -349,7 +377,8 @@ def check(root, sdlc_dir, stem):
         present = sorted(os.listdir(pathlib.Path(root, *prefix.rstrip("/").split("/"))))
     except OSError:
         present = []
+    droot = pathlib.Path(root, *prefix.rstrip("/").split("/"))
     for name in present:
-        if prefix + name not in rec["files"]:
+        if prefix + name not in rec["files"] and not is_debris(droot, name):
             problems.append({"path": prefix + name, "kind": "unexpected"})
     return {"sealed": not problems, "problems": problems}

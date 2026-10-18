@@ -665,6 +665,62 @@ class TestCheck:
         assert (tree_snapshot(repo[1]), tree_snapshot(repo[0] / DIR)) == before
 
 
+class TestDebrisAbsRoute:
+    """Round 3: verify-created cache debris, relative sdlc_dir, unserialisable route."""
+
+    def debris(self, repo):
+        pc = repo[0] / DIR / '__pycache__'
+        pc.mkdir()
+        (pc / 'test_acc_847_a.cpython-312.pyc').write_bytes(b'\x00\x01')
+        (repo[0] / DIR / '.pytest_cache').mkdir()
+        (repo[0] / DIR / '.pytest_cache' / 'README.md').write_text('x')
+
+    def test_debris_ignored_by_check_and_reseal(self, repo):
+        do_seal(repo)
+        self.debris(repo)
+        assert st.check(repo[0], repo[1], STEM) == {'sealed': True, 'problems': []}
+        assert do_seal(repo)['generation'] == 1      # idempotent re-seal, not refused
+
+    def test_seal_with_debris_present(self, repo):
+        self.debris(repo)
+        assert do_seal(repo)['generation'] == 1
+
+    def test_real_extra_py_still_reported(self, repo):
+        do_seal(repo)
+        self.debris(repo)
+        (repo[0] / DIR / 'extra.py').write_text('x=1\n')
+        assert st.check(repo[0], repo[1], STEM)['problems'] == [{'path': DIR + '/extra.py', 'kind': 'unexpected'}]
+
+    def test_non_pyc_file_in_pycache_is_unexpected(self, repo):
+        do_seal(repo)
+        pc = repo[0] / DIR / '__pycache__'
+        pc.mkdir()
+        (pc / 'evil.py').write_text('x=1\n')
+        assert st.check(repo[0], repo[1], STEM)['problems'] == [{'path': DIR + '/__pycache__', 'kind': 'unexpected'}]
+        refused(repo, 'unexpected-entry', plan_hash='b' * 64)
+
+    @pytest.mark.skipif(WIN, reason='symlinks')
+    def test_symlink_named_pycache_is_unexpected(self, repo):
+        do_seal(repo)
+        (repo[0] / 'emptydir').mkdir()               # an empty target, so only the link itself can fail it
+        (repo[0] / DIR / '__pycache__').symlink_to(repo[0] / 'emptydir')
+        assert st.check(repo[0], repo[1], STEM)['problems'] == [{'path': DIR + '/__pycache__', 'kind': 'unexpected'}]
+
+    def test_relative_sdlc_dir(self, repo, monkeypatch):
+        monkeypatch.chdir(repo[1].parent)
+        rel = repo[1].relative_to(repo[1].parent)
+        rec = st.seal(repo[0], rel, STEM, base_ref='base', plan_hash=PH, route=ROUTE, timeout=60,
+                      python=sys.executable, run=make_run(), now=1000.0)
+        assert rec['generation'] == 1 and sealed_file(repo[1]).exists()
+        assert not (repo[1] / 'sdlc').exists()
+        assert st.check(repo[0], rel, STEM)['sealed'] is True
+
+    @pytest.mark.parametrize('kw', [{'route': {'x': {1, 2}}}, {'exemptions': {N1: 'r'}, 'route': object()}])
+    def test_unserialisable_route_refused_before_side_effects(self, repo, kw):
+        refused(repo, 'bad-route', **kw)
+        assert WIT.witnesses(repo[1], STEM) == [] and not sealed_file(repo[1]).exists()
+
+
 # ---------------------------------------------------------------------------- real pytest
 
 @pytest.mark.skipif(WIN, reason='bounded_run refuses without a process group (loud refusal covered above)')
