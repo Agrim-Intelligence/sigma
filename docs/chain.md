@@ -1,5 +1,7 @@
 # Solving a whole dependency chain
 
+The full reference for the dependency map, Sigma Chain and how dependencies are read from issue text is [the dependency map and Sigma Chain](dependency-map-and-chain.md); this page keeps the detail it links to.
+
 `/sigma-chain` plans every open prerequisite behind one goal, asks the person every decision once,
 arms the members, and drives them to done. The engine is `skills/sigma-loop/scripts/chain.py`; the skill
 is a thin script over its verbs. Nothing here is model-driven: each verb is a plain command.

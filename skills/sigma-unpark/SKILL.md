@@ -110,7 +110,8 @@ Blockers are detected from prose (`Blocked by: #7`, `depends on #7`), because a 
 the GitHub UI should not have to learn a syntax. That inference is imperfect in both directions and
 **cannot be made exact with a pattern**:
 
-- **Reliable:** `Blocked by: #N`, with nothing between the phrase and the number.
+- **Reliable:** `Blocked by: #N`, with nothing between the phrase and the number. `blocked on #N` and
+  `Follow-up to #N` also count as edges (#1885).
 - **Correctly ignored:** a reference across a clause boundary — *"waiting on the sign-off, see
   #1234"*. A comma, semicolon or full stop between the two ends the match.
 - **Still wrong:** *"after #40 lands"*, *"this needs #9 to land first"*. These read as dependencies

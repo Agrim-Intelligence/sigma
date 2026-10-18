@@ -362,7 +362,7 @@ def _weak_count(issue, goal_n, blocker_scan):
     explicit = {i["ref"] for i in blocker_scan.extract_refs(text, self_ref=issue["number"])}
     weak = set()
     for mt in blocker_scan._BLOCK_RE.finditer(text):
-        if blocker_scan.is_cross_repo(text, mt) or mt.group(1).lower() not in blocker_scan.TRIGGERS[3:]:
+        if blocker_scan.is_cross_repo(text, mt) or mt.group(1).lower() not in blocker_scan.WEAK_TRIGGERS:
             continue
         ref = mt.group(2)
         if ref not in explicit and ref != str(issue["number"]):

@@ -243,8 +243,9 @@ What stays unchanged:
   unreadable}`; a record with a malformed member list prints the unreadable line instead of raising.
 - **The `sigma-chain` skill and `docs/chain.md` (#1592).** A thin skill over `chain.py
   plan|sheet|answer|approve|arm|run|stop|resume`, with an eval card; the reference lists every `chain.*` key with its
-  default, and `tests/test_chain_docs.py` keeps list and code equal. Not available, and said so: `--parallel`,
-  `--no-grow` and a `--cap-usd` flag (use `chain.max_usd`).
+  default, and `tests/test_chain_docs.py` keeps list and code equal. Not available as flags, and said so:
+  `--parallel` (use `chain.parallel`) and `--cap-usd` (use `chain.max_usd`); `run --no-grow` was added later in
+  this release.
 - **The chain agent-file block ships with init and is checked by doctor (#1593).** The block is in this repo's
   `AGENTS.md`, the `project.md` template and the Cursor `sdlc.mdc` rule, byte-pinned by `tests/test_chain_docs.py`.
   `/sigma-doctor` adds a read-only row `chain block in an agent file`, shown only when `.sdlc` exists.
@@ -293,6 +294,25 @@ What stays unchanged:
 - **`feature_rebase.py preview` notes an `upkeep.units.include` entry that matches no registered unit (#1812).**
 - **`loop.py start-run` clears the recorded `label_checked` (#1823).**
 - **The changelog layout duplicate-control test seeds its own repeated entry (#1828).**
+
+## Dependencies written in prose
+
+- **More explicit dependency forms (#1885).** The gate and the stored map now read `blocked on #N`,
+  `blocked until #N` and the follow-up forms (`follow-up to|of|on|from #N`, `follow up`, `followup`,
+  `follow-ups`, `follows up #N`, `following up on #N`) as edges. The follow-up forms count only with
+  nothing but spaces (or the word `issue`) before the `#N`, so "a follow-up to cover the cap, tracked in
+  #13" makes no edge. Measured before the change on the last 1000 issues of this repository: 83 follow-up
+  hits in 57 issues, all naming the issue the filing comes after, and 1 hit in 2,944 comments from the
+  last ten days, also in the right direction. Left out on purpose: `Prerequisites: #N` (all 11 measured
+  hits named a child's prerequisite inside an epic body), `follow-up for #N`, a bare `follow-up #N`,
+  `after #N lands` and `needs #N to land`. Every original marker matches exactly as before. Existing
+  follow-ups to an open issue now wait for it: on this repository that is four open issues.
+- **`deps.py`: read the whole ticket, write one marker (#1885).** `deps.py report <sdlc_dir> <goal>`
+  lists every `#N` in the title, body and comments with its sentence and how it is read today (`edge`,
+  `comment-edge`, `weak`, `mention`); `deps.py mark <sdlc_dir> <goal> <N> "<why>"` writes
+  `**Blocked by:** #N` into the body through the cycle-checked writer filing already uses. The loop skill
+  runs the report before the pre-checks and tells the agent to write dependencies only in that form.
+  Cost: one issue read plus its comment pages per goal. GitHub mode only.
 
 ## Not in this release
 

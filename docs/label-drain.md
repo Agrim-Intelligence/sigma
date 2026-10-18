@@ -46,13 +46,16 @@ All take the project's `.sdlc` directory and the label name.
   answers. The file maps question ids, exactly as `plan` prints them, to one of that question's
   options. An unknown id or an option outside the bank refuses the whole file with no write. Each
   answer applies its effect first and then writes one decision record and one comment. `--dry-run`
-  prints every write and makes none.
+  prints every write and makes none. Answering a member's "which kind" question declares that kind on the
+  member (`--dry-run` prints `would declare kind <kind> on` the member), so the next `plan` asks the
+  member's own question.
 - `loop.py next <sdlc_dir> --label <name>` (and `next-batch`) is the pick. Before the first claim it
   runs `plan` once and refuses to start while members are unarmed or questions are open; the refusal
   claims and writes nothing and names the command to run. The check is keyed to the label run, not to
   the checkout: a passed check records its label in `state/STATE.md` (`label_checked`), and later picks skip
   `plan` only while a run is started and that same label is the recorded one. Another label, or a
   checkout with no started run, runs `plan` again, so a second label is never picked unchecked.
+  `loop.py start-run` clears the recorded label, so the first pick of a new run checks again.
 
 ## Arming defaults
 
@@ -83,9 +86,19 @@ the single-use approval per item, not an amount. Read the paid-step warning in `
 
 ## Prerequisites, follow-ups and the stop
 
+A prerequisite is read from the member's body with the same explicit dependency forms the pick gate and the
+dependency map use: `Blocked by #N`, `depends on|upon #N`, `blocked on|until #N` and the tight follow-up forms
+(`follow-up to #N` and its variants, with only spaces before the number). Weak words such as `needs` or
+`after` make no prerequisite, and a reference to another repository keeps its member out of the ready set as
+unresolved. Write a member's prerequisite as a `**Blocked by:** #N` line; `deps.py report` and `deps.py mark`
+find and fix one stated only in prose or a comment. The full rules are in
+[the dependency map and Sigma Chain](dependency-map-and-chain.md#how-a-dependency-is-read).
+
 When a member is held by an open prerequisite outside the label, the run pulls that prerequisite into
 the label (at most 50 per run) so it is picked first, and says so on stderr; one that cannot be pulled
-stays out with its reason and the member stays held. Nothing is skipped silently.
+stays out with its reason and the member stays held. Nothing is skipped silently. A pulled prerequisite that
+is already armed but has no assignee gets the label, the fixed comment and the configured assignee; one
+assigned to someone else is refused with that reason.
 
 Work filed during the drain does not carry the label, so it is not picked by this run. When the run
 stops, `loop.py` lists what was filed since the label's start check first passed (the drain start;
@@ -98,7 +111,8 @@ by a person.
 
 - Cross-unit: a member based on its unit's branch will not contain the change of a prerequisite from
   another unit until that unit lands.
-- A cycle among members, a member with no `Done when` list, and a declared paid step are each named.
+- A cycle among members, a member with no valid `Done when` list (3 to 7 single-line items, the shape
+  acceptance accepts), and a declared paid step are each named.
 - Bounds: at most 200 members (more is refused with the count), at most 50 single-issue reads in the
   prerequisite walk, depth 8, and at most 20 parked members briefed; the rest report `not-read`.
 

@@ -62,8 +62,8 @@ Then repeat until the helper says stop:
    > **While a `--label` run is active, no goal outside that label may be picked, and an open prerequisite of a member is never skipped silently.**
 
    Full: `references/picking.md`.
-3. Otherwise, run the **opt-in pre-checks, in this order** — before spending a token. Each prints
-   `OFF` (a no-op — feature disabled), `PROCEED`, or `PARKED <reason>`. On **`PARKED <reason>`**:
+3. Otherwise, `deps.py report` (`references/picking.md`), then the **opt-in pre-checks, in order**,
+   before any token. Each prints `OFF` (feature disabled), `PROCEED`, or `PARKED <reason>`. On **`PARKED <reason>`**:
    **Do not research it: loop back to step 1** and take the next goal. (The park counts as one
    iteration.)
 

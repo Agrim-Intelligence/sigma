@@ -257,7 +257,8 @@ def test_the_warning_names_every_live_trigger_word():
     """Pinned against the LIVE tuple: adding a trigger to `blocker_scan.TRIGGERS` without naming it
     here leaves the skill teaching a safe phrasing that is no longer safe."""
     block = _warning_block()
-    for trigger in blocker_scan.TRIGGERS:
+    assert len(blocker_scan.TRIGGER_NAMES) == len(blocker_scan.TRIGGERS)
+    for trigger in blocker_scan.TRIGGER_NAMES:
         assert f"`{trigger}`" in block, f"{trigger!r} is a live trigger the warning does not name"
 
 

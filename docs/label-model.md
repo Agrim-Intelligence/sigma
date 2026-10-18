@@ -803,6 +803,11 @@ boards were separated by **1.1 hours at minimum**, while a single operation take
 ## 6. The blocker chain — what the loop does on its own
 
 The `sdlc:blocked` and `sdlc:blocking` overlays are derived state, and so is the stored dependency map ([dag.md](dag.md)): the map reads text and labels and is never a label writer.
+Wherever this page says "Blocked by #N", the same holds for every explicit dependency form: `depends on|upon #N`,
+`blocked on|until #N` and the tight follow-up forms (`follow-up to #N` and its variants). Weak words such as
+`needs` or `after` never derive `sdlc:blocked` or `sdlc:blocking`. The forms, where each reader looks, and how
+to turn a dependency stated in prose into a marker (`deps.py report` and `deps.py mark`) are in
+[the dependency map and Sigma Chain](dependency-map-and-chain.md#how-a-dependency-is-read).
 
 This is the flow the labels exist to make possible, and it is **on by default**.
 

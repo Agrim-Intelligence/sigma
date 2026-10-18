@@ -603,10 +603,16 @@ def test_the_narrow_trigger_set_is_a_prefix_subset_of_the_full_one():
 def test_the_check_time_pattern_is_byte_identical_to_the_calibrated_literal():
     """#1393 calibrated this exact string, and #1487 both moved it to another module and rebuilt it
     from a tuple. Pinned against the literal so neither step could have altered check-time
-    behaviour -- a stronger claim than "the tests still pass"."""
+    behaviour -- a stronger claim than "the tests still pass". #1885 changed it on purpose: three
+    explicit forms were inserted after the original three phrases, which keep their place, and the
+    tail (class, window, groups) is untouched."""
     bs = _mod("blocker_scan")
+    tight = r"(?=[ \t]+(?:issue[ \t]+)?#\d)"
     assert bs._BLOCK_RE.pattern == (
-        r"(?i)\b(blocked by|depends on|depends upon|needs|after|requires|waiting on)"
+        r"(?i)\b(blocked by|depends on|depends upon|blocked[ \t]+(?:on|until)"
+        r"|follow[- ]?ups?[ \t]+(?:to|of|on|from)" + tight +
+        r"|follow(?:s|ing)[ \t]+up(?:[ \t]+on)?" + tight +
+        r"|needs|after|requires|waiting on)"
         r"\b[^\n#,;.!?]{0,40}?#(\d+)")
 
 

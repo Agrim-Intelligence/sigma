@@ -334,6 +334,34 @@ than overwritten. A changelog or append-only log conflict is unioned, and an opt
 with no spend key set it runs with no spend limit. It needs three opt-ins (`upkeep.enabled`, `ledger.enabled`, and `SIGMA_UPKEEP_JOB=1` on one machine).
 Full guide: [docs/upkeep.md](docs/upkeep.md).
 
+## Dependencies, Chain, label drains and the resource guard
+
+Three features that change what the loop picks and when. Each is described in full on its own page.
+
+**Dependency map and Sigma Chain.** Write a dependency as a `**Blocked by:** #N` line in the issue body: the pick
+holds the goal while that issue is open. `depends on`, `blocked on`, `blocked until` and tight follow-up forms
+(`follow-up to #N`) count too; weak words such as `needs` or `after` are only advisory, and `deps.py report` and
+`deps.py mark` turn a dependency stated in prose or in a comment into the marker. The dependency map stores the
+whole graph in one local file (numbers only) and ships in `shadow` mode, where it is compared with each pick and
+decides nothing; `dag.py chain <N>` lists every open blocker behind a goal. `/sigma-chain <N>` plans that whole
+chain, asks every decision once and, only after you approve, arms the members and runs them under a cap. Full
+guide, including how to turn it on step by step and what it will never do:
+[docs/dependency-map-and-chain.md](docs/dependency-map-and-chain.md).
+
+**Label drains.** Put a label of your own on a set of goals, and `loop.py next --label <name>` works through
+exactly that set and stops; no goal outside the label is picked, and an open prerequisite of a member is pulled
+in or reported, never skipped silently. `label_drain.py plan` shows every member, the prerequisites and the
+questions before anything is written; `answer` and `arm --apply` ready the label. Full guide:
+[docs/label-drain.md](docs/label-drain.md).
+
+**Resource guard.** Sigma derives memory and CPU limits from the machine it runs on: a memory reserve
+(`resource.reserve_fraction`, 0.20 of total memory by default) and a share all leases together may use
+(`resource.max_share_fraction`, 0.60), both uncalibrated. A goal pick, a model session and `loop.py verify`
+each take a lease first; with no room the answer is a hold with a retry time, never a paused process, and
+under sustained pressure only a verify run Sigma itself started is stopped (the goal is not failed).
+`resource.mode` or `SIGMA_RESOURCE_MODE` selects `enforce` (the default), `observe` or `off`. Full guide:
+[the resource guard](docs/parallelism.md#the-resource-guard-derived-limits-holds-shed).
+
 ## Configuration
 
 Settings live in `.sdlc/config.json`, which `/sigma-init` writes for you. The ones most people change:
@@ -362,11 +390,14 @@ see which features are live for your config.
 | [Running the loop unattended](docs/running-unattended.md) | leave it running overnight |
 | [Backlog: local files or GitHub issues](docs/backlog.md) | use GitHub issues and a Projects board, priorities, blockers |
 | [Label model](docs/label-model.md) | understand or hand-edit `sdlc:*` labels |
+| [The dependency map and Sigma Chain](docs/dependency-map-and-chain.md) | the full reference: how dependencies are read, the map, Chain, keys, verbs, doctor rows and recovery |
 | [The dependency map](docs/dag.md) | see what waits on what, ask for a goal's chain, and read the shadow-to-on criterion |
+| [Sigma Chain](docs/chain.md) | plan, approve and run every open prerequisite behind one goal |
 | [Worktrees, PRs and merging](docs/worktrees-and-merging.md) | control how goals become pull requests and get merged |
 | [Planning the backlog](docs/planning-the-backlog.md) | use `/sigma-scope` and `/sigma-triage` |
 | [Action log and team ledger](docs/action-log-and-ledger.md) | trace what the loop did, or coordinate a team |
-| [Parallelism](docs/parallelism.md) | run several goals or slices at once, and size it to your machine |
+| [Parallelism](docs/parallelism.md) | run several goals or slices at once, size it to your machine, and read the resource guard |
+| [Label drains](docs/label-drain.md) | confine one loop run to a set of goals you label, and ready them first |
 | [Knowledge graph](docs/knowledge-graph.md) | give the loop memory across goals |
 | [Companion plugins](docs/companions.md) | the optional `code-review` plugin |
 | [Managed settings](docs/managed-settings.md) | enforce settings across an organisation |
