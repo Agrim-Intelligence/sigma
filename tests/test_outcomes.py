@@ -10,6 +10,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -750,9 +751,13 @@ def test_fixture_repos_disable_background_maintenance(tmp_path):
 
 
 def test_a_run_writes_nothing_anywhere(tmp_path):
+    # The CLI subprocess reads the REAL clock (no `now` is injectable across the process boundary), so the
+    # goals are placed relative to it: `skew` is how far the real clock sits past the fixed NOW. Anchored on
+    # NOW alone, the oldest goal (29d) sat on the 30-day window edge and fell out as real time passed.
+    skew = (time.time() - NOW) / DAY
     measured = World(tmp_path / "m")
-    measured.mature_goals(10)
-    measured.commit("fix: a (#1)", ["g100.txt"], 20)
+    measured.mature_goals(10, start_ago=24.0 - skew)  # 24d .. 19.5d before the real clock: mature, in window
+    measured.commit("fix: a (#1)", ["g100.txt"], 15.0 - skew)  # 9d after goal 100 merged, as before
     unmeasured = World(tmp_path / "u", config={"action_log": {"enabled": False}})
     unmeasured.commit("feat: a (#1)")
     scripts, home = _isolated_copy(tmp_path), tmp_path / "home"
