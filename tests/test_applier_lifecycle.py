@@ -159,6 +159,27 @@ def test_dry_run_prints_the_plan_and_writes_nothing(tmp_path):
     assert _snapshot(sd) == before
 
 
+OFF_LINE = ("applier dry-run: the applier is off (rulebook.autonomy.applier.enabled is not true); "
+            "set it to true to see planned actions")
+
+
+def test_dry_run_with_the_applier_off_says_so_then_shows_the_plan_and_writes_nothing(tmp_path):
+    """#1545/#1695: the off line comes first, then the plan; removing either turns this red."""
+    sd, cfg, rid = _setup(tmp_path)
+    AP.open_ask(sd, 7, "merge_conflict", "docs", ["rebase it"], cfg, T0)
+    cfg = json.loads(json.dumps(cfg))
+    cfg["rulebook"]["autonomy"]["applier"]["enabled"] = False
+    json.dump(cfg, open(os.path.join(sd, "config.json"), "w"))
+    before = _snapshot(sd)
+    out = subprocess.run([sys.executable, str(SCRIPTS / "applier.py"), sd, "--dry-run"],
+                         capture_output=True, text=True, env={"PATH": os.environ.get("PATH", ""), "HOME": str(tmp_path)})
+    assert out.returncode == 0
+    lines = out.stdout.splitlines()
+    assert lines[0] == OFF_LINE
+    assert len(lines) == 2 and lines[1].startswith("applier dry-run: would unpark #7 rule %s level 3" % rid)
+    assert _snapshot(sd) == before
+
+
 def _snapshot(sd):
     snap = {}
     for d, _, fs in os.walk(sd):
@@ -306,3 +327,47 @@ def test_sync_opens_no_ask_for_a_park_a_person_already_answered(tmp_path):
     DS.append(sd, {"how": "human", "qkind": "dependency", "area": "docs", "choice": "keep-parked",
                    "issue": 8, "park": "c0"}, cfg)
     assert len(AP.sync(sd, cfg, LSrc({8: [("c1", "dependency")]}), now=T0, parked_fn=_fetch([8]))) == 1
+
+
+HOLD = "evidence behind the default branch: 3 commits touching rules not here yet; pull before the applier acts"
+
+
+def _held_main(sd, cfg, monkeypatch, argv_extra=(), behind=HOLD):
+    json.dump(cfg, open(os.path.join(sd, "config.json"), "w"))
+    monkeypatch.setattr(AP, "_evidence_behind", lambda *a: behind)
+    monkeypatch.setattr(AP, "sync", lambda *a, **k: [])
+    return AP.main(["applier.py", sd, *argv_extra])
+
+
+def test_a_real_tick_with_evidence_behind_prints_the_reason(tmp_path, monkeypatch, capsys):
+    sd, cfg, _ = _setup(tmp_path)
+    assert _held_main(sd, cfg, monkeypatch) == 0
+    assert capsys.readouterr().out.strip() == "applier: held - " + HOLD
+    assert AP.read_hold(sd) == HOLD and AP.read_heartbeat(sd) is not None
+
+
+def test_dry_run_with_evidence_behind_prints_the_reason_not_would_behind(tmp_path, monkeypatch, capsys):
+    sd, cfg, _ = _setup(tmp_path)
+    before = _snapshot(sd)
+    assert _held_main(sd, cfg, monkeypatch, ("--dry-run",)) == 0
+    out = capsys.readouterr().out
+    assert "would behind" not in out and "applier dry-run: held - " + HOLD in out
+    assert {k: v for k, v in _snapshot(sd).items() if not k.endswith("config.json")} == before
+
+
+def test_current_evidence_leaves_output_and_heartbeat_shape_unchanged(tmp_path, monkeypatch, capsys):
+    sd, cfg, _ = _setup(tmp_path)
+    assert _held_main(sd, cfg, monkeypatch, behind="") == 0
+    assert capsys.readouterr().out == ""
+    hb = json.load(open(os.path.join(sd, "autonomy", "applier-heartbeat.json")))
+    assert list(hb) == ["time"] and AP.read_hold(sd) == ""
+
+
+def test_the_hold_clears_after_a_later_normal_tick(tmp_path, monkeypatch):
+    sd, cfg, _ = _setup(tmp_path)
+    monkeypatch.setattr(AP, "_evidence_behind", lambda *a: HOLD)
+    AP.tick(sd, cfg, T0, source=Src())
+    assert AP.read_hold(sd) == HOLD
+    monkeypatch.setattr(AP, "_evidence_behind", lambda *a: "")
+    AP.tick(sd, cfg, T0 + MIN, source=Src())
+    assert AP.read_hold(sd) == ""

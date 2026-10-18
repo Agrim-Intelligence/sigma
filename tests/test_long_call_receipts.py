@@ -223,6 +223,7 @@ def test_verify_final_write_is_single_and_carries_exit(tmp_path, monkeypatch):
         assert len(final["result"]) <= 500
         monkeypatch.undo()
         monkeypatch.setenv("SIGMA_ALLOW_COEXIST", "1")
+        monkeypatch.setenv("SIGMA_RESOURCE_MODE", "off")   # undo() also reverts conftest's #1600 default
 
 
 def test_verify_runner_exception_finalises_not_completed(tmp_path, monkeypatch, capsys):
@@ -242,6 +243,7 @@ def test_verify_runner_exception_finalises_not_completed(tmp_path, monkeypatch, 
     assert _lock_held(sd) is False
     monkeypatch.undo()
     monkeypatch.setenv("SIGMA_ALLOW_COEXIST", "1")
+    monkeypatch.setenv("SIGMA_RESOURCE_MODE", "off")   # undo() also reverts conftest's #1600 default
 
     real = rr.write
 
@@ -264,6 +266,7 @@ def test_verify_runner_exception_finalises_not_completed(tmp_path, monkeypatch, 
     assert "receipt" in capsys.readouterr().err.lower()                     # ...with a stderr advisory
     monkeypatch.undo()
     monkeypatch.setenv("SIGMA_ALLOW_COEXIST", "1")
+    monkeypatch.setenv("SIGMA_RESOURCE_MODE", "off")   # undo() also reverts conftest's #1600 default
 
     sd = _project(tmp_path / "c")
     _arm(monkeypatch, lp, sd, code=0)
@@ -274,6 +277,7 @@ def test_verify_runner_exception_finalises_not_completed(tmp_path, monkeypatch, 
     assert _lock_held(sd) is False
     monkeypatch.undo()
     monkeypatch.setenv("SIGMA_ALLOW_COEXIST", "1")
+    monkeypatch.setenv("SIGMA_RESOURCE_MODE", "off")   # undo() also reverts conftest's #1600 default
 
     sd = _project(tmp_path / "d")
     _arm(monkeypatch, lp, sd, exc=RuntimeError("boom"))

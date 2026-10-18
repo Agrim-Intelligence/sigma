@@ -57,13 +57,34 @@ def test_open_and_agent_gives_every_readiness_row(tmp_path):
         assert word in text, (word, text)
 
 
-def test_the_shipped_defaults_are_not_ready(tmp_path):
-    """Placeholder model, unverified flags and no cap key in the gate schema: three failing rows, each with a fix."""
+def test_the_shipped_defaults_are_ready(tmp_path):
+    """#1694: the catalog holds real ids, the caps are optional and the only unverified flag (`--bare`) is one the
+    resolver never requests, so a valid default agent configuration shows no failing row (the cli row is fed `which`)."""
     d, cfg = doctor(), config()
     by = {c["name"].lower(): c for c in rows(d, project(tmp_path, cfg), cfg)}
-    for word in ("resolver model", "resolver flags", "resolver spend"):
-        row = next(c for k, c in by.items() if word in k)
-        assert row["ok"] is False and row["fix"], word
+    flags = next(c for k, c in by.items() if "resolver flags" in k)
+    assert flags["ok"] is True and "not requested" in flags["name"].lower(), flags
+    for word in ("resolver cli", "resolver flags", "resolver model", "resolver configured", "resolver spend"):
+        assert next(c for k, c in by.items() if word in k)["ok"] is True, word
+
+
+def test_a_requested_unverified_flag_still_fails_the_flags_row(tmp_path):
+    """Control: an unverified flag the resolver does request keeps the row failing, so the row is not decoration."""
+    d, cfg = doctor(), config()
+    launcher = d._load_loop_script("feature_upkeep_launcher")
+    real = d._load_loop_script
+
+    class Patched:
+        def __getattr__(self, name):
+            return ("--model",) if name == "UNVERIFIED_FLAGS" else getattr(launcher, name)
+
+    d._load_loop_script = lambda n: Patched() if n == "feature_upkeep_launcher" else real(n)
+    try:
+        found = rows(d, project(tmp_path, cfg), cfg)
+    finally:
+        d._load_loop_script = real
+    flags = next(c for c in found if "resolver flags" in c["name"].lower())
+    assert flags["ok"] is False and "unverified" in flags["name"].lower(), flags
 
 
 def test_a_missing_cli_is_a_failing_row(tmp_path):
@@ -156,3 +177,15 @@ def test_reference_file_exists_and_its_paths_resolve():
     for path in re.findall(r"`([A-Za-z0-9_./-]+/[A-Za-z0-9_./-]+)`", text):
         assert (support.ROOT / path).exists(), path
     assert "](" not in text, "no bracket-paren sequences"
+
+
+def test_confinement_row_differs_with_and_without_a_wall(tmp_path, monkeypatch):
+    d, cfg = doctor(), config()
+    sdlc = project(tmp_path, cfg)
+    monkeypatch.setattr(d.sys, "platform", "darwin")
+    walled = [c for c in rows(d, sdlc, cfg) if c["name"].startswith("resolver session confinement")]
+    monkeypatch.setattr(d.sys, "platform", "linux")
+    bare = [c for c in rows(d, sdlc, cfg) if c["name"].startswith("resolver session confinement")]
+    assert len(walled) == 1 == len(bare) and walled[0]["ok"] and bare[0]["ok"]
+    assert "sandbox-exec" in walled[0]["name"] and "PROVISIONAL" in walled[0]["name"] and "WITHOUT the Bash tool" not in walled[0]["name"]
+    assert "WITHOUT the Bash tool" in bare[0]["name"] and "sandbox-exec" not in bare[0]["name"]

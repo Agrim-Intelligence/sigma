@@ -177,7 +177,8 @@
     "backlog-empty",
     "quota",
     "unknown",
-    "handoff"
+    "handoff",
+    "label-held"
   ],
   "retro_grades": [
     "achieved",

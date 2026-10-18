@@ -160,10 +160,9 @@ outcomes without refilling. A goal claimed this way but never actually dispatche
 that never got a free slot this run, or one you deliberately leave out of a refill — is not
 cleaned up on its own: release its stale claim explicitly with `python3
 "${CLAUDE_SKILL_DIR}/scripts/loop.py" release .sdlc "$goal" "<why>"`, the sanctioned counterpart
-to `mark_in_progress` (removes `sdlc:in-progress`/resets local `status`, leaves an audit comment,
-never touches budget). Unlike 3b's slices, goals carry no declared file-conflict graph — each
-gets its own worktree and PR, so overlap surfaces later as an ordinary PR-rebase (this plugin's own
-history already handles that routinely), not a silent lost edit. Note also that with multiple slots
+to `mark_in_progress` (leaves an audit comment,
+never touches budget). Goals carry no file-conflict graph — each has its own worktree and PR, so overlap
+surfaces as a plain PR-rebase. With multiple slots
 live, it is the ORCHESTRATING pass — the one calling `next`/`next-batch` for refills — that sees any
 **LEDGER INBOX** block (SKILL.md step 6), not a subagent mid-goal; handle it there, between refills,
 the same way you would between goals in the single-goal path.
@@ -179,6 +178,9 @@ review mechanism, park the goal instead of self-approving it.
 minutes, or reported tokens — each only when `config.json` sets it), or `HANDOFF` (the per-session
 goal-count ceiling) → STOP new claims, finish any live goal slots, and report its stderr reason.
 
+`HOLD` (no room) is not a stop, never `DONE`; nothing is claimed, no `budget` spent. Run
+`resource_lease.py wait --max 540`, then pick again.
+
 `DONE` does not always mean the backlog is empty. `next`/`next-batch` never hand back a goal
 whose own body declares a prerequisite (`**Blocked by:** #N`) that is still OPEN — it is left
 untouched, still `sdlc:goal`, never claimed and never parked, and becomes pickable by itself when
@@ -186,25 +188,26 @@ the blocker closes (`discovery.dependency_gate`, on by default; local goals: `#N
 line, held until that file is `done`; an unresolvable ref holds too). When that is
 why a pass came back empty, stderr says so: `nothing pickable — N goal(s) are waiting on an open
 prerequisite (...)`. Report that line rather than "the backlog is drained", and do NOT `--skip`
-past it — skipping is what an older loop needed and it is no longer the right gesture.
+past it.
 
 Once someone closes the blocker, the very next `next`/`next-batch` releases its dependents: the
-gate re-reads the blocker's live state before it reports a hold, rather than trusting the board
-mirror's cache. There is nothing to wait out and nothing to unpark. If the board cannot be
-reached at that moment the hold stands, and stderr says how old the evidence behind it is.
+gate re-reads the blocker's live state rather than trusting the board mirror's cache. Nothing to
+wait out, nothing to unpark. If the board cannot be reached the hold stands, and stderr says how
+old the evidence is.
 **Confining a whole run to one unit of work: `--feature <name>`.** Both `next` and `next-batch`
 take it, and it is *exclusive*, in the words `docs/branching-model.md` §14 settles:
 
 > **While a `--feature` run is active, no goal outside that unit may be picked.**
 
-Not preferential, and with no fallback: when the unit has nothing pickable the run says so and
-**stops**, in a line that distinguishes a drained unit from a drained board. Membership is the
-issue's own `Feature:`/`Branch:` declaration pair (§4), never the `feature:<name>` label alone —
-the label is attached at pick, so a member nobody has picked yet carries none, and a
-label-scoped run would silently skip exactly the goals a scoped run exists to reach. A goal
-outside the unit is left completely untouched: not claimed, not labelled, not commented on, not
-parked. A name that could never be a unit, and a bare `--feature` with no name, are both refused
-before any query is made. Open a unit with `/sigma-define`.
+`--label <name>` (`next`, `next-batch`) does the same for a run label, see `docs/label-drain.md`:
+
+> **While a `--label` run is active, no goal outside that label may be picked, and an open prerequisite of a member is never skipped silently.**
+
+No fallback: when the unit has nothing pickable the run says so and **stops**, distinguishing a
+drained unit from a drained board. Membership is the issue's `Feature:`/`Branch:` declaration pair
+(§4), never the `feature:<name>` label alone — the label is attached at pick. A goal outside the
+unit is left untouched: not claimed, labelled, commented on or parked. An impossible unit name, and
+a bare `--feature`, are refused before any query. Open one with `/sigma-define`.
 
 3. Otherwise: first **cross-check the pick** (opt-in, `backlog_check.enabled`) — before spending a
 token, run `result=$(python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" precheck .sdlc "$goal")`. It

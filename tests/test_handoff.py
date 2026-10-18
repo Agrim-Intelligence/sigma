@@ -2774,3 +2774,153 @@ def test_non_upkeep_filings_and_triage_off_keep_their_priority_1484(tmp_path):
     assert _prio(off) == ["priority:P1"]
     _r, human = _file(tmp_path, config=_off(), priority="P1")
     assert _prio(human) == ["priority:P1"]
+
+
+# --- #1553: P0/P1 filings bypass the per-goal ai_filed cap -------------------------------------------
+
+_ALL = {"urgent": "P2", "routine": "P2", "unclear": "P2"}
+
+
+def _five_armed(tmp_path, cfg):
+    for _ in range(5):
+        _r, src = _file(tmp_path, cfg, priority="P2")
+        assert src.parked == []
+
+
+def test_sixth_p1_filing_is_armed_past_the_goal_cap_1553(tmp_path):
+    """DEFAULT config: the bucket clamps the label to P2+, but the REQUESTED --priority P1 keys the bypass."""
+    _five_armed(tmp_path, None)
+    _r, src = _file(tmp_path, None, priority="P1", priority_requested=True)
+    assert src.parked == [] and src.created["goal_label"] is True
+    assert "priority:P1" not in src.created["labels"] and "priority:P3" in src.created["labels"]
+
+
+def test_per_run_cap_still_parks_a_requested_p1_1553(tmp_path, monkeypatch):
+    monkeypatch.setattr(handoff, "_run_id", lambda: "run-1553")
+    cfg = {"ai_filed": {"max_per_run": 2}}
+    for _ in range(2):
+        _r, src = _file(tmp_path, cfg, priority="P2", goal=str(_ + 100))
+        assert src.parked == []
+    _r, src = _file(tmp_path, cfg, priority="P1", priority_requested=True, goal="300")
+    assert len(src.parked) == 1 and "ai_filed.max_per_run" in src.parked[0][1]
+
+
+def test_sixth_p2_filing_is_parked_naming_the_cap_key_1553(tmp_path):
+    _five_armed(tmp_path, None)
+    _r, src = _file(tmp_path, None, priority="P2", priority_requested=True)
+    assert len(src.parked) == 1
+    assert "ai_filed.max_per_goal" in src.parked[0][1] and "cap" in src.parked[0][1]
+
+
+# ---- #1703: a filing can declare a question for a person
+
+def test_track_needs_person_files_a_parked_issue_with_the_declared_kind_1703(tmp_path, monkeypatch):
+    sdlc = _project(tmp_path)
+    src = TriageSource()
+    monkeypatch.setattr(handoff.sources, "get_source", lambda *a, **k: src)
+    argv = ["handoff.py", "track", str(sdlc), "g.md", "--area", "engine", "--why", "tidy a stale helper",
+            "--queue", "actionable", "--assignee", "same-area", "--blocks", "no"]
+    assert handoff.main(argv + ["--needs-person", "failing_check"]) == 0
+    assert src.created["goal_label"] is False and len(src.parked) == 1
+    assert "sigma-qkind: failing_check" in src.parked[0][1]
+
+
+def test_track_needs_person_with_an_unknown_kind_exits_2_and_files_nothing_1703(tmp_path, monkeypatch, capsys):
+    sdlc = _project(tmp_path)
+    src = TriageSource()
+    monkeypatch.setattr(handoff.sources, "get_source", lambda *a, **k: src)
+    argv = ["handoff.py", "track", str(sdlc), "g.md", "--area", "engine", "--why", "tidy a stale helper",
+            "--queue", "actionable", "--assignee", "same-area", "--blocks", "no"]
+    for bad in ("bogus", "unknown"):
+        assert handoff.main(argv + ["--needs-person", bad]) == 2
+    assert src.created is None and src.parked == []
+    assert "--needs-person" in capsys.readouterr().err
+
+
+def test_track_without_needs_person_is_unchanged_1703(tmp_path, monkeypatch):
+    sdlc = _project(tmp_path)
+    src = TriageSource()
+    monkeypatch.setattr(handoff.sources, "get_source", lambda *a, **k: src)
+    assert handoff.main(["handoff.py", "track", str(sdlc), "g.md", "--area", "engine",
+                         "--why", "tidy a stale helper", "--queue", "actionable", "--assignee", "same-area",
+                         "--blocks", "no"]) == 0
+    assert src.created["goal_label"] is True and src.parked == []
+
+
+def test_create_tracked_issue_needs_person_ignored_when_triage_is_off_1703(tmp_path, capsys):
+    report, src = _file(tmp_path, _off(), needs_person="needs_decision")
+    assert src.parked == []
+    assert "needs-person" in " ".join(report["warnings"]) or "needs-person" in capsys.readouterr().err
+
+
+def test_deny_list_still_wins_over_needs_person_1703(tmp_path):
+    _r, src = _file(tmp_path, why="this change is irreversible once merged", needs_person="needs_decision")
+    assert "sigma-qkind: irreversible" in src.parked[0][1]
+# --- #1697: the per-goal cap parks the lowest priority; `open --priority` forwards the request -------
+
+class _NumberedSource(TriageSource):
+    def __init__(self):
+        super().__init__("0")
+        self.n = 100
+
+    def create_dependency(self, title, body, assignee, labels=(), goal_label=True):
+        self.n += 1
+        super().create_dependency(title, body, assignee, labels, goal_label)
+        return str(self.n)
+
+
+def _five_requested(tmp_path, prio):
+    for _ in range(5):
+        _r, src = _file(tmp_path, None, priority=prio, priority_requested=True)
+        assert src.parked == []
+
+
+def test_higher_priority_filing_parks_the_newest_lowest_armed_one_1697(tmp_path):
+    src = _NumberedSource()
+    for _ in range(5):
+        _file(tmp_path, None, src=src, priority="P3", priority_requested=True)
+    assert src.parked == []
+    _r, src = _file(tmp_path, None, src=src, priority="P2", priority_requested=True)
+    assert [g for g, _t in src.parked] == ["105"]          # the newest P3, not the new P2
+    assert "ai_filed.max_per_goal" in src.parked[0][1] and "ai_filed.max_per_run" in src.parked[0][1]
+    assert src.created["goal_label"] is True
+    # the parked entry no longer counts: the counter holds five armed filings, so the next P3 is parked itself
+    _r, src = _file(tmp_path, None, src=src, priority="P3", priority_requested=True)
+    assert len(src.parked) == 2 and src.parked[1][0] == "107"
+
+
+def test_open_forwards_requested_priority_past_the_goal_cap_1697(tmp_path):
+    sdlc = _project(tmp_path)               # hand_off reads <sdlc>/state; file the five there too
+    for _ in range(5):
+        _file(sdlc, None, priority="P2")
+    src = TriageSource()
+    rep = handoff.hand_off(sdlc, dict(ON), "42", "api", "blocking dependency",
+                           priority="P1", source=src, priority_requested=True)
+    assert rep["issue"] and src.parked == []
+
+
+def test_open_priority_does_not_pass_the_per_run_cap_1697(tmp_path, monkeypatch):
+    monkeypatch.setattr(handoff, "_run_id", lambda: "run-1697")
+    cfg = dict(ON, ai_filed={"max_per_run": 1})
+    _file(tmp_path, cfg, priority="P2", goal="1")
+    src = TriageSource()
+    handoff.hand_off(str(tmp_path), cfg, "2", "api", "blocking dependency", priority="P1", source=src,
+                     priority_requested=True)
+    assert len(src.parked) == 1 and "ai_filed.max_per_run" in src.parked[0][1]
+
+
+def test_cli_track_then_open_scenario_with_fake_gh_1697(tmp_path, monkeypatch):
+    sdlc = _project(tmp_path)
+    src = _NumberedSource()
+    monkeypatch.setattr(handoff.sources, "get_source", lambda *a, **k: src)
+    monkeypatch.setattr(handoff, "_duplicate_search", lambda *a, **k: {"schema": "x", "candidates": [], "degraded": []})
+    base = ["handoff.py", "track", str(sdlc), "g.md", "--area", "engine", "--queue", "queued",
+            "--assignee", "same-area", "--blocks", "no", "--priority"]
+    for i in range(5):
+        assert handoff.main(base + ["P3", "--why", "stale helper cleanup %d" % i]) == 0
+    assert src.parked == []
+    assert handoff.main(base + ["P2", "--why", "a more urgent finding in the same area"]) == 0
+    assert [g for g, _t in src.parked] == ["105"]
+    assert handoff.main(["handoff.py", "open", str(sdlc), "g.md", "--area", "engine", "--priority", "P1",
+                         "--why", "a blocking dependency"]) == 0
+    assert [g for g, _t in src.parked] == ["105"]

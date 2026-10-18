@@ -666,6 +666,8 @@ issue's body and labels, so releasing N goals costs no per-issue reads.
 
 ---
 
+A `--label` run does not move the base: a member that declares a unit is still based on that unit's branch. See `docs/label-drain.md`.
+
 ## 7. At pick: the label, and `sdlc:needs-label`
 
 The body is what a human writes; the label is what everything queries. So at pick, on the
@@ -1611,8 +1613,7 @@ window is one `ls-remote` round trip plus the process start of the push, **unmea
 hosting service or on a local remote), so no bound is claimed beyond "one network round trip per chunk". A lookalike also keeps its backup out of the prune, so
 a stalled backup is cleared by removing the lookalike by hand.
 
-Nothing prunes by itself, and the scheduler of section 13d does not either, so while upkeep is enabled run the prune now and
-then; each rewrite adds one ref. The prune is the one sanctioned deletion in Sigma (section 13b): it removes only refs
+The sweep prunes by itself once per sweep while upkeep is enabled (see [upkeep.md](upkeep.md)); each rewrite adds one ref. The prune is the one sanctioned deletion in Sigma (section 13b): it removes only refs
 that parse as exactly the backup prefix, one unit and one stamp, and nothing else.
 
 A restore is not sticky. While upkeep is enabled the next pick of a goal in that unit brings the branch forward again,
@@ -1620,7 +1621,7 @@ keeping the restored tip as a backup; set `work.rebase_upkeep` to `off` first to
 
 Limits, stated rather than discovered: a host that rejects, hides or caps the namespace, or that cannot do an
 atomic push, fails the whole push on every pass (turn upkeep off, which restores the plain push); a client pre-push
-hook that allows only branches refuses the backup; the commands have no network timeout of their own.
+hook that allows only branches refuses the backup; the backup commands have no network timeout of their own, except the upkeep prune, which carries the sweep's remaining cap as a deadline (#1700).
 
 With the gate closed, or on a machine that has only a plain clone, restore by hand with plain git. A plain clone does
 not carry `refs/sigma/*`, and the old tip is on no branch, so fetch the backup before pushing it:
@@ -1742,6 +1743,9 @@ of settings that contradicts itself closes the whole block, and `/sigma-doctor` 
 | backup.former_prefixes | [] | list of names | namespaces an earlier product wrote, pruned the same way |
 | conflicts.resolve | "off" | off, mechanical, agent | how far a unit conflict may be resolved |
 | conflicts.mechanical_without_verify | false | boolean | lets Level 1 resolve a changelog conflict when no verify command is set; see `docs/upkeep-part-b.md` |
+| conflicts.agent.model / reviewer.model | "sonnet" | haiku, sonnet, opus, fable | resolver and reviewer tiers for Level 2 |
+| conflicts.agent.max_budget_usd_per_unit / spend_ceiling_usd_per_day | null | positive dollars | both must be set or Level 2 behaves as off |
+| conflicts.agent.timeout_minutes / max_units_per_sweep | 30 / 5 | 1 to 240 / 1 to 100 | wall clock per run, units per sweep |
 ```
 
 The relation to the older switch: `work.rebase_upkeep` (on by default; an unrecognised value reads on) still decides the
