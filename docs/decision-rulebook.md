@@ -101,6 +101,8 @@ Nothing below is needed for the rest of Sigma. Do the steps in order and stop wh
 10. **Last, and only if you want it: the applier.** Set `rulebook.autonomy.applier.enabled` to `true`, with the
     conservative defaults. It needs the ledger watcher running, because the watcher runs its tick. Before starting the watcher, check for a leftover `.sdlc/state/watch.stop`
     and remove it: while that file exists the watcher exits at once and the applier never runs.
+    Before turning it on, run `unpark.py report <sdlc_dir>`: it lists every parked or blocked issue with its kind, area,
+    matching rule, level and whether the applier would act now, later or never, and writes nothing.
 
 ## What it will never do
 
@@ -164,12 +166,21 @@ Housekeeping:
 The agent that parks a goal declares the kind with `loop.py record <sdlc_dir> <goal> parked "<text>" --qkind <kind>`,
 which adds one machine line (`sigma-qkind: <kind>`) to the park comment. Without the flag the park is undeclared (one
 stderr line suggests a kind; nothing is guessed from the text), and the Rulebook treats it as not learnable.
+`unpark.py list <sdlc_dir> --undeclared` lists the parks with no kind.
+`unpark.py declare <sdlc_dir> --from-suggestions [--kind K] [--dry-run]` declares every confidently suggested one at once (never `irreversible`).
 `unpark.py declare <sdlc_dir> <issue> <kind>` declares one afterwards; only Sigma's own park comments and an
 OWNER, MEMBER or COLLABORATOR declaration count. A filing the deny-list parks is declared a hard-stop kind and
 carries `sigma-hardstop: <class>`. The closed list:
 
 `irreversible`, `needs_decision`, `merge_conflict`, `failing_check`, `no_evidence`, `dependency`, `review_cap`,
-`quota`, `unknown`, `scope_hold`, `owner_hold`, `reviewer_down`, `review_post_ambiguous`.
+`quota`, `unknown`, `scope_hold`, `owner_hold`, `reviewer_down`, `review_post_ambiguous`, `label_set`.
+
+`label_set` is never declared on a park: it is the one route question `label_drain.py plan` asks per run label (arm the unarmed issues, arm only the ones that can start, or leave them), listed with the other up-front questions and the `ready` field.
+
+`label_drain.py answer <sdlc_dir> <label> --answers <file.json> [--dry-run]` applies the answers to those questions. The file maps question ids (as `plan` prints them) to one of the question's options; an unknown id or an option outside the bank refuses the whole file with exit 2 and no write. Each answer applies its effect first (`arm` for the arming route, `unpark.py resolve` for a parked member's route, the first-line `sigma:spend-approved=<token>` marker for `go ahead`) and then writes one decision record (scope `label:<name>`) and its one comment, so a failed effect writes no record. The marker is written only on a paid member whose author is a listed spend approver; the others are named in the output and left as they are. Dependency and registry answers are recorded only; Sigma does not reassign or close issues for you. A question left out stays open, the command re-runs `plan` and prints what is still open and whether the label is `ready`, and answering the same question twice records once.
+
+
+Run labels learn by kind (#1581). A label's kind is its name up to the first `:` or `/` (else the whole name; `label_drain.kinds` maps exact names to kinds), and the arming question is recorded under the area `label-kind:<kind>`, so ten `label_set` answers in one kind reach autonomy level 1 and an approved rule for that area is shown first as "recommended" with its rule id, never applied until you answer; the record carries `rule_id`, `shown` and `accepted` as parks do. With the records part open `plan` adds a history line per question. Spend questions are never recommended. Earlier arming answers recorded under the area `repo` no longer count toward the label-kind pair. The short hash of a label or kind name carries no repository-specific salt. On a public repository the label name and its kind are hashed in every record and comment.
 
 `scope_hold` and `owner_hold` are written by the two pick gates (scope expansion and ownership). With AI-filed
 triage on (`ai_filed.triage.enabled`, default true) those gates park a held goal with that kind instead of writing the
@@ -254,6 +265,7 @@ python3 skills/sigma-loop/scripts/rule_draft.py list    .sdlc                 # 
 python3 skills/sigma-loop/scripts/rule_draft.py draft   .sdlc <qkind> <area>  # proposes; never approves
 python3 skills/sigma-loop/scripts/rule_draft.py suggest .sdlc [--propose N]  # ranks the pairs that matter; N drafts proposals
 python3 skills/sigma-loop/scripts/rule_draft.py approve .sdlc <rule_id>       # owner only
+python3 skills/sigma-loop/scripts/rule_draft.py rules   .sdlc                 # every approved rule: id, kind, area, option, action, last confirmed
 ```
 
 `draft` splits the pair's human answers deterministically by a hash of the record id. The majority option of one part
@@ -264,6 +276,8 @@ has a rule. It needs the rules, autonomy and records parts all open. On a public
 are stored, so drafts and comparisons work from those alone.
 
 `rule_draft.py suggest .sdlc` ranks the question kind and area pairs by importance from the repository's own records: how many parks, how many hours the goals stayed parked (until that goal's next record, else now), how many goals the parked goals block (directly or through chains, read from the open issues' own `Blocked by` text; zero when that cannot be read), and how often the answers repeat (the comparison key of `decision_record.key_of`). The score is parks plus hours divided by 24 plus blocked goals, times the agreement. Each line names the suggested option (the majority key) and whether one any-area rule (area `*`) covers the pair or the area needs its own rule because its answers differ from the kind's. Hard-stop and `unknown` kinds are never listed. `--propose N` drafts the top N uncovered rules through the same exam as `draft` (one `*` rule per kind where the areas agree) and never approves; the owner approves with `rule_draft.py approve`. When rules are on, the doctor's rulebook row lists the top three uncovered pairs.
+
+`rule_draft.py rules .sdlc` lists every approved rule with what it does (unpark, keep parked, or only recommends) and when it was last confirmed; the doctor's rulebook row counts the approved rules per action and names this verb.
 
 `rule_draft.py list --why` also prints one `skipped <kind> / <area>: <reason>` line for each pair left out (hard-stop
 or unknown kind, level below 2, or the share of the most common answer). `rule_draft.py due` prints, for each approved
@@ -286,6 +300,15 @@ closed, brief and resolve output is unchanged.
 `approve` refuses, with one line, for an unknown id, an already approved rule, a non-owner, an unresolved login or a
 closed gate. For a login that is not an owner it prints the line that asks an owner to approve, and the rule stays proposed.
 
+### Auto-approve (opt-in, off by default)
+
+With `rulebook.rules.auto_approve` set to the JSON boolean true (and the rules, autonomy and records parts open, and at least one name in `rulebook.autonomy.owners`), the watcher tick, `rule_draft.py list` and `rule_draft.py suggest` draft and approve a rule for every learned pair that has a unique majority option, at any level and without the held-out exam.
+The rule is approved as the first configured owner and carries `approved_by` and `auto: true`; each approval writes one decision record with gesture `approve` and how `autonomous`.
+The applier arms such a rule at once, at any level, and applies it after the window; the window, the daily cap, the re-ask age, the person-wins rule and an owner `no` all still apply.
+A `no` after an auto rule was applied reverts the goal and lowers the pair as usual, and the rule is then held until an owner reconfirms it by hand with `rule_draft.py reconfirm`.
+Hard-stop kinds, the `unknown` kind, shape-only options and pairs that already have a rule are never drafted.
+The doctor shows a warning row, `rules: auto-approve ON (rulebook.rules.auto_approve)`, while it is on. Hand-editing `auto` or `approved_by` breaks the seal and the rule stops counting. Retiring an auto-approved rule records its pair in a top-level `retired_pairs` list in the rulebook file (only `qkind` and `area`, unsealed, since it can only restrict the auto path), and auto-approve then skips that pair until a hand `rule_draft.py draft` or an `approve` of the pair clears it (#1696).
+
 ## The applier and the veto window
 
 The applier is the one part that answers for a person. It is a separate gate, `rulebook.autonomy.applier.enabled`,
@@ -299,6 +322,7 @@ What the tick does, in order:
 1. Reads owner comments. An owner's exact `no` on a **pending** ask cancels it. An owner's `no` on an **applied** ask,
    posted after it was applied and inside the window, records a veto. The veto is judged by the comment's own time, so
    a late tick still honours it, up to `stale_after_intervals` watch intervals past the window.
+   A pending ask that cannot apply now (no matching rule, level below 3, hard-stop kind or the daily cap reached, #1702) or is stuck past twice its window is read at most once per window (`veto_read_at` on the ask), so its `no` can land up to one window late; a young ask that could apply is still read every tick.
 2. Plans actions. An ask is applied only when all hold: nobody answered, the window (`window_minutes`, default 1440)
    has passed, the kind is not a hard-stop kind, the derived level is at least 3, exactly one sealed approved rule
    matches, and fewer than `max_auto_applied_per_day` (default 3, 0 stops it) were applied in the last 24 hours.
@@ -309,6 +333,10 @@ What the tick does, in order:
    gesture lands it writes the record and posts the comment naming the rule id.
 4. Handles vetoes. A vetoed unpark is parked again (labels, and the board card on a board-active repository), a
    comment says so, and the kind drops a level.
+
+If another machine's evidence commits are ahead of this checkout, the tick acts on nothing: it prints
+`applier: held - <reason>` (and `--dry-run` prints the same), and the doctor's applier row adds `HELD: <reason>`.
+Pull the default branch to clear it; the next tick drops the hold.
 
 Level 3 comments every time. Level 4 is silent only for a kind in `allow_silent` on an owner-approved rule, and every
 `spot_check_one_in`-th silent-eligible apply per kind and area (default 5) still comments. That counter advances only
@@ -323,7 +351,13 @@ pending veto are deleted after `prune_after_days` (default 30); answered and vet
 
 A `keep-parked` on a dependency park (route answer "wait for it") no longer posts the opt-out marker, even with the gates closed. This is intended; the owner is to ratify it.
 
-A quota ask matched to the "wait it out" rule is applied only after the reset time the ask records (`reset_at`). A reset time that is missing or unreadable counts as not yet reached, so the ask stays with the person. Other kinds are not affected.
+Instead it posts a waiting note (a person's "wait for it" answer, and a rule applied by the tick, always). The automatic sweep then resumes that dependency park when its last named blocker closes (#1549): gesture unpark, recorded as an autonomous sweep decision. A newer park comment cancels the note, and a person's keep-parked opt-out marker still wins.
+
+PROVISIONAL (owner to ratify): a park applied by label only, with no Sigma park comment, also outranks an older waiting note. When the newest `sdlc:parked` label event on the issue is later than the newest waiting note, the sweep does not resume it. If no label event can be read, the #1549 behaviour is unchanged (#1630).
+
+PROVISIONAL (owner to ratify): a `keep-parked` on a quota park (route answer "wait it out") likewise posts no opt-out marker, but the sweep does not resume it either (a quota park names no blocker), so it stays parked until a person unparks it. Every other route still posts it.
+
+A quota ask matched to the "wait it out" rule is held until the reset time the ask records (`reset_at`). A quota park whose reason names a reset (`Retry-After: N` seconds, `resets in N minutes|hours`, `resets at` an ISO time or epoch, `x-ratelimit-reset`) records it on the park (a `sigma-reset-at:` line) and on the ask; a time not in the future or over 7 days away is ignored. When no reset is named there is one behaviour: the ask waits the ordinary window (`window_minutes`) and no longer, with no separate fixed wait. Other kinds are not affected.
 
 ## Hard stops and the record-done net
 
@@ -375,7 +409,7 @@ which means no call. When the rolling 24-hour spend reaches the ceiling, the doc
 
 ## Importing past decisions
 
-`decision_import.py` turns decisions you already made into records, so a repository does not start at zero.
+`decision_import.py` turns decisions you already made into records, so a repository does not start at zero. Every record writer passes the free text through the leak scan's secret-shape scrub before the file is written (matches become `[REDACTED:<shape>]`), and `apply` prints how many values were scrubbed, never the values.
 
 ```
 python3 skills/sigma-loop/scripts/decision_import.py scan  .sdlc [--profile DIR ...] [--project-dir DIR ...]
@@ -413,7 +447,7 @@ python3 skills/sigma-loop/scripts/decision_import.py remove .sdlc --project-dir 
 - **Bounds.** `max_file_bytes` (500 MB, streaming), `time_budget_s` (60, a total per scan; a file cut short is reported
   as partial), `max_candidates` (500). A dash-leading folder name takes two words: `--project-dir -srv-demo-work-repo`.
 - **Classifier.** `rulebook.import.classifier` is `"table"` (default: a fixed keyword table in code) or `"model"`. With
-  `"model"` and the records gate open, `apply` sends the clipped question and option labels to the named small model
+  `"model"` and the records gate open, `apply` sends the question and option labels, scrubbed for secret shapes and then clipped (#1698), to the named small model
   (`model`, default `haiku`) and nothing from the project: each call runs in a fresh empty temporary directory (refused if an
   instruction file sits above it), without `CLAUDE_PROJECT_DIR`, and with project settings, hooks, skills and MCP config
   skipped when the installed CLI lists those flags. User-level instructions still load. It accepts only a listed kind and area (else `unknown`), caches by fingerprint so a second run
@@ -476,8 +510,10 @@ has been measured. Setting a cap does not count calls made before it was set.
 
 ## Migrating the old confirmation label
 
-Nothing writes the legacy `sdlc:needs-confirmation` label any more except the rebase upkeep's own findings (a report for
-a person, never a goal): a filed follow-up is already a goal, armed or parked with a declared question. Boards that
+With triage on (`ai_filed.triage.enabled`, the default) nothing writes the legacy `sdlc:needs-confirmation` label any
+more: a filed follow-up is already a goal, armed or parked with a declared question, and a rebase upkeep finding is
+parked at filing with a declared kind (a report for a person, never a goal). Only with `ai_filed.triage.enabled: false`
+are follow-ups and rebase upkeep findings still filed with the label. Boards that
 still carry leftovers are cleared with:
 
 ```
@@ -549,6 +585,7 @@ flag, which closes the whole block.
 | `autonomy.applier.stale_after_intervals` | `3` | watch intervals without a tick that the doctor reads as dead |
 | `autonomy.applier.prune_after_days` | `30` | age at which an applied ask with no veto is deleted |
 | `rules.enabled` | `false` | open the rules part |
+| `rules.auto_approve` | `false` | let the watcher approve learned rules as the first owner (see Auto-approve) |
 | `rules.path` | `".sdlc/rulebook.json"` | where the rule file lives |
 | `rules.reask_days` | `90` | age at which an approved rule is due for confirmation |
 | `rules.draft.min_agreement` | `0.90` | agreement of held-out answers needed to draft |
@@ -574,6 +611,8 @@ flag, which closes the whole block.
 | `import.max_budget_usd_per_run` | `1.0` | classifier per run |
 | `import.timeout_s` | `60` | classifier per call |
 | `import.require_repo_cwd` | `false` | same as `--only-in-repo` |
+
+Doctor rows for the filing triage (advisory, shown only when wrong, silent with `ai_filed.triage.enabled` false): "AI-filed triage config is valid" names the offending `ai_filed` key, and "AI-filed counter is readable" names the counter file; either fault parks every AI-filed filing until fixed.
 
 Related keys outside the block: `ai_filed.triage.enabled` (gate holds), `ai_filed.migration.*` (the label migration),
 `ledger.watch.interval_seconds` (the interval the dead-tick check is measured in), `action_log.enabled` (the record-done

@@ -1553,6 +1553,9 @@ def _rebase_feature(run, cwd, path, branch, base_ref, sha, remote, report, stric
         # reach the replay; it says nothing about what the replay keeps.
         try:
             dropped = dropped_paths(path, sha, after, inherited_ok=True)
+            if resolved is not None and resolved.get("accepted_deletes"):
+                # #1716: a delete the Level 2 proofs accepted (every unit line moved, or listed and approved) is the decision
+                dropped = [one for one in dropped if one not in set(resolved["accepted_deletes"])]
         except Exception as exc:          # noqa: BLE001 - unmeasured is never "nothing dropped"
             report["why"] = ("the pre/post tree comparison could not be made, so nothing was "
                              "pushed: %s" % _flat(exc))
@@ -1669,10 +1672,8 @@ def level2_off_reason(config, which=None):
         if not reading.enabled or reading.settings["conflicts.resolve"] != "agent":
             return "conflicts.resolve is not agent"
         s = reading.settings
-        if s["conflicts.agent.max_budget_usd_per_unit"] is None:
-            return "conflicts.agent.max_budget_usd_per_unit is not set"
-        if s["conflicts.agent.spend_ceiling_usd_per_day"] is None:
-            return "conflicts.agent.spend_ceiling_usd_per_day is not set"
+        if s["conflicts.agent.max_budget_usd_per_unit"] is None and s["conflicts.agent.spend_ceiling_usd_per_day"] is not None:
+            return "conflicts.agent.spend_ceiling_usd_per_day is set without conflicts.agent.max_budget_usd_per_unit"
         catalog = _launcher().CATALOG
         for key in ("conflicts.agent.model", "conflicts.agent.reviewer.model"):
             if not catalog.get(s[key]):
@@ -1682,6 +1683,12 @@ def level2_off_reason(config, which=None):
         return None
     except Exception as exc:              # noqa: BLE001 - any doubt reads as off
         return "the settings could not be read (%s)" % type(exc).__name__
+
+
+def _session_wall_prefix(launcher, root, scratch_parent):
+    """#1693: the confinement for the resolver session, or None where the platform has none (the session then has no Bash)."""
+    session = os.path.join(root, "resolver", "session")
+    return launcher.session_wall(sys.platform, shutil.which, os.path.expanduser("~"), session, [scratch_parent])[0]
 
 
 def _default_level2_plan(config, sdlc_dir=None, cwd=None):
@@ -1695,18 +1702,22 @@ def _default_level2_plan(config, sdlc_dir=None, cwd=None):
     root = os.path.join(tempfile.gettempdir(), LEVEL2_ROOT_PREFIX + hashlib.sha256(str(sdlc_dir).encode()).hexdigest()[:10])
     for name in ("resolver", "scratch", "review"):
         os.makedirs(os.path.join(root, name), exist_ok=True)
-    budget = float(s["conflicts.agent.max_budget_usd_per_unit"])
-    ceiling = float(s["conflicts.agent.spend_ceiling_usd_per_day"])
+    # unset (null) means no limit: None passes through, and the launcher then adds no spend flag and checks no ceiling
+    raw_budget, raw_ceiling = s["conflicts.agent.max_budget_usd_per_unit"], s["conflicts.agent.spend_ceiling_usd_per_day"]
+    budget = None if raw_budget is None else float(raw_budget)
+    ceiling = None if raw_ceiling is None else float(raw_ceiling)
+    review_cap = None if budget is None else budget * 0.5
     common = dict(state_dir=os.path.join(str(sdlc_dir), *LEVEL2_SPEND_REL.split("/")), repo_root=str(cwd) if cwd else None,
-                  binary=shutil.which("claude"), flags=(), credential_var=None, scratch_parent=os.path.join(root, "scratch"), rates=None,
+                  binary=shutil.which("claude"), flags=(), credential_var=s["conflicts.agent.credential_var"], scratch_parent=os.path.join(root, "scratch"), rates=None,
                   ceiling_machine_usd=ceiling, ceiling_team_usd=ceiling, budget_seconds=5.0, home=os.path.expanduser("~"),
                   timeout=int(s["conflicts.agent.timeout_minutes"]) * 60, cap_usd=budget, sdlc_dir=str(sdlc_dir))
-    # the reviewer gets half the per-unit budget: the launcher requires its cap to be smaller than the resolver's
+    # the reviewer gets half the per-unit budget when one is set: its cap must be smaller than the resolver's
     review_model = launcher.CATALOG[s["conflicts.agent.reviewer.model"]]      # reviewer.enabled is validated, never honoured: a push needs a review
     return {"sdlc_dir": str(sdlc_dir), "launch": dict(common, model=launcher.CATALOG[s["conflicts.agent.model"]]),
-            "review_launch": dict(common, model=review_model, directory=os.path.join(root, "review"), cap_usd=budget * 0.5), "review_cap_usd": budget * 0.5,
+            "review_launch": dict(common, model=review_model, directory=os.path.join(root, "review"), cap_usd=review_cap), "review_cap_usd": review_cap,
             "review_model": review_model, "resolver_root": os.path.join(root, "resolver"), "limits": None, "host": "claude",
-            "environ": None, "config": config, "max_units_per_sweep": int(s["conflicts.agent.max_units_per_sweep"])}
+            "environ": None, "config": config, "max_units_per_sweep": int(s["conflicts.agent.max_units_per_sweep"]),
+            "session": True, "net_prefix": _session_wall_prefix(launcher, root, common["scratch_parent"])}
 
 
 LEVEL2_PLAN_FACTORY = _default_level2_plan
@@ -1735,7 +1746,8 @@ def _level2(run, path, report, level1):
         _park_resolved(report, dict(out["refusal"], level=2))
         return {"parked": True}
     return {"run_id": level1["run_id"], "stops": out["stops"], "files": out["files"], "level": 2, "evidence": out["evidence"],
-            "charged": out["charged"], "plan": plan}
+            "charged": out["charged"], "plan": dict(plan, dropped_by_delete=out.get("dropped_by_delete") or {}),
+            "dropped_by_delete": out.get("dropped_by_delete") or {}, "accepted_deletes": list(out.get("accepted_deletes") or ())}
 
 
 def _attempt_of(resolved):
@@ -3252,8 +3264,94 @@ def _rebase_pass(sdlc_dir, config, goal, unit, run, cwd, remote, branch, base, r
 # --------------------------------------------------------------------------- CLI
 
 
+PREVIEW_FILES_MAX = 20
+
+
+def _preview_conflict(run, cwd, base_ref, feature_ref):
+    """`merge-tree --write-tree` of the two tips -> `(True, [])` clean, `(False, files)` conflicting, None unanswered.
+    It writes content-addressed objects only and moves no ref. A rebase replays commit by commit, so it may conflict
+    where this merge does not: the answer is a prediction."""
+    argv = ["git", "merge-tree", "--write-tree", "--name-only", "--no-messages", base_ref, feature_ref]
+    try:
+        run(cwd, argv)
+        return True, []
+    except Exception as exc:                                  # noqa: BLE001 - exit 1 is the conflict answer
+        lines = str(exc).splitlines()
+        if lines and re.fullmatch(r"[0-9a-f]{40,64}", lines[0].strip()) and len(lines) > 1:
+            return False, sorted({l.strip() for l in lines[1:] if l.strip()})[:PREVIEW_FILES_MAX]
+        return None
+
+
+def _preview_unit(sdlc_dir, config, unit, run, cwd, remote, base):
+    """One unit's predicted outcome, from the remote-tracking refs only: reads, never writes."""
+    branch = features.BRANCH_PREFIX + unit
+    row = {"unit": unit, "branch": branch, "outcome": "refused", "why": "", "files": []}
+    base_ref, feature_ref = "%s/%s" % (remote, base), "%s/%s" % (remote, branch)
+    for ref, what in ((base_ref, "base"), (feature_ref, "feature branch")):
+        try:
+            run(cwd, ["git", "rev-parse", "--verify", "--quiet", "refs/remotes/%s^{commit}" % ref])
+        except Exception:                                     # noqa: BLE001
+            row["why"] = "no remote-tracking %s %s" % (what, ref)
+            return row
+    try:
+        direct, _ = _unacked(sdlc_dir, run, cwd, unit, base_ref, direct_commits(run, cwd, base_ref, feature_ref), config)
+    except Exception as exc:                                  # noqa: BLE001
+        row["why"] = "direct commits unreadable: %s" % _flat(exc)
+        return row
+    if direct:
+        row["why"] = "%d direct commit(s) not acknowledged (ack them with `ack`)" % len(direct)
+        return row
+
+    def ancestor(a, b):
+        try:
+            run(cwd, ["git", "merge-base", "--is-ancestor", a, b])
+            return True
+        except Exception:                                     # noqa: BLE001 - exit 1 means "no"
+            return False
+    if ancestor(base_ref, feature_ref):
+        row.update(outcome="current", why="the base is already in the feature branch")
+    elif ancestor(feature_ref, base_ref):
+        row.update(outcome="fast-forward", why="the feature branch has nothing the base lacks")
+    else:
+        got = _preview_conflict(run, cwd, base_ref, feature_ref)
+        if got is None:
+            row["why"] = "the merge probe gave no answer"
+        elif got[0]:
+            row.update(outcome="clean rebase", why="no conflict predicted")
+        else:
+            row.update(outcome="conflict", why="conflict predicted (a merge probe; a rebase may differ)", files=got[1])
+    return row
+
+
+def preview(sdlc_dir, config, run=None, fetch=False):
+    """The sweep-level dry run (#1559): every unit the sweep would consider, with its predicted outcome. Moves no ref,
+    pushes nothing, makes no worktree and writes nothing; works with the upkeep gate closed. No fetch unless asked: it
+    reads the remote-tracking refs, so the answer is as of the last fetch."""
+    run = run or _run
+    sched = _load("feature_upkeep_sched")
+    cwd = str(pathlib.Path(sdlc_dir).parent)
+    remote, base = _remote(config), base_of(config)
+    out = {"base": base, "remote": remote, "as_of": "last fetch", "units": [], "notes": []}
+    if not base:
+        out["notes"].append("no work.base configured: nothing can be predicted")
+        return out
+    if fetch:
+        try:
+            run(cwd, ["git", "fetch", "--quiet", remote])
+            out["as_of"] = "fetched now"
+        except Exception as exc:                              # noqa: BLE001
+            out["notes"].append("fetch failed, reading the last fetch: %s" % _flat(exc))
+    listed, notes = sched.list_units_notes(sdlc_dir)
+    out["notes"] += notes
+    settings = gate.read(config).settings
+    for unit in sched.selected(listed, settings["units.include"], settings["units.exclude"]):
+        out["units"].append(_preview_unit(sdlc_dir, config, unit, run, cwd, remote, base))
+    return out
+
+
 USAGE = ("usage: feature_rebase.py upkeep <sdlc_dir> <unit> [goal] | "
          "feature_rebase.py show <sdlc_dir> <unit> | "
+         "feature_rebase.py preview <sdlc_dir> [--fetch] | "
          "feature_rebase.py ack <sdlc_dir> <unit> (<sha>... | --all) | "
          "feature_rebase.py restore <sdlc_dir> <unit> (--list | <stamp> --expect <tip>) | "
          "feature_rebase.py prune <sdlc_dir> [--dry-run]")
@@ -3355,6 +3453,14 @@ def main(argv):
             "direct": direct_commits(_run, cwd, "%s/%s" % (remote, base),
                                      "%s/%s" % (remote, branch)) if base else []},
             indent=2, sort_keys=True))
+        return 0
+    if len(argv) >= 3 and argv[1] == "preview":
+        parsed = _flags(argv[3:], set(), {"--fetch"})
+        if parsed is None or parsed[0]:
+            print(USAGE, file=sys.stderr)
+            return 2
+        result = preview(argv[2], state.load_config(argv[2]), fetch="--fetch" in parsed[1])
+        print(json.dumps(result, indent=2, sort_keys=True))
         return 0
     if len(argv) >= 4 and argv[1] == "ack":
         rest = argv[4:]

@@ -196,9 +196,9 @@ deliberate patience budget: `PENDING_ATTEMPTS` (10) re-reads at `PENDING_INTERVA
 answered, before gate() gives up and reports it still pending. On the BEHIND-rebase path (`main`
 moving under the PR mid-merge) that same ~7.5min budget can be spent again each time a rebase
 attaches a fresh head, up to `BEHIND_REBASES` (3) times before the race arms or parks — roughly
-**22.5 minutes** worst case, on top of the separate, smaller BEHIND poll-with-backoff
-(`BEHIND_ATTEMPTS` × `BEHIND_BACKOFF`, capped by `BEHIND_BACKOFF_MAX`) that watches each rebased
-head settle. The safe minimum is that full worst case, **~1,350,000ms (22.5 minutes)** — `gate()` only READS GitHub's state while it polls; it mutates nothing.
+**22.5 minutes** worst case, plus the smaller BEHIND poll per rebased head. The
+safe minimum is **~1,350,000ms (22.5 minutes)**, plus the quality-ratchet budget and git reads when that
+gate is on (docs/quality-delta.md) — `gate()` only READS GitHub's state while it polls; it mutates nothing.
 So if the host cuts the call short while it polls, nothing was recorded as merged or armed — re-run
 `work.py merge .sdlc "$goal"` (idempotent). A cut DURING the merge call itself may have landed: run `loop.py record .sdlc "$goal" review`, never re-run merge. Or
 read `gh api repos/{owner}/{repo}/pulls/<PR> --jq '{mergeable,mergeable_state}'` first to see GitHub's read. No GraphQL: REST reads in docs/cloud-sessions.md.

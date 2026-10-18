@@ -322,13 +322,15 @@ autonomy level. At low levels the loop only records and recommends; at the top t
 applier, it may answer a question nobody answered within a window, using a rule an owner approved, tell you on the
 issue, and take your `no` as a veto. A hard-stop net can also park dangerous actions, a drift judge can compare a
 question to your reference documents (shadow only), and past decisions can be imported. Public repositories keep
-free text out of records. Full guide, including how to turn it on step by step and what it will never do:
+free text out of records. A learning loop ranks which question and area pairs deserve a rule and pools agreement
+across machines. Full guide, including how to turn it on step by step and what it will never do:
 [docs/decision-rulebook.md](docs/decision-rulebook.md).
 
 **Upkeep.** Keeps long-lived unit branches (`feature/<name>`) rebased onto their base. On a 12-hour window, the first
 session start (or the watcher tick) starts one bounded background sweep of every unit that is behind; each rewrite
 keeps the old tip as a backup ref you can restore or prune; commits made directly on a unit branch are refused rather
-than overwritten. It needs three opt-ins (`upkeep.enabled`, `ledger.enabled`, and `SIGMA_UPKEEP_JOB=1` on one machine).
+than overwritten. A changelog or append-only log conflict is unioned, and an optional agent conflict level is off by default;
+with no spend key set it runs with no spend limit. It needs three opt-ins (`upkeep.enabled`, `ledger.enabled`, and `SIGMA_UPKEEP_JOB=1` on one machine).
 Full guide: [docs/upkeep.md](docs/upkeep.md).
 
 ## Configuration
@@ -344,6 +346,8 @@ Settings live in `.sdlc/config.json`, which `/sigma-init` writes for you. The on
 | `budget.max_iterations` / `max_minutes` / `max_tokens` | 20 / 480 / 100,000,000 | Per-run limits on goals, wall-clock time and spend. |
 | `model_selection` | off | `"auto"` picks a model tier per goal (haiku, sonnet, opus or fable). |
 | `ledger.enabled` | off | A shared, committed record of what each person's loop did. |
+| `ledger.host_alias` / `salt_host_token` | `null` / `false` | Keep the host name hash out of ledger file names, or replace it with a label. |
+| `session_release` | 15 and 30 minutes | Hands back goals a session claimed but never started. |
 
 Every flag and its default: [configuration reference](docs/configuration.md). Run `/sigma-doctor` to
 see which features are live for your config.
@@ -365,7 +369,7 @@ see which features are live for your config.
 | [Companion plugins](docs/companions.md) | the optional `code-review` plugin |
 | [Managed settings](docs/managed-settings.md) | enforce settings across an organisation |
 | [Zero-touch routines](docs/routines.md) | trigger the loop on a schedule |
-| [What is new in 1.0.15](docs/whats-new-1.0.15.md) | see every change in this release and what changes by default when you upgrade |
+| [What is new in 1.0.16](docs/whats-new-1.0.16.md) | see every change in this release and what changes by default when you upgrade |
 | [Decision Rulebook](docs/decision-rulebook.md) | record decisions, earn autonomy levels, add hard stops, import past decisions |
 | [Upkeep](docs/upkeep.md) | keep unit branches rebased on a 12-hour window, with backups |
 | [Configuration reference](docs/configuration.md) | see every flag and default |

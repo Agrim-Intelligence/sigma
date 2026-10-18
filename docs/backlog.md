@@ -444,7 +444,9 @@ and the board field write is skipped when the GraphQL budget is low; the label w
    raised, whichever member the walk enters through, and the cycle is reported once.
    Whole-body scans here use only the explicit phrases (blocked by, depends on, depends upon), so prose such as
    "after #N" makes no edge. A blocker that is merged, closed or a pull request is never written to, and the dry
-   pass writes nothing. At most 10 outside blockers are read per pass; the rest are reported on stderr, not dropped.
+   pass writes nothing. At most 10 outside blockers are read per pass, newest first; one read and found at its required rank is not read
+   again for ten minutes, so the next passes reach the older ones. Blockers not yet read are counted as unread
+   in the repair state and in the doctor row, never as a clean zero.
 
 **Picker order.** With `discovery.order` at `"priority"` and `discovery.blocking_priority_override` on (the
 default), the picker orders by priority tier first, then a goal that also carries `sdlc:blocking` ahead of
@@ -479,6 +481,8 @@ there.
 
 Config: `discovery.blocker_promotion.mode` (`always` default | `off`) is the only key this feature reads.
 
+**Preview before enabling.** `python3 <installed-sigma>/skills/sigma-loop/scripts/reconcile.py blockers .sdlc` lists, read-only, every blocker the repair would raise (blocker, current priority, new priority, the goal it blocks), the blocking cycles, and the count of outside or unreadable blockers. It runs in any mode, `off` included, and writes nothing: run it before changing the mode to `always`.
+
 **A goal BLOCKED on another issue resumes by itself once that blocker is resolved (a closed issue or a merged pull request). A goal a human
 PARKED never does.** That split is why this sweep ships on. When work on a goal finds a genuine
 dependency, the loop gives it the `sdlc:blocked` overlay: it keeps `sdlc:goal`, and nothing picks it
@@ -502,7 +506,7 @@ repository, and posts a comment naming the closed blocker(s). A label never chan
 naming several blockers waits for all of them, and one with no machine-detectable reference is left
 alone. The same sweep keeps `sdlc:blocking` in sync on the blocker issues themselves.
 
-**It never resumes an `sdlc:parked` issue** (#1394). The sweep decides from the text's shape alone,
+**It never resumes an `sdlc:parked` issue** (#1394) from its text, with one exception (#1549): a dependency park that carries the waiting note a "wait for it" decision posts (a person's answer or an applied Rulebook rule) is resumed when its last named blocker closes, recorded as an autonomous sweep unpark. A newer park comment cancels the note, and the keep-parked opt-out marker still wins. The sweep decides from the text's shape alone,
 so it cannot tell a stale dependency from a person's deliberate checkpoint that happens to say
 "blocked by #N". A park stays a human decision: resume it with **`/sigma-unpark`**, which answers the
 question that caused the park before it changes a label, or with `/sigma-triage`'s `enact`, the

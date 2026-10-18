@@ -69,6 +69,16 @@ def _load(name):
 _rr = _load("run_receipt")
 
 
+_GUARD = []
+
+
+def _guard():
+    """resource_guard, loaded once (#1738): the one place a model session asks for admission."""
+    if not _GUARD:
+        _GUARD.append(_load("resource_guard"))
+    return _GUARD[0]
+
+
 def _config(sdlc_dir):
     try:
         return json.loads((pathlib.Path(sdlc_dir) / "config.json").read_text(encoding="utf-8"))
@@ -1050,22 +1060,28 @@ def run_review(sdlc_dir, brief_path, scratch_paths, goal=None, phase=None, hint=
             if key is None:
                 return failed("content_unbound", 1, "reviewer run: this checkout cannot be bound to the review: "
                               "%s. Fix that and re-run (nothing was sent to the reviewer)" % cause, cause)
-        try:
-            proc = subprocess.Popen(command, shell=mechanism == "command", stdin=subprocess.PIPE,
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                    start_new_session=True)
-        except OSError as exc:
-            return failed("start_failed", 1,
-                          f"reviewer run: could not start reviewer process ({type(exc).__name__})")
-        try:
-            output, _errors = proc.communicate(input=brief, timeout=timeout)
-        except subprocess.TimeoutExpired:
-            _stop_review_process(proc)
-            return failed("timeout", 124,
-                          f"reviewer run: timed out after {timeout}s; reviewer process group stopped")
-        except BaseException:
-            _stop_review_process(proc)
-            raise
+        with _guard().session_lease("reviewer", goal or "run", ttl=timeout * 2 + 60,
+                                    config=_config(sdlc_dir).get("resource")) as lease:        # #1738
+            if lease is not None and hasattr(lease, "reason"):
+                # A hold is "could not run now": the existing failed outcome, nothing spawned, never a verdict.
+                return failed("held", 1, "reviewer run: a model session is held (%s); no verdict accepted"
+                              % lease.reason, str(lease.reason))
+            try:
+                proc = subprocess.Popen(command, shell=mechanism == "command", stdin=subprocess.PIPE,
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                        start_new_session=True)
+            except OSError as exc:
+                return failed("start_failed", 1,
+                              f"reviewer run: could not start reviewer process ({type(exc).__name__})")
+            try:
+                output, _errors = proc.communicate(input=brief, timeout=timeout)
+            except subprocess.TimeoutExpired:
+                _stop_review_process(proc)
+                return failed("timeout", 124,
+                              f"reviewer run: timed out after {timeout}s; reviewer process group stopped")
+            except BaseException:
+                _stop_review_process(proc)
+                raise
         if proc.returncode != 0:
             return failed("nonzero_exit", 1,
                           f"reviewer run: reviewer exited with exit {proc.returncode}; no verdict accepted")

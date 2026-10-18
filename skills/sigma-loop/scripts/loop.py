@@ -10,6 +10,7 @@ stop a run."""
 import os, sys, pathlib, importlib.util, time, subprocess, inspect, json, re, tempfile, hashlib, uuid
 import contextlib, calendar
 import errno
+import datetime as _datetime
 
 try:
     import fcntl                    # POSIX only — see _try_acquire_claim_lock's docstring
@@ -231,6 +232,15 @@ ENFORCEMENT_GATES = (
                   "reach the ceiling",
      "condition": "`handoff.after_goals` is checked first and wins a tie: at the shipped 20/20 the "
                   "stop reads HANDOFF, not BUDGET"},
+    {"control": "Resource hold at pick", "function": "_resource_gate",
+     "kind": "python-gate", "hosts": "all", "enabled_by": (),
+     "settings": (),
+     "mechanism": "leaves goals unclaimed and prints HOLD while the machine has no room for another "
+                  "goal session; slots follow the derived headroom, never a constant",
+     "condition": "enforce — `resource.mode: null` resolves to `enforce` on every surface (`resource_guard.resolve_mode`: "
+                  "the environment variable, then the config key, then `enforce`); "
+                  "mode `off` is byte-identical to before; `observe` only logs the would-be hold; "
+                  "an unreadable platform clamps to one goal with a notice"},
 )
 ENFORCEMENT_EXEMPT = ()
 
@@ -1454,6 +1464,23 @@ def _feature_scope_ok(source, goal, unit):
     return False
 
 
+def _label_scope_ok(source, goal):
+    """#1575: the pick-time half of `--label` exclusivity -- may this run claim `goal`? True when no
+    label scope is in force. Re-checks that the candidate still carries the label, from labels the
+    list read and the claim's own body/labels read already fetched (zero extra calls). A goal that
+    lost the label (or whose labels were never read) is LEFT UNTOUCHED -- no claim, no label write,
+    no comment -- and passed over like a `--skip`ped goal."""
+    wanted = getattr(source, "label_scope", None)
+    if not wanted:
+        return True
+    if source.scope_label_current(goal) is True:
+        return True
+    print("loop.py: not claiming #%s — this run is confined to label %r and #%s no longer carries "
+          "it. Left untouched (no claim); taking the next candidate" % (goal, wanted, goal),
+          file=sys.stderr)
+    return False
+
+
 def _feature_drained_note(source, skip):
     """#1661: the ONE thing a scoped run owes its operator when it stops -- WHICH kind of empty.
 
@@ -1484,6 +1511,131 @@ def _feature_drained_note(source, skip):
     else:
         print("loop.py: unit %r has nothing pickable, and neither has the rest of the board — the "
               "backlog is drained, not merely out of scope" % wanted, file=sys.stderr)
+
+
+#: #1579: the most outside prerequisites one `--label` run pulls into its label, and what it has already
+#: looked at, keyed (sdlc_dir, label) -> {ref: pull result}. One process is one run for `run_loop`; a
+#: CLI `next` is a fresh process, where a ref pulled earlier carries the label and reads as `already`.
+_LABEL_PULL_CAP = 50
+_LABEL_PULLED = {}
+_LABEL_CAP_SAID = set()
+
+
+def _label_drain():
+    return _load("label_drain")
+
+
+def _label_pull_holds(sdlc_dir, source, config, goal, hold):
+    """#1579: under a `--label` scope only, pull each open prerequisite named in `hold` that is outside
+    the label, once per ref per run, at most `_LABEL_PULL_CAP` per run. Zero calls when nothing is held
+    or no label scope is in force. Fail-open: a pull that breaks leaves the goal held, as before."""
+    label = getattr(source, "label_scope", None)
+    if not label or not hold:
+        return
+    key = (str(sdlc_dir), label)
+    memo = _LABEL_PULLED.setdefault(key, {})
+    for prefix, num in re.findall(r"([\w.\-/]*)#(\d+)", hold):
+        ref = "%s#%s" % (prefix, num) if prefix else num
+        if ref in memo:
+            continue
+        if len(memo) >= _LABEL_PULL_CAP:
+            if key not in _LABEL_CAP_SAID:
+                _LABEL_CAP_SAID.add(key)
+                print("loop.py: label %r: pull cap of %d outside prerequisites reached; #%s and any "
+                      "further ones stay held and are not pulled" % (label, _LABEL_PULL_CAP, num),
+                      file=sys.stderr)
+            break
+        try:
+            res = _label_drain().pull(sdlc_dir, label, ref, goal, config=config,
+                                      run=getattr(source, "_run", None))
+        except Exception as exc:                # noqa: BLE001 - a pull never costs a pick
+            res = {"ref": ref, "result": "unreadable", "reason": str(exc)}
+        memo[ref] = res
+        if res["result"] in ("pulled", "already"):
+            print("loop.py: #%s holds #%s; %s into label %r" % (
+                goal, num, "pulled it" if res["result"] == "pulled" else "it is already", label),
+                file=sys.stderr)
+        elif res["result"] != "closed":
+            print("loop.py: #%s holds #%s, which stays out of label %r (%s); #%s stays held" % (
+                goal, ref, label, res.get("reason") or res["result"], goal), file=sys.stderr)
+
+
+def _label_set_decided(sdlc_dir, config, label):
+    """#1732: True when a `label_set` decision is recorded for this label (records off -> False)."""
+    try:
+        return bool(_label_drain()._recorded(sdlc_dir, config, label).get("label_set:" + label))
+    except Exception:                           # noqa: BLE001
+        return False
+
+
+def _label_not_ready(sdlc_dir, source, config):
+    """#1579: the one line to print when a `--label` run must not start yet, else None. Runs the
+    read-only `plan` once, before the run's first claim, and refuses on unarmed members or open
+    questions. Fail-open on a plan that cannot run: the picker's own posture."""
+    label = getattr(source, "label_scope", None)
+    if not label or state.load_cursor(sdlc_dir).get("run_iteration"):
+        return None
+    try:
+        p = _label_drain().plan(sdlc_dir, label, config=config, run=getattr(source, "_run", None))
+    except Exception as exc:                    # noqa: BLE001
+        print("loop.py: label %r start check did not run (%s); continuing" % (label, exc),
+              file=sys.stderr)
+        return None
+    unarmed = sum(1 for r in p["members"] if r["verdict"] == "unarmed")
+    # #1732: the plan's real open questions; a scope-hold, dependency or spend question still never blocks a start
+    asks = sum(1 for q in p.get("questions") or [] if q.get("kind") not in ("scope_hold", "dependency", "irreversible"))
+    if unarmed and not any(q.get("kind") == "label_set" for q in p.get("questions") or []) \
+            and _label_set_decided(sdlc_dir, config, label):
+        unarmed = 0                             # #1732: a recorded decision to leave them unarmed
+    if not unarmed and not asks:
+        return None
+    verb = ("run `label_drain.py arm %s %s --apply`" % (sdlc_dir, label) if unarmed
+            else "run `label_drain.py plan %s %s` and answer the open questions with /sigma-unpark"
+                 % (sdlc_dir, label))
+    return ("label %s is not ready: %d unarmed member(s), %d open question(s); nothing was claimed or "
+            "written. First %s, then start again" % (label, unarmed, asks, verb))
+
+
+def _label_drained_note(sdlc_dir, source, config, skip):
+    """#1579: counterpart of `_feature_drained_note` for a `--label` run -> the run-stop class,
+    `label-held` when open members remain that were not picked, else `backlog-empty`. Prints the
+    per-member reason list, the outside prerequisites left out, and what was filed during the drain
+    without the label. Costs one plan plus one list, on the terminal path only; fail-open."""
+    label = getattr(source, "label_scope", None)
+    if not label:
+        return "backlog-empty"
+    try:
+        p = _label_drain().plan(sdlc_dir, label, config=config, run=getattr(source, "_run", None))
+    except Exception as exc:                    # noqa: BLE001
+        print("loop.py: label %r has nothing pickable (the check for open members did not run: %s)"
+              % (label, exc), file=sys.stderr)
+        return "backlog-empty"
+    if not p["members"]:
+        print("loop.py: label %r is drained: no open members. The label can be deleted by a person"
+              % label, file=sys.stderr)
+        return "backlog-empty"
+    print("loop.py: label %r has %d open member(s) that were not picked:" % (label, len(p["members"])),
+          file=sys.stderr)
+    for r in p["members"]:
+        print("  #%d %s" % (r["number"], r["reason"] or "not picked this run (skipped or claimed elsewhere)"),
+              file=sys.stderr)
+    for ref, res in sorted(_LABEL_PULLED.get((str(sdlc_dir), label), {}).items()):
+        if res["result"] == "refused":
+            print("  prerequisite #%s left out of the label: %s" % (ref.lstrip("#"), res["reason"]),
+                  file=sys.stderr)
+    try:
+        since = state.load_cursor(sdlc_dir).get("run_started_at") or 0
+        filed = []
+        for i in sources.fetch_issues_rest(getattr(source, "_run"), source.repo, [source.goal_label], 200):
+            made = calendar.timegm(time.strptime(i.get("created_at") or "", "%Y-%m-%dT%H:%M:%SZ"))
+            if made >= since and label not in {(l.get("name") if isinstance(l, dict) else l)
+                                               for l in i.get("labels") or []}:
+                filed.append("#%s" % i["number"])
+        if filed:
+            print("  filed during the drain, not in the label: %s" % ", ".join(filed), file=sys.stderr)
+    except Exception:                           # noqa: BLE001 - a diagnostic never breaks a stop
+        pass
+    return "label-held"
 
 
 #: `.sdlc` dirs whose board mirror THIS PROCESS has already force-refreshed because a goal it was
@@ -2097,7 +2249,72 @@ def _ensure_unit_tracking(sdlc_dir, goal, cooldown_s=300):
         print(f"loop: unit-tracking not checked (non-fatal): {exc}", file=sys.stderr)
 
 
-def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_heartbeat=True):
+HOLD_RETRY_FLOOR = 30   # seconds; a HOLD never advertises a retry sooner than the sampler can change its mind
+
+
+def _resource_gate(config):
+    """#1600: the machine's say on admitting new goals, asked once per picker call and before any claim.
+
+    Returns None when no limit applies (`resource.mode` off, observe, or an observe-mode guard failure),
+    an int `fit` (how many session-cost units the headroom admits, at least 1) or ("HOLD", reason) when
+    nothing fits under `enforce`. An unsupported platform or any unexpected guard exception under
+    `enforce` clamps to ONE goal with a one-line stderr notice, never a crash and never silently
+    unguarded. Mode `off` returns before anything is imported. Read-only apart from the hold marker
+    (`last.json`) and the would-hold event log in the resource state folder."""
+    block = (config or {}).get("resource")
+    if str(_HERE) not in sys.path:
+        sys.path.insert(0, str(_HERE))
+    mode = importlib.import_module("resource_guard").resolve_mode(config)     # #1759: the one rule
+    block = dict(block if isinstance(block, dict) else {}, mode=mode)
+    if mode == "off":
+        return None
+    try:
+        if str(_HERE) not in sys.path:
+            sys.path.insert(0, str(_HERE))
+        lease = importlib.import_module("resource_lease")
+        directory = lease.state_dir()
+        now = time.time()
+        _sample, limits, live, observed = lease._view(directory, now, block if isinstance(block, dict) else None)
+        cost = lease.learned_cost(observed.get("goal", [])) if isinstance(observed.get("goal"), list) else None
+        cost = max(1, cost or limits.session_cost)
+        if limits.critical:
+            reason = "critical: memory below half the reserve"
+        elif limits.goal_block:
+            reason = "pressure: new work is held"
+        else:
+            reason = "memory: headroom %d below one goal unit (%d)" % (max(limits.headroom, 0), cost)
+        fit = 0 if (limits.critical or limits.goal_block) else max(0, int(limits.headroom // cost))
+        if limits.max_goals:
+            running = sum(1 for _, r in live if r.get("kind") == "goal")
+            fit = min(fit, max(0, limits.max_goals - running))
+            if fit == 0 and not (limits.critical or limits.goal_block):
+                reason = "max_goals reached"
+        last_path = os.path.join(directory, "last.json")
+        previous = lease._read_json(last_path, {})
+        if fit == 0:
+            if limits.mode != "enforce":
+                lease.log_event(directory, {"event": "would_hold", "kind": "goal", "reason": reason})
+                return None
+            since = previous.get("since") if previous.get("state") == "hold" else now
+            lease._atomic_write(last_path, {"state": "hold", "since": since, "reason": reason,
+                                            "kind": "goal", "goal": "", "at": now})
+            lease.log_event(directory, {"event": "hold", "kind": "goal", "reason": reason, "at": now})
+            stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(since))
+            retry = max(HOLD_RETRY_FLOOR, int(lease._retry()))
+            return ("HOLD", "%s; retry ~%ds; held since %s" % (reason, retry, stamp))
+        if previous.get("state") == "hold":
+            lease._atomic_write(last_path, {"state": "open", "since": now, "reason": "ok",
+                                            "kind": "goal", "goal": "", "at": now})
+        return None if limits.mode != "enforce" else fit
+    except Exception as exc:    # noqa: BLE001 - the guard must never crash a pick
+        if mode == "observe":
+            return None
+        print("loop: resource guard unavailable (%s); admitting ONE goal" % (str(exc) or type(exc).__name__),
+              file=sys.stderr)
+        return 1
+
+
+def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_heartbeat=True, gate=True):
     """(kind, goal_or_reason): 'goal' (+marks in_progress, the commit point — second element is
     the goal ref), 'DONE' (drained — second element None on a genuine empty read, or, #1084, a
     short degraded-read reason string when `source.read_degraded()` is True — mirrors BUDGET's own
@@ -2204,11 +2421,18 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
     # already prevented by its own TTL watermark (gate 2), which makes a not-due call one file read.
     # The cost of leaving it out was total: an operator who uses `next` rather than `next-batch`
     # NEVER swept, so a repo could sit ~23h past a 60-minute TTL while `next` ran repeatedly.
+    if gate:                       # #1600: before any claim; `next_batch` asks once and passes gate=False
+        fit = _resource_gate(config)
+        if isinstance(fit, tuple):
+            return fit
     session_pid = os.getppid() if session_pid is None else session_pid
     # A standalone picker pass is a loop tick, including an empty backlog. `next_batch` already
     # refreshed immediately before its one prologue sweep, so its slot calls opt out explicitly.
     if refresh_heartbeat:
         write_session_heartbeat(sdlc_dir, session_pid)
+    refusal = _label_not_ready(sdlc_dir, source, config)       # #1579: --label only, claims nothing
+    if refusal:
+        return ("DONE", refusal)
     _reconcile_sweep(sdlc_dir, config)
     just_unparked = _auto_unpark_sweep(sdlc_dir, config)
     just_reclaimed = _auto_reclaim_stale_claims(sdlc_dir, source, config)
@@ -2264,9 +2488,11 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
             # `_emit_run_stop_once` only because `pending_outside_feature` puts the degraded-read
             # flag back where it found it; see its docstring.
             _feature_drained_note(source, skip)
+            stop_class = ("backlog-empty" if degraded or not getattr(source, "label_scope", None)
+                          else _label_drained_note(sdlc_dir, source, config, skip))   # #1579
             # #905: the real production chokepoint for the budget-exhaustion run_stop -- both the CLI `next`
             # verb and `run_loop` pass through here, so wiring it once covers both drivers.
-            _emit_run_stop_once(sdlc_dir, config, source, "backlog-empty", session_pid=session_pid)
+            _emit_run_stop_once(sdlc_dir, config, source, stop_class, session_pid=session_pid)
             return ("DONE", "degraded read — backlog state unknown" if degraded else None)
         # #1499: FIRST, ahead of the lease read and the claim lock below, because the whole defect
         # was ordering -- a goal with an unsatisfied prerequisite used to be claimed and only then
@@ -2280,6 +2506,7 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
                   "taking the next candidate" % (subject, hold, still), file=sys.stderr)
             held.append((subject, hold))
             skip.add(goal)
+            _label_pull_holds(sdlc_dir, source, config, goal, hold)   # #1579: --label only
             continue
         holder_actor, holder_writer = lease.get(str(goal), (None, None))
         # #1197 (corrected post-#1237-review): `live_worker_check` is lazy — `claim_belongs_to_me`
@@ -2391,10 +2618,27 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
                                 session_pid=session_pid)
             return admission_stop
         try:
+            # #1575: an excluded goal must receive NO write, and `attach_at_pick` can write (attach
+            # label, refusal overlay + comment, no-unit handling). So the scope label is re-checked
+            # from a FRESH read BEFORE it. Cost: ONE extra `fetch_body_labels` read, on label-scoped
+            # runs only (`attach_at_pick` does its own read and cannot share this one); unscoped
+            # runs make exactly the same calls as before. A failed read falls back to the list
+            # read's labels (`scope_label_current`), and unknown means not-in-scope.
+            if getattr(source, "label_scope", None):
+                try:
+                    source.fetch_body_labels(goal)
+                except Exception:       # noqa: BLE001 - fail to the list read's labels, below
+                    pass
+                if not _label_scope_ok(source, goal):
+                    _cancel_goal_slot(sdlc_dir, session_pid, goal)
+                    _release_claim_lock(lock_fd)
+                    skip.add(goal)
+                    continue
             decision = feature_labels.attach_at_pick(sdlc_dir, source, goal, config)
             unit = _unit_at_pick(sdlc_dir, goal, config, decision)
             proceed = (decision.proceed
                        and _feature_scope_ok(source, goal, unit)
+                       and _label_scope_ok(source, goal)
                        and _scope_ok_at_pick(sdlc_dir, source, goal, config, unit)
                        and _owner_ok_at_pick(sdlc_dir, source, goal, config, unit))
         except BaseException:
@@ -2530,6 +2774,11 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
     # Keep the old batch shape (only the remaining number of goal lines, with the
     # terminal reported on the next call) using the SAME session-local count that
     # `_next` reserves atomically. The reservation remains the final race guard.
+    fit = _resource_gate(config)                  # #1600: one sample per call, before any claim
+    if isinstance(fit, tuple):
+        return [fit]
+    if fit is not None:
+        max_concurrent = min(int(max_concurrent or 1), fit)
     ceiling_applied = False
     ceilings = [n for n in (_handoff_ceiling(config.get("handoff") or {}),
                              (config.get("budget") or {}).get("max_iterations")) if n]
@@ -2570,7 +2819,7 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
             slots -= held
     for _ in range(slots):
         kind, goal = _next(sdlc_dir, source, config, extra_skip=skip, session_pid=session_pid,
-                           refresh_heartbeat=False)
+                           refresh_heartbeat=False, gate=False)
         if kind != "goal":
             picks.append((kind, goal))
             break
@@ -3747,6 +3996,12 @@ def _autowatch_setup_warnings(config):
 # create-seam detail below (both map to the same class, so the overlap is harmless) — the ordering
 # is otherwise defensive rather than load-bearing.
 _REASON_CLASS_RULES = (
+    # #1637: work.py's quality ratchet park texts, FIRST: "could not measure" is no_evidence, and the
+    # worse-metric park's own opening is failing_check, so a reason they quote ("rate limit",
+    # "irreversible") can never reclassify either. The needles are the gate's exact openings, not the
+    # bare phrase, so an unrelated park that merely names `quality ratchet` keeps its own class.
+    ("quality ratchet could not measure", "no_evidence"),
+    ("quality ratchet: required metric", "failing_check"),
     ("irreversible", "irreversible"),                       # SKILL.md's own park-for-irreversible
                                                               # prose — best-effort only, see _reason_class's docstring.
                                                               # This rule firing first used to make the
@@ -3888,9 +4143,23 @@ def _suggest_kind(detail):
         return found
     text = (detail or "").lower()
     for kind, words in _load("decision_import").KIND_WORDS:
-        if any(w in text for w in words):
+        if any(_suggest_word_hit(kind, w, text) for w in words):
             return kind
     return "unknown"
+
+
+# #1562: the irreversible words that name an ACTION; each counts only in action position (the clause rule
+# `file_triage._action_sentence` applies, #1519), so a park that merely mentions the word delete is not
+# suggested irreversible. The other words state the property outright and stay plain substrings.
+_ACTION_WORDS = ("delete", "drop table", "force push", "destructive")
+
+
+def _suggest_word_hit(kind, word, text):
+    if word not in text:
+        return False
+    if kind == "irreversible" and word in _ACTION_WORDS:
+        return _load("file_triage")._action_sentence(text, word) is not None
+    return True
 
 
 def _reason_class(detail):
@@ -4552,6 +4821,14 @@ def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transit
         # one line up -- ask what the source can actually do before calling it that way, the same
         # discipline this function already applies to `fail()`.
         park_text = detail or result
+        reset_at = None
+        if qkind == "quota" and config is not None and _load("applier").enabled(config):
+            try:                                   # #1563: a quota park that names its reset records it
+                reset_at = _load("qkind").parse_reset(park_text, _datetime.datetime.now(_datetime.timezone.utc))
+            except Exception:                      # noqa: BLE001 - never block the park
+                reset_at = None
+        if reset_at is not None:
+            park_text = park_text + "\n" + _load("qkind").render_reset_line(reset_at)
         if qkind is not None:                      # #994: the declared kind rides inside the text
             park_text = park_text + "\n" + _load("qkind").render_line(qkind)
         if tier is not None and "tier" in inspect.signature(source.park).parameters:
@@ -4562,7 +4839,7 @@ def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transit
             park_failed.append(goal)
         if qkind is not None and config is not None:   # #1178: the ask opens after the park landed
             try:
-                _load("applier").open_for_park(sdlc_dir, config, goal, qkind, source=source)
+                _load("applier").open_for_park(sdlc_dir, config, goal, qkind, source=source, reset_at=reset_at)
             except Exception:                          # noqa: BLE001 - never block the park
                 pass
             try:                                       # #1229: drift judge, shadow only
@@ -5639,6 +5916,19 @@ def _verify_result(code, sdlc_dir, goal):
     return text[:500]
 
 
+def _resource_verify_on(config):
+    """#1601: verify goes through admission unless the resolved mode (#1759) is `off`."""
+    if str(_HERE) not in sys.path:
+        sys.path.insert(0, str(_HERE))
+    return importlib.import_module("resource_guard").resolve_mode(config) != "off"
+
+
+def _verify_timeout_seconds(config):
+    minutes = (config.get("verify") or {}).get("timeout_minutes")
+    ok = isinstance(minutes, int) and not isinstance(minutes, bool) and 1 <= minutes <= 1440
+    return (minutes if ok else 60) * 60
+
+
 def verify_goal(sdlc_dir, goal):
     """The receipt/lock wrapper (#1650) around `_verify_goal_body`, whose docstring has the exit codes.
     Exit 6 (added here): a verify for this goal is ALREADY RUNNING -- refused before running anything, with
@@ -5823,11 +6113,29 @@ def _verify_goal_body(sdlc_dir, goal, guard):
     content_before = state.content_fingerprint(root, _base_ref, pathlib.Path(sdlc_dir).name)
     start = time.perf_counter()
     outputs = []
-    for command in commands:
-        proc = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=root)
-        outputs.append(proc.stdout + proc.stderr)
-        if proc.returncode != 0:
-            break
+    if _resource_verify_on(config):
+        # #1601: admitted, in its own process group, with a derived worker count; exit 5 RESOURCE-HOLD
+        # runs nothing and writes no evidence, so `record done` still refuses.
+        guarded = _load("resource_guard").run(
+            "verify", list(commands), root, _verify_timeout_seconds(config), goal,
+            config=config.get("resource"), repo=root)
+        if guarded.hold is not None:
+            _what = ("the verify group Sigma started was stopped; no evidence, the goal is not failed; rerun when "
+                     "admission reopens" if getattr(guarded, "shed", False)
+                     else "the proving command was not run; nothing was killed")
+            print(f"RESOURCE-HOLD exit=5 -- {guarded.hold.reason}; retry_after={guarded.hold.retry_after:g}s "
+                  f"({_what})", file=sys.stderr)
+            ledger.safe_append(sdlc_dir, "verify", goal, config=config, stream=ledger.EVENTS, exit=5)
+            actionlog.safe_append(sdlc_dir, goal, "verify_run", exit=5)
+            return 5
+        outputs.extend(guarded.outputs)
+        proc = subprocess.CompletedProcess(commands, guarded.returncode, "\n".join(guarded.outputs), "")
+    else:
+        for command in commands:
+            proc = subprocess.run(command, shell=True, capture_output=True, text=True, cwd=root)
+            outputs.append(proc.stdout + proc.stderr)
+            if proc.returncode != 0:
+                break
     # #267: an explicit per-node run proves planned tests actually executed, even when the
     # configured shell command only prints success. Missing scope remains advisory at verify;
     # work.pr fails closed unless the operator supplies the published exception reason.
@@ -6078,7 +6386,7 @@ def run_loop(sdlc_dir, run_goal):
                           # REST OF THIS RUN so a doubly-failing source can't spin on one goal forever
     while True:
         kind, goal = _next(sdlc_dir, source, config, extra_skip=poisoned,
-                           session_pid=session_pid)
+                           session_pid=session_pid, gate=False)
         if kind == "DONE":
             # #905: _next() itself already emitted (gated/deduped/degradation-checked) before
             # returning — nothing to do here but record the outcome for THIS function's own caller.
@@ -6146,7 +6454,7 @@ def run_loop(sdlc_dir, run_goal):
 #: `thread`, `session-pid`, `skip`). Computed from `ledger.EVENT_FIELDS`/`actionlog.AGENT_FIELDS`
 #: themselves, not re-listed, so this set can never drift from the real field vocabulary.
 _VALUE_FLAGS = frozenset(
-    {"pid", "thread", "session-pid", "session-generation", "skip", "feature"}
+    {"pid", "thread", "session-pid", "session-generation", "skip", "feature", "label"}
     | {f for fields in ledger.EVENT_FIELDS.values() for f in fields}
     | {f for fields in actionlog.AGENT_FIELDS.values() for f in fields}
 )
@@ -6229,6 +6537,30 @@ def _cli_feature(argv_tail, source):
     return sources.scope_to_feature(source, raw)
 
 
+def _cli_label(argv_tail, source):
+    """#1575: parse `--label <name>` off a CLI tail and confine `source` to it -> the name, or None.
+    Raises `sources.LabelScopeError` (one stderr line, exit 2, before any backlog query). A bare
+    `--label` arrives from `_flags` as the string "true" and is refused, never read as a label."""
+    flags = _flags(argv_tail)
+    raw = flags.get("label")
+    if raw is None:
+        return None
+    return sources.scope_to_label(source, raw, feature=flags.get("feature"))
+
+
+def _cli_scopes(argv_tail, source):
+    """Apply `--feature` and `--label` -> exit code 2 (after printing one line) on a refusal, else
+    None. `--label` is validated first so a combined call is refused as such."""
+    try:
+        if "label" in _flags(argv_tail):
+            _cli_label(argv_tail, source)
+        _cli_feature(argv_tail, source)
+    except (sources.FeatureScopeError, sources.LabelScopeError) as exc:
+        print(f"loop.py: {exc}", file=sys.stderr)
+        return 2
+    return None
+
+
 def _phase_gate_notice(sdlc_dir, config, kind, payload):
     """#684: at the moment a goal is picked, say on stderr (where the orchestrator reads it) that the phase
     record is ENFORCED for it. A live run that never saw this ran the whole goal inline and was refused at
@@ -6267,7 +6599,7 @@ def _print_pick(kind, payload):
         print(payload)
         return
     print(kind)
-    if payload and kind in ("BUDGET", "DONE", "HANDOFF", "FULL"):
+    if payload and kind in ("BUDGET", "DONE", "HANDOFF", "FULL", "HOLD"):
         print(f"{kind} ({payload})", file=sys.stderr)
 
 
@@ -6385,8 +6717,8 @@ def _validate_event(kind, flags, kind_allowlist=None):
 
 
 USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> [--session-pid PID] | "
-         "next <dir> [--skip a,b] [--feature NAME] [--session-pid PID] | "
-         "next-batch <dir> [--skip a,b] [--feature NAME] [--session-pid PID] | "
+         "next <dir> [--skip a,b] [--feature NAME] [--label NAME] [--session-pid PID] | "
+         "next-batch <dir> [--skip a,b] [--feature NAME] [--label NAME] [--session-pid PID] | "
          "session-active <dir> | prune-state <dir> [--dry-run] [--keep-days N] [--limit N] | session-end <dir> [--session-pid PID] | "
          "claim <dir> <goal> [--session-pid PID] | "
          "agent-start <dir> <goal> --pid PID [--thread T] | agent-reclaim <dir> <goal> [--thread T] | "
@@ -6936,10 +7268,7 @@ def _dispatch(argv):
         # made, no side effect to undo. `get_source` is a pure constructor; moving it up changes no
         # call and no order.
         source = sources.get_source(argv[2], config)
-        try:
-            _cli_feature(argv[3:], source)
-        except sources.FeatureScopeError as exc:
-            print(f"loop.py: {exc}", file=sys.stderr)
+        if _cli_scopes(argv[3:], source) == 2:
             return 2
         _ensure_watcher(argv[2], config)            # every loop trigger keeps the watcher (and the ledger) alive
         _ensure_ledger_delivery(argv[2], config)    # ...and notices when that flow has stalled (#2393)
@@ -6961,10 +7290,7 @@ def _dispatch(argv):
     if len(argv) >= 3 and argv[1] == "next-batch":  # F10.5-3/#375: up to parallel.goals.max_concurrent
         config = state.load_config(argv[2])         # goals to dispatch as concurrent worktree subagents
         source = sources.get_source(argv[2], config)
-        try:
-            _cli_feature(argv[3:], source)          # #1661: same up-front refusal as `next` above
-        except sources.FeatureScopeError as exc:
-            print(f"loop.py: {exc}", file=sys.stderr)
+        if _cli_scopes(argv[3:], source) == 2:      # #1661/#1575: same up-front refusal as `next`
             return 2
         _ensure_watcher(argv[2], config)
         _ensure_ledger_delivery(argv[2], config)    # ...and notices when that flow has stalled (#2393)

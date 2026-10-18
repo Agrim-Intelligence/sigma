@@ -19,6 +19,15 @@ Defaults below are what `/sigma-init` scaffolds (`config.json.tmpl`). Not everyt
 | `ledger.watch.interval_seconds` | 900 | how often `watch_daemon.py` pulls the ledger ops branch and refreshes the inbox |
 | `ledger.publish_on_write` | on | a ledger write you TYPE (`ledger.py append`, `handoff.py open`/`track`/`ack`) publishes itself, and says on stderr whether the team can see it — set `false` to keep the push local and leave it to the watcher |
 | `upkeep: {"enabled": true}` | off (the block is scaffolded with `enabled` false; an existing adopter copies it in) | keeps the old tip of a rewritten unit branch as a backup ref, adds the restore and prune commands, and with `ledger.enabled` and `SIGMA_UPKEEP_JOB=1` on one machine lets the first session start or the ledger watcher tick start one bounded sweep of every unit behind its base once `upkeep.window_hours` (default 12) have passed since that machine's last sweep. The old `triggers.*` and `auto.*` keys stay readable for one release but no longer schedule; the doctor and `docs/branching-model.md` section 13d say so. Run once end to end on a private throwaway repository, without a real model, a chat service or branch rulesets; see [docs/upkeep.md](upkeep.md), `docs/launch/evidence/upkeep-hosted-run.md` and `docs/branching-model.md` |
+| `session_release.grace_minutes` | 15 | GitHub source: a dead session's claimed-but-never-started goals are released on the next pick or start once its registry entry has been quiet this long; a started goal is never released |
+| `session_release.hold_minutes` | 30 (`0` turns it off) | any pick also releases a goal a live session has held this long with no work record and no agent marker; see [the ledger guide](action-log-and-ledger.md) |
+| `ledger.host_alias` | `null` | a label (letters and digits, at most 12) used in ledger entry file names instead of the host-name hash |
+| `ledger.salt_host_token` | `false` | `true` salts the host-name hash with `discovery.github.repo`, so one machine reads as a different token per repository; changing either key re-roots this machine |
+| `rulebook.spend.weekly_usd` / `monthly_usd` | `null` / `null` (no cap) | optional shared cap on the real cost of the import classifier and the drift judge over a rolling 7 and 30 days |
+| `rulebook.autonomy.veto_recover_after` | `l3_min_answers` / 6, at least 5 | agreeing live comparisons after which a veto's one-level drop wears off |
+| `rulebook.import.require_repo_cwd` | `false` | keep only transcript answers whose working directory is inside this repository (same as `--only-in-repo`) |
+| `rulebook.import.max_budget_usd_per_call` | `0.50` (was `0.05` before 1.0.15) | classifier per-call ceiling |
+| `upkeep.conflicts.agent.*` | model `sonnet`, both spend keys `null`, `timeout_minutes` 30, `max_units_per_sweep` 5, `reviewer.model` `sonnet`, `credential_var` `null` | the agent conflict level; with both spend keys `null` it runs with no spend limit; set `max_budget_usd_per_unit` (and optionally `spend_ceiling_usd_per_day`) to cap it, see [Upkeep part B](upkeep-part-b.md) |
 | `action_log: {"enabled": true}` | on | a full local, gitignored trace of loop activity per goal (`.sdlc/state/log/<goal>.jsonl`) — read via the `sigma-log` skill; never touches the shared ledger either direction; `retention_days` also caps how far back `sigma-log`'s `outcomes.py report --window` may look |
 | `agent_watch: {"enabled": true}` | off | background-agent-death watch — a claimed goal's registered pid confirmed dead notifies (email if `notify.email` is also configured, else always a ledger note); needs `ledger.enabled` too, since `watch_daemon.py` is what runs the check |
 | `comment_watch: {"enabled": true}` | off | in-flight comment watch — a new comment on a claimed issue notifies the claimant via a ledger note (self-comments suppressed); needs `ledger.enabled` too, since `watch_daemon.py` is what runs the check, and github discovery (comments aren't a concept for local goal files) |
@@ -32,13 +41,36 @@ Defaults below are what `/sigma-init` scaffolds (`config.json.tmpl`). Not everyt
 | `work.ci_required` | `true` | `false` makes GitHub CI optional: the merge gate stops waiting on, and parking for, failing or pending **non-required** checks (`mergeStateStatus` UNSTABLE), for teams whose real CI runs on Jenkins or another system after the feature branch is built. It never overrides GitHub: a check the base branch **requires** (BLOCKED) still parks and is named, because GitHub refuses that merge itself. Only a real boolean `false` turns it off. Measured by unit tests against stubbed GitHub replies only, not yet against a live repository |
 | `work.require_review` | `"changes"` | a real PR-review gate, independent of branch protection: `"changes"` parks on a Request-changes / unresolved thread; `"approval"` also requires an APPROVED PR before merging |
 | `budget.max_iterations` / `max_minutes` / `max_tokens` / `max_codex_raw_tokens` | 20 / 480 / 100,000,000 / 0 (off) | goals-per-session / wall-clock / priced Claude-equivalent / measured Codex raw phase-token admission ceilings (Codex counts `tokens_in + tokens_out`; cached input and reasoning output are subsets inside them, never added); each enforces only when set to a positive number |
+| `label_drain.default_priority` / `label_drain.arm_pulled_blockers` / `label_drain.kinds` | `P2` / `true` / `{}` | `label_drain.py arm <sdlc_dir> <label> --apply` (dry run without `--apply`) arms unarmed members of a run label: the goal label, no parked or blocked label, a priority label only when it has none (an existing one is kept, a missing label is never created). With `arm_pulled_blockers` an open blocker outside the label is armed too, gets the run label and one comment; an upper-tier, parked, gate-held or other-assignee issue is refused with a reason and not written. `kinds` maps exact run-label names to kinds (a label's kind is otherwise its name up to the first `:` or `/`). Wrong-typed values read as the defaults |
 | `knowledge_graph.enabled` | off | research capture + the self-improving graph |
 | `SIGMA_GATE_GLOBAL=1` (env) | unset | restores the always-on prompt gate (the reminder in every repository, adopted or not) |
 | `quality.metrics` | absent | a list of metric commands `quality_delta.py <goal>` measures at the merge-base and at the head and compares; nothing runs while it is absent. See [quality metrics](quality-delta.md) |
+| `gates.quality_ratchet.enabled` | off | `work.py merge` parks a goal whose `required` quality metric got worse beyond its `tolerance` on two readings, or could not be measured; the owner's waiver verb is not authenticated and the loop never runs it. Adds up to the gate budget to the merge call (60.5 min worst case by default, unmeasured on a real project). See [the merge gate](quality-delta.md#the-merge-gate) |
 
 > For any zero-touch / unattended multi-issue run, turn `backlog_check.enabled: true` on — it is
 > what makes a human-authored, comment-only dependency marker (bypassing `hand_off()`) actually
 > honored, not just silently ignored.
+
+## Resource limits
+
+The `resource` block holds the limits `resource_guard.py` derives from the machine. Every key defaults to `null`, which means derived; a bad value (negative, boolean, string, NaN, or a fraction outside 0 to 1) reads as derived with a note. The fractions are policy ratios not yet calibrated against a real exhaustion, so they are labelled uncalibrated wherever printed.
+
+| Key | Default | What it sets |
+|---|---|---|
+| `resource.mode` | derived (`enforce`; also `observe`, `off`) | `observe` computes a hold but never holds; `off` skips the check; uncalibrated |
+| env `SIGMA_RESOURCE_MODE` | unset | `off`, `observe` or `enforce` overrides `resource.mode` on every surface (picker, verify, sessions, watcher, doctor, log); unset and no config key resolves to `enforce`; the test suite sets `off` |
+| `resource.reserve_fraction` | derived (0.20 of total memory) | memory kept free for the machine; uncalibrated |
+| `resource.max_share_fraction` | derived (0.60 of total memory) | most memory all sessions together may lease; uncalibrated |
+| `resource.cpu_reserve_cores` | derived (one eighth of the cores, at least 1) | cores kept free; uncalibrated |
+| `resource.load_hold_ratio` | derived (1.0 per core) | one-minute load per core above which load is reported high; uncalibrated |
+| `resource.swapout_hold_mb_per_s` | derived (shown, never holds) | when set, a swap-out rate above it holds and resumes at a quarter of it; uncalibrated |
+| `resource.shed` | derived (`verify`; also `off`) | what is shed first under pressure; uncalibrated |
+| `resource.shed_after` | derived (3) | consecutive critical samples (2 seconds apart) before the shed stops the verify group; an integer of at least 1, anything else reads as 3 with a note; uncalibrated |
+| `resource.max_goals` | derived (no extra cap) | cap on concurrent goals; uncalibrated |
+| `resource.max_verify_workers` | derived (no extra cap) | cap on concurrent verify workers; uncalibrated |
+| `resource.hold_alert_minutes` | derived (no alert) | minutes a hold may last before it is reported; uncalibrated |
+
+`loop.py verify` goes through admission under the resolved resource mode (`enforce` unless `resource.mode` or `SIGMA_RESOURCE_MODE` says otherwise); `off` runs the proving command exactly as before. Admitted, the command runs in its own process group (a killed caller takes the group with it) under the `verify.timeout_minutes` budget with a 64 KiB output tail. A `{workers}` token in `verify.command` or a goal's `verify_command` is replaced by the granted worker count (an integer only; other braces are left alone), and the child also gets `SIGMA_VERIFY_WORKERS` and `PYTEST_XDIST_AUTO_NUM_WORKERS` set to it. A literal `-n N` cannot be lowered: with a measured cost that N workers do not fit, verify holds instead of running fewer. A hold exits 5 with `RESOURCE-HOLD ... retry_after=<s>` on stderr, runs nothing and writes no evidence, so `record done` still refuses; retry after the stated time. (Exit 5 also still means `UNVERIFIED`, a flaky suite; the stderr prefix tells them apart.) The learned cost is the peak footprint of the verify's process tree divided by its workers, sampled every 2 seconds, so a run shorter than that records its final reading only.
 
 ## Where the optional features are documented
 
@@ -49,6 +81,8 @@ import) is described key by key in [the Decision Rulebook guide](decision-rulebo
 (`discovery.blocker_promotion.mode`, on by default) is in [backlog.md](backlog.md).
 
 ## Rulebook rollout notes
+
+`rulebook.rules.auto_approve` (default false, only the JSON boolean true turns it on) lets the watcher draft and approve learned rules as the first configured owner; see [Auto-approve](decision-rulebook.md#auto-approve-opt-in-off-by-default).
 
 The model classifier's spend ceiling, `rulebook.import.max_budget_usd_per_run`, applies to one import run only. There is no daily or cross-run cap, so repeated runs add up; size it with that in mind. With `work.require_review: "approval"`, a host or token that cannot answer the approval query (it needs GraphQL) leaves the goal parked rather than merged. Either use an approval the REST API can see, or accept the parking. Nothing in `work.py` changes this.
 
@@ -73,13 +107,18 @@ or unreadable JSON reads as no categories; an entry with a missing or duplicate 
 an unknown threshold key or a wrong-typed value is dropped on its own. `autonomy.readout` and the
 doctor autonomy row show the matched category and the thresholds in force once the file exists.
 
+`skills/sigma-loop/scripts/resource_lease.py` is the lease table over the same limits (`admit`, `release`, `status`, `wait --max N`). Each admitted unit is a lease file in the same state folder as `hold.json` (`SIGMA_RESOURCE_DIR`, else the XDG state home), taken under an `fcntl.flock` lock so two admitters cannot both see the same headroom; the unmaterialised remainder of every lease (its estimate less what it has used so far) is counted against the next admit. A unit's cost is the p90 of its kind's last 32 measured footprints, values above four times the median excluded and logged; with no observation exactly one unit is admitted and measured. A lease is reclaimed when its process is gone or past its ttl. Admission is paused (a hold with a retry time, exit 10), never a process. POSIX only; the picker, verify and the model-session spawn sites call it under the resolved resource mode. Ratios and the 20 percent, 60 percent and 4x figures are uncalibrated.
+
 ## Quality metrics
 
 `quality.metrics` is opt-in and absent from a fresh config, so nothing measures anything until you add it.
-Each entry is `{name, command, direction, scope}` plus an optional `required` and `timeout_seconds`;
-`quality.memory_floor_fraction` and `quality.env_drop` are optional block-level keys.
+Each entry is `{name, command, direction, scope}` plus an optional `required`, `timeout_seconds` and `tolerance`
+(read only by the merge gate); `quality.memory_floor_fraction`, `quality.env_drop` and
+`quality.gate_timeout_seconds` (the merge gate's budget) are optional block-level keys.
 `python3 <installed-sigma>/skills/sigma-loop/scripts/quality_delta.py <goal>` reads the block from `.sdlc/config.json` **as
 committed at the merge-base**, never the head's file, runs each command once at the merge-base and once at the
 head in scratch worktrees, one at a time, and prints base, head, delta and `better`, `same`, `worse` or
 `unmeasured`. A command that fails or times out is `unmeasured`, never `same`. The schema, the number grammar,
 the command environment, the limits and the recovery lever are in [quality-delta.md](quality-delta.md).
+With `gates.quality_ratchet.enabled`, `work.py merge` acts on `required` metrics; that section of the same page
+gives the budget, the worst case and the owner-only `work.py quality-waive` verb.

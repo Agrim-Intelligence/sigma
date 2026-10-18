@@ -2465,3 +2465,153 @@ def test_goal_design_py_exists_and_matches_the_contracts_own_numbers():
     assert goal_design.LANE_ROUNDS == {"small": 1, "medium": 2, "large": 3}
 
 
+
+
+# --- #1694: the upkeep pages say what the agent level does with unset spend keys -----------------------------------
+UPKEEP_PAGES = ("docs/upkeep.md", "docs/configuration.md", "docs/features.md", "docs/upkeep-part-b.md",
+                "docs/enforcement.md", "docs/running-unattended.md", "README.md")
+STALE_UPKEEP_PHRASES = ("both spend keys are set", "both spend caps are set", "behaves as `off` until",
+                        "behaves as off until", "not available yet", "only a placeholder", "still the placeholder",
+                        "is a placeholder")
+NO_LIMIT_SENTENCE = ("With no spend key set the agent level runs with no spend limit; set "
+                     "`max_budget_usd_per_unit` (and optionally `spend_ceiling_usd_per_day`) to cap it.")
+
+
+def test_unreleased_changelog_has_no_duplicate_lines_1735():
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    block = text.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+    lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
+    dupes = sorted({ln[:80] for ln in lines if lines.count(ln) > 1})
+    assert not dupes, dupes
+
+
+@pytest.mark.parametrize("rel", UPKEEP_PAGES)
+def test_upkeep_pages_carry_no_stale_spend_or_catalog_claim(rel):
+    text = (ROOT / rel).read_text(encoding="utf-8")
+    found = [p for p in STALE_UPKEEP_PHRASES if p in text]
+    assert not found, (rel, found)
+
+
+@pytest.mark.parametrize("rel", ("docs/upkeep.md", "docs/upkeep-part-b.md"))
+def test_upkeep_pages_say_plainly_that_no_spend_key_means_no_limit(rel):
+    text = " ".join((ROOT / rel).read_text(encoding="utf-8").split())
+    assert NO_LIMIT_SENTENCE in text, rel
+
+
+@pytest.mark.parametrize("rel", ("skills/sigma-loop/scripts/feature_upkeep_launcher.py",
+                                 "skills/sigma-loop/scripts/feature_upkeep_level2.py"))
+def test_resolver_module_docstrings_do_not_claim_it_is_uncalled_or_never_run(rel):
+    text = (ROOT / rel).read_text(encoding="utf-8")
+    head = text[:text.index('"""', 3)]
+    for stale in ("NOTHING CALLS IT YET", "NO REAL MODEL CALL", "holds only the\n     placeholder"):
+        assert stale not in head, (rel, stale)
+
+
+def test_resolver_readiness_reference_matches_the_rows():
+    text = (ROOT / "skills/sigma-doctor/references/resolver-readiness.md").read_text(encoding="utf-8")
+    assert "fails unless both" not in text and "holds only the placeholder" not in text
+
+
+def test_resolver_confinement_is_documented_with_what_it_does_not_cover():
+    part_b = (ROOT / "docs" / "upkeep-part-b.md").read_text(encoding="utf-8")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    for text in (part_b, changelog):
+        assert "PROVISIONAL" in text and "port 443" in text and "Bash" in text
+    assert "not filtered by host" in changelog and "filter by host name" in part_b
+    assert "The session is NOT network" not in part_b
+
+
+def test_resolver_confinement_lists_the_gaps_the_wall_leaves_open():
+    """#1712: the macOS profile is allow-default, so the page and the changelog must name what it leaves open."""
+    part_b = (ROOT / "docs" / "upkeep-part-b.md").read_text(encoding="utf-8")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    entry = [ln for ln in changelog.split("## Unreleased", 1)[1].splitlines() if "1712" in ln]
+    assert entry, "the Unreleased section needs a #1712 entry"
+    gaps = ("keychain", "mach service", "reads outside", "temp")
+    for text in (part_b, entry[0]):
+        low = text.lower()
+        for gap in gaps:
+            assert gap in low, gap
+    assert "does not cover" in part_b
+
+
+def test_session_argv_constant_is_gone_and_the_doctor_uses_the_function():
+    launcher = (ROOT / "skills/sigma-loop/scripts/feature_upkeep_launcher.py").read_text(encoding="utf-8")
+    doctor = (ROOT / "skills/sigma-doctor/scripts/doctor.py").read_text(encoding="utf-8")
+    assert "SESSION_ARGV" not in launcher and "SESSION_ARGV" not in doctor
+    assert "session_argv(" in doctor
+
+
+# --- #1582: the `--label` guarantee, quoted in four places, and the page that explains it -------------
+
+#: The label run's guarantee, in ONE wording, the same way `_SCOPE_GUARANTEE` is one wording for units.
+_LABEL_GUARANTEE = ("While a `--label` run is active, no goal outside that label may be picked, and an "
+                    "open prerequisite of a member is never skipped silently.")
+_LABEL_PAGE = ROOT / "docs" / "label-drain.md"
+_LABEL_COPIES = (
+    ROOT / "skills" / "sigma-loop" / "SKILL.md",
+    ROOT / "skills" / "sigma-loop" / "references" / "picking.md",
+    ROOT / "skills" / "sigma-goal" / "SKILL.md",
+    _LABEL_PAGE,
+)
+
+
+def test_the_label_guarantee_is_one_sentence_in_all_four_places():
+    """Edit one copy and this goes red: a paraphrase is invisible to a test that only looks for the flag."""
+    for path in _LABEL_COPIES:
+        text = " ".join(path.read_text(encoding="utf-8").split())
+        assert _LABEL_GUARANTEE in text, (
+            f"{path.relative_to(ROOT)} does not carry the label guarantee byte for byte")
+
+
+def test_every_verb_and_flag_the_label_page_names_exists_in_the_code():
+    page = _LABEL_PAGE.read_text(encoding="utf-8")
+    drain = (_LOOP_SCRIPTS / "label_drain.py").read_text(encoding="utf-8")
+    usage = drain[drain.index("USAGE = "):drain.index("MAX_MEMBERS = ")]
+    loop_src = (_LOOP_SCRIPTS / "loop.py").read_text(encoding="utf-8")
+    for verb in ("plan", "status", "arm", "answer"):
+        assert re.search(r"label_drain\.py (?:[a-z]+\|)*%s\b" % verb, usage), f"`{verb}` is not in label_drain.py usage"
+        assert f"`{verb}`" in page or f"label_drain.py {verb}" in page, f"the page never names `{verb}`"
+    for flag in ("--label", "--apply", "--dry-run", "--json", "--answers"):
+        assert flag in page, f"the page does not name {flag}"
+        assert flag in usage or flag in loop_src, f"{flag} is named on the page and exists in neither script"
+    for flag in sorted(set(re.findall(r"`(--[a-z][a-z-]*)", page))):
+        assert flag in usage or flag in loop_src or flag in drain, f"the page names {flag}, which no script has"
+
+
+def test_the_label_page_has_the_measurement_table_and_no_unmeasured_number():
+    page = _LABEL_PAGE.read_text(encoding="utf-8")
+    assert "| what | calls | reads | writes |" in page, "the measurement table is gone"
+    assert "counting fake transport" in page
+    rows = [ln for ln in page.splitlines() if re.match(r"\|[^|]+\|\s*\d+\s*\|\s*\d+\s*\|\s*\d+\s*\|$", ln)]
+    assert len(rows) >= 5, "the table lost rows"
+    assert not [ln for ln in rows if "unmeasured" in ln.lower()], "a measured row says unmeasured"
+
+
+def _real_run_rows(page):
+    """Rows of the real-run table: a step name, then wall seconds, calls, reads and writes."""
+    head = "| step | wall seconds | calls | reads | writes |"
+    assert head in page, "the real-run measurement table is gone"
+    rows = []
+    for ln in page[page.index(head):].splitlines()[2:]:
+        cells = [c.strip() for c in ln.strip().strip("|").split("|")]
+        if not ln.startswith("|") or len(cells) != 5:
+            break
+        rows.append(cells)
+    return rows
+
+
+def test_the_label_page_has_a_real_run_table_that_adds_up_and_claims_no_more():
+    """#1761: the measured run is on the page as numbers; each row's calls are its reads plus writes, no
+    number sits on a line that calls itself unmeasured, and what was not measured is named."""
+    page = _LABEL_PAGE.read_text(encoding="utf-8")
+    rows = _real_run_rows(page)
+    names = [r[0] for r in rows]
+    for step in ("plan", "arm --apply", "next --label, one pick", "next, no label, one pick"):
+        assert step in names, f"the real-run table has no row for {step!r}"
+    for name, secs, calls, reads, writes in rows:
+        assert float(secs) > 0 and int(calls) == int(reads) + int(writes), f"row {name!r} does not add up"
+    assert int(rows[names.index("plan")][4]) == 0, "plan must show no writes"
+    assert not [ln for ln in page.splitlines() if "unmeasured" in ln.lower() and re.search(r"\d+\.\d|\|\s*\d+\s*\|", ln)]
+    assert "Not measured:" in page, "the page must name what the run did not measure"
+    assert "no rate-limit figure was" in page and "one sample" in page

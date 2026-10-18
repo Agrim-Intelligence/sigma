@@ -36,9 +36,16 @@ rot" property this buys is that no NEW call site through the shared, already-uni
 API is covered.
 """
 import os
+import pathlib
 import subprocess
+import sys
 
 import pytest
+
+import resource_mode
+import _script_cache
+
+_script_cache.install()   # at import, before any test module loads a script; see tests/test_script_cache.py
 
 
 def _first_token(cmd):
@@ -75,7 +82,66 @@ def _is_gh_argv(cmd):
     return name in ("gh", "gh.exe")
 
 
+def _rss_mb():
+    try:
+        import resource   # POSIX only: on Windows the RSS bound is inert (0 MB), the copies ceiling still runs
+    except ImportError:
+        return 0.0
+    r = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return r / (1024 * 1024 if sys.platform == "darwin" else 1024)
+
+
+def pytest_collection_finish(session):
+    _script_cache.fresh = True   # collection is over: from here every load is a fresh module
+    peak, n = _rss_mb(), len(session.items)
+    session.config._collect_rss_mb, session.config._collect_n = peak, n
+    if n > 200:
+        worst = _script_cache.worst_live_copies(pathlib.Path(__file__).resolve().parent.parent)
+        if worst and worst[0][1] > _script_cache.MAX_COPIES:
+            pytest.exit(f"{worst[0][1]} live copies of one script module after collection (max "
+                        f"{_script_cache.MAX_COPIES}): {worst}; see tests/test_script_cache.py", returncode=3)
+    if n > 200 and peak > _script_cache.rss_bound_mb(n):   # a partial run (-k, one file) is too small to judge
+        pytest.exit(f"collection peaked at {peak:.0f} MB for {n} tests (bound "
+                    f"{_script_cache.rss_bound_mb(n):.0f}): a script is being loaded uncached; "
+                    "see tests/test_script_cache.py", returncode=3)
+
+
+def _ram_mb():
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) // 1024
+    except OSError:
+        pass
+    return os.sysconf("SC_PHYS_PAGES") * os.sysconf("SC_PAGE_SIZE") // (1024 * 1024)
+
+
+@pytest.hookimpl(optionalhook=True)   # xdist's hook: without pytest-xdist installed it is unknown and aborts pytest (exit 3)
+def pytest_xdist_auto_num_workers(config):
+    """`-n auto` = as many workers as fit in a quarter of this machine's RAM at SIGMA_TEST_WORKER_MB each
+    (default 2000, the measured test-time peak of a worker before the script cache), capped by CPUs. A
+    constant `-n 4` copied from a laptop OOM-killed a 24 GB Mac."""
+    per = int(os.environ.get("SIGMA_TEST_WORKER_MB", "2000"))
+    return max(1, min(os.cpu_count() or 1, _ram_mb() // 4 // per))
+
+
+@pytest.fixture(autouse=True)
+def _scripts_load_fresh_at_test_time(request):
+    """The script cache serves COLLECTION only (module-level and import-time loads, which pytest keeps alive).
+    Loads made while a test runs are fresh, as before: a first full run with the cache on for those too failed
+    933 tests (modules cached while a test had pathlib/sys.modules stubbed, then reused by others)."""
+    _script_cache.fresh = request.node.get_closest_marker("shared_scripts") is None
+    yield
+    _script_cache.fresh = True
+
+
 def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "shared_scripts: for tests/test_script_cache.py only -- turns the collection-time script cache "
+        "on for this test so the cache itself can be tested.",
+    )
     config.addinivalue_line(
         "markers",
         "live_gh: this test is allowed to invoke the real `gh` CLI (network, live GitHub "
@@ -92,6 +158,14 @@ def pytest_configure(config):
 def _no_host_leak_patterns(monkeypatch):
     """#375: a developer shell that exports SIGMA_LEAK_PATTERNS must not change a test's result."""
     monkeypatch.delenv("SIGMA_LEAK_PATTERNS", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _resource_guard_off_by_default(monkeypatch):
+    """#1600: the picker's resource gate reads the real machine; a loaded developer machine must not
+    change an unrelated test's result. Tests of the gate itself set SIGMA_RESOURCE_MODE or the config key. A test that builds
+    its own subprocess env carries the mode with `resource_mode.carry(env)`."""
+    monkeypatch.setenv(resource_mode.KEY, resource_mode.DEFAULT)
 
 
 @pytest.fixture(autouse=True)

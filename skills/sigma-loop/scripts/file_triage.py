@@ -1,13 +1,14 @@
-"""File triage core (rulebook, slice 14, #999). Pure library, UNWIRED: nothing imports it yet.
+"""File triage core (rulebook, slice 14, #999). Pure library, wired into filing and the migration.
 
-`decide(title, body, flags, config) -> Decision(kind, priority, reason)` for one AI-filed issue.
+`decide(title, body, flags, config) -> Decision(kind, priority, reason, matched, qkind)` for one AI-filed issue.
 kind is `arm` (ready for the loop at `priority`), `park` (an ordinary park with `reason`), or `queue` (triage is
 switched off: the old behaviour, no priority). It is total: any error parks. Priority is P0-P4 or None, never
 a blocking value. The decision reads nothing about who filed it (login-free): `flags` is only inspected for
-`human_confirmed`, `priority` and `bucket`.
+`human_confirmed`, `priority`, `bucket` and `park` (a declared question kind, #1703).
 
 Order: triage off -> queue; invalid buckets -> park; deny-list -> park (it can only park, even for a
-human-confirmed filing); human-confirmed -> arm at its own plan priority; else a bucket -> arm at that bucket's
+human-confirmed filing); a declared `park` kind or a question title (`triage.question_patterns`, TITLE only, `[]`
+disables) -> park with that `qkind`; human-confirmed -> arm at its own plan priority; else a bucket -> arm at that bucket's
 priority. Deny-list: the hard-stop classifier (default classes forced on here), configurable words, spend phrases (`triage.spend_phrases`, [] disables), secret
 shapes, and a recorded-permission marker on the first body line (the existing first-line parser).
 
@@ -27,7 +28,8 @@ _HERE = pathlib.Path(__file__).resolve().parent
 
 #: `matched` (#1498): the deny-list class that parked the filing (`hard-stop word`, `spend phrase`, `secret`,
 #: `hard-stop class`, `permission marker`), else None. Callers declare a hard-stop kind from it.
-Decision = collections.namedtuple("Decision", "kind priority reason matched", defaults=(None,))
+#: `qkind` (#1703): the declared question kind of a park for a person (declared path or title detector), else None.
+Decision = collections.namedtuple("Decision", "kind priority reason matched qkind", defaults=(None, None))
 
 DEFAULT_BUCKETS = {"urgent": "P2", "routine": "P3", "unclear": "P4"}
 DEFAULT_HUMAN_PRIORITY = "P1"
@@ -38,8 +40,12 @@ _PRIO = re.compile(r"P[0-4]")
 _FENCE = re.compile(r"```.*?(?:```|\Z)", re.DOTALL)
 _NUMWORD = (r"(?:one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|sixty|seventy|eighty"
             r"|ninety|hundred|thousand)")
-_AMOUNT = (r"(?:(?:\$|US\$|USD\s?)\s?\d[\d,]*(?:\.\d+)?\s?[kK]?\b|\b\d[\d,]*(?:\.\d+)?\s*(?:dollars?|USD|bucks)\b"
-           r"|\b" + _NUMWORD + r"(?:[- ]" + _NUMWORD + r")*\s+(?:dollars?|bucks)\b)")
+#: One optional nationality between a number and "dollars" ("40 US dollars"); only dollars take it.
+_DOLLAR_ADJ = r"(?:(?:US|U\.S\.|Canadian|Australian|New\s+Zealand|Hong\s+Kong|Singapore)\s+)?"
+_AMOUNT = (r"(?:(?:\$|US\$|USD\s?|€|£|¥|EUR\s?|GBP\s?|CHF\s?|CAD\s?|INR\s?)\s?\d[\d,]*(?:\.\d+)?\s?[kK]?\b"
+           r"|\b\d[\d,]*(?:\.\d+)?\s*(?:" + _DOLLAR_ADJ + r"dollars?|USD|bucks|euros?|EUR|GBP|CHF|CAD|INR|AUD|NZD|JPY|CNY|RMB|SEK|NOK|DKK|SGD|HKD|KRW|MXN|BRL|ZAR|PLN|AED|yen|quid|pounds?(?:\s+sterling)?)\b"
+           r"|\b\d[\d,]*(?:\.\d+)?\s?[kK]?\s?[€£¥$]"
+           r"|\b" + _NUMWORD + r"(?:[- ]" + _NUMWORD + r")*\s+(?:" + _DOLLAR_ADJ + r"dollars?|bucks|euros?|yen|quid|pounds?(?:\s+sterling)?)\b)")
 _COMPUTE = r"\b(?:GPUs?|instances?|clusters?|credits|compute|pods?|cloud|runs?|nodes?)\b"
 _AMOUNT_FOR_COMPUTE = re.compile(_AMOUNT + r"[^.\n]{0,60}" + _COMPUTE + "|" + _COMPUTE + r"[^.\n]{0,60}" + _AMOUNT,
                                  re.IGNORECASE)
@@ -50,8 +56,22 @@ _URGENT = re.compile(r"\b(unsafe|vulnerab\w*|exploit\w*|data corrupt\w*|deadlock
 _ROUTINE = re.compile(r"\b(tech.?debt|cleanup|edge case|polish|follow.?up|cosmetic|nice.to.have)\b", re.IGNORECASE)
 
 
-def _park(reason, matched=None):
-    return Decision("park", None, reason, matched)
+def _park(reason, matched=None, qkind=None):
+    return Decision("park", None, reason, matched, qkind)
+
+
+#: Default question titles (#1703): "Question", "Decide", "Should" at the start, or a trailing "?". Title only.
+DEFAULT_QUESTION_PATTERNS = (r"^\s*question\b", r"^\s*decide\b", r"^\s*should\b", r"\?\s*$")
+
+
+def _is_question(title, tri):
+    pats = tri.get("question_patterns")
+    if not (isinstance(pats, (list, tuple)) and all(isinstance(p, str) for p in pats)):
+        pats = DEFAULT_QUESTION_PATTERNS
+    try:
+        return any(re.search(p, title, re.IGNORECASE) for p in pats)
+    except re.error:
+        return any(re.search(p, title, re.IGNORECASE) for p in DEFAULT_QUESTION_PATTERNS)
 
 
 def _block(config):
@@ -135,12 +155,49 @@ _PASSIVE = re.compile(r"\b(?:are|is) (?:read|listed|reported|detected|logged|red
 _WORD = re.compile(r"[a-z']+")
 
 
+_NAMING = frozenset("make call name label term mention list rename".split())
+_FILLER = frozenset("the a an this that these those just please now also then".split())
+_NOUN_HEAD = frozenset(("command commands word words phrase phrases term terms rule rules flag flags string strings "
+                        "text name names keyword keywords token tokens verb verbs").split())
+_BE = frozenset("is are was were be being".split())
+_NEGATION = frozenset("not never no don't dont without doesn't isn't aren't".split())
+_DESCRIBING = frozenset("for of about first second third again other another same called named".split())
+_PRONOUN = frozenset("it all any some one".split())
+_MODAL = frozenset("should must will can could next now let's i'll we'll you'll ok okay afterwards afterward".split())
+
+
+def _quoted_holds(clause, at, span_at):
+    """True when a deny word inside a quoted span follows an action verb or hand-off word (#1704)."""
+    before = _WORD.findall(clause[:span_at])
+    if not before:
+        return not (_PASSIVE.search(clause) or any(w in _COPULA for w in _WORD.findall(clause[at:])))
+    opener = before[0]
+    while before and before[-1] in _FILLER:
+        before.pop()
+    if not before:
+        return opener in _FILLER and opener not in _DETERMINER     # "Then/Just/Please `x`" holds; "The `x` guard" does not
+    last = before[-1]
+    if last in _NAMING:
+        return False
+    if last in _ACTION or last in _HANDOFF or last in _MODAL:     # before the determiners: "when" and "if" are both
+        return True
+    if last in _PRONOUN and (len(before) == 1 or before[-2] in _ACTION | _HANDOFF | _MODAL | _FILLER):
+        return not (_PASSIVE.search(clause) or any(w in _COPULA for w in _WORD.findall(clause[at:])))   # "Do it `x`", "All `x` main" (#1785)
+    if last in _NOUN_HEAD or last in _NEGATION or last in _DETERMINER or last in _BE:
+        return False
+    return last not in _DESCRIBING     # an unrecognised word before the span holds (#1755)
+
+
 def _descriptive(clause, at, deny):
     """True when the deny word at `at` in this clause is described rather than done."""
     prefix = clause[:at]
     before = _WORD.findall(prefix.lower())
     if any(w in _ACTION for w in before) or (before and before[-1] in _HANDOFF):
         return False
+    if "to" in before:  # a purpose clause ("redact X to nuke Y") is action unless it names a protective verb
+        nxt = before[len(before) - before[::-1].index("to"):][:1]
+        if nxt and nxt[0] not in _PROTECT and nxt[0] not in _DETERMINER:
+            return False
     if _NP_HEAD.search(prefix) or _PASSIVE.search(clause):
         return True
     words = _WORD.findall(_LEAD.sub("", _BULLET.sub("", clause)).lower())
@@ -156,19 +213,38 @@ def _descriptive(clause, at, deny):
     return False
 
 
+def _quoted_deny(clause, w):
+    """True when a quoted span holds the deny word in action position (#1704)."""
+    low = clause.lower()
+    for m in _QUOTED.finditer(clause):
+        at = low.find(w, m.start(), m.end())
+        if at >= 0 and _quoted_holds(low, at, m.start()):
+            return True
+    return False
+
+
+def _flat(s):
+    """Hyphen and underscore read as a space, one for one (#1734)."""
+    return s.replace("-", " ").replace("_", " ")
+
+
 def _action_sentence(text, word):
     """-> the (trimmed) first clause holding `word` in action position, else None."""
-    w = word.lower()
+    w = _flat(word.lower())
     if not w:
         return None
     for clause in _CLAUSES.split(text):
+        shown = clause
+        clause = _flat(clause)  # same length, so the reported text below is the original clause
+        if _quoted_deny(clause, w):
+            return " ".join(shown.split())[:100]
         low = _QUOTED.sub(" ", clause).lower()
         at = low.find(w)
         if at < 0:
             continue
         if _descriptive(low, at, w):
             continue
-        return " ".join(clause.split())[:100]
+        return " ".join(shown.split())[:100]
     return None
 
 
@@ -240,6 +316,11 @@ def _decide(title, body, flags, config):
     if why:
         return _park(why[0], why[1])
     flags = flags if isinstance(flags, dict) else {}
+    declared = flags.get("park")
+    if isinstance(declared, str) and declared != "unknown" and declared in _load("qkind").QKINDS:
+        return _park("declared question", None, declared)
+    if _is_question(title, tri):
+        return _park("question for a person", None, "needs_decision")
     if flags.get("human_confirmed") is True:
         pri = flags.get("priority")
         if isinstance(pri, str) and _PRIO.fullmatch(pri):

@@ -205,6 +205,74 @@ def test_money_amount_near_misses_still_arm():
         assert m.decide("cleanup", text, {}, _cfg()).kind == "arm", text
 
 
+def test_nationality_dollars_for_compute_park_as_spend():
+    m = _mod()
+    for text in ("use 40 US dollars of GPU time", "use 40 Canadian dollars of GPU", "spend forty US dollars on a cloud run",
+                 "budget 40 Australian dollars of compute", "pay 40 New Zealand dollars for cloud credits"):
+        d = m.decide("tidy", text, {}, _cfg())
+        assert d.kind == "park" and "spend phrase" in d.reason, (text, d)
+
+
+def test_nationality_dollars_near_misses_still_arm():
+    m = _mod()
+    for text in ("use 40 US dollars of docs", "see log:\n```\nuse 40 US dollars of GPU\n```\ntidy the docs"):
+        assert m.decide("tidy", text, {}, _cfg()).kind == "arm", text
+
+
+def test_euro_and_pound_amounts_for_compute_park_as_spend():
+    m = _mod()
+    for text in ("pay 100 euros for compute", "Spend about 50 EUR on cloud credits",
+                 "Budget: \u00a340 of GPU time for the benchmark", "use 40 pounds of GPU credits",
+                 "rent a node for \u20ac30", "twenty pounds sterling of compute"):
+        d = m.decide("tidy docs", text, {}, _cfg())
+        assert d.kind == "park" and "spend phrase" in d.reason, (text, d)
+
+
+def test_euro_and_pound_near_misses_still_arm():
+    m = _mod()
+    for text in ("The recipe needs 40 pounds of flour.", "Show a euro sign in the docs.",
+                 "see log:\n```\ncost \u00a340 gpu run\n```\ntidy the docs", "The price is \u20ac40 in the invoice template."):
+        assert m.decide("tidy docs", text, {}, _cfg()).kind == "arm", text
+
+
+def test_currency_after_number_for_compute_parks_as_spend():
+    m = _mod()
+    for text in ("Spend 40\u20ac on cloud credits", "use 30\u00a3 of GPU time", "rent a node, 40 CHF",
+                 "use 500 \u00a5 of compute", "budget 40 CAD for a pod", "20 INR of GPU credits",
+                 "pay 3000 yen for compute", "ten quid of cloud credits"):
+        d = m.decide("tidy docs", text, {}, _cfg())
+        assert d.kind == "park" and "spend phrase" in d.reason, (text, d)
+
+
+def test_dollar_sign_and_more_codes_after_number_park_as_spend():
+    m = _mod()
+    for text in ("use 40$ of GPU time", "use 40 $ of GPU time", "use 40 AUD of GPU time",
+                 "use 500 JPY of GPU time"):
+        d = m.decide("tidy", text, {}, {})
+        assert d.kind == "park" and "spend phrase" in d.reason, (text, d)
+
+
+def test_dollar_sign_and_codes_near_misses_still_arm():
+    m = _mod()
+    for text in ("use 40 MB of GPU docs", "see log:\n```\nuse 40$ of GPU time\n```\ntidy the docs",
+                 "use 40 audits of GPU docs"):
+        assert m.decide("tidy", text, {}, {}).kind == "arm", text
+
+
+def test_currency_after_number_near_misses_still_arm():
+    m = _mod()
+    for text in ("We need 40\u20ac of flour.", "see log:\n```\ncost 40\u20ac gpu run\n```\ntidy the docs"):
+        assert m.decide("tidy docs", text, {}, _cfg()).kind == "arm", text
+
+
+def test_hyphenated_deny_word_parks_and_descriptive_still_arms():
+    m = _mod()
+    d = m.decide("cleanup", "Run force-push now", {}, _cfg())
+    assert d.kind == "park" and d.matched == "hard-stop word", d
+    assert m.decide("cleanup", "Run force_push now", {}, _cfg()).kind == "park"
+    assert m.decide("cleanup", "Detect a force-push in the hook and warn the author.", {}, _cfg()).kind == "arm"
+
+
 DESCRIPTIVE = (
     "Redact SSH private keys at runtime so they never reach the log.",
     "Wire the check so the gate gets production data only through the reader.",
@@ -260,6 +328,46 @@ def test_chained_imperatives_and_quotes_follow_the_structural_rule():
         assert m.decide("x", text, {}, _cfg()).kind == "arm", text
 
 
+def test_quoted_deny_word_after_an_action_verb_holds():
+    m = _mod()
+    for text in ("Then `force push` to main", "Execute `rotate credentials` now",
+                 "We should 'rotate the credentials' tonight",
+                 'Next, "delete the production data" for tenant 5',
+                 "Redact the logs to nuke production data", "Run the `force push` now",
+                 "Execute the `rotate credentials` script", "Just `force push` main", "Please `force push` to main",
+                 "Let's `force push`", "I'll `force push` it", "Afterwards `force push` main", "Ok `force push`"):
+        d = m.decide("Cleanup", text, {}, _cfg())
+        assert d.kind == "park" and d.matched == "hard-stop word", text
+        assert text.split(",")[-1].strip()[:20].lower() in d.reason.lower() or "in:" in d.reason, text
+    for text in ("`force push` is refused", "Add a detector for `force push` shapes",
+                 "Make `force push` a refused word.", 'The word "force push" is in the list.',
+                 "The `force push` guard should refuse this", "Rename the `force push` rule",
+                 "The first `force push` attempt failed", "We saw it again 'force push' in the log"):
+        assert m.decide("Cleanup", text, {}, _cfg()).kind == "arm", text
+
+
+def test_quoted_deny_word_holds_unless_the_word_before_it_is_descriptive():
+    m = _mod()
+    for text in ("Later `force push` main", "Maybe `force push` main", "Yes `force push` main",
+                 "Go ahead `force push`", "Instead `force push` main", "Let us `force push` main",
+                 "I'd `force push` it", "We'd `force push` it"):
+        assert m.decide("c", text, {}, {}).kind == "park", text
+
+
+def test_quoted_deny_word_after_a_hand_off_that_is_also_a_determiner_holds():
+    m = _mod()
+    for text in ("Once ready, when `force push` main", "Please, if `force push` works do it", "If `force push` is needed"):
+        assert m.decide("c", text, {}, {}).kind == "park", text
+
+
+def test_quoted_deny_word_after_a_pronoun_or_quantifier_holds():
+    m = _mod()
+    for text in ("Do it `force push`", "All `force push` main", "Run all `force push` now", "Then do it 'force push'"):
+        assert m.decide("c", text, {}, {}).kind == "park", text
+    for text in ("The `force push` guard", "All `force push` attempts are logged", "It `force push` is refused"):
+        assert m.decide("c", text, {}, {}).kind == "arm", text
+
+
 def test_protective_opener_does_not_clear_a_later_action():
     m = _mod()
     for text in ("Redact keys to delete all rows", "Verify backups before you force push",
@@ -277,3 +385,56 @@ def test_imperative_with_a_later_cue_word_still_parks():
                  "Rotate the credentials and warn the team."):
         d = m.decide("tidy the docs", text, {}, _cfg())
         assert d.kind == "park", text
+
+
+# ---- #1703: a question for a person parks, it does not arm
+
+def test_default_question_titles_park_needs_decision():
+    m = _mod()
+    for t in ("Question: should X follow Y?", "Decide whether A needs B", "Should we rename the flag", "is it ok to drop a column?"):
+        d = m.decide(t, "", {}, _cfg())
+        assert (d.kind, d.qkind) == ("park", "needs_decision"), t
+        assert d.matched is None
+    assert m.decide("tidy a comment", "cleanup", {}, _cfg()).kind == "arm"
+
+
+def test_question_patterns_empty_disables_and_is_byte_identical_to_before():
+    m = _mod()
+    cfg = _cfg(triage={"enabled": True, "question_patterns": []})
+    d = m.decide("Question: should X follow Y?", "", {}, cfg)
+    assert d == m.Decision("arm", "P4", "bucket unclear")
+    assert d.qkind is None
+    assert m.decide("tidy a comment", "cleanup", {}, _cfg()) == m.Decision("arm", "P3", "bucket routine")
+
+
+def test_custom_question_pattern_and_wrong_type_reads_default():
+    m = _mod()
+    cfg = _cfg(triage={"enabled": True, "question_patterns": [r"^ask:"]})
+    assert m.decide("Ask: which one", "", {}, cfg).kind == "park"
+    assert m.decide("Should we rename", "", {}, cfg).kind == "arm"
+    for bad in ("Question:", 7, [1], ["(unclosed"]):
+        c = _cfg(triage={"enabled": True, "question_patterns": bad})
+        assert m.decide("Question: x", "", {}, c).kind == "park", bad
+
+
+def test_question_matches_title_only():
+    m = _mod()
+    assert m.decide("tidy a comment", "Question: should we? Decide now?", {}, _cfg()).kind == "arm"
+
+
+def test_declared_park_flag_parks_with_its_kind_and_deny_list_wins():
+    m = _mod()
+    d = m.decide("tidy a comment", "cleanup", {"park": "failing_check"}, _cfg())
+    assert (d.kind, d.qkind, d.reason) == ("park", "failing_check", "declared question")
+    for bad in ("unknown", "nonsense", 3):
+        assert m.decide("tidy a comment", "cleanup", {"park": bad}, _cfg()).kind == "arm", bad
+    d = m.decide("cleanup", "this is irreversible", {"park": "needs_decision"}, _cfg())
+    assert d.kind == "park" and d.matched and d.qkind is None
+
+
+def test_question_parks_a_human_confirmed_filing_and_triage_off_is_unchanged():
+    m = _mod()
+    flags = {"human_confirmed": True, "priority": "P3"}
+    assert m.decide("Question: x?", "", flags, _cfg()).kind == "park"
+    off = {"ai_filed": {"triage": {"enabled": False}}}
+    assert m.decide("Question: x?", "", {"park": "needs_decision"}, off).kind == "queue"

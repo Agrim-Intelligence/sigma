@@ -25,7 +25,7 @@ It does not do the following:
   refs that match the backup namespace exactly.
 - It never commits to a unit branch itself. It rewrites the branch by replaying existing commits.
 - It does not land a unit unless a person asks for that (see [Landing a unit](#landing-a-unit)).
-- It does not run a language model to resolve a conflict in the shipped engine. See [Conflicts](#conflicts).
+- It does not run a language model to resolve a conflict unless `upkeep.conflicts.resolve` is `agent`; with no spend key set that level has no spend limit. See [Conflicts](#conflicts).
 
 ## The two ways a unit gets brought forward
 
@@ -111,9 +111,10 @@ closed.
 Then set `work.base` to your default branch. With `work.base` empty every pass ends `no-base` and does
 nothing; the doctor says so.
 
-Before you rely on it, run one pass by hand on a unit you can afford to rewrite:
+Run `preview` first (add `--fetch` to refresh the remote-tracking refs; without it the answer is as of the last fetch; a conflict is a merge-probe prediction, a rebase may differ). Before you rely on it, run one pass by hand on a unit you can afford to rewrite:
 
 ```
+python3 skills/sigma-loop/scripts/feature_rebase.py preview .sdlc          # every unit the sweep would take, predicted outcome; moves nothing, works with the gate closed
 python3 skills/sigma-loop/scripts/feature_rebase.py show .sdlc <unit>      # reports, moves nothing
 python3 skills/sigma-loop/scripts/feature_rebase.py upkeep .sdlc <unit>    # one pass
 ```
@@ -150,7 +151,7 @@ python3 skills/sigma-loop/scripts/feature_rebase.py prune .sdlc
   `upkeep.backup.keep_last` (default 5) of each unit whatever their age. Age comes from the stamp in the name,
   so it follows the clock of the machine that made the backup. At most 200 are removed per run. It selects by
   the exact prefix and skips any candidate that has a lookalike ref, reported as `skipped_ambiguous`.
-- **Nothing prunes by itself.** Each rewrite adds one ref, so run the prune now and then while upkeep is on.
+- **The sweep prunes by itself.** Each rewrite adds one ref; once per sweep the job runs this prune (at most 200 deletes, a failure is retried next sweep, never fails the sweep), and `/sigma-doctor` shows the backup count and last prune. The manual verb stays.
 - Without the gate, or on a plain clone, restore by hand with plain git; the steps are in
   [branching-model.md](branching-model.md#13c-backups-of-a-rewritten-unit-tip-off-by-default).
 
@@ -182,9 +183,11 @@ protection on `feature/*` blocks upkeep's own force push, so grant upkeep's acto
 |---|---|
 | `off` (default) | the conflict is parked: the unit branch is left untouched, nothing is pushed, one issue records why |
 | `mechanical` | a conflict confined to the changelog is resolved by a heading-aware union, proved, and pushed once through the atomic backup push; anything else parks |
-| `agent` | not available yet; it behaves as `off` and the doctor shows the resolver rows as failing by design |
+| `agent` | a capped headless resolver plus an independent reviewer (#1516); it needs no spend key to run, and with none set it has no spend limit; see [Upkeep part B](upkeep-part-b.md) |
 
 Level `mechanical` needs a verify command unless `upkeep.conflicts.mechanical_without_verify` is `true`.
+With no spend key set the agent level runs with no spend limit; set `max_budget_usd_per_unit` (and optionally `spend_ceiling_usd_per_day`) to cap it.
+
 A parked conflict is one finding: before filing, the pass looks for an open issue with the same conflict id and
 comments on it at most once a day instead of filing again. Upkeep findings are filed parked with a declared
 question kind and the lowest AI bucket priority (the `unclear` bucket, P4 by default), never armed as goals (with triage off they keep the legacy
@@ -287,7 +290,7 @@ key path. (`work.rebase_upkeep` has the opposite typo rule: an unrecognised valu
 | `backup.keep_days` | `14` | 1 to 3650 | prune removes only backups older than this |
 | `backup.keep_last` | `5` | 1 to 1000 | newest backups of each unit kept whatever their age |
 | `backup.former_prefixes` | `[]` | list of `refs/<name>/backup/` | namespaces an earlier product wrote, pruned the same way |
-| `conflicts.resolve` | `"off"` | `off`, `mechanical`, `agent` | how far a unit conflict may be resolved; `agent` is not available yet |
+| `conflicts.resolve` | `"off"` | `off`, `mechanical`, `agent` | how far a unit conflict may be resolved; `agent` runs a capped headless resolver, see [Upkeep part B](upkeep-part-b.md) |
 | `conflicts.mechanical_without_verify` | `false` | boolean | lets the mechanical level run with no verify command |
 | `triggers.*`, `auto.*` | see branching-model.md 13e | | still read and validated for one release; they no longer schedule anything |
 
