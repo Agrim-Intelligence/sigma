@@ -1,6 +1,6 @@
 ---
 name: sigma-chain
-description: Solve one end goal and every open prerequisite it waits on, in order, with all decisions asked up front. Use for 'solve #N', 'do whatever #N needs' or /sigma-chain.
+description: "Solve one end goal and every open prerequisite it waits on, in order, with all decisions asked up front. Use for 'solve #N', 'do whatever #N needs' or /sigma-chain."
 allowed-tools: Bash(python3 *)
 ---
 
