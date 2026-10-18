@@ -88,3 +88,5 @@ history stays a query away. The full closed loop: **record** (issues / journey) 
 
 > Keep `.sdlc/knowledge/research/` and the builder's output (`graphify-out/`) out of git — they're
 > machine-accumulated. Commit `.sdlc/knowledge/analysis/` to version your curated learnings.
+
+System graph fragments (typed nodes and edges with evidence on every edge) are specified in [system-graph.md](system-graph.md).

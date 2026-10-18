@@ -1,0 +1,24 @@
+{
+  "sysgraph_version": "1.0",
+  "note": "Sigma's own vocabulary-and-rules document, read by skills/sigma-kg/scripts/sysgraph.py. It is NOT JSON Schema.",
+  "header": ["sysgraph_version", "repo", "nodes", "edges"],
+  "node_types": ["Service", "Repo", "Team", "Endpoint", "Topic", "Schema", "Datastore", "Function", "Feature", "BusinessRule", "ADR"],
+  "edge_types": ["exposes", "calls", "publishes", "consumes", "implemented_by", "reads", "writes", "realised_by", "enforced_in", "governs", "owned_by"],
+  "id": {"min_rest": 1, "max_rest": 500},
+  "evidence": {
+    "min": 1,
+    "max": 8,
+    "fields": ["source", "file", "line", "commit", "url", "version", "extracted_at", "confidence"],
+    "required": ["source", "extracted_at", "confidence"],
+    "confidence": ["exact", "resolved", "inferred"],
+    "anchor": "commit OR (url AND version)",
+    "sources": {
+      "contract": {"requires": ["file", "line"], "premise_eligible": true},
+      "static": {"requires": ["file", "line"], "premise_eligible": true},
+      "trace": {"requires": [], "premise_eligible": true},
+      "human": {"requires": [], "premise_eligible": true},
+      "model": {"requires": [], "requires_confidence": "inferred", "premise_eligible": false}
+    },
+    "limits": {"file": 1024, "url": 2048, "version": 200, "echo": 80}
+  }
+}

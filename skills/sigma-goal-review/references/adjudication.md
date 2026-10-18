@@ -85,6 +85,10 @@ all — it is settled, and §1 already says what to check about it instead.
   blocking**. Open-but-not-blocking items do NOT bar CONFIRM; they are carried, not dropped (2c).
 - **REJECT**, with concrete findings (`file:line` where applicable) — the mapping is wrong, stale or
   incomplete, or at least one item was adjudicated blocking. Name which item, and the slice it stops.
+  An `FR-n` that appears in no slice row (the `requirements` verb's "appears in no slice row"
+  violation, step 1) is a REJECT ground too: a promised behaviour no ticket will deliver. Name the
+  `FR-n`. That the verdict follows the verb's exit code is the reviewing model obeying this prose;
+  nothing in this kit enforces it.
 
 **Why there is no third verdict, and why that is not a dodge.** The verdict's only mechanical
 consequence is the `sdlc:designed` overlay, and that overlay is a PRESENCE check: `loop.py`'s design

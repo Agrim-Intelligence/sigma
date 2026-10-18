@@ -26,6 +26,9 @@ Write **## Architecture** as a numbered, checkable list a plan can be judged aga
 layer holds no business logic", "dependencies point inward; no sibling imports across modules", "every
 public function has a test". Keep the stack itself in `.sdlc/project.md`; the rules here are what
 plan-review enforces. Link to (don't copy) any existing `CLAUDE.md` / `AGENTS.md` / architecture doc.
+A rule may end `Enforced by: ci:<path>`, `decide:<id>` or `review` (comma-separated); `/sigma-doctor`
+then reports a named enforcement that does not hold. An untagged or `review` rule is listed, **never**
+refused: report it, don't block on it. Grammar and limits: `docs/architecture-doc.md`.
 
 ## Surface for approval
 Present it as "here's the shape I found — does this match your intent?" If the code has drifted from
