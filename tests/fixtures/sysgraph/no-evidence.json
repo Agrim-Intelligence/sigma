@@ -1,0 +1,102 @@
+{
+  "sysgraph_version": "1.0",
+  "repo": "github.com/acme/billing",
+  "nodes": [
+    {
+      "id": "Service:billing",
+      "type": "Service",
+      "name": "billing"
+    },
+    {
+      "id": "Endpoint:users:POST /v1/auth/token",
+      "type": "Endpoint",
+      "name": "POST /v1/auth/token"
+    },
+    {
+      "id": "Topic:invoices",
+      "type": "Topic",
+      "name": "invoices"
+    },
+    {
+      "id": "Team:payments",
+      "type": "Team",
+      "name": "payments"
+    },
+    {
+      "id": "Datastore:ledger",
+      "type": "Datastore",
+      "name": "ledger"
+    }
+  ],
+  "edges": [
+    {
+      "type": "calls",
+      "from": "Service:billing",
+      "to": "Endpoint:users:POST /v1/auth/token",
+      "evidence": [
+        {
+          "source": "static",
+          "file": "src/billing/client.py",
+          "line": 42,
+          "commit": "0123456789abcdef0123456789abcdef01234567",
+          "extracted_at": "2026-10-17T09:30:00Z",
+          "confidence": "resolved"
+        },
+        {
+          "source": "contract",
+          "file": "contracts/users.yaml",
+          "line": 7,
+          "commit": "0123456789abcdef0123456789abcdef01234567",
+          "extracted_at": "2026-10-17T09:30:00Z",
+          "confidence": "exact"
+        }
+      ]
+    },
+    {
+      "type": "publishes",
+      "from": "Service:billing",
+      "to": "Topic:invoices"
+    },
+    {
+      "type": "owned_by",
+      "from": "Service:billing",
+      "to": "Team:payments",
+      "evidence": [
+        {
+          "source": "trace",
+          "commit": "0123456789abcdef0123456789abcdef01234567",
+          "extracted_at": "2026-10-17T09:30:00Z",
+          "confidence": "resolved"
+        }
+      ]
+    },
+    {
+      "type": "writes",
+      "from": "Service:billing",
+      "to": "Datastore:ledger",
+      "evidence": [
+        {
+          "source": "model",
+          "commit": "0123456789abcdef0123456789abcdef01234567",
+          "extracted_at": "2026-10-17T09:30:00Z",
+          "confidence": "inferred"
+        }
+      ]
+    },
+    {
+      "type": "calls",
+      "from": "Service:billing",
+      "to": "Service:payments-gateway",
+      "evidence": [
+        {
+          "source": "static",
+          "file": "src/billing/gw.py",
+          "line": 3,
+          "commit": "0123456789abcdef0123456789abcdef01234567",
+          "extracted_at": "2026-10-17T09:30:00Z",
+          "confidence": "resolved"
+        }
+      ]
+    }
+  ]
+}
