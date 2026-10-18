@@ -476,7 +476,8 @@ def test_supervisor_passes_its_ttl_at_the_codex_site(monkeypatch, tmp_path):
     fake = type("Rt", (), {
         "lock_file": staticmethod(lambda path: contextlib.nullcontext()),
         "detect_host": staticmethod(lambda: "codex"),
-        "installed_skill": staticmethod(lambda *a: ("codex", pathlib.Path(__file__))),
+        "installed_skill": staticmethod(lambda *a, **k: ("codex", pathlib.Path(__file__))),
+        "running_version": staticmethod(lambda: "1.0.0"),
         "codex_environment": staticmethod(lambda env: dict(env)),
         "build_codex_command": staticmethod(lambda *a: ["codex", "x"])})
     monkeypatch.setattr(daemon, "_codex_runtime", lambda: fake)
