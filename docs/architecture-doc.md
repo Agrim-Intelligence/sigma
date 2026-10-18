@@ -102,7 +102,7 @@ the end of the file is a finding, `unclosed-fence`, because everything after it 
 ## Where the document lives
 
 The system document lives at `architecture.system_root` (default
-`docs/architecture/architecture.md`). In a monorepo that is one folder; in a multi-repo system it
+docs/architecture/architecture.md). In a monorepo that is one folder; in a multi-repo system it
 is the system repository, and each service keeps its own document in `docs/architecture/` in its
 own repository (or `services/<name>/docs/` in a monorepo).
 
@@ -163,7 +163,7 @@ private-name guard rejects.
 - Folder existence is checked only for a value you set explicitly. A value equal to the default
   `docs/architecture` counts as unset, so a repository that has not created the document yet does
   not fail `lint <dir>` on the key, while `lint` with no directory still exits 1 naming the missing
-  `docs/architecture/architecture.md`.
+  docs/architecture/architecture.md.
 - The label reader is line-oriented: a label that spans lines, or a node syntax not listed above,
   can hide a container. In particular Mermaid 11's shape syntax, `db@{ shape: cyl, label: "Orders
   DB [PostgreSQL]" }`, is not read: such a node is silently not checked, so use `db[("...")]`.
