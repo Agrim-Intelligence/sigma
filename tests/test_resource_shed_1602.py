@@ -12,7 +12,7 @@ import time
 import pytest
 
 import test_resource_verify_1601 as base
-from test_resource_verify_1601 import GIB, SCRIPTS, env, unix_only  # noqa: F401  (env is a fixture)
+from test_resource_verify_1601 import GIB, SCRIPTS, _restore_guard_modules, env, unix_only  # noqa: F401  (fixtures)
 
 CHILD = ("import os,signal,sys,time\n"
          "open(sys.argv[1],'w').write(str(os.getpid()))\n"
@@ -115,13 +115,15 @@ def test_end_to_end_env_observe_does_not_end_shed(tmp_path, monkeypatch, capsys)
     t0 = time.time()
 
     def sample():
-        crit = time.time() - t0 > 1.0
+        crit = time.time() - t0 > 0.5
         return lease.guard.Sample(total=16 * GIB, available=(1 if crit else 12) * GIB, swap_used=0, swap_total=0,
                                   swapouts=0, swapouts_at=0.0, pressure=1, cpu_count=8, load1=0.0)
     monkeypatch.setattr(lease, "take_sample", sample)
     loop.verify_goal(sdlc, goal)
     assert "(shed)" not in capsys.readouterr().err
-    assert not list((pathlib.Path(os.environ["SIGMA_RESOURCE_DIR"]) / "shed").glob("*.stop")) if (pathlib.Path(os.environ["SIGMA_RESOURCE_DIR"]) / "shed").exists() else True
+    shed_dir = pathlib.Path(os.environ["SIGMA_RESOURCE_DIR"]) / "shed"
+    if shed_dir.exists():
+        assert not list(shed_dir.glob("*.stop"))
 
 
 @unix_only
@@ -191,7 +193,7 @@ def test_end_to_end_shed_gives_exit_5_shed_no_evidence_and_the_rerun_records_evi
     t0 = time.time()
 
     def sample():
-        crit = time.time() - t0 > 1.0
+        crit = time.time() - t0 > 0.5
         return lease.guard.Sample(total=16 * GIB, available=(1 if crit else 12) * GIB, swap_used=0, swap_total=0,
                                   swapouts=0, swapouts_at=0.0, pressure=1, cpu_count=8, load1=0.0)
     monkeypatch.setattr(lease, "take_sample", sample)
@@ -223,3 +225,40 @@ def test_configured_shed_after_sets_the_critical_samples_before_a_shed(env, tmp_
     out = env.run("verify", "sleep 1.5", str(tmp_path), 30, "g1", sample_gap=0.1, term_grace=1,
                   config={"shed_after": 9})
     assert not out.shed and out.hold is None        # five critical samples are fewer than the configured nine
+
+
+@unix_only
+def test_critical_samples_that_never_run_shed_after_in_a_row_never_stop_the_group(env, tmp_path):
+    """#1796: critical, critical, clear, repeated: six critical samples in total but never three in a row.
+    Control: make `check_shed` count critical samples without resetting the run on a clear one and this goes red."""
+    pattern = iter([False, False, False] + [True, True, False] * 40)      # admit reads, then crit,crit,clear...
+
+    def sample():
+        crit = next(pattern)
+        return env.lease.guard.Sample(total=16 * GIB, available=(1 if crit else 12) * GIB, swap_used=0, swap_total=0,
+                                      swapouts=0, swapouts_at=0.0, pressure=1, cpu_count=8, load1=0.0)
+    env.lease.take_sample = sample
+    out = env.run("verify", "sleep 2", str(tmp_path), 30, "g1", sample_gap=0.1, term_grace=1,
+                  config={"shed_after": 3})
+    assert not out.shed and out.hold is None and out.returncode == 0
+
+
+@unix_only
+def test_after_a_shed_with_a_large_measured_footprint_the_rerun_admits_fewer_workers(env, tmp_path):
+    """#1796: the shed run's measured peak is learned, so the rerun of the same goal admits fewer workers (the ring
+    holds 400 MiB units, the shed run measures about 690 MiB per worker, the roomy rerun has 6 GiB to offer).
+    Control: do not record the shed run's footprint at release and the rerun admits as many workers as the first."""
+    (env.state).mkdir(parents=True, exist_ok=True)
+    (env.state / "observed.json").write_text(json.dumps({"verify": [400 * 1024 * 1024] * 8}))
+    env.lease.take_footprint = lambda pid: (3 * GIB // 2, 0)          # every process of the shed run looks large
+    _critical_after_admission(env, 0.5)
+    first = env.run("verify", _cmd(tmp_path), str(tmp_path), 60, "g1", sample_gap=0.1, term_grace=3,
+                    config={"mode": "enforce"})
+    assert first.shed and first.workers >= 2, first.workers
+    env.lease.take_footprint = lambda pid: (GIB // 2, 0)
+    env.lease.take_sample = lambda: env.lease.guard.Sample(
+        total=16 * GIB, available=6 * GIB, swap_used=0, swapouts=0, swap_total=0, swapouts_at=0.0, pressure=1,
+        cpu_count=8, load1=0.0)
+    rerun = env.run("verify", "true", str(tmp_path), 60, "g1", sample_gap=0.1, config={"mode": "enforce"})
+    assert rerun.hold is None and rerun.returncode == 0
+    assert rerun.workers < first.workers, (first.workers, rerun.workers)

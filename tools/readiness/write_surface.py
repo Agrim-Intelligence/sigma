@@ -56,7 +56,8 @@ def _rest_verb(token):                # `-X DELETE`, `--method=DELETE`, `-XDELET
 
 
 _GH_API_WRITES = {"comment_issue", "add_labels", "remove_label", "create_issue", "close_issue", "edit_issue", "add_assignees",
-                  "create_pr", "merge_pr", "merge_pr_pinned", "create_pr_nondraft", "comment_pr", "merge_pr_gh", "close_pr_gh"}
+                  "create_pr", "merge_pr", "merge_pr_pinned", "create_pr_nondraft", "comment_pr", "merge_pr_gh", "close_pr_gh",
+                  "create_label"}
 
 
 def _is_gh_api_write_call(func):
@@ -372,8 +373,8 @@ def _rules_for_call(node, values):
         rules.add("fs-remove")
     elif name.startswith("os.") and name.split(".")[-1] in {"mkdir", "makedirs", "link", "symlink"}:
         rules.add("fs-write")
-    elif name.split(".")[-1] in _WRITE_METHODS:
-        rules.add("fs-write")
+    elif name.split(".")[-1] in _WRITE_METHODS or name.split(".")[-1] == "atomic_write_text":
+        rules.add("fs-write")    # state.atomic_write_text writes a computed path (#1842)
     return rules
 
 

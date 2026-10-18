@@ -943,6 +943,7 @@ BOARD_COLUMNS = (("backlog", "Backlog"), ("ready", "Ready"), ("in_progress", "In
 class GitHubSource:
     """Goals are open GitHub issues labelled `goal_label`, ordered by issue number. Status via labels;
     done closes the issue; parked labels + comments it. Talks to GitHub through `run` (default _run_gh)."""
+    call_counter = None  # #1849: class default, so an instance built via __new__ (no __init__) still runs `_run`
     # #1140: `proposed_label` (sdlc:needs-confirmation) is retired from init: it is not bootstrapped
     # here. It is created ON DEMAND (`ensure_label`) when a queued proposal is filed by
     # `handoff.create_tracked_issue`. A repo that already has it keeps it; it is never removed.
@@ -1097,6 +1098,8 @@ class GitHubSource:
         # already spell its own severity scheme differently, and a hard-coded prefix would silently
         # rank every one of their issues as unprioritised.
         self.order = _order(config)
+        # #1620: set per pick batch by loop.py (a dag_order.ChainRanks); None keeps today's order.
+        self.dag_chain_ranks = None
         self.priority_prefix = gh.get("priority_label_prefix", "priority:")
         self.priority_aliases = _priority_aliases(config)
         # #900: opt-in blocker-priority promotion. Resolved once here, matching priority_aliases
@@ -1139,6 +1142,7 @@ class GitHubSource:
         # distinguishes "not read yet" from "read, and it was empty/absent".
         self._feature_registry_cache = _UNRESOLVED
         self._raw_run = run or _run_gh
+        self.call_counter = None       # #1607: set by `loop._next` only while a pick trace is on
         self._labels_ready = False
         self._last_goal_raw_count = None   # #230: raw size of the last goal-label read, see census
         self._label_ids = None                   # {label name -> node id}, see `_label_node_ids`
@@ -1312,6 +1316,15 @@ class GitHubSource:
             self.feature, self.feature_label = saved_unit, saved_label
             self._last_read_degraded = saved_degraded
 
+    def _raw(self, args):
+        """#1607: the ONE place arguments reach the runner. When a pick trace is on, `call_counter`
+        records the call first (so a runner that raises is still counted, and a retry counts each
+        attempt); off, it is `None` and this is a plain call. It never adds or reorders a call."""
+        counter = self.call_counter
+        if counter is not None:
+            counter(args)
+        return self._raw_run(args)
+
     def _run(self, args):
         """Single chokepoint for every `gh` call. `project` subcommands are retried with bounded
         exponential backoff on transient API errors (e.g. the intermittent "unknown owner type") so a
@@ -1365,10 +1378,10 @@ class GitHubSource:
                 pass
             return ""
         if not args or args[0] != "project":
-            return self._raw_run(args)
+            return self._raw(args)
         for attempt in range(self._PROJECT_RETRIES):
             try:
-                out = self._raw_run(args)
+                out = self._raw(args)
                 self._project_refusals = 0         # #1402: any answered project call clears the streak
                 return out
             except Exception as e:
@@ -2291,7 +2304,7 @@ class GitHubSource:
                 is_blocking = (self.blocking_priority_override
                               and self.blocking_label in names)
                 ready.append((self._card_rank(it), 0 if is_blocking else 1,
-                             self._board_feature_rank(names), pos, int(n)))
+                             self._board_feature_rank(names), self._chain_rank(n), pos, int(n)))
             elif it.get("status") not in in_flight:
                 names = set(it.get("labels") or [])
                 if self.goal_label in names and not (names & not_eligible):
@@ -2303,7 +2316,7 @@ class GitHubSource:
         if not ready and stranded and not seen_ready:
             self._warn_unseeded(stranded)
         ready.sort()
-        return [n for _, _, _, _, n in ready], carded
+        return [n for _, _, _, _, _, n in ready], carded
 
     def _board_feature_rank(self, names):
         """feature_rank for a BOARD card (#2264, D-9/BR-9 of design #2253): the SAME
@@ -2921,12 +2934,23 @@ class GitHubSource:
             # mixing 3- and 4-element tuples in one `sorted()` call compares a tied prefix as
             # "shorter is less", which would silently reintroduce a priority-shaped signal into a
             # mode whose whole contract is that none exists.
-            return (discovery.UNPRIORITISED, discovery.UNPRIORITISED, 0, issue["number"])
+            return (discovery.UNPRIORITISED, discovery.UNPRIORITISED, (0, 0), 0, issue["number"])
         names = [l.get("name") or "" for l in (issue.get("labels") or [])]
         not_a_bug = 0 if "bug" in names else 1
         ranks = [discovery.priority_rank(n, self.priority_aliases) for n in names if n.startswith(self.priority_prefix)]
         return (min(ranks) if ranks else discovery.UNPRIORITISED, self._feature_rank(issue),
-                not_a_bug, issue["number"])
+                self._chain_rank(issue["number"]), not_a_bug, issue["number"])
+
+    def _chain_rank(self, number):
+        """#1620: `(-open_dependents, -depth)` from the stored dependency map, right after the unit rank;
+        `(0, 0)` for every goal when no map-backed ranks were set for this batch or `order` is `created`."""
+        ranks = self.dag_chain_ranks
+        if ranks is None or self.order == "created":
+            return (0, 0)
+        try:
+            return ranks.get(number)
+        except Exception:                 # noqa: BLE001 - a rank failure never stops a pick
+            return (0, 0)
 
     def _feature_rank(self, issue):
         """feature_rank (#2262, D-3/D-2 of design #2253): `discovery.priority_rank`
@@ -3953,9 +3977,70 @@ class GitHubSource:
         former and this for the latter — two different audiences, two different channels."""
         # #895: the `["body"]` subscript is deliberate data-loss protection -- a degraded `{}` read
         # raises KeyError BEFORE `issue edit`, so a malformed read can never blank the body.
+        # #1616: a `Blocked by #N` marker is checked for a dependency cycle BEFORE anything is written
+        # (`CycleRefused` names the members; nothing is written), and its edge enters the stored map
+        # after the write. Mode `off`, no `.sdlc` directory, or a marker without `Blocked by` skip all
+        # of it: the write below is then exactly what it was.
+        dag, blockers = self._dag_blockers(goal, marker)
+        unchecked = []
+        for blocker in blockers:
+            members = dag.closing_members(self.sdlc_dir, self._hs_config, blocker, int(str(goal).lstrip("#")),
+                                          reader=self._dag_reader)
+            if members:
+                raise dag.CycleRefused(blocker, int(str(goal).lstrip("#")), members)
+            if members is None:
+                unchecked.append(blocker)
         body = self._read_issue(goal, ["body"])["body"]
         new_body = (body or "").rstrip() + "\n\n" + marker + "\n"
         self._issue_edit_body(goal, new_body)           # REST first (#895 slice 3a); RAISES as before
+        if blockers:
+            for blocker in unchecked:
+                dag.record_unchecked(self.sdlc_dir, blocker, int(str(goal).lstrip("#")), self._hs_config)
+            dag.insert(self.sdlc_dir, self._hs_config, int(str(goal).lstrip("#")), blockers=blockers)
+
+    def _dag_blockers(self, goal, marker):
+        """#1616: `(dag_insert module, blocker numbers)` for a marker that carries `Blocked by #N`, else
+        `(None, [])`. Loads `dag_insert` only when the map is in play (mode not `off`, a `.sdlc`
+        directory known); `discovery.dag.mode` is read here with `dag_store.mode`'s own rule (the exact
+        string `off`; anything else, including `OFF`, is `shadow`) so mode `off` imports nothing."""
+        try:
+            block = ((self._hs_config.get("discovery") or {}).get("dag") or {})
+            if not self.sdlc_dir or block.get("mode") == "off":
+                return None, []
+            if not re.search(r"blocked\s+by", str(marker), re.I):
+                return None, []
+            dag = self._dag_mod()
+            blockers = dag.blockers_in(marker, goal)
+            return (dag, blockers) if blockers else (None, [])
+        except Exception:                                   # noqa: BLE001 - the guard is an accelerator
+            return None, []
+
+    def _dag_mod(self):
+        dag = getattr(self, "_dag_insert_mod", None)
+        if dag is None:
+            dag = self._dag_insert_mod = _load("dag_insert")
+        return dag
+
+    def _dag_reader(self, number):
+        """The live walk's reader: the body of an open issue, `""` for any other state (#1616). It reads
+        through this source's own `_read_issue`, so the REST-first policy and the recording fakes see it."""
+        issue = self._read_issue(number, ["body", "state"])
+        return (issue.get("body") or "") if str(issue.get("state") or "").upper() == "OPEN" else ""
+
+    def _dag_insert_filed(self, number, body, labels, goal_label):
+        """#1616: the freshly filed issue enters the stored map at once. Never raises, never delays."""
+        try:
+            block = ((self._hs_config.get("discovery") or {}).get("dag") or {})
+            if not self.sdlc_dir or block.get("mode") == "off":
+                return
+            dag = self._dag_mod()
+            dag.insert(self.sdlc_dir, self._hs_config, int(number), body=body,
+                       life="goal" if goal_label else "none", prio=dag.prio_of(labels))
+        except Exception as exc:                            # noqa: BLE001
+            try:
+                sys.stderr.write("sigma: dependency map insert skipped (%s)\n" % type(exc).__name__)
+            except Exception:                               # noqa: BLE001
+                pass
 
     def issue_url(self, goal):
         return self._issue_url(goal)
@@ -4011,6 +4096,7 @@ class GitHubSource:
         number = self._create_issue(title, body, issue_labels)   # always unassigned -- see docstring
         if number is None:
             return None
+        self._dag_insert_filed(number, body, issue_labels, goal_label)     # #1616: in the stored map at once
         if assignee:
             try:
                 self._issue_add_assignees(number, assignee)       # REST; verifies the login was kept
@@ -5197,49 +5283,54 @@ class GitHubSource:
             out["skipped"] = "cap"
             return out
         try:
-            corpus = {}
-            for label in (self.goal_label, self.goal_blocked_label):
-                for it in self._fetch_issues_rest([label], self._BOARD_ITEM_LIMIT):
-                    if it.get("number") is not None:
-                        corpus.setdefault(str(it["number"]), it)
-            edges, cross_repo, blocker_refs = self._repair_edges(corpus, out)
-            edges = edges[:self._REPAIR_EDGE_CAP]
-            ext, proposed = {}, {}
-            known_closed = self._closed_refs_known()
-            confirmed = self._confirmed_refs_known()      # #1706: read lately and found at the right rank
-            newly_closed = []
-            # Newest ref first, and never a read for a ref already seen closed: the cap must not spend
-            # every pass on the same ten old closed issues (string order did, so a newer blocker outside
-            # the corpus was never reached).
-            outside = sorted((({b for b, _ in edges} - set(corpus)) - set(known_closed)) - set(confirmed),
-                             key=lambda r: (-int(r), r) if str(r).isdigit() else (0, r))
-            for ref in outside[:self._BLOCKER_READ_CAP]:
-                try:
-                    data = self._read_issue(ref, ["number", "state", "labels", "isPullRequest"])
-                except Exception as exc:
-                    cross_repo.append("#%s could not be read (%s)" % (ref, exc))
-                    continue
-                names = self._label_names(data.get("labels"))
-                if self._blocker_not_open(data):
-                    newly_closed.append(ref)
-                    continue
-                if self.proposed_label in names:
-                    proposed[ref] = data
-                    continue
-                ext[ref] = {"number": int(ref), "labels": data.get("labels") or []}
-            for ref, it in corpus.items():
-                if ref in blocker_refs and self.proposed_label in self._label_names(it.get("labels")):
-                    proposed[ref] = it
-            for ref in outside[self._BLOCKER_READ_CAP:]:      # #1475: beyond the cap is reported, never silent
-                out["unread"] = out.get("unread", 0) + 1
-                cross_repo.append("#%s not read (more than %d outside blockers this pass)" % (ref, self._BLOCKER_READ_CAP))
-            if apply:                                         # #1475: the dry pass writes nothing
-                self._remember_closed_refs(known_closed, newly_closed)
-            edges = [(b, d) for b, d in edges if b in ext or (b in corpus and b not in proposed)]
-            item_of = lambda r: corpus[r] if r in corpus else ext[r]            # noqa: E731
-            ranks = {r: discovery.priority_rank(self._priority_name(item_of(r).get("labels")), self.priority_aliases)
-                     for r in {x for e in edges for x in e if x in corpus or x in ext}}
-            edges = [e for e in edges if e[0] in ranks and e[1] in ranks]
+            mp = self._repair_map_input()          # #1626: None -> today's path, untouched below
+            if mp is not None:
+                corpus, cross_repo, blocker_refs, ext, proposed, known_closed, confirmed, item_of, ranks, edges = \
+                    self._repair_from_map(mp, out, apply)
+            else:
+                corpus = {}
+                for label in (self.goal_label, self.goal_blocked_label):
+                    for it in self._fetch_issues_rest([label], self._BOARD_ITEM_LIMIT):
+                        if it.get("number") is not None:
+                            corpus.setdefault(str(it["number"]), it)
+                edges, cross_repo, blocker_refs = self._repair_edges(corpus, out)
+                edges = edges[:self._REPAIR_EDGE_CAP]
+                ext, proposed = {}, {}
+                known_closed = self._closed_refs_known()
+                confirmed = self._confirmed_refs_known()      # #1706: read lately and found at the right rank
+                newly_closed = []
+                # Newest ref first, and never a read for a ref already seen closed: the cap must not spend
+                # every pass on the same ten old closed issues (string order did, so a newer blocker outside
+                # the corpus was never reached).
+                outside = sorted((({b for b, _ in edges} - set(corpus)) - set(known_closed)) - set(confirmed),
+                                 key=lambda r: (-int(r), r) if str(r).isdigit() else (0, r))
+                for ref in outside[:self._BLOCKER_READ_CAP]:
+                    try:
+                        data = self._read_issue(ref, ["number", "state", "labels", "isPullRequest"])
+                    except Exception as exc:
+                        cross_repo.append("#%s could not be read (%s)" % (ref, exc))
+                        continue
+                    names = self._label_names(data.get("labels"))
+                    if self._blocker_not_open(data):
+                        newly_closed.append(ref)
+                        continue
+                    if self.proposed_label in names:
+                        proposed[ref] = data
+                        continue
+                    ext[ref] = {"number": int(ref), "labels": data.get("labels") or []}
+                for ref, it in corpus.items():
+                    if ref in blocker_refs and self.proposed_label in self._label_names(it.get("labels")):
+                        proposed[ref] = it
+                for ref in outside[self._BLOCKER_READ_CAP:]:      # #1475: beyond the cap is reported, never silent
+                    out["unread"] = out.get("unread", 0) + 1
+                    cross_repo.append("#%s not read (more than %d outside blockers this pass)" % (ref, self._BLOCKER_READ_CAP))
+                if apply:                                         # #1475: the dry pass writes nothing
+                    self._remember_closed_refs(known_closed, newly_closed)
+                edges = [(b, d) for b, d in edges if b in ext or (b in corpus and b not in proposed)]
+                item_of = lambda r: corpus[r] if r in corpus else ext[r]            # noqa: E731
+                ranks = {r: discovery.priority_rank(self._priority_name(item_of(r).get("labels")), self.priority_aliases)
+                         for r in {x for e in edges for x in e if x in corpus or x in ext}}
+                edges = [e for e in edges if e[0] in ranks and e[1] in ranks]
             required, cyc = discovery.blocker_required_ranks(edges, ranks)
             if cyc:
                 self._warn_blocking_cycle(set(cyc))
@@ -5287,6 +5378,129 @@ class GitHubSource:
             self._note_scope(exc)
             out["skipped"] = out["skipped"] or "failed"
         return out
+
+    def _repair_map_input(self):
+        """#1626: `dag_repair.repair_input` when the stored map may answer (mode written `on`, usable, fresh
+        change check), else None. Never raises; the module is loaded once per source object."""
+        try:
+            mod = getattr(self, "_dag_repair_mod", None)
+            if mod is None:
+                mod = self._dag_repair_mod = _load("dag_repair")
+            return mod.repair_input(self.sdlc_dir, self._hs_config)
+        except Exception:                       # noqa: BLE001 - the old path is always safe
+            return None
+
+    def _repair_from_map(self, mp, out, apply):
+        """#1626: the same decision inputs as the list-and-extract block of `repair_blocker_ranks`, taken from
+        the stored map: no list read, no outside read for open or closed state. One `_read_issue` per open
+        blocker (newest outside first, then corpus, at most `_BLOCKER_READ_CAP`) gives the labels for the
+        legacy-label check and the live rank; a raise target not read in that pass is read when it is written.
+        PROVISIONAL (owner to ratify): an outside blocker beyond the read cap is reported unread and dropped,
+        as today; a corpus blocker beyond it keeps its map rank. Hand-off edges come from the ledger, as today.
+        Other-repository notes are not produced (the map holds no text). -> the tail's inputs."""
+        corpus = {ref: {"number": int(ref), "labels": []} for ref in mp["corpus"]}
+        parked = set(mp.get("parked") or ())               # #1859: parked stands alone, never raised or stripped
+        edges = [e for e in mp["edges"] if e[1] in corpus and e[0] not in parked]
+        blocker_refs = set(mp["blocker_refs"]) - parked
+        if self.sdlc_dir:
+            try:
+                for h in ledger.outstanding(ledger.read_all(self.sdlc_dir)):
+                    by, blocked = str(ledger.handoff_key(h)), str(h.get("goal"))
+                    if by == blocked:
+                        continue
+                    blocker_refs.add(by)
+                    if blocked in corpus and (by, blocked) not in edges:
+                        edges.append((by, blocked))
+            except Exception:
+                pass
+        edges = edges[:self._REPAIR_EDGE_CAP]
+        cross_repo, ext, proposed, newly_closed = [], {}, {}, []
+        known_closed = self._closed_refs_known()
+        confirmed = self._confirmed_refs_known()
+        newest = lambda r: (-int(r), r) if str(r).isdigit() else (0, r)         # noqa: E731
+        outside = sorted((({b for b, _ in edges} - set(corpus)) - set(known_closed)) - set(confirmed), key=newest)
+        open_outside = [r for r in outside if mp["states"].get(r) != "closed"]
+        # #1859: a legacy label on a corpus blocker is seen only by a read, so the corpus blockers are read
+        # stalest first (never-read first, ties newest ref first) and keep at least half the cap when there are
+        # that many; outside blockers take the rest, as before. Over passes this reaches every one of them.
+        stamped = self._inside_read_known()
+        inside = sorted(blocker_refs & set(corpus), key=lambda r: (stamped.get(r, 0), newest(r)))
+        cap = self._BLOCKER_READ_CAP
+        outside_n = min(len(open_outside), cap - min(len(inside), cap // 2))
+        reads = open_outside[:outside_n] + inside[:cap - outside_n]
+        live = {}
+        for ref in reads:
+            try:
+                data = self._read_issue(ref, ["number", "state", "labels", "isPullRequest"])
+            except Exception as exc:
+                cross_repo.append("#%s could not be read (%s)" % (ref, exc))
+                continue
+            if self._blocker_not_open(data):
+                newly_closed.append(ref)
+                continue
+            live[ref] = {"number": int(ref), "labels": data.get("labels") or []}
+            if self.proposed_label in self._label_names(data.get("labels")):
+                proposed[ref] = data
+            elif ref not in corpus:
+                ext[ref] = live[ref]
+        for ref in open_outside[outside_n:]:
+            out["unread"] = out.get("unread", 0) + 1
+            cross_repo.append("#%s not read (more than %d outside blockers this pass)" % (ref, self._BLOCKER_READ_CAP))
+        out["map"] = True                                  # #1859: the preview row names what this path leaves out
+        if apply:
+            self._remember_inside_read(stamped, [r for r in reads if r in corpus])
+            self._remember_closed_refs(known_closed, newly_closed + [r for r in outside if mp["states"].get(r) == "closed"])
+        for ref in corpus:
+            if ref in live:
+                corpus[ref] = live[ref]
+        skipped_outside = set(open_outside[outside_n:]) | set(newly_closed) | \
+            {r for r in outside if mp["states"].get(r) == "closed"} | set(proposed)
+        edges = [(b, d) for b, d in edges
+                 if (b in corpus and b not in proposed and b not in newly_closed)
+                 or (b in ext and b not in skipped_outside)]
+        ranks = {}
+        for r in {x for e in edges for x in e}:
+            labels = live[r]["labels"] if r in live else None
+            name = self._priority_name(labels) if labels is not None else mp["prio"].get(r, mp["corpus"].get(r))
+            ranks[r] = discovery.priority_rank(name, self.priority_aliases)
+
+        def item_of(ref):
+            if ref in live:
+                return live[ref]
+            data = self._read_issue(ref, ["number", "labels"])
+            live[ref] = {"number": int(ref), "labels": data.get("labels") or []}
+            return live[ref]
+        return corpus, cross_repo, blocker_refs, ext, proposed, known_closed, confirmed, item_of, ranks, edges
+
+    _INSIDE_READ_CACHE = "blocker-inside-read.json"
+    _INSIDE_READ_MAX = 500      # #1859: {ref: epoch} of corpus blockers read by an apply pass; newest kept
+
+    def _inside_read_known(self):
+        """{ref: epoch} of corpus blockers a map-path apply pass read (0 = never). No expiry: it only orders reads.
+        Empty without a state folder or on any read problem."""
+        try:
+            data = json.loads((pathlib.Path(self.sdlc_dir) / "state" / self._INSIDE_READ_CACHE).read_text(encoding="utf-8"))
+            return {str(r): t for r, t in data.items() if isinstance(t, (int, float)) and not isinstance(t, bool)}
+        except Exception:                       # noqa: BLE001
+            return {}
+
+    def _remember_inside_read(self, known, new):
+        """Stamp refs just read. Bounded (newest kept); a write failure costs only the read order."""
+        if not self.sdlc_dir or not new:
+            return
+        try:
+            now = time.time()
+            merged = dict(known)
+            merged.update({str(r): now for r in new})
+            if len(merged) > self._INSIDE_READ_MAX:
+                merged = dict(sorted(merged.items(), key=lambda kv: kv[1])[-self._INSIDE_READ_MAX:])
+            path = pathlib.Path(self.sdlc_dir) / "state" / self._INSIDE_READ_CACHE
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(path.name + ".%d.tmp" % __import__("os").getpid())
+            tmp.write_text(json.dumps(merged, sort_keys=True), encoding="utf-8")
+            __import__("os").replace(str(tmp), str(path))
+        except Exception:                       # noqa: BLE001
+            pass
 
     _CONFIRMED_CACHE = "blocker-confirmed.json"
     _CONFIRMED_TTL = 600        # #1706 (PROVISIONAL): seconds a read-and-fine outside blocker is not read again

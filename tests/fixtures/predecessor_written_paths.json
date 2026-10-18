@@ -372,10 +372,13 @@
   {
    "compatible": true,
    "pattern": ".sdlc/ledger/*",
-   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing.",
+   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted (dag release): dag_history.py::_mirror, append and record_save write the dag history mirror under dag/YYYY-MM/ on the ledger branch, one file per writer process, only when the ledger is enabled; a path the predecessor never writes.",
    "verdict": "directory",
    "vetted_writers": [
     "skills/sigma-loop/scripts/comment_watch.py::tick",
+    "skills/sigma-loop/scripts/dag_history.py::_mirror",
+    "skills/sigma-loop/scripts/dag_history.py::append",
+    "skills/sigma-loop/scripts/dag_history.py::record_save",
     "skills/sigma-loop/scripts/drift_watch.py::sweep",
     "skills/sigma-loop/scripts/handoff.py::_park",
     "skills/sigma-loop/scripts/handoff.py::_triage_finish",
@@ -384,8 +387,8 @@
     "skills/sigma-loop/scripts/ledger.py::safe_append",
     "skills/sigma-loop/scripts/loop.py::_claim",
     "skills/sigma-loop/scripts/loop.py::_dispatch",
-    "skills/sigma-loop/scripts/loop.py::main",
     "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
+    "skills/sigma-loop/scripts/loop.py::main",
     "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
     "skills/sigma-loop/scripts/phase_report.py::cmd_start",
     "skills/sigma-loop/scripts/spend_approval.py::_check",
@@ -399,10 +402,13 @@
    "compatible": false,
    "issue": "#515",
    "pattern": ".sdlc/ledger/*/*-*.*.jsonl",
-   "reason": "No sample reached this path and the writers differ; compatibility is unverified. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing.",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted (dag release): dag_history.py::_mirror, append and record_save write the dag history mirror under dag/YYYY-MM/ on the ledger branch, one file per writer process, only when the ledger is enabled; a path the predecessor never writes.",
    "verdict": "unsampled",
    "vetted_writers": [
     "skills/sigma-loop/scripts/comment_watch.py::tick",
+    "skills/sigma-loop/scripts/dag_history.py::_mirror",
+    "skills/sigma-loop/scripts/dag_history.py::append",
+    "skills/sigma-loop/scripts/dag_history.py::record_save",
     "skills/sigma-loop/scripts/drift_watch.py::sweep",
     "skills/sigma-loop/scripts/handoff.py::_park",
     "skills/sigma-loop/scripts/handoff.py::_triage_finish",
@@ -411,8 +417,8 @@
     "skills/sigma-loop/scripts/ledger.py::safe_append",
     "skills/sigma-loop/scripts/loop.py::_claim",
     "skills/sigma-loop/scripts/loop.py::_dispatch",
-    "skills/sigma-loop/scripts/loop.py::main",
     "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
+    "skills/sigma-loop/scripts/loop.py::main",
     "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
     "skills/sigma-loop/scripts/phase_report.py::cmd_start",
     "skills/sigma-loop/scripts/spend_approval.py::_check",
@@ -475,7 +481,7 @@
   {
    "compatible": true,
    "pattern": ".sdlc/state",
-   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1152 (refs #1142): sync.py::_reroot_guarded takes the existing knowledge flock (the already vetted _knowledge_lock file) and sync.py::bootstrap makes directories and aside copies only under .sdlc/state/orphaned/<stamp>/, a subtree the predecessor does not write; neither writes a file the predecessor writes in .sdlc/state. Vetted #1229: drift_shadow.py::_save and ::shadow_for_park write only .sdlc/state/drift-shadow.json, a file the predecessor never writes (shadow-mode drift verdicts of this product). Vetted #1243: decision_import.py::classify_model and ::_cache_save write only .sdlc/state/decision-import-classes.json (the import classification cache), a file the predecessor never writes. Vetted #1410: reconcile_tick.py::_blocker_rank_repair and ::_write_repair_state write only .sdlc/state/blocker-repair.meta.json (the blocker-rank repair record), a file the predecessor never writes.",
+   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1152 (refs #1142): sync.py::_reroot_guarded takes the existing knowledge flock (the already vetted _knowledge_lock file) and sync.py::bootstrap makes directories and aside copies only under .sdlc/state/orphaned/<stamp>/, a subtree the predecessor does not write; neither writes a file the predecessor writes in .sdlc/state. Vetted #1229: drift_shadow.py::_save and ::shadow_for_park write only .sdlc/state/drift-shadow.json, a file the predecessor never writes (shadow-mode drift verdicts of this product). Vetted #1243: decision_import.py::classify_model and ::_cache_save write only .sdlc/state/decision-import-classes.json (the import classification cache), a file the predecessor never writes. Vetted #1410: reconcile_tick.py::_blocker_rank_repair and ::_write_repair_state write only .sdlc/state/blocker-repair.meta.json (the blocker-rank repair record), a file the predecessor never writes. Vetted #1612: dag_refresh.py::_write_meta and ::refresh_if_due write only .sdlc/state/dag-refresh.meta.json (the dependency map refresh record), a file the predecessor never writes. Vetted #1584: chain.py::plan writes only .sdlc/state/chains/c<N>.json (the local chain plan record, issue numbers and labels only), a file the predecessor never writes. Vetted (dag release): dag_insert.py::insert and dag_pick.py::_append and log_compare write their own dag files (store and compare log) under the state directory; paths the predecessor never writes.",
    "verdict": "directory",
    "vetted_writers": [
     "skills/sigma-init/scripts/init_flow.py::main",
@@ -492,9 +498,18 @@
     "skills/sigma-loop/scripts/autowatch.py::_tick_inner",
     "skills/sigma-loop/scripts/backlog_check.py::_dense_channel",
     "skills/sigma-loop/scripts/backlog_check.py::cross_check",
+    "skills/sigma-loop/scripts/chain.py::plan",
     "skills/sigma-loop/scripts/channel_notify.py::tick",
     "skills/sigma-loop/scripts/coexist.py::write_owner",
     "skills/sigma-loop/scripts/comment_watch.py::tick",
+    "skills/sigma-loop/scripts/dag_check.py::check",
+    "skills/sigma-loop/scripts/dag_collect.py::refresh",
+    "skills/sigma-loop/scripts/dag_insert.py::insert",
+    "skills/sigma-loop/scripts/dag_pick.py::_append",
+    "skills/sigma-loop/scripts/dag_pick.py::log_compare",
+    "skills/sigma-loop/scripts/dag_refresh.py::_write_meta",
+    "skills/sigma-loop/scripts/dag_refresh.py::refresh_if_due",
+    "skills/sigma-loop/scripts/dag_store.py::refresh_lock",
     "skills/sigma-loop/scripts/decision_import.py::_cache_save",
     "skills/sigma-loop/scripts/decision_import.py::classify_model",
     "skills/sigma-loop/scripts/drift_shadow.py::_save",
@@ -511,6 +526,7 @@
     "skills/sigma-loop/scripts/loop.py::_ensure_ledger_delivery",
     "skills/sigma-loop/scripts/loop.py::_merge_reconcile_lock",
     "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_next_untraced",
     "skills/sigma-loop/scripts/loop.py::_reconcile_awaiting_merges",
     "skills/sigma-loop/scripts/loop.py::_reconcile_stamp",
     "skills/sigma-loop/scripts/loop.py::_reconcile_sweep",
@@ -539,6 +555,7 @@
     "skills/sigma-loop/scripts/state.py::park",
     "skills/sigma-loop/scripts/state.py::phase_end_lock",
     "skills/sigma-loop/scripts/state.py::record_phase_end",
+    "skills/sigma-loop/scripts/state.py::set_label_checked",
     "skills/sigma-loop/scripts/state.py::start_run",
     "skills/sigma-loop/scripts/supervise_daemon.py::_codex_main",
     "skills/sigma-loop/scripts/supervise_daemon.py::main",
@@ -570,6 +587,7 @@
     "skills/sigma-loop/scripts/state.py::add_tokens",
     "skills/sigma-loop/scripts/state.py::advance_cursor",
     "skills/sigma-loop/scripts/state.py::record_phase_end",
+    "skills/sigma-loop/scripts/state.py::set_label_checked",
     "skills/sigma-loop/scripts/state.py::start_run",
     "skills/sigma-scope/scripts/assign.py::_start_drain"
    ]
@@ -588,6 +606,7 @@
     "skills/sigma-loop/scripts/state.py::add_tokens",
     "skills/sigma-loop/scripts/state.py::advance_cursor",
     "skills/sigma-loop/scripts/state.py::record_phase_end",
+    "skills/sigma-loop/scripts/state.py::set_label_checked",
     "skills/sigma-loop/scripts/state.py::start_run",
     "skills/sigma-scope/scripts/assign.py::_start_drain"
    ]
@@ -652,6 +671,7 @@
    "vetted_writers": [
     "skills/sigma-loop/scripts/loop.py::_ensure_claimed",
     "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_next_untraced",
     "skills/sigma-loop/scripts/loop.py::_try_acquire_claim_lock",
     "skills/sigma-loop/scripts/loop.py::next_batch",
     "skills/sigma-loop/scripts/loop.py::reclaim_stale_claim_lock",
@@ -677,6 +697,7 @@
    "verdict": "unsampled",
    "vetted_writers": [
     "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_next_untraced",
     "skills/sigma-loop/scripts/loop.py::_try_acquire_claim_lock",
     "skills/sigma-loop/scripts/loop.py::next_batch",
     "skills/sigma-loop/scripts/loop.py::reclaim_stale_claim_lock",
@@ -693,6 +714,7 @@
    "verdict": "unsampled",
    "vetted_writers": [
     "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_next_untraced",
     "skills/sigma-loop/scripts/loop.py::_try_acquire_claim_lock",
     "skills/sigma-loop/scripts/loop.py::next_batch",
     "skills/sigma-loop/scripts/loop.py::reclaim_stale_claim_lock",
@@ -887,6 +909,7 @@
    "verdict": "unsampled",
    "vetted_writers": [
     "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_next_untraced",
     "skills/sigma-loop/scripts/loop.py::_reconcile_stamp",
     "skills/sigma-loop/scripts/loop.py::_reconcile_sweep",
     "skills/sigma-loop/scripts/loop.py::next_batch"
@@ -911,6 +934,7 @@
    "vetted_writers": [
     "skills/sigma-loop/scripts/loop.py::_emit_run_stop_once",
     "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_next_untraced",
     "skills/sigma-loop/scripts/state.py::claim_run_stop"
    ]
   },
@@ -923,6 +947,7 @@
    "vetted_writers": [
     "skills/sigma-loop/scripts/loop.py::_emit_run_stop_once",
     "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_next_untraced",
     "skills/sigma-loop/scripts/state.py::claim_run_stop"
    ]
   },
@@ -935,6 +960,7 @@
     "skills/sigma-loop/scripts/loop.py::_claim",
     "skills/sigma-loop/scripts/loop.py::_ensure_claimed",
     "skills/sigma-loop/scripts/loop.py::_next",
+    "skills/sigma-loop/scripts/loop.py::_next_untraced",
     "skills/sigma-loop/scripts/loop.py::_reserve_goal_slot",
     "skills/sigma-loop/scripts/loop.py::_session_claim",
     "skills/sigma-loop/scripts/loop.py::begin_run",

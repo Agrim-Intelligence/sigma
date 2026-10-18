@@ -272,6 +272,7 @@ Everyday commands:
 | `/sigma-promote` | Approve an issue the loop filed, so it can be picked up. |
 | `/sigma-scope <idea>` | Turn a rough idea into planned, prioritised issues. |
 | `/sigma-triage` | Plan a dependency-ordered run over the backlog. |
+| `/sigma-chain <N>` | Solve the whole chain of open blockers behind one goal: plan, ask once, arm, run. |
 | `/sigma-doctor` | Check the setup and print the exact fix for anything wrong. |
 | `/sigma-audit` · `/sigma-align` | Audit the codebase's health, or check shipped work against your strategy. |
 
@@ -361,6 +362,7 @@ see which features are live for your config.
 | [Running the loop unattended](docs/running-unattended.md) | leave it running overnight |
 | [Backlog: local files or GitHub issues](docs/backlog.md) | use GitHub issues and a Projects board, priorities, blockers |
 | [Label model](docs/label-model.md) | understand or hand-edit `sdlc:*` labels |
+| [The dependency map](docs/dag.md) | see what waits on what, ask for a goal's chain, and read the shadow-to-on criterion |
 | [Worktrees, PRs and merging](docs/worktrees-and-merging.md) | control how goals become pull requests and get merged |
 | [Planning the backlog](docs/planning-the-backlog.md) | use `/sigma-scope` and `/sigma-triage` |
 | [Action log and team ledger](docs/action-log-and-ledger.md) | trace what the loop did, or coordinate a team |
@@ -369,7 +371,7 @@ see which features are live for your config.
 | [Companion plugins](docs/companions.md) | the optional `code-review` plugin |
 | [Managed settings](docs/managed-settings.md) | enforce settings across an organisation |
 | [Zero-touch routines](docs/routines.md) | trigger the loop on a schedule |
-| [What is new in 1.0.16](docs/whats-new-1.0.16.md) | see every change in this release and what changes by default when you upgrade |
+| [What is new in 1.0.17](docs/whats-new-1.0.17.md) | see every change in this release and what changes by default when you upgrade |
 | [Decision Rulebook](docs/decision-rulebook.md) | record decisions, earn autonomy levels, add hard stops, import past decisions |
 | [Upkeep](docs/upkeep.md) | keep unit branches rebased on a 12-hour window, with backups |
 | [Configuration reference](docs/configuration.md) | see every flag and default |

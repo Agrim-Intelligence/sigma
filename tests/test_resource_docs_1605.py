@@ -26,3 +26,39 @@ def test_every_test_named_in_the_controls_table_exists():
     text = (EVID / "resource-guard-controls.md").read_text()
     for path, name in re.findall(r"(tests/test_\w+\.py)::(\w+)", text):
         assert ("def %s(" % name) in (ROOT / path).read_text(), (path, name)
+
+
+def test_no_controls_table_row_says_not_run():
+    """#1797: every row is covered by the runner or says why it cannot be patched."""
+    text = (EVID / "resource-guard-controls.md").read_text()
+    rows = [l for l in text.splitlines() if l.startswith("| ") and "tests/test_" in l]
+    assert rows and not [r for r in rows if "not run" in r.lower()]
+
+
+def test_parallelism_says_the_rerun_after_a_shed_learns_the_measured_footprint():
+    """#1796: the claim is the one test_resource_shed_1602 shows: a large measured footprint lowers the rerun's workers."""
+    text = (ROOT / "docs" / "parallelism.md").read_text()
+    section = text[text.index("- **Shed.**"):]
+    section = section[:section.index("- **What the guard cannot cover.**")]
+    assert "fewer workers" in section and "measured" in section
+    shed_test = (ROOT / "tests" / "test_resource_shed_1602.py").read_text()
+    assert "def test_after_a_shed_with_a_large_measured_footprint_the_rerun_admits_fewer_workers" in shed_test
+
+
+def test_parallelism_documents_the_cold_start_bound_and_the_seeding_lever():
+    """#1816: the cold-start behaviour and how an operator seeds a ring are written down."""
+    text = (ROOT / "docs" / "parallelism.md").read_text()
+    section = text[text.index("- **Cold start.**"):]
+    section = section[:section.index("- **What the guard cannot cover.**")]
+    for needle in ("divided by the derived session cost", "released when it ends", "observed.json", "SIGMA_RESOURCE_DIR"):
+        assert needle in section, needle
+
+
+def test_parallelism_documents_the_ring_unit_and_the_verify_run_bound():
+    """The ring unit is per sizeable process of the run, and a verify admission is bounded by the whole-run peak."""
+    text = (ROOT / "docs" / "parallelism.md").read_text()
+    section = text[text.index("- **The ring unit.**"):]
+    section = section[:section.index("- **What the guard cannot cover.**")]
+    for needle in ("per sizeable process", "a quarter of the largest", "1.5 times the largest whole-run peak",
+                   "`verify_run`"):
+        assert needle in " ".join(section.split()), needle

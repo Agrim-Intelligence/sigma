@@ -47,6 +47,8 @@ DEFAULT_TTL = 6 * 3600.0  # seconds; callers pass the verify timeout or session 
 WAIT_TTL = 600.0  # seconds a held verify keeps blocking new goal starts
 EVENTS_MAX = 262144  # events.jsonl is rotated once past this size
 POLL = 0.5
+RUN_MARGIN = 1.5  # a verify admission may reserve at most this times the largest whole-run peak seen (#1858)
+SIZEABLE = 4  # a process is sizeable when its footprint is at least 1/4 of the largest in its tree
 START_TOLERANCE = 2.0  # seconds two readings of one process start time may differ
 
 
@@ -73,6 +75,10 @@ def take_sample():
 
 def take_footprint(pid):
     return guard.footprint(pid)
+
+
+def take_descendants(pid):
+    return guard.descendants(pid)
 
 
 def pid_alive(pid):
@@ -255,19 +261,68 @@ def _stale(record, now):
     return record is None or not pid_alive(record["pid"]) or expired(record, now) or reused(record)
 
 
-def _seen(record):
+def _tree_feet(record, held):
+    """Footprints of the lease's pid plus everything it started, minus any descendant (and its subtree) that holds a
+    lease of its own: a verify under a session is measured by its own lease, not twice."""
+    feet = []
     foot = take_footprint(record["pid"])
-    return max(record.get("peak", 0), foot[0] if foot else 0)
+    feet.append(foot[0] if foot else 0)
+    skipped = set()
+    for child in take_descendants(record["pid"]):
+        if child in skipped:
+            continue
+        if child in held:
+            skipped.add(child)
+            skipped.update(take_descendants(child))
+            continue
+        foot = take_footprint(child)
+        feet.append(foot[0] if foot else 0)
+    return feet
+
+
+def _tree_footprint(record, held):
+    return sum(_tree_feet(record, held))
+
+
+def _sizeable(feet):
+    """How many processes of the tree are at least a quarter of its largest (a heuristic: helpers do not count)."""
+    big = max(feet) if feet else 0
+    return sum(1 for f in feet if big > 0 and f * SIZEABLE >= big)
+
+
+def _measure(record, held=frozenset()):
+    """(peak, procs): the footprint now or the recorded peak, and the most sizeable processes seen in the tree.
+    A session lease covers the session tree (#1816): its pid is the supervisor, a few MB, while the model session
+    below it is hundreds. Other kinds record their pid, but count the tree's processes (#1858)."""
+    procs = record.get("procs", 0)
+    if reused(record):
+        return record.get("peak", 0), procs
+    feet = _tree_feet(record, held)
+    now = sum(feet) if record.get("kind") == "session" else feet[0]
+    return max(record.get("peak", 0), now), max(procs, _sizeable(feet))
+
+
+def _seen(record, held=frozenset()):
+    return _measure(record, held)[0]
+
+
+def _held_pids(directory, skip_id=None):
+    """Pids of the live leases other than `skip_id`."""
+    return frozenset(r["pid"] for _, r in _load_leases(directory)
+                     if r is not None and r.get("id") != skip_id and pid_alive(r["pid"]))
 
 
 def _finish(directory, path, record, why):
     """Record the unit's measured peak into its ring and remove the lease file."""
     if record is not None:
         # a reused pid is a foreign process: measuring it would feed its size into the ring
-        peak = record.get("peak", 0) if reused(record) else _seen(record)
-        workers = max(1, record.get("workers", 1))
+        peak, procs = _measure(record, _held_pids(directory, record.get("id")))
+        unit = max(1, record.get("workers", 1), procs)  # bytes per sizeable process of the run (#1858)
         if peak > 0:
-            record_observation(directory, record.get("kind", "unknown"), [peak // workers or 1])
+            kind = record.get("kind", "unknown")
+            record_observation(directory, kind, [peak // unit or 1])
+            if kind == "verify":
+                record_observation(directory, "verify_run", [peak])
         log_event(directory, {"event": why, "id": record.get("id", os.path.basename(path)[:-len(".json")]),
                               "kind": record.get("kind", "unknown"), "peak": peak})
     try:
@@ -287,7 +342,8 @@ def _view(directory, now, config=None, reclaim=False):
         live.append((path, record))
     sample = take_sample()
     limits = guard.derive(sample, config)
-    limits.unmaterialised = sum(remainder(r["est_mem"], _seen(r)) for _, r in live)
+    held = frozenset(r["pid"] for _, r in live)
+    limits.unmaterialised = sum(remainder(r["est_mem"], _seen(r, held - {r["pid"]})) for _, r in live)
     limits.leased = sum(r["est_mem"] for _, r in live)
     limits.headroom = limits.headroom_for(sample.available)
     observed = _read_json(os.path.join(directory, "observed.json"), {})
@@ -325,16 +381,25 @@ def _decide(kind, want, goal, limits, live, observed, waiting, now):
     room = _room(kind, limits)
     cost = learned_cost(ring)
     if cost is None:
-        if any(r["kind"] == kind for _, r in live):
-            return Hold("no observation of %s yet and one unit is already running" % kind, _retry())
+        running = sum(1 for _, r in live if r["kind"] == kind)
         if room <= 0:
             return Hold("memory: no room above the reserve", _retry())
+        # cold ring (#1816): a session may be admitted up to room / session_cost; every other kind stays at one
+        bound = max(1, int(room // max(limits.session_cost, 1))) if kind == "session" else 1
+        if running >= bound:
+            why = ("no observation of %s yet and one unit is already running" % kind) if bound == 1 else \
+                ("no observation of %s yet and %d units are already running (cold-start bound %d)"
+                 % (kind, running, bound))
+            return Hold(why, _retry())
         return 1, 0
     n = min(want, int(room // max(cost, 1)))
     if kind == "verify" and limits.max_verify_workers:
         n = min(n, limits.max_verify_workers)
     if n < 1:
         return Hold("memory: headroom %d below one %s unit (%d)" % (max(room, 0), kind, cost), _retry())
+    runs = [v for v in observed.get("verify_run", []) if guard._number(v) and v > 0] if kind == "verify" else []
+    if runs:  # the unit may be skewed by a count mismatch: never reserve more than the biggest whole run, plus margin
+        n = max(1, min(n, int(RUN_MARGIN * max(runs) // max(cost, 1))))
     return n, n * cost
 
 
@@ -349,9 +414,9 @@ def admit(kind, want, repo, goal, pid=None, ttl=None, config=None, now=None, env
             return Hold("admit lock busy", 1.0)
         sample, limits, live, observed = _view(directory, now, config, reclaim=True)
         for path, record in live:  # keep the peak: a process that exits before release still taught us its size
-            seen = _seen(record)
-            if seen > record.get("peak", 0):
-                _atomic_write(path, dict(record, peak=seen))
+            seen, procs = _measure(record, frozenset(r["pid"] for _, r in live) - {record["pid"]})
+            if seen > record.get("peak", 0) or procs > record.get("procs", 0):
+                _atomic_write(path, dict(record, peak=seen, procs=procs))
         waiting = _waiting(directory, now)
         choice = _decide(kind, want, goal, limits, live, observed, waiting, now)
         previous = _read_json(os.path.join(directory, "last.json"), {})
@@ -374,7 +439,7 @@ def admit(kind, want, repo, goal, pid=None, ttl=None, config=None, now=None, env
         record = {"id": lease_id, "kind": kind, "pid": pid, "pgid": _pgid(pid), "start": now,
                   "pid_start": process_start(pid),
                   "repo_hash": hashlib.sha256(str(repo).encode()).hexdigest()[:12], "goal": goal, "est_mem": est,
-                  "workers": n, "ttl": ttl if guard._number(ttl) and ttl > 0 else DEFAULT_TTL, "peak": 0}
+                  "workers": n, "ttl": ttl if guard._number(ttl) and ttl > 0 else DEFAULT_TTL, "peak": 0, "procs": 0}
         _atomic_write(os.path.join(directory, "leases", lease_id + ".json"), record)
         waiting.pop(goal, None) if kind == "verify" else None
         _atomic_write(os.path.join(directory, "waiting.json"), waiting)
@@ -413,6 +478,23 @@ def release(lease_id, env=None):
         if not got or not os.path.exists(path):
             return False
         _finish(directory, path, _load_one(path), "release")
+        return True
+
+
+def note_peak(lease_id, env=None):
+    """Raise a live lease's recorded peak to what it measures now (#1816): a session's tree is gone by release, so the
+    peak has to be taken while it runs. False when the lease is unknown, dead or the lock is busy."""
+    directory = state_dir(env)
+    path = os.path.join(directory, "leases", os.path.basename(str(lease_id)) + ".json")
+    with _locked(directory) as got:
+        if not got or not os.path.exists(path):
+            return False
+        record = dict(_load_leases(directory)).get(path)
+        if record is None or not pid_alive(record["pid"]) or reused(record):
+            return False
+        seen, procs = _measure(record, _held_pids(directory, record.get("id")))
+        if seen > record.get("peak", 0) or procs > record.get("procs", 0):
+            _atomic_write(path, dict(record, peak=seen, procs=procs))
         return True
 
 

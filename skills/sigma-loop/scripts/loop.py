@@ -49,6 +49,7 @@ def _host_model_config(config):
 state = _load("state")
 sources = _load("sources")          # backlog source: local files or GitHub issues (config-selected)
 legacy = _load("legacy")            # #239: markers written under the plugin's previous name
+pick_trace = _load("pick_trace")    # #1607: opt-in call-count + stage-seconds trace of a pick
 ledger = _load("ledger")            # team record (config-gated, default OFF; every call is fail-open)
 work = _load("work")                # per-goal worktree/branch/PR (config-gated, default OFF)
 tamper_scan = _load("tamper_scan")  # #1937: diff parser; #1933 reuses changed_test_files()
@@ -209,6 +210,16 @@ def _ensure_ledger_delivery(sdlc_dir, config, threshold=15, publish_fn=None, coo
 #: Pure literals only (str/tuple/bool/None): the reader is `ast.literal_eval`, so it cannot follow a
 #: name or a call. Text fields carry no `|` and no newline -- they land in a Markdown table cell.
 ENFORCEMENT_GATES = (
+    {"control": "Dependency hold at pick, from the stored map", "function": "_map_dependency_hold",
+     "kind": "python-gate", "hosts": "all", "enabled_by": ("discovery.dag.mode",),
+     "settings": ("discovery.dag.ttl_minutes",),
+     "mechanism": "replaces the board-mirror read of the pick-time dependency hold with the stored "
+                  "dependency map only when it is written `on`, the map is usable and a change check "
+                  "ran in the last ten minutes; any unusable clause prints one stderr line and takes "
+                  "the old path",
+     "condition": "acts only when `discovery.dag.mode` is written `on`; the shadow default (and any "
+                  "typo) returns the old decision and appends one comparison record, and `off` "
+                  "loads nothing"},
     {"control": "Dependency hold at pick", "function": "_pick_dependency_hold",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("discovery.dependency_gate.mode",),
      "settings": (),
@@ -1180,6 +1191,76 @@ def _reconcile_ttl_minutes(config):
         return 60
 
 
+_DAG_PICKED = [False]          # #1612: the first pick of a process checks the dependency map once
+
+
+def _dag_github_source(config):
+    """#1851: the dependency map exists only for a GitHub source; local-goals makes no `gh` call."""
+    return ((((config or {}).get("discovery") or {}).get("source")) or "local-goals") == "github"
+
+
+def _dag_first_pick(sdlc_dir, source, config):
+    """#1612: the first `_next` or `next_batch` of a process refreshes the dependency map once when it
+    is stale (`dag_refresh.refresh_if_due`: TTL, offset, call cap and time budget inside). Opt-in:
+    nothing happens unless `discovery.dag.mode` is written as shadow or on, and the flag is set before
+    anything else so a later pick of the same process never checks again. #1851: the map is read
+    through `gh`, so a source other than GitHub (the default is local-goals) makes no call at all.
+    Never raises."""
+    if _DAG_PICKED[0]:
+        return
+    _DAG_PICKED[0] = True
+    if not _dag_github_source(config):
+        return
+    try:
+        dr = _load("dag_refresh")
+        if dr.active(config):
+            dr.refresh_if_due(sdlc_dir, config, run=getattr(source, "_run", None))
+    except Exception:                       # noqa: BLE001 - a map refresh never stops a pick
+        pass
+
+
+def _dag_check_pick(sdlc_dir, config, source):
+    """#1617: the cheap change check, once at the start of a pick (`dag_check.check`). Nothing happens, and
+    `dag_check` is not even loaded, when `discovery.dag.mode` is written `off` or no stored map exists, so
+    the pick path is unchanged in both cases. A failure prints one stderr line from the check; this guard
+    swallows anything else. #1851: nothing happens for a non-GitHub source. Never raises."""
+    if not _dag_github_source(config):
+        return
+    try:
+        block = (((config or {}).get("discovery") or {}).get("dag"))
+        if isinstance(block, dict) and block.get("mode") == "off":
+            return
+        if not (pathlib.Path(sdlc_dir) / "state" / "dag.json").is_file():
+            return
+        _load("dag_check").check(sdlc_dir, config, run=getattr(source, "_run", None))
+    except Exception:                       # noqa: BLE001 - a change check never stops a pick
+        pass
+
+
+def _dag_order_pick(sdlc_dir, config, source, cache=None):
+    """#1620: sets `source.dag_chain_ranks` for this pick (biggest chain first, from the stored map), or
+    clears it to None so the order is exactly today's. Set only for a GitHub source whose `discovery.order`
+    is `priority`, `discovery.dag.mode` is not `off` and `state/dag.json` exists; otherwise `dag_order`
+    is not even loaded. Runs after `_dag_check_pick` so the change check it gates on is this pick's.
+    #1621: `cache` is the dict `dag_pick._entry` keeps the loaded map in; `next_batch` passes one dict
+    for the whole batch so the pick-time hold reuses this load. None is a fresh dict. Never raises."""
+    try:
+        source.dag_chain_ranks = None
+        if not _dag_github_source(config):
+            return
+        disc = (config or {}).get("discovery") or {}
+        if disc.get("order") == "created":
+            return
+        block = disc.get("dag")
+        if isinstance(block, dict) and block.get("mode") == "off":
+            return
+        if not (pathlib.Path(sdlc_dir) / "state" / "dag.json").is_file():
+            return
+        source.dag_chain_ranks = _load("dag_order").chain_ranks(sdlc_dir, config, {} if cache is None else cache)
+    except Exception:                       # noqa: BLE001 - an order term never stops a pick
+        pass
+
+
 def _reconcile_sweep(sdlc_dir, config, run=None, now=None):
     """#1391 step 5e: the throttled, opt-in reconciliation pass. Returns the swept issue refs (or an
     empty frozenset), and NEVER raises.
@@ -1571,9 +1652,15 @@ def _label_set_decided(sdlc_dir, config, label):
 def _label_not_ready(sdlc_dir, source, config):
     """#1579: the one line to print when a `--label` run must not start yet, else None. Runs the
     read-only `plan` once, before the run's first claim, and refuses on unarmed members or open
-    questions. Fail-open on a plan that cannot run: the picker's own posture."""
+    questions. Fail-open on a plan that cannot run: the picker's own posture.
+
+    #1805: `run_iteration` is per checkout, so it cannot say "this label's run has started". The
+    check is skipped only when a run is started AND this very label is the one it last passed for
+    (`label_checked`); a different label, or no started run, runs `plan` again. A refusal records nothing."""
     label = getattr(source, "label_scope", None)
-    if not label or state.load_cursor(sdlc_dir).get("run_iteration"):
+    if not label:
+        return None
+    if state.load_cursor(sdlc_dir).get("run_iteration") and state.load_label_checked(sdlc_dir) == label:
         return None
     try:
         p = _label_drain().plan(sdlc_dir, label, config=config, run=getattr(source, "_run", None))
@@ -1582,18 +1669,24 @@ def _label_not_ready(sdlc_dir, source, config):
               file=sys.stderr)
         return None
     unarmed = sum(1 for r in p["members"] if r["verdict"] == "unarmed")
+    unassigned = sum(1 for r in p["members"] if r["verdict"] == "unassigned")      # #1824
     # #1732: the plan's real open questions; a scope-hold, dependency or spend question still never blocks a start
     asks = sum(1 for q in p.get("questions") or [] if q.get("kind") not in ("scope_hold", "dependency", "irreversible"))
-    if unarmed and not any(q.get("kind") == "label_set" for q in p.get("questions") or []) \
+    if (unarmed or unassigned) and not any(q.get("kind") == "label_set" for q in p.get("questions") or []) \
             and _label_set_decided(sdlc_dir, config, label):
-        unarmed = 0                             # #1732: a recorded decision to leave them unarmed
-    if not unarmed and not asks:
+        unarmed = unassigned = 0                # #1732: a recorded decision to leave them unarmed
+    if not unarmed and not unassigned and not asks:
+        try:
+            state.set_label_checked(sdlc_dir, label)
+        except OSError as exc:                  # fail-open: an unrecorded pass only means a re-check
+            print("loop.py: label %r start check not recorded (%s); continuing" % (label, exc), file=sys.stderr)
         return None
-    verb = ("run `label_drain.py arm %s %s --apply`" % (sdlc_dir, label) if unarmed
+    verb = ("run `label_drain.py arm %s %s --apply`" % (sdlc_dir, label) if unarmed or unassigned
             else "run `label_drain.py plan %s %s` and answer the open questions with /sigma-unpark"
                  % (sdlc_dir, label))
-    return ("label %s is not ready: %d unarmed member(s), %d open question(s); nothing was claimed or "
-            "written. First %s, then start again" % (label, unarmed, asks, verb))
+    return ("label %s is not ready: %d unarmed member(s)%s, %d open question(s); nothing was claimed or "
+            "written. First %s, then start again"
+            % (label, unarmed, ", %d unassigned member(s)" % unassigned if unassigned else "", asks, verb))
 
 
 def _label_drained_note(sdlc_dir, source, config, skip):
@@ -1625,8 +1718,11 @@ def _label_drained_note(sdlc_dir, source, config, skip):
                   file=sys.stderr)
     try:
         since = state.load_cursor(sdlc_dir).get("run_started_at") or 0
-        filed = []
-        for i in sources.fetch_issues_rest(getattr(source, "_run"), source.repo, [source.goal_label], 200):
+        if not since and state.load_label_checked(sdlc_dir) == label:
+            since = state.load_label_checked_at(sdlc_dir)   # #1832: the documented gesture has no start-run
+        filed = []              # #1809: no recorded start means no window; never count from the epoch
+        for i in (sources.fetch_issues_rest(getattr(source, "_run"), source.repo, [source.goal_label], 200)
+                  if since else ()):
             made = calendar.timegm(time.strptime(i.get("created_at") or "", "%Y-%m-%dT%H:%M:%SZ"))
             if made >= since and label not in {(l.get("name") if isinstance(l, dict) else l)
                                                for l in i.get("labels") or []}:
@@ -1886,6 +1982,46 @@ def _pick_dependency_hold(sdlc_dir, source, goal, config, cache):
         return ""
 
 
+def _map_dependency_hold(sdlc_dir, source, goal, config, cache):
+    """#1619: `_pick_dependency_hold`'s answer, optionally from the stored dependency map.
+
+    Mode `off`, a source other than GitHub, or (in shadow) no stored map: the old function, and
+    `dag_pick` is never loaded. `shadow` (the default, and what a typo reads): the old decision is
+    computed and RETURNED, the map's is compared with it in a guarded block and one record is
+    appended to `state/dag-shadow.jsonl`. `on` (only when written exactly `on`): a usable map with a
+    change check inside ten minutes that knows the goal decides, with no mirror and no live read when
+    nothing is held; anything else prints ONE stderr line per call and takes the old path. Never
+    raises beyond what the old function does."""
+    block = (((config or {}).get("discovery") or {}).get("dag"))
+    mode = block.get("mode") if isinstance(block, dict) else None
+    if mode == "off" or not _dag_github_source(config):
+        return _pick_dependency_hold(sdlc_dir, source, goal, config, cache)
+    on = mode == "on"
+    if not on and not (pathlib.Path(sdlc_dir) / "state" / "dag.json").is_file():
+        return _pick_dependency_hold(sdlc_dir, source, goal, config, cache)
+    try:
+        dp = cache.get("dag_pick_mod")
+        if dp is None:
+            dp = cache["dag_pick_mod"] = _load("dag_pick")
+    except Exception:                       # noqa: BLE001 - the old path is always safe
+        return _pick_dependency_hold(sdlc_dir, source, goal, config, cache)
+    if on:
+        held, why = dp.map_hold(sdlc_dir, config, goal, cache)
+        if held is not None:
+            return dp.hold_text(held, cache.get("dag_pick_phrases"))
+        if not cache.get("dag_pick_warned"):
+            cache["dag_pick_warned"] = True
+            print("loop.py: dependency map not used (%s); using the board mirror" % why,
+                  file=sys.stderr)
+        return _pick_dependency_hold(sdlc_dir, source, goal, config, cache)
+    old = _pick_dependency_hold(sdlc_dir, source, goal, config, cache)
+    try:
+        dp.log_compare(sdlc_dir, config, goal, old, cache)
+    except Exception:                       # noqa: BLE001 - a comparison never changes a pick
+        pass
+    return old
+
+
 def _is_local_source(source):
     """#1550: goals are files under `goals_dir`, read through `fetch_title_body`. Both halves are
     required: GitHubSource has the reader but no `goals_dir`; a bare fake has neither."""
@@ -1955,13 +2091,52 @@ def _hold_subject(source, goal):
     return pathlib.Path(goal).stem, "still status: %s" % status if status else "status unchanged"
 
 
-def _held_release_note(gate):
-    """#1550: the DONE summary must not promise self-release for a hold only a human can lift."""
+def _held_cycles(sdlc_dir, config, held):
+    """#1615: one line per stored-map dependency cycle that holds at least one of the held goals (#1841: it
+    holds a goal that is in it or waits behind it); `[]`
+    (and `dag_cycles` not even loaded) when `discovery.dag.mode` is written `off`. Never raises."""
+    try:
+        if config.get("discovery", {}).get("dag", {}).get("mode") == "off":
+            return []
+        nums = set()
+        for subject, _ in held:
+            tail = str(subject).lstrip("#")
+            if tail.isdigit():
+                nums.add(int(tail))
+        if not nums:
+            return []
+        dc = _load("dag_cycles")
+        return [dc.line(c) for c in dc.holding(sdlc_dir, config, nums)]     # #1841: in OR behind a cycle
+    except Exception:                       # noqa: BLE001 - the report is advice, never a failure
+        return []
+
+
+def _held_release_note(gate, cycles=()):
+    """#1550: the DONE summary must not promise self-release for a hold only a human can lift.
+    #1615: nor for a hold that is a dependency cycle, which no event ever releases."""
+    if cycles:
+        return ("At least one is in, or waits behind, a dependency cycle and never releases by itself; "
+                "someone has to remove one Blocked by line")
     if gate.get("needs_human"):
         return ("At least one waits on a prerequisite that is parked, failed, proposed or names no "
                 "single local goal, which needs a human before it can move")
     return "They become pickable by themselves when it %s" % ("is done" if gate.get("local")
                                                               else "closes")
+
+
+def _stuck_root_lines(sdlc_dir, config, subjects):
+    """#1614: the root-cause lines for a pick that found nothing pickable, or `[]` (today's text).
+    Nothing is loaded when `discovery.dag.mode` is `off` or no stored map exists; local file only,
+    never raises."""
+    try:
+        block = (((config or {}).get("discovery") or {}).get("dag"))
+        if isinstance(block, dict) and block.get("mode") == "off":
+            return []
+        if not (pathlib.Path(sdlc_dir) / "state" / "dag.json").is_file():
+            return []
+        return _load("dag_stuck").pick_lines(sdlc_dir, subjects) or []
+    except Exception:                                   # noqa: BLE001 - the old text is always safe
+        return []
 
 
 # --------------------------------------------------------------- #1962: the claim, in one place
@@ -2314,7 +2489,29 @@ def _resource_gate(config):
         return 1
 
 
-def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_heartbeat=True, gate=True):
+_TRACE_FORCED = [False]      # #1607: `next --trace` flips this for the process; `SIGMA_PICK_TRACE=1` needs no flip
+
+
+def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_heartbeat=True, gate=True,
+          batch=None):
+    """One pick: `_next_untraced`, bracketed by the opt-in pick trace (#1607, `pick_trace.py`).
+    Off (the default) `rec` is the no-op `NULL`, the source's counter stays unset and nothing is
+    written, so the pick is byte-identical to `_next_untraced`."""
+    rec = pick_trace.begin(sdlc_dir, os.environ, _TRACE_FORCED[0])
+    hooked = rec.active and hasattr(source, "call_counter")
+    if hooked:
+        saved, source.call_counter = source.call_counter, rec.count_args
+    try:
+        return _next_untraced(sdlc_dir, source, config, extra_skip, session_pid, refresh_heartbeat,
+                              gate, rec, batch)
+    finally:
+        if hooked:
+            source.call_counter = saved
+        rec.end()
+
+
+def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_heartbeat=True,
+                   gate=True, rec=pick_trace.NULL, batch=None):
     """(kind, goal_or_reason): 'goal' (+marks in_progress, the commit point — second element is
     the goal ref), 'DONE' (drained — second element None on a genuine empty read, or, #1084, a
     short degraded-read reason string when `source.read_degraded()` is True — mirrors BUDGET's own
@@ -2433,11 +2630,28 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
     refusal = _label_not_ready(sdlc_dir, source, config)       # #1579: --label only, claims nothing
     if refusal:
         return ("DONE", refusal)
-    _reconcile_sweep(sdlc_dir, config)
-    just_unparked = _auto_unpark_sweep(sdlc_dir, config)
+    rec.mark("reconcile")
+    # #1621: with a `batch` dict (only `next_batch` passes one) its prologue already ran the four
+    # steps below and the map is cached in `batch["map"]`; the auto-unpark sweep runs on the FIRST
+    # slot call only, and its result is folded into every slot's skip. `batch=None` is the old path.
+    if batch is None:
+        _dag_first_pick(sdlc_dir, source, config)
+        _dag_check_pick(sdlc_dir, config, source)
+        _dag_order_pick(sdlc_dir, config, source)
+        _reconcile_sweep(sdlc_dir, config)
+    rec.mark("auto_unpark")
+    if batch is None:
+        just_unparked = _auto_unpark_sweep(sdlc_dir, config)
+    else:
+        if batch.get("unparked") is None:
+            batch["unparked"] = frozenset(_auto_unpark_sweep(sdlc_dir, config) or ())
+        just_unparked = batch["unparked"]
+    rec.mark("reclaim")
     just_reclaimed = _auto_reclaim_stale_claims(sdlc_dir, source, config)
     if refresh_heartbeat:                  # #1531: a standalone pick; next_batch ran it in its prologue
+        rec.mark("release_unstarted")
         just_reclaimed = frozenset(just_reclaimed) | _release_held_unstarted(sdlc_dir, config)
+    rec.mark("other")
     # #1468 / #2521: only when this call could actually do work. `_budget_reason`/`_handoff_reason`
     # are both local cursor reads, and skipping the sweep on a halted run is what keeps "a run that
     # reports BUDGET or HANDOFF mutated nothing" true of THIS commit's own code, not only of the
@@ -2464,19 +2678,32 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
     # refetch when a hold is about to be reported, and `_pick_dependency_hold` does the same when
     # the goal itself is absent, so this is read once plus AT MOST ONE refresh per call.
     gate = {}
+    if batch is not None and "dag_pick" in batch["map"]:
+        gate["dag_pick"] = batch["map"]["dag_pick"]            # #1621: the batch's one map load
     held = []       # ...and the goals it declined to claim, for the summary on the DONE path
     while True:
+        rec.mark("pending_fetch")
         goal = source.next_pending(skip=skip)
+        rec.mark("other")
         if goal is None:
             # #1499: `("DONE", None)` on a backlog where everything left is waiting on an open
             # prerequisite is technically true and practically misleading -- it is what made the
             # live trial read as a silent stall. The terminal tuple is unchanged (a caller's
             # contract, and the goals genuinely are not pickable right now); the operator is told.
             if held:
+                # #1614: when EVERY held goal waits on a person's decision or a cycle (read from the
+                # stored map, a local file), say which; otherwise today's text, byte for byte.
+                root_lines = _stuck_root_lines(sdlc_dir, config, [h[0] for h in held])
+                cyc = [] if root_lines else _held_cycles(sdlc_dir, config, held)   # #1615: [] unless a stored cycle holds one
                 print("loop.py: nothing pickable — %d goal(s) are waiting on an open prerequisite "
                       "(%s). %s; nothing was written to them"
                       % (len(held), ", ".join("%s → %s" % h for h in held),
-                         _held_release_note(gate)), file=sys.stderr)
+                         "None of them moves until a person acts" if root_lines
+                         else _held_release_note(gate, cyc)), file=sys.stderr)
+                for text in root_lines:
+                    print("loop.py: stuck: %s" % text, file=sys.stderr)
+                for c in cyc:
+                    print("loop.py: %s" % c, file=sys.stderr)
             # #1084: read ONCE, before anything below can touch `_last_read_degraded`
             # (`_feature_drained_note` -> `pending_outside_feature` saves/restores it around its
             # own diagnostic probe, so reading first keeps this call's own verdict authoritative
@@ -2499,7 +2726,11 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
         # discovered to be unworkable. Nothing above this line has touched the goal, so a hold
         # leaves it exactly as it was found. See `_pick_dependency_hold` for the cost and the
         # fail-open cases.
-        hold = _pick_dependency_hold(sdlc_dir, source, goal, config, gate)
+        rec.mark("dependency_hold")
+        hold = _map_dependency_hold(sdlc_dir, source, goal, config, gate)
+        if batch is not None and "dag_pick" in gate:
+            batch["map"].setdefault("dag_pick", gate["dag_pick"])
+        rec.mark("gates")
         if hold:
             subject, still = _hold_subject(source, goal)
             print("loop.py: not claiming %s — open prerequisite %s. Left untouched (%s, no claim); "
@@ -2658,6 +2889,7 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
         # #1962: the claim itself now lives in `_claim()`, so `next`, the `claim` verb and
         # `_ensure_claimed` share ONE implementation. Behaviour here is unchanged --
         # `test_next_still_emits_claimed_through_the_extracted_helper` is the characterisation lock.
+        rec.mark("claim_writes")
         _claim(sdlc_dir, source, goal, config, session_pid=session_pid)
         # #1472: the claim is durable and nothing has been BUILT yet — the one moment where learning
         # that a cross-repo unit cannot land in one of its repos still costs nothing. See
@@ -2693,6 +2925,15 @@ def goals_parallel(config):
     except (TypeError, ValueError):
         cap = DEFAULT_GOALS_MAX_CONCURRENT
     return (block.get("enabled") is True, max(1, cap))
+
+
+def clamp_batch_width(config, requested):
+    """#1590: `next-batch --max-concurrent N` -> N, never above the configured goal-level cap, and 1 when
+    goal-level parallelism (or the worktree setting it needs) is off. Never raises the configured cap."""
+    enabled, cap = goals_parallel(config)
+    if not (enabled and work.enabled(config)):
+        return 1
+    return max(1, min(int(requested), cap))
 
 
 def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), session_pid=None):
@@ -2759,6 +3000,10 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
     session_pid = os.getppid() if session_pid is None else session_pid
     # This prologue can be the only tick when reconciliation blocks or drains the batch.
     write_session_heartbeat(sdlc_dir, session_pid)
+    _dag_first_pick(sdlc_dir, source, config)
+    _dag_check_pick(sdlc_dir, config, source)
+    batch = {"map": {}, "unparked": None}          # #1621: one map load, one unpark sweep per batch
+    _dag_order_pick(sdlc_dir, config, source, cache=batch["map"])
     _reconcile_sweep(sdlc_dir, config)
     capped_by_config = max_concurrent is None      # #1531: free slots count only against the configured cap
     if max_concurrent is None:
@@ -2819,12 +3064,18 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
             slots -= held
     for _ in range(slots):
         kind, goal = _next(sdlc_dir, source, config, extra_skip=skip, session_pid=session_pid,
-                           refresh_heartbeat=False, gate=False)
+                           refresh_heartbeat=False, gate=False, batch=batch)
         if kind != "goal":
             picks.append((kind, goal))
             break
         picks.append(("goal", goal))
         skip.add(goal)
+        ranks = getattr(source, "dag_chain_ranks", None)
+        if ranks is not None:
+            try:
+                ranks.mark_in_flight(goal)
+            except Exception:                   # noqa: BLE001 - an order term never stops a batch
+                pass
     return picks
 
 
@@ -6121,12 +6372,13 @@ def _verify_goal_body(sdlc_dir, goal, guard):
         # runs nothing and writes no evidence, so `record done` still refuses.
         guarded = _load("resource_guard").run(
             "verify", list(commands), root, _verify_timeout_seconds(config), goal,
-            config=config.get("resource"), repo=root)
+            config=dict(config.get("resource") or {}, mode=_load("resource_guard").resolve_mode(config)),
+            repo=root)                                  # #1804: the one resolver, env > config > default
         if guarded.hold is not None:
             _what = ("the verify group Sigma started was stopped; no evidence, the goal is not failed; rerun when "
                      "admission reopens" if getattr(guarded, "shed", False)
                      else "the proving command was not run; nothing was killed")
-            print(f"RESOURCE-HOLD exit=5 -- {guarded.hold.reason}; retry_after={guarded.hold.retry_after:g}s "
+            print(f"RESOURCE-HOLD exit=5 -- {guarded.hold.reason}; retry_after={max(HOLD_RETRY_FLOOR, guarded.hold.retry_after):g}s "
                   f"({_what})", file=sys.stderr)
             ledger.safe_append(sdlc_dir, "verify", goal, config=config, stream=ledger.EVENTS, exit=5)
             actionlog.safe_append(sdlc_dir, goal, "verify_run", exit=5)
@@ -6721,8 +6973,9 @@ def _validate_event(kind, flags, kind_allowlist=None):
 
 
 USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> [--session-pid PID] | "
-         "next <dir> [--skip a,b] [--feature NAME] [--label NAME] [--session-pid PID] | "
-         "next-batch <dir> [--skip a,b] [--feature NAME] [--label NAME] [--session-pid PID] | "
+         "next <dir> [--skip a,b] [--feature NAME] [--label NAME] [--session-pid PID] [--trace] | "
+         "pick-trace-report <dir> | "
+         "next-batch <dir> [--skip a,b] [--feature NAME] [--label NAME] [--session-pid PID] [--max-concurrent N] | "
          "session-active <dir> | prune-state <dir> [--dry-run] [--keep-days N] [--limit N] | session-end <dir> [--session-pid PID] | "
          "claim <dir> <goal> [--session-pid PID] | "
          "agent-start <dir> <goal> --pid PID [--thread T] | agent-reclaim <dir> <goal> [--thread T] | "
@@ -7265,7 +7518,12 @@ def _dispatch(argv):
             print(f"nothing to reclaim for thread {thread!r}" if thread
                   else "nothing registered for this goal")
         return 1 if (not result["reclaimed"] and result["blocked"]) else 0
+    if len(argv) >= 3 and argv[1] == "pick-trace-report":     # #1607: read-only; reads one state file
+        sys.stdout.write(pick_trace.report(argv[2]))
+        return 0
     if len(argv) >= 3 and argv[1] == "next":
+        if "trace" in _flags(argv[3:]):                       # #1607: `next --trace` turns the pick trace on
+            _TRACE_FORCED[0] = True
         config = state.load_config(argv[2])
         # #1661: the source is built and scoped BEFORE the watchers and the inbox read below, so a
         # `--feature` this run cannot honour costs nothing at all -- no watcher spawned, no query
@@ -7304,7 +7562,14 @@ def _dispatch(argv):
         session_pid = _flags(argv[3:]).get("session-pid")   # #1239 review finding 1, same gap as `next`
         session_pid = None if session_pid in (None, "true") else session_pid
         _arm_run_id(session_pid)                            # #889: attribute a bare session
-        for kind, payload in next_batch(argv[2], source, config, extra_skip=skip, session_pid=session_pid):
+        asked = _flags(argv[3:]).get("max-concurrent")      # #1590: absent, the call is today's
+        if asked is not None:
+            if not str(asked).isdigit() or int(asked) < 1:
+                print("loop: --max-concurrent needs a positive whole number", file=sys.stderr)
+                return 2
+            asked = clamp_batch_width(config, asked)
+        for kind, payload in next_batch(argv[2], source, config, max_concurrent=asked, extra_skip=skip,
+                                        session_pid=session_pid):
             _print_pick(kind, payload)
             _phase_gate_notice(argv[2], config, kind, payload)
         return 0

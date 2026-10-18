@@ -52,7 +52,8 @@ INTERNAL_ENV = frozenset({"SIGMA_RUN_ID", "SIGMA_AUTOWATCH_HOP", "SIGMA_SESSION_
 POST_RENAME_ENV = frozenset({"SIGMA_ALLOW_COEXIST", "SIGMA_HOST", "SIGMA_CODEX_CMD", "SIGMA_CODEX_BIN", "SIGMA_GH_GRAPHQL",
                              "SIGMA_GH_BREAKER_COOLDOWN",
                              "SIGMA_RESOURCE_DIR", "SIGMA_RESOURCE_MODE", "SIGMA_VERIFY_WORKERS",
-                             "SIGMA_UPKEEP_JOB", "SIGMA_LEAK_PATTERNS"})   # #801, #895, #917, #375
+                             "SIGMA_UPKEEP_JOB", "SIGMA_LEAK_PATTERNS",   # #801, #895, #917
+                             "SIGMA_PICK_TRACE"})   # #375, #1607
 
 #: The schema ids (kind@version) whose spelling changed only in its brand segment. A previous-name id
 #: of any OTHER kind or version is not understood: it reads as itself (so it matches nothing Sigma
@@ -63,7 +64,7 @@ KNOWN_SCHEMAS = ("features@1", "landing@1", "withheld@1", "propagation@1")
 #: seen next to the rule that its readers must also accept the previous spelling
 #: (`tests/test_legacy_compat.py` pins that every marker literal in shipped code is listed).
 MARKERS = frozenset({
-    "<!-- sigma:acceptance",
+    "<!-- sigma:acceptance", "<!-- sigma:dag-cycle",
     "<!-- sigma:begin managed", "<!-- sigma:end managed -->",
     "<!-- sigma:codex:start -->", "<!-- sigma:codex:end -->",
     "<!-- sigma:unpark-qa:start -->", "<!-- sigma:unpark-qa:end -->",

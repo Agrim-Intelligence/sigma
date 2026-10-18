@@ -641,3 +641,115 @@ def test_cli_scenario_through_main_with_config(tmp_path, monkeypatch, capsys):
     assert module.main(["status", "--json"]) == 0
     assert len(json.loads(capsys.readouterr().out)["leases"]) == 1
     assert module.main(["release", grant["id"]]) == 0
+
+
+# ------------------------------------------------------------------ #1816 a session lease covers its tree
+def _tree(lease, monkeypatch, kids, foot):
+    monkeypatch.setattr(lease, "take_descendants", lambda pid: kids.get(pid, []) if pid == 100 else [])
+    box = lease.box
+    box["foot"].update(foot)
+
+
+def test_session_footprint_covers_the_session_tree(lease, monkeypatch):
+    _tree(lease, monkeypatch, {100: [101, 102]}, {100: 14, 101: 400, 102: 50})
+    record = {"kind": "session", "pid": 100, "peak": 0}
+    assert lease._seen(record) == 464
+
+
+def test_session_footprint_excludes_a_descendant_that_holds_its_own_lease(lease, monkeypatch):
+    kids = {100: [101, 102]}
+    monkeypatch.setattr(lease, "take_descendants", lambda pid: kids.get(pid, []))
+    lease.box["foot"].update({100: 14, 101: 400, 102: 900, 103: 700})
+    kids[102] = [103]
+    record = {"kind": "session", "pid": 100, "peak": 0}
+    assert lease._seen(record, frozenset({102})) == 414  # the verify at 102 and its child 103 are its own lease's
+
+
+def test_non_session_lease_measures_only_its_pid(lease, monkeypatch):
+    monkeypatch.setattr(lease, "take_descendants", lambda pid: [101])
+    lease.box["foot"].update({100: 14, 101: 400})
+    assert lease._seen({"kind": "verify", "pid": 100, "peak": 0}) == 14
+
+
+def test_peak_taken_while_the_session_runs_is_what_release_records(lease, monkeypatch):
+    """#1816: the tree is gone at release; the observation is the peak sampled while it lived."""
+    monkeypatch.setattr(lease, "take_descendants", lambda pid: [101] if pid == 100 else [])
+    lease.box["foot"].update({100: 14, 101: 400})
+    got = lease.admit("session", 1, "r", "supervisor:x", pid=os.getpid(), now=1000.0)
+    path = pathlib.Path(lease.state_dir()) / "leases" / (got.id + ".json")
+    record = json.loads(path.read_text())
+    path.write_text(json.dumps(dict(record, pid=100)))
+    monkeypatch.setattr(lease, "pid_alive", lambda pid: True)
+    assert lease.note_peak(got.id) is True
+    lease.box["foot"].pop(101)  # the session exited; only the supervisor remains
+    lease.release(got.id)
+    ring = json.loads((pathlib.Path(lease.state_dir()) / "observed.json").read_text())
+    assert ring["session"] == [414]
+
+
+def test_real_descendants_are_all_found():
+    import subprocess
+    sys.path.insert(0, str(SCRIPTS))
+    import resource_guard as guard
+    kids = [subprocess.Popen(["sleep", "20"]) for _ in range(6)]
+    try:
+        assert {k.pid for k in kids} <= set(guard.descendants(os.getpid()))
+    finally:
+        for k in kids:
+            k.kill()
+            k.wait()
+
+
+# ------------------------------------------------------------------ #1858 a verify ring unit is per sizeable process
+def _ring(lease):
+    return json.loads((pathlib.Path(lease.state_dir()) / "observed.json").read_text())
+
+
+def test_ring_unit_is_bytes_per_sizeable_process_of_the_run(lease, monkeypatch):
+    """A workers=1 lease whose tree holds 5 sizeable processes records at most peak/5, and the whole run beside it."""
+    monkeypatch.setattr(lease, "take_descendants", lambda pid: [101, 102, 103, 104, 105] if pid == 100 else [])
+    lease.box["foot"].update({100: 500, 101: 500, 102: 480, 103: 520, 104: 500, 105: 1})  # 105 is a tiny helper
+    got = lease.admit("verify", 1, "r", "g1", pid=os.getpid(), now=1000.0)
+    path = pathlib.Path(lease.state_dir()) / "leases" / (got.id + ".json")
+    path.write_text(json.dumps(dict(json.loads(path.read_text()), pid=100)))
+    monkeypatch.setattr(lease, "pid_alive", lambda pid: True)
+    assert lease.note_peak(got.id) is True
+    assert json.loads(path.read_text())["procs"] == 5
+    lease.release(got.id)
+    ring = _ring(lease)
+    assert ring["verify"] == [500 // 5]
+    assert ring["verify_run"] == [500]
+
+
+def test_verify_admission_is_bounded_by_the_largest_whole_run_peak(lease):
+    """The skewed ring: unit p90 100, workers wanted 5, largest whole run 98. 5 x 100 is not granted."""
+    path = pathlib.Path(lease.state_dir()) / "observed.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"verify": [100] * 5, "verify_run": [90, 98, 95]}))
+    lease.box["available"] = 800  # room for 5 x 100 without the bound
+    got = lease.admit("verify", 5, "r", "g1", pid=os.getpid(), now=1000.0)
+    record = json.loads((pathlib.Path(lease.state_dir()) / "leases" / (got.id + ".json")).read_text())
+    assert got.n == 1
+    assert record["est_mem"] <= lease.RUN_MARGIN * 98
+
+
+def test_run_bound_removed_control(lease, monkeypatch):
+    """With the margin made huge the bound is gone and the skewed ring grants the multiple: the test above is red."""
+    monkeypatch.setattr(lease, "RUN_MARGIN", 1000)
+    path = pathlib.Path(lease.state_dir()) / "observed.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"verify": [100] * 5, "verify_run": [98]}))
+    got = lease.admit("verify", 5, "r", "g1", pid=os.getpid(), now=1000.0)
+    assert got.n > 1
+
+
+def test_without_verify_run_or_for_other_kinds_admission_is_unchanged(lease):
+    seed_ring(lease, "verify", [100])
+    lease.box["available"] = 400
+    first = lease.admit("verify", 5, "r", "g1", pid=os.getpid(), now=1000.0)
+    assert getattr(first, "n", first) == 2
+    lease.release(first.id)
+    lease.box["available"] = 800
+    path = pathlib.Path(lease.state_dir()) / "observed.json"
+    path.write_text(json.dumps({"goal": [100], "verify_run": [10]}))
+    assert lease.admit("goal", 1, "r", "g2", pid=os.getpid(), now=1000.0).n == 1
