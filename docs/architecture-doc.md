@@ -191,3 +191,47 @@ private-name guard rejects.
 - Only a value starting with lowercase `https://`, `ssh://` or `git@` is a repository URL. Any other
   value, `http://...` or `HTTPS://...` included, is read as a folder, so it is reported as a folder
   that does not exist, with a reminder of the URL forms.
+
+## Enforcing the rules
+
+The north-star's `## Architecture` section holds your rules as a numbered list. A rule that only a
+person remembers decays, so each rule can say what enforces it, as a suffix at the end of the rule (same
+line, or its own continuation line):
+
+```
+1. Dependencies point inward; no sibling imports across modules. Enforced by: ci:tests/test_layers.py
+2. No plaintext secrets in config. Enforced by: decide:INV-004
+3. Public functions are documented. Enforced by: review
+```
+
+Grammar: `Enforced by: <spec>[, <spec>...]` where a spec is `ci:<path>` (a file in the repository;
+`ci:tests/test_x.py::test_name` is allowed and only the file part is checked), `decide:<id>` (an entry in
+`.sdlc/decisions.json`) or the bare word `review`. The keyword is case-insensitive; paths and ids are not.
+`Enforced by:` counts as a suffix only at the start of a line or right after a sentence end, a dash
+(em, en, or spaced hyphen), a comma, a colon or an opening parenthesis, never after an ordinary word; if
+a rule has several, the last one wins. A spec may be wrapped in one pair of backticks. A `ci:` path
+cannot contain a comma, and a path ending in `/` is reported as a directory.
+
+**Prefer a fitness function.** A tool that fails CI on the whole program beats a check that sees one
+edit: import-linter (Python layering), dependency-cruiser (JavaScript), ArchUnit (JVM). Point `ci:` at the
+file that runs it. `sigma-decide` is the in-editor seatbelt, not the main defence: it judges literal
+assignments only and fails open. `review` is the honest label for "no machine checks this".
+
+**What `/sigma-doctor` does with it** (local file reads only; no model, no network):
+
+`python3 skills/sigma-doctor/scripts/doctor.py rules .sdlc`
+
+- Rules with no suffix, or `review` only, are listed and never refused.
+- A rule is **broken** when a named enforcement does not hold: the `ci:` path is missing, a directory,
+  absolute, or outside the repository (including through a symlink); the `decide:` id is absent from, or
+  not `active` in, the registry; the registry is missing or unreadable; or the spec is malformed. A good
+  spec does not rescue a bad one on the same rule.
+- `check` shows broken rules as one `[MISSING] architecture rule enforcement` row; `rules` exits 1 on
+  them, and also when a present north-star could not be read (over a size limit derived from the
+  machine's memory, not a regular file, not UTF-8).
+
+**Limits.** "Exists" is not "runs": the doctor proves a named file is there, not that CI executes it or
+that it tests the rule. An untracked or gitignored file satisfies `ci:`. Paths are not case-checked, so
+on a case-insensitive filesystem (macOS) a differently-cased path may be accepted. A "rule" is a
+heuristic over prose (a numbered line in the section plus its continuation lines), and it has not been
+measured against a real model-drafted north-star.

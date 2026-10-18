@@ -37,6 +37,9 @@ or a rule whose real enforcement is a code review. Those are north-star material
 **The relationship:** the north-star holds *all* your architecture rules as numbered prose; this
 registry holds the small subset that is mechanically checkable. Most rules never make it here, and
 that's the expected outcome — say so rather than manufacturing entries to fill the file.
+A north-star rule can name a registry entry as its enforcement (`Enforced by: decide:<id>`); when you
+supersede that entry, update the rule too, because `/sigma-doctor` reports a rule whose `decide:` id is
+missing or superseded as broken enforcement (`doctor.py rules .sdlc`).
 
 ## Recording a decision
 

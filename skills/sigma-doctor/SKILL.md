@@ -150,13 +150,16 @@ thing to every phase that reads it.
 
 `python3 "${CLAUDE_SKILL_DIR}/scripts/doctor.py" hygiene .sdlc .` prints the detail on its own.
 
-Report it as a **separate section** from the setup checks and never fold it into the ready score —
-"is my setup working?" and "are my docs rotting?" are different questions with different fixes. This
-half is deliberately mechanical: it only reports references that provably don't resolve, or that
-resolve *outside* the repository — a leading `/`, a `..`, or a symlink that leaves the tree is the
-same failure for a doc making claims about THIS repo. The judgment
-half — demoting a rule that CI now enforces, archiving a superseded plan — belongs to **`sigma-retro`**,
-which proposes standing-doc changes and parks them for your approval rather than editing them.
+Report it as a **separate section**, never folded into the ready score; how it decides and what
+it leaves to `sigma-retro`: [hygiene](references/hygiene.md).
+
+**Architecture rules.** Each numbered rule in the north-star's `## Architecture` section may end
+`Enforced by: ci:<path>`, `decide:<id>` or `review`; this lists the unenforced ones and reports a named
+enforcement that does not hold (exit 1 only then):
+
+`python3 "${CLAUDE_SKILL_DIR}/scripts/doctor.py" rules .sdlc`
+
+Grammar, severity and limits: [architecture rules](references/architecture-rules.md).
 
 ## Dispatch compliance — detection, never enforcement
 
