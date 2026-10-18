@@ -26,6 +26,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 S = ROOT / "skills" / "sigma-loop" / "scripts"
 GOAL = "sdlc:goal"
 NOW = time.time()
+FRESH = object()   # a change check stamped when called, not at import (#1883)
 
 
 def _mod(name, tag="1626"):
@@ -51,7 +52,7 @@ def _prio(issue):
     return None
 
 
-def _map_of(issues, extra_nodes=(), extra_edges=(), checked=NOW - 60):
+def _map_of(issues, extra_nodes=(), extra_edges=(), checked=FRESH):
     """The map the refresh would have written for `issues` (open, goal-labelled ones are the corpus)."""
     nodes, edges = {}, []
     for it in issues:
@@ -66,6 +67,7 @@ def _map_of(issues, extra_nodes=(), extra_edges=(), checked=NOW - 60):
         nodes[n["number"]] = n
     edges += list(extra_edges)
     stamp = _iso(NOW - 60)
+    checked = time.time() - 60 if checked is FRESH else checked
     h = {"repo": "acme/widget", "built_at": stamp, "refreshed_at": stamp, "last_ok_at": stamp,
          "last_error": None, "partial": False}
     if checked is not None:
@@ -81,7 +83,7 @@ def _cfg(mode="on"):
     return cfg
 
 
-def _setup(tmp_path, issues, mode="on", checked=NOW - 60, save=True, **kw):
+def _setup(tmp_path, issues, mode="on", checked=FRESH, save=True, **kw):
     d = tmp_path / ".sdlc"
     (d / "state").mkdir(parents=True, exist_ok=True)
     if save:

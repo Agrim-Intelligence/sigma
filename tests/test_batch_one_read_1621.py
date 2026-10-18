@@ -23,6 +23,14 @@ import test_pick_dependency_gate as pg  # noqa: E402  (the board fake)
 
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 NOW = time.time()
+
+
+@pytest.fixture(autouse=True)
+def _now_per_test(monkeypatch):
+    """The readers below take `NOW`; an import-time one reads a map stamped later as "future" (#1883)."""
+    monkeypatch.setitem(globals(), "NOW", time.time())
+
+
 ROOT_A, DEP_A, ROOT_B, DEP_B, ROOT_C = 10, 11, 20, 21, 30     # two chains and a free goal
 
 

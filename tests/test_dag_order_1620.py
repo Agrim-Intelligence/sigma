@@ -35,6 +35,14 @@ do = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(do)
 
 NOW = time.time()
+
+
+@pytest.fixture(autouse=True)
+def _now_per_test(monkeypatch):
+    """The readers below take `NOW`; an import-time one reads a map stamped later as "future" (#1883)."""
+    monkeypatch.setitem(globals(), "NOW", time.time())
+
+
 FREE = 90                                   # oldest, nothing waits on it
 BIG, SMALL = 100, 110                       # 5 and 2 open dependents (flat)
 BIG_DEPS = [101, 102, 103, 104, 105]
