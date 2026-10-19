@@ -38,6 +38,9 @@ DEFAULT_TIMEOUT = 3600
 TAIL_BYTES = 65536
 ENV_WORKERS = "SIGMA_VERIFY_WORKERS"
 ENV_XDIST = "PYTEST_XDIST_AUTO_NUM_WORKERS"
+# vitest reads both (measured in vitest 3.2.7): the env value overrides the config's maxForks / maxThreads, so a
+# `bash scripts/verify.sh` that runs vitest obeys the grant too. Without them vitest starts cpus-1 workers.
+ENV_NODE_RUNNERS = ("VITEST_MAX_FORKS", "VITEST_MAX_THREADS")
 _LITERAL = re.compile(r"(?<![\w-])(?:-n|--numprocesses)(?:\s+|=)(\d+)(?![\w.-])")
 
 
@@ -51,6 +54,15 @@ def _sibling(name):
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _lowered(current, n):
+    """`n`, or the caller's own positive integer cap when that is lower: the guard never raises a cap someone set."""
+    try:
+        cap = int(current)
+    except (TypeError, ValueError):
+        return n
+    return min(cap, n) if cap >= 1 else n
 
 
 def substitute_workers(command, n):
@@ -206,6 +218,8 @@ def run(kind, commands, root, timeout, goal, *, config=None, repo=None, env=None
         child_env = bounded.unattended_env(env)
         child_env[ENV_WORKERS] = str(n)
         child_env[ENV_XDIST] = str(n)
+        for name in ENV_NODE_RUNNERS:
+            child_env[name] = str(_lowered(child_env.get(name), n))
         resolved = guard.resolve_config(config)[0]
         if shed_after is None:                                   # #1769: an explicit argument wins, then the key
             shed_after = resolved.get("shed_after") or SHED_AFTER
