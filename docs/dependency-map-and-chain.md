@@ -375,7 +375,12 @@ The loose phrasings are a closed set, each with a direction and none a bare ment
 followed by up to 100 characters (`depends on the rulings recorded in the thread, see #N`), `only once|when|after
 ... #N` (`starts only once #N has landed`), `#N ... must land|be merged ... before` (`#N must land on main before
 this change`), `plug|hook into ... #N` (`these plug into #N's port`), `hold on|off|until|for ... #N`, `#N is (now)
-a blocker` and `waiting for ... #N`. They are not added to the shared vocabulary: the gate, the map and the label
+a blocker`, `waits|waiting for ... #N`, `this|it ... waits on ... #N` (`What this waits on: #N and #M`; the subject must be THIS issue, since `E20 itself waits on #N` is another issue's wait), `once|as soon as ... #N has merged|landed|closed`,
+`#N [and ... #M] land(s) ... before this`, and `this|it ... sits|stands|queued behind ...` followed by every reference to the end of
+that sentence (at most 300 characters). A **negation** within two words before the trigger (`does not wait for #N`,
+`no longer waits for #N`, `is not blocked by #N`) cancels that reading: the sentence says the goal does NOT wait, and
+reading it as a wait parked goals that could run. A body is read to GitHub's own limit of 65,536 characters, not
+cut short. Not measured: how often these shapes match a remark that is not a wait. They are not added to the shared vocabulary: the gate, the map and the label
 drain read exactly what they read before, so no phantom edge can be minted from prose for a goal outside the
 chain. `deps.py report` lists the same references as `weak`.
 

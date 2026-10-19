@@ -184,6 +184,7 @@ chain_waits = _load("chain_waits")
 chain_checkpoint = _load("chain_checkpoint")
 chain_closed = _load("chain_closed")
 chain_forecast = _load("chain_forecast")
+chain_reads = _load("chain_reads")
 dag_store = dag_chain.dag_store
 dag_core = dag_chain.dag_core
 
@@ -469,6 +470,11 @@ def _plan_map(sdlc, goal, config, ro, source, now, m, bound, cache=None):
     if out["unconfirmed_waits"]:      # #1902: the map holds no comment or prose, so only the live read can follow them
         raise _NeedsLive("%d wait(s) written only in comments or loose wording, which the map does not hold"
                          % len(out["unconfirmed_waits"]))
+    if getattr(source, "assignee", None) and len(rows) <= min(LIVE_MAX_MEMBERS, bound):
+        # a run applies the assignee filter and the map holds no assignees: a forecast from this plan could not apply
+        # it and would promise work the runner may not take. A chain too big for the live read keeps the map plan and
+        # the forecast's note that the filter was not applied.
+        raise _NeedsLive("the assignee filter needs each member's assignees, which the map does not hold")
     out["stops"] = []
     return out
 
@@ -714,12 +720,15 @@ def _closed_gate_ask(w):
             % (w["prerequisite"], _closed_gate_what(w), _ids(w["dependents"])))
 
 
-def _held(rec):
+def _held(rec, assume=False):
     """#1906: the members that wait on a closed prerequisite whose warning the person answered "keep waiting".
-    Reads the plan's current warnings, so an answer about a warning a later plan no longer raises holds nothing."""
+    Reads the plan's current warnings, so an answer about a warning a later plan no longer raises holds nothing.
+    `assume` (the FORECAST only: a run cannot start with a question open) also holds the members behind a warning
+    nobody has answered yet, because "keep waiting" is the recommended answer."""
     ans = rec.get("answers") or {}
     return {d for w in rec.get("closed_gates") or []
-            if ans.get("closed_gate:%d" % w["prerequisite"]) == CLOSED_GATE_OPTIONS[0] for d in w["dependents"]}
+            if ans.get("closed_gate:%d" % w["prerequisite"]) == CLOSED_GATE_OPTIONS[0]
+            or (assume and ans.get("closed_gate:%d" % w["prerequisite"]) is None) for d in w["dependents"]}
 
 
 def _declined(rec):
@@ -1000,7 +1009,7 @@ def render_sheet(rec, now, config=None, runner=None):
     age = _age(now - rec["planned_at"]) if isinstance(rec.get("planned_at"), int) else "unknown"
     depth = max([r["depth"] for r in members] or [0])
     ahead = rec.get("higher_priority_ahead")
-    fc = chain_forecast.forecast(rec, config, runner, _held(rec), _declined(rec))
+    fc = chain_forecast.forecast(rec, config, runner, _held(rec, True), _declined(rec), _held(rec, True) - _held(rec))
     L = ["Chain sheet for #%d" % rec["goal"],
          "End goal: #%d (%s)" % (rec["goal"], next((r["verdict"] for r in members if r["number"] == rec["goal"]),
                                                     "not in the plan")),
@@ -1583,6 +1592,7 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
         except chain_parallel.ChainRefused as exc:
             raise ChainRefused(str(exc))
         width = chain_parallel.width(config)
+    run = chain_reads.CycleReads(run or sources._run_gh)    # one cycle's repeated reads of an issue cost one call
     try:
         skip = frozenset(str(x) for x in ((sweep or _default_sweep)(sdlc_dir, config, run) or ()))
     except Exception:           # noqa: BLE001 - fail open, like the loop's own sweep
@@ -1595,7 +1605,7 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
     ok, why = _load("chain_spend").admit(sdlc_dir, cfg, {"members": recorded, "approved_at": rec.get("approved_at")},
                                          now=now)
     if not ok:                  # before the claim: a refused cycle picks nothing
-        blk.update(state="capped", reason=why, stuck=None)
+        blk.update(state="capped", reason=why, stuck=None, holding=None)
         rec["run"] = blk
         _save(sdlc_dir, goal, rec)
         res.update(state="capped", exit=3, reason="capped", detail=why)
@@ -1654,16 +1664,16 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
         except Exception as exc:    # noqa: BLE001 - a failed pick is a stuck cycle, not a crash
             got, failure = set(), failure or exc
     if waiting is not None:
-        blk.update(state="running", reason=None, stuck=None)
+        blk.update(state="running", reason=None, stuck=None, holding=None)
         res.update(state="running", detail=waiting)
     elif got:
-        blk.update(state="running", heartbeat=_iso(now), reason=None, stuck=None,
+        blk.update(state="running", heartbeat=_iso(now), reason=None, stuck=None, holding=None,
                    picked=sorted(set(blk.get("picked") or ()) | got))
         res.update(state="running", picked=sorted(got), detail=note)
     else:
         unconfirmed = known - open_now - set(blk["closed"])
         if failure is None and not open_now and not unconfirmed and not blk.get("paused"):
-            blk.update(state="done", reason=None, stuck=None)
+            blk.update(state="done", reason=None, stuck=None, holding=None)
             res.update(state="done", detail="all %d members closed in %d cycle(s); %d claimed by this run"
                        % (len(known), blk["cycle"], len(blk.get("picked") or ())))
             if blk.get("joined"):
@@ -1683,9 +1693,17 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
                                  % (_ids(left), "it" if len(left) == 1 else "them"))
                 reason, detail = "decision", "; ".join(parts)
             else:
-                reason, detail = _stuck(p, failure, unconfirmed, _held(rec), _declined(rec)) if (p is not None or failure is not None) \
-                    else ("degraded-read", "no read")
-            blk.update(state="stuck", reason=detail, stuck=reason)
+                if p is not None:   # the record's waits, so the stop names the roots (the forecast's rows carry them)
+                    waits = {r["number"]: r.get("waits_on") or [] for r in rec["members"]}
+                    p = dict(p, members=[dict(r, waits_on=waits.get(r["number"], r.get("waits_on") or []))
+                                         for r in p["members"]])
+                reason, detail = _stuck(p, failure, unconfirmed, _held(rec), _declined(rec)) \
+                    if (p is not None or failure is not None) else ("degraded-read", "no read")
+                if p is not None and failure is None and reason != "degraded-read":
+                    others, more = chain_forecast.other_roots(p, detail)
+                    if others:      # the stop names the first thing to act on; these also hold the chain
+                        res["holding"] = chain_forecast.holding_text(others, more)
+            blk.update(state="stuck", reason=detail, stuck=reason, holding=res.get("holding"))
             res.update(state="stuck", exit=3, reason=reason, detail=detail)
     rec["run"] = blk
     _save(sdlc_dir, goal, rec)
@@ -1752,7 +1770,7 @@ def resume(sdlc_dir, goal, cap=None):
         raise ChainRefused("--cap must be a positive whole number")
     if cap is not None:
         blk["cap"] = cap
-    blk.update(state="approved-running", reason=None, stuck=None)
+    blk.update(state="approved-running", reason=None, stuck=None, holding=None)
     answered = rec.get("answers") or {}
     for key in [k for k in (blk.get("paused") or {})           # clear what the person answered
                 if answered.get("grow:%s" % k, "leave it out") != "leave it out"]:
@@ -1788,6 +1806,8 @@ def render_run(res):
         out.append("%s: %s" % (res["reason"], res["detail"]))
     elif res["detail"]:
         out.append(res["detail"])
+    if res.get("holding"):
+        out.append(res["holding"])
     return "\n".join(out) + "\n"
 
 
@@ -1906,7 +1926,8 @@ def main(argv, run=None, now=None, pick=None):
     try:
         p = plan(args[1], int(args[2]), run=run, now=now)
         if want_forecast:
-            p["forecast"] = chain_forecast.forecast(p, _load("state").load_config(args[1]), runner, _held(p), _declined(p))
+            p["forecast"] = chain_forecast.forecast(p, _load("state").load_config(args[1]), runner, _held(p, True),
+                                                    _declined(p), _held(p, True) - _held(p))
     except ChainRefused as exc:
         print("chain.py: %s" % exc, file=sys.stderr)
         return 2

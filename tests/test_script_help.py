@@ -74,7 +74,7 @@ LIBRARY_ONLY = {
     "dag_insert",
     "dag_check",
     "dag_chain", "chain_status", "dag_stuck", "dag_pick", "dag_order", "dag_repair", "chain_parallel", "chain_waits",
-    "chain_forecast", "chain_checkpoint", "chain_closed", "dag_html",
+    "chain_forecast", "chain_checkpoint", "chain_closed", "chain_reads", "dag_html",
     "feature_park",
     "qkind",
     "landing_preflight",

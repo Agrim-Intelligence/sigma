@@ -34,7 +34,22 @@ the sigma-loop scripts. It plans the whole chain, asks every decision together, 
 
 No GitHub write exists in any verb before `approve`. `run` is one cycle and is called again until it
 reports done; exit 3 means capped or stuck with one reason (decision, held-gate, claimed, external,
-checkpoint, rate-limit, degraded-read, capped).
+checkpoint, rate-limit, degraded-read, capped). The stop names what HOLDS the chain: of the members still open, only
+those that wait on no other open member are considered (a parked goal that itself waits on an open goal is held, not
+holding), and the same rule gives the forecast's roots. When more than one member holds the chain, the run prints the
+others on a line of its own (`also holding the chain: #a, #b`, at most 6 and a count), and `chain.py status` repeats it;
+the stop line itself is unchanged. A closed prerequisite's open follow-up never counts as a dependent waiting on itself:
+a follow-up names its parent and so waits on it by construction, and asking it to "keep waiting" for itself is no
+question. A plan read from the stored map, with an assignee filter configured and a chain small enough for the live
+read, is planned live instead: the map holds no assignees, and a forecast that cannot apply the filter promises work
+the runner may not take. Before a closed-prerequisite question is answered, the sheet's forecast reads the recommended
+answer (keep waiting) and says so in a note.
+
+One `run` cycle reads each issue and each comment page at most once (`chain_reads.py`): a repeat of a GET of one issue
+is served from memory for the length of that call, any call that can write drops everything kept, and the store is
+bounded (400 entries, 16 MB). It covers the in-process sweep that opens the cycle (its own repeats and its writes included);
+the pick that ends it is a separate process with its own reads and is outside it.
+Not measured on a real repository; the private re-test harness counts the calls.
 
 ## The sheet
 
@@ -100,6 +115,10 @@ really get, before anything is armed:
 | `someone else's` | assigned to another login, or already in progress |
 | `checkpoint` | never worked: met when its unit lands or a person closes it |
 | `not workable` | held by a gate, a paid step the owner answered not to run, carries the blocked label, waits on a prerequisite outside the chain, or could not be read |
+
+A member that carries the blocked label because of waits on other members of the chain is classified by those
+waits (`after #N`) and is counted as finishing once they do: Sigma's own sweep sets that label and clears it when the
+waits close, so reading it as permanent promised 1 goal where a run did 3.
 
 One line follows: `a run from <login> can finish K of N before it stops on <reason>: <each root>`. The roots are
 the members that wait on nothing else that is left, each with its marker; the reason is the one word `run` itself

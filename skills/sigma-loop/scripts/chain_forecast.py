@@ -22,6 +22,7 @@ assignees). Ceiling: O(cycles x members) per call, members bounded by `chain.max
 """
 import importlib.util
 import pathlib
+import re
 
 _HERE = pathlib.Path(__file__).resolve().parent
 
@@ -56,7 +57,10 @@ VERDICTS = {
     "declined": ("not workable", False, "a paid step you answered not to run"),
     "unknown": ("not workable", False, "could not be read"),
 }
-#: flag on a row -> (marker, why). Checked after the verdict, in this order, as `label_drain._reason` does.
+#: flag on a row -> (marker, why). Checked after the verdict, in this order, as `label_drain._reason` does. The
+#: `blocked` flag is an overlay only while NOTHING in the chain explains it: a row that waits on members of the chain
+#: carries the label because of those waits (the blocker sweep adds it and clears it when they close), so it is
+#: classified by its waits, and a run that closes them frees it.
 OVERLAYS = (
     ("in_progress", "someone else's", "already in progress"),
     ("blocked", "not workable", "carries the blocked label"),
@@ -75,6 +79,8 @@ def classify(row, open_now):
     if workable:
         for key, o_marker, o_why in OVERLAYS:
             if row.get(key):
+                if key == "blocked" and row.get("waits_on"):
+                    continue    # Sigma's own sweep sets it for a wait on an open goal and clears it when that closes
                 marker, workable, why = o_marker, False, o_why
                 break
     if not workable:
@@ -111,14 +117,26 @@ def checkpoint_detail(row):
     return "#%d is a checkpoint waiting for a person to close it" % row["number"]
 
 
-def stuck_reason(p, unconfirmed=(), held=(), declined=()):
+def roots_of(rows):
+    """-> the rows no other open row of `rows` stands behind in the sense that they wait on nothing open: what
+    HOLDS the chain, as opposed to what is held. A parked goal that itself waits on an open goal is held, and
+    naming it sends a person to answer something that could not move anyway. Every row when each waits on
+    another (a cycle), so a stop is never left without a name."""
+    open_now = {r["number"] for r in rows}
+    free = [r for r in rows if not [w for w in r.get("waits_on") or [] if w in open_now and w != r["number"]]]
+    return free or rows
+
+
+def _stop_of_first_root(p, unconfirmed=(), held=(), declined=()):
     """-> (reason, detail), ONE reason from `chain.STUCK_REASONS` for an empty pick with members still open,
-    given plan rows `p["members"]` and `p["outside"]`. Numbers only in the detail. The order is the order a
-    person would act in: what needs a person, then what only waits. A failed read is the caller's, ahead of
+    given plan rows `p["members"]` (each may carry `waits_on`: the members it waits on) and `p["outside"]`. Only
+    the ROOTS are named (`roots_of`). Numbers only in the detail. The order is the order a person would act in:
+    what needs a person, then what only waits. A failed read is the caller's, ahead of
     this."""
     rows, outside = p["members"], p.get("outside") or []
     if any(r.get("kind") in ("not-read", "unreadable") for r in rows + outside):
         return "degraded-read", "a parked member could not be read"
+    rows = roots_of(rows)                       # name what holds the chain, not what waits behind it
     parked = sorted(r["number"] for r in rows if r["verdict"] == "parked")
     if parked:
         return "decision", "#%d is parked and needs an answer" % parked[0]
@@ -153,6 +171,29 @@ def stuck_reason(p, unconfirmed=(), held=(), declined=()):
     if unconfirmed:
         return "degraded-read", "#%d could not be confirmed closed" % sorted(unconfirmed)[0]
     return "claimed", "open members remain but none could be claimed this cycle (skipped or leased elsewhere)"
+
+
+MAX_OTHER_ROOTS = 6
+
+
+def stuck_reason(p, unconfirmed=(), held=(), declined=()):
+    """-> (reason, detail): `_stop_of_first_root`, the one thing a person acts on first. `other_roots` names the rest."""
+    return _stop_of_first_root(p, unconfirmed, held, declined)
+
+
+def other_roots(p, detail):
+    """-> the numbers of the members that ALSO hold the chain: the roots (`roots_of`) the stop `detail` does not name,
+    at most MAX_OTHER_ROOTS, then a count in `more`. -> ([numbers], more). A chain can be held by several things at
+    once; the stop line names the first one to act on, and this names the others (the run prints them on a line of
+    their own and records them for `chain.py status`; `detail` itself is unchanged, so the forecast's and the run's
+    stop line stay equal)."""
+    named = {int(x) for x in re.findall(r"#(\d+)", detail or "")}
+    others = sorted(r["number"] for r in roots_of(p["members"]) if r["number"] not in named)
+    return others[:MAX_OTHER_ROOTS], max(0, len(others) - MAX_OTHER_ROOTS)
+
+
+def holding_text(numbers, more=0):
+    return "also holding the chain: %s%s" % (", ".join("#%d" % n for n in numbers), " and %d more" % more if more else "")
 
 
 # --- the forecast ------------------------------------------------------------------------------------------
@@ -192,7 +233,7 @@ def _normalise(rec, login, filtered, held=(), declined=()):
             for r in rec.get("members") or []]
 
 
-def forecast(rec, config=None, login=None, held=(), declined=()):
+def forecast(rec, config=None, login=None, held=(), declined=(), assumed=()):
     """-> the forecast for the plan record `rec` as run by `login` (default: who planned it). Keys: `runner`,
     `width`, `members` ([{number, marker, why, after}], the record's order), `finish` (claimed in order),
     `cycles`, `of`, `reason` and `detail` (None when everything finishes), `stops` ([{number, marker, why}],
@@ -207,6 +248,10 @@ def forecast(rec, config=None, login=None, held=(), declined=()):
         notes.append("the runner's login is unknown, so the assignee filter is not applied; pass --as <login>")
     elif login is not None and rec.get("assignee_filter") is False:
         notes.append("no assignee filter is configured, so --as changes nothing")
+    if assumed:
+        notes.append("%s wait%s on a closed prerequisite's open follow-up or question nobody has answered yet: read as "
+                     "the recommended answer, keep waiting" % (", ".join("#%d" % n for n in sorted(assumed)),
+                                                               "s" if len(assumed) == 1 else ""))
     rows = _normalise(rec, me, filtered, held, declined)
     width = chain_parallel.width(config or {})
     open_now = {r["number"] for r in rows}

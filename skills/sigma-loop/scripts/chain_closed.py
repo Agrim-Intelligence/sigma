@@ -99,7 +99,10 @@ def scan(ro, repo, closed_by, limit=DEFAULT_LIMIT, followup_label=FOLLOWUP_LABEL
             ok = False
         if not (ok and list_ok):
             out["unread"].append(p)
-        if kids.get(p) or question:
-            out["warnings"].append({"prerequisite": p, "dependents": sorted(closed_by[p]),
+        # a follow-up is filed because of its parent, so it names it and waits on it: it is not a dependent that the
+        # warning can ask to wait for itself
+        dependents = sorted(d for d in closed_by[p] if d not in kids.get(p, []))
+        if dependents and (kids.get(p) or question):
+            out["warnings"].append({"prerequisite": p, "dependents": dependents,
                                     "followups": kids.get(p, [])[:MAX_FOLLOWUPS_SHOWN], "question": question})
     return out
