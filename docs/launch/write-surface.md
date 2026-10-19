@@ -61,6 +61,8 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-kg/scripts/kg.py | retain_web | fs-write | 1 | ungated | medium |
 | skills/sigma-kg/scripts/kg.py | warn | fs-write | 2 | ungated | medium |
 | skills/sigma-kg/scripts/kg.py | write_note | fs-write | 2 | ungated | medium |
+| skills/sigma-kg/scripts/sysgraph_merge.py | _atomic_write | fs-remove | 2 | explicit `merge` command; writes only merged.json and unresolved.json inside the caller-named --out, via same-directory temp file and os.replace; the temp file is removed on failure | high |
+| skills/sigma-kg/scripts/sysgraph_merge.py | main | fs-write | 1 | explicit `merge` command; os.makedirs of the caller-named --out only, after the symlink and inside-fragments checks | medium |
 | skills/sigma-loop/scripts/acceptance.py | record | fs-remove | 1 | ungated | high |
 | skills/sigma-loop/scripts/acceptance.py | record | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/actionlog.py | append | fs-write | 1 | ungated | medium |
