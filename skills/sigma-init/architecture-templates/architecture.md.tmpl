@@ -1,0 +1,65 @@
+# {{PROJECT_NAME}} architecture
+
+This is a skeleton. Replace every placeholder with the real system, then run the lint gesture in
+docs/architecture-doc.md. A clean lint checks structure only, not truth.
+
+## Context and scope
+
+Who uses the system and which external systems it talks to.
+
+```mermaid
+flowchart TB
+    user["Customer [Person]"]
+    system["Your system [Technology]"]
+    ext["Payments [External system]"]
+    user --> system
+    system --> ext
+```
+
+## Constraints
+
+What the design may not change: platforms, regulation, deadlines.
+
+## Solution strategy
+
+The few decisions that shape everything else.
+
+## Building blocks
+
+The containers of the system. Name each node with its technology last.
+
+```mermaid
+flowchart TB
+    web["Web UI [TypeScript]"] --> api["Billing API [Python]"]
+```
+
+## Runtime view
+
+How the important requests flow through the building blocks.
+
+## Deployment
+
+Where each container runs.
+
+## Cross-cutting concepts
+
+Logging, configuration, security and the like.
+
+## Decisions
+
+Links to the decision records.
+
+## Quality requirements
+
+The measurable qualities the system must keep.
+
+## Risks and technical debt
+
+What is known to be fragile.
+
+## Technology inventory
+
+| Container | Technology |
+| --- | --- |
+| Web UI | TypeScript |
+| Billing API | Python |

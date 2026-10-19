@@ -44,6 +44,7 @@ alias: it runs this same flow. The flow is `scripts/init_flow.py`, the same Pyth
    | ledger (github) | `--ledger yes` / `--ledger no` |
 
    Other flags: `--demo` (queue a runnable demo goal), `--vision`, `--codex`, `--cursor`,
+   `--architecture-doc` (scaffold the architecture document, never overwritten),
    `--github-templates` (the `.github/` issue templates and workflows; `--github` is shorthand for
    `--mode github --github-templates`), `--ignore-scope local` (1a below).
    **`.sdlc/config.json` is the one source of truth.** `.sdlc/state/init.json` records only that a
@@ -84,8 +85,8 @@ alias: it runs this same flow. The flow is `scripts/init_flow.py`, the same Pyth
    until then.
 
    The scaffolder underneath, `scripts/sdlc_init.py`, still runs alone (same `--codex` / `--cursor`
-   / `--demo` / `--vision` flags); it asks nothing and never sets the mode -- its `--github` creates
-   labels but leaves `discovery.source: local-goals`, so prefer the flow.
+   / `--demo` / `--vision` / `--architecture-doc` flags); it asks nothing and never sets the mode --
+   its `--github` creates labels but leaves `discovery.source: local-goals`, so prefer the flow.
 1a. `/sigma-init` now git-ignores the machine-written runtime dirs itself, by shelling out to
     `setup.py ignore` (the same mechanism `/sigma-setup` uses) at the end of scaffolding — a bare
     `/sigma-init`, on its own, is a real, supported install and no longer depends on also running
