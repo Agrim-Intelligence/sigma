@@ -31,7 +31,7 @@ GENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
 
 
 def _git(root, *args):
-    subprocess.run(["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=t@example.com",
+    subprocess.run(["git", "-C", str(root), "-c", "user.name=t", "-c", "user.email=",
                     "-c", "commit.gpgsign=false", *args], check=True, capture_output=True, env=GENV)
 
 
