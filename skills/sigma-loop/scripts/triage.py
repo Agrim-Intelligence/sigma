@@ -2167,7 +2167,17 @@ def _picked_actions(plan, state_by_issue, assignee, goal_label, parked_label, bl
             if not value:
                 continue
             label = f"{prefix}{value}"
-            if label not in state["labels"]:
+            # #1920: an issue ends with exactly ONE priority label. The plan's priority replaces any
+            # other `priority:*` the issue carries in the same swap (and heals a double that is already
+            # there), because every reader takes the best rank, so a stale lower label left behind made
+            # the goal run at a priority nobody chose. `model:*` keeps the plain add.
+            stale = sorted(l for l in state["labels"] if prefix == "priority:" and l.startswith(prefix)
+                           and l != label)
+            if stale:
+                add = [] if label in state["labels"] else [label]
+                actions.append({"action": "swap-label", "issue": n, "detail": _swap_detail(add, stale),
+                                "add": add, "remove": stale, "result": None, "error": None})
+            elif label not in state["labels"]:
                 actions.append({"action": "add-label", "issue": n, "detail": label,
                                 "result": None, "error": None})
     return actions
