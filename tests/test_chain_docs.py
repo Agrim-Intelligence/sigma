@@ -14,7 +14,7 @@ ARGS = ("--longest", "--dry-run", "--cap-usd", "--parallel", "--no-grow", "--def
 
 def _code_keys():
     keys = set()
-    for name in ("chain.py", "chain_spend.py", "chain_parallel.py"):
+    for name in ("chain.py", "chain_spend.py", "chain_parallel.py", "chain_asks.py"):
         text = (SCRIPTS / name).read_text(encoding="utf-8")
         keys |= set(re.findall(r'\b(?:block|chain_cfg|cfg\[?"?chain"?\]?)\.get\("(\w+)"', text))
         keys |= set(re.findall(r'_num\(block, "(\w+)"', text))

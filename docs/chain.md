@@ -25,9 +25,9 @@ the sigma-loop scripts. It plans the whole chain, asks every decision together, 
 | Plan | `chain.py plan <sdlc_dir> <N> [--json] [--forecast [--as <login>]]` | reads only (about one request per member, for unconfirmed waits); writes the local record |
 | Offer end goals | `chain.py plan <sdlc_dir> --longest [--by freeing]` | nothing, from the stored map |
 | Sheet | `chain.py sheet <sdlc_dir> <chain> [--as <login>]` | nothing |
-| Answer | `chain.py answer <sdlc_dir> <chain> --answers <file>` or `--defaults` | parked members only, through the unpark gesture |
-| Approve | `chain.py approve <sdlc_dir> <chain>` | nothing |
-| Arm | `chain.py arm <sdlc_dir> <chain> [--dry-run]` | the only write path: label `chain:<root>`, one fixed comment, arming |
+| Answer | `chain.py answer <sdlc_dir> <chain> --answers <file>` or `--defaults` | nothing: an answer is a local record, enacted at `arm` |
+| Approve | `chain.py approve <sdlc_dir> <chain>` | nothing; prints the forecast the answers give |
+| Arm | `chain.py arm <sdlc_dir> <chain> [--dry-run]` | the only write path: what the answers ask for (release, take over, confirm or dismiss a wait), then label `chain:<root>`, one fixed comment, arming |
 | Run | `chain.py run <sdlc_dir> <chain> [--session-pid P]` | one cycle: the loop's label-scoped pick |
 | Stop / resume | `chain.py stop`, `chain.py resume [--cap N]` | nothing; local record only |
 
@@ -51,6 +51,30 @@ the pick that ends it is a separate process with its own reads and is outside it
 Not measured on a real repository; the private re-test harness counts the calls.
 
 ## The sheet
+
+The sheet asks every question the chain needs, once, before anything is armed, **deep members as well as near ones**: a
+run that stops on something the sheet never asked is a defect. A question is asked only when its answer changes what
+`arm` or `run` does, and every answer is enacted:
+
+| Question | Asked for | `keep` / `wait` (recommended) | The other answer, enacted at `arm` |
+|---|---|---|---|
+| `park:<n>` | a parked member: why it is parked (its recorded park question, else the first line of its park note or body, cut to 140 characters; withheld when the decision records are keys-only) and who waits behind it | `keep it parked`: the chain stops before it and the members that wait on it, named | `release it`: the existing atomic unpark gesture (`unpark.resolve`, decision `unpark`: one label swap, the Q&A block, one comment); an undeclared kind is declared with the recommended guess |
+| `wait:<a>-<b>` | a wait read only from prose or a comment, whose blocker is **open** and in the chain and whose edge the explicit edges do not already imply (a wait on a closed issue is only shown) | `confirm it`: the marker `deps.py mark` writes (`**Blocked by:** #b` in the body, one note) | `dismiss it`: the dismissal marker (`backlog_check.dismiss_comment`, posted the way `loop.py note` posts it); the plan, the forecast and the run drop the wait |
+| `elsewhere:<n>` | a member assigned to someone else, or in progress in another session | `wait for them`: the run pauses there and says whose it is | `take it over`: assign the runner, then remove the old assignee (one assignee). Never offered for a member in progress: only `wait for them` is, and the sheet says why |
+| `irreversible:<n>` | a paid step: a declared paid line in the body, or a label listed in `chain.paid_labels` | none: never defaulted | `go ahead`; anything else is skipped by every run cycle |
+| `cap:c<n>` | every chain | none: never defaulted | the answer is the goal cap the run enforces (`chain_spend.admit`); the tighter of it and `chain.max_goals` wins, and the forecast models it |
+| `cross_unit:<a>-<b>` | an edge between two units | `keep going` | `stop here`: the dependent and what waits behind it are held (labelled, never armed, skipped by every run cycle) |
+
+The old per-kind question for a parked member (a 13-option "which kind of question is this?" and the per-kind route
+questions) is not asked of a chain; the park question replaces them. A question with no listed option says where it
+is answered (`/sigma-unpark`); only the cap offers a number. Park, wait and elsewhere questions are never folded into
+a group (each carries its own reason), however long the sheet is. `arm --dry-run` prints the same lines the sheet's
+"Writes that follow approval" lists, and a second `arm` finds nothing to do: each step reads the member's current
+state first. A step that fails is reported, the chain is not stamped armed, and running `arm` again finishes it.
+The sheet's forecast is computed from the answers (a released member is armed, a kept-parked one stops the run, a
+taken-over one is the runner's, a dismissed wait is no edge), `approve` prints it, and it equals what the run does.
+Not measured: a live repository; the harness replay is offline.
+
 
 Every decision the chain needs, shown together: the label drain's questions over the member set, plus a
 cross-unit edge, an end goal that cannot be armed, and the cap. Every answer is a bank option (the cap is a
@@ -235,6 +259,7 @@ Keys under `chain` in the project config.
 |---|---|---|
 | `chain.max_members` | 100 | Largest closure `plan` accepts; over it the plan is refused with its count, never truncated. |
 | `chain.max_goals` | members plus `chain.max_added` | Most goals the chain may hold. |
+| `chain.paid_labels` | `[]` | Labels that mark a paid step (a list of label names, for example one a repository puts on its paid-run issues). A member carrying one gets the spend question up front even though its body declares no paid line. Empty by default: nothing is asked by label unless the operator opts in. A value that is not a list of label names is refused at `plan`. A plan read from the map goes live for this (the map holds no labels); a chain too big for the live read is INCOMPLETE rather than silently missing them. |
 | `chain.max_closed_checks` | 10 | Closed prerequisites `plan` inspects for an open follow-up or an unanswered owner question; the rest are skipped and counted. 0 turns the check off. |
 | `chain.max_added` | 5 | Goals the chain may grow by when `chain.max_goals` is unset. |
 | `chain.freeze` | false | When true (or `run --no-grow`), nothing joins by itself: each new prerequisite is asked on a delta sheet. A fourth such pause (max_reasks, default 3) ends the run stuck. |

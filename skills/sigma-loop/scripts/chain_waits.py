@@ -427,7 +427,9 @@ def sheet_block(rec):
     out = ["Unconfirmed waits (%d): written only in comments or loose wording; read as edges in this plan:" % len(un)]
     out += ["  #%d waits on %s" % (i["goal"], _how(i)) for i in un] or ["  none"]
     if un:
-        out += ["  Confirm each real one: python3 skills/sigma-loop/scripts/deps.py mark <sdlc_dir> <goal> <ref> <reason...>",
+        out += ["  A wait on an open issue in this chain is a question below (wait:<goal>-<ref>): confirm it or dismiss it; "
+                "`chain.py arm` writes the marker or the dismissal. A wait on a closed issue is only shown.",
+                "  Confirm each real one: python3 skills/sigma-loop/scripts/deps.py mark <sdlc_dir> <goal> <ref> <reason...>",
                 "  Dismiss a wrong one: python3 skills/sigma-loop/scripts/backlog_check.py dismiss-text blocked-by <ref>,",
                 "  then post that text with python3 skills/sigma-loop/scripts/loop.py note <sdlc_dir> <goal> \"<text>\"",
                 "  Then run chain.py plan again; a confirmed wait is a body edge, a dismissed one is dropped."]

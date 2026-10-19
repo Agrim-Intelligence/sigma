@@ -78,7 +78,7 @@ def test_answer_defaults_never_arms_an_owner_gated_member_or_accepts_a_spend_gat
     assert "irreversible:8" not in answers and "irreversible:8" in res["open"]
     assert "cap:c1" in res["open"]
     # the rest answered, the two questions that only the owner can answer still open: the chain is not approved
-    more = ch.answer(base, 1, {"cap:c1": "5"}, run=fk)
+    more = ch.answer(base, 1, {"cap:c1": "50"}, run=fk)
     assert more["state"] == "awaiting-answers" and sorted(more["open"]) == [
         "irreversible:6", "irreversible:8", "owner_gate:3"]
     assert not any(w[0] in (3, 4) for w in tca._writes(fk))
@@ -123,7 +123,7 @@ def _go(tmp_path, issues, spend=(), answers=None):
             r["spend"] = True
     tca._put(base, rec)
     ch.answer(base, 1, defaults=True, run=fk)
-    got = ch.answer(base, 1, dict({"cap:c1": "5"}, **(answers or {})), run=fk)
+    got = ch.answer(base, 1, dict({"cap:c1": "50"}, **(answers or {})), run=fk)
     assert got["state"] == "approved", got
     ch.arm(base, 1, run=fk, now=NOW)
     return ch, base, fk

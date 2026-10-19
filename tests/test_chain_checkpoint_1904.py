@@ -81,7 +81,7 @@ def _scene(tmp_path, unit="open", cp_state="open", issues=None, approve=False):
     ch.plan(base, 1, run=fk, now=tca.NOW)
     if approve:
         ch.answer(base, 1, defaults=True, run=fk)
-        assert ch.answer(base, 1, {"cap:c1": "5"}, run=fk)["state"] == "approved"
+        assert ch.answer(base, 1, {"cap:c1": "50"}, run=fk)["state"] == "approved"
     fk.calls.clear()
     fk.write_count = 0
     return base, fk

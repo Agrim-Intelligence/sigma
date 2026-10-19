@@ -467,6 +467,7 @@ All keys live in `.sdlc/config.json`. A wrong-typed value reads as its default, 
 | `discovery.dag.cycle_comment` | `true` | whether a saved refresh posts one comment per distinct cycle |
 | `chain.max_members` | `100` | largest closure `plan` accepts from the map (live: the smaller of this and 50) |
 | `chain.max_goals` | members plus `chain.max_added` | most goals the chain may hold |
+| `chain.paid_labels` | `[]` | label names that mark a paid step: a member carrying one gets the spend question up front, as one with a declared paid line does; a plan from the map goes live for it |
 | `chain.max_added` | `5` | goals the chain may grow by when `chain.max_goals` is unset |
 | `chain.freeze` | `false` | when `true`, nothing joins by itself; each new prerequisite is asked on a delta sheet |
 | `chain.max_reasks` | `3` | delta-sheet pauses allowed before the run ends stuck |

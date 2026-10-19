@@ -234,8 +234,13 @@ def test_plan_is_read_only(tmp_path):
     assert calls and all(a[0] == "api" and a[a.index("--method") + 1] == "GET" for a in calls)
     rec = pathlib.Path(base) / "state" / "chains" / "c1.json"
     text = rec.read_text()
-    assert "SECRET" not in text and "legacy column" not in text
+    assert "SECRET" not in text            # no title and no body, ever
     doc = json.loads(text)
+    # the one exception, asked for by the sheet: a parked member's recorded park question, ONE cut-short line under
+    # `park_why`, so the sheet (which reads only the record) can say why it is parked
+    why = [m["park_why"] for m in doc["members"] if m.get("park_why")]
+    assert why and all("legacy column" in w and len(w) <= 140 for w in why)
+    assert text.count("legacy column") == len(why)
     assert doc["goal"] == 1 and [m["number"] for m in doc["members"]] == [4, 3, 2, 1]
     assert doc["calls"]["total"] == p["calls"]["total"] and 1 <= doc["calls"]["total"] <= len(calls)
     keys = set()

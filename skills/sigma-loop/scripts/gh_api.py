@@ -56,7 +56,7 @@ list, ONE `gh issue list` fallback built in `_list_fallback`, the shared `_rest_
 Newest-created-first by default to match gh; only `created`/`desc` and `updated`/`desc` are accepted.
 
 WRITES (#895 slice 3a): `comment_issue`, `create_issue`, `add_labels`, `remove_label`, `close_issue`,
-`edit_issue`, `add_assignees` go REST first behind `_rest_write` and the table `WRITE_POLICY` (ONE
+`edit_issue`, `add_assignees`, `remove_assignees` go REST first behind `_rest_write` and the table `WRITE_POLICY` (ONE
 fallback to today's `gh issue ...` argv, never retried; primary rate limit any write, 5xx idempotent
 writes only, transport/timeout never, everything else never; none in a cloud session; no read breaker).
 Classification reads gh's stderr (`.hint`) and the cause chain only, never `str(exc)`. The wording is
@@ -762,7 +762,7 @@ def _list_fallback(gql_run, fields, repo, labels, state, cap, sort, rest_err):
 # The single source of truth for WRITE fallback: the code reads it, the tests iterate it, and
 # docs/cloud-sessions.md must name every case id. Columns: case id, description, may an IDEMPOTENT
 # write fall back to ONE `gh issue ...` call, may a NON-idempotent write (comment, create). Idempotent
-# ops: add_labels, remove_label, close_issue, edit_issue(body=), add_assignees.
+# ops: add_labels, remove_label, close_issue, edit_issue(body=), add_assignees, remove_assignees.
 # The wording that selects a case is INFERRED (no live capture), see classify().
 WRITE_POLICY = (
     ("primary_rate_limit", "HTTP 429, or 403 whose gh stderr says rate limit and NOT secondary/abuse "
@@ -1118,6 +1118,38 @@ def add_assignees(run, number, assignees, repo=None, *, fallback_run=None, env=N
     for a in originals:
         fb += ["--add-assignee", a]
     return _write("issue_add_assignees", number, "gh issue edit", rest, fb, True, fallback_run, run, env,
+                  sdlc_dir, now)
+
+
+def remove_assignees(run, number, assignees, repo=None, *, fallback_run=None, env=None, sdlc_dir=None, now=None):
+    """DELETE assignees (idempotent: a login that is not assigned stays not assigned). Teams and `@me` are not
+    resolved here: pass plain logins. REST reports the issue as it stands afterwards, and it must no longer list
+    any requested login (case-insensitive), else this raises `kind="invalid"` (the caller then knows the issue
+    still has someone else on it). The fallback `gh issue edit --remove-assignee` receives the same logins."""
+    logins = [str(a)[1:] if str(a).startswith("@") else str(a) for a in assignees]
+    for a in logins:
+        if "/" in a or a.lower() == "me":
+            raise GhApiError("gh_api.remove_assignees: %r is not a plain login" % a, kind="invalid")
+
+    def rest():
+        args = ["api", _endpoint(repo, "issues/%d/assignees" % number), "--method", "DELETE"]
+        for name in logins:
+            args += ["-f", "assignees[]=%s" % name]
+        resp = _json(run, args)
+        left = {str(x.get("login", "")).lower() for x in (resp.get("assignees") or []) if isinstance(x, dict)} \
+            if isinstance(resp, dict) else None
+        if left is None:
+            raise _malformed("assignees", number, resp)
+        still = [n for n in logins if n.lower() in left]
+        if still:
+            raise GhApiError("GitHub still lists %s as assigned to #%d" % (", ".join("@" + m for m in still), number),
+                             kind="invalid")
+        return resp
+
+    fb = ["issue", "edit", str(number), *_repo_flag(repo)]
+    for a in logins:
+        fb += ["--remove-assignee", a]
+    return _write("issue_remove_assignees", number, "gh issue edit", rest, fb, True, fallback_run, run, env,
                   sdlc_dir, now)
 
 

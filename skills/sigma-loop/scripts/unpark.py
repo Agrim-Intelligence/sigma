@@ -429,10 +429,21 @@ def brief(sdlc_dir, config, number, source=None, run=None):
     extra = _recommendation(sdlc_dir, config, declared, data.get("labels"))
     return {"number": str(number), "title": data.get("title") or "",
             "state": data.get("state"), "labels": sorted(names),
+            "body_head": _body_head(body),
             "park_reason": reason, "park_reason_is_sigmas": from_sigma,
             "reason_class": reason_class, "kind_declared": bool(declared), "decision_tier": tier, "tier_signal": tier_signal,
             "blockers": blockers, "prior_answers": answered,
             "questions": questions, "degraded": [], **({"learning": learning} if learning else {}), **extra}
+
+
+def _body_head(body):
+    """The first line of an issue body that says something (heading marks and list bullets removed), cut short:
+    the fallback a chain sheet shows when a park left no note. Never the title."""
+    for line in (body or "").splitlines():
+        flat = line.strip().lstrip("#>*- ").strip()
+        if flat and not flat.startswith("<!--"):
+            return _one_line(flat)
+    return ""
 
 
 def _recommendation(sdlc_dir, config, kind, labels):

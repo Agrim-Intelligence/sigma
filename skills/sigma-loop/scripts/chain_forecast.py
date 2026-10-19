@@ -10,7 +10,8 @@ THE TABLE. `VERDICTS` maps a member's verdict to its marker, whether a run may c
 `OVERLAYS` does the same for flags a verdict does not carry. A new kind of member is one row. A verdict the
 table does not know is NOT workable: the forecast never promises work it cannot name.
 
-FORECAST. From the plan record alone (no `gh` call). The assignee filter is re-applied for the runner asked
+FORECAST. From the plan record alone (no `gh` call), as the person's answers leave it (`chain_asks.view`: a released
+member is armed, a kept-parked one stops the run, a taken-over one is the runner's, a dismissed wait is no edge). The assignee filter is re-applied for the runner asked
 about (`login`, default the one who planned), through `label_drain.assignee_gate`, the clause `_Judge.verdict`
 uses. It then plays the run: each cycle claims what `ready_members` offers at the configured width, every
 claimed goal is assumed to merge, until nothing is offered. What is left is the stop: its reason is
@@ -37,6 +38,7 @@ def _load(name):
 label_drain = _load("label_drain")
 chain_parallel = _load("chain_parallel")
 chain_checkpoint = _load("chain_checkpoint")
+chain_asks = _load("chain_asks")
 
 READY, AFTER = "ready now", "after"
 MARKERS = (READY, AFTER, "needs decision", "someone else's", "checkpoint", "not workable")
@@ -55,6 +57,7 @@ VERDICTS = {
     # Not verdicts the label drain gives: the person's answers in the chain record turn a member into these.
     "kept-waiting": ("needs decision", False, "kept waiting on a closed prerequisite's open follow-up or question"),
     "declined": ("not workable", False, "a paid step you answered not to run"),
+    chain_asks.KEPT_PARKED: ("needs decision", False, "parked; you answered to keep it parked"),
     "unknown": ("not workable", False, "could not be read"),
 }
 #: flag on a row -> (marker, why). Checked after the verdict, in this order, as `label_drain._reason` does. The
@@ -127,18 +130,25 @@ def roots_of(rows):
     return free or rows
 
 
-def _stop_of_first_root(p, unconfirmed=(), held=(), declined=()):
+def _stop_of_first_root(p, unconfirmed=(), held=(), declined=(), ctx=None):
     """-> (reason, detail), ONE reason from `chain.STUCK_REASONS` for an empty pick with members still open,
     given plan rows `p["members"]` (each may carry `waits_on`: the members it waits on) and `p["outside"]`. Only
     the ROOTS are named (`roots_of`). Numbers only in the detail. The order is the order a person would act in:
     what needs a person, then what only waits. A failed read is the caller's, ahead of
-    this."""
+    this. `ctx` (`chain_asks.stop_context`) only changes the words, never the reason: the parked members the person
+    answered to keep parked, whose a member held elsewhere is (the person chose to wait for them), and the unit
+    boundaries the person answered `stop here` about."""
+    ctx = ctx or {}
+    kept, waiting, stopped = ctx.get("kept") or (), ctx.get("waiting") or {}, ctx.get("stopped") or {}
     rows, outside = p["members"], p.get("outside") or []
     if any(r.get("kind") in ("not-read", "unreadable") for r in rows + outside):
         return "degraded-read", "a parked member could not be read"
     rows = roots_of(rows)                       # name what holds the chain, not what waits behind it
-    parked = sorted(r["number"] for r in rows if r["verdict"] == "parked")
+    parked = sorted(r["number"] for r in rows if r["verdict"] in ("parked", chain_asks.KEPT_PARKED))
     if parked:
+        if parked[0] in kept or any(r["number"] == parked[0] and r["verdict"] == chain_asks.KEPT_PARKED for r in rows):
+            return "decision", ("#%d is parked and you answered to keep it parked; release it (answer `release it`) "
+                                "to include it" % parked[0])
         return "decision", "#%d is parked and needs an answer" % parked[0]
     gated = sorted(r["number"] for r in rows if r["verdict"] == "held-by-gate")
     if gated:
@@ -148,7 +158,9 @@ def _stop_of_first_root(p, unconfirmed=(), held=(), declined=()):
         return "held-gate", "#%d is a paid step you answered not to run; answer go ahead, or change the plan" % no_spend[0]
     claimed = sorted(r["number"] for r in rows if r.get("in_progress") or r["verdict"] == "assigned-elsewhere")
     if claimed:
-        return "claimed", "#%d is in progress or assigned to someone else" % claimed[0]
+        who = waiting.get(claimed[0])
+        return "claimed", "#%d is in progress or assigned to someone else%s" % (
+            claimed[0], " (%s; you chose to wait for them)" % who if who else "")
     cps = sorted((r for r in rows + outside if (r.get("own_verdict") or r["verdict"]) == "checkpoint"),
                  key=lambda r: r["number"])
     left_out = sorted(r["number"] for r in outside if r.get("own_verdict") in label_drain.GATED_KIND)
@@ -162,10 +174,14 @@ def _stop_of_first_root(p, unconfirmed=(), held=(), declined=()):
     needs = sorted(r["number"] for r in rows if r["verdict"] in ("unarmed", "upper-tier") + tuple(label_drain.GATED_KIND))
     if needs:
         return "decision", "#%d is not armed and needs a person" % needs[0]
-    kept = sorted(r["number"] for r in rows if r["number"] in held)
-    if kept:        # #1906: the person said to keep waiting; the run skips it, so say so rather than "none claimable"
+    boundary = sorted(r["number"] for r in rows if r["number"] in stopped)
+    if boundary:        # the person answered `stop here` about a unit boundary: the run stops before the dependent
+        return "decision", ("#%d waits on #%d in another unit and you answered to stop here; answer keep going to "
+                            "include it" % (boundary[0], stopped[boundary[0]]))
+    kept_waiting = sorted(r["number"] for r in rows if r["number"] in held)
+    if kept_waiting:        # #1906: the person said to keep waiting; the run skips it, so say so rather than "none claimable"
         return "decision", ("#%d is kept waiting on a closed prerequisite's open follow-up or question (your "
-                            "answer); finish what it waits on, or answer proceed" % kept[0])
+                            "answer); finish what it waits on, or answer proceed" % kept_waiting[0])
     if cps:             # #1904: only after everything a person can act on, so it is named when it is the only thing left
         return "checkpoint", checkpoint_detail(cps[0])
     if unconfirmed:
@@ -176,9 +192,9 @@ def _stop_of_first_root(p, unconfirmed=(), held=(), declined=()):
 MAX_OTHER_ROOTS = 6
 
 
-def stuck_reason(p, unconfirmed=(), held=(), declined=()):
+def stuck_reason(p, unconfirmed=(), held=(), declined=(), ctx=None):
     """-> (reason, detail): `_stop_of_first_root`, the one thing a person acts on first. `other_roots` names the rest."""
-    return _stop_of_first_root(p, unconfirmed, held, declined)
+    return _stop_of_first_root(p, unconfirmed, held, declined, ctx)
 
 
 def other_roots(p, detail):
@@ -233,11 +249,12 @@ def _normalise(rec, login, filtered, held=(), declined=()):
             for r in rec.get("members") or []]
 
 
-def forecast(rec, config=None, login=None, held=(), declined=(), assumed=()):
+def forecast(rec, config=None, login=None, held=(), declined=(), assumed=(), cap=None):
     """-> the forecast for the plan record `rec` as run by `login` (default: who planned it). Keys: `runner`,
     `width`, `members` ([{number, marker, why, after}], the record's order), `finish` (claimed in order),
     `cycles`, `of`, `reason` and `detail` (None when everything finishes), `stops` ([{number, marker, why}],
     the roots), `notes`, `line`."""
+    rec = chain_asks.view(rec)          # the record as the answers leave it (idempotent): the forecast reads the answers
     filtered = rec.get("assignee_filter") is True
     me = login if login is not None else rec.get("runner")
     me = str(me).strip().lstrip("@").casefold() if me else None
@@ -260,7 +277,8 @@ def forecast(rec, config=None, login=None, held=(), declined=(), assumed=()):
         marker, why, after = classify(r, open_now)
         out_members.append({"number": r["number"], "marker": marker, "why": why, "after": after})
     finish, cycles = [], 0
-    while True:
+    over = cap is not None and cap[1] > cap[0]      # `chain_spend.admit` refuses before any claim: same words
+    while not over:
         batch = ready_members([r for r in rows if r["number"] in open_now], open_now, set(), width)
         if not batch:
             break
@@ -270,8 +288,11 @@ def forecast(rec, config=None, login=None, held=(), declined=(), assumed=()):
     left = [r for r in rows if r["number"] in open_now]
     reason = detail = None
     stops = []
-    if left:
-        reason, detail = stuck_reason({"members": left, "outside": []}, (), held, declined)
+    if over:
+        reason, detail = "capped", "capped: %d goals over the %d goal cap" % (cap[1], cap[0])
+    elif left:
+        reason, detail = stuck_reason({"members": left, "outside": []}, (), held, declined,
+                                      chain_asks.stop_context(rec))
         for r in left:
             if not [w for w in r["waits_on"] if w in open_now]:
                 marker, why, _after = classify(r, open_now)
@@ -282,7 +303,7 @@ def forecast(rec, config=None, login=None, held=(), declined=(), assumed=()):
     else:
         line = "%s can finish %d of %d before it stops on %s: %s" % (
             who, len(finish), len(rows), reason,
-            ", ".join("#%d %s (%s)" % (s["number"], s["marker"], s["why"]) for s in stops))
+            ", ".join("#%d %s (%s)" % (s["number"], s["marker"], s["why"]) for s in stops) or detail)
     return {"runner": me, "width": width, "members": out_members, "finish": finish, "cycles": cycles,
             "of": len(rows), "reason": reason, "detail": detail, "stops": stops, "notes": notes, "line": line}
 
