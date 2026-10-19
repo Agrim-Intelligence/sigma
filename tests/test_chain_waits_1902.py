@@ -191,15 +191,18 @@ def test_a_secret_shaped_ref_list_is_bounded():
 # --- the plan: live and from the map ---------------------------------------------------------------------
 
 @pytest.mark.parametrize("via", ["live", "map"])
-def test_a_comment_wait_by_the_assignee_is_unconfirmed_and_not_an_edge(tmp_path, via):
+def test_a_comment_wait_by_the_assignee_is_an_unconfirmed_edge(tmp_path, via):
     issues = [_goal(1, blocked_by=[2], assignees=["pat"], comments=[_c("Blocked by: #5 added", "pat", "NONE")]),
               _goal(2), _goal(5)]
     _base, p = _plan(tmp_path, via, issues, _chain_of(via))
     it = _items(p)[(1, 5)]
-    assert (it["by"], it["form"], it["where"], it["in_chain"]) == ("assignee", "explicit", "comment", False)
-    assert [m["number"] for m in p["members"]] == [2, 1]
-    assert {(e["from"], e["to"]) for e in p["edges"]} == {(2, 1)}      # the phantom-blocker control
+    assert (it["by"], it["form"], it["where"], it["in_chain"]) == ("assignee", "explicit", "comment", True)
+    assert sorted(m["number"] for m in p["members"]) == [1, 2, 5]
+    assert {(e["from"], e["to"]): e["tag"] for e in p["edges"]} == {(2, 1): "explicit", (5, 1): "unconfirmed"}
     assert p["complete"] is True
+    assert p["source"] == "live"        # the map holds no comment text, so a plan that finds one reads live
+    if via == "map":
+        assert "written only in comments or loose wording" in p["source_reason"]
 
 
 @pytest.mark.parametrize("via", ["live", "map"])
@@ -241,12 +244,14 @@ def test_follow_up_wording_in_a_comment_stays_advisory(tmp_path, via):
 
 
 @pytest.mark.parametrize("via", ["live", "map"])
-def test_loose_body_wording_is_a_weak_mention_not_a_wait(tmp_path, via):
+def test_loose_body_wording_is_an_unconfirmed_edge(tmp_path, via):
     issues = [_goal(1, body="these plug into #5's port\nstarts only once #6 has landed"), _goal(5), _goal(6)]
     _base, p = _plan(tmp_path, via, issues, [])
-    assert p["unconfirmed_waits"] == []
-    assert {(i["ref"], i["form"]) for i in p["weak_waits"]} == {(5, "plug-into"), (6, "only-once")}
-    assert [m["number"] for m in p["members"]] == [1] and p["edges"] == []
+    assert {(i["ref"], i["form"], i["where"]) for i in p["unconfirmed_waits"]} == {
+        (5, "plug-into", "body"), (6, "only-once", "body")}
+    assert p["weak_waits"] == []
+    assert sorted(m["number"] for m in p["members"]) == [1, 5, 6]
+    assert {(e["from"], e["to"]): e["tag"] for e in p["edges"]} == {(5, 1): "unconfirmed", (6, 1): "unconfirmed"}
 
 
 @pytest.mark.parametrize("via", ["live", "map"])
@@ -298,8 +303,9 @@ def test_a_wait_is_labelled_with_the_state_of_what_it_names(tmp_path, via):
               _issue(3, "sdlc:goal", state="closed"), _goal(5)]
     _base, p = _plan(tmp_path, via, issues, _chain_of(via))
     states = {k[1]: v["state"] for k, v in _items(p).items()}
-    assert states[6] == "unknown"                  # not in the map, not read: said so, not guessed
-    assert states[3] == states[5] == ("open" if via == "map" else "unknown")
+    assert states[3] == "closed" and states[5] == "open"       # followed by the plan, so the plan knows what they are
+    assert states[6] == "unknown"                  # no such issue: said so, not guessed
+    assert p["complete"] is False                  # and the plan says a wait could not be read
 
 
 def test_a_closed_node_in_the_map_is_labelled_closed(tmp_path):
@@ -307,7 +313,7 @@ def test_a_closed_node_in_the_map_is_labelled_closed(tmp_path):
     base = _repo(tmp_path)
     _save_map(base, [_mnode(1), _mnode(3, state="closed")], [])
     p = ch.plan(base, 1, run=_fake([_goal(1, comments=[_c("hold on #3")]), _goal(3, state="closed")]), now=NOW)
-    assert _items(p)[(1, 3)]["state"] == "closed"
+    assert _items(p)[(1, 3)]["state"] == "closed" and p["done"] == [3]
 
 
 def test_an_unreadable_comment_page_makes_the_plan_incomplete(tmp_path):
@@ -390,28 +396,28 @@ def test_the_record_holds_numbers_and_codes_only(tmp_path, via):
     text = (pathlib.Path(base) / "state" / "chains" / "c1.json").read_text()
     assert "SECRET" not in text and "hold on" not in text
     doc = json.loads(text)
-    assert doc["unconfirmed_waits"] == p["unconfirmed_waits"] and len(doc["unconfirmed_waits"]) == 2
-    assert doc["weak_waits"][0]["form"] == "only-once"
+    assert doc["unconfirmed_waits"] == p["unconfirmed_waits"] and len(doc["unconfirmed_waits"]) == 3
+    assert doc["weak_waits"] == [] and {i["form"] for i in doc["unconfirmed_waits"]} == {"explicit", "hold", "only-once"}
 
 
 def test_the_plan_printout_lists_them(tmp_path):
     ch = _mod("chain")
     _base, p = _two_waits(tmp_path)
     out = ch.render(dict(p, record="r"))
-    assert "unconfirmed waits (found only in comments; none is an edge): 2" in out
-    assert "#1 may wait on #5 (explicit; in a comment by the owner; unknown, not in the chain)" in out
-    assert "#2 ~ #7 (only-once; in the body; unknown, not in the chain)" in out
+    assert "unconfirmed waits (read as edges for this chain, not confirmed): 3" in out
+    assert "#1 waits on #5 (explicit; in a comment by the owner; open, in the chain)" in out
+    assert "#2 waits on #7 (only-once; in the body; open, in the chain)" in out
+    assert "weak mentions (follow-up wording; never an edge): 0" in out
 
 
 def test_the_sheet_has_one_block_for_all_unconfirmed_waits(tmp_path):
     ch = _mod("chain")
     base, _p = _two_waits(tmp_path)
     text = ch.sheet(base, 1, now=NOW)
-    assert text.count("Unconfirmed waits (2)") == 1
-    block = text.split("Unconfirmed waits (2)")[1].split("Decisions (")[0]
-    assert "#1 may wait on #5" in block and "#2 may wait on #6" in block
+    assert text.count("Unconfirmed waits (3)") == 1
+    block = text.split("Unconfirmed waits (3)")[1].split("Decisions (")[0]
+    assert "#1 waits on #5" in block and "#2 waits on #6" in block and "#2 waits on #7" in block
     assert "deps.py mark <sdlc_dir> <goal> <ref>" in block and "dismiss-text blocked-by <ref>" in block
-    assert "Weak mentions (never block, not asked): #2 ~ #7" in block
     assert text.index("Unconfirmed waits") < text.index("Decisions (")
     assert "[unconfirmed" not in text and "wait:" not in text.split("Decisions (")[1].split("Writes that")[0]
     assert "Nothing has been changed yet." in text
@@ -423,7 +429,7 @@ def test_the_documented_gesture_prints_the_waits(tmp_path, capsys):
     base = _repo(tmp_path, dag_mode="off")
     run = _fake([_goal(1, comments=[_c("Blocked by: #5 added")]), _goal(5)])
     assert ch.main(["chain.py", "plan", base, "1"], run=run, now=NOW) == 0
-    assert "#1 may wait on #5" in capsys.readouterr().out
+    assert "#1 waits on #5" in capsys.readouterr().out
     assert ch.main(["chain.py", "sheet", base, "1"], run=run, now=NOW) == 0
     out = capsys.readouterr().out
     assert "Unconfirmed waits (1)" in out and "deps.py mark" in out
@@ -476,3 +482,69 @@ def test_the_docs_describe_the_unconfirmed_waits():
                     ("docs/chain.md", "docs/dependency-map-and-chain.md", "skills/sigma-chain/SKILL.md"))
     for needle in ("unconfirmed wait", "weak mention", "deps.py mark", "dismiss-text", "chain_waits"):
         assert needle in flat, needle
+
+
+# --- the chain follows the waits it reads (integration, #1908) ---------------------------------------------
+
+def _deep_chain():
+    """1 waits on 2 in prose, 2 on 3 in a trusted comment, 3 on 4 in prose: three levels the closure cannot see."""
+    return [_goal(1, body="starts only once #2 has landed"),
+            _goal(2, comments=[_c("hold on #3 before any paid run")]),
+            _goal(3, body="#4 must land on main before this change"), _goal(4)]
+
+
+def test_the_closure_follows_waits_level_by_level(tmp_path):
+    _base, p = _plan(tmp_path, "live", _deep_chain(), [])
+    assert sorted(m["number"] for m in p["members"]) == [1, 2, 3, 4]
+    assert {(e["from"], e["to"]): e["tag"] for e in p["edges"]} == {
+        (2, 1): "unconfirmed", (3, 2): "unconfirmed", (4, 3): "unconfirmed"}
+    assert [m["number"] for m in p["members"]] == [4, 3, 2, 1] and p["complete"] is True
+
+
+def test_a_wait_chain_deeper_than_the_rounds_makes_the_plan_incomplete(tmp_path, monkeypatch):
+    ch = _mod("chain")
+    monkeypatch.setattr(ch, "MAX_WAIT_ROUNDS", 1)
+    base = _repo(tmp_path, dag_mode="off")
+    p = ch.plan(base, 1, run=_fake(_deep_chain()), now=NOW)
+    assert p["complete"] is False and any("go deeper than 1 levels" in s for s in p["stops"]), p["stops"]
+
+
+def test_a_cycle_made_only_by_prose_is_refused_with_the_way_out(tmp_path):
+    ch = _mod("chain")
+    base = _repo(tmp_path, dag_mode="off")
+    issues = [_goal(1, body="starts only once #2 has landed"), _goal(2, body="starts only once #1 has landed")]
+    with pytest.raises(ch.ChainRefused) as exc:
+        ch.plan(base, 1, run=_fake(issues), now=NOW)
+    text = str(exc.value)
+    assert "dependency cycle among #1, #2" in text and "read only from a comment or loose wording" in text
+    assert "dismiss-text blocked-by" in text
+
+
+def test_a_sentence_that_only_names_an_issue_adds_no_member_and_no_edge(tmp_path):
+    """The phantom-blocker control, end to end: nothing JUST_NAMES lists may pull an issue into the chain."""
+    body = "\n".join(JUST_NAMES)
+    issues = [_goal(1, body=body, comments=[_c(t) for t in JUST_NAMES])] + [_goal(n) for n in range(2, 20)]
+    _base, p = _plan(tmp_path, "live", issues, [])
+    assert [m["number"] for m in p["members"]] == [1] and p["edges"] == [] and p["unconfirmed_waits"] == []
+
+
+def test_a_dismissed_wait_is_not_followed(tmp_path):
+    bc = _mod("backlog_check")
+    issues = [_goal(1, body="starts only once #5 has landed",
+                    comments=[_c(bc.dismiss_comment("blocked-by", 5, "not this goal"))]), _goal(5)]
+    _base, p = _plan(tmp_path, "live", issues, [])
+    assert [m["number"] for m in p["members"]] == [1] and p["unconfirmed_waits"] == []
+
+
+def test_a_wait_on_a_closed_issue_is_a_done_prerequisite_not_a_member(tmp_path):
+    issues = [_goal(1, body="starts only once #5 has landed"), _issue(5, "sdlc:goal", state="closed")]
+    _base, p = _plan(tmp_path, "live", issues, [])
+    assert [m["number"] for m in p["members"]] == [1] and p["done"] == [5]
+
+
+def test_the_map_attempt_and_the_live_fallback_read_each_comment_page_once(tmp_path):
+    calls = []
+    issues = [_goal(1, blocked_by=[2], comments=[_c("hold on #5 first")]), _goal(2), _goal(5)]
+    _plan(tmp_path, "map", issues, [(2, 1)], calls)
+    pages = [a[1] for a in calls if a[1].endswith("issues/1/comments")]
+    assert len(pages) == 1, pages

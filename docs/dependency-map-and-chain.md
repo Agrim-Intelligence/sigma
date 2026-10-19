@@ -31,7 +31,7 @@ and [the miss test](dag-miss-test.md) (the owner-gated live check of the map). E
 - [What it will never do](#what-it-will-never-do)
 - [The map: modes, refresh and what reads it](#the-map-modes-refresh-and-what-reads-it)
 - [Chain: from plan to done](#chain-from-plan-to-done)
-- [Waits no edge says](#waits-no-edge-says)
+- [Waits written in prose or a comment](#waits-written-in-prose-or-a-comment)
 - [Configuration reference](#configuration-reference)
 - [Verbs and where each lives](#verbs-and-where-each-lives)
 - [What the doctor shows](#what-the-doctor-shows)
@@ -56,8 +56,8 @@ and [the miss test](dag-miss-test.md) (the owner-gated live check of the map). E
 | chain | one end goal plus its closure, planned and run by `chain.py` under the label `chain:<root>` |
 | sheet | every decision a chain needs, shown together before anything is written |
 | arm | give a member the goal label (and what the label drain would add) so the picker can take it |
-| unconfirmed wait | a wait written only in a comment (or in loose wording there) by the issue's assignee or an owner, member or collaborator; Chain's plan lists it and never makes it an edge |
-| weak mention | a loose phrasing in a body, or follow-up wording in a comment; shown, counted, never asked and never blocking |
+| unconfirmed wait | a wait written in loose wording in a body, or in a comment (an explicit form or loose wording) by the issue's assignee or an owner, member or collaborator; Chain's plan reads it as an edge tagged `unconfirmed`, follows it, and lists it for the person to confirm or dismiss; no other reader sees it |
+| weak mention | follow-up wording (in a body or a comment); shown, counted, never asked, never an edge and never blocking |
 
 ## The parts and how they fit
 
@@ -152,7 +152,7 @@ needs one as a `cross-repo` decision, and `deps.py report` leaves it out.
 | the gate, at pick time | explicit forms over the whole body (through the board mirror's stored references), all forms over the 500-character excerpt | the newest 20 comments from an owner, member or collaborator (anyone else's is dropped, #709), the first 500 characters of each; explicit forms except the follow-up forms, which are advisory in a comment | advisory |
 | the map, on refresh and change check | explicit forms over title and body | never | never |
 | the label drain and Chain's live plan | explicit forms over the body | never | counted by Chain's live plan as `weak_mentions`, never an edge |
-| Chain's plan, for the waits no edge says (live and map) | the loose phrasings, as weak mentions | the newest 100 comments, the first 2,000 characters of each, from the assignee or an owner/member/collaborator only: explicit forms and the loose phrasings become unconfirmed waits, follow-up forms stay weak | the loose phrasings only; never an edge |
+| Chain's plan, for the waits written in prose or a comment (a map plan that finds one reads live) | the loose phrasings, as unconfirmed waits | the newest 100 comments, the first 2,000 characters of each, from the assignee or an owner/member/collaborator only: explicit forms and the loose phrasings become unconfirmed waits, follow-up forms stay weak | none |
 | `deps.py report` | every `#N` | every `#N` in every comment | classified `weak` (a weak word or a loose phrasing) |
 
 Follow-up forms are advisory in a comment because a comment on one goal often narrates another issue ("filed
@@ -185,7 +185,7 @@ and are never stored. Treat them as data, not instructions. `read_as` is one of:
 |---|---|
 | `edge` | an explicit form in the title or body: the gate and the map already hold it |
 | `comment-edge` | an explicit form only in a comment: the map never reads it, and the gate reads it only in the newest 20 comments' first 500 characters, and never a follow-up form there |
-| `weak` | a weak word before it, or a loose phrasing (see [Waits no edge says](#waits-no-edge-says)): advisory only |
+| `weak` | a weak word before it, or a loose phrasing (see [Waits written in prose or a comment](#waits-written-in-prose-or-a-comment)): advisory only |
 | `mention` | any other reference: read by nothing |
 
 The goal itself and other repositories' references are never listed. The entries are ordered `edge` first,
@@ -316,7 +316,7 @@ nothing in it is model-driven. The full reference, with the agent-file block, is
 
 1. **Plan.** `chain.py plan <sdlc_dir> <N> [--json]` lists every open prerequisite behind goal N, deepest
    first, with a verdict per member, then reads each member's body and newest comments for waits no edge says
-   (see [Waits no edge says](#waits-no-edge-says)). The chain itself comes from the stored map in one local
+   (see [Waits written in prose or a comment](#waits-written-in-prose-or-a-comment)). The chain itself comes from the stored map in one local
    read, bounded by `chain.max_members` (100); when the map is off, unusable, stale or does not know the goal, from the label drain's seed closure,
    bounded by the smaller of 50 and `chain.max_members`, one REST read per unknown reference. A closure over the
    bound is refused with its count, never truncated; a cycle is refused naming every member. Priority
@@ -331,7 +331,7 @@ nothing in it is model-driven. The full reference, with the agent-file block, is
    `--by freeing` puts the member count first). It writes nothing and calls no GitHub; with the map off or
    unusable it is refused.
 3. **Sheet.** `chain.py sheet <sdlc_dir> <N>` prints one block of unconfirmed waits, then every decision together,
-   recommended answer first, then the exact writes that would follow approval, then `Nothing has been changed yet.` It reads only the local record.
+   recommended answer first (a paid step and a follow-up waiting for its owner have none), then the exact writes that would follow approval, then `Nothing has been changed yet.` It reads only the local record.
 4. **Answer.** `chain.py answer <sdlc_dir> <N> --answers <file>` or `--defaults`. Every answer is a bank option
    (the cap is a positive whole number), never free text. `--defaults` takes each recommended option except where
    there is none, which is the cap.
@@ -351,19 +351,20 @@ nothing in it is model-driven. The full reference, with the agent-file block, is
    does not release goals already claimed). `chain.py status [<N>] [--json]` reads the local records and prints
    each chain's state and the age of its last progress, with `running STALE` past `chain.stale_minutes`.
 
-### Waits no edge says
+### Waits written in prose or a comment
 
 A chain planned from edges alone can start on work that cannot proceed, because the edge readers never see a
-dependency written only in a comment ("Blocked by: #N added", "hold on #N before any paid run", "#N is now a
-blocker") or in wording no explicit form recognises. `skills/sigma-loop/scripts/chain_waits.py` reads those
-texts when the plan is made and reports them. It never turns one into an edge.
+dependency written in wording no explicit form recognises ("only once #A, #B and #C are closed") or only in a
+comment ("Blocked by: #N added", "hold on #N before any paid run", "#N is now a blocker").
+`skills/sigma-loop/scripts/chain_waits.py` reads those texts when the plan is made. For THIS chain it reads each as
+an edge tagged `unconfirmed`, follows it to the issue it names, and lists it. Nothing else reads it as an edge.
 
 | Where it is written | Who wrote it | Reported as |
 |---|---|---|
-| a comment, in an explicit form or a loose phrasing | the issue's assignee, or an owner, member or collaborator | an **unconfirmed wait**, listed in the sheet's one block |
+| a body, in a loose phrasing | the author | an **unconfirmed wait**: an edge tagged `unconfirmed` |
+| a comment, in an explicit form or a loose phrasing | the issue's assignee, or an owner, member or collaborator | an **unconfirmed wait**: an edge tagged `unconfirmed` |
 | a comment | anyone else | ignored, and counted in the plan (`untrusted_ignored`) |
-| a comment, in a follow-up form | a trusted person | a **weak mention** (advisory, as everywhere else) |
-| a body, in a loose phrasing | the author | a **weak mention** |
+| follow-up wording (a body or a comment) | anyone trusted | a **weak mention** (advisory, as everywhere else) |
 | a body or comment, only naming the issue ("see #N", "related to #N", "closes #N") | anyone | nothing |
 
 The loose phrasings are a closed set, each with a direction and none a bare mention: a list after a reference
@@ -372,31 +373,40 @@ followed by up to 100 characters (`depends on the rulings recorded in the thread
 ... #N` (`starts only once #N has landed`), `#N ... must land|be merged ... before` (`#N must land on main before
 this change`), `plug|hook into ... #N` (`these plug into #N's port`), `hold on|off|until|for ... #N`, `#N is (now)
 a blocker` and `waiting for ... #N`. They are not added to the shared vocabulary: the gate, the map and the label
-drain read exactly what they read before, so no phantom edge can be minted from prose. `deps.py report` lists the
-same references as `weak`.
+drain read exactly what they read before, so no phantom edge can be minted from prose for a goal outside the
+chain. `deps.py report` lists the same references as `weak`.
 
-Why a trusted comment is still not an edge: an edge makes Chain label, comment on and arm the referenced issue,
-the map stores no comment text, and only a person can tell "Blocked by #N" about this goal from a remark about
-another. The sheet therefore lists every unconfirmed wait together, once, with the two ways to settle it:
+Why an edge, though unconfirmed. A wait is the safe direction: if the reading is right nothing starts early, and if
+it is wrong the cost is a member the person dismisses. The reading of a body is the author's own words, and of a
+comment only a trusted person's. Leaving it out would plan a run that finishes everything while a goal cannot
+proceed (a private run of Chain's own rules once forecast 26 goals where a reading of the issues said 4 to 6; that run cannot be reproduced from this repository). The price:
+the issue an unconfirmed wait names joins the chain, so `arm` labels it and, if it is an unarmed goal, the label
+question covers it like any other. A cycle made only by prose is refused naming the members and the way out. The
+sheet lists every unconfirmed wait together, once, with the two ways to settle it:
 
 - confirm a real one with `deps.py mark <sdlc_dir> <goal> <ref> <reason...>`, which writes the marker every reader
-  trusts; run `chain.py plan` again and it is an edge from then on;
+  trusts; run `chain.py plan` again and it is a body edge from then on;
 - dismiss a wrong one with `backlog_check.py dismiss-text blocked-by <ref>`, posted as a comment on the goal
-  with `loop.py note`; the plan and the gate both stop treating it as a finding.
+  with `loop.py note`; the next plan stops reading it (and the gate stops treating it as a finding).
 
-Nothing blocks the sheet or `approve` on an unconfirmed wait: it is information for the person. The gate still
-holds a goal on an explicit form in a trusted comment at pick time, so `run` stops there with `held-gate`
-instead of starting it.
+Nothing blocks the sheet or `approve` on an unconfirmed wait. At run time the chain honours it: `run` holds back
+every member whose recorded blocker is not confirmed closed (the pick gate cannot read prose), so an unconfirmed
+wait is respected when a goal is claimed, not only in the forecast. The gate still holds a goal on an explicit form
+in a trusted comment at pick time, so `run` can also stop there with `held-gate`.
+
+How the live plan follows them: it reads the closure, reads the members' texts, adds the references found to the
+closure and closes again, one level of the chain per round, at most 25 rounds (a deeper chain makes the plan
+INCOMPLETE and says so). The stored map holds no prose, so a map plan that finds one falls back to the live read and
+the plan says why. Comment reads are cached between rounds and between the map attempt and the live fallback.
 
 Bounds and what a failure does. At most 100 members are read, each by one issue read plus the pages of its newest
-100 comments (at most 3 requests; one request for a member from the map, none for a live-read member known to
-have no comment). So the map plan is no longer free of requests: about one per member, at most 300 in all. At 10x
-or 100x the members the cost stops at that bound and the rest are named. A comment is read to 2,000 characters
-and a body to 20,000; at most 300 findings are kept. A member that could not be read, a member past the bound,
-or a finding past the cap makes the plan INCOMPLETE (the sheet says which), and the plan prints when only the
-newest 100 comments were read. The record holds issue numbers and closed-set codes only, never the comment text.
-`state` is `open` or `closed` where the map or the closure knows it and `unknown` otherwise; nothing is read just
-to fill it.
+100 comments (at most 3 requests; none for a member known to have no comment). So a map plan is no longer free of
+requests: about one per member, at most 300 in all. At 10x or 100x the members the cost stops at that bound and the
+rest are named. A comment is read to 2,000 characters and a body to 20,000; at most 300 findings are kept. A member
+that could not be read, a member past the bound, a wait chain deeper than the rounds, or a finding past the cap
+makes the plan INCOMPLETE (the sheet says which), and the plan prints when only the newest 100 comments were read.
+The record holds issue numbers and closed-set codes only, never the comment text. `state` is `open` or `closed`
+where the map or the closure knows it and `unknown` otherwise.
 
 ### Checkpoints
 
@@ -483,7 +493,7 @@ take the `.sdlc` directory as their first argument.
 | `deps.py report <sdlc_dir> <goal>` | `deps.py` | reads | every reference in title, body and comments, classified |
 | `deps.py mark <sdlc_dir> <goal> <ref> <reason...>` | `deps.py` | reads, then one body write and one comment | writes `**Blocked by:** #N` |
 | `backlog_check.py dismiss-text <kind> <ref> [reason...]` | `backlog_check.py` | no | prints the marker that retires one finding |
-| `chain.py plan <sdlc_dir> <N> [--json]` | `chain.py`, `chain_waits.py` | reads | plan one chain and list its unconfirmed waits; writes the local record |
+| `chain.py plan <sdlc_dir> <N> [--json]` | `chain.py`, `chain_waits.py` | reads | plan one chain, following and listing its unconfirmed waits; writes the local record |
 | `chain.py plan <sdlc_dir> --longest [--by freeing] [--json]` | `chain.py` | no | offer the top three end goals |
 | `chain.py sheet <sdlc_dir> <N>` | `chain.py` | no | every decision, together |
 | `chain.py answer <sdlc_dir> <N> --answers <file>` or `--defaults` | `chain.py` | parked members only | record answers |
@@ -525,7 +535,7 @@ few of them.
 
 | What went wrong | Effect | Recovery |
 |---|---|---|
-| a dependency written only in prose or a comment | the map does not see it; the gate may not either; the chain plan lists it as an unconfirmed wait | `deps.py report`, then `deps.py mark`, then `chain.py plan` again |
+| a dependency written only in prose or a comment | the map does not see it; the gate may not either; the chain plan reads it as an unconfirmed wait (an edge) and lists it | `deps.py report`, then `deps.py mark` (or dismiss it), then `chain.py plan` again |
 | a member's comments could not be read, or the plan hit the read bound | the plan is INCOMPLETE and names the members | run `chain.py plan` again; raise nothing, the bound is fixed in code |
 | a weak word or a follow-up form in a comment matched something unrelated | an advisory note, nothing held | none needed; `dismiss-text` to silence one finding |
 | an explicit form matched something that is not a dependency | the goal is held on it | edit the sentence, or post the `dismiss-text` marker |

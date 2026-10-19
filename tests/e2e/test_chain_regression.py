@@ -16,11 +16,11 @@ dependencies, not by what Chain read: a goal Chain wrongly thinks is ready is ne
 dependency shows as a missing edge and as a wrong stop, never as a lucky pass. After a stop whose root the reference
 names a resolution for (a person unparks it), the scripted world applies it and the run goes on.
 
-THE ASSERTIONS ARE WRITTEN FOR THE FINAL INTENDED BEHAVIOUR. On the engine as it stood when this was written
-(1.0.17) `test_regression_scenario_end_to_end` is RED, by design; `criteria()` reports each failed criterion with its
-reason, so the red run is a checklist. Nothing is marked xfail. The one skip is the forecast
-(`test_forecast_equals_actual_run`): `chain.py plan --forecast` does not exist yet, and the test says so in its skip
-reason.
+THE ASSERTIONS WERE WRITTEN FOR THE FINAL INTENDED BEHAVIOUR. On the engine as it stood when this was written
+(1.0.17) `test_regression_scenario_end_to_end` was RED, by design; `criteria()` reports each failed criterion with its
+reason, so a red run is a checklist. Nothing is marked xfail and nothing is skipped: with the dependency-reading,
+checkpoint, confirmation, closed-prerequisite, hold and forecast changes in, both end goals and the forecast
+(`test_forecast_equals_actual_run`) are green.
 
 THE CHECKER IS CONTROLLED TOO. A synthetic perfect outcome passes `criteria()`, and breaking it one clause at a time
 turns exactly that clause red (`test_checker_controls`): a checker never seen red proves nothing.
@@ -57,11 +57,6 @@ CRITERIA = ("reached", "owner", "members", "dependencies", "phantoms", "checkpoi
 
 def reference():
     return json.loads((FIXTURES / "reference.json").read_text(encoding="utf-8"))
-
-
-def forecast_available(ch=None):
-    """True once `chain.py plan --forecast` exists: its usage line names the flag."""
-    return "--forecast" in (ch or tcs._fresh()).USAGE
 
 
 # --- the backlog ----------------------------------------------------------------------------------------------
@@ -487,9 +482,6 @@ def test_regression_scenario_end_to_end(tmp_path, goal):
     assert not failed(bad), "chain regression scenario for end goal #%d:\n%s" % (goal, render_failed(bad))
 
 
-@pytest.mark.skipif(not forecast_available(), reason="`chain.py plan --forecast` does not exist yet; this test "
-                    "is skipped, not xfailed, until the forecast slice lands and then asserts the forecast "
-                    "equals the actual run")
 @pytest.mark.parametrize("goal", [1, 11])
 def test_forecast_equals_actual_run(tmp_path, goal):
     out = run_scenario(tmp_path, goal, with_forecast=True)
@@ -760,10 +752,10 @@ def test_forecast_parser():
     ref = reference()
     out = perfect(1)
     chain = ref["chains"]["1"]
-    assert not forecast_failures("a run from alice can finish 4 of 12 before it stops on #8 (a decision)", out, chain)
-    for text, what in (("a run from alice can finish 3 of 12 before it stops on #8", "goals finish"),
-                       ("a run from alice can finish 4 of 11 before it stops on #8", "members"),
-                       ("a run from alice can finish 4 of 12 before it stops on #9", "first stop"),
+    assert not forecast_failures("a run from alice can finish 2 of 11 before it stops on #8 (a decision)", out, chain)
+    for text, what in (("a run from alice can finish 3 of 11 before it stops on #8", "goals finish"),
+                       ("a run from alice can finish 2 of 12 before it stops on #8", "members"),
+                       ("a run from alice can finish 2 of 11 before it stops on #9", "first stop"),
                        ("nothing useful", "printed no line")):
         errs = forecast_failures(text, out, chain)
         assert errs and what in errs[0], (text, errs)

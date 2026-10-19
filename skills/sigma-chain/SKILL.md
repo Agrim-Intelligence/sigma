@@ -22,13 +22,15 @@ Arguments: `<N | issue URL of this repository>`, `--longest`, `--forecast`, `--a
    `C plan D <N> --forecast` (read-only toward GitHub): relay its one line, "a run from <login> can finish K of N
    before it stops on <reason>", and the root of each stop; `--as <login>` asks for another runner. A refusal
    (cycle, over the member bound) is relayed as is.
-2. **Ask.** `C sheet D <N>` lists every decision at once. If it opens with an "Unconfirmed waits" block, put that
-   block to the user first, whole: for each wait that is real, run `deps.py mark D <goal> <ref> <reason>`; for a
-   wrong one, post the `backlog_check.py dismiss-text blocked-by <ref>` text with `loop.py note`; then `C plan D <N>`
-   again. Never turn one into an edge yourself. Put them to the user in batches of up to four
+2. **Ask.** `C sheet D <N>` lists every decision at once. If it has an "Unconfirmed waits" block, put that block
+   to the user whole: the plan already reads each
+   as a wait, so for each that is real run `deps.py mark D <goal> <ref> <reason>`; for a wrong one, post the
+   `backlog_check.py dismiss-text blocked-by <ref>` text with `loop.py note`; then `C plan D <N>` again. Put the
+   decisions to the user in batches of up to four
    (`AskUserQuestion` where the host has it, a numbered text reply otherwise); record them with
    `C answer D <N> --answers <file>`. `--defaults` skips asking: `C answer D <N> --defaults` takes each
-   recommended option, and the cap has none, so it is still asked. Then `C approve D <N>`.
+   recommended option; the cap, a paid step (`irreversible:<n>`) and a follow-up waiting for its owner
+   (`owner_gate:<n>`) have none, so they are still asked and never decided for the user. Then `C approve D <N>`.
 3. **Arm.** `C arm D <N> --dry-run` shows the writes; `C arm D <N>` makes them. With `--dry-run`, stop here.
 4. **Solve.** Call `C run D <N>` again until it reports done. Exit 3 is capped or stuck, with one reason:
    relay it, never work around it. `C stop D <N>` and `C resume D <N> [--cap N]` change only the local record.

@@ -40,20 +40,35 @@ checkpoint, rate-limit, degraded-read, capped).
 Every decision the chain needs, shown together: the label drain's questions over the member set, plus a
 cross-unit edge, an end goal that cannot be armed, and the cap. Every answer is a bank option (the cap is a
 positive whole number), never free text. `--defaults` takes each recommended option except where there is
-none, which is the cap.
+none: the cap, a paid step (`irreversible:<n>`, which is never accepted for the owner) and a follow-up waiting
+for its owner (`owner_gate:<n>`, which is never decided for the owner). Those stay open, and the chain is not
+approved until a person answers them.
 
 ### Unconfirmed waits
 
-A wait written only in a comment, or in loose wording no explicit form recognises, is not an edge, but it is
-not hidden either. `chain.py plan` reads each member's body and newest comments (GET only) and the sheet lists
-every **unconfirmed wait** in one block, before the decisions: a comment by the issue's assignee or an
-owner, member or collaborator that says `Blocked by: #N`, `hold on #N`, `#N is now a blocker` and the like.
-Loose wording in a body, and follow-up wording in a comment, appear as **weak mentions** and never block. The
-block names the two ways to settle a wait: `deps.py mark <sdlc_dir> <goal> <ref> <reason...>` to make it an edge,
-or the dismissal marker from `backlog_check.py dismiss-text blocked-by <ref>`; run `chain.py plan` again after
-either. A member whose comments could not be read makes the plan INCOMPLETE. The full rules, the closed list of
-phrasings and the bounds are in [the reference](dependency-map-and-chain.md#waits-no-edge-says). Not measured:
-network time, and how often the loose phrasings match a remark that is not a wait.
+A wait written in prose or in a comment, in wording no explicit form recognises, is read by Chain for this chain
+and listed, not hidden and not trusted blindly. `chain.py plan` reads each member's body and newest comments (GET
+only). A directional phrasing in a body ("only once #A, #B and #C are closed", "#N must land on main before ...",
+"these plug into #N's port"), and the same or an explicit form in a comment by the issue's assignee or an owner,
+member or collaborator ("Blocked by: #N added", "hold on #N before any paid run", "#N is now a blocker"), is an
+**unconfirmed wait**. The plan treats it as an edge tagged `unconfirmed` (waiting is the safe direction: nothing
+starts early), follows it to the issue it names so that issue and what it waits on join the chain, and the
+sheet lists every one in a block of its own. Follow-up wording ("filed as a follow-up to #N") stays a **weak
+mention**: advisory, never an edge.
+
+The block names the two ways to settle a wait: `deps.py mark <sdlc_dir> <goal> <ref> <reason...>` for a real one
+(it becomes a body edge every reader trusts), or the dismissal marker from `backlog_check.py dismiss-text
+blocked-by <ref>` for a wrong one (the plan stops reading it); run `chain.py plan` again after either. Only
+Chain's plan reads these as edges. The pick gate, the stored map and the label drain still read explicit forms
+only, so a goal outside the chain is never held by prose. Inside the chain, `run` holds back every member whose
+recorded blocker is not confirmed closed even when the pick would offer it, so an unconfirmed wait is honoured at
+the time a goal is claimed, not only in the plan. The stored map holds no prose, so a map plan that finds one
+falls back to the live read and says why. A member whose comments could not be read, a wait chain deeper than
+the rounds the plan follows, or a cap on findings makes the plan INCOMPLETE. The full rules, the closed list of
+phrasings and the bounds are in [the reference](dependency-map-and-chain.md#waits-written-in-prose-or-a-comment).
+Not measured: network time, and how often the loose phrasings match a remark that is not a wait (a wrong match
+costs a line in the sheet and a member the person dismisses, and a cycle it makes is refused by name).
+
 ## The forecast
 
 `chain.py plan <sdlc_dir> <N> --forecast` (and the sheet, always) marks every member and says how far a run will
@@ -63,14 +78,16 @@ really get, before anything is armed:
 |---|---|
 | `ready now` | a run may claim it and it waits on nothing open |
 | `after #N` | a run may claim it once the named members are done |
-| `needs decision` | parked, not armed, or an upper-tier issue: a person must act |
+| `needs decision` | parked, not armed, upper-tier, not a goal, waiting for its owner, or kept waiting on a closed prerequisite's open follow-up: a person must act |
 | `someone else's` | assigned to another login, or already in progress |
-| `checkpoint` | reserved; until checkpoints exist it is shown as `not workable` |
-| `not workable` | held by a gate, carries the blocked label, waits on a prerequisite outside the chain, or could not be read |
+| `checkpoint` | never worked: met when its unit lands or a person closes it |
+| `not workable` | held by a gate, a paid step the owner answered not to run, carries the blocked label, waits on a prerequisite outside the chain, or could not be read |
 
 One line follows: `a run from <login> can finish K of N before it stops on <reason>: <each root>`. The roots are
 the members that wait on nothing else that is left, each with its marker; the reason is the one word `run` itself
-would print (decision, held-gate, claimed, external, degraded-read). `--as <login>` asks for another runner (a
+would print (decision, held-gate, claimed, external, checkpoint, degraded-read). It reads the answers already in the
+record: a paid step answered "do not", and a dependent kept waiting on a closed prerequisite, are not counted as
+finishing. `--as <login>` asks for another runner (a
 runner who owns none of the work finishes none of it); the default is whoever planned.
 
 The forecast plays `run` cycle by cycle at the configured width and uses the rules `run` uses: the claim rule and
@@ -124,14 +141,26 @@ A member that carries the legacy confirmation label (`sdlc:needs-confirmation`, 
 `ledger.handoff.proposed_label`), with or without `sdlc:goal`, is a follow-up still waiting for its owner. Approving
 a chain is not that confirmation, so it is never armed by `chain.py arm` or `label_drain.py arm`, with or without
 `--apply` or `--dry-run`, unless the sheet asked about that member and the person answered "promote it". The
-sheet asks one question per such member (`owner_gate:<n>`): leave it out (the recommended answer, so no default
-arms), promote it, or close it. Members that share the options are shown as one group (`group:owner_gate`)
+sheet asks one question per such member (`owner_gate:<n>`): leave it out, promote it, or close it. It has no
+recommended answer, so `answer --defaults` leaves it open (the fate of a follow-up is the owner's to decide) and
+the chain is not approved until it is answered. Members that share the options are shown as one group (`group:owner_gate`)
 whatever the number of questions, and an answer to the group reaches each of them. "Promote it" arms the member
 through the same machinery as any other, and also strips the leftover label, so the queue stops refusing it; the
 other two answers write nothing (Sigma does not close an issue for you). The same holds for an open blocker that
 `label_drain.py arm` would otherwise pull into the label. Known gap: the stored map cannot see the leftover label on
 a member that also carries `sdlc:goal`, so the sheet may show it as armed; `arm` reads every member's current labels
 and still leaves it untouched, listing it as refused.
+
+## What a run does with the answers
+
+`run` calls the loop's own pick, scoped to the chain label, and adds what only the record knows. It hands the pick
+a skip list of: members the person said to keep waiting on a closed prerequisite; paid steps answered anything but
+`go ahead`; and members whose recorded blocker (an unconfirmed wait included) is not yet confirmed closed. A member
+that was never labelled (a checkpoint, or a not-a-goal or awaiting-owner member nobody promoted) is not a member of
+the run: it is neither claimed nor waited on to close, and work that waits on it stops the run, naming it. The
+reasons are the existing ones: a paid step the owner declined is `held-gate` ("answer go ahead, or change the
+plan"), a left-out member that work waits on is `decision`, a dependent kept waiting is `decision`, a checkpoint is
+`checkpoint`. The forecast uses the same rules, so it agrees.
 
 ## Checkpoints
 
@@ -201,7 +230,9 @@ The scenario is a chain of four behind end goal 1 (waits on 2, 2 on 3, 3 on 4): 
 unarmed, goal 3 in another unit, a fifth goal filed mid-run, and an armed goal outside the chain. It runs on a
 stateful fake of the host, with no network.
 
-- GitHub calls for `plan`: 7 (counted from the fake's call log).
+- GitHub calls for `plan`: 9 (counted from the fake's call log; it was 7 before the reader for waits written in prose
+  or a comment, which adds the issue read and the comment page of the one member that has a comment; the
+  closed-prerequisite check adds none here because the scenario has no closed prerequisite).
 - Time to the sheet: measured as wall time on the fake, which is not meaningful against a live host.
   It is not measured live.
 - Estimate versus actual spend: not measured (the scratch ledger holds no priced goals).
@@ -244,23 +275,25 @@ claimed after "do not"; each stop names its reference root with an accepted reas
 the reference's; goals outside the chain are untouched and the pick is scoped to the chain label; every write stays in
 the scratch repository, no process starts, no ledger file appears and nothing is written outside the scratch `.sdlc`.
 
-The assertions are written for the intended behaviour, not for the engine as it stood. Measured on 1.0.17 at the commit
-this was written against, `test_regression_scenario_end_to_end` is red for both end goals and nothing is marked
-xfail:
+The assertions were written for the intended behaviour, not for the engine as it stood, and the engine now meets them:
+the scenario is green for both end goals and nothing is marked xfail. It was measured RED on 1.0.17 at the commit it
+was written against, which is the record that it can fail:
 
 | End goal | Red on 1.0.17 | Why |
 |---|---|---|
 | 1 | members, dependencies, awaiting, stops, closed | the closure ends at the end goal (all 11 waits behind it are unread), `--defaults` decides for the owner, and the run stops with no root |
 | 11 | members, dependencies, stops, closed | `blocked on #5 and #12` yields #5 only; #12, the checkpoint and its blocker are unread |
 
-With every wait rewritten as the canonical `Blocked by` line, the dependency, member and phantom criteria go green and
-what stays red is the rest: follow-ups awaiting confirmation armed and claimed, the paid goal claimed, and the
-checkpoint armed and claimed. That is the share of the dependency-reading, checkpoint, confirmation, closed-prerequisite
-and hold slices.
+With every wait rewritten as the canonical `Blocked by` line, the dependency, member and phantom criteria went green
+and what stayed red was the rest: follow-ups awaiting confirmation armed and claimed, the paid goal claimed, and the
+checkpoint armed and claimed.
 
-`plan --forecast` does not exist yet. `test_forecast_equals_actual_run` is skipped, with that reason in its skip
-message, until the flag is in the usage line; it then asserts the printed "can finish K of N before it stops on
-<reason>" equals the run's first segment (goals finished, members, and the root).
+What the scenario then pins, beyond the criteria above: the six loose phrasings and the comment wait are edges (tag
+`unconfirmed`) and the chain follows them to the issues they name; the closed prerequisite's open follow-up is a
+question on the sheet that the scripted owner answers "keep waiting", so its dependent is held and not claimed (the
+follow-up carries `sdlc:followup`, the only follow-up Chain looks for); the left-out checkpoint stops the run naming it;
+and `test_forecast_equals_actual_run` asserts the printed "can finish K of N before it stops on <reason>" equals the
+run's first segment (goals finished, members, and the root).
 
 The checker is controlled too: a synthetic perfect outcome passes, and each clause broken alone turns its own
 criterion red (`test_checker_controls`, `test_checker_counts_a_question_as_finding_a_wait`); the fake pick, the

@@ -51,6 +51,9 @@ VERDICTS = {
     "checkpoint": ("checkpoint", False, "a checkpoint, not work"),                      # #1904
     "not-a-goal": ("needs decision", False, "blocks others but is not a goal"),         # #1903
     "awaiting-owner": ("needs decision", False, "waiting for its owner to confirm it"), # #1905
+    # Not verdicts the label drain gives: the person's answers in the chain record turn a member into these.
+    "kept-waiting": ("needs decision", False, "kept waiting on a closed prerequisite's open follow-up or question"),
+    "declined": ("not workable", False, "a paid step you answered not to run"),
     "unknown": ("not workable", False, "could not be read"),
 }
 #: flag on a row -> (marker, why). Checked after the verdict, in this order, as `label_drain._reason` does.
@@ -108,7 +111,7 @@ def checkpoint_detail(row):
     return "#%d is a checkpoint waiting for a person to close it" % row["number"]
 
 
-def stuck_reason(p, unconfirmed=()):
+def stuck_reason(p, unconfirmed=(), held=(), declined=()):
     """-> (reason, detail), ONE reason from `chain.STUCK_REASONS` for an empty pick with members still open,
     given plan rows `p["members"]` and `p["outside"]`. Numbers only in the detail. The order is the order a
     person would act in: what needs a person, then what only waits. A failed read is the caller's, ahead of
@@ -119,14 +122,21 @@ def stuck_reason(p, unconfirmed=()):
     parked = sorted(r["number"] for r in rows if r["verdict"] == "parked")
     if parked:
         return "decision", "#%d is parked and needs an answer" % parked[0]
-    held = sorted(r["number"] for r in rows if r["verdict"] == "held-by-gate")
-    if held:
-        return "held-gate", "#%d is held by a gate" % held[0]
+    gated = sorted(r["number"] for r in rows if r["verdict"] == "held-by-gate")
+    if gated:
+        return "held-gate", "#%d is held by a gate" % gated[0]
+    no_spend = sorted(r["number"] for r in rows if r["number"] in declined)
+    if no_spend:        # #1908: the person answered not to run a paid step; the run skips it and says so
+        return "held-gate", "#%d is a paid step you answered not to run; answer go ahead, or change the plan" % no_spend[0]
     claimed = sorted(r["number"] for r in rows if r.get("in_progress") or r["verdict"] == "assigned-elsewhere")
     if claimed:
         return "claimed", "#%d is in progress or assigned to someone else" % claimed[0]
     cps = sorted((r for r in rows + outside if (r.get("own_verdict") or r["verdict"]) == "checkpoint"),
                  key=lambda r: r["number"])
+    left_out = sorted(r["number"] for r in outside if r.get("own_verdict") in label_drain.GATED_KIND)
+    if left_out:        # #1903/#1905: nobody promoted it, so it was never labelled; work waits on it
+        return "decision", ("#%d was left out of the chain (not a goal, or waiting for its owner) and work waits "
+                            "on it; promote it, or finish what it stands for" % left_out[0])
     ext = sorted({r["number"] for r in outside if (r.get("own_verdict") or r["verdict"]) != "checkpoint"}
                  | {r["number"] for r in rows if r.get("unresolved")})
     if ext:
@@ -134,6 +144,10 @@ def stuck_reason(p, unconfirmed=()):
     needs = sorted(r["number"] for r in rows if r["verdict"] in ("unarmed", "upper-tier") + tuple(label_drain.GATED_KIND))
     if needs:
         return "decision", "#%d is not armed and needs a person" % needs[0]
+    kept = sorted(r["number"] for r in rows if r["number"] in held)
+    if kept:        # #1906: the person said to keep waiting; the run skips it, so say so rather than "none claimable"
+        return "decision", ("#%d is kept waiting on a closed prerequisite's open follow-up or question (your "
+                            "answer); finish what it waits on, or answer proceed" % kept[0])
     if cps:             # #1904: only after everything a person can act on, so it is named when it is the only thing left
         return "checkpoint", checkpoint_detail(cps[0])
     if unconfirmed:
@@ -155,19 +169,30 @@ def verdict_for(row, login, filtered):
     return gate[0] if gate else base
 
 
-def _normalise(rec, login, filtered):
+def _answered(r, login, filtered, held, declined):
+    """The verdict the person's answers leave a member with: a paid step they declined, or a member they said to
+    keep waiting; a checkpoint or a parked member keeps its own."""
+    base = verdict_for(r, login, filtered)
+    if base in ("checkpoint", "parked") or base in label_drain.GATED_KIND:
+        return base
+    if r["number"] in declined:
+        return "declined"
+    return "kept-waiting" if r["number"] in held else base
+
+
+def _normalise(rec, login, filtered, held=(), declined=()):
     needed = {}
     for e in rec.get("externals") or []:
         for n in e.get("needed_by") or []:
             needed.setdefault(n, []).append(e.get("ref"))
-    return [{"number": r["number"], "verdict": verdict_for(r, login, filtered), "kind": r.get("kind"),
+    return [{"number": r["number"], "verdict": _answered(r, login, filtered, held, declined), "kind": r.get("kind"),
              "waits_on": list(r.get("waits_on") or []), "unresolved": needed.get(r["number"], []),
              "in_progress": bool(r.get("in_progress")), "blocked": bool(r.get("blocked")),
              "checkpoint": r.get("checkpoint")}
             for r in rec.get("members") or []]
 
 
-def forecast(rec, config=None, login=None):
+def forecast(rec, config=None, login=None, held=(), declined=()):
     """-> the forecast for the plan record `rec` as run by `login` (default: who planned it). Keys: `runner`,
     `width`, `members` ([{number, marker, why, after}], the record's order), `finish` (claimed in order),
     `cycles`, `of`, `reason` and `detail` (None when everything finishes), `stops` ([{number, marker, why}],
@@ -182,7 +207,7 @@ def forecast(rec, config=None, login=None):
         notes.append("the runner's login is unknown, so the assignee filter is not applied; pass --as <login>")
     elif login is not None and rec.get("assignee_filter") is False:
         notes.append("no assignee filter is configured, so --as changes nothing")
-    rows = _normalise(rec, me, filtered)
+    rows = _normalise(rec, me, filtered, held, declined)
     width = chain_parallel.width(config or {})
     open_now = {r["number"] for r in rows}
     out_members = []
@@ -201,7 +226,7 @@ def forecast(rec, config=None, login=None):
     reason = detail = None
     stops = []
     if left:
-        reason, detail = stuck_reason({"members": left, "outside": []})
+        reason, detail = stuck_reason({"members": left, "outside": []}, (), held, declined)
         for r in left:
             if not [w for w in r["waits_on"] if w in open_now]:
                 marker, why, _after = classify(r, open_now)

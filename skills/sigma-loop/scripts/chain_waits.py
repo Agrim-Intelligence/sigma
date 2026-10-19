@@ -1,22 +1,23 @@
-"""chain_waits.py -- waits that no edge reader sees, shown to the person instead of trusted (#1902).
+"""chain_waits.py -- waits that no edge reader sees, read for the chain and listed for the person (#1902).
 
 The gate, the map and the label drain read a dependency only from an explicit form in the title or body
 (`blocker_scan.EXPLICIT_TRIGGERS`). Real tickets say more: "Blocked by: #N added" in a comment,
 "hold on #N before any paid run", "only once #A, #B and #C are closed", "blocked on #N and #M". A chain
-planned from edges alone starts on work that cannot proceed. Widening the shared vocabulary is the wrong fix
-(a phantom edge parks a goal for good and writes to an unrelated issue, see `blocker_scan`), so Chain's plan
-READS these texts itself and reports what it found. It never turns any of it into an edge:
+planned from edges alone starts on work that cannot proceed (and forecasts a run that finishes everything).
+Widening the shared vocabulary is the wrong fix (a phantom edge parks a goal for good and writes to an
+unrelated issue, see `blocker_scan`), so Chain's plan READS these texts itself, for this chain only:
 
-  unconfirmed wait  written in a COMMENT by the issue's assignee or an OWNER/MEMBER/COLLABORATOR (the
-                    gate's own trust set, `sources.TRUSTED_ASSOCIATIONS`): an explicit form, or a loose
-                    phrasing below. The sheet lists every one in ONE block, with the two ways to settle it:
-                    `deps.py mark` (writes the marker every reader trusts) or the existing dismissal marker.
-  weak mention      a loose phrasing in the BODY, or follow-up wording in a comment (advisory, as
-                    `blocker_scan` says): shown, counted, never asked and never blocking.
+  unconfirmed wait  a directional form (below) in the BODY, or written in a COMMENT by the issue's assignee or
+                    an OWNER/MEMBER/COLLABORATOR (the gate's own trust set, `sources.TRUSTED_ASSOCIATIONS`).
+                    Chain reads it as an edge (tag `unconfirmed`, a wait is the safe direction: nothing
+                    starts early) and the sheet lists every one in ONE block, with the two ways to settle
+                    it: `deps.py mark` (writes the marker every reader trusts) or the existing dismissal
+                    marker, which removes it at the next plan.
+  weak mention      follow-up wording (advisory, as `blocker_scan` says): shown, counted, never an edge.
 
-Why not an edge, even from a trusted author: an edge makes Chain label, comment on and arm the referenced
-issue, the map does not store comment text, and only the person can tell "Blocked by #N" about THIS goal
-from a remark about another one. After `deps.py mark` the body carries the line and every reader agrees.
+Only Chain's plan reads them as edges: the gate, the map and the label drain are untouched, so a goal outside
+the chain is never held by one. `WithExtra` is how the live closure follows them; the map holds none of this
+text, so a map plan that finds one falls back to the live read (`chain.py`).
 
 Comments from anyone else are ignored and counted (the gate does the same, #709). Sigma's own comments
 (a marker, or a fixed head below) are skipped; a park or fail prefix is stripped, as the gate does.
@@ -30,7 +31,7 @@ Loose forms (closed set; each is a SHAPE with a direction, none is a bare mentio
   hold          "hold on|off|until|for ... #N"           ("hold on #N before any paid run")
   is-blocker    "#N is (now) a blocker"
   waiting-for   "waiting|wait for ... #N"
-  follow-up     a follow-up form in a comment (advisory; never an unconfirmed wait)
+  follow-up     a follow-up form (advisory; never an unconfirmed wait)
 
 Bounds: at most MAX_READS members are read (an issue GET plus the pages of its newest COMMENT_LIMIT comments,
 so at most 3 requests each; none when the issue is known to have no comment); each comment is read to
@@ -186,18 +187,25 @@ def _assignees(issue):
     return {str(n).lower() for n in names if n}
 
 
-def _read(ro, repo, number, issue):
+def _read(ro, repo, number, issue, cache=None):
     """-> (issue with its body and assignees, newest-first comment dicts, maybe_older). A known-empty issue costs
-    no request; otherwise the issue and the pages of its newest COMMENT_LIMIT comments (at most 3 requests)."""
+    no request; otherwise the issue and the pages of its newest COMMENT_LIMIT comments (at most 3 requests).
+    `cache` (number -> that answer) makes a repeat read free: the live closure collects once per round."""
+    if cache is not None and number in cache:
+        return cache[number]
     if issue is not None and isinstance(issue.get("comments"), int) and issue["comments"] == 0:
-        return issue, [], False
-    gh_api = _load("gh_api")
-    full = gh_api.view_issue(ro, number, repo or None, comments=COMMENT_LIMIT)
-    got = [c for c in (full.get("comments") or []) if isinstance(c, dict)]
-    return full, list(reversed(got)), len(got) >= COMMENT_LIMIT
+        got = issue, [], False
+    else:
+        gh_api = _load("gh_api")
+        full = gh_api.view_issue(ro, number, repo or None, comments=COMMENT_LIMIT)
+        comments = [c for c in (full.get("comments") or []) if isinstance(c, dict)]
+        got = full, list(reversed(comments)), len(comments) >= COMMENT_LIMIT
+    if cache is not None:
+        cache[number] = got
+    return got
 
 
-def collect(ro, repo, numbers, issues=None, have=None, state_of=None):
+def collect(ro, repo, numbers, issues=None, have=None, state_of=None, cache=None):
     """Read the bodies and newest comments of `numbers` (at most MAX_READS) and report what they wait on that no
     edge says. `issues` maps number -> the issue already read (skips a request for a known-empty one);
     `have` maps number -> blockers already known as edges (a ledger edge the body does not carry);
@@ -211,7 +219,7 @@ def collect(ro, repo, numbers, issues=None, have=None, state_of=None):
     skipped = todo[MAX_READS:]
     for n in todo[:MAX_READS]:
         try:
-            issue, comments, maybe_older = _read(ro, repo, n, issues.get(n))
+            issue, comments, maybe_older = _read(ro, repo, n, issues.get(n), cache)
         except Exception:                      # noqa: BLE001 - say so rather than guess
             not_read.append(n)
             continue
@@ -238,7 +246,7 @@ def collect(ro, repo, numbers, issues=None, have=None, state_of=None):
                 r = int(ref)
                 if r == n or r in known or r in gone:
                     continue
-                kind = "unconfirmed" if where == "comment" and form != "follow-up" else "weak"
+                kind = "weak" if form == "follow-up" else "unconfirmed"
                 item = {"goal": n, "ref": r, "kind": kind, "form": form, "where": where, "by": role,
                         "state": state_of(r), "in_chain": r in members}
                 cur = items.get((n, r))
@@ -254,12 +262,30 @@ def collect(ro, repo, numbers, issues=None, have=None, state_of=None):
                      "maybe_older_comments": older, "untrusted_ignored": ignored, "dropped": dropped}}
 
 
-def attach(out, ro, repo, numbers, issues=None, have=None, state_of=None):
+def attach(out, ro, repo, numbers, issues=None, have=None, state_of=None, cache=None):
     """Put the findings on the plan dict `out` and make the plan INCOMPLETE when anything was not read or cut."""
-    res = collect(ro, repo, numbers, issues, have, state_of)
+    res = collect(ro, repo, numbers, issues, have, state_of, cache)
     out["unconfirmed_waits"], out["weak_waits"], out["waits_read"] = res["unconfirmed"], res["weak"], res["read"]
     r = res["read"]
     out["complete"] = bool(out.get("complete")) and not r["not_read"] and not r["dropped"]
+
+
+class WithExtra:
+    """`blocker_scan` plus the references Chain read as unconfirmed waits: `extract_refs(body, self_ref=n)` also
+    returns `extra[n]`. `label_drain.closure` calls nothing else on its scanner except the cross-repository helper,
+    which is delegated untouched. A stand-in for the scan module, used only inside Chain's plan."""
+
+    def __init__(self, base, extra):
+        self._base, self._extra = base, extra
+
+    def __getattr__(self, name):
+        return getattr(self._base, name)
+
+    def extract_refs(self, text, self_ref=None):
+        items = self._base.extract_refs(text, self_ref=self_ref)
+        have = {str(i["ref"]) for i in items}
+        return items + [{"phrase": "unconfirmed wait", "ref": str(r)} for r in self._extra.get(self_ref, ())
+                        if str(r) not in have]
 
 
 # --- text for the plan and the sheet ---------------------------------------------------------------------
@@ -279,9 +305,9 @@ def plan_lines(p):
     un, weak, rd = p.get("unconfirmed_waits"), p.get("weak_waits"), p.get("waits_read")
     if un is None or rd is None:
         return []
-    out = ["unconfirmed waits (found only in comments; none is an edge): %d" % len(un)]
-    out += ["  #%d may wait on %s" % (i["goal"], _how(i)) for i in un]
-    out.append("weak mentions in loose wording (never block): %d" % len(weak or []))
+    out = ["unconfirmed waits (read as edges for this chain, not confirmed): %d" % len(un)]
+    out += ["  #%d waits on %s" % (i["goal"], _how(i)) for i in un]
+    out.append("weak mentions (follow-up wording; never an edge): %d" % len(weak or []))
     out += ["  #%d ~ %s" % (i["goal"], _how(i)) for i in weak or []]
     out += _read_lines(rd)
     return out
@@ -308,13 +334,13 @@ def sheet_block(rec):
     notes = _read_lines(rd)
     if not un and not weak and not notes:
         return []
-    out = ["Unconfirmed waits (%d): written only in comments or loose wording; none blocks anything yet:" % len(un)]
-    out += ["  #%d may wait on %s" % (i["goal"], _how(i)) for i in un] or ["  none"]
+    out = ["Unconfirmed waits (%d): written only in comments or loose wording; read as edges in this plan:" % len(un)]
+    out += ["  #%d waits on %s" % (i["goal"], _how(i)) for i in un] or ["  none"]
     if un:
         out += ["  Confirm each real one: python3 skills/sigma-loop/scripts/deps.py mark <sdlc_dir> <goal> <ref> <reason...>",
                 "  Dismiss a wrong one: python3 skills/sigma-loop/scripts/backlog_check.py dismiss-text blocked-by <ref>,",
                 "  then post that text with python3 skills/sigma-loop/scripts/loop.py note <sdlc_dir> <goal> \"<text>\"",
-                "  Then run chain.py plan again; a confirmed wait is an edge from then on."]
+                "  Then run chain.py plan again; a confirmed wait is a body edge, a dismissed one is dropped."]
     if weak:
         out.append("Weak mentions (never block, not asked): " + "; ".join("#%d ~ %s" % (i["goal"], _how(i)) for i in weak))
     out += ["  " + n for n in notes]

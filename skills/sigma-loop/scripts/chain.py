@@ -54,11 +54,14 @@ EDGES. `explicit` for an edge from an issue body, `ledger` for any other recorde
 comment, timeline and other edges). Weak "needs/after" mentions are counted from bodies and never
 become an edge; from the map they are not knowable (`weak_mentions` is null).
 
-WAITS (#1902). A wait written only in a comment, or in loose wording no edge reader knows, is never an edge:
-`chain_waits` reads each member's body and newest comments (GET only) and the plan lists what it found as
-`unconfirmed_waits` (a comment by the assignee or an owner) and `weak_waits` (loose body wording, advisory
-follow-ups). The sheet shows every unconfirmed wait in ONE block with the commands that settle it
-(`deps.py mark`, or the dismissal marker); a member whose comments could not be read makes the plan INCOMPLETE.
+WAITS (#1902). A wait written in loose wording in a body, or in a comment by the assignee or an owner, is no edge
+for any reader but this plan: `chain_waits` reads each member's body and newest comments (GET only), the live
+closure follows what it finds (`chain_waits.WithExtra`, round by round, at most MAX_WAIT_ROUNDS) and the plan
+lists it as `unconfirmed_waits`, each an edge tagged `unconfirmed`; follow-up wording is a `weak_waits` entry and
+never an edge. The sheet shows every unconfirmed wait in ONE block with the commands that settle it (`deps.py mark`,
+or the dismissal marker). The stored map holds no prose, so a map plan that finds one reads live. A member whose
+comments could not be read makes the plan INCOMPLETE. `run` holds back every member whose recorded blocker is not
+confirmed closed, because the loop's pick cannot read prose. (Explicit edges are left to the pick's own gate.)
 
 PRIORITY. Inversions (a blocker less urgent than the goal that waits on it) and `higher_priority_ahead`
 (open goals outside the chain more urgent than the least urgent member) are reported, never written.
@@ -76,7 +79,7 @@ ANSWER. Records answers in the chain record, nothing else locally. A parked memb
 `unpark.resolve`, the verb `/sigma-unpark` uses, so the issue gets the identical recorded Q&A block. Every
 answer is a bank option (or, for the cap, a positive integer), never free text, so nothing a person typed
 is posted on a public repository. `--defaults` accepts the recommended (first) option of every question
-except one that has none (the cap, a spend question). The state is `approved` only when no blocking
+except one that has none (the cap, a spend question, a follow-up waiting for its owner: `NO_DEFAULT`). The state is `approved` only when no blocking
 question is open and the plan is complete. `--partial` is refused for now.
 
 APPROVE (#1587). A local state change only: sets the record's state to `approved` when no blocking question
@@ -104,7 +107,9 @@ them), or the run was stopped. A cycle: the existing auto-unpark sweep; the spen
 members to report what was added and what closed since the last cycle (reported, never acted on; a closed
 member is confirmed by reading the issue itself, so a lost label never reads as done); then ONE pick, the
 loop's own `loop.py next-batch --label chain:<root> --session-pid P`, the only process this verb starts, so
-nothing outside the label is ever claimed and the claim stays lease based. A non-empty pick is recorded
+nothing outside the label is ever claimed and the claim stays lease based. The pick is handed a skip list of what
+only the record knows (#1906, #1908, #1902): members kept waiting on a closed prerequisite, paid steps answered
+anything but "go ahead", and members whose recorded blocker is not confirmed closed. A non-empty pick is recorded
 (numbers only) with a heartbeat, exit 0. An empty pick is `done` only when every member is confirmed closed;
 otherwise it is STUCK, exit 3, with ONE reason: decision, held-gate, claimed, external, checkpoint (#1904: the
 only thing left is a checkpoint, named with its unit), rate-limit, degraded-read. `stop` and `resume [--cap N]` change only the record's `run` block (local, no `gh` call); a
@@ -270,11 +275,15 @@ def _cycles_of(edges_by_blocked):
     return [[int(x) for x in c] for c in slices._cycles(graph)]
 
 
-def _refuse_cycles(cycles):
+def _refuse_cycles(cycles, unconfirmed=None):
     if cycles:
         names = sorted({n for c in cycles for n in c})
-        raise ChainRefused("dependency cycle among %s; break it first (drop one blocker line)"
-                           % ", ".join("#%d" % n for n in names), names)
+        prose = sorted(n for n in names if any(r in names for r in (unconfirmed or {}).get(n, ())))
+        hint = ("; #%s wait(s) here are read only from a comment or loose wording: dismiss a wrong one "
+                "(`backlog_check.py dismiss-text blocked-by <ref>`, posted with `loop.py note`) and plan again"
+                % ", #".join(str(n) for n in prose)) if prose else ""
+        raise ChainRefused("dependency cycle among %s; break it first (drop one blocker line)%s"
+                           % (", ".join("#%d" % n for n in names), hint), names)
 
 
 def _refuse_bound(count, bound, where, at_least=False):
@@ -387,7 +396,7 @@ def _external(items):
 
 # --- the map ----------------------------------------------------------------------------------------
 
-def _plan_map(sdlc, goal, config, ro, source, now, m, bound):
+def _plan_map(sdlc, goal, config, ro, source, now, m, bound, cache=None):
     g = dag_chain._graph(m)
     body, _closure = dag_chain._walk(g, m, goal, True, set())
     _refuse_cycles(body["cycles"])
@@ -438,7 +447,10 @@ def _plan_map(sdlc, goal, config, ro, source, now, m, bound):
     for a, b in esrc:
         have[b].add(a)
     chain_waits.attach(out, ro, source.repo, members, have=have,
-                       state_of=lambda r: getattr(g.nodes.get(r), "state", "unknown"))
+                       state_of=lambda r: getattr(g.nodes.get(r), "state", "unknown"), cache=cache)
+    if out["unconfirmed_waits"]:      # #1902: the map holds no comment or prose, so only the live read can follow them
+        raise _NeedsLive("%d wait(s) written only in comments or loose wording, which the map does not hold"
+                         % len(out["unconfirmed_waits"]))
     out["stops"] = []
     return out
 
@@ -465,16 +477,51 @@ def _runner_login(ro, source):
                                                     getattr(source, "assignee", None))
 
 
-def _plan_live(sdlc, goal, config, ro, source, bound):
-    ld = label_drain
-    gh_api, blocker_scan, features = _load("gh_api"), _load("blocker_scan"), _load("features")
-    dag_collect, hard_stop = _load("dag_collect"), _load("hard_stop")
-    repo = source.repo
+class _NeedsLive(Exception):
+    """A map plan found a wait only the live read can follow; `_resolve` plans live instead."""
+
+
+#: Rounds of "read the members' texts, follow the waits they name" a live plan makes: one new level of the chain
+#: per round, so this is also the deepest chain of waits written only in comments or loose wording it follows.
+MAX_WAIT_ROUNDS = 25
+
+
+def _live_closure(goal, ro, repo, bound, cache, ld, blocker_scan):
+    """-> (closure, extra, hit_limit). The label drain's closure over `goal`, widened by the waits Chain reads
+    from loose wording and trusted comments (#1902): read the members, add what they wait on, close again, until
+    nothing new turns up. `extra` maps a member to the references it was widened by."""
+    gh_api = _load("gh_api")
+    memo, extra = {}, {}
 
     def get(n):
-        return gh_api.view_issue(ro, n, repo or None, comments="none")
+        if n not in memo:
+            memo[n] = gh_api.view_issue(ro, n, repo or None, comments="none")
+        return memo[n]
+    for rounds in range(MAX_WAIT_ROUNDS + 1):
+        clo = ld.closure([goal], get, max_depth=bound, max_pulled=bound,
+                         blocker_scan=chain_waits.WithExtra(blocker_scan, extra))
+        if goal not in clo["nodes"]:
+            return clo, extra, False
+        found = chain_waits.collect(ro, repo, clo["nodes"], issues={n: v["issue"] for n, v in clo["nodes"].items()},
+                                    cache=cache)
+        fresh = sorted({(i["goal"], i["ref"]) for i in found["unconfirmed"]}
+                       - {(n, r) for n, rs in extra.items() for r in rs})
+        if not fresh:
+            return clo, extra, False
+        if rounds == MAX_WAIT_ROUNDS:
+            return clo, extra, True
+        for n, r in fresh:
+            extra.setdefault(n, []).append(r)
+    return clo, extra, True
 
-    clo = ld.closure([goal], get, max_depth=bound, max_pulled=bound, blocker_scan=blocker_scan)
+
+def _plan_live(sdlc, goal, config, ro, source, bound, cache=None):
+    ld = label_drain
+    blocker_scan, features = _load("blocker_scan"), _load("features")
+    dag_collect, hard_stop = _load("dag_collect"), _load("hard_stop")
+    repo = source.repo
+    cache = {} if cache is None else cache
+    clo, extra, deep = _live_closure(goal, ro, repo, bound, cache, ld, blocker_scan)
     if goal not in clo["nodes"]:
         raise ChainRefused("#%d could not be read" % goal)
     seed = clo["nodes"][goal]["issue"]
@@ -482,7 +529,7 @@ def _plan_live(sdlc, goal, config, ro, source, bound):
         raise ChainRefused("#%d is a pull request, not a goal" % goal)
     if str(seed.get("state") or "").lower() == "closed":
         raise ChainRefused("#%d is already closed; there is no chain to plan" % goal)
-    _refuse_cycles(_cycles_of(clo["edges"]))
+    _refuse_cycles(_cycles_of(clo["edges"]), extra)
     _refuse_bound(len(clo["nodes"]), bound, "live read",
                   at_least=any("pulled-issue limit" in s for s in clo["stops"]))
     judge = ld._Judge(sdlc, config, source)
@@ -509,7 +556,8 @@ def _plan_live(sdlc, goal, config, ro, source, bound):
         if verdict == "checkpoint":                                  # #1904
             row["checkpoint"] = chain_checkpoint.status(sdlc, config, units[n])
         rows.append(row)
-    edges = [{"from": b, "to": n, "tag": "explicit"} for n, bs in clo["edges"].items() for b in bs]
+    edges = [{"from": b, "to": n, "tag": "unconfirmed" if b in extra.get(n, ()) else "explicit"}
+             for n, bs in clo["edges"].items() for b in bs]
     ext = []
     for n, tags in clo["unresolved"].items():
         for tag in tags:
@@ -552,7 +600,11 @@ def _plan_live(sdlc, goal, config, ro, source, bound):
     out["complete"] = not clo["stops"] and not skipped and all(
         e["kind"] not in ("not-read", "unreadable") for e in out["externals"])
     chain_waits.attach(out, ro, repo, clo["nodes"], issues={n: v["issue"] for n, v in clo["nodes"].items()},
-                       state_of=lambda r: "open" if r in clo["nodes"] else "closed" if r in done else "unknown")
+                       state_of=lambda r: "open" if r in clo["nodes"] else "closed" if r in done else "unknown",
+                       cache=cache)
+    if deep:        # waits written in prose, deeper than the rounds above follow: say so rather than plan thin
+        out["complete"] = False
+        out["stops"].append("waits written in comments or loose wording go deeper than %d levels" % MAX_WAIT_ROUNDS)
     return out
 
 
@@ -571,12 +623,17 @@ def _resolve(sdlc_dir, goal, config, run, now):
             m, why = None, "goal not in map"
     except dag_chain.ChainError as exc:
         m, why = None, ("off" if str(exc) == "dag: off" else re.sub(r"^dag: ", "", str(exc)))
+    cache = {}          # comment reads, shared by a map plan that falls back to the live read
+    out = None
     if m is not None:
-        out = _plan_map(sdlc_dir, goal, config, ro, source, now, m, max_members)
-        out.update(source="map", source_reason=None, bound=max_members)
-    else:
+        try:
+            out = _plan_map(sdlc_dir, goal, config, ro, source, now, m, max_members, cache)
+            out.update(source="map", source_reason=None, bound=max_members)
+        except _NeedsLive as exc:
+            why = str(exc)
+    if out is None:
         bound = min(LIVE_MAX_MEMBERS, max_members)
-        out = _plan_live(sdlc_dir, goal, config, ro, source, bound)
+        out = _plan_live(sdlc_dir, goal, config, ro, source, bound, cache)
         out.update(source="live", source_reason=why, bound=bound)
     return out, ro
 
@@ -602,8 +659,9 @@ def plan(sdlc_dir, goal, config=None, run=None, now=None):
 # --- the decision sheet and its answers (#1585) ------------------------------------------------------------
 
 GROUP_OVER = 25
-#: kinds with no recommended answer: the cap has no estimate yet, and a spend question is never defaulted.
-NO_DEFAULT = ("cap", "irreversible")
+#: kinds with no recommended answer: the cap has no estimate yet, a spend question is never defaulted, and neither
+#: is the fate of a follow-up that waits for its owner (#1908): `--defaults` must not decide that for the owner.
+NO_DEFAULT = ("cap", "irreversible", "owner_gate")
 CROSS_UNIT_OPTIONS = ["keep going", "stop here"]
 UPPER_TIER_OPTIONS = ["plan its slices instead", "leave it"]
 SHEET_USAGE = ("usage: chain.py sheet <sdlc_dir> <chain> [--as <login>]\n"
@@ -644,6 +702,16 @@ def _held(rec):
     ans = rec.get("answers") or {}
     return {d for w in rec.get("closed_gates") or []
             if ans.get("closed_gate:%d" % w["prerequisite"]) == CLOSED_GATE_OPTIONS[0] for d in w["dependents"]}
+
+
+def _declined(rec):
+    """#1908: the paid members whose spend question the person answered with anything but "go ahead". A run
+    skips them (the pick never claims one) and says so when it stops. An unanswered question declines nothing
+    here: approval already requires every question answered. Reads only the record."""
+    ok = _load("unpark").route_slot("irreversible")["options"][0]
+    ans = rec.get("answers") or {}
+    return {r["number"] for r in rec["members"]
+            if r.get("spend") and ans.get("irreversible:%d" % r["number"]) not in (None, ok)}
 
 
 def _row_for_questions(r):
@@ -747,7 +815,7 @@ def _arm_scope(rec):
     out = {r["number"] for r in rec["members"] if r["verdict"] == "unarmed"}
     if ans.startswith("arm only"):
         out = {r["number"] for r in rec["members"] if r["number"] in out and not r.get("waits_on")}
-    return out - _held(rec)
+    return out - _held(rec) - _declined(rec)
 
 
 def _promoted(rec):
@@ -756,6 +824,34 @@ def _promoted(rec):
     ld, ans = label_drain, rec.get("answers") or {}
     return {r["number"] for r in rec["members"] if r["verdict"] in ld.GATED_KIND
             and ans.get("%s:%d" % (ld.GATED_KIND[r["verdict"]], r["number"])) == ld.ARM_ANSWER[ld.GATED_KIND[r["verdict"]]]}
+
+
+def _waits(rec):
+    return {r["number"]: r.get("waits_on") or [] for r in rec["members"]}
+
+
+def _hidden_waits(rec):
+    """member -> the blockers the loop's pick cannot see: every edge of the record that is not an explicit body
+    edge (an unconfirmed wait read from prose or a comment, or an edge only the map's ledger holds)."""
+    out = {}
+    for e in rec.get("edges") or []:
+        if e.get("tag") != "explicit":
+            out.setdefault(e["to"], []).append(e["from"])
+    return out
+
+
+def _blockers_of(rec, among):
+    """The members of `among` that some member of the record waits on."""
+    return {b for bs in _waits(rec).values() for b in bs if b in among}
+
+
+def _never_labelled(rec):
+    """The members `arm` leaves untouched: a checkpoint, and a not-a-goal or awaiting-owner member nobody
+    promoted. The run neither claims nor waits to see them closed; a member that waits on one stops the run,
+    naming it (reason `decision` for a left-out member, `checkpoint` for a checkpoint)."""
+    promoted = _promoted(rec)
+    return {r["number"] for r in rec["members"]
+            if r["verdict"] == "checkpoint" or (r["verdict"] in label_drain.GATED_KIND and r["number"] not in promoted)}
 
 
 def _label_line(n, goal):
@@ -796,6 +892,10 @@ def _writes(rec, qs, config=None):
     if waiting:
         out.append("%s is kept waiting on a closed prerequisite's open follow-up or question (your answer): labelled, "
                    "never armed, and skipped by every run cycle" % _ids(waiting))
+    no_spend = sorted(_declined(rec) & {r["number"] for r in rec["members"]})
+    if no_spend:
+        out.append("%s is a paid step you answered not to run: labelled, never armed, and skipped by every run cycle"
+                   % _ids(no_spend))
     cps = [r["number"] for r in rec["members"] if r["verdict"] == "checkpoint"]
     if cps:
         out.append("%s is a checkpoint: left entirely untouched, never labelled or armed" % _ids(cps))
@@ -864,7 +964,7 @@ def render_sheet(rec, now, config=None, runner=None):
     for e in rec.get("externals") or []:
         L.append("External: %s (%s), needed by %s" % (e["ref"], e["kind"], _ids(e["needed_by"])))
     L += chain_waits.sheet_block(rec)
-    L += chain_forecast.render_forecast(chain_forecast.forecast(rec, config, runner))      # #1907
+    L += chain_forecast.render_forecast(chain_forecast.forecast(rec, config, runner, _held(rec), _declined(rec)))      # #1907
     L.append("")
     groups = _active_groups(qs)
     grouped_ids = {i for ids in groups.values() for i in ids}
@@ -1393,13 +1493,13 @@ def _closed_counts(p):
         p.get("closed_checked") or 0, len(sk), " (%s)" % _ids(sk) if sk else "")
 
 
-def _stuck(p, failure, unconfirmed):
+def _stuck(p, failure, unconfirmed, held=(), declined=()):
     """-> (reason, detail), ONE reason from STUCK_REASONS for an empty pick with members still open. A failed
     read comes first (nothing else can be trusted); the rest is `chain_forecast.stuck_reason`, the rule the
     forecast shares (#1907)."""
     if failure is not None:
         return _why_failed(failure), "a read or the pick failed"
-    return chain_forecast.stuck_reason(p, unconfirmed)
+    return chain_forecast.stuck_reason(p, unconfirmed, held, declined)
 
 
 def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=None, sweep=None,
@@ -1426,7 +1526,8 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
     if blk.get("state") == "done":
         return res
     label = chain_label(goal)
-    recorded = [r["number"] for r in rec["members"] if r["verdict"] != "checkpoint"]     # #1904: never claimed, never "closed"
+    never = _never_labelled(rec)         # #1904: a checkpoint is never claimed; #1903/#1905: a left-out member is never labelled
+    recorded = [r["number"] for r in rec["members"] if r["number"] not in never]
     width, locked = 1, chain_parallel.engaged(config)
     if locked:                  # #1590: before any write or claim; a refused cycle starts nothing
         try:
@@ -1463,7 +1564,7 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
         if locked:              # #1866: stuck is not running; the pool is free for another chain
             chain_parallel.release(sdlc_dir, goal)
         return res
-    skip = skip | frozenset(str(d) for d in held_back) | frozenset(str(n) for n in _held(rec))     # #1906
+    skip = skip | frozenset(str(d) for d in held_back) | frozenset(str(n) for n in _held(rec) | _declined(rec))
     known = set(recorded) | set(blk.get("seen") or ()) | set(blk.get("joined") or ())
     already = set(blk.get("closed") or ())
     failure, p, open_now, confirmed = None, None, set(), set()
@@ -1471,7 +1572,7 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
         p = label_drain.plan(sdlc_dir, label, config=config, run=run)
         open_now = {r["number"] for r in p["members"]}
         res["added"] = sorted(open_now - known)
-        confirmed = _confirm_closed(run, config, known - open_now - already)
+        confirmed = _confirm_closed(run, config, (known | _blockers_of(rec, never)) - open_now - already)
     except Exception as exc:    # noqa: BLE001 - reported as the stuck reason only if the pick finds nothing
         failure = exc
     closed_new = sorted(confirmed)
@@ -1480,6 +1581,18 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
     blk["seen"] = sorted(known | open_now)
     if closed_new:
         blk["heartbeat"] = _iso(now)
+    if p is not None and failure is None:
+        # #1902: a wait the plan read from prose or a comment is in the record but not in the gate the picker
+        # uses, so hold back every member whose such blocker is not confirmed closed
+        done = set(blk["closed"])
+        hidden = _hidden_waits(rec)
+        skip = skip | frozenset(str(n) for n in open_now if any(b not in done for b in hidden.get(n, ())))
+        gone = _blockers_of(rec, never) - done
+        have = {r["number"] for r in p.get("outside") or []}
+        by = {r["number"]: r for r in rec["members"]}
+        p["outside"] = list(p.get("outside") or []) + [
+            {"number": n, "verdict": "outside", "own_verdict": by[n]["verdict"], "checkpoint": by[n].get("checkpoint")}
+            for n in sorted(gone) if n not in have and n not in open_now]
     pick_kw, waiting, note = {}, None, ""
     if width > 1 and p is not None and failure is None:
         pick_kw, waiting, note = _width_plan(sdlc_dir, rec, cfg, p, open_now, recorded, width)
@@ -1522,7 +1635,7 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
                                  % (_ids(left), "it" if len(left) == 1 else "them"))
                 reason, detail = "decision", "; ".join(parts)
             else:
-                reason, detail = _stuck(p, failure, unconfirmed) if (p is not None or failure is not None) \
+                reason, detail = _stuck(p, failure, unconfirmed, _held(rec), _declined(rec)) if (p is not None or failure is not None) \
                     else ("degraded-read", "no read")
             blk.update(state="stuck", reason=detail, stuck=reason)
             res.update(state="stuck", exit=3, reason=reason, detail=detail)
@@ -1545,8 +1658,9 @@ def _width_plan(sdlc_dir, rec, cfg, p, open_now, recorded, width):
     ready members (no open in-chain blocker, not in flight), widens only when the remaining cap covers the
     goals that would be in flight at p90 (`chain_parallel.widen_ok`), else falls back to one at a time."""
     cp, cs = chain_parallel, _load("chain_spend")
-    rows = p["members"]
-    in_flight = {r["number"] for r in rows if r.get("in_progress")}
+    held = _held(rec) | _declined(rec)      # skipped by the pick (#1906, #1908); do not offer them
+    rows = [r for r in p["members"] if r["number"] not in held]
+    in_flight = {r["number"] for r in p["members"] if r.get("in_progress")}
     waits = {r["number"]: r.get("waits_on") or [] for r in rec["members"]}
     ready = chain_forecast.ready_members([dict(r, waits_on=waits.get(r["number"], [])) for r in rows],
                                          open_now, in_flight, width)         # #1907: the rule the forecast shares
@@ -1744,7 +1858,7 @@ def main(argv, run=None, now=None, pick=None):
     try:
         p = plan(args[1], int(args[2]), run=run, now=now)
         if want_forecast:
-            p["forecast"] = chain_forecast.forecast(p, _load("state").load_config(args[1]), runner)
+            p["forecast"] = chain_forecast.forecast(p, _load("state").load_config(args[1]), runner, _held(p), _declined(p))
     except ChainRefused as exc:
         print("chain.py: %s" % exc, file=sys.stderr)
         return 2

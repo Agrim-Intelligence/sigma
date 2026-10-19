@@ -285,7 +285,7 @@ def test_table_is_one_row_per_verdict(tmp_path, monkeypatch):
                        {"number": 5, "verdict": "armed", "blocked": True, "waits_on": []},
                        {"number": 6, "verdict": "armed", "waits_on": []}]}
     got = {m["number"]: (m["marker"], m["why"]) for m in cf.forecast(rec)["members"]}
-    assert got[1] == ("not workable", "held by a gate") and got[2][0] == "not workable"
+    assert got[1] == ("not workable", "held by a gate") and got[2][0] == "checkpoint"
     assert got[3] == ("not workable", "an unrecognised state"), "an unknown verdict must never be promised"
     assert got[4][0] == "someone else's" and got[5][0] == "not workable" and got[6][0] == "ready now"
     assert cf.forecast(rec)["finish"] == [6]
@@ -364,7 +364,7 @@ def test_comparison_goes_red_when_the_rules_diverge(tmp_path, monkeypatch):
     # (a) the run's stuck rule changed in `run` only
     ch, base, fk = _scene(tmp_path / "a", _backlog())
     fc = _forecast(ch, base, "alice")
-    monkeypatch.setattr(ch, "_stuck", lambda p, failure, unconfirmed: ("held-gate", "#1 is held by a gate"))
+    monkeypatch.setattr(ch, "_stuck", lambda p, failure, unconfirmed, held=(), declined=(): ("held-gate", "#1 is held by a gate"))
     assert "reason" in _diff(fc, _drive(ch, base, fk, "alice"))
     monkeypatch.undo()
     # (b) the run's pick ignoring the assignee filter

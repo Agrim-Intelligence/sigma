@@ -66,6 +66,14 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/chain_checkpoint.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/chain_closed.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/chain_forecast.py",
       "role": "library"
     },

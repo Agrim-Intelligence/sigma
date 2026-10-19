@@ -5,9 +5,9 @@
  "end_goals": [1, 11],
  "chains": {
   "1": {
-   "members": [1, 2, 3, 4, 6, 7, 8, 9, 10, 16, 17, 18],
+   "members": [1, 2, 3, 4, 6, 7, 8, 9, 10, 17, 18],
    "stops": [
-    {"root": 8, "reasons": ["decision"], "closed": [2, 6, 16, 17],
+    {"root": 8, "reasons": ["decision"], "closed": [6, 17],
      "why": "a member is parked and its question is answered 'wait for it', so only a person can lift it"},
     {"root": 10, "reasons": ["held-gate", "decision"], "closed": [4, 8],
      "why": "a paid step the owner said 'do not' to: the run must hold it, never claim it"}
@@ -53,7 +53,7 @@
  "resolutions": {"8": "unpark"},
  "owner": {
   "cap": "50",
-  "by_id": {"dependency:8": ["wait for it"]},
+  "by_id": {"dependency:8": ["wait for it"], "closed_gate:15": ["keep waiting"]},
   "by_kind": {"label_set": ["arm them"], "irreversible": ["do not"], "cross_unit": ["keep going"]},
   "by_member": {"17": ["promote"], "18": ["leave"], "13": ["checkpoint", "not a goal", "leave"]},
   "confirm_a_wait": ["it waits", "wait", "add", "include", "yes", "confirm"]

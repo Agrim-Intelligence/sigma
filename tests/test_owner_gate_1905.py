@@ -3,7 +3,7 @@
 A member carrying the legacy confirmation label (`proposed_label`, default `sdlc:needs-confirmation`), with or
 without `sdlc:goal`, has the verdict `awaiting-owner`. `chain.py arm` and `label_drain.py arm` never arm it, with
 or without `--apply` / `--dry-run`, unless the sheet asked about that member and the person answered "promote it".
-The sheet asks one question per member, grouped when several share the options, and no default arms. A stateful
+The sheet asks one question per member, grouped when several share the options, and `--defaults` answers none of them. A stateful
 fake `gh`; no network.
 
 Controls (each clause alone, then restored; every one was seen red): the label no longer blocks arming (the
@@ -74,8 +74,8 @@ def test_the_sheet_asks_one_question_per_member_grouped_with_no_default_that_arm
     rec = tca._rec(base)
     qs = {q["id"]: q for q in ch.questions_of(rec, {}) if q["kind"] == "owner_gate"}
     assert sorted(qs) == ["owner_gate:2", "owner_gate:3", "owner_gate:5"]
-    assert all(q["options"] == OPTIONS and q["recommended"] == "leave it out" for q in qs.values())
-    assert [rec["answers"][k] for k in sorted(qs)] == ["leave it out"] * 3          # `--defaults` took the first option
+    assert all(q["options"] == OPTIONS and q["recommended"] is None for q in qs.values())    # no default (#1908)
+    assert [rec["answers"][k] for k in sorted(qs)] == ["leave it out"] * 3          # the person's answer, via `_scene`
     text = ch.sheet(base, 1, now=tca.NOW)
     assert "[group:owner_gate]" in text and "applies to 3 questions" in text
     assert "[owner_gate:2]" not in text                            # the three are one group, not three entries

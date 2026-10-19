@@ -226,7 +226,9 @@
   {
    "number": 16,
    "title": "Schema follow-up",
-   "labels": [],
+   "labels": [
+    "sdlc:followup"
+   ],
    "assignees": [],
    "state": "open",
    "body": "Follow-up to #15. The gate measured below its target; the real fix is tracked here.",
