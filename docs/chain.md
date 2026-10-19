@@ -39,7 +39,8 @@ holding), and the same rule gives the forecast's roots.
 
 One `run` cycle reads each issue and each comment page at most once (`chain_reads.py`): a repeat of a GET of one issue
 is served from memory for the length of that call, any call that can write drops everything kept, and the store is
-bounded (400 entries, 16 MB). The sweep before the cycle and the pick after it are separate processes and are outside it.
+bounded (400 entries, 16 MB). It covers the in-process sweep that opens the cycle (its own repeats and its writes included);
+the pick that ends it is a separate process with its own reads and is outside it.
 Not measured on a real repository; the private re-test harness counts the calls.
 
 ## The sheet

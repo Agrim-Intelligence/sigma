@@ -1568,6 +1568,7 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
         except chain_parallel.ChainRefused as exc:
             raise ChainRefused(str(exc))
         width = chain_parallel.width(config)
+    run = chain_reads.CycleReads(run or sources._run_gh)    # one cycle's repeated reads of an issue cost one call
     try:
         skip = frozenset(str(x) for x in ((sweep or _default_sweep)(sdlc_dir, config, run) or ()))
     except Exception:           # noqa: BLE001 - fail open, like the loop's own sweep
@@ -1587,7 +1588,6 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
         if locked:
             chain_parallel.release(sdlc_dir, goal)
         return res
-    run = chain_reads.CycleReads(run or sources._run_gh)    # after the sweep, before the pick: one cycle's repeats
     held_back = _grow(sdlc_dir, goal, rec, blk, config, cfg, now, run, closure, pull, filed, no_grow, res)
     if res.pop("over_asked", None) is not None:
         detail = "chain.max_reasks reached: %s still need an answer" % _ids(sorted(int(k) for k in blk["paused"]))

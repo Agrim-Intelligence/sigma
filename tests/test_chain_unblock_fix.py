@@ -121,3 +121,23 @@ def test_a_run_that_is_stuck_names_the_member_that_holds_the_chain(tmp_path):
 def test_a_member_that_lists_itself_among_its_waits_is_still_a_root():
     p = _p({"number": 1, "verdict": "parked", "waits_on": [1]}, {"number": 2, "verdict": "parked"})
     assert _cf().stuck_reason(p) == ("decision", "#1 is parked and needs an answer")
+
+
+def test_the_sweep_before_the_cycle_shares_the_cycles_reads_and_its_writes_drop_them(tmp_path):
+    """The sweep is in-process and runs first: its own repeated reads of one issue are served once, and a write it
+    makes (an unpark) drops what was kept, so the cycle's later reads see the new state."""
+    ch, base, fk = tcr._armed(tmp_path)
+    seen = []
+
+    def sweep(_sdlc, _cfg, run):
+        ep = "repos/acme/widget/issues/3"
+        a = run(["api", ep, "--method", "GET"])
+        b = run(["api", ep, "--method", "GET"])
+        seen.append(a == b)
+        run(["api", ep + "/labels", "--method", "POST", "-f", "labels[]=sdlc:note"])
+        run(["api", ep, "--method", "GET"])
+        seen.append(len([c for c in fk.calls if c[0] == "api" and c[1] == ep]))
+        return ()
+
+    tcr._run(ch, base, fk, tcr.FakePick(fk, base), sweep=sweep)
+    assert seen == [True, 2], "two reads before the write are one call; the read after the write is a second"

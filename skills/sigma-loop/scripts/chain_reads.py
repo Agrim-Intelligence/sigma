@@ -11,8 +11,10 @@ What makes that safe:
     lookup and anything else go straight through;
   * ANY call that can write (a method other than GET, a graphql mutation, a command that is not `api`) first drops
     everything kept, so a read after a write goes to GitHub;
-  * it lives for one `chain.run` call, built after the cycle's out-of-process sweep and dropped before the pick, so a
-    write by another process cannot be hidden by it;
+  * it lives for one `chain.run` call: built before the cycle's in-process sweep (which reads an issue several
+    times and writes only through the runner it is given, so its writes drop what was kept) and gone before the pick,
+    which is a separate process with its own reads; a write by another process cannot be seen by it, and none
+    happens inside the call;
   * it is bounded: MAX_ENTRIES entries and MAX_BYTES characters kept in all (a body is at most 65,536 characters).
     Past a bound a read is simply not kept; it is never refused;
   * a failed read raises as before and keeps nothing.
