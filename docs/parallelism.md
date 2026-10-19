@@ -151,8 +151,10 @@ constant copied from a laptop, and nothing here ever pauses a process.
   holds even when the config says `observe`. A verify hold shares exit 5 with the flaky-suite `UNVERIFIED`
   verdict; the stderr prefix tells them apart, and the final receipt records a hold as `RESOURCE-HOLD`, never as `UNVERIFIED`.
 - **Verify workers.** The granted worker count reaches the proving command as a `{workers}` token (replaced by an
-  integer before the shell sees it), as `SIGMA_VERIFY_WORKERS`, and as `PYTEST_XDIST_AUTO_NUM_WORKERS` for
-  `-n auto`. A literal `-n N` is never lowered: a warm cost record that cannot fit N holds instead.
+  integer before the shell sees it), as `SIGMA_VERIFY_WORKERS`, as `PYTEST_XDIST_AUTO_NUM_WORKERS` for
+  `-n auto`, and as `VITEST_MAX_FORKS` and `VITEST_MAX_THREADS`, which vitest reads (measured in vitest 3.2.7), so a
+  `bash scripts/verify.sh` that runs vitest no longer starts cpus-1 workers whatever was granted. A positive cap the
+  caller already set lower than the grant is kept, never raised. A literal `-n N` is never lowered: a warm cost record that cannot fit N holds instead.
 - **Shed.** With `resource.shed` at `verify` (the default) and `enforce`, `resource.shed_after` (default 3) critical samples in a row stop the
   verify process group Sigma itself started (TERM, a grace, then KILL). The result is `RESOURCE-HOLD (shed)`,
   exit 5, no evidence, the goal not failed; rerun once admission reopens. The shed run's measured footprint is learned like any other run's, so when it

@@ -3,6 +3,7 @@
 All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
+- **The verify worker grant now reaches vitest (`VITEST_MAX_FORKS`, `VITEST_MAX_THREADS`).** `loop.py verify` exported the granted count only as `SIGMA_VERIFY_WORKERS` and `PYTEST_XDIST_AUTO_NUM_WORKERS`, so a verify command that runs vitest (omega's `bash scripts/verify.sh` does) started cpus-1 workers whatever the guard granted. Found after the 2026-10-19 hard reboot, where the pre-reboot memory report showed ten omega `node` processes at 2.2-2.9 GB each (about 25 GB on a 24 GB Mac) while the loop ran Sigma 1.0.15, which has no resource guard. A caller's own positive cap below the grant is kept. MEASURED: vitest 3.2.7 reads both variables; NOT measured: what made those ten workers balloon (a full-width run of omega's UI tests peaked at 3.1 GB in 17 s and did not reproduce it).
 - **Plan-review asks which force an abstraction answers; review reports `missing structure` (#1543).** An interface, factory, layer or indirection naming no force is over-built (a legacy sprout or wrap excepted), and a new or modern-zone diff adding a third or later case to a type conditional is a follow-up Concern. The effect on model behaviour is UNMEASURED; #1544 is the deferred baseline.
 
 ## 1.0.17 — 2026-10-18 — the stored dependency map and Sigma Chain: a map of what waits on what, a longest-chain plan, an approved and capped chain run; plus the 1.0.16 follow-ups to the resource guard and label drains
