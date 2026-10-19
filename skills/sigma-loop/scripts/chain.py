@@ -11,14 +11,16 @@
     chain.py resume <sdlc_dir> <chain> [--cap N]
     chain.py status <sdlc_dir> [<chain>] [--json] [--rebuild [--force] [--answers <file>]] [--leftovers]
 
+    chain.py plan <sdlc_dir> <N> --forecast [--as <login>]
+
 `plan` and `sheet` are READ-ONLY toward GitHub. Every call they make goes through `_GetOnly`, which raises
 on anything that is not an explicit `gh api ... --method GET`: no `gh issue ...` verb, no GraphQL, no body
 flag. `answer` is the one verb that reaches GitHub: it hands a parked member's bank-option answer to
 `unpark.resolve` (the Q&A block, one comment, and a label change only if the answer starts the member
 again); it never posts free text, and the write-surface scanner does not see this path, so this paragraph
 and the sheet's own list of writes are its record. `arm` is the verb that creates the label `chain:<root>`,
-adds it to the members and arms them: a new GitHub write path, reached only after approval (see ARM). The local write is the record `<sdlc_dir>/state/chains/c<N>.json` (issue numbers, verdict words and labels only; never
-a title, a body, a comment or a question), written only for a plan that was produced, never for a refusal.
+adds it to the members and arms them: a new GitHub write path, reached only after approval (see ARM). The local write is the record `<sdlc_dir>/state/chains/c<N>.json` (issue numbers, verdict words, labels and the
+assignees' logins only; never a title, a body, a comment or a question), written only for a plan that was produced, never for a refusal.
 
 CLOSURE. From the stored dependency map in one local read (`dag_chain`; the members' comments are read after,
 see WAITS), bounded by `chain.max_members`
@@ -121,6 +123,18 @@ other branches go on), and a delta sheet with ONLY the new questions is printed 
 delta sheet counts in `run.pauses`; past `chain.max_reasks` (default 3) the run ends stuck, reason decision.
 Anything filed from a member that is not a prerequisite never joins and is listed as "filed, not in the chain".
 
+FORECAST (#1907). `plan --forecast` and the sheet mark every member `ready now`, `after #N`, `needs decision`,
+`someone else's`, `checkpoint` or `not workable`, and print ONE line: "a run from <login> can finish K of N before it
+stops on <reason>", naming the root of each stop. It reads the record only (no `gh` call), re-applies the assignee
+filter for `--as <login>` (default: who planned) and plays the run cycle by cycle at the configured width. It uses
+the rules `run` uses, not a copy: `chain_forecast.ready_members` (the width plan) and `chain_forecast.stuck_reason`
+(the stuck line) are called by both, and the assignee clause is `label_drain.assignee_gate`, also called by the
+judge. The record therefore keeps each member's assignee logins, `base_verdict` (the verdict before the assignee
+clause, when that clause decided it), `in_progress` and `blocked`, and the planner's `runner` and `assignee_filter`.
+A plan read from the map holds no assignees, so its forecast says it cannot apply the filter. Not modelled: the cap,
+and a goal that fails or is parked by its own session (every claimed goal is assumed to merge). A cycle with goals
+in flight and only members nobody may claim unblocked now waits (width past 1) instead of asking the pick for one.
+
 STATUS (#1594). Reads the local records only (`chain_status`, no `gh` call): per chain a closed state (planned,
 approved, running, stuck(<reason>), paused(decision), capped, done, stopped), the age of its last progress
 (the run heartbeat) and `running STALE` when a running chain's last progress is older than `chain.stale_minutes`
@@ -162,13 +176,15 @@ chain_parallel = _load("chain_parallel")
 chain_waits = _load("chain_waits")
 chain_checkpoint = _load("chain_checkpoint")
 chain_closed = _load("chain_closed")
+chain_forecast = _load("chain_forecast")
 dag_store = dag_chain.dag_store
 dag_core = dag_chain.dag_core
 
 SCHEMA = "chain-plan/1"
-USAGE = ("usage: chain.py plan <sdlc_dir> <N> [--json]\n"
+USAGE = ("usage: chain.py plan <sdlc_dir> <N> [--json] [--forecast [--as <login>]]\n"
          "  Plan the chain of open prerequisites behind goal N, deepest first. Read-only toward GitHub;\n"
-         "  writes only .sdlc/state/chains/c<N>.json (numbers and labels, no titles or bodies).\n"
+         "  writes only .sdlc/state/chains/c<N>.json (numbers, labels and assignee logins, no titles or bodies).\n"
+         "  --forecast marks every member and says how far a run by <login> (default: you) would get.\n"
          "       chain.py plan <sdlc_dir> --longest [--by freeing] [--json]\n"
          "  Offer the top three end goals to work on first, from the stored map only. Writes nothing.")
 ARM_USAGE = ("usage: chain.py approve <sdlc_dir> <chain>\n"
@@ -403,10 +419,11 @@ def _plan_map(sdlc, goal, config, ro, source, now, m, bound):
         verdict = "unknown" if (g.nodes[x["number"]].state == "unknown" or raw == "unknown") \
             else _VERDICT_OF_LIFE.get(raw, "unarmed")
         rows.append({"number": x["number"], "verdict": verdict, "life": life,
-                     "prio": g.nodes[x["number"]].prio})
+                     "prio": g.nodes[x["number"]].prio,
+                     "in_progress": raw == "in-progress", "blocked": raw == "blocked"})      # #1907
     outside = [g.rank(n) for n, nd in g.nodes.items()
                if n not in members and nd.kind == "issue" and nd.state == "open" and nd.life == "goal"]
-    out = {"verdict_basis": "map-life", "map_built_at": int(dag_store.parse_ts(m["header"].get("built_at")) or 0) or None}
+    out = {"verdict_basis": "map-life", "runner": None, "assignee_filter": None, "map_built_at": int(dag_store.parse_ts(m["header"].get("built_at")) or 0) or None}
     t = dag_store.stamp(m)
     out["map_age_seconds"] = max(0, int(now - t)) if t is not None else None
     _finish(out, rows, edges, _external(ext), done, {n: unit.get(n) for n in members}, ranks, outside, None)
@@ -441,6 +458,13 @@ def _weak_count(issue, goal_n, blocker_scan):
     return len(weak)
 
 
+def _runner_login(ro, source):
+    """The login a run would match assignees against, or None (no filter, or unresolved: fails open like the
+    picker). `@me` is resolved with an explicit GET, which `_GetOnly` allows (#1907)."""
+    return _load("sources").resolve_assignee_login(lambda args: ro(list(args) + ["--method", "GET"]),
+                                                    getattr(source, "assignee", None))
+
+
 def _plan_live(sdlc, goal, config, ro, source, bound):
     ld = label_drain
     gh_api, blocker_scan, features = _load("gh_api"), _load("blocker_scan"), _load("features")
@@ -462,6 +486,8 @@ def _plan_live(sdlc, goal, config, ro, source, bound):
     _refuse_bound(len(clo["nodes"]), bound, "live read",
                   at_least=any("pulled-issue limit" in s for s in clo["stops"]))
     judge = ld._Judge(sdlc, config, source)
+    runner = _runner_login(ro, source)
+    judge._login = runner            # #1907: the login the run's own judge resolves; `_GetOnly` refuses a bare `@me`
     prefix = dag_collect._gh(config).get("priority_label_prefix", "priority:")
     aliases = dag_collect._priority_aliases(config)
     rows, ranks, units, weak = [], {}, {}, 0
@@ -473,10 +499,16 @@ def _plan_live(sdlc, goal, config, ro, source, bound):
         ranks[n] = _rank(prio)
         units[n] = ld._unit(issue, judge.features)
         weak += _weak_count(issue, goal, blocker_scan)
-        rows.append({"number": n, "verdict": verdict, "labels": sorted(names), "prio": prio,
-                     "spend": ld._spend_text(issue.get("body"), hard_stop, config) is not None})
+        row = {"number": n, "verdict": verdict, "labels": sorted(names), "prio": prio,
+               "spend": ld._spend_text(issue.get("body"), hard_stop, config) is not None,
+               "assignees": sorted({(a.get("login") if isinstance(a, dict) else str(a)).casefold()
+                                    for a in issue.get("assignees") or [] if a}),          # #1907: for a forecast
+               "in_progress": source.in_progress_label in names, "blocked": source.goal_blocked_label in names}
+        if verdict in ("unassigned", "assigned-elsewhere"):         # what the verdict was before the assignee clause
+            row["base_verdict"] = judge.verdict(issue, by_assignee=False)[0]
         if verdict == "checkpoint":                                  # #1904
-            rows[-1]["checkpoint"] = chain_checkpoint.status(sdlc, config, units[n])
+            row["checkpoint"] = chain_checkpoint.status(sdlc, config, units[n])
+        rows.append(row)
     edges = [{"from": b, "to": n, "tag": "explicit"} for n, bs in clo["edges"].items() for b in bs]
     ext = []
     for n, tags in clo["unresolved"].items():
@@ -507,7 +539,8 @@ def _plan_live(sdlc, goal, config, ro, source, bound):
             outside.append(_rank(dag_collect._prio(nm, prefix, aliases)))
     except Exception:       # noqa: BLE001 - the comparison is advisory; say so rather than guess
         outside = None
-    out = {"verdict_basis": "labels", "map_age_seconds": None, "stops": list(clo["stops"])}
+    out = {"verdict_basis": "labels", "map_age_seconds": None, "stops": list(clo["stops"]), "runner": runner,
+           "assignee_filter": bool(getattr(source, "assignee", None))}
     _finish(out, rows, edges, _external(ext), done, units, ranks, outside, weak)
     closed_by = collections.defaultdict(list)
     for n, refs in clo["closed"].items():
@@ -573,10 +606,10 @@ GROUP_OVER = 25
 NO_DEFAULT = ("cap", "irreversible")
 CROSS_UNIT_OPTIONS = ["keep going", "stop here"]
 UPPER_TIER_OPTIONS = ["plan its slices instead", "leave it"]
-SHEET_USAGE = ("usage: chain.py sheet <sdlc_dir> <chain>\n"
+SHEET_USAGE = ("usage: chain.py sheet <sdlc_dir> <chain> [--as <login>]\n"
                "       chain.py answer <sdlc_dir> <chain> --answers <file> | --defaults\n"
-               "  <chain> is the end goal number (or c<N>). `sheet` prints every decision the chain needs and\n"
-               "  changes nothing. `answer` records answers in .sdlc/state/chains/c<N>.json; a parked member's\n"
+               "  <chain> is the end goal number (or c<N>). `sheet` prints every decision the chain needs, with the\n"
+               "  forecast for a run by <login> (default: who planned), and changes nothing. `answer` records answers in .sdlc/state/chains/c<N>.json; a parked member's\n"
                "  answer goes through the unpark resolve path. --partial is not available yet.")
 
 
@@ -785,7 +818,7 @@ def _decision_lines(n, ident, q, ans, ids=None):
     return L
 
 
-def render_sheet(rec, now, config=None):
+def render_sheet(rec, now, config=None, runner=None):
     qs, openq = open_questions(rec, config)
     shown = [q for q in qs if not q["hidden"]]
     ans = rec.get("answers") or {}
@@ -831,6 +864,7 @@ def render_sheet(rec, now, config=None):
     for e in rec.get("externals") or []:
         L.append("External: %s (%s), needed by %s" % (e["ref"], e["kind"], _ids(e["needed_by"])))
     L += chain_waits.sheet_block(rec)
+    L += chain_forecast.render_forecast(chain_forecast.forecast(rec, config, runner))      # #1907
     L.append("")
     groups = _active_groups(qs)
     grouped_ids = {i for ids in groups.values() for i in ids}
@@ -854,10 +888,10 @@ def render_sheet(rec, now, config=None):
     return "\n".join(L) + "\n"
 
 
-def sheet(sdlc_dir, goal, now=None, config=None):
+def sheet(sdlc_dir, goal, now=None, config=None, runner=None):
     now = time.time() if now is None else now
     rec = _read_record(_record_path(sdlc_dir, goal))
-    return render_sheet(rec, now, config if config is not None else _load("state").load_config(sdlc_dir))
+    return render_sheet(rec, now, config if config is not None else _load("state").load_config(sdlc_dir), runner)
 
 
 def _check_answer(q, raw):
@@ -1359,51 +1393,13 @@ def _closed_counts(p):
         p.get("closed_checked") or 0, len(sk), " (%s)" % _ids(sk) if sk else "")
 
 
-def _checkpoint_detail(row):
-    """The stop line for one checkpoint row: its number, its unit and the one step that releases it."""
-    ck = row.get("checkpoint") or {}
-    unit = ck.get("unit")
-    if ck.get("state") == chain_checkpoint.MET:
-        return ("#%d is a checkpoint whose unit %s has landed, but its issue is still open: close it to release "
-                "what waits on it" % (row["number"], unit))
-    if unit:
-        return ("#%d is a checkpoint waiting for unit %s to land on the integration branch (%s), or for a "
-                "person to close it" % (row["number"], unit, ck.get("state") or "unknown"))
-    return "#%d is a checkpoint waiting for a person to close it" % row["number"]
-
-
 def _stuck(p, failure, unconfirmed):
-    """-> (reason, detail), ONE reason from STUCK_REASONS for an empty pick with members still open. Numbers
-    only in the detail. The order is the order a person would act in: a failed read first (nothing else can
-    be trusted), then what needs a person, then what only waits."""
+    """-> (reason, detail), ONE reason from STUCK_REASONS for an empty pick with members still open. A failed
+    read comes first (nothing else can be trusted); the rest is `chain_forecast.stuck_reason`, the rule the
+    forecast shares (#1907)."""
     if failure is not None:
         return _why_failed(failure), "a read or the pick failed"
-    rows, outside = p["members"], p.get("outside") or []
-    if any(r.get("kind") in ("not-read", "unreadable") for r in rows + outside):
-        return "degraded-read", "a parked member could not be read"
-    parked = sorted(r["number"] for r in rows if r["verdict"] == "parked")
-    if parked:
-        return "decision", "#%d is parked and needs an answer" % parked[0]
-    held = sorted(r["number"] for r in rows if r["verdict"] == "held-by-gate")
-    if held:
-        return "held-gate", "#%d is held by a gate" % held[0]
-    claimed = sorted(r["number"] for r in rows if r.get("in_progress") or r["verdict"] == "assigned-elsewhere")
-    if claimed:
-        return "claimed", "#%d is in progress or assigned to someone else" % claimed[0]
-    cps = sorted((r for r in rows + outside if (r.get("own_verdict") or r["verdict"]) == "checkpoint"),
-                 key=lambda r: r["number"])
-    ext = sorted({r["number"] for r in outside if (r.get("own_verdict") or r["verdict"]) != "checkpoint"}
-                 | {r["number"] for r in rows if r.get("unresolved")})
-    if ext:
-        return "external", "#%d waits on an open prerequisite outside the chain" % ext[0]
-    needs = sorted(r["number"] for r in rows if r["verdict"] in ("unarmed", "upper-tier") + tuple(label_drain.GATED_KIND))
-    if needs:
-        return "decision", "#%d is not armed and needs a person" % needs[0]
-    if cps:             # #1904: only after everything a person can act on, so it is named when it is the only thing left
-        return "checkpoint", _checkpoint_detail(cps[0])
-    if unconfirmed:
-        return "degraded-read", "#%d could not be confirmed closed" % sorted(unconfirmed)[0]
-    return "claimed", "open members remain but none could be claimed this cycle (skipped or leased elsewhere)"
+    return chain_forecast.stuck_reason(p, unconfirmed)
 
 
 def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=None, sweep=None,
@@ -1552,9 +1548,8 @@ def _width_plan(sdlc_dir, rec, cfg, p, open_now, recorded, width):
     rows = p["members"]
     in_flight = {r["number"] for r in rows if r.get("in_progress")}
     waits = {r["number"]: r.get("waits_on") or [] for r in rec["members"]}
-    blockers = {r["number"]: [w for w in waits.get(r["number"], []) if w in open_now]
-                + (["outside"] if r.get("unresolved") else []) for r in rows}
-    ready = cp.ready_set([r["number"] for r in rows], blockers, in_flight, width)
+    ready = chain_forecast.ready_members([dict(r, waits_on=waits.get(r["number"], [])) for r in rows],
+                                         open_now, in_flight, width)         # #1907: the rule the forecast shares
     if in_flight and not ready:
         return {}, "%d in flight, none ready (width %d)" % (len(in_flight), width), ""
     slots = max(1, len(ready))
@@ -1646,7 +1641,7 @@ def _ids(nums):
     return ", ".join("#%d" % n for n in nums) or "none"
 
 
-def render(p):
+def render(p, forecast=None):
     src = ("map, age %s" % _age(p["map_age_seconds"])) if p["source"] == "map" \
         else "live (map: %s)" % p["source_reason"]
     c = p["calls"]
@@ -1683,6 +1678,8 @@ def render(p):
     for s in p["stops"]:
         lines.append("stop: %s" % s)
     lines += chain_waits.plan_lines(p)
+    if forecast is not None:
+        lines += chain_forecast.render_forecast(forecast)
     lines.append("record: %s" % p["record"])
     return "\n".join(lines) + "\n"
 
@@ -1737,19 +1734,35 @@ def main(argv, run=None, now=None, pick=None):
     args = [a for a in args if a != "--json"]
     if args[:1] == ["plan"] and "--longest" in args:
         return _main_longest(args, as_json, now)
-    if len(args) != 3 or args[0] != "plan" or not (args[2].isascii() and args[2].isdigit()):
+    want_forecast = "--forecast" in args
+    args = [a for a in args if a != "--forecast"]
+    runner, args = _take_as(args)
+    if len(args) != 3 or args[0] != "plan" or not (args[2].isascii() and args[2].isdigit()) \
+            or (runner is not None and not want_forecast) or runner == "":
         print(USAGE, file=sys.stderr)
         return 2
     try:
         p = plan(args[1], int(args[2]), run=run, now=now)
+        if want_forecast:
+            p["forecast"] = chain_forecast.forecast(p, _load("state").load_config(args[1]), runner)
     except ChainRefused as exc:
         print("chain.py: %s" % exc, file=sys.stderr)
         return 2
     except OSError as exc:
         print("chain.py: could not write the record: %s" % exc, file=sys.stderr)
         return 1
-    print(json.dumps(p, indent=2, sort_keys=True) if as_json else render(p), end="" if not as_json else "\n")
+    print(json.dumps(p, indent=2, sort_keys=True) if as_json else render(p, p.get("forecast")),
+          end="" if not as_json else "\n")
     return 0
+
+
+def _take_as(args):
+    """-> (login or None, the args without `--as <login>`). An `--as` with no value gives "" (a usage error)."""
+    if "--as" not in args:
+        return None, args
+    i = args.index("--as")
+    val = args[i + 1] if i + 1 < len(args) and not args[i + 1].startswith("--") else ""
+    return val, args[:i] + args[i + (2 if val else 1):]
 
 
 def _main_run(args, run, now, pick):
@@ -1819,10 +1832,11 @@ def _main_sheet(args, run, now):
         return 2
     try:
         if verb == "sheet":
-            if len(rest) != 2:
+            runner, rest = _take_as(rest)
+            if len(rest) != 2 or runner == "":
                 print(SHEET_USAGE, file=sys.stderr)
                 return 2
-            print(sheet(rest[0], _chain_arg(rest[1]), now=now), end="")
+            print(sheet(rest[0], _chain_arg(rest[1]), now=now, runner=runner), end="")
             return 0
         flags = rest[2:]
         if len(rest) < 3 or not (flags == ["--defaults"] or (len(flags) == 2 and flags[0] == "--answers")):

@@ -14,12 +14,14 @@ empty path. Claude keeps its provided value.
 
 Detailed selection triggers: [selection](references/selection.md). Full reference: [chain](../../docs/chain.md).
 
-Arguments: `<N | issue URL of this repository>`, `--longest`, `--dry-run`, `--cap-usd N`, `--parallel N`,
+Arguments: `<N | issue URL of this repository>`, `--longest`, `--forecast`, `--as <login>`, `--dry-run`, `--cap-usd N`, `--parallel N`,
 `--no-grow`, `--defaults`, `status`, `resume`, `stop`. `C` below is
 `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/chain.py"`; `D` is the repository's `.sdlc` directory.
 
 1. **Identify.** With `--longest`, run `C plan D --longest` and offer its top three end goals. Otherwise
-   `C plan D <N>` (read-only toward GitHub). A refusal (cycle, over the member bound) is relayed as is.
+   `C plan D <N> --forecast` (read-only toward GitHub): relay its one line, "a run from <login> can finish K of N
+   before it stops on <reason>", and the root of each stop; `--as <login>` asks for another runner. A refusal
+   (cycle, over the member bound) is relayed as is.
 2. **Ask.** `C sheet D <N>` lists every decision at once. If it opens with an "Unconfirmed waits" block, put that
    block to the user first, whole: for each wait that is real, run `deps.py mark D <goal> <ref> <reason>`; for a
    wrong one, post the `backlog_check.py dismiss-text blocked-by <ref>` text with `loop.py note`; then `C plan D <N>`

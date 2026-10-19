@@ -22,9 +22,9 @@ the sigma-loop scripts. It plans the whole chain, asks every decision together, 
 
 | Step | Verb | Touches GitHub |
 |---|---|---|
-| Plan | `chain.py plan <sdlc_dir> <N> [--json]` | reads only (about one request per member, for unconfirmed waits); writes the local record |
+| Plan | `chain.py plan <sdlc_dir> <N> [--json] [--forecast [--as <login>]]` | reads only (about one request per member, for unconfirmed waits); writes the local record |
 | Offer end goals | `chain.py plan <sdlc_dir> --longest [--by freeing]` | nothing, from the stored map |
-| Sheet | `chain.py sheet <sdlc_dir> <chain>` | nothing |
+| Sheet | `chain.py sheet <sdlc_dir> <chain> [--as <login>]` | nothing |
 | Answer | `chain.py answer <sdlc_dir> <chain> --answers <file>` or `--defaults` | parked members only, through the unpark gesture |
 | Approve | `chain.py approve <sdlc_dir> <chain>` | nothing |
 | Arm | `chain.py arm <sdlc_dir> <chain> [--dry-run]` | the only write path: label `chain:<root>`, one fixed comment, arming |
@@ -54,6 +54,30 @@ or the dismissal marker from `backlog_check.py dismiss-text blocked-by <ref>`; r
 either. A member whose comments could not be read makes the plan INCOMPLETE. The full rules, the closed list of
 phrasings and the bounds are in [the reference](dependency-map-and-chain.md#waits-no-edge-says). Not measured:
 network time, and how often the loose phrasings match a remark that is not a wait.
+## The forecast
+
+`chain.py plan <sdlc_dir> <N> --forecast` (and the sheet, always) marks every member and says how far a run will
+really get, before anything is armed:
+
+| Marker | Meaning |
+|---|---|
+| `ready now` | a run may claim it and it waits on nothing open |
+| `after #N` | a run may claim it once the named members are done |
+| `needs decision` | parked, not armed, or an upper-tier issue: a person must act |
+| `someone else's` | assigned to another login, or already in progress |
+| `checkpoint` | reserved; until checkpoints exist it is shown as `not workable` |
+| `not workable` | held by a gate, carries the blocked label, waits on a prerequisite outside the chain, or could not be read |
+
+One line follows: `a run from <login> can finish K of N before it stops on <reason>: <each root>`. The roots are
+the members that wait on nothing else that is left, each with its marker; the reason is the one word `run` itself
+would print (decision, held-gate, claimed, external, degraded-read). `--as <login>` asks for another runner (a
+runner who owns none of the work finishes none of it); the default is whoever planned.
+
+The forecast plays `run` cycle by cycle at the configured width and uses the rules `run` uses: the claim rule and
+the stuck rule live in `chain_forecast.py` and both call them, and the assignee clause is the label drain's own. A
+test plays a real run on a fixture and compares. It assumes every goal a run claims merges, and it does not model
+the cap. A plan read from the map holds no assignees, so there the assignee filter is not applied (the output
+says so). The record keeps each member's assignee logins for this; it is local state and holds no titles or text.
 
 ## Member states
 

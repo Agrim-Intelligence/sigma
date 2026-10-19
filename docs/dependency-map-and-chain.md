@@ -70,7 +70,7 @@ and [the miss test](dag-miss-test.md) (the owner-gated live check of the map). E
 | map readers | `dag_pick.py`, `dag_order.py`, `dag_chain.py`, `dag_stuck.py`, `dag_cycles.py` | the shadow comparison, biggest-chain-first order, the chain query, root-cause lines, cycle reports | follow the mode |
 | filing guard | `dag_insert.py` | a filed goal enters the map at once; a `Blocked by` line that closes a cycle is refused | follows the mode |
 | history | `dag_history.py` | what changed between saved maps, per month | follows the mode |
-| Chain | `chain.py`, `chain_spend.py`, `chain_parallel.py`, `chain_status.py` | plan, sheet, answer, approve, arm, run, stop, resume, status | nothing runs until you run it |
+| Chain | `chain.py`, `chain_spend.py`, `chain_parallel.py`, `chain_status.py`, `chain_forecast.py` | plan, sheet, answer, approve, arm, run, stop, resume, status | nothing runs until you run it |
 
 The order matters. The vocabulary feeds the gate and the map identically, so they can disagree only about
 *where* they look, never about *what* counts. The map feeds Chain's plan; when the map is off, stale or does not
@@ -321,7 +321,11 @@ nothing in it is model-driven. The full reference, with the agent-file block, is
    bounded by the smaller of 50 and `chain.max_members`, one REST read per unknown reference. A closure over the
    bound is refused with its count, never truncated; a cycle is refused naming every member. Priority
    inversions (a blocker less urgent than what waits on it) are reported, never written. The one write is the
-   local record `.sdlc/state/chains/c<N>.json` (numbers, verdict words and labels only).
+   local record `.sdlc/state/chains/c<N>.json` (numbers, verdict words, labels and assignee logins only).
+   `--forecast [--as <login>]` marks every member `ready now`, `after #N`, `needs decision`, `someone else's`,
+   `checkpoint` or `not workable` and prints how many goals a run by that login can finish before it stops, naming
+   the root of each stop; the sheet carries the same block. It uses the rules `run` uses (see
+   [the forecast](chain.md#the-forecast)).
 2. **Or offer the longest.** `chain.py plan <sdlc_dir> --longest [--by freeing] [--json]` offers the top three
    end goals from the map only (priority tier, then depth, then member count, then oldest, then number;
    `--by freeing` puts the member count first). It writes nothing and calls no GitHub; with the map off or
