@@ -1415,3 +1415,61 @@ def test_gate_budget_is_derived_and_capped():
     assert qd.gate_budget_seconds(explicit) == 3000
     one_optional = cfg(dict(GOOD, name="o", timeout_seconds=10))
     assert qd.gate_budget_seconds(one_optional) == 380                          # 20 + 360
+
+
+# ------------------------------------------------------------------ #1638: printed reasons never show the home
+
+def test_reason_redacts_home_path(monkeypatch):
+    monkeypatch.setenv("HOME", "/hx/qd-sentinel")
+    assert qd._one_line("fatal: '/hx/qd-sentinel/r/x' exists") == "fatal: '~/r/x' exists"
+
+
+def test_reason_redacts_before_the_cap(monkeypatch):
+    monkeypatch.setenv("HOME", "/hx/qd-sentinel")
+    got = qd._one_line("x" * 195 + " /hx/qd-sentinel/r")
+    assert "qd-sentinel" not in got and "sentinel" not in got and got.endswith("~/r")
+
+
+def test_reason_redacts_the_resolved_home(monkeypatch):
+    monkeypatch.setenv("HOME", "/hx/qd")
+    real = qd.os.path.realpath
+    monkeypatch.setattr(qd.os.path, "realpath", lambda p, *a, **k: "/data/qd" if p == "/hx/qd" else real(p, *a, **k))
+    assert qd._one_line("at /data/qd/r") == "at ~/r"
+
+
+@pytest.mark.parametrize("home", ["", "/"])
+def test_reason_leaves_an_empty_or_root_home_alone(monkeypatch, home):
+    monkeypatch.setenv("HOME", home)
+    assert qd._one_line("dir/ and /") == "dir/ and /"
+
+
+def test_reason_needs_a_path_boundary(monkeypatch):
+    monkeypatch.setenv("HOME", "/hx/qd")
+    assert qd._one_line("/hx/qdx/f") == "/hx/qdx/f"
+
+
+def test_reason_needs_a_left_boundary(monkeypatch):
+    """A path that merely CONTAINS the home (`/x/hx/me`) must not become `/x~`."""
+    monkeypatch.setenv("HOME", "/hx/me")
+    assert qd._one_line("in /x/hx/me/f and /hx/me/g") == "in /x/hx/me/f and ~/g"
+
+
+def test_reason_leaves_a_longer_path_that_ends_in_home_alone(monkeypatch):
+    """`/alt/var/qd/r` merely contains the home `/var/qd`; only the left boundary keeps it out."""
+    monkeypatch.setenv("HOME", "/var/qd")
+    assert qd._one_line("/alt/var/qd/r") == "/alt/var/qd/r"
+
+
+def test_worktree_add_failure_row_prints_no_home(tmp_path, monkeypatch):
+    r = build(tmp_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    real = qd._git
+
+    def failing(root, argv, timeout=30):
+        if argv[:2] == ["worktree", "add"]:
+            return 128, "", "fatal: '%s' already exists" % (tmp_path / ".sdlc" / "state" / "quality_delta" / "1635-base")
+        return real(root, argv, timeout)
+
+    got = measure(r, git=failing, runner=ok_runner())
+    out = "\n".join(got.out) + "\n".join(got.err if isinstance(got.err, list) else [str(got.err)])
+    assert "fatal: '~/" in out and str(tmp_path) not in out

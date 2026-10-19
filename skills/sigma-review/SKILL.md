@@ -78,12 +78,8 @@ Pick the mode from the request:
   evaluate each finding critically — accept what's right, push back on what's wrong, add what it missed.
 
 ## 1. Quantitative pass (a KPI dashboard)
-Run the objective tools the repo has and report the numbers, so quality is measurable at a glance:
-- **Python:** `ruff`, `mypy`, `pytest --cov` (lint / type errors, coverage %).
-- **JS/TS:** the repo's `eslint` / `tsc` / test-coverage.
-- **Hotspots:** `git log` churn × current size — the files most likely to hide risk.
-
-Skip any tool the repo doesn't use; never invent numbers. A tool you ran that FAILS is reported with its number; do not approve while it fails unless the configured verification command demonstrably covers that same tool.
+Run `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/quality_delta.py" <goal>` from the work record's `worktree` (default `.sdlc/work/<goal>`) and quote its stdout verbatim.
+If it prints `no metrics configured` or `unmeasured`, or errors, never skip: run the repo's own tools (`ruff`, `mypy`, `pytest --cov`, `eslint`, `tsc`, `git log` churn × size hotspots); never invent numbers. A tool you ran that FAILS is reported with its number; do not approve while it fails unless the configured verification command demonstrably covers that same tool.
 
 ## 2. Qualitative scan — the eight axes
 Every axis, every review, each finding with `file:line` evidence. An axis you skipped is a blind spot,
