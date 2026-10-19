@@ -123,14 +123,16 @@ def checkpoint_detail(row):
 def roots_of(rows, outside=()):
     """-> the rows no other open row of `rows` stands behind in the sense that they wait on nothing open: what
     HOLDS the chain, as opposed to what is held. A parked goal that itself waits on an open goal is held, and
-    naming it sends a person to answer something that could not move anyway. `outside` are members the chain never
-    labelled (a checkpoint, a member left out) that work still waits on: they count as open, so what waits only on one
-    of them is held by it, and is not named as a root itself (the left-out member is, by `other_roots`). Every row
-    when each waits on another (a cycle), so a stop is never left without a name."""
-    open_now = {r["number"] for r in rows} | {r["number"] for r in outside}
+    naming it sends a person to answer something that could not move anyway. `outside` members that were left out of
+    the chain (not a goal, or waiting for its owner: `label_drain.GATED_KIND`) count as open: what waits only on one
+    of them is held by it, and is not named as a root itself (`other_roots` names the left-out member). A
+    checkpoint outside the chain does not: a member behind it that needs a person is still the thing to act on. Every
+    row when each waits on another (a cycle), so a stop is never left without a name."""
+    left_out = {r["number"] for r in outside if (r.get("own_verdict") or r.get("verdict")) in label_drain.GATED_KIND}
+    open_now = {r["number"] for r in rows} | left_out
     free = [r for r in rows if not [w for w in r.get("waits_on") or [] if w in open_now and w != r["number"]]]
-    if not free and outside and any(w in {r["number"] for r in outside} for r in rows for w in r.get("waits_on") or []):
-        return []                       # everything left waits on a member the chain never labelled: that one holds it
+    if not free and any(w in left_out for r in rows for w in r.get("waits_on") or []):
+        return []                       # everything left waits on a member nobody promoted: that one holds it
     return free or rows
 
 
@@ -209,7 +211,7 @@ def other_roots(p, detail):
     stop line stay equal)."""
     named = {int(x) for x in re.findall(r"#(\d+)", detail or "")}
     outside = p.get("outside") or []
-    held_out = [r for r in outside if (r.get("own_verdict") or r["verdict"]) not in ("closed",)]
+    held_out = [r for r in outside if (r.get("own_verdict") or r["verdict"]) in label_drain.GATED_KIND]
     others = sorted(({r["number"] for r in roots_of(p["members"], outside)} | {r["number"] for r in held_out}) - named)
     return others[:MAX_OTHER_ROOTS], max(0, len(others) - MAX_OTHER_ROOTS)
 
