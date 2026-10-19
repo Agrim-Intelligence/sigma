@@ -66,6 +66,10 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/chain_forecast.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/chain_parallel.py",
       "role": "library"
     },

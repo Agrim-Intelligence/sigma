@@ -257,6 +257,17 @@ def closure(seed_numbers, get, preloaded=None, max_depth=MAX_DEPTH, max_pulled=M
             "stops": list(dict.fromkeys(stops)), "pulled": pulled}
 
 
+def assignee_gate(logins, me):
+    """-> (verdict, detail) when the assignee filter keeps the picker off an issue assigned to `logins`, else
+    None. `me` None (an unresolved login) fails open, like the picker. The one copy of this clause: `_Judge`
+    and the chain forecast (#1907) both call it."""
+    if me and not logins:
+        return "unassigned", "unassigned; the picker only takes issues assigned to %s" % me
+    if me and me.casefold() not in {x.casefold() for x in logins}:
+        return "assigned-elsewhere", "assigned to %s, not %s" % (", ".join(logins), me)
+    return None
+
+
 class _Judge:
     """Per-run verdict context: the source's label names, config, and lazily resolved login."""
 
@@ -275,8 +286,9 @@ class _Judge:
                 self._login = None
         return self._login
 
-    def verdict(self, issue):
-        """-> (verdict, detail) for one open issue. Order: the first that applies wins."""
+    def verdict(self, issue, by_assignee=True):
+        """-> (verdict, detail) for one open issue. Order: the first that applies wins. `by_assignee=False`
+        leaves the assignee clause out (the chain forecast re-applies it for another runner, #1907)."""
         names = _names(issue)
         if str(issue.get("state") or "").lower() == "closed":
             return "closed", ""
@@ -288,12 +300,10 @@ class _Judge:
         if self.source.goal_label not in names:
             return "unarmed", "no %s label" % self.source.goal_label
         logins = [(a.get("login") if isinstance(a, dict) else str(a)) for a in (issue.get("assignees") or [])]
-        if getattr(self.source, "assignee", None):
-            me = self.login()
-            if me and not logins:
-                return "unassigned", "unassigned; the picker only takes issues assigned to %s" % me
-            if me and me.casefold() not in {x.casefold() for x in logins}:
-                return "assigned-elsewhere", "assigned to %s, not %s" % (", ".join(logins), me)
+        if by_assignee and getattr(self.source, "assignee", None):
+            gate = assignee_gate(logins, self.login())
+            if gate:
+                return gate
         held = self._gate(issue, names)
         if held:
             return "held-by-gate", held
