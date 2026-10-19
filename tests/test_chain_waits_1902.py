@@ -149,6 +149,9 @@ PHRASINGS = [
     ("#12 is now a blocker", [("12", "is-blocker")]),
     ("we are waiting for #12 and #13 to settle", [("12", "waiting-for"), ("13", "list")]),
     ("depends on #1, #2, and #3", [("1", "explicit"), ("2", "list"), ("3", "list")]),
+    ("lands again once the port (#12) has merged", [("12", "once-done")]),
+    ("#12 lands on main before this change", [("12", "lands-before")]),
+    ("this slice sits behind the port work (#12)", [("12", "behind")]),
 ]
 
 #: sentences that only NAME an issue: no form reads any of them (the phantom-blocker control)

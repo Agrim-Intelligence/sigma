@@ -33,7 +33,14 @@ the sigma-loop scripts. It plans the whole chain, asks every decision together, 
 
 No GitHub write exists in any verb before `approve`. `run` is one cycle and is called again until it
 reports done; exit 3 means capped or stuck with one reason (decision, held-gate, claimed, external,
-checkpoint, rate-limit, degraded-read, capped).
+checkpoint, rate-limit, degraded-read, capped). The stop names what HOLDS the chain: of the members still open, only
+those that wait on no other open member are considered (a parked goal that itself waits on an open goal is held, not
+holding), and the same rule gives the forecast's roots.
+
+One `run` cycle reads each issue and each comment page at most once (`chain_reads.py`): a repeat of a GET of one issue
+is served from memory for the length of that call, any call that can write drops everything kept, and the store is
+bounded (400 entries, 16 MB). The sweep before the cycle and the pick after it are separate processes and are outside it.
+Not measured on a real repository; the private re-test harness counts the calls.
 
 ## The sheet
 
@@ -99,6 +106,10 @@ really get, before anything is armed:
 | `someone else's` | assigned to another login, or already in progress |
 | `checkpoint` | never worked: met when its unit lands or a person closes it |
 | `not workable` | held by a gate, a paid step the owner answered not to run, carries the blocked label, waits on a prerequisite outside the chain, or could not be read |
+
+A member that carries the blocked label because of waits on other members of the chain is classified by those
+waits (`after #N`) and is counted as finishing once they do: Sigma's own sweep sets that label and clears it when the
+waits close, so reading it as permanent promised 1 goal where a run did 3.
 
 One line follows: `a run from <login> can finish K of N before it stops on <reason>: <each root>`. The roots are
 the members that wait on nothing else that is left, each with its marker; the reason is the one word `run` itself

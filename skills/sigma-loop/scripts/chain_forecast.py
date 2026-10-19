@@ -56,7 +56,10 @@ VERDICTS = {
     "declined": ("not workable", False, "a paid step you answered not to run"),
     "unknown": ("not workable", False, "could not be read"),
 }
-#: flag on a row -> (marker, why). Checked after the verdict, in this order, as `label_drain._reason` does.
+#: flag on a row -> (marker, why). Checked after the verdict, in this order, as `label_drain._reason` does. The
+#: `blocked` flag is an overlay only while NOTHING in the chain explains it: a row that waits on members of the chain
+#: carries the label because of those waits (the blocker sweep adds it and clears it when they close), so it is
+#: classified by its waits, and a run that closes them frees it.
 OVERLAYS = (
     ("in_progress", "someone else's", "already in progress"),
     ("blocked", "not workable", "carries the blocked label"),
@@ -75,6 +78,8 @@ def classify(row, open_now):
     if workable:
         for key, o_marker, o_why in OVERLAYS:
             if row.get(key):
+                if key == "blocked" and row.get("waits_on"):
+                    continue    # Sigma's own sweep sets it for a wait on an open goal and clears it when that closes
                 marker, workable, why = o_marker, False, o_why
                 break
     if not workable:
@@ -111,14 +116,26 @@ def checkpoint_detail(row):
     return "#%d is a checkpoint waiting for a person to close it" % row["number"]
 
 
+def roots_of(rows):
+    """-> the rows no other open row of `rows` stands behind in the sense that they wait on nothing open: what
+    HOLDS the chain, as opposed to what is held. A parked goal that itself waits on an open goal is held, and
+    naming it sends a person to answer something that could not move anyway. Every row when each waits on
+    another (a cycle), so a stop is never left without a name."""
+    open_now = {r["number"] for r in rows}
+    free = [r for r in rows if not [w for w in r.get("waits_on") or [] if w in open_now and w != r["number"]]]
+    return free or rows
+
+
 def stuck_reason(p, unconfirmed=(), held=(), declined=()):
     """-> (reason, detail), ONE reason from `chain.STUCK_REASONS` for an empty pick with members still open,
-    given plan rows `p["members"]` and `p["outside"]`. Numbers only in the detail. The order is the order a
-    person would act in: what needs a person, then what only waits. A failed read is the caller's, ahead of
+    given plan rows `p["members"]` (each may carry `waits_on`: the members it waits on) and `p["outside"]`. Only
+    the ROOTS are named (`roots_of`). Numbers only in the detail. The order is the order a person would act in:
+    what needs a person, then what only waits. A failed read is the caller's, ahead of
     this."""
     rows, outside = p["members"], p.get("outside") or []
     if any(r.get("kind") in ("not-read", "unreadable") for r in rows + outside):
         return "degraded-read", "a parked member could not be read"
+    rows = roots_of(rows)                       # name what holds the chain, not what waits behind it
     parked = sorted(r["number"] for r in rows if r["verdict"] == "parked")
     if parked:
         return "decision", "#%d is parked and needs an answer" % parked[0]

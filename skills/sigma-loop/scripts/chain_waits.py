@@ -30,8 +30,18 @@ Loose forms (closed set; each is a SHAPE with a direction, none is a bare mentio
   plug-into     "plug|hook into ... #N"                  ("these plug into #N's port")
   hold          "hold on|off|until|for ... #N"           ("hold on #N before any paid run")
   is-blocker    "#N is (now) a blocker"
-  waiting-for   "waiting|wait for ... #N"
+  waiting-for   "waits|waiting|wait for|on ... #N"      ("What this waits on: #N and #M")
+  behind        "sits|stands|queued behind ..." then EVERY reference to the end of that sentence (a list that
+                names its members in words: "sits behind E11 (#N), which ...; E3 (#M), which ...")
+  once-done     "once|as soon as ... #N (has|is) merged|landed|closed|done"  ("lands again as soon as #N has merged")
+  lands-before  "#N [and ... #M] land(s) ... before this|the|its"          ("#N and #M land on main before this run")
   follow-up     a follow-up form (advisory; never an unconfirmed wait)
+
+A NEGATION cancels a forward form or one of the two new ones when `not`, `never`, `nor`, `n't`, `no longer` or
+`without` stands within two words before the trigger ("this link does NOT wait for #N", "it no longer waits for
+#N"): such a sentence says the goal does not wait, and reading it as a wait parked a goal that could run. A
+negation in an earlier sentence, or further back than that, cancels nothing; the windows below stop at a sentence
+end, and the test looks back no further than the sentence start.
 
 Bounds: at most MAX_READS members are read (an issue GET plus the pages of its newest COMMENT_LIMIT comments,
 so at most 3 requests each; none when the issue is known to have no comment); each comment is read to
@@ -59,7 +69,7 @@ legacy = blocker_scan.legacy
 MAX_READS = 100
 COMMENT_LIMIT = 100
 COMMENT_CHARS = 2000
-BODY_CHARS = 20000
+BODY_CHARS = 65536          # GitHub's own limit on an issue body: a body is read to its end, never cut short
 MAX_ITEMS = 300
 MAX_MORE = 20
 TRUSTED = ("OWNER", "MEMBER", "COLLABORATOR")
@@ -74,13 +84,18 @@ OFFBOARD_PREFIXES = ("Parked by Sigma — needs human review: ",
 _I = re.IGNORECASE
 _SIGMA_MARKER = re.compile(legacy.MARKER_PREFIX_RE + ":", _I)     # a `sigma:` marker: Sigma wrote this comment
 _WIN = r"[^\n#,;.!?]{0,40}?"
+#: a longer window that allows commas, for a list that names its members in words before the reference
+_LIST_WIN = r"[^\n#;.!?]{0,80}?"
 #: forward forms: a trigger, a short window, then the first reference (group 1).
 _FORWARD = {
     "far": re.compile(r"\b(?:blocked[ \t]+(?:by|on|until)|depends[ \t]+(?:on|upon))\b[^\n#]{0,100}?#(\d+)\b", _I),
-    "only-once": re.compile(r"\bonly[ \t]+(?:once|when|after)\b" + _WIN + r"#(\d+)\b", _I),
+    "only-once": re.compile(r"\bonly[ \t]+(?:once|when|after)\b" + _LIST_WIN + r"#(\d+)\b", _I),
     "plug-into": re.compile(r"\b(?:plugs?|plugged|hooks?|hooked)[ \t]+(?:in)?to\b" + _WIN + r"#(\d+)\b", _I),
     "hold": re.compile(r"\bhold[ \t]+(?:on|off|until|for)\b" + _WIN + r"#(\d+)\b", _I),
-    "waiting-for": re.compile(r"\bwait(?:ing)?[ \t]+for\b" + _WIN + r"#(\d+)\b", _I),
+    "waiting-for": re.compile(r"\bwait(?:s|ing)?[ \t]+(?:for|on)\b" + _WIN + r"#(\d+)\b", _I),
+    "once-done": re.compile(r"(?<!only )(?<!only\t)\b(?:as[ \t]+soon[ \t]+as|once)\b" + _LIST_WIN + r"#(\d+)\b[^\n#;.!?]{0,25}?"
+                            r"\b(?:has|have|had|is|are)[ \t]+(?:been[ \t]+)?(?:merged|landed|closed|done|finished|resolved)\b",
+                            _I),
 }
 #: reference-first forms: the reference (group 1) comes before the words that give the direction.
 _REF_FIRST = {
@@ -90,15 +105,38 @@ _REF_FIRST = {
     "is-blocker": re.compile(r"#(\d+)\b[^\n#.!?;]{0,30}?\b(?:is|are)[ \t]+(?:(?:now|also|still)[ \t]+)*"
                              r"(?:(?:a|the)[ \t]+)?(?:hard[ \t]+)?blockers?\b", _I),
 }
+#: a landing stated without a modal: "#N [and lever 1 (#M)] land(s) ... before this ...". Group 1 is the whole run of
+#: references (up to six) that stand before the verb; group `t` is the verb, where a negation is looked for.
+_SPAN = {
+    "lands-before": re.compile(r"((?:#\d+\b[^\n#.!?;]{0,40}?){1,6})(?P<t>\blands?\b)[^\n#.!?;]{0,30}?"
+                               r"\bbefore\b\W{0,4}(?:this|the|its|it|any)\b", _I),
+}
+#: a negation shortly before a trigger: the goal does not wait, so the sentence is not a wait.
+_NEGATED = re.compile(r"(?:\b(?:not|never|nor|without)\b|n't\b|\bno[ \t]+longer\b)\W*(?:\w+\W+){0,2}$", _I)
+_SENTENCE_END = re.compile(r"[.!?\n]")
+#: "sits behind <a sentence that lists what it sits behind>": group `s` is the rest of that sentence (300 characters
+#: at most, to the first full stop or line end); every reference in it is read. Group `t` is the trigger.
+_SENTENCE_FORMS = {
+    "behind": re.compile(r"(?P<t>\b(?:sits?|sat|stands?|stood|queued?)[ \t]+(?:also[ \t]+)?behind\b)(?P<s>(?:[^\n.]|\.(?![ \t\n]|$)){0,300})", _I),
+}
 #: the tail of a list: ", #M", ", and #M", " and #M", " & #M" -- tight, one reference per step.
 _MORE = re.compile(r"[ \t]*(?:,[ \t]*(?:and[ \t]+)?|and[ \t]+|&[ \t]*)#(\d+)\b", _I)
-FORMS = ("explicit", "list", "follow-up") + tuple(_FORWARD) + tuple(_REF_FIRST)
+FORMS = ("explicit", "list", "follow-up") + tuple(_FORWARD) + tuple(_REF_FIRST) + tuple(_SPAN) + tuple(_SENTENCE_FORMS)
 
 
 def _foreign(text, ref_start):
     """`owner/repo#N`: the character before `#` belongs to a name (the rule `blocker_scan.is_cross_repo` has)."""
     i = ref_start - 2
     return i >= 0 and (text[i].isalnum() or text[i] in "_/-.")
+
+
+def _negated(text, pos):
+    """True when a negation stands within two words before `pos`, in the same sentence."""
+    head = text[max(0, pos - 60):pos]
+    ends = list(_SENTENCE_END.finditer(head))
+    if ends:
+        head = head[ends[-1].end():]
+    return bool(_NEGATED.search(head))
 
 
 def _tail(text, pos):
@@ -124,6 +162,8 @@ def find(text, explicit=True):
         if not blocker_scan.is_explicit(text, m, 0):             # a follow-up form: advisory only
             found.append((m.group(2), "follow-up"))
             continue
+        if _negated(text, m.start()):                            # "is not blocked by #N any more"
+            continue
         plain.add(m.group(2))
         if explicit:
             found.append((m.group(2), "explicit"))
@@ -132,12 +172,27 @@ def find(text, explicit=True):
         for m in rx.finditer(text):
             if _foreign(text, m.start(1)) or (form == "far" and m.group(1) in plain):
                 continue                                  # `far` only adds what the explicit window missed
+            if _negated(text, m.start()):
+                continue                                  # "does not wait for #N" says the opposite
             found.append((m.group(1), form))
             found += [(r, "list") for r in _tail(text, m.end())]
     for form, rx in _REF_FIRST.items():
         for m in rx.finditer(text):
             if not _foreign(text, m.start(1)):
                 found.append((m.group(1), form))
+    for form, rx in _SENTENCE_FORMS.items():
+        for m in rx.finditer(text):
+            if _negated(text, m.start("t")):
+                continue
+            found += [(r.group(1), form) for r in re.finditer(r"#(\d+)\b", m.group("s"))
+                      if not _foreign(text, m.start("s") + r.start(1))][:MAX_MORE + 1]
+    modal = {r for r, f in found if f == "land-before"}           # "must land ... before" is that form already
+    for form, rx in _SPAN.items():
+        for m in rx.finditer(text):
+            if _negated(text, m.start("t")):
+                continue
+            found += [(r.group(1), form) for r in re.finditer(r"#(\d+)\b", m.group(1))
+                      if r.group(1) not in modal and not _foreign(text, m.start(1) + r.start(1))]
     out, seen = [], set()
     for ref, form in found:
         if (ref, form) not in seen:

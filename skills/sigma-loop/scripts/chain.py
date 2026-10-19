@@ -184,6 +184,7 @@ chain_waits = _load("chain_waits")
 chain_checkpoint = _load("chain_checkpoint")
 chain_closed = _load("chain_closed")
 chain_forecast = _load("chain_forecast")
+chain_reads = _load("chain_reads")
 dag_store = dag_chain.dag_store
 dag_core = dag_chain.dag_core
 
@@ -1586,6 +1587,7 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
         if locked:
             chain_parallel.release(sdlc_dir, goal)
         return res
+    run = chain_reads.CycleReads(run or sources._run_gh)    # after the sweep, before the pick: one cycle's repeats
     held_back = _grow(sdlc_dir, goal, rec, blk, config, cfg, now, run, closure, pull, filed, no_grow, res)
     if res.pop("over_asked", None) is not None:
         detail = "chain.max_reasks reached: %s still need an answer" % _ids(sorted(int(k) for k in blk["paused"]))
@@ -1667,8 +1669,12 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
                                  % (_ids(left), "it" if len(left) == 1 else "them"))
                 reason, detail = "decision", "; ".join(parts)
             else:
-                reason, detail = _stuck(p, failure, unconfirmed, _held(rec), _declined(rec)) if (p is not None or failure is not None) \
-                    else ("degraded-read", "no read")
+                if p is not None:   # the record's waits, so the stop names the roots (the forecast's rows carry them)
+                    waits = {r["number"]: r.get("waits_on") or [] for r in rec["members"]}
+                    p = dict(p, members=[dict(r, waits_on=waits.get(r["number"], r.get("waits_on") or []))
+                                         for r in p["members"]])
+                reason, detail = _stuck(p, failure, unconfirmed, _held(rec), _declined(rec)) \
+                    if (p is not None or failure is not None) else ("degraded-read", "no read")
             blk.update(state="stuck", reason=detail, stuck=reason)
             res.update(state="stuck", exit=3, reason=reason, detail=detail)
     rec["run"] = blk
