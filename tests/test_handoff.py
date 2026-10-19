@@ -199,6 +199,28 @@ def test_create_tracked_issue_does_not_duplicate_sdlc_followup_if_the_caller_alr
     assert "model:bulk" in src.created["labels"]
 
 
+def test_create_tracked_issue_files_exactly_one_priority_label_when_the_caller_passes_another(tmp_path):
+    """#1920: `handoff track --label priority:P0` put a second priority label beside the decided one,
+    so the issue was filed carrying two in the same second. Only the decided one survives, and the
+    report says what was dropped."""
+    src = FakeSource()
+    rep = handoff.create_tracked_issue(_project(tmp_path), ON, "0008-x.md", "engine", "found something",
+                                       same_area=True, immediately_actionable=False, blocks_goal=False,
+                                       extra_labels=["priority:P0", "model:bulk"], source=src)
+    prio = [l for l in src.created["labels"] if l.startswith("priority:")]
+    assert len(prio) == 1 and prio[0] != "priority:P0"
+    assert "model:bulk" in src.created["labels"]
+    assert any("priority:P0" in w for w in (rep or {}).get("warnings", []))
+
+
+def test_create_tracked_issue_with_no_extra_priority_keeps_its_one_label(tmp_path):
+    src = FakeSource()
+    handoff.create_tracked_issue(_project(tmp_path), ON, "0009-x.md", "engine", "found something",
+                                  same_area=True, immediately_actionable=False, blocks_goal=False,
+                                  extra_labels=["model:bulk"], source=src)
+    assert len([l for l in src.created["labels"] if l.startswith("priority:")]) == 1
+
+
 def test_hand_off_transitions_the_current_goal_to_blocked(tmp_path):
     """#1350: hand_off() always pins blocks_goal=True, so filing a cross-area dependency must
     transition the CURRENT (blocked) goal's own label immediately -- not deferred to a later
