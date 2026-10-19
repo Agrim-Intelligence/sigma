@@ -3298,6 +3298,7 @@ def test_label_conflict_notice_names_both_values_while_the_swap_replaces_the_sta
     notices = triage._label_conflict_notices(plan, state_by_issue)
     assert len(notices) == 1
     assert "priority:P1" in notices[0] and "priority:P3" in notices[0] and "#42" in notices[0]
+    assert "replaced" in notices[0] and "left both" not in notices[0]
 
     actions = triage._picked_actions(plan, state_by_issue, None, "sdlc:goal", "sdlc:parked")
     assert [(a["action"], a["detail"]) for a in actions if "priority:" in a["detail"]] == [
