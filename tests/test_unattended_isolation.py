@@ -20,7 +20,7 @@ OWN = ("skills/sigma-loop/scripts/bounded_run.py", "skills/sigma-loop/scripts/un
 #: Registered callers, exempt by PATH: the shared "landed" predicate (#930) builds its read-only runner on `bounded_run`
 #: and is itself a library with no caller until its gated callers ship.
 REGISTERED_CALLERS = (
-    # sealed-test seal record (#847): a library with no caller until its gated work.py verb ships (slice 4, #558)
+    # sealed-test seal record (#847): called by the work.py commit/pr gates (#850); no seal verb until slice 4, #558
     "skills/sigma-loop/scripts/sealed_tests.py",
     "skills/sigma-loop/scripts/feature_landed.py",
     "skills/sigma-loop/scripts/feature_upkeep_pass.py",
