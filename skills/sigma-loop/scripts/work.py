@@ -257,7 +257,7 @@ ENFORCEMENT_GATES = (
                   "a goal with no seal record, and staged paths outside that directory, commit as before",
      "condition": "active only for a goal that has a seal record, and the record is agent-writable, so "
                   "deleting it disarms the gate (the D-11 ceiling; the configured record-required check of "
-                  "slice 4 closes it); local evidence, not tamper-proof; a raw `git commit` in the worktree "
+                  "slice C closes it); local evidence, not tamper-proof; a raw `git commit` in the worktree "
                   "bypasses this gate and is caught only at `work.py pr`; compares the working tree, so a "
                   "path git ignores is judged by the files on disk"},
     {"control": "Sealed acceptance tests unchanged and green at PR", "function": "_sealed_pr_refusal",
@@ -278,6 +278,36 @@ ENFORCEMENT_GATES = (
                   "rev while `core.attributesFile` is not seen; sealed tests are model-authored code run "
                   "with operator privileges and no sandbox; the red run and the green run may use "
                   "different interpreters; time and memory of a real run are unmeasured"},
+    {"control": "Sealed acceptance tests authored by an author-blind breaker (opt-in)",
+     "function": "_seal_tests_refusal", "kind": "python-gate", "hosts": "all",
+     "enabled_by": ("work.enabled", "gates.sealed_acceptance.enabled"), "settings": ("review.timeout_seconds",),
+     "mechanism": "`work.py seal-tests` runs after an approving plan-review: it builds the breaker brief from "
+                  "the acceptance record (read from the main checkout), spawns the breaker in an empty "
+                  "temporary directory in a process group that is killed whole on timeout, validates the "
+                  "file blocks it prints (AST parse, paths confined to `tests/acceptance/<stem>/`, "
+                  "`test_acc_<stem>_AC<n>_*.py` names), writes them from Python into the goal worktree and "
+                  "seals them; REFUSES with exit 3 for a precondition checked before any spawn (a non-pytest "
+                  "or absent verify command, a plan-review that is missing or stale, a non-actionable "
+                  "criterion) and exit 4 for a re-seal once implement has started, a host with no breaker "
+                  "route (a Claude Code host: no `claude` entry exists, #537 is not built), the attempts "
+                  "cap (a third re-seal) or an unreadable attempts counter (all four also checked before "
+                  "any spawn, nothing spent), and, at spawn time, an unattended first run without a "
+                  "recorded spend approval, a runner failure and a test that passes on the base commit "
+                  "(the attempts counter has advanced); inert (exit 0) with the gate off",
+     "condition": "this is slice A of the story: it REPORTS a non-actionable criterion and refuses, it does "
+                  "not record a plan defect or return the goal to plan, there is no `--no-seal` and no "
+                  "phase-gate step, and the commit and PR gates still activate only when a seal record "
+                  "exists, so deleting the record still disarms them (slice C closes that); per-criterion "
+                  "coverage is deferred to #535; the re-seal-after-implement guard reads the action log and is BLIND "
+                  "when it is off or unreadable (only the cap then bounds a rewrite); the unattended "
+                  "spend consult covers the first breaker run only (one approval, up to 3 runs), so an "
+                  "attended first run means later unattended re-seals are not consulted; concurrent "
+                  "`seal-tests` runs for one goal are not serialized (the counter is read and written "
+                  "without a lock and the session lease is machine-wide capacity, not a per-goal mutex), "
+                  "so the cap can be exceeded by the number of concurrent runs; the empty working directory does not stop a host CLI "
+                  "reading the worktree by absolute path, and the breaker keeps the caller's HOME, so its "
+                  "credentials are reachable; the verify-command pytest check is a heuristic; the "
+                  "end-to-end run against a real host is UNMEASURED (only a fake CLI has run)"},
     {"control": "Plan review before implementation", "function": "_plan_review_refusal",
      "kind": "python-gate", "hosts": "all",
      "enabled_by": ("work.enabled", "gates.plan_review.enabled"), "settings": (),
@@ -3935,7 +3965,7 @@ def _sealed_commit_refusal(sdlc_dir, rec, goal, run):
     being protected and is reset, per path, exactly as `_secret_refusal` resets (`_unstage`). TOTAL: any
     failure while checking is itself a refusal, and the unstage runs on every path after the add. "" only
     for a goal with no seal record (zero git calls) or a tree that matches. Activation = the record exists,
-    so deleting the record disarms the gate (the D-11 ceiling; slice 4's configured check closes it)."""
+    so deleting the record disarms the gate (the D-11 ceiling; slice C's configured check closes it)."""
     sdlc_dir, goal_stem = os.path.abspath(sdlc_dir), stem(goal)
     if not sealed_tests.is_sealed(sdlc_dir, goal_stem):
         return ""
@@ -3990,6 +4020,13 @@ def _sealed_pr_refusal(sdlc_dir, config, rec, goal):
                 f"Fix the code (the sealed tests are not edited), or {_SEALED_PARK} (nothing pushed)")
     except Exception as exc:                # noqa: BLE001 - total, as main() is: an unverifiable seal is a refusal
         return f"SEALED REFUSED: could not verify the seal ({type(exc).__name__}: {exc}); {_SEALED_PARK} (nothing pushed)"
+
+
+def _seal_tests_refusal(sdlc_dir, config, goal, **seams):
+    """#853 (slice A of #558): `work.py seal-tests` -> `(exit_code, text)`. Gate OFF is inert (0). Every
+    refusal is `seal-tests: REFUSED [<clause>]: ...` (3 = a precondition before any spawn; 4 = the rest, some also before any spawn). All logic and its limits
+    live in `seal_tests.py`; this is the registered seam `ENFORCEMENT_GATES` names."""
+    return _load("seal_tests").run(sdlc_dir, goal, config=config, **seams)
 
 
 def _test_first_refusal(sdlc_dir, config, rec, goal, run, no_tests=None):
@@ -8514,6 +8551,9 @@ _COMMANDS = {"start": start, "commit": commit, "pr": pr, "rebase": rebase,
              "post-review": post_review, "merge": merge, "finish": finish}
 
 
+_SEAL_TESTS_USAGE = ("usage: work.py seal-tests <sdlc_dir> <goal>   (opt-in: gates.sealed_acceptance.enabled; "
+                     "inert and exit 0 with it off; run it after an approving plan-review; exit 3 = a precondition refused "
+                     "before any spawn, exit 4 = other refusals, some also before any spawn; see seal_tests.py)")
 _RECORD_PLAN_REVIEW_USAGE = ("usage: work.py record-plan-review <sdlc_dir> <goal> --verdict "
                              "SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST --plan-sha256 <hex> "
                              "[--agent-id <reviewer agentId>] [--reason \"<text>\"]")
@@ -8561,6 +8601,7 @@ def main(argv):
             "quality-waive": _QUALITY_WAIVE_USAGE,
             "record-review": _RECORD_REVIEW_USAGE,
             "line-hash": _LINE_HASH_USAGE,
+            "seal-tests": _SEAL_TESTS_USAGE,
         }
         print(usage.get(command, "usage: work.py start|commit|pr|rebase|post-review|merge|finish <sdlc_dir> <goal>"))
         return 0
@@ -8679,6 +8720,18 @@ def main(argv):
             return 2
         print(json.dumps(result, sort_keys=True))
         return 0
+    if len(argv) >= 2 and argv[1] == "seal-tests":              # #853: dispatched OUTSIDE `_COMMANDS`; gate OFF is inert
+        if len(argv) != 4:
+            print(_SEAL_TESTS_USAGE, file=sys.stderr)
+            return 2
+        try:
+            config = state.load_config(argv[2])
+        except (state.ConfigMissing, state.ConfigInvalid) as exc:
+            print(f"work: {exc}", file=sys.stderr)
+            return 1
+        code, text = _seal_tests_refusal(argv[2], config, argv[3])
+        print(text, file=sys.stdout if code == 0 else sys.stderr)
+        return code
     if len(argv) >= 2 and argv[1] == "quality-waive":           # #1637: an owner's lever, never the loop's
         if len(argv) < 4 or "--metric" not in argv or "--reason" not in argv:
             print(_QUALITY_WAIVE_USAGE, file=sys.stderr)
@@ -8864,6 +8917,7 @@ def main(argv):
           "         post-review --verdict approve|block|unblock --evidence <path> [--reason \"<changes>\"]\n"
           "       work.py record-plan-review <sdlc_dir> <goal> --verdict SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST "
           "--plan-sha256 <hex> [--reason \"<text>\"]\n"
+          "       work.py seal-tests <sdlc_dir> <goal>   (opt-in, gates.sealed_acceptance.enabled)\n"
           "       work.py quality-waive <sdlc_dir> <goal> --metric <name> --reason \"<why>\"   "
           "(an owner's lever; the loop never runs it)\n"
           "       work.py root <sdlc_dir> <goal>\n"

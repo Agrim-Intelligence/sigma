@@ -55,6 +55,20 @@ _HOST_COMMANDS = {
 }
 
 
+#: #853: the BREAKER's own host table, SEPARATE from `_HOST_COMMANDS` on purpose. A reviewer reads the
+#: repository; a breaker must not, so its argv differs (codex needs `--skip-git-repo-check` to start in the
+#: breaker's empty working directory: measured necessary). There is NO `claude` key: no Claude Code breaker
+#: route exists yet (#537 is not built), so a Claude Code host is REFUSED by `resolve_breaker` -- adding the
+#: entry here is the whole change that would flip it, nothing else in the code branches on the host name.
+#: The brief reaches the CLI on STDIN for both entries, exactly as the review route sends its brief. UNMEASURED:
+#: `cursor-agent --help` documents a positional prompt, and whether `-p` reads stdin was not run against a real
+#: model; codex `exec -` reads stdin by its own documentation, also not run here. `verified` is False for both.
+_BREAKER_COMMANDS = {
+    "cursor": (["cursor-agent", "-p", "--output-format", "text"], False),
+    "codex": (["codex", "exec", "--sandbox", "read-only", "--ephemeral", "--skip-git-repo-check", "-"], False),
+}
+
+
 def _load(name):
     """Import a sibling script by path -- the kit's standard zero-install module loader. Legal here
     only because `breaker.py` lives in this same skill; a DIFFERENT skill must shell out to the CLI
@@ -184,6 +198,41 @@ def resolve(sdlc_dir, env=None, which=None):
                     timeout=timeout)
     return _out("inline", "other",
                 "no host marker in the environment and no review.command configured",
+                timeout=timeout)
+
+
+def resolve_breaker(sdlc_dir, env=None, which=None, table=None):
+    """-> the dict `work.py seal-tests` branches on (#853). Never raises. `mechanism` is `process` (argv in
+    `command`) or `refused` (named `reason`, and the `host`). Host detection is `resolve()`'s own, so the two
+    can never disagree about which host this is; only the TABLE differs (`_BREAKER_COMMANDS`).
+
+    A host with no entry is REFUSED, never degraded to an inline or in-session breaker: a breaker that shares
+    the maker's context is not a breaker. `review.command` is ignored (an operator command is a verdict
+    producer, not a file-writing breaker). `table` is a test seam: an injected `claude` entry flips the same
+    code to `process`, which is the claim that #537 is data and not a rewrite."""
+    env = os.environ if env is None else env
+    table = _BREAKER_COMMANDS if table is None else table
+    route = resolve(sdlc_dir, env=env, which=which)
+    host, timeout = route["host"], route["timeout_seconds"]
+    refuse = lambda reason: _out("refused", host, reason, verified=False, timeout=timeout)  # noqa: E731
+    if route["mechanism"] == "command":
+        return refuse("review.command is configured, and an operator command is not a breaker route")
+    entry = table.get(host)
+    if entry is None:
+        why = "the host %r has no breaker route (no entry in the breaker table; #537 is not built)" % host
+        if route["mechanism"] == "inline":
+            why += "; " + route["reason"]
+        return refuse(why)
+    argv, verified = entry
+    argv = list(argv)
+    if host == "codex":
+        path, why = _codex_cli(which, env)
+        if path is None:
+            return refuse("review.host is codex but %s" % why)
+        argv[0] = path
+    elif not (shutil.which if which is None else which)(argv[0]):
+        return refuse("the %s breaker needs %s, which is not on PATH" % (host, argv[0]))
+    return _out("process", host, "%s breaker resolved" % argv[0], command=argv, verified=verified,
                 timeout=timeout)
 
 
