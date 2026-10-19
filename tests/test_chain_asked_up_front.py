@@ -518,3 +518,24 @@ def test_remove_assignees_deletes_the_login_and_refuses_a_response_that_still_li
     assert ei.value.kind == "invalid"
     with pytest.raises(api.GhApiError):
         api.remove_assignees(gone, 5, ["org/team"], "O/N", env={})
+
+
+def test_a_member_in_progress_is_asked_even_when_it_is_assigned_to_the_runner(tmp_path):
+    """The label says a session holds it, whoever it is assigned to (another session of the same login is one)."""
+    ch, base, fk = scene(tmp_path, [goal(1, 2), goal(2, who="alice", labels=("sdlc:in-progress",))])
+    q = next(q for q in ch.questions_of(tca._rec(base), {}) if q["id"] == "elsewhere:2")
+    assert q["options"] == ["wait for them"] and "in progress in another session" in q["ask"]
+
+
+# --- 11 -- a member that waits only on a left-out member is held by it, and the stop names the left-out one ----------------
+
+def test_a_member_waiting_only_on_a_left_out_member_is_not_named_as_what_holds_the_chain(tmp_path):
+    cf = tca._chain().chain_forecast
+    p = {"members": [{"number": 61, "verdict": "armed", "waits_on": [52], "kind": None}],
+         "outside": [{"number": 52, "verdict": "outside", "own_verdict": "not-a-goal", "checkpoint": None}]}
+    reason, detail = cf.stuck_reason(p)
+    assert reason == "decision" and "#52 was left out" in detail, (reason, detail)
+    assert cf.other_roots(p, detail) == ([], 0)                   # 61 is held by 52, which the stop line already names
+    p["members"].append({"number": 70, "verdict": "armed", "waits_on": [], "kind": None})
+    others, more = cf.other_roots(p, detail)
+    assert others == [70] and 61 not in others

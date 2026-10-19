@@ -120,13 +120,17 @@ def checkpoint_detail(row):
     return "#%d is a checkpoint waiting for a person to close it" % row["number"]
 
 
-def roots_of(rows):
+def roots_of(rows, outside=()):
     """-> the rows no other open row of `rows` stands behind in the sense that they wait on nothing open: what
     HOLDS the chain, as opposed to what is held. A parked goal that itself waits on an open goal is held, and
-    naming it sends a person to answer something that could not move anyway. Every row when each waits on
-    another (a cycle), so a stop is never left without a name."""
-    open_now = {r["number"] for r in rows}
+    naming it sends a person to answer something that could not move anyway. `outside` are members the chain never
+    labelled (a checkpoint, a member left out) that work still waits on: they count as open, so what waits only on one
+    of them is held by it, and is not named as a root itself (the left-out member is, by `other_roots`). Every row
+    when each waits on another (a cycle), so a stop is never left without a name."""
+    open_now = {r["number"] for r in rows} | {r["number"] for r in outside}
     free = [r for r in rows if not [w for w in r.get("waits_on") or [] if w in open_now and w != r["number"]]]
+    if not free and outside and any(w in {r["number"] for r in outside} for r in rows for w in r.get("waits_on") or []):
+        return []                       # everything left waits on a member the chain never labelled: that one holds it
     return free or rows
 
 
@@ -143,7 +147,7 @@ def _stop_of_first_root(p, unconfirmed=(), held=(), declined=(), ctx=None):
     rows, outside = p["members"], p.get("outside") or []
     if any(r.get("kind") in ("not-read", "unreadable") for r in rows + outside):
         return "degraded-read", "a parked member could not be read"
-    rows = roots_of(rows)                       # name what holds the chain, not what waits behind it
+    rows = roots_of(rows, outside)              # name what holds the chain, not what waits behind it
     parked = sorted(r["number"] for r in rows if r["verdict"] in ("parked", chain_asks.KEPT_PARKED))
     if parked:
         if parked[0] in kept or any(r["number"] == parked[0] and r["verdict"] == chain_asks.KEPT_PARKED for r in rows):
@@ -204,7 +208,9 @@ def other_roots(p, detail):
     their own and records them for `chain.py status`; `detail` itself is unchanged, so the forecast's and the run's
     stop line stay equal)."""
     named = {int(x) for x in re.findall(r"#(\d+)", detail or "")}
-    others = sorted(r["number"] for r in roots_of(p["members"]) if r["number"] not in named)
+    outside = p.get("outside") or []
+    held_out = [r for r in outside if (r.get("own_verdict") or r["verdict"]) not in ("closed",)]
+    others = sorted(({r["number"] for r in roots_of(p["members"], outside)} | {r["number"] for r in held_out}) - named)
     return others[:MAX_OTHER_ROOTS], max(0, len(others) - MAX_OTHER_ROOTS)
 
 

@@ -207,14 +207,12 @@ def test_approval_refuses_an_incomplete_plan_and_bad_answers(tmp_path):
     assert ch.main(["chain.py", "answer", base, "1", "--defaults", "--partial"]) == 2
 
 
-def _many(base, n, kind="closed_gate"):
-    """n closed prerequisites that each hold a dependent back (one `closed_gate` question each)."""
+def _many(base, n):
+    """n members held by a gate (one `scope_hold` question each, the same options)."""
     rec = _rec(base)
-    rec["members"] = [{"number": 100 + i, "verdict": "armed", "kind": None, "labels": [], "waits_on": [],
+    rec["members"] = [{"number": 100 + i, "verdict": "held-by-gate", "kind": None, "labels": [], "waits_on": [],
                        "depth": 0, "prio": None} for i in range(n)]
-    rec["cross_unit"], rec["done"] = [], []
-    rec["closed_gates"] = [{"prerequisite": 500 + i, "followups": [900 + i], "question": False,
-                            "dependents": [100 + i]} for i in range(n)]
+    rec["cross_unit"], rec["done"], rec["closed_gates"] = [], [], []
     _put(base, rec)
 
 
@@ -223,18 +221,34 @@ def test_grouping(tmp_path):
     ch = _chain()
     _many(base, 24)                                   # 24 + the cap = 25: not over the line
     text = ch.sheet(base, 1, now=NOW)
-    assert "grouped" not in text and "[closed_gate:500]" in text
+    assert "grouped" not in text and "[scope_hold:100]" in text
     _many(base, 25)                                   # 25 + the cap = 26
     text = ch.sheet(base, 1, now=NOW)
-    assert "grouped by kind" in text and "[group:closed_gate]" in text
-    assert "[closed_gate:500]" not in text and "applies to 25 questions" in text
-    assert "keep waiting (recommended)" in text
-    res = ch.answer(base, 1, {"group:closed_gate": "proceed", "cap:c1": "30"}, run=fk)
+    assert "grouped by kind" in text and "[group:scope_hold]" in text
+    assert "[scope_hold:100]" not in text and "applies to 25 questions" in text
+    res = ch.answer(base, 1, {"group:scope_hold": "drop this", "cap:c1": "30"}, run=fk)
     assert res["errors"] == [] and res["state"] == "approved"
     answers = _rec(base)["answers"]
-    assert len([k for k in answers if k.startswith("closed_gate:")]) == 25
+    assert len([k for k in answers if k.startswith("scope_hold:")]) == 25
     assert fk.writes() == []                          # an answer is a local record
     assert ch.answer(base, 1, {"group:upper_tier": "x"}, run=fk)["errors"]
+
+
+def test_a_question_that_names_its_members_is_never_folded_into_a_group(tmp_path):
+    """A spend, closed-prerequisite or unit-boundary question prints what it is about; a group would print only a count."""
+    base, fk = _scene(tmp_path)
+    rec = _rec(base)
+    rec["members"] = [{"number": 100 + i, "verdict": "armed", "kind": None, "labels": [], "waits_on": [], "depth": 0,
+                       "prio": None, "spend": True} for i in range(30)]
+    rec["done"] = []
+    rec["cross_unit"] = [{"from": 100 + i, "to": 101 + i, "units": ["a", "b"]} for i in range(10)]
+    rec["closed_gates"] = [{"prerequisite": 500 + i, "followups": [900 + i], "question": False, "dependents": [100 + i]}
+                           for i in range(10)]
+    _put(base, rec)
+    text = _chain().sheet(base, 1, now=NOW)
+    assert "grouped" not in text and "applies to" not in text.replace("What cap applies to", "")
+    assert all("[irreversible:%d]" % (100 + i) in text for i in range(30))
+    assert all("[closed_gate:%d]" % (500 + i) in text for i in range(10))
 
 
 def test_a_parked_member_is_never_folded_into_a_group(tmp_path):

@@ -38,8 +38,9 @@ PARK_OPTIONS = [KEEP_PARKED, RELEASE]                  # the first of each is th
 WAIT_OPTIONS = [CONFIRM, DISMISS]
 ELSEWHERE_OPTIONS = [WAIT_FOR_THEM, TAKE_OVER]
 ELSEWHERE_WAIT_ONLY = [WAIT_FOR_THEM]
-#: the kinds that are one decision each about one named member: the sheet never folds them into a group
-UNGROUPED = (PARK, WAIT, ELSEWHERE)
+#: the kinds that are one decision each about named members, whose text is what the person decides on (a group
+#: question prints only "N questions share these options" and would hide it): the sheet never folds them into a group
+UNGROUPED = (PARK, WAIT, ELSEWHERE, "irreversible", "closed_gate", "cross_unit")
 WHY_CHARS = 140
 NAMES_SHOWN = 8
 KEYS_ONLY_WHY = "(wording withheld: this repository's decision records are keys-only)"
@@ -227,13 +228,12 @@ def held_elsewhere(row, runner):
     """True when a run by `runner` cannot take the member because someone else holds it: its verdict (or the
     verdict before the assignee clause) is assigned-elsewhere, an unarmed or PARKED member assigned to someone else
     (releasing the parked one would hand the run a member somebody else holds, so that is asked up front too), or the
-    in-progress label is on it and it is not the runner's."""
+    in-progress label is on it (a session holds it, whoever it is assigned to)."""
     if row["verdict"] in ("checkpoint", "closed", "upper-tier"):
         return False
-    mine = bool(runner) and runner.casefold() in {x.casefold() for x in row.get("assignees") or []}
     if row["verdict"] == "assigned-elsewhere":
         return True
-    if row.get("in_progress") and not mine:
+    if row.get("in_progress"):          # the label says a session holds it, whoever it is assigned to
         return True
     others = [x for x in row.get("assignees") or [] if not runner or x.casefold() != runner.casefold()]
     return bool(runner) and row["verdict"] in ("unarmed", "parked", KEPT_PARKED) and bool(others)
