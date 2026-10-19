@@ -212,6 +212,66 @@ armed goal is claimed), the done clause without its open-member checks (an empty
 an unreadable spend ledger read as empty (the run goes on), and the approval gate removed (a write before
 approval).
 
+## The regression scenario
+
+`tests/e2e/test_chain_regression.py` is the check to run before a release that touches how Chain reads, plans, asks
+or drives. It reproduces, on a synthetic backlog of 20 generic issues (`tests/fixtures/chain_regression/issues.json`),
+the shapes a real tangled backlog showed: a wait written only in a comment by the assignee; six loose phrasings
+("must land on main before", "plug into #N's port", "depends on rulings in #N", "only once #A, #B and #C are closed",
+"blocked on #N and #M", "starts only once #N has landed"); a checkpoint issue labelled `sdlc:blocking` with no
+`sdlc:goal`; follow-ups awaiting the owner under the legacy confirmation label; a closed prerequisite whose real
+gate moved to an open follow-up; a paid step; goals assigned to two logins; a parked goal; a mention that is not a
+wait; and armed goals outside every chain. `tests/fixtures/chain_regression/reference.json` says what the right
+answer is: the 15 hard waits, the ones that are not waits, each chain's members, and each stop with its root, its
+accepted reasons and the goals that finish before it.
+
+It runs the documented gesture (plan, sheet, `answer --defaults`, `answer --answers`, approve, arm, run until it
+stops, status) for two end goals through `chain.main(argv)` on the same fake host as the scratch scenario. A scripted
+owner answers the sheet from the reference only; a question the reference cannot answer is named and fails the run,
+never guessed. Scripted goal sessions close each claimed goal, or park it with the reference's kind. The pick is a fake
+of the loop's scoped pick that judges a goal ready by the reference's waits, not by what Chain read, so a wait Chain
+missed is a missing edge and a wrong stop, never a lucky pass. After a stop whose root the reference resolves (a person
+unparks it), the scripted world applies the resolution and the run goes on.
+
+```
+python3 -m pytest -q -p no:cacheprovider tests/e2e/test_chain_regression.py
+```
+
+Each criterion is judged alone, so a red run is a checklist: every reference wait is an edge in the plan or a question
+on the sheet; no phantom edge; the checkpoint is never claimed or armed; `answer --defaults` leaves a question open for
+every follow-up awaiting confirmation, and none is armed or claimed against the owner's answer; the paid goal is never
+claimed after "do not"; each stop names its reference root with an accepted reason, and the goals closed before it are
+the reference's; goals outside the chain are untouched and the pick is scoped to the chain label; every write stays in
+the scratch repository, no process starts, no ledger file appears and nothing is written outside the scratch `.sdlc`.
+
+The assertions are written for the intended behaviour, not for the engine as it stood. Measured on 1.0.17 at the commit
+this was written against, `test_regression_scenario_end_to_end` is red for both end goals and nothing is marked
+xfail:
+
+| End goal | Red on 1.0.17 | Why |
+|---|---|---|
+| 1 | members, dependencies, awaiting, stops, closed | the closure ends at the end goal (all 11 waits behind it are unread), `--defaults` decides for the owner, and the run stops with no root |
+| 11 | members, dependencies, stops, closed | `blocked on #5 and #12` yields #5 only; #12, the checkpoint and its blocker are unread |
+
+With every wait rewritten as the canonical `Blocked by` line, the dependency, member and phantom criteria go green and
+what stays red is the rest: follow-ups awaiting confirmation armed and claimed, the paid goal claimed, and the
+checkpoint armed and claimed. That is the share of the dependency-reading, checkpoint, confirmation, closed-prerequisite
+and hold slices.
+
+`plan --forecast` does not exist yet. `test_forecast_equals_actual_run` is skipped, with that reason in its skip
+message, until the flag is in the usage line; it then asserts the printed "can finish K of N before it stops on
+<reason>" equals the run's first segment (goals finished, members, and the root).
+
+The checker is controlled too: a synthetic perfect outcome passes, and each clause broken alone turns its own
+criterion red (`test_checker_controls`, `test_checker_counts_a_question_as_finding_a_wait`); the fake pick, the
+scripted owner, the hidden-wait builder and the world are each broken clause by clause by hand and seen to fail their
+tests. A new kind of question on the sheet needs its answer added to `reference.json` before the scenario can pass.
+
+Limits: the fake serves REST reads and writes only (no search endpoint, no timeline); the pick is a fake of the loop's
+scoped pick, not the loop; goal sessions do no work; the stop reasons for a checkpoint and a held paid goal accept a
+list because the reason vocabulary is not fixed for them; a GraphQL write carries no repository name, so the
+scratch-repository check covers REST writes only. A run on a live repository is not measured.
+
 ## The active-chain lock
 
 When `chain.parallel` or `chain.max_active` is set, each run cycle records its chain in
