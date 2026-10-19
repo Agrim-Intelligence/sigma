@@ -353,6 +353,11 @@ With no cap configured nothing reads the spend ledger; with one set, an unreadab
 at the p90 cost per goal. Setting `chain.parallel` or `chain.max_active` turns on the active-chain lock in
 `.sdlc/state/chain-active.json`, described with its recovery in [the chain reference](chain.md#the-active-chain-lock).
 
+**Checking a change.** Before a release that touches how a wait is read, how a plan is built or how a run stops,
+run the regression scenario in [the chain reference](chain.md#the-regression-scenario): a synthetic backlog, a
+reference answer for it, a scripted owner and scripted goal sessions, for two end goals, with every criterion judged
+alone.
+
 ## Configuration reference
 
 All keys live in `.sdlc/config.json`. A wrong-typed value reads as its default, except for the four cap keys
@@ -478,6 +483,8 @@ These pages say so where it applies; here is the list in one place.
   from the code; the one timing (graph build at 3,000 and 30,000 nodes) is in [the dependency map](dag.md).
 - No Chain run against a live repository has been done. Every chain behaviour was proven against fakes,
   fixtures and an offline scenario; network wall time and the cost of one cycle's reads are not measured.
+- The regression scenario is synthetic and offline: it measures nothing about a live repository, and its fake
+  pick is not the loop.
 - The 900-second stale rule for the active-chain lock and the 30-minute `chain.stale_minutes` are defaults, not
   measurements.
 - `deps.py` costs are counted from the code, not timed, and how well an agent judges a prose dependency is not

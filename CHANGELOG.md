@@ -3,6 +3,7 @@
 All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
+- **A public regression scenario for Chain on a tangled backlog (#1909).** `tests/e2e/test_chain_regression.py` with a 20-issue synthetic fixture and a reference answer (`tests/fixtures/chain_regression/`): comment-only and loosely phrased waits, a blocking-only checkpoint, follow-ups awaiting the owner, a closed prerequisite with an open follow-up, a paid step and goals of two logins, driven through the documented gesture by a scripted owner and scripted goal sessions for two end goals. It is written for the intended behaviour and is RED on 1.0.17 (nothing is marked xfail; the forecast check is skipped until `plan --forecast` exists). See `docs/chain.md`.
 - **Plan-review asks which force an abstraction answers; review reports `missing structure` (#1543).** An interface, factory, layer or indirection naming no force is over-built (a legacy sprout or wrap excepted), and a new or modern-zone diff adding a third or later case to a type conditional is a follow-up Concern. The effect on model behaviour is UNMEASURED; #1544 is the deferred baseline.
 
 ## 1.0.17 — 2026-10-18 — the stored dependency map and Sigma Chain: a map of what waits on what, a longest-chain plan, an approved and capped chain run; plus the 1.0.16 follow-ups to the resource guard and label drains
