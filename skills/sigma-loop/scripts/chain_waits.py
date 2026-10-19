@@ -30,9 +30,11 @@ Loose forms (closed set; each is a SHAPE with a direction, none is a bare mentio
   plug-into     "plug|hook into ... #N"                  ("these plug into #N's port")
   hold          "hold on|off|until|for ... #N"           ("hold on #N before any paid run")
   is-blocker    "#N is (now) a blocker"
-  waiting-for   "waits|waiting|wait for|on ... #N"      ("What this waits on: #N and #M")
-  behind        "sits|stands|queued behind ..." then EVERY reference to the end of that sentence (a list that
-                names its members in words: "sits behind E11 (#N), which ...; E3 (#M), which ...")
+  waiting-for   "waits|waiting|wait for ... #N"
+  waits-on      "this|it ... waits on ... #N"             ("What this waits on: #N and #M"; the subject must be THIS
+                issue: "E20 itself waits on #N" and "stage 1 also waits on #N" are another issue's waits)
+  behind        "this|it ... sits|stands|queued behind ..." then EVERY reference to the end of that sentence (a list
+                that names its members in words: "sits behind E11 (#N), which ...; E3 (#M), which ...")
   once-done     "once|as soon as ... #N (has|is) merged|landed|closed|done"  ("lands again as soon as #N has merged")
   lands-before  "#N [and ... #M] land(s) ... before this|the|its"          ("#N and #M land on main before this run")
   follow-up     a follow-up form (advisory; never an unconfirmed wait)
@@ -92,7 +94,8 @@ _FORWARD = {
     "only-once": re.compile(r"\bonly[ \t]+(?:once|when|after)\b" + _LIST_WIN + r"#(\d+)\b", _I),
     "plug-into": re.compile(r"\b(?:plugs?|plugged|hooks?|hooked)[ \t]+(?:in)?to\b" + _WIN + r"#(\d+)\b", _I),
     "hold": re.compile(r"\bhold[ \t]+(?:on|off|until|for)\b" + _WIN + r"#(\d+)\b", _I),
-    "waiting-for": re.compile(r"\bwait(?:s|ing)?[ \t]+(?:for|on)\b" + _WIN + r"#(\d+)\b", _I),
+    "waiting-for": re.compile(r"\bwait(?:s|ing)?[ \t]+for\b" + _WIN + r"#(\d+)\b", _I),
+    "waits-on": re.compile(r"\b(?:waits?|is[ \t]+waiting|are[ \t]+waiting)[ \t]+on\b" + _WIN + r"#(\d+)\b", _I),
     "once-done": re.compile(r"(?<!only )(?<!only\t)\b(?:as[ \t]+soon[ \t]+as|once)\b" + _LIST_WIN + r"#(\d+)\b[^\n#;.!?]{0,25}?"
                             r"\b(?:has|have|had|is|are)[ \t]+(?:been[ \t]+)?(?:merged|landed|closed|done|finished|resolved)\b",
                             _I),
@@ -111,6 +114,10 @@ _SPAN = {
     "lands-before": re.compile(r"((?:#\d+\b[^\n#.!?;]{0,40}?){1,6})(?P<t>\blands?\b)[^\n#.!?;]{0,30}?"
                                r"\bbefore\b\W{0,4}(?:this|the|its|it|any)\b", _I),
 }
+#: forms that are a wait only when the sentence's subject is THIS issue ("What this waits on: #N", "it waits on #N"),
+#: because "E20 itself waits on #N" and "stage 1 also waits on #N" say what ANOTHER issue waits on
+_OWN_SUBJECT = frozenset({"waits-on", "behind"})
+_OWN = re.compile(r"\b(?:this|it)\b(?:[ \t]+[\w'*]+){0,3}[ \t]*$", _I)
 #: a negation shortly before a trigger: the goal does not wait, so the sentence is not a wait.
 _NEGATED = re.compile(r"(?:\b(?:not|never|nor|without)\b|n't\b|\bno[ \t]+longer\b)\W*(?:\w+\W+){0,2}$", _I)
 _SENTENCE_END = re.compile(r"[.!?\n]")
@@ -128,6 +135,15 @@ def _foreign(text, ref_start):
     """`owner/repo#N`: the character before `#` belongs to a name (the rule `blocker_scan.is_cross_repo` has)."""
     i = ref_start - 2
     return i >= 0 and (text[i].isalnum() or text[i] in "_/-.")
+
+
+def _own_subject(text, pos):
+    """True when `this` or `it` stands within three words before `pos`, in the same sentence."""
+    head = text[max(0, pos - 60):pos]
+    ends = list(_SENTENCE_END.finditer(head))
+    if ends:
+        head = head[ends[-1].end():]
+    return bool(_OWN.search(head))
 
 
 def _negated(text, pos):
@@ -172,8 +188,8 @@ def find(text, explicit=True):
         for m in rx.finditer(text):
             if _foreign(text, m.start(1)) or (form == "far" and m.group(1) in plain):
                 continue                                  # `far` only adds what the explicit window missed
-            if _negated(text, m.start()):
-                continue                                  # "does not wait for #N" says the opposite
+            if _negated(text, m.start()) or (form in _OWN_SUBJECT and not _own_subject(text, m.start())):
+                continue                                  # "does not wait for #N" says the opposite; or another issue's wait
             found.append((m.group(1), form))
             found += [(r, "list") for r in _tail(text, m.end())]
     for form, rx in _REF_FIRST.items():
@@ -182,7 +198,7 @@ def find(text, explicit=True):
                 found.append((m.group(1), form))
     for form, rx in _SENTENCE_FORMS.items():
         for m in rx.finditer(text):
-            if _negated(text, m.start("t")):
+            if _negated(text, m.start("t")) or (form in _OWN_SUBJECT and not _own_subject(text, m.start("t"))):
                 continue
             found += [(r.group(1), form) for r in re.finditer(r"#(\d+)\b", m.group("s"))
                       if not _foreign(text, m.start("s") + r.start(1))][:MAX_MORE + 1]

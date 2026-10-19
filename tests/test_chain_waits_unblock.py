@@ -33,8 +33,9 @@ READ_AS = [
     ("#12 and lever 1 (#13) land on main **before** this issue's one paid run",
      [("12", "lands-before"), ("13", "lands-before")]),
     ("#12 lands before this change", [("12", "lands-before")]),
-    ("What this waits on: #12 and #13 (the two fixes), because #14 needs both.", [("12", "waiting-for"), ("13", "list")]),
-    ("this change is waiting on #12", [("12", "waiting-for")]),
+    ("What this waits on: #12 and #13 (the two fixes), because #14 needs both.", [("12", "waits-on"), ("13", "list")]),
+    ("this change is waiting on #12", [("12", "waits-on")]),
+    ("it waits on #12", [("12", "waits-on")]),
     ("Through the port's own blockers it also sits behind E11 (#12), which records the plan; E3 (#13), which builds the "
      "renderer; and E2 (#14), which holds the registry. It reads them.",
      [("12", "behind"), ("13", "behind"), ("14", "behind")]),
@@ -55,6 +56,12 @@ NOT_A_WAIT = [
     "it will not start only once #12 has landed",
     "it will not run as soon as #12 has merged",
     "it does not wait on #12",
+    "E20 itself waits on the plot-type fix (#12, #13).",
+    "Stage 1 also waits on #12 and #13, both parked.",
+    "a paid run that is still blocked, and E20 waits on #12",
+    "E20 sits behind #12 and #13.",
+    "it was a long and winding road before E20 waits on #12",
+    "the landing carries the core; E20 sits behind #12",
     "this slice never sits behind #12",
 ]
 

@@ -152,6 +152,7 @@ PHRASINGS = [
     ("lands again once the port (#12) has merged", [("12", "once-done")]),
     ("#12 lands on main before this change", [("12", "lands-before")]),
     ("this slice sits behind the port work (#12)", [("12", "behind")]),
+    ("What this waits on: #12.", [("12", "waits-on")]),
 ]
 
 #: sentences that only NAME an issue: no form reads any of them (the phantom-blocker control)
