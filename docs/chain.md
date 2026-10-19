@@ -44,9 +44,22 @@ none, which is the cap.
 
 ## Member states
 
-Live verdicts: armed, unarmed, parked, upper-tier, assigned-elsewhere, held-by-gate. From the stored map
-only the life is known: armed, unarmed, parked, unknown. An upper-tier, parked or gate-held member is
-labelled, never armed.
+Live verdicts: armed, unarmed, parked, upper-tier, assigned-elsewhere, held-by-gate, not-a-goal. From the
+stored map only the life is known: armed, unarmed, parked, unknown; a member whose life is `blocking` or
+unarmed is therefore read once (a GET, at most the plan's member bound) and the live verdict decides, and a
+`blocking` member that cannot be read is `unknown` (the plan is INCOMPLETE), never `armed`. An upper-tier,
+parked or gate-held member is labelled, never armed.
+
+### Not a goal (`not-a-goal`)
+
+An open issue that carries `sdlc:blocking` but not `sdlc:goal` is something other work waits on that nobody can
+start: the loop cannot pick it and the doctor already reports it as a deadlock. It is never `armed` and never the
+first pick. The sheet asks one question per such member (`not_goal:<n>`): leave it out (the recommended
+answer), arm it as a goal, or treat it as a checkpoint. Only "arm it as a goal" arms it. `chain.py arm` and
+`label_drain.py arm` touch such a member, with or without `--apply` or `--dry-run`, only after that answer: with
+any other answer, or none, it gets no `chain:<root>` label, no comment and no goal label, and `arm` lists it as
+refused. "Treat it as a checkpoint" is recorded only; the label that makes it one is a person's step (see the
+dependency docs).
 
 ## Growth
 

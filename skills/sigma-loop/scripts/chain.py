@@ -28,8 +28,9 @@ fallback. A closure over the bound is refused with its count, never truncated; a
 every member named.
 
 VERDICTS. Live: the label drain's `_Judge.verdict` (armed, unarmed, parked, upper-tier,
-assigned-elsewhere, held-by-gate). From the map only the life is known, so only armed, unarmed, parked
-and unknown can be given (`verdict_basis: map-life`). A parked member's kind is read through the label
+assigned-elsewhere, held-by-gate, not-a-goal). From the map only the life is known, so only armed, unarmed,
+parked and unknown can be given (`verdict_basis: map-life`), except that a member whose life is `blocking` or
+unarmed is read once and takes the live verdict when that is `not-a-goal` (#1903). A parked member's kind is read through the label
 drain's brief (several GETs, at most 20 members).
 
 EDGES. `explicit` for an edge from an issue body, `ledger` for any other recorded source (the map's
@@ -266,6 +267,27 @@ def _brief_kinds(rows, sdlc, config, source):
     return skipped
 
 
+def _refine_gated(rows, sdlc, config, ro, source):
+    """#1903: the map keeps a member's life, not its labels. Its `blocking` life cannot tell a goal that is also
+    blocking from an issue that only carries the overlay (nobody can start that one), and its unarmed lives
+    cannot tell an issue a person must decide about. So each such member is read once (a GET, so at most the
+    plan's member bound) and the label drain's own verdict decides: a gated one takes that verdict, and a
+    `blocking` member that could not be read is `unknown` (the plan is then INCOMPLETE), never `armed`."""
+    gh_api, judge = _load("gh_api"), label_drain._Judge(sdlc, config, source)
+    for r in rows:
+        if r["life"] != "blocking" and r["verdict"] != "unarmed":
+            continue
+        try:
+            issue = gh_api.view_issue(ro, r["number"], source.repo or None, comments="none")
+            verdict, _detail = judge.verdict(issue)
+        except Exception:       # noqa: BLE001 - say so rather than guess
+            if r["life"] == "blocking":
+                r["verdict"] = "unknown"
+            continue
+        if verdict in label_drain.GATED_KIND:
+            r["verdict"], r["labels"] = verdict, sorted(label_drain._names(issue))
+
+
 def _finish(out, rows, edges, ext, done, units, ranks, outside_ranks, weak):
     """Fields shared by both sources: order, depth, inversions, cross-unit, ahead-of."""
     nums = [r["number"] for r in rows]
@@ -348,6 +370,7 @@ def _plan_map(sdlc, goal, config, ro, source, now, m, bound):
     t = dag_store.stamp(m)
     out["map_age_seconds"] = max(0, int(now - t)) if t is not None else None
     _finish(out, rows, edges, _external(ext), done, {n: unit.get(n) for n in members}, ranks, outside, None)
+    _refine_gated(out["members"], sdlc, config, ro, source)
     skipped = _brief_kinds(out["members"], sdlc, config, source)
     out["parked_not_briefed"] = sorted(skipped)
     out["complete"] = not skipped and all(r["verdict"] != "unknown" for r in rows)
@@ -594,6 +617,14 @@ def _arm_scope(rec):
     return out
 
 
+def _promoted(rec):
+    """#1903: the members the label drain calls not-a-goal whose question the person answered with the one
+    option that arms them. Reads only the record."""
+    ld, ans = label_drain, rec.get("answers") or {}
+    return {r["number"] for r in rec["members"] if r["verdict"] in ld.GATED_KIND
+            and ans.get("%s:%d" % (ld.GATED_KIND[r["verdict"]], r["number"])) == ld.ARM_ANSWER[ld.GATED_KIND[r["verdict"]]]}
+
+
 def _label_line(n, goal):
     return "#%d: add label %s" % (n, chain_label(goal))
 
@@ -616,14 +647,19 @@ def _writes(rec, qs, config=None):
     out.append("answers to an undeclared-kind or spend question are recorded here only: declaring the kind "
                "and writing the spend marker belong to a later slice")
     out.append("after approval, `chain.py arm` creates the label %s if it is missing" % chain_label(goal))
-    out += [_label_line(r["number"], goal) for r in rec["members"]]
+    promoted = _promoted(rec)
+    held = [r for r in rec["members"] if r["verdict"] in label_drain.GATED_KIND and r["number"] not in promoted]
+    out += [_label_line(r["number"], goal) for r in rec["members"] if r not in held]
     out.append("arming, per member below: add sdlc:goal, priority %s only if it has none, assign you only if "
                "nobody is assigned, never edit the body; one comment with issue numbers only"
                % label_drain.arm_settings(config)["default_priority"])
     scope = _arm_scope(rec)
-    out += [_arm_line(r["number"]) for r in rec["members"] if r["number"] in scope]
+    out += [_arm_line(r["number"]) for r in rec["members"] if r["number"] in scope or r["number"] in promoted]
     out.append("nothing else: an upper-tier, parked or assigned-elsewhere member is labelled, never armed; "
                "starting the members belongs to a later slice")
+    if held:
+        out.append("%s is not a goal and you have not answered to arm it: left entirely untouched, no label, no comment"
+                   % _ids([r["number"] for r in held]))
     return out
 
 
@@ -868,6 +904,7 @@ def arm(sdlc_dir, goal, dry_run=False, config=None, run=None, now=None):
     except Exception as exc:        # noqa: BLE001 - fail closed: no write on a read that failed
         raise ChainRefused("could not check whether the label %s exists (%s); nothing was written" % (label, exc))
     judge, scope = ld._Judge(sdlc_dir, config, source), _arm_scope(rec)
+    answers = rec.get("answers") or {}
     refused, notes, per_member = [], [], []
     for r in rec["members"]:
         n = r["number"]
@@ -881,10 +918,15 @@ def arm(sdlc_dir, goal, dry_run=False, config=None, run=None, now=None):
         if verdict == "closed":
             notes.append("#%d is closed; left alone" % n)
             continue
+        kind = ld.GATED_KIND.get(verdict)
+        asked = bool(kind) and answers.get("%s:%d" % (kind, n)) == ld.ARM_ANSWER[kind]       # #1903: the person said arm it
+        if kind and not asked:          # #1903: not a goal and nobody said so: not even the chain label goes on
+            refused.append({"issue": n, "verdict": verdict, "reason": detail or verdict})
+            continue
         acts = []
         if label not in names:
             acts.append(_act("add-label", n, label))
-        if verdict == "unarmed" and n in scope:
+        if (verdict == "unarmed" and n in scope) or asked:
             got_refused = len(refused)
             prepared = ld._prepare(source, triage, gh_api, label, cfg, [(n, None)], refused, notes)
             if n in prepared and len(refused) == got_refused:
@@ -1198,7 +1240,7 @@ def _stuck(p, failure, unconfirmed):
     ext = sorted({n for r in outside for n in [r["number"]]} | {r["number"] for r in rows if r.get("unresolved")})
     if ext:
         return "external", "#%d waits on an open prerequisite outside the chain" % ext[0]
-    needs = sorted(r["number"] for r in rows if r["verdict"] in ("unarmed", "upper-tier"))
+    needs = sorted(r["number"] for r in rows if r["verdict"] in ("unarmed", "upper-tier") + tuple(label_drain.GATED_KIND))
     if needs:
         return "decision", "#%d is not armed and needs a person" % needs[0]
     if unconfirmed:
