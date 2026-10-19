@@ -433,6 +433,22 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-kg/scripts/sysgraph_merge.py",
+      "function": "_atomic_write",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "explicit `merge` command; writes only merged.json and unresolved.json inside the caller-named --out, via same-directory temp file and os.replace; the temp file is removed on failure",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-kg/scripts/sysgraph_merge.py",
+      "function": "main",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "explicit `merge` command; os.makedirs of the caller-named --out only, after the symlink and inside-fragments checks",
+      "risk": "medium"
+    },
+    {
       "path": "skills/sigma-loop/scripts/acceptance.py",
       "function": "record",
       "rule": "fs-remove",
