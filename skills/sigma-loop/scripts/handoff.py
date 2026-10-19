@@ -905,6 +905,14 @@ def create_tracked_issue(sdlc_dir, config, goal, area, why, *,
             labels[0] = f"priority:{_bucket_floor(config)}"
         if blocks_goal and goal and hasattr(source, "blocker_filing_priority"):    # #1408: never below the blocked goal
             labels[0] = f"priority:{source.blocker_filing_priority(str(goal), labels[0]) or labels[0][9:]}"
+        # #1920: an issue is filed with exactly ONE priority label, the one decided above. A caller's own
+        # `priority:*` in `extra_labels` (`handoff track --label priority:P4`) used to ride along beside it,
+        # filing the issue with two in the same second; every reader then takes the best rank of the two.
+        dropped = [l for l in labels[1:] if l.startswith("priority:")]
+        if dropped:
+            labels = [labels[0]] + [l for l in labels[1:] if not l.startswith("priority:")]
+            report["warnings"].append("dropped %s: an issue is filed with exactly one priority label (%s)"
+                                      % (", ".join(dropped), labels[0]))
         # #1347: guaranteed, not a caller-supplied extra — dedup against a caller that already
         # passed it explicitly (harmless either way, but a repeated label in one `gh` call is
         # needless noise).
