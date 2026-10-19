@@ -242,13 +242,22 @@ def forecast(rec, config=None, login=None, held=(), declined=()):
             "of": len(rows), "reason": reason, "detail": detail, "stops": stops, "notes": notes, "line": line}
 
 
-def render_forecast(fc):
-    """The forecast as lines of text: one per member, then the one-line answer and what it assumes."""
-    lines = ["Forecast, a run%s (width %d):" % (" from " + fc["runner"] if fc["runner"] else "", fc["width"])]
+def member_lines(fc):
+    """One line per member: its marker, or `after #N` while it waits on members still open."""
+    out = []
     for m in fc["members"]:
         shown = "after " + ", ".join("#%d" % a for a in m["after"]) if m["marker"] == AFTER else m["marker"]
-        lines.append("  #%d %s%s" % (m["number"], shown, " (%s)" % m["why"] if m["why"] and m["marker"] != AFTER else ""))
-    lines.append("Forecast: %s" % fc["line"])
-    lines += ["  note: " + n for n in fc["notes"]]
-    lines.append("  assumes every goal it claims merges; the cap is not modelled")
-    return lines
+        out.append("  #%d %s%s" % (m["number"], shown, " (%s)" % m["why"] if m["why"] and m["marker"] != AFTER else ""))
+    return out
+
+
+def answer_lines(fc):
+    """The one-line answer, then what it rests on. The sheet prints these first (#1908)."""
+    return (["Forecast: %s" % fc["line"]] + ["  note: " + n for n in fc["notes"]]
+            + ["  assumes every goal it claims merges; the cap is not modelled"])
+
+
+def render_forecast(fc):
+    """The forecast as lines of text: one per member, then the one-line answer and what it assumes."""
+    head = "Forecast, a run%s (width %d):" % (" from " + fc["runner"] if fc["runner"] else "", fc["width"])
+    return [head] + member_lines(fc) + answer_lines(fc)

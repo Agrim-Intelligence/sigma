@@ -68,7 +68,9 @@ PRIORITY. Inversions (a blocker less urgent than the goal that waits on it) and 
 
 SHEET (#1585). Every decision the chain needs, in front of the person together, before anything is
 changed. It reads ONLY the local record `plan` wrote (no `gh` call at all, so no GitHub write is possible)
-and prints requested content, not a status block. The questions are the label drain's own question list
+and prints requested content, not a status block. It opens with the forecast line (#1908), then the member
+blocks in the order a person unblocks a run: ready and waiting, owner decisions, unconfirmed waits, checkpoints,
+paid gates (`_unblock_blocks`; a member is in exactly one), then the decisions. The questions are the label drain's own question list
 over the member set (`label_drain.questions`) plus three chain-only ones: a cross-unit edge, an end goal
 that cannot be armed, and the cap (it has no default; its estimate arrives in a later slice). A question
 the record already answers (a parked member whose own question has a recorded answer, or an answer in
@@ -918,6 +920,59 @@ def _decision_lines(n, ident, q, ans, ids=None):
     return L
 
 
+def _unblock_blocks(rec, members, fc):
+    """#1908: the member blocks of the sheet, in the order a person unblocks a run: ready and waiting, owner
+    decisions, unconfirmed waits, checkpoints, paid gates. A member is in exactly one: a checkpoint, else a paid
+    step (whatever its verdict), else one that needs a person, else ready or waiting. A block with nothing in
+    it is not printed. Pure: reads only the record and the forecast."""
+    marker = {m["number"]: m for m in fc["members"]}
+    spend = lambda r: r.get("spend") and r["verdict"] != "checkpoint"           # noqa: E731
+    cps = [r for r in members if r["verdict"] == "checkpoint"]
+    paid = [r for r in members if spend(r)]
+    owner = [r for r in members if r not in cps and r not in paid and marker[r["number"]]["marker"] == "needs decision"]
+    ready = [r for r in members if r not in cps and r not in paid and r not in owner]
+    out = []
+    if ready:
+        out += ["", "Ready and waiting (%d, deepest first):" % len(ready)]
+        for r in ready:
+            m = marker[r["number"]]
+            shown = "after " + _ids(m["after"]) if m["after"] else m["marker"]
+            out.append("  #%d %s%s" % (r["number"], shown, " (%s)" % m["why"] if m["why"] and not m["after"] else ""))
+    gates = rec.get("closed_gates") or []
+    xs = rec.get("cross_unit") or []
+    if owner or gates or xs:
+        out += ["", "Owner decisions (%d):" % (len(owner) + len(gates) + len(xs))]
+        for r in owner:
+            out.append("  #%d %s%s%s" % (r["number"], r["verdict"], " (kind %s)" % r["kind"] if r.get("kind") else "",
+                                         "; waits on %s" % _ids(r["waits_on"]) if r.get("waits_on") else ""))
+        for w in gates:                                                         # #1906
+            out.append("  Closed with something still open: #%d (%s); %s waits on it" % (
+                w["prerequisite"], _closed_gate_what(w), _ids(w["dependents"])))
+        if gates or rec.get("closed_skipped"):
+            out.append("  " + _closed_counts(rec))
+        for x in xs:
+            out.append("  Cross-unit: #%d (%s) waits on #%d (%s)" % (x["from"], x["units"][0], x["to"], x["units"][1]))
+    out += chain_waits.sheet_block(rec)
+    if cps:         # #1904: their own block; they are never worked
+        out += ["", "Checkpoints (never worked; met when their unit lands on the integration branch, or when a person "
+                    "closes the issue):"]
+        for r in cps:
+            ck = r.get("checkpoint") or {}
+            held = [m["number"] for m in members if r["number"] in (m.get("waits_on") or [])]
+            out.append("  #%d%s: %s%s; holds up %s" % (
+                r["number"], " (unit %s)" % ck["unit"] if ck.get("unit") else "", ck.get("state") or "unknown",
+                " - %s" % ck["why"] if ck.get("why") else "", _ids(held)))
+            if ck.get("state") == chain_checkpoint.MET and held:
+                out.append("      its unit has landed but the issue is open and the pick gate still reads it as "
+                           "open: close it to release #%s" % ", #".join(str(n) for n in held))
+    if paid:
+        out += ["", "Paid gates (%d, never defaulted):" % len(paid)]
+        for r in paid:
+            out.append("  #%d (%s): asks for paid work; a run starts it only after the answer to irreversible:%d"
+                       % (r["number"], marker[r["number"]]["marker"], r["number"]))
+    return out + [""]
+
+
 def render_sheet(rec, now, config=None, runner=None):
     qs, openq = open_questions(rec, config)
     shown = [q for q in qs if not q["hidden"]]
@@ -929,42 +984,19 @@ def render_sheet(rec, now, config=None, runner=None):
     age = _age(now - rec["planned_at"]) if isinstance(rec.get("planned_at"), int) else "unknown"
     depth = max([r["depth"] for r in members] or [0])
     ahead = rec.get("higher_priority_ahead")
+    fc = chain_forecast.forecast(rec, config, runner, _held(rec), _declined(rec))
     L = ["Chain sheet for #%d" % rec["goal"],
          "End goal: #%d (%s)" % (rec["goal"], next((r["verdict"] for r in members if r["number"] == rec["goal"]),
                                                     "not in the plan")),
          "Open members: %d, depth %d, units: %s" % (len(members), depth, ", ".join(units) or "none"),
          "Source: %s; planned %s ago; plan %s" % (src, age, "complete" if rec.get("complete") else "INCOMPLETE"),
-         "State: %s" % rec.get("state", "planned"), "", "Order, deepest first:"]
-    for i, r in enumerate(members, 1):
-        extra = " (kind %s)" % r["kind"] if r.get("kind") else ""
-        w = "; waits on %s" % _ids(r["waits_on"]) if r.get("waits_on") else ""
-        L.append("  %d. #%d %s%s%s" % (i, r["number"], r["verdict"], extra, w))
-    cps = [r for r in members if r["verdict"] == "checkpoint"]
-    if cps:         # #1904: their own block; they are never worked
-        L.append("Checkpoints (never worked; met when their unit lands on the integration branch, or when a person "
-                 "closes the issue):")
-        for r in cps:
-            ck = r.get("checkpoint") or {}
-            held = [m["number"] for m in members if r["number"] in (m.get("waits_on") or [])]
-            L.append("  #%d%s: %s%s; holds up %s" % (
-                r["number"], " (unit %s)" % ck["unit"] if ck.get("unit") else "", ck.get("state") or "unknown",
-                " - %s" % ck["why"] if ck.get("why") else "", _ids(held)))
-            if ck.get("state") == chain_checkpoint.MET and held:
-                L.append("      its unit has landed but the issue is open and the pick gate still reads it as "
-                         "open: close it to release #%s" % ", #".join(str(n) for n in held))
+         "State: %s" % rec.get("state", "planned")]
+    L += chain_forecast.answer_lines(fc)                                                    # #1908: first
+    L += _unblock_blocks(rec, members, fc)
     L.append("Done prerequisites: %s" % _ids(rec.get("done") or []))
-    for w in rec.get("closed_gates") or []:                 # #1906
-        L.append("Closed with something still open: #%d (%s); %s waits on it" % (
-            w["prerequisite"], _closed_gate_what(w), _ids(w["dependents"])))
-    if rec.get("closed_gates") or rec.get("closed_skipped"):
-        L.append(_closed_counts(rec))
     L.append("Runs ahead of: %s higher-priority open goal(s)" % ("an unknown number of" if ahead is None else ahead))
-    for x in rec.get("cross_unit") or []:
-        L.append("Cross-unit: #%d (%s) waits on #%d (%s)" % (x["from"], x["units"][0], x["to"], x["units"][1]))
     for e in rec.get("externals") or []:
         L.append("External: %s (%s), needed by %s" % (e["ref"], e["kind"], _ids(e["needed_by"])))
-    L += chain_waits.sheet_block(rec)
-    L += chain_forecast.render_forecast(chain_forecast.forecast(rec, config, runner, _held(rec), _declined(rec)))      # #1907
     L.append("")
     groups = _active_groups(qs)
     grouped_ids = {i for ids in groups.values() for i in ids}

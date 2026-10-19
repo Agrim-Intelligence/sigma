@@ -78,19 +78,18 @@ End goal: #1 (armed)
 Open members: 3, depth 1, units: none
 Source: live (map: off); planned 5m ago; plan complete
 State: planned
-
-Order, deepest first:
-  1. #2 parked (kind dependency)
-  2. #3 unarmed
-  3. #1 armed; waits on #2, #3
-Done prerequisites: #4
-Runs ahead of: 0 higher-priority open goal(s)
-Forecast, a run (width 1):
-  #2 needs decision (parked)
-  #3 needs decision (not armed)
-  #1 after #2, #3
 Forecast: a run can finish 0 of 3 before it stops on decision: #2 needs decision (parked), #3 needs decision (not armed)
   assumes every goal it claims merges; the cap is not modelled
+
+Ready and waiting (1, deepest first):
+  #1 after #2, #3
+
+Owner decisions (2):
+  #2 parked (kind dependency)
+  #3 unarmed
+
+Done prerequisites: #4
+Runs ahead of: 0 higher-priority open goal(s)
 
 Decisions (3 open of 3):
   1. [dependency:2] A blocking issue is still open. Do you want to wait for it, work around it, or drop this?

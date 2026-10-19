@@ -31,8 +31,9 @@ PAID = "Paid step: runpodctl create pod for the render\n\n" + DW
 
 def _backlog():
     """Goal 1 waits on 2 (ready, with a wait only a comment says), 3 (a follow-up waiting for its owner), 4 (only
-    the blocking overlay), 5 (a checkpoint), 6 (a paid step) and 7 (ready once 2 is done)."""
-    return [tla.issue(1, "sdlc:goal", assignees=("alice",), body="".join("Blocked by #%d\n" % n for n in range(2, 8))
+    the blocking overlay), 5 (a checkpoint), 6 (a paid step), 7 (ready once 2 is done) and 8 (a paid step that is
+    not armed either)."""
+    return [tla.issue(1, "sdlc:goal", assignees=("alice",), body="".join("Blocked by #%d\n" % n for n in range(2, 9))
                       + "\n" + DW),
             tla.issue(2, "sdlc:goal", assignees=("alice",), body=DW, comments=["hold on #9 before any paid run"]),
             tla.issue(3, NC, "sdlc:followup", body=DW),
@@ -40,6 +41,7 @@ def _backlog():
             tla.issue(5, "sdlc:checkpoint", body=DW),
             tla.issue(6, "sdlc:goal", assignees=("alice",), body=PAID),
             tla.issue(7, "sdlc:goal", assignees=("alice",), body="Blocked by #2\n\n" + DW),
+            tla.issue(8, body=PAID),
             tla.issue(9, "sdlc:goal", assignees=("alice",), body=DW)]
 
 
@@ -54,7 +56,8 @@ def _say(ch, argv, **kw):
 def _sheet(tmp_path, approve=False):
     base, fk = tca._scene(tmp_path, approve=approve, issues=_backlog())
     rec = tca._rec(base)            # the fixture's hard-stop net is off, so mark the paid member as the plan would
-    next(r for r in rec["members"] if r["number"] == 6)["spend"] = True
+    for r in rec["members"]:
+        r["spend"] = r.get("spend") or r["number"] in (6, 8)
     tca._put(base, rec)
     code, text = _say(tca._chain(), ["chain.py", "sheet", base, "1"], now=NOW)       # the gesture the docs give
     assert code == 0, text
@@ -72,14 +75,16 @@ def test_answer_defaults_never_arms_an_owner_gated_member_or_accepts_a_spend_gat
     assert answers["not_goal:4"] == "leave it out"          # leaving a non-goal out arms nothing
     assert "owner_gate:3" not in answers and "owner_gate:3" in res["open"]    # the fate of a follow-up is the owner's
     assert "irreversible:6" not in answers and "irreversible:6" in res["open"]
+    assert "irreversible:8" not in answers and "irreversible:8" in res["open"]
     assert "cap:c1" in res["open"]
     # the rest answered, the two questions that only the owner can answer still open: the chain is not approved
     more = ch.answer(base, 1, {"cap:c1": "5"}, run=fk)
-    assert more["state"] == "awaiting-answers" and sorted(more["open"]) == ["irreversible:6", "owner_gate:3"]
+    assert more["state"] == "awaiting-answers" and sorted(more["open"]) == [
+        "irreversible:6", "irreversible:8", "owner_gate:3"]
     assert not any(w[0] in (3, 4) for w in tca._writes(fk))
 
 
-# --- the run and the forecast honour what the sheet shows (#1908) ---------------------------------------------
+# --- the run and the forecast honour the answers (#1908) --------------------------------------------------------
 
 class NaivePick:
     """A pick that knows only labels, the goal label, the explicit `Blocked by` edges (the gate the loop's pick

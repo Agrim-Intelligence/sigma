@@ -44,6 +44,23 @@ none: the cap, a paid step (`irreversible:<n>`, which is never accepted for the 
 for its owner (`owner_gate:<n>`, which is never decided for the owner). Those stay open, and the chain is not
 approved until a person answers them.
 
+### What the sheet shows first (unblock order)
+
+The sheet opens with the header, then the forecast line, then one block per kind of thing a person can act on,
+always in this order, each printed only when it has members, and a member is in exactly one:
+
+1. `Forecast:` how far a run from this login gets, and where it stops (see [the forecast](#the-forecast)).
+2. **Ready and waiting:** members a run can claim, now or once what they wait on is done (and, marked as such,
+   the ones it cannot: someone else's, not workable).
+3. **Owner decisions:** parked, not-armed, upper-tier, not-a-goal and awaiting-owner members, closed
+   prerequisites with something still open, and cross-unit edges.
+4. **Unconfirmed waits:** waits written in prose or a comment, with the commands that settle them.
+5. **Checkpoints:** never worked; met when their unit lands, or when a person closes the issue.
+6. **Paid gates:** members that ask for paid work. Never defaulted; a run does not start one until the answer
+   to `irreversible:<n>` is `go ahead`. A paid member is listed here and nowhere else among the member blocks.
+
+Then the numbered decisions and the writes that follow approval, as before.
+
 ### Unconfirmed waits
 
 A wait written in prose or in a comment, in wording no explicit form recognises, is read by Chain for this chain

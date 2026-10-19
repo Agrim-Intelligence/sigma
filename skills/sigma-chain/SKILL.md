@@ -22,8 +22,9 @@ Arguments: `<N | issue URL of this repository>`, `--longest`, `--forecast`, `--a
    `C plan D <N> --forecast` (read-only toward GitHub): relay its one line, "a run from <login> can finish K of N
    before it stops on <reason>", and the root of each stop; `--as <login>` asks for another runner. A refusal
    (cycle, over the member bound) is relayed as is.
-2. **Ask.** `C sheet D <N>` lists every decision at once. If it has an "Unconfirmed waits" block, put that block
-   to the user whole: the plan already reads each
+2. **Ask.** `C sheet D <N>` lists every decision at once. It opens with the forecast line (relay it), then the
+   blocks in the order a person unblocks a run: ready and waiting, owner decisions, unconfirmed waits, checkpoints,
+   paid gates. If it has an "Unconfirmed waits" block, put that block to the user whole: the plan already reads each
    as a wait, so for each that is real run `deps.py mark D <goal> <ref> <reason>`; for a wrong one, post the
    `backlog_check.py dismiss-text blocked-by <ref>` text with `loop.py note`; then `C plan D <N>` again. Put the
    decisions to the user in batches of up to four

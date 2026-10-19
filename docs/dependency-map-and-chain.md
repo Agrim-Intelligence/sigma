@@ -330,8 +330,10 @@ nothing in it is model-driven. The full reference, with the agent-file block, is
    end goals from the map only (priority tier, then depth, then member count, then oldest, then number;
    `--by freeing` puts the member count first). It writes nothing and calls no GitHub; with the map off or
    unusable it is refused.
-3. **Sheet.** `chain.py sheet <sdlc_dir> <N>` prints one block of unconfirmed waits, then every decision together,
-   recommended answer first (a paid step and a follow-up waiting for its owner have none), then the exact writes that would follow approval, then `Nothing has been changed yet.` It reads only the local record.
+3. **Sheet.** `chain.py sheet <sdlc_dir> <N>` prints the forecast line first, then one block each for what is ready
+   or waiting, the owner decisions, the unconfirmed waits, the checkpoints and the paid gates (in that order, each
+   only when it has members), then every decision together, recommended answer first (a paid step and a follow-up
+   waiting for its owner have none), then the exact writes that would follow approval, then `Nothing has been changed yet.` It reads only the local record.
 4. **Answer.** `chain.py answer <sdlc_dir> <N> --answers <file>` or `--defaults`. Every answer is a bank option
    (the cap is a positive whole number), never free text. `--defaults` takes each recommended option except where
    there is none, which is the cap.

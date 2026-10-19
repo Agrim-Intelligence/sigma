@@ -212,8 +212,9 @@ def test_sheet_carries_the_forecast(tmp_path):
     base, fk = tca._scene(tmp_path, issues=_backlog(), approve=False)
     ch = tca._chain()
     code, out = _say(ch, ["chain.py", "sheet", base, "1"], now=NOW)
-    assert code == 0 and "Forecast, a run from alice (width 1):" in out and "  #2 after #3" in out
-    assert out.index("Forecast: a run from alice can finish 3 of 8") < out.index("Decisions (")
+    assert code == 0 and "  #2 after #3" in out        # the per-member markers ride in the sheet's blocks (#1908)
+    assert out.index("Forecast: a run from alice can finish 3 of 8") < out.index("Ready and waiting") \
+        < out.index("Decisions (")
     code, out = _say(ch, ["chain.py", "sheet", base, "1", "--as", "carol"], now=NOW)
     assert "Forecast: a run from carol can finish 0 of 8" in out
     assert _say(ch, ["chain.py", "sheet", base, "1", "--as"], now=NOW)[0] == 2
