@@ -21,7 +21,8 @@ Arguments: `<N | issue URL of this repository>`, `--longest`, `--forecast`, `--a
 1. **Identify.** With `--longest`, run `C plan D --longest` and offer its top three end goals. Otherwise
    `C plan D <N> --forecast` (read-only toward GitHub): relay its one line, "a run from <login> can finish K of N
    before it stops on <reason>", and the root of each stop; `--as <login>` asks for another runner. A refusal
-   (cycle, over the member bound) is relayed as is.
+   (cycle, over the member bound) is relayed as is. Then name the chain's page: `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/dag.py" html --goal <N> --sdlc D`
+   writes `D/state/dag-html/chain-<N>.html` from the stored map (offline, no GitHub call; add `--titles <file>` for titles).
 2. **Ask.** `C sheet D <N>` lists every decision at once. It opens with the forecast line (relay it), then the
    blocks in the order a person unblocks a run: ready and waiting, owner decisions, unconfirmed waits, checkpoints,
    paid gates. If it has an "Unconfirmed waits" block, put that block to the user whole: the plan already reads each

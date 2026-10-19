@@ -230,7 +230,8 @@ Commands run from the directory that holds `.sdlc`; scripts are under `skills/si
    `shadow` or `on` explicitly is what starts the automatic refresh (the reconcile tick, the first pick of a
    process, and `dag.py refresh`). Build the first map at once with `dag.py rebuild` (needs gh signed in).
 3. **Read it.** `dag.py line`, `dag.py stuck`, `dag.py chains --rank biggest` and `dag.py chain <goal>` all read
-   the stored file and write nothing.
+   the stored file and write nothing. `dag.py html --all` draws every chain as an offline page (see
+   [the map](dag.md)).
 4. **Clean up prose dependencies.** For a goal whose ticket says what it waits for in words, run
    `deps.py report .sdlc <goal>` and `deps.py mark` for each real one. The loop's instructions do this per goal
    before its pre-checks; doing it by hand first makes the shadow comparison cleaner.
@@ -492,6 +493,7 @@ take the `.sdlc` directory as their first argument.
 | `dag.py chain <goal> [--json] [--verify] [--include-resolved]` | `dag.py`, `dag_chain.py` | only with `--verify` | the closure of one goal, schema `dag-chain/1` |
 | `dag.py chains [--rank longest\|biggest] [--json]` | `dag.py` | no | connected groups of two or more open members |
 | `dag.py stuck [--json]` | `dag.py`, `dag_stuck.py` | no | decision roots holding other work, most freeing first |
+| `dag.py html (--goal N \| --all) [--out DIR] [--titles FILE]` | `dag.py`, `dag_html.py` | no | one offline HTML page per chain (a goal and its open prerequisites), and an index with `--all`; default `.sdlc/state/dag-html/` |
 | `deps.py report <sdlc_dir> <goal>` | `deps.py` | reads | every reference in title, body and comments, classified |
 | `deps.py mark <sdlc_dir> <goal> <ref> <reason...>` | `deps.py` | reads, then one body write and one comment | writes `**Blocked by:** #N` |
 | `backlog_check.py dismiss-text <kind> <ref> [reason...]` | `backlog_check.py` | no | prints the marker that retires one finding |

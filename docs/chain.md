@@ -23,6 +23,7 @@ the sigma-loop scripts. It plans the whole chain, asks every decision together, 
 | Step | Verb | Touches GitHub |
 |---|---|---|
 | Plan | `chain.py plan <sdlc_dir> <N> [--json] [--forecast [--as <login>]]` | reads only (about one request per member, for unconfirmed waits); writes the local record |
+| See it | `dag.py html --goal <N>` (or `--all`) | nothing, from the stored map; one offline page per chain under `.sdlc/state/dag-html/` |
 | Offer end goals | `chain.py plan <sdlc_dir> --longest [--by freeing]` | nothing, from the stored map |
 | Sheet | `chain.py sheet <sdlc_dir> <chain> [--as <login>]` | nothing |
 | Answer | `chain.py answer <sdlc_dir> <chain> --answers <file>` or `--defaults` | parked members only, through the unpark gesture |

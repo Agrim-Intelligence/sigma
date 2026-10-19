@@ -398,10 +398,18 @@ def _external(items):
 
 # --- the map ----------------------------------------------------------------------------------------
 
-def _plan_map(sdlc, goal, config, ro, source, now, m, bound, cache=None):
+def map_closure(m, goal, bound=None, strict=True, now=None):
+    """The plan's map half, from the stored map alone (no `gh` call): -> `(out, g, esrc, body)`. `out` holds the
+    members (verdict from the map's life), the done prerequisites, the pull-request externals, the edges and the
+    fields `_finish` adds; `g` is the graph, `esrc` maps each edge to its source and `body` is `dag_chain._walk`'s
+    object (its `cycles` are the ones `strict` refuses). `strict` (the plan) refuses a cycle and a closure over
+    `bound`; the HTML page (`dag_html`) passes `strict=False` and reports both itself. One walk, shared, so the
+    page's members are the plan's."""
+    now = time.time() if now is None else now
     g = dag_chain._graph(m)
     body, _closure = dag_chain._walk(g, m, goal, True, set())
-    _refuse_cycles(body["cycles"])
+    if strict:
+        _refuse_cycles(body["cycles"])
     if g.resolved(goal):
         raise ChainRefused("#%d is already closed; there is no chain to plan" % goal)
     unit = {n["number"]: n.get("unit") for n in m["nodes"]}
@@ -417,7 +425,8 @@ def _plan_map(sdlc, goal, config, ro, source, now, m, bound, cache=None):
                     ext.append(("#%d" % n, "pull-request", d))
         else:
             keep.append(x)
-    _refuse_bound(len(keep), bound, "from the map")
+    if strict:
+        _refuse_bound(len(keep), bound, "from the map")
     members = {x["number"] for x in keep}
     esrc = {(e["blocker"], e["blocked"]): e.get("source") for e in m["edges"]}
     edges = [{"from": a, "to": b, "tag": "explicit" if esrc.get((a, b)) == "body" else "ledger"}
@@ -438,6 +447,13 @@ def _plan_map(sdlc, goal, config, ro, source, now, m, bound, cache=None):
     t = dag_store.stamp(m)
     out["map_age_seconds"] = max(0, int(now - t)) if t is not None else None
     _finish(out, rows, edges, _external(ext), done, {n: unit.get(n) for n in members}, ranks, outside, None)
+    return out, g, esrc, body
+
+
+def _plan_map(sdlc, goal, config, ro, source, now, m, bound, cache=None):
+    out, g, esrc, _body = map_closure(m, goal, bound, True, now)
+    members, done = {r["number"] for r in out["members"]}, out["done"]
+    rows = out["members"]
     out.update(_closed_check(ro, source, {p: sorted(d for d in g.dependents[p] if d in members)
                                           for p in done if g.nodes[p].kind == "issue"
                                           and any(d in members for d in g.dependents[p])}, config))
