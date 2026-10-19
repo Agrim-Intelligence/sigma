@@ -24,7 +24,8 @@ new inference rule inside the scanners.
   edge          an explicit form in the title or body: the gate and the map already hold it
   comment-edge  an explicit form only in a comment: the map never reads it, and the gate reads it only
                 in the newest 20 comments' first 500 characters, and never a follow-up form there
-  weak          a weak word (`needs`, `after`, `requires`, `waiting on`) before it: advisory only
+  weak          a weak word (`needs`, `after`, `requires`, `waiting on`) before it, or a loose phrasing
+                `chain_waits` knows ("only once #N", "hold on #N", "#N is a blocker", ...): advisory only
   mention       any other reference: read by nothing
 
 GitHub mode only: a local-goals source prints `UNSUPPORTED` and exits 2. Snippets go to stdout for
@@ -53,6 +54,7 @@ def _load(name):
 
 blocker_scan = _load("blocker_scan")
 _scrub = _load("scrub")
+chain_waits = _load("chain_waits")
 
 _REF_RE = re.compile(r"#(\d+)\b")
 SNIPPET_CHARS = 160
@@ -84,8 +86,8 @@ def analyse(goal, title, body, comments):
     for where, text in texts:
         explicit = {m.group(2) for m in blocker_scan._EXPLICIT_BLOCK_RE.finditer(text)
                     if not blocker_scan.is_cross_repo(text, m)}
-        weak = {m.group(2) for m in blocker_scan._BLOCK_RE.finditer(text)
-                if not blocker_scan.is_cross_repo(text, m)} - explicit
+        weak = ({m.group(2) for m in blocker_scan._BLOCK_RE.finditer(text)
+                 if not blocker_scan.is_cross_repo(text, m)} | chain_waits.loose_refs(text)) - explicit   # #1902
         for m in _REF_RE.finditer(text):
             ref = m.group(1)
             if ref == goal or _is_foreign(text, m.start()):

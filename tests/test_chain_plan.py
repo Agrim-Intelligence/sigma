@@ -346,11 +346,13 @@ def test_measured_calls_for_10_30_50_member_chains(tmp_path, capsys):
         _save_map(mbase, [_mnode(i) for i in range(1, k + 1)], [(i, i + 1) for i in range(1, k)])
         mcalls = []
         t = time.perf_counter()
-        mp = _plan(mbase, k, [], mcalls)
+        mp = _plan(mbase, k, _line_issues(k), mcalls)
         map_ms = (time.perf_counter() - t) * 1000
         assert len(mp["members"]) == k and mp["source"] == "map"
-        assert mp["calls"]["total"] == len(mcalls) == 0
-        rows.append((k, 0, map_ms, len(calls), live_ms))
+        # #1902: the map names the chain with no call, then ONE issue GET per member reads its comments for
+        # waits no edge says (a member without comments costs that one request; the fake's have none)
+        assert mp["calls"]["total"] == len(mcalls) == k and mp["complete"] is True
+        rows.append((k, k, map_ms, len(calls), live_ms))
     with capsys.disabled():
         print("\nchain plan measured (counting fake; local wall time only, network not measured)")
         print("members | map calls | map local ms | live calls | live local ms")
