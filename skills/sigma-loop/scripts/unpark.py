@@ -196,6 +196,18 @@ QUESTIONS = {
                                "close that dependency, or replace it?",
          "options": ["close the dependency", "replace the dependency"],
          "gestures": {"close the dependency": "none", "replace the dependency": "none"}},
+        # #1903: asked once per member by the label drain and the chain sheet. The first option is the
+        # recommended one, so no default ever makes the issue a goal.
+        {"id": "not_goal", "ask": "Other work waits on this issue, but it was never made a goal: leave it out, "
+                                  "arm it as a goal, or treat it as a checkpoint?",
+         "options": ["leave it out", "arm it as a goal", "treat it as a checkpoint"],
+         "gestures": {"leave it out": "none", "arm it as a goal": "none", "treat it as a checkpoint": "none"}},
+        # #1905: a follow-up still waiting for its owner. Approving a chain is not that confirmation, so the
+        # first (recommended) option never promotes it.
+        {"id": "owner_gate", "ask": "This follow-up is still waiting for its owner to confirm it, and approving the "
+                                    "chain is not that confirmation: leave it out, promote it, or close it?",
+         "options": ["leave it out", "promote it", "close it"],
+         "gestures": {"leave it out": "none", "promote it": "none", "close it": "none"}},
     ],
     "unknown": [
         {"id": "next", "ask": "Here is what it stopped on: {reason} What should happen next?"},

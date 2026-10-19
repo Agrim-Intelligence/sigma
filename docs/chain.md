@@ -33,7 +33,7 @@ the sigma-loop scripts. It plans the whole chain, asks every decision together, 
 
 No GitHub write exists in any verb before `approve`. `run` is one cycle and is called again until it
 reports done; exit 3 means capped or stuck with one reason (decision, held-gate, claimed, external,
-rate-limit, degraded-read, capped).
+checkpoint, rate-limit, degraded-read, capped).
 
 ## The sheet
 
@@ -57,9 +57,70 @@ network time, and how often the loose phrasings match a remark that is not a wai
 
 ## Member states
 
-Live verdicts: armed, unarmed, parked, upper-tier, assigned-elsewhere, held-by-gate. From the stored map
-only the life is known: armed, unarmed, parked, unknown. An upper-tier, parked or gate-held member is
-labelled, never armed.
+Live verdicts: armed, unarmed, parked, upper-tier, assigned-elsewhere, held-by-gate, not-a-goal. From the
+stored map only the life is known: armed, unarmed, parked, unknown; a member whose life is `blocking` or
+unarmed is therefore read once (a GET, at most the plan's member bound) and the live verdict decides, and a
+`blocking` member that cannot be read is `unknown` (the plan is INCOMPLETE), never `armed`. An upper-tier,
+parked or gate-held member is labelled, never armed.
+
+### Not a goal (`not-a-goal`)
+
+An open issue that carries `sdlc:blocking` but not `sdlc:goal` is something other work waits on that nobody can
+start: the loop cannot pick it and the doctor already reports it as a deadlock. It is never `armed` and never the
+first pick. The sheet asks one question per such member (`not_goal:<n>`): leave it out (the recommended
+answer), arm it as a goal, or treat it as a checkpoint. Only "arm it as a goal" arms it. `chain.py arm` and
+`label_drain.py arm` touch such a member, with or without `--apply` or `--dry-run`, only after that answer: with
+any other answer, or none, it gets no `chain:<root>` label, no comment and no goal label, and `arm` lists it as
+refused. "Treat it as a checkpoint" is recorded only; the label that makes it one is a person's step (see the
+dependency docs).
+
+### Closed, but not done (`closed_gate`)
+
+Chain treats a closed prerequisite as resolved. Some were closed without meeting their goal and the real gate moved to
+an issue nobody linked. `plan` therefore inspects the closed prerequisites it lists under `done`, and warns, next to
+the dependent, for each one that has either of two signals: an open issue carrying `sdlc:followup` whose body says
+`Follow-up to|of|on|from #N` (the tight forms that count as an edge elsewhere; a follow-up that was never labelled is
+not seen), or an owner question as its **newest** comment (a line starting `Owner question:`, `Question for the owner:`
+or `Needs the owner's answer|decision|call:`, a bullet or bold allowed, with nothing posted after it). The warning is
+advisory: it adds no edge and no member. It is in the record (`closed_gates`, numbers only), in the `plan` output
+as `warning: closed #N with ...`, and on the sheet as the question `closed_gate:<N>`: keep waiting (the recommended
+answer) or proceed. "Keep waiting" holds the dependent: `arm` labels it but does not arm it, and every `run` cycle skips
+it; a later `plan` that no longer raises the warning (the follow-up closed) releases it. "Proceed" changes nothing.
+
+Bounded: at most `chain.max_closed_checks` (default 10; 0 turns the check off) closed prerequisites are inspected per
+plan, lowest number first, at most three reads each plus one list of open follow-ups; the plan prints
+`closed prerequisites inspected: N, skipped: M (#...)`. A read that fails costs only that signal and is listed as not
+fully read; it never refuses a plan. Not measured: the added reads against a live repository (measured on the offline fake: a plan with
+three closed prerequisites made 13 calls with the check on and 6 with `chain.max_closed_checks` at 0, which is one list, three
+issue reads and three comment-page reads more).
+
+### Waiting for the owner (`awaiting-owner`)
+
+A member that carries the legacy confirmation label (`sdlc:needs-confirmation`, or the name under
+`ledger.handoff.proposed_label`), with or without `sdlc:goal`, is a follow-up still waiting for its owner. Approving
+a chain is not that confirmation, so it is never armed by `chain.py arm` or `label_drain.py arm`, with or without
+`--apply` or `--dry-run`, unless the sheet asked about that member and the person answered "promote it". The
+sheet asks one question per such member (`owner_gate:<n>`): leave it out (the recommended answer, so no default
+arms), promote it, or close it. Members that share the options are shown as one group (`group:owner_gate`)
+whatever the number of questions, and an answer to the group reaches each of them. "Promote it" arms the member
+through the same machinery as any other, and also strips the leftover label, so the queue stops refusing it; the
+other two answers write nothing (Sigma does not close an issue for you). The same holds for an open blocker that
+`label_drain.py arm` would otherwise pull into the label. Known gap: the stored map cannot see the leftover label on
+a member that also carries `sdlc:goal`, so the sheet may show it as armed; `arm` reads every member's current labels
+and still leaves it untouched, listing it as refused.
+
+## Checkpoints
+
+A checkpoint (`sdlc:checkpoint`, see [the label model](label-model.md#2b-vi-sdlccheckpoint--an-issue-that-means-that-units-code-is-on-main))
+stands for "that unit's code is on the integration branch". It is a row in the plan with the verdict `checkpoint`,
+its unit and a status (`met`, `waiting` or `unknown`). It is never picked, never armed and gets no `chain:<root>`
+label; `Blocked by` on it is an ordinary edge; the sheet shows checkpoints in their own block, with what each one
+holds up. When no other reason is open, `run` stops with the reason `checkpoint` and names it; a `met` one says
+that its issue is still open and the step that releases it (close the issue). It is met when the unit's tip is
+contained in `<remote>/<work.base>` (local git ancestry, no fetch, no network) or a person closes the issue.
+A unit landed by squash, or whose branch is gone, reads `waiting` or `unknown` until a person closes the
+checkpoint. The loop's own pick gate still reads an open blocker as open, so a `met` checkpoint does not release
+its dependents until it is closed: the status is a report, the close is the release.
 
 ## Growth
 
@@ -85,6 +146,7 @@ Keys under `chain` in the project config.
 |---|---|---|
 | `chain.max_members` | 100 | Largest closure `plan` accepts; over it the plan is refused with its count, never truncated. |
 | `chain.max_goals` | members plus `chain.max_added` | Most goals the chain may hold. |
+| `chain.max_closed_checks` | 10 | Closed prerequisites `plan` inspects for an open follow-up or an unanswered owner question; the rest are skipped and counted. 0 turns the check off. |
 | `chain.max_added` | 5 | Goals the chain may grow by when `chain.max_goals` is unset. |
 | `chain.freeze` | false | When true (or `run --no-grow`), nothing joins by itself: each new prerequisite is asked on a delta sheet. A fourth such pause (max_reasks, default 3) ends the run stuck. |
 | `chain.parallel` | unset (width 1) | Whole number of 2 or more: members one run cycle may claim at once. Capped by `parallel.goals.max_concurrent` (default 3) and honoured only with `parallel.goals.enabled` true and `work.enabled` on; otherwise the width is 1. A value below 2 is read as unset. When `chain.max_usd` is set and the remaining budget does not cover the goals in flight at the p90 cost per goal, the run falls back to width 1. |

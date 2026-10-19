@@ -2288,6 +2288,10 @@ def _unreachable_blocker_scan(gh_cfg, run):
     legacy confirmation label and deliberately no goal label (`handoff.py`), and something later
     declares itself blocked by it.
 
+    A CHECKPOINT (`checkpoint_label`, #1904) is the one intended exception: it stands for "a unit's code is on
+    the integration branch", nobody works it, and it is met by the unit landing or a person closing it, so
+    it is not a deadlock and is not reported here.
+
     Report-only, and deliberately so: auto-adding `goal_label` would defeat the very approval gate
     that put the issue in this state. `/sigma-promote`'s `deadlocked` bucket is the route out.
 
@@ -2295,6 +2299,7 @@ def _unreachable_blocker_scan(gh_cfg, run):
     (silent), never a false alarm."""
     blocking = gh_cfg.get("blocking_label", "sdlc:blocking")
     goal = gh_cfg.get("goal_label", "sdlc:goal")
+    checkpoint = gh_cfg.get("checkpoint_label", "sdlc:checkpoint")
     issues = _list(run, gh_cfg, ["number", "labels"], [blocking])
     if issues is None:
         return []
@@ -2304,7 +2309,7 @@ def _unreachable_blocker_scan(gh_cfg, run):
             continue
         names = [(l.get("name") or "") if isinstance(l, dict) else str(l or "")
                  for l in (i.get("labels") or [])]
-        if goal not in names:
+        if goal not in names and checkpoint not in names:       # #1904: a checkpoint is met, never worked
             flagged.append(i.get("number"))
     return flagged
 

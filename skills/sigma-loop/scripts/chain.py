@@ -28,9 +28,24 @@ and one REST read per unknown reference. The output says which source and its ag
 fallback. A closure over the bound is refused with its count, never truncated; a cycle is refused with
 every member named.
 
+CLOSED, BUT NOT DONE (#1906). `plan` inspects up to `chain.max_closed_checks` (default 10) closed prerequisites
+(`chain_closed.scan`, GETs only) for an open `Follow-up to|of` child or an unanswered owner question as the newest
+comment, and records an advisory warning per prerequisite (`closed_gates`, numbers only) with how many were
+inspected and skipped. It adds no edge. The sheet asks keep waiting or proceed; "keep waiting" leaves the
+dependents unarmed and makes every `run` cycle skip them.
+
+OWNER GATE (#1905). A member carrying the legacy confirmation label is `awaiting-owner` (with or without the goal
+label) and, like a `not-a-goal` one, is armed only after the sheet's question about it was answered with the one
+option that arms it ("promote it"); the other answers leave it untouched.
+
+CHECKPOINTS (#1904). A member the label drain calls `checkpoint` is a row with `checkpoint: {unit, state, why}`
+(`chain_checkpoint.status`, local git only). It is never labelled or armed, is not a member of the run (so
+it never has to close for the run to be done), and is shown in its own block on the sheet.
+
 VERDICTS. Live: the label drain's `_Judge.verdict` (armed, unarmed, parked, upper-tier,
-assigned-elsewhere, held-by-gate). From the map only the life is known, so only armed, unarmed, parked
-and unknown can be given (`verdict_basis: map-life`). A parked member's kind is read through the label
+assigned-elsewhere, held-by-gate, not-a-goal). From the map only the life is known, so only armed, unarmed,
+parked and unknown can be given (`verdict_basis: map-life`), except that a member whose life is `blocking` or
+unarmed is read once and takes the live verdict when that is `not-a-goal` (#1903). A parked member's kind is read through the label
 drain's brief (several GETs, at most 20 members).
 
 EDGES. `explicit` for an edge from an issue body, `ledger` for any other recorded source (the map's
@@ -52,7 +67,8 @@ and prints requested content, not a status block. The questions are the label dr
 over the member set (`label_drain.questions`) plus three chain-only ones: a cross-unit edge, an end goal
 that cannot be armed, and the cap (it has no default; its estimate arrives in a later slice). A question
 the record already answers (a parked member whose own question has a recorded answer, or an answer in
-this record) is not asked. More than 25 questions are grouped by kind.
+this record) is not asked. More than 25 questions are grouped by kind; the per-member `owner_gate` and `not_goal`
+questions (#1903, #1905) are grouped whenever two or more share their options.
 
 ANSWER. Records answers in the chain record, nothing else locally. A parked member's answer is handed to
 `unpark.resolve`, the verb `/sigma-unpark` uses, so the issue gets the identical recorded Q&A block. Every
@@ -88,8 +104,8 @@ member is confirmed by reading the issue itself, so a lost label never reads as 
 loop's own `loop.py next-batch --label chain:<root> --session-pid P`, the only process this verb starts, so
 nothing outside the label is ever claimed and the claim stays lease based. A non-empty pick is recorded
 (numbers only) with a heartbeat, exit 0. An empty pick is `done` only when every member is confirmed closed;
-otherwise it is STUCK, exit 3, with ONE reason: decision, held-gate, claimed, external, rate-limit,
-degraded-read. `stop` and `resume [--cap N]` change only the record's `run` block (local, no `gh` call); a
+otherwise it is STUCK, exit 3, with ONE reason: decision, held-gate, claimed, external, checkpoint (#1904: the
+only thing left is a checkpoint, named with its unit), rate-limit, degraded-read. `stop` and `resume [--cap N]` change only the record's `run` block (local, no `gh` call); a
 stop does not release goals already claimed. The record is a local file with no lock: run one driver per
 chain. Not measured: a run against a live repository, and the cost of one cycle's reads beyond the fake's
 call counts.
@@ -144,6 +160,8 @@ label_drain = _load("label_drain")
 dag_chain = _load("dag_chain")
 chain_parallel = _load("chain_parallel")
 chain_waits = _load("chain_waits")
+chain_checkpoint = _load("chain_checkpoint")
+chain_closed = _load("chain_closed")
 dag_store = dag_chain.dag_store
 dag_core = dag_chain.dag_core
 
@@ -274,6 +292,42 @@ def _brief_kinds(rows, sdlc, config, source):
     return skipped
 
 
+def _refine_gated(rows, sdlc, config, ro, source):
+    """#1903: the map keeps a member's life, not its labels. Its `blocking` life cannot tell a goal that is also
+    blocking from an issue that only carries the overlay (nobody can start that one), and its unarmed lives
+    cannot tell an issue a person must decide about. So each such member is read once (a GET, so at most the
+    plan's member bound) and the label drain's own verdict decides: a gated one takes that verdict, and a
+    `blocking` member that could not be read is `unknown` (the plan is then INCOMPLETE), never `armed`."""
+    gh_api, judge = _load("gh_api"), label_drain._Judge(sdlc, config, source)
+    for r in rows:
+        if r["life"] != "blocking" and r["verdict"] != "unarmed":
+            continue
+        try:
+            issue = gh_api.view_issue(ro, r["number"], source.repo or None, comments="none")
+            verdict, _detail = judge.verdict(issue)
+        except Exception:       # noqa: BLE001 - say so rather than guess
+            if r["life"] == "blocking":
+                r["verdict"] = "unknown"
+            continue
+        if verdict in label_drain.GATED_KIND or verdict == "checkpoint":
+            r["verdict"], r["labels"] = verdict, sorted(label_drain._names(issue))
+        if verdict == "checkpoint":         # #1904
+            r["checkpoint"] = chain_checkpoint.status(sdlc, config, label_drain._unit(issue, judge.features))
+
+
+def _closed_check(ro, source, closed_by, config):
+    """#1906: the advisory "closed with open follow-up" warnings for the plan's closed prerequisites (`closed_by`
+    maps each to the members that wait on it), bounded by `chain.max_closed_checks` (default
+    `chain_closed.DEFAULT_LIMIT`, 0 turns it off). -> the plan fields. Adds no edge and never refuses a plan."""
+    block = (config or {}).get("chain") if isinstance((config or {}).get("chain"), dict) else {}
+    limit = block.get("max_closed_checks")
+    limit = limit if isinstance(limit, int) and not isinstance(limit, bool) and limit >= 0 \
+        else chain_closed.DEFAULT_LIMIT
+    got = chain_closed.scan(ro, source.repo or None, closed_by, limit)
+    return {"closed_gates": got["warnings"], "closed_checked": got["inspected"],
+            "closed_skipped": got["skipped"], "closed_unread": got["unread"]}
+
+
 def _finish(out, rows, edges, ext, done, units, ranks, outside_ranks, weak):
     """Fields shared by both sources: order, depth, inversions, cross-unit, ahead-of."""
     nums = [r["number"] for r in rows]
@@ -356,6 +410,10 @@ def _plan_map(sdlc, goal, config, ro, source, now, m, bound):
     t = dag_store.stamp(m)
     out["map_age_seconds"] = max(0, int(now - t)) if t is not None else None
     _finish(out, rows, edges, _external(ext), done, {n: unit.get(n) for n in members}, ranks, outside, None)
+    out.update(_closed_check(ro, source, {p: sorted(d for d in g.dependents[p] if d in members)
+                                          for p in done if g.nodes[p].kind == "issue"
+                                          and any(d in members for d in g.dependents[p])}, config))
+    _refine_gated(out["members"], sdlc, config, ro, source)
     skipped = _brief_kinds(out["members"], sdlc, config, source)
     out["parked_not_briefed"] = sorted(skipped)
     out["complete"] = not skipped and all(r["verdict"] != "unknown" for r in rows)
@@ -417,6 +475,8 @@ def _plan_live(sdlc, goal, config, ro, source, bound):
         weak += _weak_count(issue, goal, blocker_scan)
         rows.append({"number": n, "verdict": verdict, "labels": sorted(names), "prio": prio,
                      "spend": ld._spend_text(issue.get("body"), hard_stop, config) is not None})
+        if verdict == "checkpoint":                                  # #1904
+            rows[-1]["checkpoint"] = chain_checkpoint.status(sdlc, config, units[n])
     edges = [{"from": b, "to": n, "tag": "explicit"} for n, bs in clo["edges"].items() for b in bs]
     ext = []
     for n, tags in clo["unresolved"].items():
@@ -449,6 +509,11 @@ def _plan_live(sdlc, goal, config, ro, source, bound):
         outside = None
     out = {"verdict_basis": "labels", "map_age_seconds": None, "stops": list(clo["stops"])}
     _finish(out, rows, edges, _external(ext), done, units, ranks, outside, weak)
+    closed_by = collections.defaultdict(list)
+    for n, refs in clo["closed"].items():
+        for r in refs:
+            closed_by[r].append(n)
+    out.update(_closed_check(ro, source, {r: sorted(set(ns)) for r, ns in closed_by.items()}, config))
     skipped = _brief_kinds(out["members"], sdlc, config, source)
     out["parked_not_briefed"] = sorted(skipped)
     out["complete"] = not clo["stops"] and not skipped and all(
@@ -522,6 +587,32 @@ def _chain_arg(text):
     return int(m.group(1))
 
 
+CLOSED_GATE_OPTIONS = ["keep waiting", "proceed"]       # the first is the recommended one: nothing starts early unasked
+
+
+def _closed_gate_what(w, short=False):
+    """The warning's cause in words, numbers only; `short` is the plan line's wording."""
+    parts = []
+    if w.get("followups"):
+        parts.append(("open follow-up %s" if short else "its follow-up %s is still open") % _ids(w["followups"]))
+    if w.get("question"):
+        parts.append("an unanswered owner question" if short else "a question for the owner on it is unanswered")
+    return " and ".join(parts)
+
+
+def _closed_gate_ask(w):
+    return ("#%d is closed, but %s, and %s waits on it. Keep waiting for that, or proceed?"
+            % (w["prerequisite"], _closed_gate_what(w), _ids(w["dependents"])))
+
+
+def _held(rec):
+    """#1906: the members that wait on a closed prerequisite whose warning the person answered "keep waiting".
+    Reads the plan's current warnings, so an answer about a warning a later plan no longer raises holds nothing."""
+    ans = rec.get("answers") or {}
+    return {d for w in rec.get("closed_gates") or []
+            if ans.get("closed_gate:%d" % w["prerequisite"]) == CLOSED_GATE_OPTIONS[0] for d in w["dependents"]}
+
+
 def _row_for_questions(r):
     return {"number": r["number"], "verdict": r["verdict"], "waiting_on": list(r.get("waits_on") or []),
             "labels": r.get("labels") or [], "kind": r.get("kind"), "question": ""}
@@ -551,6 +642,9 @@ def questions_of(rec, config=None):
                           "lands. Keep going or stop here?" % (x["from"], x["units"][0], x["to"], x["units"][1],
                                                                 x["from"]),
                    "options": list(CROSS_UNIT_OPTIONS), "unblocks": [x["from"], x["to"]]})
+    for w in rec.get("closed_gates") or []:          # #1906: advisory; one question per closed prerequisite
+        qs.append({"id": "closed_gate:%d" % w["prerequisite"], "kind": "closed_gate", "ask": _closed_gate_ask(w),
+                   "options": list(CLOSED_GATE_OPTIONS), "unblocks": sorted(w["dependents"])})
     end = by.get(goal) or {}
     if end.get("verdict") == "upper-tier":
         qs.append({"id": "upper_tier:%d" % goal, "kind": "upper_tier",
@@ -594,6 +688,20 @@ def _grouped(qs):
     return len([q for q in qs if not q["hidden"]]) > GROUP_OVER
 
 
+#: #1905: kinds asked once per member that are grouped whenever two or more share their options, however few
+#: questions the sheet holds (the 25-question threshold is for the rest).
+GROUP_ALWAYS = ("owner_gate", "not_goal")
+
+
+def _active_groups(qs):
+    """-> the groups the sheet and `answer` use: every group past `GROUP_OVER` questions, else only those of
+    `GROUP_ALWAYS` kinds."""
+    groups = _groups(qs)
+    if _grouped(qs):
+        return groups
+    return {g: ids for g, ids in groups.items() if g.split(":", 1)[1].split("#")[0] in GROUP_ALWAYS}
+
+
 def chain_label(goal):
     return "chain:%d" % goal
 
@@ -606,7 +714,15 @@ def _arm_scope(rec):
     out = {r["number"] for r in rec["members"] if r["verdict"] == "unarmed"}
     if ans.startswith("arm only"):
         out = {r["number"] for r in rec["members"] if r["number"] in out and not r.get("waits_on")}
-    return out
+    return out - _held(rec)
+
+
+def _promoted(rec):
+    """#1903: the members the label drain calls not-a-goal whose question the person answered with the one
+    option that arms them. Reads only the record."""
+    ld, ans = label_drain, rec.get("answers") or {}
+    return {r["number"] for r in rec["members"] if r["verdict"] in ld.GATED_KIND
+            and ans.get("%s:%d" % (ld.GATED_KIND[r["verdict"]], r["number"])) == ld.ARM_ANSWER[ld.GATED_KIND[r["verdict"]]]}
 
 
 def _label_line(n, goal):
@@ -631,14 +747,28 @@ def _writes(rec, qs, config=None):
     out.append("answers to an undeclared-kind or spend question are recorded here only: declaring the kind "
                "and writing the spend marker belong to a later slice")
     out.append("after approval, `chain.py arm` creates the label %s if it is missing" % chain_label(goal))
-    out += [_label_line(r["number"], goal) for r in rec["members"]]
+    promoted = _promoted(rec)
+    held = [r for r in rec["members"] if r["verdict"] in label_drain.GATED_KIND and r["number"] not in promoted]
+    out += [_label_line(r["number"], goal) for r in rec["members"]
+            if r not in held and r["verdict"] != "checkpoint"]
     out.append("arming, per member below: add sdlc:goal, priority %s only if it has none, assign you only if "
                "nobody is assigned, never edit the body; one comment with issue numbers only"
                % label_drain.arm_settings(config)["default_priority"])
     scope = _arm_scope(rec)
-    out += [_arm_line(r["number"]) for r in rec["members"] if r["number"] in scope]
+    out += [_arm_line(r["number"]) for r in rec["members"]
+            if r["number"] in scope or (r["number"] in promoted and r["number"] not in _held(rec))]
     out.append("nothing else: an upper-tier, parked or assigned-elsewhere member is labelled, never armed; "
                "starting the members belongs to a later slice")
+    waiting = sorted(_held(rec) & {r["number"] for r in rec["members"]})
+    if waiting:
+        out.append("%s is kept waiting on a closed prerequisite's open follow-up or question (your answer): labelled, "
+                   "never armed, and skipped by every run cycle" % _ids(waiting))
+    cps = [r["number"] for r in rec["members"] if r["verdict"] == "checkpoint"]
+    if cps:
+        out.append("%s is a checkpoint: left entirely untouched, never labelled or armed" % _ids(cps))
+    if held:
+        out.append("%s is not a goal and you have not answered to arm it: left entirely untouched, no label, no comment"
+                   % _ids([r["number"] for r in held]))
     return out
 
 
@@ -676,7 +806,25 @@ def render_sheet(rec, now, config=None):
         extra = " (kind %s)" % r["kind"] if r.get("kind") else ""
         w = "; waits on %s" % _ids(r["waits_on"]) if r.get("waits_on") else ""
         L.append("  %d. #%d %s%s%s" % (i, r["number"], r["verdict"], extra, w))
+    cps = [r for r in members if r["verdict"] == "checkpoint"]
+    if cps:         # #1904: their own block; they are never worked
+        L.append("Checkpoints (never worked; met when their unit lands on the integration branch, or when a person "
+                 "closes the issue):")
+        for r in cps:
+            ck = r.get("checkpoint") or {}
+            held = [m["number"] for m in members if r["number"] in (m.get("waits_on") or [])]
+            L.append("  #%d%s: %s%s; holds up %s" % (
+                r["number"], " (unit %s)" % ck["unit"] if ck.get("unit") else "", ck.get("state") or "unknown",
+                " - %s" % ck["why"] if ck.get("why") else "", _ids(held)))
+            if ck.get("state") == chain_checkpoint.MET and held:
+                L.append("      its unit has landed but the issue is open and the pick gate still reads it as "
+                         "open: close it to release #%s" % ", #".join(str(n) for n in held))
     L.append("Done prerequisites: %s" % _ids(rec.get("done") or []))
+    for w in rec.get("closed_gates") or []:                 # #1906
+        L.append("Closed with something still open: #%d (%s); %s waits on it" % (
+            w["prerequisite"], _closed_gate_what(w), _ids(w["dependents"])))
+    if rec.get("closed_gates") or rec.get("closed_skipped"):
+        L.append(_closed_counts(rec))
     L.append("Runs ahead of: %s higher-priority open goal(s)" % ("an unknown number of" if ahead is None else ahead))
     for x in rec.get("cross_unit") or []:
         L.append("Cross-unit: #%d (%s) waits on #%d (%s)" % (x["from"], x["units"][0], x["to"], x["units"][1]))
@@ -684,7 +832,7 @@ def render_sheet(rec, now, config=None):
         L.append("External: %s (%s), needed by %s" % (e["ref"], e["kind"], _ids(e["needed_by"])))
     L += chain_waits.sheet_block(rec)
     L.append("")
-    groups = _groups(qs) if _grouped(qs) else {}
+    groups = _active_groups(qs)
     grouped_ids = {i for ids in groups.values() for i in ids}
     L.append("Decisions (%d open of %d%s):" % (len(openq), len(shown),
                                                  ", grouped by kind" if groups else ""))
@@ -696,8 +844,8 @@ def render_sheet(rec, now, config=None):
         L.extend(_decision_lines(n, ident, q, ans, ids))
     for gid, ids in groups.items():
         first = next(q for q in shown if q["id"] == ids[0])
-        put(gid, dict(first, ask="%d questions of kind %s share these options" % (len(ids), first["kind"]),
-                      note=None), ids)
+        put(gid, dict(first, ask=first["ask"] if first["kind"] in GROUP_ALWAYS else
+                      "%d questions of kind %s share these options" % (len(ids), first["kind"]), note=None), ids)
     for q in shown:
         if q["id"] not in grouped_ids:
             put(q["id"], q)
@@ -737,7 +885,7 @@ def answer(sdlc_dir, goal, answers=None, defaults=False, config=None, run=None):
     rec = _read_record(path)
     qs, openq = open_questions(rec, config)
     byid = {q["id"]: q for q in qs if not q["hidden"]}
-    groups = _groups(qs) if _grouped(qs) else {}
+    groups = _active_groups(qs)
     have = dict(rec.get("answers") or {})
     chosen, errors = {}, []
     if defaults:
@@ -884,6 +1032,7 @@ def arm(sdlc_dir, goal, dry_run=False, config=None, run=None, now=None):
     except Exception as exc:        # noqa: BLE001 - fail closed: no write on a read that failed
         raise ChainRefused("could not check whether the label %s exists (%s); nothing was written" % (label, exc))
     judge, scope = ld._Judge(sdlc_dir, config, source), _arm_scope(rec)
+    answers, held = rec.get("answers") or {}, _held(rec)
     refused, notes, per_member = [], [], []
     for r in rec["members"]:
         n = r["number"]
@@ -897,10 +1046,18 @@ def arm(sdlc_dir, goal, dry_run=False, config=None, run=None, now=None):
         if verdict == "closed":
             notes.append("#%d is closed; left alone" % n)
             continue
+        if verdict == "checkpoint":     # #1904: not a goal, not a member of the run: no label, no arming
+            notes.append("#%d is a checkpoint; left alone (met when its unit lands or a person closes it)" % n)
+            continue
+        kind = ld.GATED_KIND.get(verdict)
+        asked = bool(kind) and answers.get("%s:%d" % (kind, n)) == ld.ARM_ANSWER[kind]       # #1903: the person said arm it
+        if kind and not asked:          # #1903: not a goal and nobody said so: not even the chain label goes on
+            refused.append({"issue": n, "verdict": verdict, "reason": detail or verdict})
+            continue
         acts = []
         if label not in names:
             acts.append(_act("add-label", n, label))
-        if verdict == "unarmed" and n in scope:
+        if (verdict == "unarmed" and n in scope) or (asked and n not in held):
             got_refused = len(refused)
             prepared = ld._prepare(source, triage, gh_api, label, cfg, [(n, None)], refused, notes)
             if n in prepared and len(refused) == got_refused:
@@ -977,7 +1134,8 @@ RUN_USAGE = ("usage: chain.py run <sdlc_dir> <chain> [--session-pid P] [--no-gro
              "  armed chain through the loop's own label-scoped pick, or says why it cannot (exit 3: capped or\n"
              "  stuck). Call it again. `stop` and `resume` change only the local record. A new prerequisite of the\n"
              "  chain joins by itself up to chain.max_added; --no-grow (or chain.freeze) makes every addition ask.")
-STUCK_REASONS = ("decision", "held-gate", "claimed", "external", "rate-limit", "degraded-read", "capped")
+STUCK_REASONS = ("decision", "held-gate", "claimed", "external", "checkpoint", "rate-limit", "degraded-read",
+                 "capped")
 _DEFAULT_PICK_TIMEOUT = 900
 _NO_PICK = ("DONE", "BUDGET", "HANDOFF", "FULL", "HOLD")
 
@@ -1193,6 +1351,27 @@ def _grow(sdlc_dir, goal, rec, blk, config, cfg, now, run, closure, pull, filed,
     return {d for ds in held.values() for d in ds}
 
 
+def _closed_counts(p):
+    """The "how many were looked at" line of the plan and the sheet (#1906), shown when there is a warning or
+    something was skipped, so a plan with nothing to say keeps its old shape."""
+    sk = p.get("closed_skipped") or []
+    return "closed prerequisites inspected: %d, skipped: %d%s" % (
+        p.get("closed_checked") or 0, len(sk), " (%s)" % _ids(sk) if sk else "")
+
+
+def _checkpoint_detail(row):
+    """The stop line for one checkpoint row: its number, its unit and the one step that releases it."""
+    ck = row.get("checkpoint") or {}
+    unit = ck.get("unit")
+    if ck.get("state") == chain_checkpoint.MET:
+        return ("#%d is a checkpoint whose unit %s has landed, but its issue is still open: close it to release "
+                "what waits on it" % (row["number"], unit))
+    if unit:
+        return ("#%d is a checkpoint waiting for unit %s to land on the integration branch (%s), or for a "
+                "person to close it" % (row["number"], unit, ck.get("state") or "unknown"))
+    return "#%d is a checkpoint waiting for a person to close it" % row["number"]
+
+
 def _stuck(p, failure, unconfirmed):
     """-> (reason, detail), ONE reason from STUCK_REASONS for an empty pick with members still open. Numbers
     only in the detail. The order is the order a person would act in: a failed read first (nothing else can
@@ -1211,12 +1390,17 @@ def _stuck(p, failure, unconfirmed):
     claimed = sorted(r["number"] for r in rows if r.get("in_progress") or r["verdict"] == "assigned-elsewhere")
     if claimed:
         return "claimed", "#%d is in progress or assigned to someone else" % claimed[0]
-    ext = sorted({n for r in outside for n in [r["number"]]} | {r["number"] for r in rows if r.get("unresolved")})
+    cps = sorted((r for r in rows + outside if (r.get("own_verdict") or r["verdict"]) == "checkpoint"),
+                 key=lambda r: r["number"])
+    ext = sorted({r["number"] for r in outside if (r.get("own_verdict") or r["verdict"]) != "checkpoint"}
+                 | {r["number"] for r in rows if r.get("unresolved")})
     if ext:
         return "external", "#%d waits on an open prerequisite outside the chain" % ext[0]
-    needs = sorted(r["number"] for r in rows if r["verdict"] in ("unarmed", "upper-tier"))
+    needs = sorted(r["number"] for r in rows if r["verdict"] in ("unarmed", "upper-tier") + tuple(label_drain.GATED_KIND))
     if needs:
         return "decision", "#%d is not armed and needs a person" % needs[0]
+    if cps:             # #1904: only after everything a person can act on, so it is named when it is the only thing left
+        return "checkpoint", _checkpoint_detail(cps[0])
     if unconfirmed:
         return "degraded-read", "#%d could not be confirmed closed" % sorted(unconfirmed)[0]
     return "claimed", "open members remain but none could be claimed this cycle (skipped or leased elsewhere)"
@@ -1246,7 +1430,7 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
     if blk.get("state") == "done":
         return res
     label = chain_label(goal)
-    recorded = [r["number"] for r in rec["members"]]
+    recorded = [r["number"] for r in rec["members"] if r["verdict"] != "checkpoint"]     # #1904: never claimed, never "closed"
     width, locked = 1, chain_parallel.engaged(config)
     if locked:                  # #1590: before any write or claim; a refused cycle starts nothing
         try:
@@ -1283,7 +1467,7 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
         if locked:              # #1866: stuck is not running; the pool is free for another chain
             chain_parallel.release(sdlc_dir, goal)
         return res
-    skip = skip | frozenset(str(d) for d in held_back)
+    skip = skip | frozenset(str(d) for d in held_back) | frozenset(str(n) for n in _held(rec))     # #1906
     known = set(recorded) | set(blk.get("seen") or ()) | set(blk.get("joined") or ())
     already = set(blk.get("closed") or ())
     failure, p, open_now, confirmed = None, None, set(), set()
@@ -1476,6 +1660,13 @@ def render(p):
         lines.append("  #%d depth %d %s%s%s" % (r["number"], r["depth"], r["verdict"], extra,
                                                "; waits on %s" % _ids(r["waits_on"]) if r["waits_on"] else ""))
     lines.append("done (closed prerequisites): %s" % _ids(p["done"]))
+    for w in p.get("closed_gates") or []:                   # #1906
+        lines.append("warning: closed #%d with %s; %s waits on it (advisory, no edge added)" % (
+            w["prerequisite"], _closed_gate_what(w, short=True), _ids(w["dependents"])))
+    if p.get("closed_gates") or p.get("closed_skipped"):
+        lines.append(_closed_counts(p))
+    if p.get("closed_unread"):
+        lines.append("closed prerequisites not fully read (advisory check skipped part): %s" % _ids(p["closed_unread"]))
     for e in p["externals"]:
         lines.append("external %s (%s), needed by %s" % (e["ref"], e["kind"], _ids(e["needed_by"])))
     for e in p["edges"]:

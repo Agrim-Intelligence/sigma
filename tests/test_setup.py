@@ -361,7 +361,8 @@ def test_ignore_status_reports_the_mechanism(tmp_path):
 _CORE_LABELS = {"sdlc:goal", "sdlc:in-progress", "sdlc:parked", "sdlc:blocked", "sdlc:blocking",
                 "sdlc:needs-label", "sdlc:designed",
                 "sdlc:needs-unit",   # #2263: the sibling overlay, same colour as sdlc:needs-label
-                "sdlc:needs-triage"}  # #2363: tier 4 of feature_classify's chain, a distinct colour
+                "sdlc:needs-triage",  # #2363: tier 4 of feature_classify's chain, a distinct colour
+                "sdlc:checkpoint"}    # #1904: met when a unit lands or a person closes it
 
 
 def _github_cfg(repo="acme/app"):
