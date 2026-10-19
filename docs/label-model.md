@@ -78,6 +78,8 @@ whichever query happens to ask for the overlay, which is exactly the orphan clas
 `sdlc:parked` stands alone precisely because the opposite is true of it — nothing automatic ever
 brings it back, so it belongs in a person's review queue instead. The retired `sdlc:needs-confirmation`
 stood alone the same way; it is legacy now, and a leftover is moved off by `/sigma-promote`. A leftover that also carries `sdlc:goal` is routed by `blockers.classify` so the label is stripped and the issue enters the queue.
+Approving a chain or a run label is not the owner's confirmation of such an issue: `chain.py arm` and `label_drain.py arm` never promote it
+unless the person answered "promote it" to the sheet's question about that very issue (verdict `awaiting-owner`, see `docs/chain.md`).
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  ANNOTATIONS — descriptive only. Never affect what gets picked.          │
 │                                                                          │

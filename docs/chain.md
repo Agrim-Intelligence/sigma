@@ -61,6 +61,21 @@ any other answer, or none, it gets no `chain:<root>` label, no comment and no go
 refused. "Treat it as a checkpoint" is recorded only; the label that makes it one is a person's step (see the
 dependency docs).
 
+### Waiting for the owner (`awaiting-owner`)
+
+A member that carries the legacy confirmation label (`sdlc:needs-confirmation`, or the name under
+`ledger.handoff.proposed_label`), with or without `sdlc:goal`, is a follow-up still waiting for its owner. Approving
+a chain is not that confirmation, so it is never armed by `chain.py arm` or `label_drain.py arm`, with or without
+`--apply` or `--dry-run`, unless the sheet asked about that member and the person answered "promote it". The
+sheet asks one question per such member (`owner_gate:<n>`): leave it out (the recommended answer, so no default
+arms), promote it, or close it. Members that share the options are shown as one group (`group:owner_gate`)
+whatever the number of questions, and an answer to the group reaches each of them. "Promote it" arms the member
+through the same machinery as any other, and also strips the leftover label, so the queue stops refusing it; the
+other two answers write nothing (Sigma does not close an issue for you). The same holds for an open blocker that
+`label_drain.py arm` would otherwise pull into the label. Known gap: the stored map cannot see the leftover label on
+a member that also carries `sdlc:goal`, so the sheet may show it as armed; `arm` reads every member's current labels
+and still leaves it untouched, listing it as refused.
+
 ## Checkpoints
 
 A checkpoint (`sdlc:checkpoint`, see [the label model](label-model.md#2b-vi-sdlccheckpoint--an-issue-that-means-that-units-code-is-on-main))

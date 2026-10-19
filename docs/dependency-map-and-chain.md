@@ -331,7 +331,8 @@ nothing in it is model-driven. The full reference, with the agent-file block, is
    when missing, adds it to every open member, posts one fixed comment and arms each member the answers allow.
    An upper-tier, parked or gate-held member is labelled, never armed. A member that carries `sdlc:blocking` but
    not `sdlc:goal` (verdict `not-a-goal`) is left entirely untouched unless the sheet asked about it and the answer
-   was "arm it as a goal" ([details](chain.md#not-a-goal-not-a-goal)). A re-run after a crash finishes the work
+   was "arm it as a goal" ([details](chain.md#not-a-goal-not-a-goal)); the same holds for a follow-up still carrying the
+   legacy confirmation label, which only "promote it" arms ([details](chain.md#waiting-for-the-owner-awaiting-owner)). A re-run after a crash finishes the work
    with no duplicate label or comment.
 7. **Run.** `chain.py run <sdlc_dir> <N> [--session-pid P] [--no-grow]`: one cycle (the auto-unpark sweep, the
    spend cap check, a read of the label's members, then one pick). Call it again until it reports done. Exit 3

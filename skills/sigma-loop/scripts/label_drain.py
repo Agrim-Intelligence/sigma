@@ -288,6 +288,10 @@ class _Judge:
         cp = getattr(self.source, "checkpoint_label", None)
         if cp and cp in names:                               # #1904: never picked, never armed, with or without a goal label
             return "checkpoint", "a checkpoint: met when its unit lands or a person closes it; never worked"
+        proposed = getattr(self.source, "proposed_label", None)
+        if proposed and proposed in names:                   # #1905: with or without a goal label the queue refuses it
+            return "awaiting-owner", ("carries %s: waiting for its owner to confirm it; approving a run or a chain "
+                                      "is not that confirmation" % proposed)
         if self.source.goal_label not in names:
             blocking = getattr(self.source, "blocking_label", None)
             if blocking and blocking in names:           # #1903: other work waits on it, yet it was never a goal
@@ -336,8 +340,8 @@ def _done_when_missing(body, acceptance):
 
 #: #1903: verdicts that are never armed by a default. verdict -> the question kind that asks about it (the
 #: kind is also the id of its bank entry), and the one option that arms it. Every other option leaves it as is.
-GATED_KIND = {"not-a-goal": "not_goal"}
-ARM_ANSWER = {"not_goal": "arm it as a goal"}
+GATED_KIND = {"not-a-goal": "not_goal", "awaiting-owner": "owner_gate"}
+ARM_ANSWER = {"not_goal": "arm it as a goal", "owner_gate": "promote it"}
 
 
 def _unit(issue, features):
@@ -818,7 +822,8 @@ def _prepare(source, triage, gh_api, label, cfg, todo, refused, notes):
                             "assigned to %s, not %s" % (", ".join(sorted(map(str, state["assignees"]))), me)})
             continue
         item = {"issue": n}
-        armed = source.goal_label in state["labels"]     # #1807: only the assignee is missing
+        # #1807: only the assignee is missing. #1905: a leftover confirmation label is still to be stripped.
+        armed = source.goal_label in state["labels"] and source.proposed_label not in state["labels"]
         if not armed and not any(l.startswith(prefix) for l in state["labels"]):
             name = prefix + cfg["default_priority"]
             if name not in label_ok:

@@ -27,6 +27,10 @@ and one REST read per unknown reference. The output says which source and its ag
 fallback. A closure over the bound is refused with its count, never truncated; a cycle is refused with
 every member named.
 
+OWNER GATE (#1905). A member carrying the legacy confirmation label is `awaiting-owner` (with or without the goal
+label) and, like a `not-a-goal` one, is armed only after the sheet's question about it was answered with the one
+option that arms it ("promote it"); the other answers leave it untouched.
+
 CHECKPOINTS (#1904). A member the label drain calls `checkpoint` is a row with `checkpoint: {unit, state, why}`
 (`chain_checkpoint.status`, local git only). It is never labelled or armed, is not a member of the run (so
 it never has to close for the run to be done), and is shown in its own block on the sheet.
@@ -50,7 +54,8 @@ and prints requested content, not a status block. The questions are the label dr
 over the member set (`label_drain.questions`) plus three chain-only ones: a cross-unit edge, an end goal
 that cannot be armed, and the cap (it has no default; its estimate arrives in a later slice). A question
 the record already answers (a parked member whose own question has a recorded answer, or an answer in
-this record) is not asked. More than 25 questions are grouped by kind.
+this record) is not asked. More than 25 questions are grouped by kind; the per-member `owner_gate` and `not_goal`
+questions (#1903, #1905) are grouped whenever two or more share their options.
 
 ANSWER. Records answers in the chain record, nothing else locally. A parked member's answer is handed to
 `unpark.resolve`, the verb `/sigma-unpark` uses, so the issue gets the identical recorded Q&A block. Every
@@ -611,6 +616,20 @@ def _grouped(qs):
     return len([q for q in qs if not q["hidden"]]) > GROUP_OVER
 
 
+#: #1905: kinds asked once per member that are grouped whenever two or more share their options, however few
+#: questions the sheet holds (the 25-question threshold is for the rest).
+GROUP_ALWAYS = ("owner_gate", "not_goal")
+
+
+def _active_groups(qs):
+    """-> the groups the sheet and `answer` use: every group past `GROUP_OVER` questions, else only those of
+    `GROUP_ALWAYS` kinds."""
+    groups = _groups(qs)
+    if _grouped(qs):
+        return groups
+    return {g: ids for g, ids in groups.items() if g.split(":", 1)[1].split("#")[0] in GROUP_ALWAYS}
+
+
 def chain_label(goal):
     return "chain:%d" % goal
 
@@ -730,7 +749,7 @@ def render_sheet(rec, now, config=None):
     for e in rec.get("externals") or []:
         L.append("External: %s (%s), needed by %s" % (e["ref"], e["kind"], _ids(e["needed_by"])))
     L.append("")
-    groups = _groups(qs) if _grouped(qs) else {}
+    groups = _active_groups(qs)
     grouped_ids = {i for ids in groups.values() for i in ids}
     L.append("Decisions (%d open of %d%s):" % (len(openq), len(shown),
                                                  ", grouped by kind" if groups else ""))
@@ -742,8 +761,8 @@ def render_sheet(rec, now, config=None):
         L.extend(_decision_lines(n, ident, q, ans, ids))
     for gid, ids in groups.items():
         first = next(q for q in shown if q["id"] == ids[0])
-        put(gid, dict(first, ask="%d questions of kind %s share these options" % (len(ids), first["kind"]),
-                      note=None), ids)
+        put(gid, dict(first, ask=first["ask"] if first["kind"] in GROUP_ALWAYS else
+                      "%d questions of kind %s share these options" % (len(ids), first["kind"]), note=None), ids)
     for q in shown:
         if q["id"] not in grouped_ids:
             put(q["id"], q)
@@ -783,7 +802,7 @@ def answer(sdlc_dir, goal, answers=None, defaults=False, config=None, run=None):
     rec = _read_record(path)
     qs, openq = open_questions(rec, config)
     byid = {q["id"]: q for q in qs if not q["hidden"]}
-    groups = _groups(qs) if _grouped(qs) else {}
+    groups = _active_groups(qs)
     have = dict(rec.get("answers") or {})
     chosen, errors = {}, []
     if defaults:
