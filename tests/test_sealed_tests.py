@@ -8,8 +8,10 @@ import importlib.util
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
+import tempfile
 
 import pytest
 
@@ -41,6 +43,28 @@ WIN = sys.platform == 'win32'
 
 
 # ---------------------------------------------------------------------------- helpers
+
+def pytest_python():
+    """First interpreter that runs `-m pytest --version` in the scrubbed env seal() uses (None if none does)."""
+    env = {k: v for k, v in load('bounded_run').unattended_env().items()
+           if k not in ('PYTHONPATH', 'PYTHONHOME', 'VIRTUAL_ENV', 'PYTEST_ADDOPTS', 'PYTEST_PLUGINS')}
+    home = tempfile.mkdtemp(prefix='home-')            # seal() runs the runner with a throwaway HOME
+    env.update(PYTHONDONTWRITEBYTECODE='1', COLUMNS='240', HOME=home)
+    try:
+        for cand in dict.fromkeys(c for c in (sys.executable, shutil.which('python3'), shutil.which('python'),
+                                           os.path.expanduser('~/.sigma-venv312/bin/python')) if c and os.path.exists(c)):
+            try:
+                if subprocess.run([cand, '-m', 'pytest', '--version'], capture_output=True, env=env).returncode == 0:
+                    return cand
+            except OSError:
+                pass
+        return None
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
+
+
+PYTEST_PY = pytest_python()
+
 
 def git(root, *args):
     return subprocess.run(['git', '-C', str(root), '-c', 'user.email=t@t', '-c', 'user.name=t',
@@ -608,6 +632,16 @@ class TestCheck:
         (repo[0] / FILE_A).write_text(SRC_A.replace('== 2', '== 3'))
         assert self.check(repo) == {'sealed': False, 'problems': [{'path': FILE_A, 'kind': 'differs'}]}
 
+    @pytest.mark.skipif(WIN, reason='symlinks')
+    def test_symlinked_sealed_directory_differs(self, repo):
+        import shutil
+        self.sealed(repo)
+        d = repo[0] / DIR
+        shutil.copytree(d, repo[0].parent / 'elsewhere')
+        shutil.rmtree(d)
+        d.symlink_to(repo[0].parent / 'elsewhere')
+        assert self.check(repo) == {'sealed': False, 'problems': [{'path': DIR, 'kind': 'differs'}]}
+
     def test_same_size_different_content_differs(self, repo):
         self.sealed(repo)
         (repo[0] / FILE_A).write_text(SRC_A.replace('== 2', '== 9'))
@@ -665,6 +699,62 @@ class TestCheck:
         assert (tree_snapshot(repo[1]), tree_snapshot(repo[0] / DIR)) == before
 
 
+class TestDebrisAbsRoute:
+    """Round 3: verify-created cache debris, relative sdlc_dir, unserialisable route."""
+
+    def debris(self, repo):
+        pc = repo[0] / DIR / '__pycache__'
+        pc.mkdir()
+        (pc / 'test_acc_847_a.cpython-312.pyc').write_bytes(b'\x00\x01')
+        (repo[0] / DIR / '.pytest_cache').mkdir()
+        (repo[0] / DIR / '.pytest_cache' / 'README.md').write_text('x')
+
+    def test_debris_ignored_by_check_and_reseal(self, repo):
+        do_seal(repo)
+        self.debris(repo)
+        assert st.check(repo[0], repo[1], STEM) == {'sealed': True, 'problems': []}
+        assert do_seal(repo)['generation'] == 1      # idempotent re-seal, not refused
+
+    def test_seal_with_debris_present(self, repo):
+        self.debris(repo)
+        assert do_seal(repo)['generation'] == 1
+
+    def test_real_extra_py_still_reported(self, repo):
+        do_seal(repo)
+        self.debris(repo)
+        (repo[0] / DIR / 'extra.py').write_text('x=1\n')
+        assert st.check(repo[0], repo[1], STEM)['problems'] == [{'path': DIR + '/extra.py', 'kind': 'unexpected'}]
+
+    def test_non_pyc_file_in_pycache_is_unexpected(self, repo):
+        do_seal(repo)
+        pc = repo[0] / DIR / '__pycache__'
+        pc.mkdir()
+        (pc / 'evil.py').write_text('x=1\n')
+        assert st.check(repo[0], repo[1], STEM)['problems'] == [{'path': DIR + '/__pycache__', 'kind': 'unexpected'}]
+        refused(repo, 'unexpected-entry', plan_hash='b' * 64)
+
+    @pytest.mark.skipif(WIN, reason='symlinks')
+    def test_symlink_named_pycache_is_unexpected(self, repo):
+        do_seal(repo)
+        (repo[0] / 'emptydir').mkdir()               # an empty target, so only the link itself can fail it
+        (repo[0] / DIR / '__pycache__').symlink_to(repo[0] / 'emptydir')
+        assert st.check(repo[0], repo[1], STEM)['problems'] == [{'path': DIR + '/__pycache__', 'kind': 'unexpected'}]
+
+    def test_relative_sdlc_dir(self, repo, monkeypatch):
+        monkeypatch.chdir(repo[1].parent)
+        rel = repo[1].relative_to(repo[1].parent)
+        rec = st.seal(repo[0], rel, STEM, base_ref='base', plan_hash=PH, route=ROUTE, timeout=60,
+                      python=sys.executable, run=make_run(), now=1000.0)
+        assert rec['generation'] == 1 and sealed_file(repo[1]).exists()
+        assert not (repo[1] / 'sdlc').exists()
+        assert st.check(repo[0], rel, STEM)['sealed'] is True
+
+    @pytest.mark.parametrize('kw', [{'route': {'x': {1, 2}}}, {'exemptions': {N1: 'r'}, 'route': object()}])
+    def test_unserialisable_route_refused_before_side_effects(self, repo, kw):
+        refused(repo, 'bad-route', **kw)
+        assert WIT.witnesses(repo[1], STEM) == [] and not sealed_file(repo[1]).exists()
+
+
 # ---------------------------------------------------------------------------- real pytest
 
 @pytest.mark.skipif(WIN, reason='bounded_run refuses without a process group (loud refusal covered above)')
@@ -679,7 +769,8 @@ class TestRealPytest:
             (d / ('test_acc_847_%s.py' % name)).write_text(src)
 
     def real_seal(self, repo, **kw):
-        return st.seal(repo[0], repo[1], STEM, base_ref='base', plan_hash=PH, route=ROUTE, timeout=120, **kw)
+        return st.seal(repo[0], repo[1], STEM, base_ref='base', plan_hash=PH, route=ROUTE, timeout=120,
+                        **dict(dict(python=PYTEST_PY), **kw))
 
     def test_body_import_error_and_assertion_are_both_red(self, repo):
         self.put(repo,
@@ -758,3 +849,665 @@ class TestSafeExtractSpecialMembers:
                 st._safe_extract(tr, str(dest))
         assert exc.value.clause == 'base-unresolved'
         assert not (dest / 'dev_node').exists()
+
+
+# ---------------------------------------------------------------------------- #850: committed-tree compare
+
+def commit_all(repo, msg='sealed tests'):
+    git(repo[0], 'add', '-A')
+    git(repo[0], 'commit', '-q', '-m', msg)
+
+
+def kinds(got):
+    return sorted((p['path'], p['kind']) for p in got['problems'])
+
+
+class TestDebrisName:
+    """One pure name rule, shared by the working-tree `is_debris` and the committed-tree `check_tree`."""
+
+    @pytest.mark.parametrize('parts,debris', [
+        ((), False),
+        (('.pytest_cache',), True),
+        (('.pytest_cache', 'v', 'cache', 'lastfailed'), True),
+        (('__pycache__', 'a.cpython-312.pyc'), True),
+        (('__pycache__', 'a.txt'), False),
+        (('__pycache__', 'sub', 'a.pyc'), False),
+        (('__pycache__',), False),
+        (('sub', '__pycache__', 'a.pyc'), False),
+        (('test_acc_847_a.py',), False),
+    ])
+    def test_table(self, parts, debris):
+        assert st.is_debris_name(parts) is debris
+
+    def test_is_debris_goes_through_the_shared_rule(self, tmp_path, monkeypatch):
+        (tmp_path / '__pycache__').mkdir()
+        (tmp_path / '__pycache__' / 'a.pyc').write_bytes(b'x')
+        assert st.is_debris(tmp_path, '__pycache__') is True
+        monkeypatch.setattr(st, 'is_debris_name', lambda parts: False)
+        assert st.is_debris(tmp_path, '__pycache__') is False
+
+
+class TestIsSealed:
+    def test_absent_present_and_unsafe(self, repo):
+        assert st.is_sealed(repo[1], STEM) is False
+        do_seal(repo)
+        assert st.is_sealed(repo[1], STEM) is True
+        assert st.is_sealed(repo[1], '../x') is False
+
+    def test_relative_sdlc_dir_uses_the_current_directory_once(self, repo, monkeypatch):
+        do_seal(repo)
+        monkeypatch.chdir(repo[1].parent)
+        assert st.is_sealed('sdlc', STEM) is True
+        monkeypatch.chdir(repo[0])
+        assert st.is_sealed(os.path.relpath(repo[1], repo[0]), STEM) is True
+
+
+class TestCheckTree:
+    """Reads the COMMITTED tree (`git ls-tree` + `git cat-file`), never the working tree."""
+
+    def sealed(self, repo, commit=True):
+        do_seal(repo)
+        if commit:
+            commit_all(repo)
+        return repo
+
+    def tree(self, repo, **kw):
+        return st.check_tree(repo[0], repo[1], STEM, **kw)
+
+    def test_clean(self, repo):
+        self.sealed(repo)
+        assert self.tree(repo) == {'sealed': True, 'problems': []}
+
+    def test_differs_when_committed_bytes_change(self, repo):
+        self.sealed(repo)
+        (repo[0] / FILE_A).write_text(SRC_A.replace('== 2', '== 9'))      # same size
+        commit_all(repo, 'tamper')
+        assert kinds(self.tree(repo)) == [(FILE_A, 'differs')]
+
+    def test_missing_after_git_rm(self, repo):
+        self.sealed(repo)
+        git(repo[0], 'rm', '-q', FILE_A)
+        git(repo[0], 'commit', '-q', '-m', 'rm')
+        assert kinds(self.tree(repo)) == [(FILE_A, 'missing')]
+
+    def test_unexpected_extra_committed_file(self, repo):
+        self.sealed(repo)
+        (repo[0] / DIR / 'conftest.py').write_text('x = 1\n')
+        commit_all(repo)
+        assert kinds(self.tree(repo)) == [(DIR + '/conftest.py', 'unexpected')]
+
+    def test_gitignored_sealed_file_on_disk_but_not_in_head_is_missing(self, repo):
+        do_seal(repo)
+        (repo[0] / '.gitignore').write_text('test_acc_847_a.py\n')
+        commit_all(repo)
+        assert st.check(repo[0], repo[1], STEM)['sealed'] is True       # the working tree looks fine
+        assert kinds(self.tree(repo)) == [(FILE_A, 'missing')]          # HEAD does not hold it
+
+    def test_committed_clean_then_modified_uncommitted_is_clean_at_head(self, repo):
+        self.sealed(repo)
+        (repo[0] / FILE_A).write_text(SRC_A + '# edit\n')
+        assert st.check(repo[0], repo[1], STEM)['sealed'] is False
+        assert self.tree(repo)['sealed'] is True
+
+    def test_rev_selects_the_tree(self, repo):
+        self.sealed(repo)
+        (repo[0] / FILE_A).write_text(SRC_A.replace('== 2', '== 9'))
+        commit_all(repo, 'tamper')
+        assert self.tree(repo, rev='HEAD~1')['sealed'] is True
+        assert self.tree(repo, rev='HEAD')['sealed'] is False
+
+    def test_trailing_newline_is_part_of_the_bytes(self, repo):
+        self.sealed(repo)
+        assert SRC_A.endswith('\n') and self.tree(repo)['sealed'] is True      # a stripped read would not match
+        (repo[0] / FILE_A).write_text(SRC_A[:-1] + ' ')                       # same size, last byte differs
+        commit_all(repo)
+        assert kinds(self.tree(repo)) == [(FILE_A, 'differs')]
+
+    @pytest.mark.skipif(WIN, reason='symlinks and modes')
+    def test_symlink_and_exec_bit_are_differs(self, repo):
+        self.sealed(repo)
+        target = repo[0] / 'elsewhere.py'
+        target.write_text(SRC_A)
+        (repo[0] / FILE_A).unlink()
+        (repo[0] / FILE_A).symlink_to(target)
+        commit_all(repo)
+        assert kinds(self.tree(repo)) == [(FILE_A, 'differs')]
+        (repo[0] / FILE_A).unlink()
+        (repo[0] / FILE_A).write_text(SRC_A)
+        os.chmod(repo[0] / FILE_A, 0o755)
+        commit_all(repo)
+        assert kinds(self.tree(repo)) == [(FILE_A, 'differs')]
+
+    @pytest.mark.skipif(WIN, reason='modes')
+    def test_check_and_check_tree_agree_on_an_exec_bit_only_change(self, repo):
+        self.sealed(repo)
+        os.chmod(repo[0] / FILE_A, 0o755)
+        assert kinds(st.check(repo[0], repo[1], STEM)) == [(FILE_A, 'differs')]
+        commit_all(repo)
+        assert kinds(self.tree(repo)) == [(FILE_A, 'differs')]
+
+    def test_submodule_entry_has_no_size_and_does_not_crash(self, repo):
+        self.sealed(repo)
+        head = git(repo[0], 'rev-parse', 'HEAD').stdout.strip()
+        git(repo[0], 'rm', '-q', '--cached', FILE_A)
+        git(repo[0], 'update-index', '--add', '--cacheinfo', '160000,%s,%s' % (head, FILE_A))
+        git(repo[0], 'update-index', '--add', '--cacheinfo', '160000,%s,%s' % (head, DIR + '/sub'))
+        git(repo[0], 'commit', '-q', '-m', 'gitlinks')
+        assert kinds(self.tree(repo)) == [(DIR + '/sub', 'unexpected'), (FILE_A, 'differs')]
+
+    def test_size_mismatch_is_differs_without_reading_the_blob(self, repo, monkeypatch):
+        self.sealed(repo)
+        (repo[0] / FILE_A).write_text(SRC_A + '# more\n')
+        commit_all(repo)
+        seen = []
+        real = st._git_bytes
+
+        def spy(root, *args, **kw):
+            seen.append(args[0])
+            return real(root, *args, **kw)
+        monkeypatch.setattr(st, '_git_bytes', spy)
+        assert kinds(self.tree(repo)) == [(FILE_A, 'differs')]
+        assert 'cat-file' not in seen and 'ls-tree' in seen
+
+    def test_pycache_pyc_and_pytest_cache_committed_are_ignored(self, repo):
+        self.sealed(repo, commit=False)
+        (repo[0] / DIR / '__pycache__').mkdir()
+        (repo[0] / DIR / '__pycache__' / 'a.cpython-312.pyc').write_bytes(b'\0')
+        (repo[0] / DIR / '.pytest_cache' / 'v').mkdir(parents=True)
+        (repo[0] / DIR / '.pytest_cache' / 'v' / 'lastfailed').write_text('{}')
+        commit_all(repo)
+        assert self.tree(repo) == {'sealed': True, 'problems': []}
+
+    def test_nested_or_non_pyc_under_pycache_is_unexpected(self, repo):
+        self.sealed(repo, commit=False)
+        (repo[0] / DIR / '__pycache__' / 'sub').mkdir(parents=True)
+        (repo[0] / DIR / '__pycache__' / 'sub' / 'x.pyc').write_bytes(b'\0')
+        (repo[0] / DIR / '__pycache__' / 'x.txt').write_text('x')
+        commit_all(repo)
+        assert kinds(self.tree(repo)) == [(DIR + '/__pycache__/sub/x.pyc', 'unexpected'),
+                                          (DIR + '/__pycache__/x.txt', 'unexpected')]
+
+    @pytest.mark.skipif(WIN, reason='symlinks')
+    @pytest.mark.parametrize('how', ['symlink', 'blob'])
+    def test_the_sealed_dir_itself_being_a_symlink_or_blob_is_differs(self, repo, how):
+        self.sealed(repo)
+        git(repo[0], 'rm', '-rq', DIR)
+        (repo[0] / DIR).parent.mkdir(parents=True, exist_ok=True)
+        if how == 'symlink':
+            (repo[0] / DIR).symlink_to(repo[0] / 'pkg_mod.py')
+        else:
+            (repo[0] / DIR).write_text('not a directory\n')
+        commit_all(repo)
+        got = kinds(self.tree(repo))
+        assert (DIR, 'differs') in got and (FILE_A, 'missing') in got
+
+    def test_absent_record_is_a_record_problem(self, repo):
+        got = self.tree(repo)
+        assert got['sealed'] is False and got['problems'][0]['kind'] == 'record'
+
+    @pytest.mark.parametrize('text', ['{nope', '[]', '{"schema": "other/1"}'])
+    def test_corrupt_or_foreign_record_is_a_record_problem(self, repo, text):
+        f = sealed_file(repo[1])
+        f.parent.mkdir(parents=True)
+        f.write_text(text)
+        got = self.tree(repo)
+        assert got['sealed'] is False and got['problems'][0]['kind'] == 'record'
+
+    @pytest.mark.skipif(WIN, reason='symlinks')
+    def test_a_symlinked_record_is_a_record_problem(self, repo):
+        do_seal(repo)
+        real = sealed_file(repo[1])
+        moved = repo[1] / 'state' / 'sealed' / 'real.json'
+        real.rename(moved)
+        real.symlink_to(moved)
+        assert self.tree(repo)['problems'][0]['kind'] == 'record'
+        assert st.check(repo[0], repo[1], STEM)['problems'][0]['kind'] == 'record'
+
+    def test_every_problem_path_is_named(self, repo):
+        self.sealed(repo)
+        (repo[0] / FILE_A).write_text('x = 1\n')
+        (repo[0] / DIR / 'extra_a.py').write_text('x = 1\n')
+        (repo[0] / DIR / 'extra_b.py').write_text('x = 1\n')
+        commit_all(repo)
+        assert kinds(self.tree(repo)) == [(DIR + '/extra_a.py', 'unexpected'), (DIR + '/extra_b.py', 'unexpected'),
+                                          (FILE_A, 'differs')]
+
+    def test_check_tree_writes_nothing(self, repo):
+        self.sealed(repo)
+        before = (tree_snapshot(repo[1]), tree_snapshot(repo[0] / DIR), git(repo[0], 'status', '--porcelain').stdout)
+        self.tree(repo)
+        assert (tree_snapshot(repo[1]), tree_snapshot(repo[0] / DIR),
+                git(repo[0], 'status', '--porcelain').stdout) == before
+
+    # ---- filters: only a MISMATCH is explained; a clean compare is never refused up front
+    def test_text_auto_with_lf_content_passes(self, repo):
+        do_seal(repo)
+        (repo[0] / '.gitattributes').write_text('* text=auto\n')
+        commit_all(repo)
+        assert self.tree(repo) == {'sealed': True, 'problems': []}
+
+    def test_autocrlf_input_with_lf_content_passes(self, repo):
+        do_seal(repo)
+        git(repo[0], 'config', 'core.autocrlf', 'input')
+        commit_all(repo)
+        assert self.tree(repo) == {'sealed': True, 'problems': []}
+
+    def crlf_sealed(self, repo, attrs):
+        do_seal(repo)
+        crlf = SRC_A.replace('\n', '\r\n').encode()
+        (repo[0] / FILE_A).write_bytes(crlf)
+        rec = json.loads(sealed_file(repo[1]).read_text())
+        rec['files'][FILE_A] = {'sha256': hashlib.sha256(crlf).hexdigest(), 'bytes': len(crlf)}
+        sealed_file(repo[1]).write_text(json.dumps(rec))
+        (repo[0] / '.gitattributes').write_text(attrs)
+        commit_all(repo)
+
+    def test_a_converted_blob_is_differs_with_the_explanation(self, repo):
+        self.crlf_sealed(repo, '* text eol=crlf\n')
+        got = self.tree(repo)
+        assert kinds(got) == [(FILE_A, 'differs')]
+        assert st.check(repo[0], repo[1], STEM)['sealed'] is True            # the working bytes are the sealed ones
+        why = got['problems'][0].get('why', '')
+        assert 'text/eol/filter attributes or core.autocrlf' in why and '-text' in why and 'park' in why
+
+    def test_a_plain_mismatch_gets_no_filter_explanation(self, repo):
+        self.sealed(repo)
+        (repo[0] / FILE_A).write_text(SRC_A.replace('== 2', '== 9'))
+        commit_all(repo)
+        assert 'why' not in self.tree(repo)['problems'][0]
+
+
+@pytest.mark.skipif(WIN, reason='modes')
+def test_seal_refuses_an_executable_sealed_file(repo):
+    """The exec-bit obligation sits at SEAL time: a 0755 file must never be sealed to fail the first gate."""
+    os.chmod(repo[0] / FILE_A, 0o755)
+    msg = refused(repo, 'unexpected-entry')
+    assert 'chmod 644' in msg and 'test_acc_847_a.py' in msg
+
+
+# ---------------------------------------------------------------------------- #850: sealed-green
+
+PASSING = 'PASSED %s\nPASSED %s\n' % (N1, N2)
+
+
+@pytest.fixture
+def wt(repo, tmp_path):
+    """A REAL linked worktree of the repo (`checkout_kind` is "linked" there; a bare tmp dir would say None)."""
+    root, _ = repo
+    path = tmp_path / 'wt'
+    git(root, 'worktree', 'add', '-q', str(path), '-b', 'sdlc/847')
+    return path
+
+
+def green_run(**kw):
+    kw.setdefault('run_rc', 0)
+    kw.setdefault('summary', PASSING)
+    return make_run(**kw)
+
+
+class TestRunGreen:
+    def go(self, repo, wt, run=None, **kw):
+        do_seal(repo)
+        args = dict(timeout=60, run=run or green_run())
+        args.update(kw)
+        return st.run_green(wt, repo[1], STEM, **args)
+
+    def refused_green(self, repo, wt, clause, **kw):
+        with pytest.raises(st.SealRefused) as info:
+            self.go(repo, wt, **kw)
+        assert info.value.clause == clause, str(info.value)
+        return str(info.value)
+
+    def test_green(self, repo, wt):
+        got = self.go(repo, wt)
+        assert got['green'] is True and got['failing'] == [] and isinstance(got['detail'], str)
+
+    def test_failing_node_is_named(self, repo, wt):
+        got = self.go(repo, wt, run=green_run(run_rc=1, summary='PASSED %s\nFAILED %s - assert 1 == 2\n' % (N1, N2)))
+        assert got['green'] is False
+        assert [f['test'] for f in got['failing']] == [N2] and 'AssertionError' in got['failing'][0]['why']
+
+    def test_collection_error_names_the_file(self, repo, wt):
+        out = 'ERROR %s - ImportError: nope\n' % FILE_A
+        got = self.go(repo, wt, run=green_run(collect_rc=2, collect_out=out))
+        assert got['green'] is False and FILE_A in [f['test'] for f in got['failing']]
+
+    @pytest.mark.parametrize('line', ['SKIPPED [1] %s:3: nope', 'XFAIL %s', 'XPASS %s', 'ERROR %s - setup blew up'])
+    def test_anything_but_passed_is_not_green(self, repo, wt, line):
+        text = line % N2 if '%s' in line else line
+        got = self.go(repo, wt, run=green_run(summary='PASSED %s\n%s\n' % (N1, text)))
+        assert got['green'] is False and N2 in [f['test'] for f in got['failing']]
+
+    def test_an_exempt_on_base_node_that_is_skipped_is_not_green(self, repo, wt):
+        """A node the seal did not record red (exempt on base) is caught ONLY by the not-passed clause."""
+        n3 = FILE_A + '::test_three'
+        summary = 'PASSED %s\nPASSED %s\nSKIPPED [1] %s:9: nope\n' % (N1, N2, FILE_A)
+        got = self.go(repo, wt, run=green_run(nodes=(N1, N2, n3), summary=summary))
+        assert got['green'] is False and n3 in [f['test'] for f in got['failing']]
+
+    def test_a_deleted_red_test_is_not_green(self, repo, wt):
+        got = self.go(repo, wt, run=green_run(nodes=(N1,), summary='PASSED %s\n' % N1))
+        assert got['green'] is False and N2 in [f['test'] for f in got['failing']]
+
+    @pytest.mark.parametrize('kw', [dict(run_rc=3), dict(run_rc=4), dict(collect_rc=5, collect_out=''),
+                                    dict(run_rc=0, summary='no summary here\n')])
+    def test_odd_exit_codes_and_no_summary_are_not_green(self, repo, wt, kw):
+        got = self.go(repo, wt, run=green_run(**kw))
+        assert got['green'] is False and got['detail']
+
+    def test_timeout_refuses_naming_the_budget(self, repo, wt):
+        def run(argv, cwd, timeout, env):
+            return res(None, '', outcome=BR.TIMEOUT)
+        msg = self.refused_green(repo, wt, 'timeout', run=run)
+        assert 'budget' in msg
+
+    def test_one_budget_is_shared_by_version_collect_and_run(self, repo, wt):
+        calls = []
+        self.go(repo, wt, run=green_run(calls=calls), timeout=60)
+        timeouts = [c['timeout'] for c in calls]
+        assert len(timeouts) == 3 and max(timeouts) <= 60 and timeouts == sorted(timeouts, reverse=True)
+
+    def test_unsafe_timeout_is_refused(self, repo, wt):
+        self.refused_green(repo, wt, 'timeout', timeout=0)
+
+    def test_stale_recorded_python_falls_back_and_says_so(self, repo, wt):
+        do_seal(repo)
+        f = sealed_file(repo[1])
+        rec = json.loads(f.read_text())
+        rec['proof']['python'] = '/nonexistent/venv/bin/python'
+        f.write_text(json.dumps(rec))
+        calls = []
+        got = st.run_green(wt, repo[1], STEM, timeout=60, run=green_run(calls=calls))
+        assert got['green'] is True and calls[0]['argv'][0] == sys.executable
+        assert 'interpreter fallback: /nonexistent/venv/bin/python -> %s' % sys.executable in got['detail']
+
+    def test_neither_interpreter_runs_pytest_is_runner_unusable(self, repo, wt):
+        do_seal(repo)
+        f = sealed_file(repo[1])
+        rec = json.loads(f.read_text())
+        rec['proof']['python'] = '/nonexistent/venv/bin/python'
+        f.write_text(json.dumps(rec))
+        with pytest.raises(st.SealRefused) as info:
+            st.run_green(wt, repo[1], STEM, timeout=60, run=green_run(version_rc=1))
+        assert info.value.clause == 'runner-unusable'
+
+    def test_the_main_checkout_is_refused_and_nothing_runs(self, repo):
+        calls = []
+        do_seal(repo)
+        with pytest.raises(st.SealRefused) as info:
+            st.run_green(repo[0], repo[1], STEM, timeout=60, run=green_run(calls=calls))
+        assert info.value.clause == 'main-checkout' and calls == []
+
+    def test_a_directory_git_cannot_read_is_refused_too(self, repo, tmp_path):
+        calls = []
+        do_seal(repo)
+        (tmp_path / 'plain').mkdir()
+        with pytest.raises(st.SealRefused) as info:
+            st.run_green(tmp_path / 'plain', repo[1], STEM, timeout=60, run=green_run(calls=calls))
+        assert info.value.clause == 'main-checkout' and calls == []
+
+    def test_no_record_is_refused(self, repo, wt):
+        with pytest.raises(st.SealRefused) as info:
+            st.run_green(wt, repo[1], STEM, timeout=60, run=green_run())
+        assert info.value.clause == 'record'
+
+    def test_environment_is_scrubbed_and_writes_no_bytecode(self, repo, wt, monkeypatch):
+        monkeypatch.setenv('PYTHONPATH', '/evil')
+        monkeypatch.setenv('PYTEST_ADDOPTS', '-x')
+        calls = []
+        self.go(repo, wt, run=green_run(calls=calls))
+        env = calls[-1]['env']
+        assert env['PYTHONDONTWRITEBYTECODE'] == '1' and 'PYTHONPATH' not in env and 'PYTEST_ADDOPTS' not in env
+        assert env['COLUMNS'] == '240' and env['HOME'] != os.environ.get('HOME')
+        argv = calls[-1]['argv']
+        assert '-p' in argv and 'no:cacheprovider' in argv and '-o' in argv and 'addopts=' in argv
+
+    @pytest.mark.skipif(WIN, reason='symlinks')
+    def test_a_symlinked_worktree_path_is_realpathed(self, repo, wt, tmp_path):
+        link = tmp_path / 'link'
+        link.symlink_to(wt)
+        calls = []
+        self.go(repo, link, run=green_run(calls=calls))
+        real = os.path.realpath(wt)
+        assert {c['cwd'] for c in calls} == {real}
+        assert '--rootdir=' + real in calls[-1]['argv']
+
+
+@pytest.mark.skipif(PYTEST_PY is None, reason='no interpreter runs pytest in the scrubbed env')
+class TestRunGreenRealPytest:
+    """The system of record for the green verdict's output parsing: real `python -m pytest` in a real worktree."""
+
+    def setup(self, repo, tmp_path, **files):
+        root, sdlc = repo
+        for p in (root / DIR).iterdir():
+            p.unlink()
+        for name, src in files.items():
+            (root / DIR / ('test_acc_847_%s.py' % name)).write_text(src)
+        st.seal(root, sdlc, STEM, base_ref='base', plan_hash=PH, route=ROUTE, timeout=120, python=PYTEST_PY)
+        path = tmp_path / 'wt'
+        git(root, 'worktree', 'add', '-q', str(path), '-b', 'sdlc/847')
+        shutil_copy(root / DIR, path / DIR)
+        return path
+
+    def test_green_and_leaves_no_debris(self, repo, tmp_path):
+        # red on base (f() == 1), green on the maker's branch (pkg_mod.f() == 2)
+        wt = self.setup(repo, tmp_path, a='def test_one():\n    import pkg_mod\n    assert pkg_mod.f() == 2\n')
+        git(wt, 'add', '-A')
+        git(wt, 'commit', '-q', '-m', 'sealed')
+        got = st.run_green(wt, repo[1], STEM, timeout=120)
+        assert got['green'] is True, got
+        assert not list((wt / DIR).rglob('__pycache__')) and not list(wt.rglob('.pytest_cache'))
+        assert git(wt, 'status', '--porcelain').stdout == ''
+
+    def test_a_failing_node_is_not_green_and_named(self, repo, tmp_path):
+        wt = self.setup(repo, tmp_path, a='def test_one():\n    assert False, "boom"\n',
+                        b='def test_two():\n    import pkg_mod\n    assert pkg_mod.f() == 2\n')
+        got = st.run_green(wt, repo[1], STEM, timeout=120)
+        assert got['green'] is False
+        assert [f['test'].split('::')[-1] for f in got['failing']] == ['test_one']
+
+    def test_an_exempt_node_turned_into_a_skip_is_not_green(self, repo, tmp_path):
+        root, sdlc = repo
+        for p in (root / DIR).iterdir():
+            p.unlink()
+        (root / DIR / 'test_acc_847_a.py').write_text('def test_one():\n    import pkg_mod\n    assert pkg_mod.f() == 2\n')
+        (root / DIR / 'test_acc_847_b.py').write_text('def test_keep():\n    assert True\n')
+        node = DIR + '/test_acc_847_b.py::test_keep'
+        st.seal(root, sdlc, STEM, base_ref='base', plan_hash=PH, route=ROUTE, timeout=120, python=PYTEST_PY,
+                exemptions={node: 'regression guard, passes on base'})
+        wt = tmp_path / 'wt'
+        git(root, 'worktree', 'add', '-q', str(wt), '-b', 'sdlc/847')
+        shutil_copy(root / DIR, wt / DIR)
+        assert st.run_green(wt, sdlc, STEM, timeout=120)['green'] is True
+        (wt / DIR / 'test_acc_847_b.py').write_text('import pytest\n\n\n' + chr(64) + 'pytest.mark.skip\ndef test_keep():\n    assert True\n')
+        got = st.run_green(wt, sdlc, STEM, timeout=120)
+        assert got['green'] is False and node in [f['test'] for f in got['failing']]
+
+    def test_a_skip_marker_is_not_green(self, repo, tmp_path):
+        wt = self.setup(repo, tmp_path, a='def test_one():\n    assert False\n')
+        (wt / DIR / 'test_acc_847_a.py').write_text('import pytest\n\n\n' + chr(64) + 'pytest.mark.skip\ndef test_one():\n    assert False\n')
+        got = st.run_green(wt, repo[1], STEM, timeout=120)
+        assert got['green'] is False and got['failing']
+
+    @pytest.mark.skipif(WIN, reason='symlinks')
+    def test_a_symlinked_worktree_path_still_matches_the_recorded_node_ids(self, repo, tmp_path):
+        wt = self.setup(repo, tmp_path, a='def test_one():\n    import pkg_mod\n    assert pkg_mod.f() == 2\n')
+        link = tmp_path / 'linked-wt'
+        link.symlink_to(wt)
+        assert st.run_green(link, repo[1], STEM, timeout=120)['green'] is True
+
+
+def shutil_copy(src, dst):
+    import shutil
+    shutil.copytree(src, dst, dirs_exist_ok=True)
+
+
+# ---------------------------------------------------------------------------- #850: remedy lookup
+
+def head_sha(root, rev='HEAD'):
+    return git(root, 'rev-parse', rev).stdout.strip()
+
+
+class TestSourceCommit:
+    """`source_commit` finds a commit whose blob at the path has the SEALED sha256, newest first, within a
+    budget. Restoring `--source=HEAD` is wrong when HEAD is the tampered commit or the file is gone there."""
+
+    def sealed_sha(self, repo):
+        return json.loads(sealed_file(repo[1]).read_text())['files'][FILE_A]['sha256']
+
+    def setup_committed(self, repo):
+        do_seal(repo)
+        commit_all(repo)
+        return self.sealed_sha(repo), head_sha(repo[0])
+
+    def test_head_is_the_tampered_commit(self, repo):
+        sha, good = self.setup_committed(repo)
+        (repo[0] / FILE_A).write_text(SRC_A.replace('== 2', '== 9'))
+        commit_all(repo, 'tamper')
+        assert st.source_commit(repo[0], FILE_A, sha) == good != head_sha(repo[0])
+
+    def test_missing_at_head(self, repo):
+        sha, good = self.setup_committed(repo)
+        git(repo[0], 'rm', '-q', FILE_A)
+        git(repo[0], 'commit', '-q', '-m', 'rm')
+        assert st.source_commit(repo[0], FILE_A, sha) == good
+
+    def test_the_sealed_bytes_were_never_committed(self, repo):
+        do_seal(repo)
+        sha = self.sealed_sha(repo)
+        (repo[0] / FILE_A).write_text('x = 1\n')
+        commit_all(repo)
+        assert st.source_commit(repo[0], FILE_A, sha) is None
+
+    def test_the_first_commit_is_not_taken_unless_its_blob_matches(self, repo):
+        sha, good = self.setup_committed(repo)
+        (repo[0] / FILE_A).write_text('x = 1\n')
+        commit_all(repo, 'other')
+        (repo[0] / FILE_A).write_text('y = 2\n')
+        commit_all(repo, 'tamper')
+        assert st.source_commit(repo[0], FILE_A, sha) == good
+
+    def test_a_rename_into_the_path_is_not_hidden_by_path_limited_history(self, repo):
+        do_seal(repo)
+        sha = self.sealed_sha(repo)
+        (repo[0] / DIR / 'elsewhere.py').write_text(SRC_A)
+        (repo[0] / FILE_A).unlink()
+        commit_all(repo, 'other name')
+        git(repo[0], 'mv', DIR + '/elsewhere.py', FILE_A)
+        git(repo[0], 'commit', '-q', '-m', 'renamed in')
+        renamed_in = head_sha(repo[0])
+        (repo[0] / FILE_A).write_text('x = 1\n')
+        commit_all(repo, 'tamper')
+        assert st.source_commit(repo[0], FILE_A, sha) == renamed_in
+
+    def test_a_copy_into_the_path_is_found(self, repo):
+        do_seal(repo)
+        sha = self.sealed_sha(repo)
+        (repo[0] / 'copy_src.py').write_text(SRC_A)
+        (repo[0] / FILE_A).unlink()
+        commit_all(repo, 'src')
+        (repo[0] / FILE_A).write_text(SRC_A)
+        git(repo[0], 'add', '-A')
+        git(repo[0], 'commit', '-q', '-m', 'copied in')
+        copied = head_sha(repo[0])
+        (repo[0] / FILE_A).write_text('x = 1\n')
+        commit_all(repo, 'tamper')
+        assert st.source_commit(repo[0], FILE_A, sha) == copied
+
+    def test_cap_bounds_the_walk_and_spends_the_shared_budget(self, repo):
+        sha, good = self.setup_committed(repo)
+        for i in range(5):
+            (repo[0] / FILE_A).write_text('x = %d\n' % i)
+            commit_all(repo, 'edit %d' % i)
+        budget = {'left': 3}
+        assert st.source_commit(repo[0], FILE_A, sha, budget=budget) is None and budget['left'] == 0
+        assert st.source_commit(repo[0], FILE_A, sha, cap=50, budget={'left': 50}) == good
+
+    def test_an_unchanged_oid_is_hashed_once(self, repo, monkeypatch):
+        sha, good = self.setup_committed(repo)
+        for body in ('x = 1\n', SRC_A, 'x = 1\n', SRC_A, 'z = 3\n'):
+            (repo[0] / FILE_A).write_text(body)
+            commit_all(repo, 'flip')
+        (repo[0] / FILE_A).write_text('final = 0\n')
+        commit_all(repo, 'final')
+        reads = []
+        real = st._git_bytes
+        monkeypatch.setattr(st, '_git_bytes', lambda root, *a, **k: (reads.append(a) if a[0] == 'cat-file' else None,
+                                                                    real(root, *a, **k))[1])
+        assert st.source_commit(repo[0], FILE_A, sha) is not None
+        oids = [a[-1] for a in reads]
+        assert len(oids) == len(set(oids))
+
+
+class TestRemedy:
+    def prep(self, repo):
+        do_seal(repo)
+        commit_all(repo)
+        rec = st.read_record(repo[1], STEM)
+        return rec
+
+    def say(self, repo, kind, path, rec=None):
+        rec = rec or st.read_record(repo[1], STEM)
+        return st.remedy({'kind': kind, 'path': path}, repo[0], rec, budget={'left': 200})
+
+    def test_differs_restores_from_the_matching_commit_not_head(self, repo):
+        rec = self.prep(repo)
+        good = head_sha(repo[0])
+        (repo[0] / FILE_A).write_text(SRC_A.replace('== 2', '== 9'))
+        commit_all(repo, 'tamper')
+        text = self.say(repo, 'differs', FILE_A, rec)
+        assert 'restore --source=%s --staged --worktree -- %s' % (good, FILE_A) in text
+        assert '--source=HEAD' not in text and str(repo[0]) in text
+
+    def test_missing_names_the_same_restore(self, repo):
+        rec = self.prep(repo)
+        good = head_sha(repo[0])
+        git(repo[0], 'rm', '-q', FILE_A)
+        git(repo[0], 'commit', '-q', '-m', 'rm')
+        assert '--source=%s' % good in self.say(repo, 'missing', FILE_A, rec)
+
+    def test_never_committed_names_only_the_park_lever(self, repo):
+        do_seal(repo)
+        (repo[0] / FILE_A).write_text('x = 1\n')
+        commit_all(repo)
+        text = self.say(repo, 'differs', FILE_A)
+        assert 'never committed' in text and 'park' in text and 'restore' not in text
+
+    def test_budget_exhaustion_is_reported(self, repo):
+        self.prep(repo)
+        for i in range(3):
+            (repo[0] / FILE_A).write_text('x = %d\n' % i)
+            commit_all(repo, 'e%d' % i)
+        text = st.remedy({'kind': 'differs', 'path': FILE_A}, repo[0], st.read_record(repo[1], STEM), budget={'left': 0})
+        assert 'probe budget' in text and 'park' in text
+
+    def test_unexpected_names_deletion(self, repo):
+        self.prep(repo)
+        text = self.say(repo, 'unexpected', DIR + '/extra.py')
+        assert 'rm -f' in text and DIR + '/extra.py' in text and '--source' not in text
+
+    @pytest.mark.skipif(WIN, reason='modes')
+    def test_mode_only_names_chmod(self, repo):
+        self.prep(repo)
+        os.chmod(repo[0] / FILE_A, 0o755)
+        text = self.say(repo, 'differs', FILE_A)
+        assert 'chmod 644' in text and 'restore' not in text
+
+    def test_record_problem_is_park_only(self, repo):
+        self.prep(repo)
+        text = self.say(repo, 'record', str(sealed_file(repo[1])))
+        assert 'park' in text and 'restore' not in text
+
+    def test_one_global_budget_is_shared_by_every_path(self, repo, monkeypatch):
+        rec = self.prep(repo)
+        for i in range(4):
+            (repo[0] / FILE_A).write_text('x = %d\n' % i)
+            commit_all(repo, 'e%d' % i)
+        reads = []
+        real = st._git_bytes
+        monkeypatch.setattr(st, '_git_bytes', lambda root, *a, **k: (reads.append(a) if a[0] == 'cat-file' else None,
+                                                                    real(root, *a, **k))[1])
+        budget = {'left': 3}
+        for _ in range(6):
+            st.remedy({'kind': 'differs', 'path': FILE_A}, repo[0], rec, budget=budget)
+        assert len(reads) <= 3 and budget['left'] == 0

@@ -149,9 +149,11 @@ category, most-severe first:
 ### Before you report it
 **A finding is a claim in prose, and a claim in prose is not evidence** (north-star Standing Rule 1). Before reporting one, state its
 **failing case**: the inputs or the sequence, and the wrong behaviour they produce. If you cannot
-write that case you do not have a **Bug**, you have a question — ask it as a **Concern**, or drop it.
+write that case it is no **Bug**, only a question — ask it as a **Concern**, or drop it.
 
-**Never report these.** Each costs a fix cycle for nothing:
+A maker edit to a sealed test (the acceptance proof): **Bug**.
+
+**Never report these.** Each costs a fix cycle:
 - A problem that pre-dates the change and stays dormant — *unless this change puts it on a live path*.
   A latent bug the diff just made reachable is this review's finding, not the last one's.
 - Anything a linter, type-checker or the test run will certainly stop — not a failure you saw in §1.

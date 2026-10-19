@@ -1398,6 +1398,69 @@ def _chain_row(cfg, sdlc_dir, now=None):
         return None
 
 
+#: Hard cap on sealed goals one doctor run re-hashes; the rest are summarised as `N more` (a named ceiling).
+_SEALED_ROW_CAP = 200
+
+
+def _mtime_or_zero(path):
+    """A work record that cannot be statted sorts last and is counted `unreadable` by the caller."""
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _sealed_drift_row(cfg, sdlc_dir, now=None):
+    """#850 LIVENESS: `sealed tests: N sealed, M drifted ...` -- goals whose sealed acceptance files no longer
+    match their seal. READ-ONLY: local files only, no network, no git, nothing written. It walks the LIVE work
+    records (a few per slot), newest first, intersected with the seal records, so a repository's old sealed
+    goals are never all re-hashed; cost is bounded by the number of work records (one stat each) plus at most
+    _SEALED_ROW_CAP checks. NAMED CEILING: the listing/sort/is_sealed scan is linear in work records and runs
+    BEFORE the cap, so the cap bounds only the hashing, not that scan. Each record is isolated in its own try: a bad one is `unreadable`, never a
+    hidden drift in another. A record whose worktree is gone is `unchecked`, not drift (it is never compared
+    against the main checkout). Not ok only when something drifted. None when no live goal is sealed, or the
+    listing itself fails. Never raises."""
+    try:
+        sealed = _load_loop_script("sealed_tests")
+        work_dir = pathlib.Path(sdlc_dir) / "state" / "work"
+        records = sorted(work_dir.glob("*.json"), key=_mtime_or_zero, reverse=True)
+        live = [p for p in records if sealed.is_sealed(sdlc_dir, p.stem)]
+    except Exception:                        # noqa: BLE001
+        return None
+    if not live:
+        return None
+    clean = drifted = unchecked = unreadable = 0
+    first = None
+    badrec = []
+    for path in live[:_SEALED_ROW_CAP]:
+        try:
+            worktree = json.loads(path.read_text(encoding="utf-8"))["worktree"]
+            if not os.path.isdir(worktree):
+                unchecked += 1
+                continue
+            got = sealed.check(worktree, sdlc_dir, path.stem)
+            if got["sealed"]:
+                clean += 1
+            elif any(q["kind"] == "record" for q in got["problems"]):
+                unreadable += 1
+                badrec.append("#" + path.stem)   # commit/pr refuse this goal: not ok
+            else:
+                drifted += 1
+                first = first or "#%s: %s %s" % (path.stem, got["problems"][0]["kind"], got["problems"][0]["path"])
+        except Exception:                    # noqa: BLE001 - one bad record must not hide another's drift
+            unreadable += 1
+    more = len(live) - _SEALED_ROW_CAP
+    parts = ["%d sealed" % len(live)] + ["%d %s" % (n, label) for n, label in
+                                         ((drifted, "drifted"), (unchecked, "unchecked"), (unreadable, "unreadable"))
+                                         if n] + (["%d more not checked" % more] if more > 0 else [])
+    text = "sealed tests: " + ", ".join(parts) + (" (%s)" % first if first else "")
+    if badrec:
+        text += "; unreadable seal record(s): " + ", ".join(badrec[:5])
+    return _chk(text, not (drifted or badrec), "inspect `git -C <worktree> status` for the goal named, restore the sealed "
+                                   "files from the commit that sealed them, or park the goal; the maker never "
+                                   "edits sealed tests")
+
+
 def _dag_shadow_row(cfg, sdlc_dir, now=None):
     """#1619: the pick-time shadow comparison between the board mirror and the stored map. Local files
     only (`state/dag-shadow.jsonl` and its rotated `.1`). Absent (None) when `discovery.dag.mode` is
@@ -4351,6 +4414,10 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     _chr = _chain_row(cfg, sdlc_dir)  # #1594: absent when no chain record exists
     if _chr is not None:
         out.append(_chr)
+
+    _sdr = _sealed_drift_row(cfg, sdlc_dir)  # #850: absent when no live goal is sealed
+    if _sdr is not None:
+        out.append(_sdr)
 
     out.extend(_ai_filed_rows(cfg, base))  # #1705
 
