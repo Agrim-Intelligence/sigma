@@ -22,6 +22,10 @@ OWN = ("skills/sigma-loop/scripts/bounded_run.py", "skills/sigma-loop/scripts/un
 REGISTERED_CALLERS = (
     # sealed-test seal record (#847): called by the work.py commit/pr gates (#850); no seal verb until slice 4, #558
     "skills/sigma-loop/scripts/sealed_tests.py",
+    # the breaker runner (#853): loaded only by `seal_tests.py`, which `work.py seal-tests` calls behind
+    # `gates.sealed_acceptance.enabled` (default off); it spawns a model CLI under a lease and arms no claim
+    "skills/sigma-loop/scripts/breaker_run.py",
+    "skills/sigma-loop/scripts/seal_tests.py",
     "skills/sigma-loop/scripts/feature_landed.py",
     "skills/sigma-loop/scripts/feature_upkeep_pass.py",
     # the landing engine front half (#937): gated on the upkeep gate (refuses while closed) and rehearsal-only
@@ -45,7 +49,7 @@ REGISTERED_CALLERS = (
 GATED_CALLERS = (
     "skills/sigma-loop/scripts/feature_upkeep_prove.py:228",
     "skills/sigma-loop/scripts/feature_upkeep_prove.py:235",
-    "skills/sigma-loop/scripts/resource_verify.py:189",
+    "skills/sigma-loop/scripts/resource_verify.py:201",
 )
 ALLOWED_LOADS = {"shell_policy", "bounded_run"}
 #: Names of the one place a claim is armed and its helpers.

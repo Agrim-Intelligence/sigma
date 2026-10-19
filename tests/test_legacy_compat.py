@@ -392,6 +392,7 @@ _NOT_MARKERS = ("sigma-doctor", "sigma-doctor:", "sigma-init", "sigma-init:", "s
                 "sigma-judge-",   # new with #1472: a tempfile prefix for the isolated judge cwd, not a marker
                 "sigma-upkeep-",   # new with #1085: a tempfile prefix for the replay worktree parent, not a marker
                 "sigma-sealed", "sigma-sealed-",   # new with #847: a state-record schema id and a tempdir prefix, not markers
+                "sigma-breaker-",   # new with #853: a tempdir prefix for the breaker's empty working directory, not a marker
                 "sigma-reset-at:")   # new with #1563: a plain park-comment line, no legacy spelling
 
 
