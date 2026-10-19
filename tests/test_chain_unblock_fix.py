@@ -141,3 +141,40 @@ def test_the_sweep_before_the_cycle_shares_the_cycles_reads_and_its_writes_drop_
 
     tcr._run(ch, base, fk, tcr.FakePick(fk, base), sweep=sweep)
     assert seen == [True, 2], "two reads before the write are one call; the read after the write is a second"
+
+
+def _gated_rec(answer=None):
+    rec = _rec({"number": 1}, {"number": 2, "waits_on": [1]}, {"number": 3})
+    rec["goal"], rec["assignee_filter"] = 2, False
+    rec["closed_gates"] = [{"prerequisite": 9, "followups": [8], "question": False, "dependents": [3]}]
+    rec["answers"] = {} if answer is None else {"closed_gate:9": answer}
+    return rec
+
+
+def test_the_forecast_before_a_closed_prerequisite_question_is_answered_reads_the_recommended_answer():
+    """Approval needs every question answered, so a run never starts with one open; the sheet's forecast, printed
+    before the answer, promised the dependent of a closed prerequisite's open follow-up (3 of 3) and the run, after
+    the recommended answer 'keep waiting', finished 2. The forecast reads the recommended answer and says so."""
+    ch = tcr.tca._chain()
+    rec = _gated_rec()
+    fc = ch.chain_forecast.forecast(rec, None, None, ch._held(rec, assume=True), (), ch._held(rec, assume=True))
+    assert fc["finish"] == [1, 2] and any("keep waiting" in n and "#3" in n for n in fc["notes"]), fc
+    assert ch._held(rec) == set(), "the run itself holds nothing nobody answered"
+
+
+def test_an_answer_of_proceed_is_honoured_in_the_forecast():
+    ch = tcr.tca._chain()
+    rec = _gated_rec("proceed")
+    fc = ch.chain_forecast.forecast(rec, None, None, ch._held(rec, assume=True), (), ())
+    assert fc["finish"] == [1, 3, 2] or sorted(fc["finish"]) == [1, 2, 3], fc
+    assert fc["notes"] == []
+
+
+def test_the_sheet_prints_the_assumption():
+    ch = tcr.tca._chain()
+    rec = _gated_rec()
+    rec.update(planned_at=1_800_000_000, source="live", source_reason="x", complete=True, state="planned")
+    for r in rec["members"]:
+        r.update(depth=0, unit=None)
+    text = ch.render_sheet(rec, 1_800_000_010)
+    assert "keep waiting" in text.split("Ready and waiting")[0], text[:600]

@@ -699,12 +699,15 @@ def _closed_gate_ask(w):
             % (w["prerequisite"], _closed_gate_what(w), _ids(w["dependents"])))
 
 
-def _held(rec):
+def _held(rec, assume=False):
     """#1906: the members that wait on a closed prerequisite whose warning the person answered "keep waiting".
-    Reads the plan's current warnings, so an answer about a warning a later plan no longer raises holds nothing."""
+    Reads the plan's current warnings, so an answer about a warning a later plan no longer raises holds nothing.
+    `assume` (the FORECAST only: a run cannot start with a question open) also holds the members behind a warning
+    nobody has answered yet, because "keep waiting" is the recommended answer."""
     ans = rec.get("answers") or {}
     return {d for w in rec.get("closed_gates") or []
-            if ans.get("closed_gate:%d" % w["prerequisite"]) == CLOSED_GATE_OPTIONS[0] for d in w["dependents"]}
+            if ans.get("closed_gate:%d" % w["prerequisite"]) == CLOSED_GATE_OPTIONS[0]
+            or (assume and ans.get("closed_gate:%d" % w["prerequisite"]) is None) for d in w["dependents"]}
 
 
 def _declined(rec):
@@ -985,7 +988,7 @@ def render_sheet(rec, now, config=None, runner=None):
     age = _age(now - rec["planned_at"]) if isinstance(rec.get("planned_at"), int) else "unknown"
     depth = max([r["depth"] for r in members] or [0])
     ahead = rec.get("higher_priority_ahead")
-    fc = chain_forecast.forecast(rec, config, runner, _held(rec), _declined(rec))
+    fc = chain_forecast.forecast(rec, config, runner, _held(rec, True), _declined(rec), _held(rec, True) - _held(rec))
     L = ["Chain sheet for #%d" % rec["goal"],
          "End goal: #%d (%s)" % (rec["goal"], next((r["verdict"] for r in members if r["number"] == rec["goal"]),
                                                     "not in the plan")),
@@ -1896,7 +1899,8 @@ def main(argv, run=None, now=None, pick=None):
     try:
         p = plan(args[1], int(args[2]), run=run, now=now)
         if want_forecast:
-            p["forecast"] = chain_forecast.forecast(p, _load("state").load_config(args[1]), runner, _held(p), _declined(p))
+            p["forecast"] = chain_forecast.forecast(p, _load("state").load_config(args[1]), runner, _held(p, True),
+                                                    _declined(p), _held(p, True) - _held(p))
     except ChainRefused as exc:
         print("chain.py: %s" % exc, file=sys.stderr)
         return 2

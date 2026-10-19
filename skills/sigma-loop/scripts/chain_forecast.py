@@ -209,7 +209,7 @@ def _normalise(rec, login, filtered, held=(), declined=()):
             for r in rec.get("members") or []]
 
 
-def forecast(rec, config=None, login=None, held=(), declined=()):
+def forecast(rec, config=None, login=None, held=(), declined=(), assumed=()):
     """-> the forecast for the plan record `rec` as run by `login` (default: who planned it). Keys: `runner`,
     `width`, `members` ([{number, marker, why, after}], the record's order), `finish` (claimed in order),
     `cycles`, `of`, `reason` and `detail` (None when everything finishes), `stops` ([{number, marker, why}],
@@ -224,6 +224,10 @@ def forecast(rec, config=None, login=None, held=(), declined=()):
         notes.append("the runner's login is unknown, so the assignee filter is not applied; pass --as <login>")
     elif login is not None and rec.get("assignee_filter") is False:
         notes.append("no assignee filter is configured, so --as changes nothing")
+    if assumed:
+        notes.append("%s wait%s on a closed prerequisite's open follow-up or question nobody has answered yet: read as "
+                     "the recommended answer, keep waiting" % (", ".join("#%d" % n for n in sorted(assumed)),
+                                                               "s" if len(assumed) == 1 else ""))
     rows = _normalise(rec, me, filtered, held, declined)
     width = chain_parallel.width(config or {})
     open_now = {r["number"] for r in rows}

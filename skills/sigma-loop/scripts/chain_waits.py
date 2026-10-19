@@ -39,7 +39,8 @@ Loose forms (closed set; each is a SHAPE with a direction, none is a bare mentio
   lands-before  "#N [and ... #M] land(s) ... before this|the|its"          ("#N and #M land on main before this run")
   follow-up     a follow-up form (advisory; never an unconfirmed wait)
 
-A NEGATION cancels a forward form or one of the two new ones when `not`, `never`, `nor`, `n't`, `no longer` or
+A trigger inside a parenthetical gloss that closes before the reference ("#A (what #B is blocked on), #C (...)")
+reads nothing: the reference is outside the clause the trigger governs. A NEGATION cancels a forward form or one of the two new ones when `not`, `never`, `nor`, `n't`, `no longer` or
 `without` stands within two words before the trigger ("this link does NOT wait for #N", "it no longer waits for
 #N"): such a sentence says the goal does not wait, and reading it as a wait parked a goal that could run. A
 negation in an earlier sentence, or further back than that, cancels nothing; the windows below stop at a sentence
@@ -86,8 +87,9 @@ OFFBOARD_PREFIXES = ("Parked by Sigma — needs human review: ",
 _I = re.IGNORECASE
 _SIGMA_MARKER = re.compile(legacy.MARKER_PREFIX_RE + ":", _I)     # a `sigma:` marker: Sigma wrote this comment
 _WIN = r"[^\n#,;.!?]{0,40}?"
-#: a longer window that allows commas, for a list that names its members in words before the reference
-_LIST_WIN = r"[^\n#;.!?]{0,80}?"
+#: the plain window, or a LIST of short codes ("E11, E14 and E24 (#N)"): commas are allowed only between codes of at
+#: most 12 characters, so a clause with its own punctuation ("field has landed on main (its S0, issue #N") is not crossed
+_LIST_WIN = r"(?:" + _WIN + r"|(?:[ \t]+[\w.-]{1,12}(?:,|[ \t]+and\b|[ \t]*&)?){1,12}[ \t]*\(?)"
 #: forward forms: a trigger, a short window, then the first reference (group 1).
 _FORWARD = {
     "far": re.compile(r"\b(?:blocked[ \t]+(?:by|on|until)|depends[ \t]+(?:on|upon))\b[^\n#]{0,100}?#(\d+)\b", _I),
@@ -97,7 +99,7 @@ _FORWARD = {
     "waiting-for": re.compile(r"\bwait(?:s|ing)?[ \t]+for\b" + _WIN + r"#(\d+)\b", _I),
     "waits-on": re.compile(r"\b(?:waits?|is[ \t]+waiting|are[ \t]+waiting)[ \t]+on\b" + _WIN + r"#(\d+)\b", _I),
     "once-done": re.compile(r"(?<!only )(?<!only\t)\b(?:as[ \t]+soon[ \t]+as|once)\b" + _LIST_WIN + r"#(\d+)\b[^\n#;.!?]{0,25}?"
-                            r"\b(?:has|have|had|is|are)[ \t]+(?:been[ \t]+)?(?:merged|landed|closed|done|finished|resolved)\b",
+                            r"\b(?:has|have|is|are)[ \t]+(?:been[ \t]+)?(?:merged|landed|closed|done|finished|resolved)\b",
                             _I),
 }
 #: reference-first forms: the reference (group 1) comes before the words that give the direction.
@@ -155,6 +157,20 @@ def _negated(text, pos):
     return bool(_NEGATED.search(head))
 
 
+def _leaves_paren(segment):
+    """True when `segment` (the text from a trigger to its reference) closes a parenthesis it did not open: the
+    trigger sat inside a gloss ("#A (what #B is blocked on), #C (...)") and the reference is outside it."""
+    depth = 0
+    for ch in segment:
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            if depth == 0:
+                return True
+            depth -= 1
+    return False
+
+
 def _tail(text, pos):
     """Every reference in the list that continues at `pos`, at most MAX_MORE."""
     out = []
@@ -188,6 +204,8 @@ def find(text, explicit=True):
         for m in rx.finditer(text):
             if _foreign(text, m.start(1)) or (form == "far" and m.group(1) in plain):
                 continue                                  # `far` only adds what the explicit window missed
+            if _leaves_paren(text[m.start():m.start(1)]):
+                continue                                  # the trigger was inside a gloss that closed before the reference
             if _negated(text, m.start()) or (form in _OWN_SUBJECT and not _own_subject(text, m.start())):
                 continue                                  # "does not wait for #N" says the opposite; or another issue's wait
             found.append((m.group(1), form))
