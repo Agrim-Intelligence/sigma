@@ -128,8 +128,9 @@ _SENTENCE_END = re.compile(r"[.!?\n]")
 _SENTENCE_FORMS = {
     "behind": re.compile(r"(?P<t>\b(?:sits?|sat|stands?|stood|queued?)[ \t]+(?:also[ \t]+)?behind\b)(?P<s>(?:[^\n.]|\.(?![ \t\n]|$)){0,300})", _I),
 }
-#: the tail of a list: ", #M", ", and #M", " and #M", " & #M" -- tight, one reference per step.
-_MORE = re.compile(r"[ \t]*(?:,[ \t]*(?:and[ \t]+)?|and[ \t]+|&[ \t]*)#(\d+)\b", _I)
+#: the tail of a list: ", #M", ", and #M", " and #M", " & #M", each with an optional short code before the reference
+#: (", and E22 #M") -- tight, one reference per step.
+_MORE = re.compile(r"[ \t]*(?:,[ \t]*(?:and[ \t]+)?|and[ \t]+|&[ \t]*)(?:[A-Za-z][\w.-]{0,7}[ \t]+)?#(\d+)\b", _I)
 FORMS = ("explicit", "list", "follow-up") + tuple(_FORWARD) + tuple(_REF_FIRST) + tuple(_SPAN) + tuple(_SENTENCE_FORMS)
 
 

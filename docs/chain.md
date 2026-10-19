@@ -35,7 +35,14 @@ No GitHub write exists in any verb before `approve`. `run` is one cycle and is c
 reports done; exit 3 means capped or stuck with one reason (decision, held-gate, claimed, external,
 checkpoint, rate-limit, degraded-read, capped). The stop names what HOLDS the chain: of the members still open, only
 those that wait on no other open member are considered (a parked goal that itself waits on an open goal is held, not
-holding), and the same rule gives the forecast's roots.
+holding), and the same rule gives the forecast's roots. When more than one member holds the chain, the run prints the
+others on a line of its own (`also holding the chain: #a, #b`, at most 6 and a count), and `chain.py status` repeats it;
+the stop line itself is unchanged. A closed prerequisite's open follow-up never counts as a dependent waiting on itself:
+a follow-up names its parent and so waits on it by construction, and asking it to "keep waiting" for itself is no
+question. A plan read from the stored map, with an assignee filter configured and a chain small enough for the live
+read, is planned live instead: the map holds no assignees, and a forecast that cannot apply the filter promises work
+the runner may not take. Before a closed-prerequisite question is answered, the sheet's forecast reads the recommended
+answer (keep waiting) and says so in a note.
 
 One `run` cycle reads each issue and each comment page at most once (`chain_reads.py`): a repeat of a GET of one issue
 is served from memory for the length of that call, any call that can write drops everything kept, and the store is

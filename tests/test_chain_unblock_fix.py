@@ -178,3 +178,101 @@ def test_the_sheet_prints_the_assumption():
         r.update(depth=0, unit=None)
     text = ch.render_sheet(rec, 1_800_000_010)
     assert "keep waiting" in text.split("Ready and waiting")[0], text[:600]
+
+
+def test_a_plan_with_an_assignee_filter_reads_each_members_assignees_so_the_forecast_can_apply_it(tmp_path):
+    """The stored map holds no assignees, so a forecast from a map plan could not apply the filter a run applies and
+    promised work the runner may not take (K = 1 where a run finished none). With a filter configured and a chain
+    that fits the live read, the plan reads live, and the forecast for someone else's goal is 0."""
+    import json
+    import test_chain_waits_1902 as tw
+    ch = tw._mod("chain")
+    base = tw._repo(tmp_path)
+    cfgp = pathlib.Path(base) / "config.json"
+    cfg = json.loads(cfgp.read_text())
+    cfg["discovery"]["github"]["assignee"] = "alice"
+    cfgp.write_text(json.dumps(cfg))
+    issues = [tw._goal(1, assignees=["bob"])]
+    tw._save_map(base, [tw._mnode(1)], [])
+    p = ch.plan(base, 1, run=tw._fake(issues), now=tw.NOW)
+    assert p["source"] == "live" and "assignee" in p["source_reason"], (p["source"], p["source_reason"])
+    fc = ch.chain_forecast.forecast(p, ch._load("state").load_config(base), "alice")
+    assert fc["finish"] == [] and fc["notes"] == [], fc
+
+
+def test_a_map_plan_without_an_assignee_filter_stays_on_the_map(tmp_path):
+    import test_chain_waits_1902 as tw
+    ch = tw._mod("chain")
+    base = tw._repo(tmp_path)
+    tw._save_map(base, [tw._mnode(1)], [])
+    p = ch.plan(base, 1, run=tw._fake([tw._goal(1)]), now=tw.NOW)
+    assert p["source"] == "map"
+
+
+def test_a_follow_up_that_waits_on_its_own_closed_parent_is_not_a_gate_on_itself():
+    """A follow-up is filed BECAUSE of its parent, so it names it ("Follow-up to #P") and so waits on it. The warning
+    'P is closed, but its follow-up F is still open, and F waits on it. Keep waiting for that?' asks F to wait for F."""
+    ch = tcr.tca._chain()
+    closed = ch.chain_closed
+    calls = []
+
+    def ro(args):
+        calls.append(args)
+        if "labels=sdlc:followup" in " ".join(args):
+            import json
+            return json.dumps([{"number": 7, "state": "open", "body": "Follow-up to #2: the target was missed.",
+                                "labels": [{"name": "sdlc:followup"}]}])
+        import json
+        return json.dumps({"number": 2, "state": "closed", "body": "", "comments": 0, "labels": [], "assignees": []})
+
+    got = closed.scan(ro, "o/r", {2: [1, 7]})
+    assert got["warnings"] == [{"prerequisite": 2, "dependents": [1], "followups": [7], "question": False}], got
+    only = closed.scan(ro, "o/r", {2: [7]})
+    assert only["warnings"] == [], only
+
+
+def test_the_stop_line_is_unchanged_and_the_other_roots_are_named_apart_from_it():
+    """A chain can be held by several things at once. The stop line names the first one to act on (and is the same
+    line the forecast prints); `other_roots` names the rest, and the run prints them on a line of their own."""
+    cf = _cf()
+    p = _p({"number": 1, "verdict": "parked"}, {"number": 2, "verdict": "assigned-elsewhere"},
+           {"number": 3, "verdict": "parked"}, {"number": 4, "verdict": "armed", "waits_on": [1]})
+    reason, detail = cf.stuck_reason(p)
+    assert (reason, detail) == ("decision", "#1 is parked and needs an answer")
+    assert cf.other_roots(p, detail) == ([2, 3], 0)
+    assert cf.holding_text([2, 3]) == "also holding the chain: #2, #3"
+
+
+def test_a_single_root_has_no_other():
+    p = _p({"number": 1, "verdict": "parked"}, {"number": 4, "verdict": "armed", "waits_on": [1]})
+    reason, detail = _cf().stuck_reason(p)
+    assert _cf().other_roots(p, detail) == ([], 0)
+
+
+def test_the_other_roots_are_bounded():
+    cf = _cf()
+    p = _p(*({"number": n, "verdict": "parked"} for n in range(1, 30)))
+    reason, detail = cf.stuck_reason(p)
+    others, more = cf.other_roots(p, detail)
+    assert len(others) == cf.MAX_OTHER_ROOTS and more == 28 - cf.MAX_OTHER_ROOTS
+    assert cf.holding_text(others, more).endswith("and %d more" % more)
+
+
+def test_a_run_that_is_held_by_two_things_prints_both_and_status_repeats_them(tmp_path):
+    from test_chain_forecast import PARK, DW, tla
+    def goal(n, who, waits=(), *labels, **kw):
+        body = "".join("Blocked by #%d\n" % w for w in waits) + "\n" + DW
+        return tla.issue(n, "sdlc:goal", *labels, assignees=(who,), body=body, **kw)
+    issues = [goal(1, "alice", (2, 3)), goal(2, "bob"), goal(3, "alice", (), "sdlc:parked", comments=[PARK])]
+    ch, base, fk = tcr._armed(tmp_path, issues)
+    res = tcr._run(ch, base, fk, lambda label, skip, **kw: [])
+    assert res["state"] == "stuck" and res["holding"] == "also holding the chain: #2", res
+    assert ch.render_run(res).splitlines()[-1] == "also holding the chain: #2"
+    rec = tca_rec(base)
+    assert rec["run"]["holding"] == "also holding the chain: #2"
+    st = ch._load("chain_status").status_of(rec)
+    assert "also holding the chain: #2" in (st["root_cause"] or ""), st
+
+
+def tca_rec(base):
+    return tcr.tca._rec(base)

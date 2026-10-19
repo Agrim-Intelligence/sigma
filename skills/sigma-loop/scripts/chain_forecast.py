@@ -22,6 +22,7 @@ assignees). Ceiling: O(cycles x members) per call, members bounded by `chain.max
 """
 import importlib.util
 import pathlib
+import re
 
 _HERE = pathlib.Path(__file__).resolve().parent
 
@@ -126,7 +127,7 @@ def roots_of(rows):
     return free or rows
 
 
-def stuck_reason(p, unconfirmed=(), held=(), declined=()):
+def _stop_of_first_root(p, unconfirmed=(), held=(), declined=()):
     """-> (reason, detail), ONE reason from `chain.STUCK_REASONS` for an empty pick with members still open,
     given plan rows `p["members"]` (each may carry `waits_on`: the members it waits on) and `p["outside"]`. Only
     the ROOTS are named (`roots_of`). Numbers only in the detail. The order is the order a person would act in:
@@ -170,6 +171,29 @@ def stuck_reason(p, unconfirmed=(), held=(), declined=()):
     if unconfirmed:
         return "degraded-read", "#%d could not be confirmed closed" % sorted(unconfirmed)[0]
     return "claimed", "open members remain but none could be claimed this cycle (skipped or leased elsewhere)"
+
+
+MAX_OTHER_ROOTS = 6
+
+
+def stuck_reason(p, unconfirmed=(), held=(), declined=()):
+    """-> (reason, detail): `_stop_of_first_root`, the one thing a person acts on first. `other_roots` names the rest."""
+    return _stop_of_first_root(p, unconfirmed, held, declined)
+
+
+def other_roots(p, detail):
+    """-> the numbers of the members that ALSO hold the chain: the roots (`roots_of`) the stop `detail` does not name,
+    at most MAX_OTHER_ROOTS, then a count in `more`. -> ([numbers], more). A chain can be held by several things at
+    once; the stop line names the first one to act on, and this names the others (the run prints them on a line of
+    their own and records them for `chain.py status`; `detail` itself is unchanged, so the forecast's and the run's
+    stop line stay equal)."""
+    named = {int(x) for x in re.findall(r"#(\d+)", detail or "")}
+    others = sorted(r["number"] for r in roots_of(p["members"]) if r["number"] not in named)
+    return others[:MAX_OTHER_ROOTS], max(0, len(others) - MAX_OTHER_ROOTS)
+
+
+def holding_text(numbers, more=0):
+    return "also holding the chain: %s%s" % (", ".join("#%d" % n for n in numbers), " and %d more" % more if more else "")
 
 
 # --- the forecast ------------------------------------------------------------------------------------------

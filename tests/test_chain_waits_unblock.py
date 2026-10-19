@@ -43,6 +43,9 @@ READ_AS = [
      "renderer; and E2 (#14), which holds the registry. It reads them.",
      [("12", "behind"), ("13", "behind"), ("14", "behind")]),
     ("it stands behind #12", [("12", "behind")]),
+    ("the six judges are blocked on story-events E17 #12 and E22 #13 (unchanged)", [("12", "explicit"), ("13", "list")]),
+    ("hold on #12, E7 #13 and E8 #14", [("12", "hold"), ("13", "list"), ("14", "list")]),
+    ("blocked on #12 and then a long sentence about the old design #13", [("12", "explicit")]),
 ]
 
 #: wording that says the goal does NOT wait: nothing to read

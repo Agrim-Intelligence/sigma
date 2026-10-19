@@ -105,8 +105,9 @@ def root_cause(rec, state, reason):
             return "waiting on a decision; /sigma-unpark"
         w = _waiters(rec, n)
         who = _ids(w) if w else "the chain"
-        return "%s %s on #%d's decision; /sigma-unpark #%d" % (who, "wait" if len(w) != 1 else "waits", n, n)
-    return "%s%s" % (reason, " at #%s" % m.group(1) if m else "")
+        return "%s %s on #%d's decision; /sigma-unpark #%d" % (who, "wait" if len(w) != 1 else "waits", n, n) \
+            + ("; " + blk["holding"] if blk.get("holding") else "")
+    return "%s%s" % (reason, " at #%s" % m.group(1) if m else "") + ("; " + blk["holding"] if blk.get("holding") else "")
 
 
 def status_of(rec, config=None, now=None):
