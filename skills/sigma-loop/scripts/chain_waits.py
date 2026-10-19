@@ -122,7 +122,7 @@ _OWN_SUBJECT = frozenset({"waits-on", "behind"})
 _OWN = re.compile(r"\b(?:this|it)\b(?:[ \t]+[\w'*]+){0,3}[ \t]*$", _I)
 #: a negation shortly before a trigger: the goal does not wait, so the sentence is not a wait.
 _NEGATED = re.compile(r"(?:\b(?:not|never|nor|without)\b|n't\b|\bno[ \t]+longer\b)\W*(?:\w+\W+){0,2}$", _I)
-_SENTENCE_END = re.compile(r"[.!?\n]")
+_SENTENCE_END = re.compile(r"[.!?;\n]")
 #: "sits behind <a sentence that lists what it sits behind>": group `s` is the rest of that sentence (300 characters
 #: at most, to the first full stop or line end); every reference in it is read. Group `t` is the trigger.
 _SENTENCE_FORMS = {
