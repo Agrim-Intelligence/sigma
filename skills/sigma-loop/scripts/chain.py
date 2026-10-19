@@ -200,6 +200,10 @@ ARM_USAGE = ("usage: chain.py approve <sdlc_dir> <chain>\n"
              "  `approve` marks a fully answered sheet approved (local only). `arm` refuses unless the chain is\n"
              "  approved; then it creates the label chain:<root> if missing, adds it to every member and arms\n"
              "  the unarmed ones with one comment each. --dry-run writes nothing and prints the same lines.")
+HTML_USAGE = ("usage: chain.py html <sdlc_dir> <chain> [--out DIR] [--titles FILE]\n"
+              "  Write the whole stored plan of <chain> as one offline page (every member, every edge, every question\n"
+              "  the sheet asks, numbered as the sheet numbers them). Reads only the plan record; no GitHub call.\n"
+              "  Run `plan` first. Default: <sdlc_dir>/state/dag-html/chain-plan-<N>.html (see dag_html.py).")
 STATUS_USAGE = ("usage: chain.py status <sdlc_dir> [<chain>] [--json] [--rebuild [--force] [--answers <file>]] [--leftovers]\n"
                 "  Print each chain's state and the age of its last progress (read-only); a stopped or stuck chain\n"
                 "  adds one root-cause line. --rebuild regenerates a chain's record from its label and recorded\n"
@@ -1900,6 +1904,7 @@ def main(argv, run=None, now=None, pick=None):
     if args in (["-h"], ["--help"]):
         print(USAGE)
         print(SHEET_USAGE)
+        print(HTML_USAGE)
         print(ARM_USAGE)
         print(RUN_USAGE)
         print(STATUS_USAGE)
@@ -1912,6 +1917,8 @@ def main(argv, run=None, now=None, pick=None):
         return _main_sheet(args, run, now)
     if args[:1] in (["approve"], ["arm"]):
         return _main_arm(args, run)
+    if args[:1] == ["html"]:
+        return _main_html(args[1:])
     as_json = "--json" in args
     args = [a for a in args if a != "--json"]
     if args[:1] == ["plan"] and "--longest" in args:
@@ -2008,6 +2015,27 @@ def _main_arm(args, run):
     return 1 if any(a["result"] == "failed" for a in res["actions"]) else 0
 
 
+def _main_html(rest):
+    """`chain.py html <sdlc_dir> <chain> [--out DIR] [--titles FILE]`: the page is dag_html's (#1924)."""
+    opts, pos, it = {}, [], iter(rest)
+    for a in it:
+        if a in ("--out", "--titles"):
+            opts[a] = next(it, None)
+        else:
+            pos.append(a)
+    if len(pos) != 2 or None in opts.values():
+        print(HTML_USAGE, file=sys.stderr)
+        return 2
+    try:
+        goal = _chain_arg(pos[1])
+    except ChainRefused as exc:
+        print("chain.py: %s" % exc, file=sys.stderr)
+        return 2
+    lines, code = _load("dag_html").run_plan(pos[0], goal, opts.get("--out"), opts.get("--titles"))
+    print("\n".join(lines), file=sys.stdout if code == 0 else sys.stderr)
+    return code
+
+
 def _main_sheet(args, run, now):
     verb, rest = args[0], args[1:]
     if "--partial" in rest:
@@ -2020,6 +2048,8 @@ def _main_sheet(args, run, now):
                 print(SHEET_USAGE, file=sys.stderr)
                 return 2
             print(sheet(rest[0], _chain_arg(rest[1]), now=now, runner=runner), end="")
+            print("Page of this plan: chain.py html %s %s (writes %s)" % (rest[0], rest[1].lstrip("c"), pathlib.Path(
+                rest[0]) / "state" / "dag-html" / ("chain-plan-%s.html" % rest[1].lstrip("c"))))
             return 0
         flags = rest[2:]
         if len(rest) < 3 or not (flags == ["--defaults"] or (len(flags) == 2 and flags[0] == "--answers")):

@@ -22,14 +22,18 @@ Arguments: `<N | issue URL of this repository>`, `--longest`, `--forecast`, `--a
    `C plan D <N> --forecast` (read-only toward GitHub): relay its one line, "a run from <login> can finish K of N
    before it stops on <reason>", and the root of each stop; `--as <login>` asks for another runner. A refusal
    (cycle, over the member bound) is relayed as is. Then name the chain's page: `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/dag.py" html --goal <N> --sdlc D`
-   writes `D/state/dag-html/chain-<N>.html` from the stored map (offline, no GitHub call; add `--titles <file>` for titles).
+   writes `D/state/dag-html/chain-<N>.html` from the stored map (offline, no GitHub call; add `--titles <file>` for titles);
+   that is the map's view and holds no wait written in prose, so the plan's own page comes after the sheet (step 2).
 2. **Ask.** `C sheet D <N>` lists every decision at once. It opens with the forecast line (relay it), then the
    blocks in the order a person unblocks a run: ready and waiting, owner decisions, unconfirmed waits, checkpoints,
    paid gates. If it has an "Unconfirmed waits" block, put that block to the user whole: the plan already reads each
    as a wait, so for each that is real run `deps.py mark D <goal> <ref> <reason>`; for a wrong one, post the
    `backlog_check.py dismiss-text blocked-by <ref>` text with `loop.py note`; then `C plan D <N>` again. Put the
    decisions to the user in batches of up to four
-   (`AskUserQuestion` where the host has it, a numbered text reply otherwise); record them with
+   (`AskUserQuestion` where the host has it, a numbered text reply otherwise). After the sheet, open the page of
+   the whole plan: `C html D <N> [--titles <file>]` writes `D/state/dag-html/chain-plan-<N>.html` from the stored
+   plan (offline, no GitHub call): every member, deep ones too, every edge (a prose wait dashed) and every question
+   numbered as the sheet numbers it, with a badge on the member it is about. Record the answers with
    `C answer D <N> --answers <file>`. `--defaults` skips asking: `C answer D <N> --defaults` takes each
    recommended option; the cap, a paid step (`irreversible:<n>`) and a follow-up waiting for its owner
    (`owner_gate:<n>`) have none, so they are still asked and never decided for the user. Then `C approve D <N>`.

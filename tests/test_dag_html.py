@@ -142,7 +142,7 @@ def test_states_by_marker(sdlc):
 
 def test_every_marker_has_a_colour_class_and_a_legend_entry():
     chain_forecast = dh.chain_forecast
-    assert set(chain_forecast.MARKERS) | {"closed", "outside", "cycle"} == set(dh.CLASS)
+    assert set(chain_forecast.MARKERS) | {"closed", "outside", "cycle"} | set(dh.PLAN_WORDS) == set(dh.CLASS)
     assert {k for k, _v in dh.LEGEND} == set(dh.CLASS)
 
 

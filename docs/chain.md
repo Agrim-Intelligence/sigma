@@ -23,14 +23,28 @@ the sigma-loop scripts. It plans the whole chain, asks every decision together, 
 | Step | Verb | Touches GitHub |
 |---|---|---|
 | Plan | `chain.py plan <sdlc_dir> <N> [--json] [--forecast [--as <login>]]` | reads only (about one request per member, for unconfirmed waits); writes the local record |
-| See it | `dag.py html --goal <N>` (or `--all`) | nothing, from the stored map; one offline page per chain under `.sdlc/state/dag-html/` |
+| See the map | `dag.py html --goal <N>` (or `--all`) | nothing, from the stored map; one offline page per chain under `.sdlc/state/dag-html/` |
+| See the plan | `chain.py html <sdlc_dir> <chain> [--out DIR] [--titles FILE]` | nothing, from the stored plan record; `chain-plan-<N>.html` |
 | Offer end goals | `chain.py plan <sdlc_dir> --longest [--by freeing]` | nothing, from the stored map |
-| Sheet | `chain.py sheet <sdlc_dir> <chain> [--as <login>]` | nothing |
+| Sheet | `chain.py sheet <sdlc_dir> <chain> [--as <login>]` | nothing (its last line names the page command) |
 | Answer | `chain.py answer <sdlc_dir> <chain> --answers <file>` or `--defaults` | parked members only, through the unpark gesture |
 | Approve | `chain.py approve <sdlc_dir> <chain>` | nothing |
 | Arm | `chain.py arm <sdlc_dir> <chain> [--dry-run]` | the only write path: label `chain:<root>`, one fixed comment, arming |
 | Run | `chain.py run <sdlc_dir> <chain> [--session-pid P]` | one cycle: the loop's label-scoped pick |
 | Stop / resume | `chain.py stop`, `chain.py resume [--cap N]` | nothing; local record only |
+
+**The page of the whole plan.** `chain.py html` draws the stored plan record (what `plan` and `sheet` read), not the
+map, so a wait written in prose or a comment (a dashed `unconfirmed` edge) and every deep member appear. Every
+member, done prerequisite and external is on it, coloured by what it is: ready, waiting, needs decision,
+someone else's, checkpoint, not a goal, awaiting its owner, parked, paid gate; closed prerequisites sit behind a
+toggle. The questions are the sheet's, taken from the sheet's own text so the number and the wording cannot differ:
+a panel reads "N questions before anything is armed", each question carries a numbered badge on the member it is
+about (a grouped question on every member it covers, a question about the whole chain on the end goal), and a click
+on a question or its badge highlights the other; an answered question shows its recorded answer. There is no plan
+yet: it refuses (exit 2) and names `chain.py plan`. The sheet does not write the page (it stays a reading that
+changes nothing); it prints one last line naming the command and the path. A closed prerequisite carries edges only
+where a warning ties it to a member: the record does not hold what each one freed. Unmeasured: a chain deeper than
+about 8 columns opens fitted but small; zoom, or click a question, which pans and enlarges.
 
 No GitHub write exists in any verb before `approve`. `run` is one cycle and is called again until it
 reports done; exit 3 means capped or stuck with one reason (decision, held-gate, claimed, external,
