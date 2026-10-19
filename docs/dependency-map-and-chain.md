@@ -335,11 +335,24 @@ nothing in it is model-driven. The full reference, with the agent-file block, is
    with no duplicate label or comment.
 7. **Run.** `chain.py run <sdlc_dir> <N> [--session-pid P] [--no-grow]`: one cycle (the auto-unpark sweep, the
    spend cap check, a read of the label's members, then one pick). Call it again until it reports done. Exit 3
-   means capped or stuck, with one reason: decision, held-gate, claimed, external, rate-limit, degraded-read,
-   capped.
+   means capped or stuck, with one reason: decision, held-gate, claimed, external, checkpoint, rate-limit,
+   degraded-read, capped.
 8. **Stop, resume, status.** `chain.py stop` and `chain.py resume [--cap N]` change only the local record (a stop
    does not release goals already claimed). `chain.py status [<N>] [--json]` reads the local records and prints
    each chain's state and the age of its last progress, with `running STALE` past `chain.stale_minutes`.
+
+### Checkpoints
+
+Some goals wait on a fact, not on work: that a unit's code is on the integration branch. That is a checkpoint, an
+open issue with the reserved label `sdlc:checkpoint` and (usually) the unit it waits for. Write the wait the
+ordinary way, or with `deps.py mark <sdlc_dir> <goal> <checkpoint> <reason>`, which writes `**Blocked by:** #N` and
+says the issue is a checkpoint. It is never picked and never armed (the label is an overlay of the eligibility rule,
+so even a stray `sdlc:goal` beside it picks nothing), and the blocker sweep never grants it membership. It is met
+when the unit's tip is contained in `<remote>/<work.base>` (local git, no network) or when a person closes it; the
+plan, the sheet's own checkpoint block and the stop reason `checkpoint` say which, and name the one step that releases
+it. The doctor does not call it a blocking issue without a goal. Limits: a squash-landed unit or a deleted unit branch
+reads `waiting` or `unknown` until a person closes it, and the loop's own pick gate still reads an open blocker as
+open, so a `met` checkpoint releases nothing until it is closed. Details: [the chain reference](chain.md#checkpoints).
 
 **Growth.** Each `run` cycle re-reads the end goal's open closure. A new prerequisite that needs no decision
 joins, up to `chain.max_added` and `chain.max_goals`. One that needs a decision, is over a bound, or arrives

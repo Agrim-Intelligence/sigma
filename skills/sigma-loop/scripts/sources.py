@@ -962,7 +962,10 @@ class GitHubSource:
                      # every tier of automatic classification was tried and failed, which is a
                      # genuinely rarer and more open-ended state. Not used anywhere else in the
                      # existing `sdlc:*` palette (checked against `_LABEL_COLORS` above).
-                     ("needs_triage_label", "5319e7"))
+                     ("needs_triage_label", "5319e7"),
+                     # #1904: a checkpoint (met when a named unit lands, or a person closes it). A
+                     # different colour from every label above; see `checkpoint_label`.
+                     ("checkpoint_label", "c5def5"))
     #: #230: the priority tiers bootstrapped alongside `_LABEL_COLORS` -- by `ensure_labels_report`
     #: only (setup, init --github, `loop.py start`), never by the hot-path `_ensure_labels` above,
     #: whose per-pick contract (and its tests) stays the lifecycle set alone. Without these an
@@ -1054,6 +1057,11 @@ class GitHubSource:
         # condition to watch for, so a human clears it by removing the label directly (or by
         # declaring a real unit) rather than by a documented one-gesture fix a sweep re-checks.
         self.needs_triage_label = gh.get("needs_triage_label", "sdlc:needs-triage")
+        # #1904: the reserved label of a CHECKPOINT -- an issue that stands for "a named unit's code is
+        # on the integration branch". It is never picked and never armed, so it is an overlay: an
+        # issue carrying it is excluded by `not_eligible_labels` even if someone also gave it
+        # `goal_label`. It is met by the unit landing or by a person closing it (`chain_checkpoint`).
+        self.checkpoint_label = gh.get("checkpoint_label", "sdlc:checkpoint")
         # #1351: the DERIVED, self-healing auxiliary label — applied to the BLOCKER issue itself
         # (not the blocked goal `goal_blocked_label` marks), for as long as at least one open issue
         # still references it via a live "Blocked by #N" marker. Also DISTINCT from `sdlc:dependency`
@@ -2139,7 +2147,7 @@ class GitHubSource:
         legitimately write to an issue it does not own (a parked blocker, a human's proposal, a
         third-party issue), precisely because it grants nothing."""
         return (self.in_progress_label, self.goal_blocked_label, self.needs_label_label,
-                self.needs_unit_label, self.needs_triage_label)
+                self.needs_unit_label, self.needs_triage_label, self.checkpoint_label)
 
     def not_eligible_labels(self):
         """THE eligibility rule, in ONE place. An issue is pickable iff it carries `goal_label` and

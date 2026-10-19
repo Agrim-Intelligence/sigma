@@ -14,6 +14,8 @@ and a phantom edge writes to an unrelated issue. So this module hands the WHOLE 
           stored map), and leaves a note saying why. Idempotent: an edge the body already carries is
           `ALREADY`, and nothing is written. The referenced number must be an OPEN issue or pull request
           (one read); a closed, missing or unreadable one is `REFUSED`, so a typo never becomes an edge.
+          A checkpoint (#1904, label `sdlc:checkpoint`) is an open issue like any other, so a wait on it is
+          written the same way; the answer says the issue is a checkpoint.
 
 The judgment is the agent's, and it costs one read of the ticket per goal (one issue read plus its
 comment pages through `gh_api`), paid once at pick time. What makes it safe is that the agent's
@@ -129,7 +131,9 @@ def mark(source, goal, ref, reason):
     if any(r["ref"] == ref for r in blocker_scan.extract_refs(body, self_ref=goal)):
         return "ALREADY", "the body already carries an explicit edge to issue %s" % ref
     try:
-        state = str(source._read_issue(ref, ["state"]).get("state") or "").upper()
+        data = source._read_issue(ref, ["state", "labels"])
+        state = str(data.get("state") or "").upper()
+        names = {(l.get("name") if isinstance(l, dict) else str(l)) for l in (data.get("labels") or [])}
     except Exception as exc:                       # noqa: BLE001 - unreadable is a refusal, never a guess
         return "REFUSED", "issue %s could not be read (%s)" % (ref, type(exc).__name__)
     if state != "OPEN":
@@ -145,6 +149,10 @@ def mark(source, goal, ref, reason):
         source.note(goal, note)
     except Exception as exc:                       # noqa: BLE001 - the marker is the record; the note is narration
         return "MARKED", "marker written; the explanatory note failed (%s)" % type(exc).__name__
+    checkpoint = getattr(source, "checkpoint_label", None)
+    if checkpoint and checkpoint in names:          # #1904: a wait on a checkpoint is an ordinary edge
+        return "MARKED", ("issue %s is a checkpoint and now holds this goal until its unit lands or a person "
+                          "closes it" % ref)
     return "MARKED", "issue %s now blocks this goal" % ref
 
 

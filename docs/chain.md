@@ -33,7 +33,7 @@ the sigma-loop scripts. It plans the whole chain, asks every decision together, 
 
 No GitHub write exists in any verb before `approve`. `run` is one cycle and is called again until it
 reports done; exit 3 means capped or stuck with one reason (decision, held-gate, claimed, external,
-rate-limit, degraded-read, capped).
+checkpoint, rate-limit, degraded-read, capped).
 
 ## The sheet
 
@@ -60,6 +60,19 @@ answer), arm it as a goal, or treat it as a checkpoint. Only "arm it as a goal" 
 any other answer, or none, it gets no `chain:<root>` label, no comment and no goal label, and `arm` lists it as
 refused. "Treat it as a checkpoint" is recorded only; the label that makes it one is a person's step (see the
 dependency docs).
+
+## Checkpoints
+
+A checkpoint (`sdlc:checkpoint`, see [the label model](label-model.md#2b-vi-sdlccheckpoint--an-issue-that-means-that-units-code-is-on-main))
+stands for "that unit's code is on the integration branch". It is a row in the plan with the verdict `checkpoint`,
+its unit and a status (`met`, `waiting` or `unknown`). It is never picked, never armed and gets no `chain:<root>`
+label; `Blocked by` on it is an ordinary edge; the sheet shows checkpoints in their own block, with what each one
+holds up. When no other reason is open, `run` stops with the reason `checkpoint` and names it; a `met` one says
+that its issue is still open and the step that releases it (close the issue). It is met when the unit's tip is
+contained in `<remote>/<work.base>` (local git ancestry, no fetch, no network) or a person closes the issue.
+A unit landed by squash, or whose branch is gone, reads `waiting` or `unknown` until a person closes the
+checkpoint. The loop's own pick gate still reads an open blocker as open, so a `met` checkpoint does not release
+its dependents until it is closed: the status is a report, the close is the release.
 
 ## Growth
 

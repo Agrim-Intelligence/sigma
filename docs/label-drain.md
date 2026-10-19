@@ -164,12 +164,13 @@ parked member is answered; the other rows use the starting state.
 | plan | 4 | 4 | 0 |
 | arm --apply | 16 | 10 | 6 |
 | next --label, before arm | 5 | 5 | 0 |
-| next --label, after arm and answer | 25 | 15 | 10 |
-| next, no label | 20 | 10 | 10 |
+| next --label, after arm and answer | 26 | 15 | 11 |
+| next, no label | 21 | 10 | 11 |
 
 Reading it: `plan` never writes. A refused start made five reads and no write. The pick inside the
-label made five more reads than the pick without it. Both picks wrote ten times; this page does not
-break those writes down further. The two picks chose different goals, so they are a cost comparison,
+label made five more reads than the pick without it. Both picks wrote eleven times, one of them the creation of the `sdlc:checkpoint` label, which this fake does not have
+and a real repository has after its first pick; this page does not
+break the other writes down further. The two picks chose different goals, so they are a cost comparison,
 not an identical-work comparison.
 
 ## What it costs: one real run

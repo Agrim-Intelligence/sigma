@@ -285,6 +285,9 @@ class _Judge:
             return "upper-tier", "labelled %s; the picker never takes it" % tier
         if self.source.parked_label in names:
             return "parked", "carries %s" % self.source.parked_label
+        cp = getattr(self.source, "checkpoint_label", None)
+        if cp and cp in names:                               # #1904: never picked, never armed, with or without a goal label
+            return "checkpoint", "a checkpoint: met when its unit lands or a person closes it; never worked"
         if self.source.goal_label not in names:
             blocking = getattr(self.source, "blocking_label", None)
             if blocking and blocking in names:           # #1903: other work waits on it, yet it was never a goal
@@ -399,6 +402,8 @@ def plan(sdlc_dir, label, config=None, run=None, hide_answered=True):
         row = {"number": n, "title": scrub(str(issue.get("title") or "")), "verdict": verdict,
                "detail": detail, "waiting_on": waiting, "unresolved": unres,
                "dropped_closed": sorted(set(clo["closed"].get(n, [])))}
+        if verdict == "checkpoint":                        # #1904: is it met? (local reads only)
+            row["checkpoint"] = _light("chain_checkpoint").status(sdlc_dir, config, _unit(issue, features))
         if node["outside"]:
             row["depth"] = node["depth"]
             row["verdict"], row["own_verdict"] = "outside", verdict
@@ -703,7 +708,7 @@ def _reason(row, in_progress, blocked_overlay):
     if v == "parked":
         q = row.get("question") or ""
         return "parked (%s)%s" % (row.get("kind") or "undeclared", ": " + q[:140] if q else "")
-    if v in ("unarmed", "unassigned", "assigned-elsewhere", "held-by-gate") + tuple(GATED_KIND):
+    if v in ("unarmed", "unassigned", "assigned-elsewhere", "held-by-gate", "checkpoint") + tuple(GATED_KIND):
         return "%s: %s" % (v, row["detail"])
     if in_progress:
         return "in progress (claimed by a run)"
@@ -887,7 +892,10 @@ def arm(sdlc_dir, label, apply=False, config=None, run=None, only=None, promote=
         v = r["own_verdict"] if outside else r["verdict"]
         if v in GATED_KIND and r["number"] in promote:
             v = "unarmed"                  # #1903: the person was asked and answered; arm it like any unarmed one
-        if v in _REFUSED:
+        if v == "checkpoint":              # #1904: not a goal and never becomes one; not an error either
+            notes.append("#%d is a checkpoint; never armed (met when its unit lands or a person closes it)"
+                         % r["number"])
+        elif v in _REFUSED:
             refused.append({"issue": r["number"], "verdict": v, "reason": r["detail"] or v})
         elif v in ("unarmed", "unassigned"):
             if not outside:
@@ -932,6 +940,8 @@ def pull(sdlc_dir, label, ref, for_goal, config=None, run=None):
         return out("closed")
     if label in _names(issue):
         return out("already")
+    if verdict == "checkpoint":
+        return out("refused", "checkpoint: %s" % detail)
     if verdict in _REFUSED:
         return out("refused", "%s: %s" % (verdict, detail or verdict))
     if verdict in ("unarmed", "unassigned") and not cfg["arm_pulled_blockers"]:

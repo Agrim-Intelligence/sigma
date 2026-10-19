@@ -27,6 +27,10 @@ and one REST read per unknown reference. The output says which source and its ag
 fallback. A closure over the bound is refused with its count, never truncated; a cycle is refused with
 every member named.
 
+CHECKPOINTS (#1904). A member the label drain calls `checkpoint` is a row with `checkpoint: {unit, state, why}`
+(`chain_checkpoint.status`, local git only). It is never labelled or armed, is not a member of the run (so
+it never has to close for the run to be done), and is shown in its own block on the sheet.
+
 VERDICTS. Live: the label drain's `_Judge.verdict` (armed, unarmed, parked, upper-tier,
 assigned-elsewhere, held-by-gate, not-a-goal). From the map only the life is known, so only armed, unarmed,
 parked and unknown can be given (`verdict_basis: map-life`), except that a member whose life is `blocking` or
@@ -82,8 +86,8 @@ member is confirmed by reading the issue itself, so a lost label never reads as 
 loop's own `loop.py next-batch --label chain:<root> --session-pid P`, the only process this verb starts, so
 nothing outside the label is ever claimed and the claim stays lease based. A non-empty pick is recorded
 (numbers only) with a heartbeat, exit 0. An empty pick is `done` only when every member is confirmed closed;
-otherwise it is STUCK, exit 3, with ONE reason: decision, held-gate, claimed, external, rate-limit,
-degraded-read. `stop` and `resume [--cap N]` change only the record's `run` block (local, no `gh` call); a
+otherwise it is STUCK, exit 3, with ONE reason: decision, held-gate, claimed, external, checkpoint (#1904: the
+only thing left is a checkpoint, named with its unit), rate-limit, degraded-read. `stop` and `resume [--cap N]` change only the record's `run` block (local, no `gh` call); a
 stop does not release goals already claimed. The record is a local file with no lock: run one driver per
 chain. Not measured: a run against a live repository, and the cost of one cycle's reads beyond the fake's
 call counts.
@@ -137,6 +141,7 @@ def _load(name):
 label_drain = _load("label_drain")
 dag_chain = _load("dag_chain")
 chain_parallel = _load("chain_parallel")
+chain_checkpoint = _load("chain_checkpoint")
 dag_store = dag_chain.dag_store
 dag_core = dag_chain.dag_core
 
@@ -284,8 +289,10 @@ def _refine_gated(rows, sdlc, config, ro, source):
             if r["life"] == "blocking":
                 r["verdict"] = "unknown"
             continue
-        if verdict in label_drain.GATED_KIND:
+        if verdict in label_drain.GATED_KIND or verdict == "checkpoint":
             r["verdict"], r["labels"] = verdict, sorted(label_drain._names(issue))
+        if verdict == "checkpoint":         # #1904
+            r["checkpoint"] = chain_checkpoint.status(sdlc, config, label_drain._unit(issue, judge.features))
 
 
 def _finish(out, rows, edges, ext, done, units, ranks, outside_ranks, weak):
@@ -427,6 +434,8 @@ def _plan_live(sdlc, goal, config, ro, source, bound):
         weak += _weak_count(issue, goal, blocker_scan)
         rows.append({"number": n, "verdict": verdict, "labels": sorted(names), "prio": prio,
                      "spend": ld._spend_text(issue.get("body"), hard_stop, config) is not None})
+        if verdict == "checkpoint":                                  # #1904
+            rows[-1]["checkpoint"] = chain_checkpoint.status(sdlc, config, units[n])
     edges = [{"from": b, "to": n, "tag": "explicit"} for n, bs in clo["edges"].items() for b in bs]
     ext = []
     for n, tags in clo["unresolved"].items():
@@ -649,7 +658,8 @@ def _writes(rec, qs, config=None):
     out.append("after approval, `chain.py arm` creates the label %s if it is missing" % chain_label(goal))
     promoted = _promoted(rec)
     held = [r for r in rec["members"] if r["verdict"] in label_drain.GATED_KIND and r["number"] not in promoted]
-    out += [_label_line(r["number"], goal) for r in rec["members"] if r not in held]
+    out += [_label_line(r["number"], goal) for r in rec["members"]
+            if r not in held and r["verdict"] != "checkpoint"]
     out.append("arming, per member below: add sdlc:goal, priority %s only if it has none, assign you only if "
                "nobody is assigned, never edit the body; one comment with issue numbers only"
                % label_drain.arm_settings(config)["default_priority"])
@@ -657,6 +667,9 @@ def _writes(rec, qs, config=None):
     out += [_arm_line(r["number"]) for r in rec["members"] if r["number"] in scope or r["number"] in promoted]
     out.append("nothing else: an upper-tier, parked or assigned-elsewhere member is labelled, never armed; "
                "starting the members belongs to a later slice")
+    cps = [r["number"] for r in rec["members"] if r["verdict"] == "checkpoint"]
+    if cps:
+        out.append("%s is a checkpoint: left entirely untouched, never labelled or armed" % _ids(cps))
     if held:
         out.append("%s is not a goal and you have not answered to arm it: left entirely untouched, no label, no comment"
                    % _ids([r["number"] for r in held]))
@@ -697,6 +710,19 @@ def render_sheet(rec, now, config=None):
         extra = " (kind %s)" % r["kind"] if r.get("kind") else ""
         w = "; waits on %s" % _ids(r["waits_on"]) if r.get("waits_on") else ""
         L.append("  %d. #%d %s%s%s" % (i, r["number"], r["verdict"], extra, w))
+    cps = [r for r in members if r["verdict"] == "checkpoint"]
+    if cps:         # #1904: their own block; they are never worked
+        L.append("Checkpoints (never worked; met when their unit lands on the integration branch, or when a person "
+                 "closes the issue):")
+        for r in cps:
+            ck = r.get("checkpoint") or {}
+            held = [m["number"] for m in members if r["number"] in (m.get("waits_on") or [])]
+            L.append("  #%d%s: %s%s; holds up %s" % (
+                r["number"], " (unit %s)" % ck["unit"] if ck.get("unit") else "", ck.get("state") or "unknown",
+                " - %s" % ck["why"] if ck.get("why") else "", _ids(held)))
+            if ck.get("state") == chain_checkpoint.MET and held:
+                L.append("      its unit has landed but the issue is open and the pick gate still reads it as "
+                         "open: close it to release #%s" % ", #".join(str(n) for n in held))
     L.append("Done prerequisites: %s" % _ids(rec.get("done") or []))
     L.append("Runs ahead of: %s higher-priority open goal(s)" % ("an unknown number of" if ahead is None else ahead))
     for x in rec.get("cross_unit") or []:
@@ -918,6 +944,9 @@ def arm(sdlc_dir, goal, dry_run=False, config=None, run=None, now=None):
         if verdict == "closed":
             notes.append("#%d is closed; left alone" % n)
             continue
+        if verdict == "checkpoint":     # #1904: not a goal, not a member of the run: no label, no arming
+            notes.append("#%d is a checkpoint; left alone (met when its unit lands or a person closes it)" % n)
+            continue
         kind = ld.GATED_KIND.get(verdict)
         asked = bool(kind) and answers.get("%s:%d" % (kind, n)) == ld.ARM_ANSWER[kind]       # #1903: the person said arm it
         if kind and not asked:          # #1903: not a goal and nobody said so: not even the chain label goes on
@@ -1003,7 +1032,8 @@ RUN_USAGE = ("usage: chain.py run <sdlc_dir> <chain> [--session-pid P] [--no-gro
              "  armed chain through the loop's own label-scoped pick, or says why it cannot (exit 3: capped or\n"
              "  stuck). Call it again. `stop` and `resume` change only the local record. A new prerequisite of the\n"
              "  chain joins by itself up to chain.max_added; --no-grow (or chain.freeze) makes every addition ask.")
-STUCK_REASONS = ("decision", "held-gate", "claimed", "external", "rate-limit", "degraded-read", "capped")
+STUCK_REASONS = ("decision", "held-gate", "claimed", "external", "checkpoint", "rate-limit", "degraded-read",
+                 "capped")
 _DEFAULT_PICK_TIMEOUT = 900
 _NO_PICK = ("DONE", "BUDGET", "HANDOFF", "FULL", "HOLD")
 
@@ -1219,6 +1249,19 @@ def _grow(sdlc_dir, goal, rec, blk, config, cfg, now, run, closure, pull, filed,
     return {d for ds in held.values() for d in ds}
 
 
+def _checkpoint_detail(row):
+    """The stop line for one checkpoint row: its number, its unit and the one step that releases it."""
+    ck = row.get("checkpoint") or {}
+    unit = ck.get("unit")
+    if ck.get("state") == chain_checkpoint.MET:
+        return ("#%d is a checkpoint whose unit %s has landed, but its issue is still open: close it to release "
+                "what waits on it" % (row["number"], unit))
+    if unit:
+        return ("#%d is a checkpoint waiting for unit %s to land on the integration branch (%s), or for a "
+                "person to close it" % (row["number"], unit, ck.get("state") or "unknown"))
+    return "#%d is a checkpoint waiting for a person to close it" % row["number"]
+
+
 def _stuck(p, failure, unconfirmed):
     """-> (reason, detail), ONE reason from STUCK_REASONS for an empty pick with members still open. Numbers
     only in the detail. The order is the order a person would act in: a failed read first (nothing else can
@@ -1237,12 +1280,17 @@ def _stuck(p, failure, unconfirmed):
     claimed = sorted(r["number"] for r in rows if r.get("in_progress") or r["verdict"] == "assigned-elsewhere")
     if claimed:
         return "claimed", "#%d is in progress or assigned to someone else" % claimed[0]
-    ext = sorted({n for r in outside for n in [r["number"]]} | {r["number"] for r in rows if r.get("unresolved")})
+    cps = sorted((r for r in rows + outside if (r.get("own_verdict") or r["verdict"]) == "checkpoint"),
+                 key=lambda r: r["number"])
+    ext = sorted({r["number"] for r in outside if (r.get("own_verdict") or r["verdict"]) != "checkpoint"}
+                 | {r["number"] for r in rows if r.get("unresolved")})
     if ext:
         return "external", "#%d waits on an open prerequisite outside the chain" % ext[0]
     needs = sorted(r["number"] for r in rows if r["verdict"] in ("unarmed", "upper-tier") + tuple(label_drain.GATED_KIND))
     if needs:
         return "decision", "#%d is not armed and needs a person" % needs[0]
+    if cps:             # #1904: only after everything a person can act on, so it is named when it is the only thing left
+        return "checkpoint", _checkpoint_detail(cps[0])
     if unconfirmed:
         return "degraded-read", "#%d could not be confirmed closed" % sorted(unconfirmed)[0]
     return "claimed", "open members remain but none could be claimed this cycle (skipped or leased elsewhere)"
@@ -1272,7 +1320,7 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
     if blk.get("state") == "done":
         return res
     label = chain_label(goal)
-    recorded = [r["number"] for r in rec["members"]]
+    recorded = [r["number"] for r in rec["members"] if r["verdict"] != "checkpoint"]     # #1904: never claimed, never "closed"
     width, locked = 1, chain_parallel.engaged(config)
     if locked:                  # #1590: before any write or claim; a refused cycle starts nothing
         try:
