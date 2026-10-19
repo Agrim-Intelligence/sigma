@@ -61,6 +61,26 @@ any other answer, or none, it gets no `chain:<root>` label, no comment and no go
 refused. "Treat it as a checkpoint" is recorded only; the label that makes it one is a person's step (see the
 dependency docs).
 
+### Closed, but not done (`closed_gate`)
+
+Chain treats a closed prerequisite as resolved. Some were closed without meeting their goal and the real gate moved to
+an issue nobody linked. `plan` therefore inspects the closed prerequisites it lists under `done`, and warns, next to
+the dependent, for each one that has either of two signals: an open issue carrying `sdlc:followup` whose body says
+`Follow-up to|of|on|from #N` (the tight forms that count as an edge elsewhere; a follow-up that was never labelled is
+not seen), or an owner question as its **newest** comment (a line starting `Owner question:`, `Question for the owner:`
+or `Needs the owner's answer|decision|call:`, a bullet or bold allowed, with nothing posted after it). The warning is
+advisory: it adds no edge and no member. It is in the record (`closed_gates`, numbers only), in the `plan` output
+as `warning: closed #N with ...`, and on the sheet as the question `closed_gate:<N>`: keep waiting (the recommended
+answer) or proceed. "Keep waiting" holds the dependent: `arm` labels it but does not arm it, and every `run` cycle skips
+it; a later `plan` that no longer raises the warning (the follow-up closed) releases it. "Proceed" changes nothing.
+
+Bounded: at most `chain.max_closed_checks` (default 10; 0 turns the check off) closed prerequisites are inspected per
+plan, lowest number first, at most three reads each plus one list of open follow-ups; the plan prints
+`closed prerequisites inspected: N, skipped: M (#...)`. A read that fails costs only that signal and is listed as not
+fully read; it never refuses a plan. Not measured: the added reads against a live repository (measured on the offline fake: a plan with
+three closed prerequisites made 13 calls with the check on and 6 with `chain.max_closed_checks` at 0, which is one list, three
+issue reads and three comment-page reads more).
+
 ### Waiting for the owner (`awaiting-owner`)
 
 A member that carries the legacy confirmation label (`sdlc:needs-confirmation`, or the name under
@@ -113,6 +133,7 @@ Keys under `chain` in the project config.
 |---|---|---|
 | `chain.max_members` | 100 | Largest closure `plan` accepts; over it the plan is refused with its count, never truncated. |
 | `chain.max_goals` | members plus `chain.max_added` | Most goals the chain may hold. |
+| `chain.max_closed_checks` | 10 | Closed prerequisites `plan` inspects for an open follow-up or an unanswered owner question; the rest are skipped and counted. 0 turns the check off. |
 | `chain.max_added` | 5 | Goals the chain may grow by when `chain.max_goals` is unset. |
 | `chain.freeze` | false | When true (or `run --no-grow`), nothing joins by itself: each new prerequisite is asked on a delta sheet. A fourth such pause (max_reasks, default 3) ends the run stuck. |
 | `chain.parallel` | unset (width 1) | Whole number of 2 or more: members one run cycle may claim at once. Capped by `parallel.goals.max_concurrent` (default 3) and honoured only with `parallel.goals.enabled` true and `work.enabled` on; otherwise the width is 1. A value below 2 is read as unset. When `chain.max_usd` is set and the remaining budget does not cover the goals in flight at the p90 cost per goal, the run falls back to width 1. |

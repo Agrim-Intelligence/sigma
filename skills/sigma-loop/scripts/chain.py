@@ -27,6 +27,12 @@ and one REST read per unknown reference. The output says which source and its ag
 fallback. A closure over the bound is refused with its count, never truncated; a cycle is refused with
 every member named.
 
+CLOSED, BUT NOT DONE (#1906). `plan` inspects up to `chain.max_closed_checks` (default 10) closed prerequisites
+(`chain_closed.scan`, GETs only) for an open `Follow-up to|of` child or an unanswered owner question as the newest
+comment, and records an advisory warning per prerequisite (`closed_gates`, numbers only) with how many were
+inspected and skipped. It adds no edge. The sheet asks keep waiting or proceed; "keep waiting" leaves the
+dependents unarmed and makes every `run` cycle skip them.
+
 OWNER GATE (#1905). A member carrying the legacy confirmation label is `awaiting-owner` (with or without the goal
 label) and, like a `not-a-goal` one, is armed only after the sheet's question about it was answered with the one
 option that arms it ("promote it"); the other answers leave it untouched.
@@ -147,6 +153,7 @@ label_drain = _load("label_drain")
 dag_chain = _load("dag_chain")
 chain_parallel = _load("chain_parallel")
 chain_checkpoint = _load("chain_checkpoint")
+chain_closed = _load("chain_closed")
 dag_store = dag_chain.dag_store
 dag_core = dag_chain.dag_core
 
@@ -300,6 +307,19 @@ def _refine_gated(rows, sdlc, config, ro, source):
             r["checkpoint"] = chain_checkpoint.status(sdlc, config, label_drain._unit(issue, judge.features))
 
 
+def _closed_check(ro, source, closed_by, config):
+    """#1906: the advisory "closed with open follow-up" warnings for the plan's closed prerequisites (`closed_by`
+    maps each to the members that wait on it), bounded by `chain.max_closed_checks` (default
+    `chain_closed.DEFAULT_LIMIT`, 0 turns it off). -> the plan fields. Adds no edge and never refuses a plan."""
+    block = (config or {}).get("chain") if isinstance((config or {}).get("chain"), dict) else {}
+    limit = block.get("max_closed_checks")
+    limit = limit if isinstance(limit, int) and not isinstance(limit, bool) and limit >= 0 \
+        else chain_closed.DEFAULT_LIMIT
+    got = chain_closed.scan(ro, source.repo or None, closed_by, limit)
+    return {"closed_gates": got["warnings"], "closed_checked": got["inspected"],
+            "closed_skipped": got["skipped"], "closed_unread": got["unread"]}
+
+
 def _finish(out, rows, edges, ext, done, units, ranks, outside_ranks, weak):
     """Fields shared by both sources: order, depth, inversions, cross-unit, ahead-of."""
     nums = [r["number"] for r in rows]
@@ -382,6 +402,9 @@ def _plan_map(sdlc, goal, config, ro, source, now, m, bound):
     t = dag_store.stamp(m)
     out["map_age_seconds"] = max(0, int(now - t)) if t is not None else None
     _finish(out, rows, edges, _external(ext), done, {n: unit.get(n) for n in members}, ranks, outside, None)
+    out.update(_closed_check(ro, source, {p: sorted(d for d in g.dependents[p] if d in members)
+                                          for p in done if g.nodes[p].kind == "issue"
+                                          and any(d in members for d in g.dependents[p])}, config))
     _refine_gated(out["members"], sdlc, config, ro, source)
     skipped = _brief_kinds(out["members"], sdlc, config, source)
     out["parked_not_briefed"] = sorted(skipped)
@@ -473,6 +496,11 @@ def _plan_live(sdlc, goal, config, ro, source, bound):
         outside = None
     out = {"verdict_basis": "labels", "map_age_seconds": None, "stops": list(clo["stops"])}
     _finish(out, rows, edges, _external(ext), done, units, ranks, outside, weak)
+    closed_by = collections.defaultdict(list)
+    for n, refs in clo["closed"].items():
+        for r in refs:
+            closed_by[r].append(n)
+    out.update(_closed_check(ro, source, {r: sorted(set(ns)) for r, ns in closed_by.items()}, config))
     skipped = _brief_kinds(out["members"], sdlc, config, source)
     out["parked_not_briefed"] = sorted(skipped)
     out["complete"] = not clo["stops"] and not skipped and all(
@@ -544,6 +572,32 @@ def _chain_arg(text):
     return int(m.group(1))
 
 
+CLOSED_GATE_OPTIONS = ["keep waiting", "proceed"]       # the first is the recommended one: nothing starts early unasked
+
+
+def _closed_gate_what(w, short=False):
+    """The warning's cause in words, numbers only; `short` is the plan line's wording."""
+    parts = []
+    if w.get("followups"):
+        parts.append(("open follow-up %s" if short else "its follow-up %s is still open") % _ids(w["followups"]))
+    if w.get("question"):
+        parts.append("an unanswered owner question" if short else "a question for the owner on it is unanswered")
+    return " and ".join(parts)
+
+
+def _closed_gate_ask(w):
+    return ("#%d is closed, but %s, and %s waits on it. Keep waiting for that, or proceed?"
+            % (w["prerequisite"], _closed_gate_what(w), _ids(w["dependents"])))
+
+
+def _held(rec):
+    """#1906: the members that wait on a closed prerequisite whose warning the person answered "keep waiting".
+    Reads the plan's current warnings, so an answer about a warning a later plan no longer raises holds nothing."""
+    ans = rec.get("answers") or {}
+    return {d for w in rec.get("closed_gates") or []
+            if ans.get("closed_gate:%d" % w["prerequisite"]) == CLOSED_GATE_OPTIONS[0] for d in w["dependents"]}
+
+
 def _row_for_questions(r):
     return {"number": r["number"], "verdict": r["verdict"], "waiting_on": list(r.get("waits_on") or []),
             "labels": r.get("labels") or [], "kind": r.get("kind"), "question": ""}
@@ -573,6 +627,9 @@ def questions_of(rec, config=None):
                           "lands. Keep going or stop here?" % (x["from"], x["units"][0], x["to"], x["units"][1],
                                                                 x["from"]),
                    "options": list(CROSS_UNIT_OPTIONS), "unblocks": [x["from"], x["to"]]})
+    for w in rec.get("closed_gates") or []:          # #1906: advisory; one question per closed prerequisite
+        qs.append({"id": "closed_gate:%d" % w["prerequisite"], "kind": "closed_gate", "ask": _closed_gate_ask(w),
+                   "options": list(CLOSED_GATE_OPTIONS), "unblocks": sorted(w["dependents"])})
     end = by.get(goal) or {}
     if end.get("verdict") == "upper-tier":
         qs.append({"id": "upper_tier:%d" % goal, "kind": "upper_tier",
@@ -642,7 +699,7 @@ def _arm_scope(rec):
     out = {r["number"] for r in rec["members"] if r["verdict"] == "unarmed"}
     if ans.startswith("arm only"):
         out = {r["number"] for r in rec["members"] if r["number"] in out and not r.get("waits_on")}
-    return out
+    return out - _held(rec)
 
 
 def _promoted(rec):
@@ -683,9 +740,14 @@ def _writes(rec, qs, config=None):
                "nobody is assigned, never edit the body; one comment with issue numbers only"
                % label_drain.arm_settings(config)["default_priority"])
     scope = _arm_scope(rec)
-    out += [_arm_line(r["number"]) for r in rec["members"] if r["number"] in scope or r["number"] in promoted]
+    out += [_arm_line(r["number"]) for r in rec["members"]
+            if r["number"] in scope or (r["number"] in promoted and r["number"] not in _held(rec))]
     out.append("nothing else: an upper-tier, parked or assigned-elsewhere member is labelled, never armed; "
                "starting the members belongs to a later slice")
+    waiting = sorted(_held(rec) & {r["number"] for r in rec["members"]})
+    if waiting:
+        out.append("%s is kept waiting on a closed prerequisite's open follow-up or question (your answer): labelled, "
+                   "never armed, and skipped by every run cycle" % _ids(waiting))
     cps = [r["number"] for r in rec["members"] if r["verdict"] == "checkpoint"]
     if cps:
         out.append("%s is a checkpoint: left entirely untouched, never labelled or armed" % _ids(cps))
@@ -743,6 +805,11 @@ def render_sheet(rec, now, config=None):
                 L.append("      its unit has landed but the issue is open and the pick gate still reads it as "
                          "open: close it to release #%s" % ", #".join(str(n) for n in held))
     L.append("Done prerequisites: %s" % _ids(rec.get("done") or []))
+    for w in rec.get("closed_gates") or []:                 # #1906
+        L.append("Closed with something still open: #%d (%s); %s waits on it" % (
+            w["prerequisite"], _closed_gate_what(w), _ids(w["dependents"])))
+    if rec.get("closed_gates") or rec.get("closed_skipped"):
+        L.append(_closed_counts(rec))
     L.append("Runs ahead of: %s higher-priority open goal(s)" % ("an unknown number of" if ahead is None else ahead))
     for x in rec.get("cross_unit") or []:
         L.append("Cross-unit: #%d (%s) waits on #%d (%s)" % (x["from"], x["units"][0], x["to"], x["units"][1]))
@@ -949,7 +1016,7 @@ def arm(sdlc_dir, goal, dry_run=False, config=None, run=None, now=None):
     except Exception as exc:        # noqa: BLE001 - fail closed: no write on a read that failed
         raise ChainRefused("could not check whether the label %s exists (%s); nothing was written" % (label, exc))
     judge, scope = ld._Judge(sdlc_dir, config, source), _arm_scope(rec)
-    answers = rec.get("answers") or {}
+    answers, held = rec.get("answers") or {}, _held(rec)
     refused, notes, per_member = [], [], []
     for r in rec["members"]:
         n = r["number"]
@@ -974,7 +1041,7 @@ def arm(sdlc_dir, goal, dry_run=False, config=None, run=None, now=None):
         acts = []
         if label not in names:
             acts.append(_act("add-label", n, label))
-        if (verdict == "unarmed" and n in scope) or asked:
+        if (verdict == "unarmed" and n in scope) or (asked and n not in held):
             got_refused = len(refused)
             prepared = ld._prepare(source, triage, gh_api, label, cfg, [(n, None)], refused, notes)
             if n in prepared and len(refused) == got_refused:
@@ -1268,6 +1335,14 @@ def _grow(sdlc_dir, goal, rec, blk, config, cfg, now, run, closure, pull, filed,
     return {d for ds in held.values() for d in ds}
 
 
+def _closed_counts(p):
+    """The "how many were looked at" line of the plan and the sheet (#1906), shown when there is a warning or
+    something was skipped, so a plan with nothing to say keeps its old shape."""
+    sk = p.get("closed_skipped") or []
+    return "closed prerequisites inspected: %d, skipped: %d%s" % (
+        p.get("closed_checked") or 0, len(sk), " (%s)" % _ids(sk) if sk else "")
+
+
 def _checkpoint_detail(row):
     """The stop line for one checkpoint row: its number, its unit and the one step that releases it."""
     ck = row.get("checkpoint") or {}
@@ -1376,7 +1451,7 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
         if locked:              # #1866: stuck is not running; the pool is free for another chain
             chain_parallel.release(sdlc_dir, goal)
         return res
-    skip = skip | frozenset(str(d) for d in held_back)
+    skip = skip | frozenset(str(d) for d in held_back) | frozenset(str(n) for n in _held(rec))     # #1906
     known = set(recorded) | set(blk.get("seen") or ()) | set(blk.get("joined") or ())
     already = set(blk.get("closed") or ())
     failure, p, open_now, confirmed = None, None, set(), set()
@@ -1569,6 +1644,13 @@ def render(p):
         lines.append("  #%d depth %d %s%s%s" % (r["number"], r["depth"], r["verdict"], extra,
                                                "; waits on %s" % _ids(r["waits_on"]) if r["waits_on"] else ""))
     lines.append("done (closed prerequisites): %s" % _ids(p["done"]))
+    for w in p.get("closed_gates") or []:                   # #1906
+        lines.append("warning: closed #%d with %s; %s waits on it (advisory, no edge added)" % (
+            w["prerequisite"], _closed_gate_what(w, short=True), _ids(w["dependents"])))
+    if p.get("closed_gates") or p.get("closed_skipped"):
+        lines.append(_closed_counts(p))
+    if p.get("closed_unread"):
+        lines.append("closed prerequisites not fully read (advisory check skipped part): %s" % _ids(p["closed_unread"]))
     for e in p["externals"]:
         lines.append("external %s (%s), needed by %s" % (e["ref"], e["kind"], _ids(e["needed_by"])))
     for e in p["edges"]:

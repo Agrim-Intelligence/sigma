@@ -355,6 +355,12 @@ it. The doctor does not call it a blocking issue without a goal. Limits: a squas
 reads `waiting` or `unknown` until a person closes it, and the loop's own pick gate still reads an open blocker as
 open, so a `met` checkpoint releases nothing until it is closed. Details: [the chain reference](chain.md#checkpoints).
 
+**Closed, but not done.** A closed prerequisite is resolved, except when it has an open `Follow-up to|of` child
+or an unanswered owner question as its newest comment: then `plan` lists an advisory warning next to the dependent
+and the sheet asks keep waiting or proceed (no edge is added; "keep waiting" holds the dependent unarmed and skipped).
+At most `chain.max_closed_checks` (10) closed prerequisites are inspected and the plan says how many were skipped.
+Details: [the chain reference](chain.md#closed-but-not-done-closed_gate).
+
 **Growth.** Each `run` cycle re-reads the end goal's open closure. A new prerequisite that needs no decision
 joins, up to `chain.max_added` and `chain.max_goals`. One that needs a decision, is over a bound, or arrives
 under `chain.freeze` or `--no-grow` is held with its dependents while other branches go on, and a delta sheet
