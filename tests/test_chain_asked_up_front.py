@@ -539,3 +539,32 @@ def test_a_member_waiting_only_on_a_left_out_member_is_not_named_as_what_holds_t
     p["members"].append({"number": 70, "verdict": "armed", "waits_on": [], "kind": None})
     others, more = cf.other_roots(p, detail)
     assert others == [70] and 61 not in others
+
+
+# --- 12 -- two gaps found by the offline replay of a tangled backlog ----------------------------------------------------------
+
+def test_a_paid_parked_member_whose_route_question_was_answered_still_gets_the_spend_question(tmp_path):
+    """The spend question `irreversible:N` shares its id with a parked member's own route question. A recorded answer
+    to the route question must not hide the spend question (it did: the run then stopped on a paid step nobody asked)."""
+    issues = [goal(1, 2), goal(2, labels=("sdlc:parked", "paid"), comments=[PARK.replace("needs_decision", "irreversible")])]
+    ch, base, fk = scene(tmp_path, issues, config={"chain": {"paid_labels": ["paid"]}})
+    rec = tca._rec(base)
+    row = next(r for r in rec["members"] if r["number"] == 2)
+    row["answered"] = True                                  # its own route question was answered on GitHub in an earlier round
+    tca._put(base, rec)
+    assert "irreversible:2" in qids(ch, base)
+
+
+def test_an_owner_gated_member_somebody_else_holds_is_asked_about_both_and_promoting_it_arms_it_for_the_forecast(tmp_path):
+    NC = "sdlc:needs-confirmation"
+    ch, base, fk = scene(tmp_path, [goal(1, 2), tla.issue(2, NC, "sdlc:followup", assignees=("bob",), body=DW)])
+    ids = qids(ch, base)
+    assert "owner_gate:2" in ids and "elsewhere:2" in ids
+    rec = tca._rec(base)
+    rec["answers"] = {"owner_gate:2": "promote it", "elsewhere:2": "wait for them"}
+    fc = ch.chain_forecast.forecast(rec, {}, "alice")
+    assert fc["finish"] == [] and fc["reason"] == "claimed" and "assigned to bob" in fc["detail"], fc
+    rec["answers"] = {"owner_gate:2": "promote it", "elsewhere:2": "take it over"}
+    assert ch.chain_forecast.forecast(rec, {}, "alice")["finish"] == [2, 1]
+    rec["answers"] = {"owner_gate:2": "leave it out", "elsewhere:2": "take it over"}      # stays left out: nobody's assignment changes
+    assert 2 not in ch.chain_asks.taken_over(rec)

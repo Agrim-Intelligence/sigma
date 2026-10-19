@@ -236,7 +236,8 @@ def held_elsewhere(row, runner):
     if row.get("in_progress"):          # the label says a session holds it, whoever it is assigned to
         return True
     others = [x for x in row.get("assignees") or [] if not runner or x.casefold() != runner.casefold()]
-    return bool(runner) and row["verdict"] in ("unarmed", "parked", KEPT_PARKED) and bool(others)
+    return bool(runner) and bool(others) and (
+        row["verdict"] in ("unarmed", "parked", KEPT_PARKED) or row["verdict"] in _label_drain().GATED_KIND)
 
 
 def elsewhere_questions(rec):
@@ -265,12 +266,10 @@ def elsewhere_questions(rec):
 
 def taken_over(rec):
     """-> the members the person answered `take it over` about and that may be taken over: not in progress, and not
-    parked unless the person releases it (a member that stays parked changes nobody's assignment)."""
+    one that stays parked or left out (`_inert`)."""
     ans = rec.get("answers") or {}
-    rel = released(rec)
     return {r["number"] for r in rec["members"]
-            if held_elsewhere(r, rec.get("runner")) and not r.get("in_progress")
-            and (r["verdict"] not in ("parked", KEPT_PARKED) or r["number"] in rel)
+            if held_elsewhere(r, rec.get("runner")) and not r.get("in_progress") and not _inert(rec, r)
             and ans.get("%s:%d" % (ELSEWHERE, r["number"])) == TAKE_OVER}
 
 
@@ -322,10 +321,7 @@ def stop_context(rec):
 _LD = []
 
 
-def _gate(runner, assignees):
-    """-> the verdict word of the assignee clause (`label_drain.assignee_gate`), or None; no logins known: None."""
-    if assignees is None:
-        return None
+def _label_drain():
     if not _LD:
         import importlib.util
         import pathlib
@@ -333,8 +329,31 @@ def _gate(runner, assignees):
         m = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(m)
         _LD.append(m)
-    got = _LD[0].assignee_gate(list(assignees), runner)
+    return _LD[0]
+
+
+def _gate(runner, assignees):
+    """-> the verdict word of the assignee clause (`label_drain.assignee_gate`), or None; no logins known: None."""
+    if assignees is None:
+        return None
+    got = _label_drain().assignee_gate(list(assignees), runner)
     return got[0] if got else None
+
+
+def promoted(rec):
+    """-> the members left out of the chain (not a goal, waiting for its owner) that the person answered with the one
+    option that arms them (`label_drain.ARM_ANSWER`). Also true of a `view`'s rows once the verdict has been turned."""
+    ld, ans = _label_drain(), rec.get("answers") or {}
+    return {r["number"] for r in rec["members"] if r["verdict"] in ld.GATED_KIND
+            and ans.get("%s:%d" % (ld.GATED_KIND[r["verdict"]], r["number"])) == ld.ARM_ANSWER[ld.GATED_KIND[r["verdict"]]]}
+
+
+def _inert(rec, row):
+    """True when the member stays as it is unless the person activates it: parked and not released, or left out of the
+    chain and not promoted. Such a member is not taken over (a member that stays put changes nobody's assignment)."""
+    if row["verdict"] in ("parked", KEPT_PARKED):
+        return row["number"] not in released(rec)
+    return row["verdict"] in _label_drain().GATED_KIND and row["number"] not in promoted(rec)
 
 
 def view(rec):
@@ -343,11 +362,18 @@ def view(rec):
     else's (it is assigned to the runner), a dismissed wait is no edge. Everything else is shared with `rec`."""
     out = dict(rec)
     rel, kept, took = released(rec), kept_parked(rec), taken_over(rec)
+    promo = promoted(rec)
     gone = dismissed_waits(rec)
     rows = []
     for r in rec["members"]:
         n = r["number"]
         r = dict(r)
+        if n in promo:                       # arm promotes it: it is armed, and somebody else's if it is somebody else's
+            r["verdict"] = "armed"
+            r.pop("base_verdict", None)
+            gate = _gate(rec.get("runner"), r.get("assignees")) if rec.get("assignee_filter") else None
+            if gate:
+                r["verdict"], r["base_verdict"] = gate, "armed"
         if n in rel:
             r["verdict"] = "armed"
             r.pop("base_verdict", None)

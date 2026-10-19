@@ -805,7 +805,9 @@ def questions_of(rec, config=None, legacy_parked=False):
         q["recommended"] = q["options"][0] if q["options"] and q["kind"] not in NO_DEFAULT else None
         row = by.get(int(q["id"].split(":", 1)[1])) if q["kind"] in unpark.QUESTIONS \
             and q["id"].split(":", 1)[1].isdigit() else None
-        q["hidden"] = bool(row and row.get("answered") and row.get("verdict") == "parked")
+        # a recorded answer to a parked member's OWN route question hides only that question (the growth delta's old
+        # shape). On a chain no such question exists, and a spend question with the same id must still be asked.
+        q["hidden"] = bool(legacy_parked and row and row.get("answered") and row.get("verdict") == "parked")
     return qs
 
 
