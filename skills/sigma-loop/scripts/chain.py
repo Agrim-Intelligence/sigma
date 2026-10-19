@@ -20,7 +20,8 @@ and the sheet's own list of writes are its record. `arm` is the verb that create
 adds it to the members and arms them: a new GitHub write path, reached only after approval (see ARM). The local write is the record `<sdlc_dir>/state/chains/c<N>.json` (issue numbers, verdict words and labels only; never
 a title, a body, a comment or a question), written only for a plan that was produced, never for a refusal.
 
-CLOSURE. From the stored dependency map in one local read (`dag_chain`), bounded by `chain.max_members`
+CLOSURE. From the stored dependency map in one local read (`dag_chain`; the members' comments are read after,
+see WAITS), bounded by `chain.max_members`
 (default 100). When the map is off, unusable, stale, or does not know the goal, from the label drain's
 seed closure (`label_drain.closure`, one end goal as the seed), bounded by min(50, `chain.max_members`)
 and one REST read per unknown reference. The output says which source and its age or the reason for the
@@ -35,6 +36,12 @@ drain's brief (several GETs, at most 20 members).
 EDGES. `explicit` for an edge from an issue body, `ledger` for any other recorded source (the map's
 comment, timeline and other edges). Weak "needs/after" mentions are counted from bodies and never
 become an edge; from the map they are not knowable (`weak_mentions` is null).
+
+WAITS (#1902). A wait written only in a comment, or in loose wording no edge reader knows, is never an edge:
+`chain_waits` reads each member's body and newest comments (GET only) and the plan lists what it found as
+`unconfirmed_waits` (a comment by the assignee or an owner) and `weak_waits` (loose body wording, advisory
+follow-ups). The sheet shows every unconfirmed wait in ONE block with the commands that settle it
+(`deps.py mark`, or the dismissal marker); a member whose comments could not be read makes the plan INCOMPLETE.
 
 PRIORITY. Inversions (a blocker less urgent than the goal that waits on it) and `higher_priority_ahead`
 (open goals outside the chain more urgent than the least urgent member) are reported, never written.
@@ -136,6 +143,7 @@ def _load(name):
 label_drain = _load("label_drain")
 dag_chain = _load("dag_chain")
 chain_parallel = _load("chain_parallel")
+chain_waits = _load("chain_waits")
 dag_store = dag_chain.dag_store
 dag_core = dag_chain.dag_core
 
@@ -351,6 +359,11 @@ def _plan_map(sdlc, goal, config, ro, source, now, m, bound):
     skipped = _brief_kinds(out["members"], sdlc, config, source)
     out["parked_not_briefed"] = sorted(skipped)
     out["complete"] = not skipped and all(r["verdict"] != "unknown" for r in rows)
+    have = collections.defaultdict(set)
+    for a, b in esrc:
+        have[b].add(a)
+    chain_waits.attach(out, ro, source.repo, members, have=have,
+                       state_of=lambda r: getattr(g.nodes.get(r), "state", "unknown"))
     out["stops"] = []
     return out
 
@@ -440,6 +453,8 @@ def _plan_live(sdlc, goal, config, ro, source, bound):
     out["parked_not_briefed"] = sorted(skipped)
     out["complete"] = not clo["stops"] and not skipped and all(
         e["kind"] not in ("not-read", "unreadable") for e in out["externals"])
+    chain_waits.attach(out, ro, repo, clo["nodes"], issues={n: v["issue"] for n, v in clo["nodes"].items()},
+                       state_of=lambda r: "open" if r in clo["nodes"] else "closed" if r in done else "unknown")
     return out
 
 
@@ -667,6 +682,7 @@ def render_sheet(rec, now, config=None):
         L.append("Cross-unit: #%d (%s) waits on #%d (%s)" % (x["from"], x["units"][0], x["to"], x["units"][1]))
     for e in rec.get("externals") or []:
         L.append("External: %s (%s), needed by %s" % (e["ref"], e["kind"], _ids(e["needed_by"])))
+    L += chain_waits.sheet_block(rec)
     L.append("")
     groups = _groups(qs) if _grouped(qs) else {}
     grouped_ids = {i for ids in groups.values() for i in ids}
@@ -1475,6 +1491,7 @@ def render(p):
                                                             else p["weak_mentions"]))
     for s in p["stops"]:
         lines.append("stop: %s" % s)
+    lines += chain_waits.plan_lines(p)
     lines.append("record: %s" % p["record"])
     return "\n".join(lines) + "\n"
 

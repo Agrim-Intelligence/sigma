@@ -22,7 +22,7 @@ the sigma-loop scripts. It plans the whole chain, asks every decision together, 
 
 | Step | Verb | Touches GitHub |
 |---|---|---|
-| Plan | `chain.py plan <sdlc_dir> <N> [--json]` | reads only; writes the local record |
+| Plan | `chain.py plan <sdlc_dir> <N> [--json]` | reads only (about one request per member, for unconfirmed waits); writes the local record |
 | Offer end goals | `chain.py plan <sdlc_dir> --longest [--by freeing]` | nothing, from the stored map |
 | Sheet | `chain.py sheet <sdlc_dir> <chain>` | nothing |
 | Answer | `chain.py answer <sdlc_dir> <chain> --answers <file>` or `--defaults` | parked members only, through the unpark gesture |
@@ -41,6 +41,19 @@ Every decision the chain needs, shown together: the label drain's questions over
 cross-unit edge, an end goal that cannot be armed, and the cap. Every answer is a bank option (the cap is a
 positive whole number), never free text. `--defaults` takes each recommended option except where there is
 none, which is the cap.
+
+### Unconfirmed waits
+
+A wait written only in a comment, or in loose wording no explicit form recognises, is not an edge, but it is
+not hidden either. `chain.py plan` reads each member's body and newest comments (GET only) and the sheet lists
+every **unconfirmed wait** in one block, before the decisions: a comment by the issue's assignee or an
+owner, member or collaborator that says `Blocked by: #N`, `hold on #N`, `#N is now a blocker` and the like.
+Loose wording in a body, and follow-up wording in a comment, appear as **weak mentions** and never block. The
+block names the two ways to settle a wait: `deps.py mark <sdlc_dir> <goal> <ref> <reason...>` to make it an edge,
+or the dismissal marker from `backlog_check.py dismiss-text blocked-by <ref>`; run `chain.py plan` again after
+either. A member whose comments could not be read makes the plan INCOMPLETE. The full rules, the closed list of
+phrasings and the bounds are in [the reference](dependency-map-and-chain.md#waits-no-edge-says). Not measured:
+network time, and how often the loose phrasings match a remark that is not a wait.
 
 ## Member states
 

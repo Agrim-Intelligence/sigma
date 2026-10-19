@@ -20,7 +20,10 @@ Arguments: `<N | issue URL of this repository>`, `--longest`, `--dry-run`, `--ca
 
 1. **Identify.** With `--longest`, run `C plan D --longest` and offer its top three end goals. Otherwise
    `C plan D <N>` (read-only toward GitHub). A refusal (cycle, over the member bound) is relayed as is.
-2. **Ask.** `C sheet D <N>` lists every decision at once. Put them to the user in batches of up to four
+2. **Ask.** `C sheet D <N>` lists every decision at once. If it opens with an "Unconfirmed waits" block, put that
+   block to the user first, whole: for each wait that is real, run `deps.py mark D <goal> <ref> <reason>`; for a
+   wrong one, post the `backlog_check.py dismiss-text blocked-by <ref>` text with `loop.py note`; then `C plan D <N>`
+   again. Never turn one into an edge yourself. Put them to the user in batches of up to four
    (`AskUserQuestion` where the host has it, a numbered text reply otherwise); record them with
    `C answer D <N> --answers <file>`. `--defaults` skips asking: `C answer D <N> --defaults` takes each
    recommended option, and the cap has none, so it is still asked. Then `C approve D <N>`.
