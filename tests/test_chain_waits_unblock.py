@@ -43,7 +43,7 @@ READ_AS = [
      "renderer; and E2 (#14), which holds the registry. It reads them.",
      [("12", "behind"), ("13", "behind"), ("14", "behind")]),
     ("it stands behind #12", [("12", "behind")]),
-    ("the six judges are blocked on story-events E17 #12 and E22 #13 (unchanged)", [("12", "explicit"), ("13", "list")]),
+    ("the six checks are blocked on events-track E17 #12 and E22 #13 (unchanged)", [("12", "explicit"), ("13", "list")]),
     ("hold on #12, E7 #13 and E8 #14", [("12", "hold"), ("13", "list"), ("14", "list")]),
     ("blocked on #12 and then a long sentence about the old design #13", [("12", "explicit")]),
 ]
@@ -66,7 +66,7 @@ NOT_A_WAIT = [
     "footer on it is already satisfied).",
     "#13 (what #14 is blocked on), #12 (the prior change this one copies)",
     "it does not wait on #12",
-    "E20 itself waits on the plot-type fix (#12, #13).",
+    "E20 itself waits on the type-check fix (#12, #13).",
     "Stage 1 also waits on #12 and #13, both parked.",
     "a paid run that is still blocked, and E20 waits on #12",
     "E20 sits behind #12 and #13.",
