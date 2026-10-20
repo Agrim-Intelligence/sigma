@@ -1,0 +1,293 @@
+{
+ "repo": "acme/widget",
+ "issues": [
+  {
+   "number": 1,
+   "title": "Release candidate",
+   "labels": [
+    "sdlc:goal"
+   ],
+   "assignees": [
+    "alice"
+   ],
+   "state": "open",
+   "body": "Ship the candidate. Only once #2, #3 and #4 are closed does this start.",
+   "done_when": true,
+   "comments": []
+  },
+  {
+   "number": 2,
+   "title": "Parser",
+   "labels": [
+    "sdlc:goal"
+   ],
+   "assignees": [
+    "alice"
+   ],
+   "state": "open",
+   "body": "Rewrite the parser.\n\nThe tokenizer change in #6 must land on main before this issue's work starts.\n\nBlocked by #15",
+   "done_when": true,
+   "comments": []
+  },
+  {
+   "number": 3,
+   "title": "Loader",
+   "labels": [],
+   "assignees": [
+    "alice"
+   ],
+   "state": "open",
+   "body": "Wire the loader.\n\nThese handlers plug into #7's port.",
+   "done_when": true,
+   "comments": [
+    {
+     "login": "alice",
+     "assoc": "OWNER",
+     "body": "Blocked by: #9"
+    }
+   ]
+  },
+  {
+   "number": 4,
+   "title": "Gate",
+   "labels": [
+    "sdlc:goal"
+   ],
+   "assignees": [
+    "alice"
+   ],
+   "state": "open",
+   "body": "Add the gate.\n\nThis depends on rulings in #8.",
+   "done_when": true,
+   "comments": []
+  },
+  {
+   "number": 5,
+   "title": "Exporter",
+   "labels": [
+    "sdlc:goal"
+   ],
+   "assignees": [
+    "alice"
+   ],
+   "state": "open",
+   "body": "Export the data.",
+   "done_when": true,
+   "comments": []
+  },
+  {
+   "number": 6,
+   "title": "Tokenizer",
+   "labels": [
+    "sdlc:goal"
+   ],
+   "assignees": [
+    "alice"
+   ],
+   "state": "open",
+   "body": "Tokenizer change.\n\nBlocked by #17",
+   "done_when": true,
+   "comments": []
+  },
+  {
+   "number": 7,
+   "title": "Port",
+   "labels": [
+    "sdlc:goal"
+   ],
+   "assignees": [
+    "alice"
+   ],
+   "state": "open",
+   "body": "Port handlers.\n\n**Blocked by:** #10",
+   "done_when": true,
+   "comments": []
+  },
+  {
+   "number": 8,
+   "title": "Rulings",
+   "labels": [
+    "sdlc:goal",
+    "sdlc:parked"
+   ],
+   "assignees": [
+    "alice"
+   ],
+   "state": "open",
+   "body": "Record the naming rulings.",
+   "done_when": true,
+   "comments": [
+    {
+     "login": "alice",
+     "assoc": "OWNER",
+     "body": "Parked by Sigma: waiting on the other issue.\nsigma-qkind: dependency"
+    }
+   ]
+  },
+  {
+   "number": 9,
+   "title": "Format",
+   "labels": [
+    "sdlc:goal"
+   ],
+   "assignees": [
+    "bob"
+   ],
+   "state": "open",
+   "body": "Output format work.\n\nBlocked by #18",
+   "done_when": true,
+   "comments": []
+  },
+  {
+   "number": 10,
+   "title": "Replay run",
+   "labels": [
+    "sdlc:goal"
+   ],
+   "assignees": [
+    "alice"
+   ],
+   "state": "open",
+   "body": "Replay the capture.\n\nPaid step: runpodctl create pod for the render",
+   "done_when": true,
+   "comments": []
+  },
+  {
+   "number": 11,
+   "title": "Dashboard",
+   "labels": [
+    "sdlc:goal"
+   ],
+   "assignees": [
+    "alice"
+   ],
+   "state": "open",
+   "body": "Build the dashboard.\n\nBlocked on #5 and #12.",
+   "done_when": true,
+   "comments": []
+  },
+  {
+   "number": 12,
+   "title": "Renderer",
+   "labels": [
+    "sdlc:goal"
+   ],
+   "assignees": [
+    "alice"
+   ],
+   "state": "open",
+   "body": "Render the views.\n\nStarts only once #13 has landed.",
+   "done_when": true,
+   "comments": []
+  },
+  {
+   "number": 13,
+   "title": "Schema on main",
+   "labels": [
+    "sdlc:blocking"
+   ],
+   "assignees": [],
+   "state": "open",
+   "body": "The schema is on main. Met by hand once the schema job lands.\n\nBlocked by #14",
+   "done_when": false,
+   "comments": []
+  },
+  {
+   "number": 14,
+   "title": "Schema job",
+   "labels": [
+    "sdlc:goal"
+   ],
+   "assignees": [
+    "alice"
+   ],
+   "state": "open",
+   "body": "Land the schema.\n\nSee also #19.",
+   "done_when": true,
+   "comments": [
+    {
+     "login": "carol",
+     "assoc": "NONE",
+     "body": "Blocked by: #19"
+    }
+   ]
+  },
+  {
+   "number": 15,
+   "title": "Schema first cut",
+   "labels": [],
+   "assignees": [],
+   "state": "closed",
+   "body": "The first cut of the schema.",
+   "done_when": true,
+   "comments": [],
+   "state_reason": "completed"
+  },
+  {
+   "number": 16,
+   "title": "Schema follow-up",
+   "labels": [
+    "sdlc:followup"
+   ],
+   "assignees": [],
+   "state": "open",
+   "body": "Follow-up to #15. The gate measured below its target; the real fix is tracked here.",
+   "done_when": true,
+   "comments": []
+  },
+  {
+   "number": 17,
+   "title": "Proposal A",
+   "labels": [
+    "sdlc:followup",
+    "sdlc:needs-confirmation"
+   ],
+   "assignees": [],
+   "state": "open",
+   "body": "Filed by Sigma as a follow-up. Awaiting the owner.",
+   "done_when": false,
+   "comments": []
+  },
+  {
+   "number": 18,
+   "title": "Proposal B",
+   "labels": [
+    "sdlc:followup",
+    "sdlc:needs-confirmation"
+   ],
+   "assignees": [],
+   "state": "open",
+   "body": "Filed by Sigma as a follow-up. Awaiting the owner.",
+   "done_when": false,
+   "comments": []
+  },
+  {
+   "number": 19,
+   "title": "Side task",
+   "labels": [
+    "sdlc:goal"
+   ],
+   "assignees": [
+    "alice"
+   ],
+   "state": "open",
+   "body": "A side task nobody waits on.",
+   "done_when": true,
+   "comments": []
+  },
+  {
+   "number": 20,
+   "title": "Outside goal",
+   "labels": [
+    "sdlc:goal"
+   ],
+   "assignees": [
+    "alice"
+   ],
+   "state": "open",
+   "body": "An armed goal outside every chain.",
+   "done_when": true,
+   "comments": []
+  }
+ ]
+}

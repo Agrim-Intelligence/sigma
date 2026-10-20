@@ -46,6 +46,7 @@ labels — the only ones Sigma creates. For `priority:*`, `model:*` and your own
 │    sdlc:designed             goal-design + goal-review both              │
 │                              confirmed (gates retrofit pick)             │
 │    sdlc:needs-triage         every tier tried and failed (no self-heal)  │
+│    sdlc:checkpoint          met by a unit landing or a close (2b-vi)     │
 └─────────────────────────────────────────────────────────────────────────┘
 
 **The whole model in one rule:**
@@ -77,6 +78,8 @@ whichever query happens to ask for the overlay, which is exactly the orphan clas
 `sdlc:parked` stands alone precisely because the opposite is true of it — nothing automatic ever
 brings it back, so it belongs in a person's review queue instead. The retired `sdlc:needs-confirmation`
 stood alone the same way; it is legacy now, and a leftover is moved off by `/sigma-promote`. A leftover that also carries `sdlc:goal` is routed by `blockers.classify` so the label is stripped and the issue enters the queue.
+Approving a chain or a run label is not the owner's confirmation of such an issue: `chain.py arm` and `label_drain.py arm` never promote it
+unless the person answered "promote it" to the sheet's question about that very issue (verdict `awaiting-owner`, see `docs/chain.md`).
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  ANNOTATIONS — descriptive only. Never affect what gets picked.          │
 │                                                                          │
@@ -469,6 +472,32 @@ reconciler's census (`reconcile.py`) still reports it as a bucket, separately fr
 because it is corruption, but because it names something a human still owes the issue.
 
 ---
+
+## 2b-vi. `sdlc:checkpoint` — an issue that means "that unit's code is on main"
+
+Added with #1904. Some goals wait on a fact, not on work: a unit's code reaching the integration branch. No goal
+can do that and nobody works an issue that stands for it, so a `Blocked by` line pointing at an ordinary issue
+used to leave Chain either trying to work it or stalling on it with no honest reason. A checkpoint is an open
+issue carrying the reserved label `sdlc:checkpoint` (key `checkpoint_label` under `discovery.github`) and,
+usually, the unit it waits for as its own `feature:<unit>` label or `Feature:` line.
+
+```
+   sdlc:checkpoint                 [+ feature:<unit>]    [+ sdlc:blocking, derived]
+        │
+        │   never picked   (an overlay: not_eligible_labels refuses it even beside sdlc:goal)
+        │   never armed    (chain.py arm and label_drain.py arm leave it alone; no chain label either)
+        │   never granted membership by the blocker sweep (blockers.classify: verdict `checkpoint`)
+        │
+        └── met when the unit's tip is contained in <remote>/<work.base> (local git, no fetch),
+            or when a person closes the issue
+```
+
+`Blocked by` on it is a real edge. When a chain can go no further because of a checkpoint (and nothing a person
+can act on comes first), `chain.py run` stops with the reason `checkpoint` and names it. The doctor does not
+report it as an `sdlc:blocking` issue without `sdlc:goal`, because that is its intended shape. It is created with
+the other `sdlc:*` labels by `sigma-init`. Nothing in Sigma adds the label: the chain sheet's answer "treat it as a
+checkpoint" is recorded only, and a person adds the label. The full contract is in
+[the dependency docs](dependency-map-and-chain.md#checkpoints).
 
 ## 2b-iv. Reviewer down — a park with the kind `reviewer_down`
 
@@ -1174,9 +1203,9 @@ is *invisible* to it — the census exists specifically to hunt those down.
 ## 12. Labels outside the `sdlc:` prefix — `priority:*`, `model:*`, and yours
 
 Everything above is about the `sdlc:*` lifecycle labels. Those are the only labels Sigma
-**defines**: `_ensure_labels` seeds exactly nine — `sdlc:goal`, `sdlc:parked` and seven
-overlays (in-progress, blocked, blocking, needs-label, designed, needs-unit, needs-triage; `sdlc:designed` joined the table in #1826, `sdlc:needs-unit` in #2263,
-`sdlc:needs-triage` in #2364) — and
+**defines**: `_ensure_labels` seeds exactly ten — `sdlc:goal`, `sdlc:parked` and eight
+overlays (in-progress, blocked, blocking, needs-label, designed, needs-unit, needs-triage, checkpoint; `sdlc:designed` joined the table in #1826, `sdlc:needs-unit` in #2263,
+`sdlc:needs-triage` in #2364, `sdlc:checkpoint` in #1904) — and
 nothing else (the legacy `sdlc:needs-confirmation` is created only on demand). Any other label on your board is yours.
 
 Two non-`sdlc:` prefixes appear in Sigma's own output, and they are **not** the same kind of

@@ -1,0 +1,61 @@
+{
+ "about": "What the right answer is for issues.json, written for the FINAL behaviour of Sigma Chain. Every number is an issue in issues.json; every name is generic. Where a field says 'reasons', any one of the listed stop reasons is accepted, because the engine's reason vocabulary is not fixed for that case.",
+ "runner": "alice",
+ "other_login": "bob",
+ "end_goals": [1, 11],
+ "chains": {
+  "1": {
+   "members": [1, 2, 3, 4, 6, 7, 8, 9, 10, 17, 18],
+   "stops": [
+    {"root": 8, "reasons": ["decision"], "closed": [6, 17],
+     "why": "a member is parked and its question is answered 'wait for it', so only a person can lift it"},
+    {"root": 10, "reasons": ["held-gate", "decision"], "closed": [4, 8],
+     "why": "a paid step the owner said 'do not' to: the run must hold it, never claim it"}
+   ]
+  },
+  "11": {
+   "members": [5, 11, 12, 13, 14],
+   "stops": [
+    {"root": 13, "reasons": ["decision", "external", "checkpoint"], "closed": [5, 14],
+     "why": "a checkpoint that is met by a hand-run landing, never by a goal session"}
+   ]
+  }
+ },
+ "dependencies": [
+  {"blocked": 1, "blocker": 2, "form": "only-once-list", "strength": "hard"},
+  {"blocked": 1, "blocker": 3, "form": "only-once-list", "strength": "hard"},
+  {"blocked": 1, "blocker": 4, "form": "only-once-list", "strength": "hard"},
+  {"blocked": 2, "blocker": 6, "form": "must-land-on-main-before", "strength": "hard"},
+  {"blocked": 2, "blocker": 16, "form": "closed-with-open-follow-up", "via": [15], "strength": "hard"},
+  {"blocked": 3, "blocker": 7, "form": "plug-into-port", "strength": "hard"},
+  {"blocked": 3, "blocker": 9, "form": "comment-by-assignee", "strength": "hard"},
+  {"blocked": 4, "blocker": 8, "form": "depends-on-rulings", "strength": "hard"},
+  {"blocked": 6, "blocker": 17, "form": "explicit", "strength": "hard"},
+  {"blocked": 7, "blocker": 10, "form": "explicit", "strength": "hard"},
+  {"blocked": 9, "blocker": 18, "form": "explicit", "strength": "hard"},
+  {"blocked": 11, "blocker": 5, "form": "blocked-on-and", "strength": "hard"},
+  {"blocked": 11, "blocker": 12, "form": "blocked-on-and", "strength": "hard"},
+  {"blocked": 12, "blocker": 13, "form": "starts-only-once", "strength": "hard"},
+  {"blocked": 13, "blocker": 14, "form": "explicit", "strength": "hard"}
+ ],
+ "not_dependencies": [
+  {"blocked": 14, "blocker": 19, "why": "a 'see also' mention, and a 'Blocked by' line in a comment by someone who is neither the assignee nor an owner"}
+ ],
+ "awaiting_confirmation": {"17": "promote", "18": "leave out"},
+ "checkpoints": [13],
+ "paid": [10],
+ "outside": [19, 20],
+ "sessions": {
+  "default": "close",
+  "10": "park:irreversible",
+  "13": "park:needs_decision"
+ },
+ "resolutions": {"8": "unpark"},
+ "owner": {
+  "cap": "50",
+  "by_id": {"dependency:8": ["wait for it"], "closed_gate:15": ["keep waiting"]},
+  "by_kind": {"label_set": ["arm them"], "irreversible": ["do not"], "cross_unit": ["keep going"]},
+  "by_member": {"17": ["promote"], "18": ["leave"], "13": ["checkpoint", "not a goal", "leave"]},
+  "confirm_a_wait": ["it waits", "wait", "add", "include", "yes", "confirm"]
+ }
+}

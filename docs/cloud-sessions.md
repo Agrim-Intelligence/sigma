@@ -140,8 +140,8 @@ and message.
 Fallback policy, one table in code (`gh_api.WRITE_POLICY`, read by `_write_fallback_ok`; the cases below
 are its ids and `test_cloud_sessions_doc_lists_every_write_policy_case` fails if one is missing here). A REST
 write falls back to the matching `gh issue ...` at most ONCE and is never retried; the fallback's own error
-propagates. Idempotent writes are `add_labels`, `remove_label`, `close_issue`, `edit_issue(body=)` and
-`add_assignees`; non-idempotent are `comment_issue` and `create_issue`.
+propagates. Idempotent writes are `add_labels`, `remove_label`, `close_issue`, `edit_issue(body=)`,
+`add_assignees` and `remove_assignees` (added for `chain.py arm`'s take-over: DELETE, checked against the response); non-idempotent are `comment_issue` and `create_issue`.
 
 | case id | meaning | falls back (idempotent) | falls back (comment, create) |
 |---|---|---|---|

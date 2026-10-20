@@ -14,6 +14,8 @@ and a phantom edge writes to an unrelated issue. So this module hands the WHOLE 
           stored map), and leaves a note saying why. Idempotent: an edge the body already carries is
           `ALREADY`, and nothing is written. The referenced number must be an OPEN issue or pull request
           (one read); a closed, missing or unreadable one is `REFUSED`, so a typo never becomes an edge.
+          A checkpoint (#1904, label `sdlc:checkpoint`) is an open issue like any other, so a wait on it is
+          written the same way; the answer says the issue is a checkpoint.
 
 The judgment is the agent's, and it costs one read of the ticket per goal (one issue read plus its
 comment pages through `gh_api`), paid once at pick time. What makes it safe is that the agent's
@@ -24,7 +26,8 @@ new inference rule inside the scanners.
   edge          an explicit form in the title or body: the gate and the map already hold it
   comment-edge  an explicit form only in a comment: the map never reads it, and the gate reads it only
                 in the newest 20 comments' first 500 characters, and never a follow-up form there
-  weak          a weak word (`needs`, `after`, `requires`, `waiting on`) before it: advisory only
+  weak          a weak word (`needs`, `after`, `requires`, `waiting on`) before it, or a loose phrasing
+                `chain_waits` knows ("only once #N", "hold on #N", "#N is a blocker", ...): advisory only
   mention       any other reference: read by nothing
 
 GitHub mode only: a local-goals source prints `UNSUPPORTED` and exits 2. Snippets go to stdout for
@@ -53,6 +56,7 @@ def _load(name):
 
 blocker_scan = _load("blocker_scan")
 _scrub = _load("scrub")
+chain_waits = _load("chain_waits")
 
 _REF_RE = re.compile(r"#(\d+)\b")
 SNIPPET_CHARS = 160
@@ -84,8 +88,8 @@ def analyse(goal, title, body, comments):
     for where, text in texts:
         explicit = {m.group(2) for m in blocker_scan._EXPLICIT_BLOCK_RE.finditer(text)
                     if not blocker_scan.is_cross_repo(text, m)}
-        weak = {m.group(2) for m in blocker_scan._BLOCK_RE.finditer(text)
-                if not blocker_scan.is_cross_repo(text, m)} - explicit
+        weak = ({m.group(2) for m in blocker_scan._BLOCK_RE.finditer(text)
+                 if not blocker_scan.is_cross_repo(text, m)} | chain_waits.loose_refs(text)) - explicit   # #1902
         for m in _REF_RE.finditer(text):
             ref = m.group(1)
             if ref == goal or _is_foreign(text, m.start()):
@@ -129,7 +133,9 @@ def mark(source, goal, ref, reason):
     if any(r["ref"] == ref for r in blocker_scan.extract_refs(body, self_ref=goal)):
         return "ALREADY", "the body already carries an explicit edge to issue %s" % ref
     try:
-        state = str(source._read_issue(ref, ["state"]).get("state") or "").upper()
+        data = source._read_issue(ref, ["state", "labels"])
+        state = str(data.get("state") or "").upper()
+        names = {(l.get("name") if isinstance(l, dict) else str(l)) for l in (data.get("labels") or [])}
     except Exception as exc:                       # noqa: BLE001 - unreadable is a refusal, never a guess
         return "REFUSED", "issue %s could not be read (%s)" % (ref, type(exc).__name__)
     if state != "OPEN":
@@ -145,6 +151,10 @@ def mark(source, goal, ref, reason):
         source.note(goal, note)
     except Exception as exc:                       # noqa: BLE001 - the marker is the record; the note is narration
         return "MARKED", "marker written; the explanatory note failed (%s)" % type(exc).__name__
+    checkpoint = getattr(source, "checkpoint_label", None)
+    if checkpoint and checkpoint in names:          # #1904: a wait on a checkpoint is an ordinary edge
+        return "MARKED", ("issue %s is a checkpoint and now holds this goal until its unit lands or a person "
+                          "closes it" % ref)
     return "MARKED", "issue %s now blocks this goal" % ref
 
 

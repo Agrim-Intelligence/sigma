@@ -218,6 +218,7 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/sources.py | _gh_json | gh-label | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _graphql | graphql-mutation | 1 | discovery.source == github; board writes require project.enabled | medium |
 | skills/sigma-loop/scripts/sources.py | _issue_add_assignees | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |
+| skills/sigma-loop/scripts/sources.py | _issue_remove_assignees | gh-api-write | 1 | discovery.source == github; REST issue write on a chain member, reached only from `chain.py arm` after the person approved the chain and answered `take it over` (never for a member in progress) | medium |
 | skills/sigma-loop/scripts/sources.py | _issue_add_labels | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |
 | skills/sigma-loop/scripts/sources.py | _issue_close | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |
 | skills/sigma-loop/scripts/sources.py | _issue_comment | gh-api-write | 1 | discovery.source == github; REST issue write on the goal issue, reached only from the loop's own claim, park and close paths | medium |

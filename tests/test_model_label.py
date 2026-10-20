@@ -3,8 +3,8 @@
 
 Triage's hygiene bucket used to flag every in-scope goal that carried no `model:*` label, and the
 `sigma-triage` SKILL presented that as a gap to close before picking. Nothing answered the only
-question that raises: *which values are legal?* The kit creates nine labels, all `sdlc:*`
-lifecycle (`test_the_kit_creates_only_the_nine_lifecycle_labels`); `docs/label-model.md` did not
+question that raises: *which values are legal?* The kit creates ten labels, all `sdlc:*`
+lifecycle (`test_the_kit_creates_only_the_ten_lifecycle_labels`); `docs/label-model.md` did not
 mention the prefix; and the kit's own two hardcoded values contradicted each other and everything
 else — `model:daily` on every decompose meta-issue, `model:bulk` in the README's copy-paste example,
 neither defined anywhere, while `predict.py`'s tiers are `haiku | sonnet | opus | fable`.
@@ -136,13 +136,13 @@ def test_the_model_selection_path_never_reads_a_label():
         encoding="utf-8")
 
 
-def test_the_kit_creates_only_the_nine_lifecycle_labels():
+def test_the_kit_creates_only_the_ten_lifecycle_labels():
     """`docs/label-model.md` now states that the kit seeds ten labels (seven, plus
     `sdlc:designed` as of #1826, plus `sdlc:needs-unit` as of #2263, plus `sdlc:needs-triage` as of
-    #2363) and all of them are `sdlc:*` lifecycle. Pinned against the real table `_ensure_labels`
+    #2363, plus `sdlc:checkpoint` as of #1904) and all of them are `sdlc:*` lifecycle. Pinned against the real table `_ensure_labels`
     iterates, so the claim cannot rot into a lie the way the ledger's filename did."""
     attrs = [attr for attr, _colour in sources.GitHubSource._LABEL_COLORS]
-    assert len(attrs) == 9, attrs
+    assert len(attrs) == 10, attrs
     src = (SCRIPTS / "sources.py").read_text(encoding="utf-8")
     for attr in attrs:
         default = re.search(rf'self\.{attr} = .*?"(sdlc:[a-z-]+)"', src)

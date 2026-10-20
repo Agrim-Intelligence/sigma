@@ -196,6 +196,18 @@ QUESTIONS = {
                                "close that dependency, or replace it?",
          "options": ["close the dependency", "replace the dependency"],
          "gestures": {"close the dependency": "none", "replace the dependency": "none"}},
+        # #1903: asked once per member by the label drain and the chain sheet. The first option is the
+        # recommended one, so no default ever makes the issue a goal.
+        {"id": "not_goal", "ask": "Other work waits on this issue, but it was never made a goal: leave it out, "
+                                  "arm it as a goal, or treat it as a checkpoint?",
+         "options": ["leave it out", "arm it as a goal", "treat it as a checkpoint"],
+         "gestures": {"leave it out": "none", "arm it as a goal": "none", "treat it as a checkpoint": "none"}},
+        # #1905: a follow-up still waiting for its owner. Approving a chain is not that confirmation, so the
+        # first (recommended) option never promotes it.
+        {"id": "owner_gate", "ask": "This follow-up is still waiting for its owner to confirm it, and approving the "
+                                    "chain is not that confirmation: leave it out, promote it, or close it?",
+         "options": ["leave it out", "promote it", "close it"],
+         "gestures": {"leave it out": "none", "promote it": "none", "close it": "none"}},
     ],
     "unknown": [
         {"id": "next", "ask": "Here is what it stopped on: {reason} What should happen next?"},
@@ -417,10 +429,21 @@ def brief(sdlc_dir, config, number, source=None, run=None):
     extra = _recommendation(sdlc_dir, config, declared, data.get("labels"))
     return {"number": str(number), "title": data.get("title") or "",
             "state": data.get("state"), "labels": sorted(names),
+            "body_head": _body_head(body),
             "park_reason": reason, "park_reason_is_sigmas": from_sigma,
             "reason_class": reason_class, "kind_declared": bool(declared), "decision_tier": tier, "tier_signal": tier_signal,
             "blockers": blockers, "prior_answers": answered,
             "questions": questions, "degraded": [], **({"learning": learning} if learning else {}), **extra}
+
+
+def _body_head(body):
+    """The first line of an issue body that says something (heading marks and list bullets removed), cut short:
+    the fallback a chain sheet shows when a park left no note. Never the title."""
+    for line in (body or "").splitlines():
+        flat = line.strip().lstrip("#>*- ").strip()
+        if flat and not flat.startswith("<!--"):
+            return _one_line(flat)
+    return ""
 
 
 def _recommendation(sdlc_dir, config, kind, labels):

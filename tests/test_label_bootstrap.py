@@ -41,7 +41,7 @@ REPO = "acme/app"
 #: Spelled out so this file stands alone (never imports sources.py to learn its own vocabulary).
 LIFECYCLE = ("sdlc:goal", "sdlc:in-progress", "sdlc:parked", "sdlc:blocked", "sdlc:blocking",
              "sdlc:needs-label", "sdlc:designed", "sdlc:needs-unit",
-             "sdlc:needs-triage")
+             "sdlc:needs-triage", "sdlc:checkpoint")
 PRIORITY = ("priority:P0", "priority:P1", "priority:P2", "priority:P3")
 ALL_LABELS = LIFECYCLE + PRIORITY
 
@@ -190,7 +190,7 @@ def _github_cfg(repo=REPO):
 
 
 @posix_only
-def test_setup_labels_creates_all_thirteen_on_a_fresh_repo(tmp_path):
+def test_setup_labels_creates_all_fourteen_on_a_fresh_repo(tmp_path):
     w = _world(tmp_path, cfg=_github_cfg())
     p = _run(w, [SETUP, "labels", w["sdlc"]])
     assert p.returncode == 0, p.stdout + p.stderr
@@ -275,7 +275,7 @@ def test_loop_start_in_local_goals_mode_makes_no_gh_call(tmp_path):
 
 @posix_only
 def test_init_github_creates_labels_before_the_first_pick(tmp_path):
-    """Acceptance: fresh repo, github mode, one issue with no labels. After init all thirteen
+    """Acceptance: fresh repo, github mode, one issue with no labels. After init all fourteen
     labels exist; labelling the issue `sdlc:goal` makes the pick query return it."""
     w = _world(tmp_path, issues={"1": {"labels": [], "title": "t"}},
                git_remote="https://github.com/%s.git" % REPO)
