@@ -4273,6 +4273,22 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/sealed_tests.py",
+      "function": "retire",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "reached only from `work.py seal-retire` (an explicit, reasoned operator or maker verb, never run by the loop; works with gates.sealed_acceptance.enabled off because it is cleanup); refuses a blank reason, a goal with no live seal record and a symlinked path; writes one tombstone `.sdlc/state/sealed/<stem>.retired.json` via state.atomic_write_text, FIRST (0600), so a crash leaves the goal sealed and the verb re-runnable",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sealed_tests.py",
+      "function": "retire",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "unlinks exactly the one live seal record `.sdlc/state/sealed/<stem>.json` (a regular file, never a symlink), LAST and only after the tombstone is on disk; never touches the sealed test files; the same record-delete disarm D-11 names, now recorded and reasoned",
+      "risk": "medium"
+    },
+    {
       "path": "skills/sigma-loop/scripts/breaker_run.py",
       "function": "_remove",
       "rule": "fs-rmtree",

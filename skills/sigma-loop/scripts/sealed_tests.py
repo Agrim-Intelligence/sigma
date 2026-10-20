@@ -67,7 +67,7 @@ class SealRefused(ValueError):
     """A seal refusal. `.clause` is one of collection-error, pass-on-base, not-red, exemption-reason,
     exemption-stale, exemption-unknown, all-exempt, unexpected-entry, bad-files, bad-plan-hash,
     base-unresolved, runner-unusable, timeout, disk, no-tests-in-file, evidence-unpersisted,
-    bad-route, main-checkout, record, tree-unreadable."""
+    bad-route, main-checkout, record, tree-unreadable; `retire` adds no-reason, not-sealed, already-retired."""
 
     def __init__(self, clause, detail):
         super().__init__("sealed_tests: REFUSED [%s]: %s" % (clause, detail))
@@ -79,6 +79,12 @@ def seal_path(sdlc_dir, stem):
     if reason or not isinstance(stem, str) or not stem:
         raise SealRefused("bad-files", "unsafe goal stem %r: %s" % (stem, reason))
     return pathlib.Path(sdlc_dir) / "state" / "sealed" / (stem + ".json")
+
+
+def retired_path(sdlc_dir, stem):
+    """`state/sealed/<stem>.retired.json`: the tombstone `retire` leaves. Invisible to `is_sealed` and
+    `read_record`, which open `<stem>.json` only."""
+    return seal_path(sdlc_dir, stem).with_name(stem + ".retired.json")
 
 
 def _rel(stem):
@@ -422,6 +428,42 @@ def is_sealed(sdlc_dir, stem):
         return os.path.lexists(seal_path(os.path.abspath(sdlc_dir), stem))
     except SealRefused:
         return False
+
+
+def retire(sdlc_dir, stem, reason, now=None):
+    """Disarm the commit/PR gates for one goal on purpose, with a recorded reason (#855, D-7). -> the tombstone dict.
+
+    Writes `state/sealed/<stem>.retired.json` (schema, goal, reason, retired_at, generation, last file
+    sha256s) atomically FIRST and unlinks the live record LAST: a crash between the two leaves the goal
+    sealed and the call re-runnable (an existing tombstone is overwritten). It never touches the sealed test
+    files: the maker folds them into the owner test file and the ordinary commit carries that move.
+    Refuses: blank reason (`no-reason`), no live regular record (`not-sealed`; `already-retired` when a
+    tombstone exists), unsafe stem, any I/O failure (`record`). HONEST LIMIT (D-11): this is the same
+    record-delete disarm anyone can do with `rm`; the tombstone is evidence, not prevention."""
+    text = " ".join(str(reason or "").split())
+    if not text:
+        raise SealRefused("no-reason", "a reason is required: retiring is recorded, never silent")
+    sdlc_dir = os.path.abspath(sdlc_dir)
+    path, tomb = seal_path(sdlc_dir, stem), retired_path(sdlc_dir, stem)
+    if path.is_symlink() or not os.path.lexists(path):
+        done = os.path.lexists(tomb)
+        raise SealRefused("already-retired" if done else "not-sealed",
+                          "no live seal record for %s%s" % (stem, " (a tombstone exists)" if done else ""))
+    rec = _existing(path) or {}      # a corrupt regular record still arms the gates: it can be retired too
+    stamp = float(now) if now is not None else time.time()
+    body = {"schema": "sigma-sealed-retired/1", "goal": stem, "reason": text,
+            "retired_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(stamp)),
+            "generation": rec.get("generation"),
+            "files": {k: (v or {}).get("sha256") for k, v in (rec.get("files") or {}).items()}}
+    state = _load("state")
+    try:
+        state.refuse_symlinks(sdlc_dir, tomb, create_parents=True)
+        state.atomic_write_text(tomb, json.dumps(body, indent=2, sort_keys=True) + "\n")   # FIRST
+        os.chmod(tomb, 0o600)
+        os.unlink(path)                                                                   # LAST
+    except OSError as exc:
+        raise SealRefused("record", "could not retire %s: %s" % (stem, exc))
+    return body
 
 
 def _git_bytes(root, *args, timeout=None):

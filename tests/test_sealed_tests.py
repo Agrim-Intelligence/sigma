@@ -1511,3 +1511,135 @@ class TestRemedy:
         for _ in range(6):
             st.remedy({'kind': 'differs', 'path': FILE_A}, repo[0], rec, budget=budget)
         assert len(reads) <= 3 and budget['left'] == 0
+
+
+# ---------------------------------------------------------------------------- retire (#855)
+
+def _require_retire():
+    """A missing `retire` is an AssertionError (a planned red), not a collection failure."""
+    assert hasattr(st, 'retire'), 'sealed_tests.retire does not exist yet'
+    return st.retire
+
+
+def tombstone(sdlc):
+    return sdlc / 'state' / 'sealed' / (STEM + '.retired.json')
+
+
+def acceptance_hashes(root):
+    d = root / DIR
+    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(d.iterdir())}
+
+
+class TestRetire:
+    def test_a_blank_or_missing_reason_is_refused_and_nothing_changes(self, repo):
+        retire = _require_retire()
+        do_seal(repo)
+        for bad in ('', '   \n\t', None):
+            with pytest.raises(st.SealRefused) as info:
+                retire(repo[1], STEM, bad)
+            assert info.value.clause == 'no-reason'
+        assert sealed_file(repo[1]).exists() and not tombstone(repo[1]).exists()
+
+    def test_an_unsealed_goal_is_refused(self, repo):
+        retire = _require_retire()
+        with pytest.raises(st.SealRefused) as info:
+            retire(repo[1], STEM, 'folded')
+        assert info.value.clause == 'not-sealed'
+
+    def test_an_already_retired_goal_is_named(self, repo):
+        retire = _require_retire()
+        do_seal(repo)
+        retire(repo[1], STEM, 'folded')
+        with pytest.raises(st.SealRefused) as info:
+            retire(repo[1], STEM, 'again')
+        assert info.value.clause == 'already-retired'
+
+    def test_an_unsafe_stem_is_refused(self, repo):
+        retire = _require_retire()
+        with pytest.raises(st.SealRefused):
+            retire(repo[1], '../x', 'folded')
+
+    def test_it_writes_the_tombstone_with_the_record_hashes_then_removes_the_record(self, repo):
+        retire = _require_retire()
+        rec = do_seal(repo)
+        body = retire(repo[1], STEM, '  folded into the owner file ', now=2000.0)
+        on_disk = json.loads(tombstone(repo[1]).read_text())
+        assert on_disk == body
+        assert body['schema'] == 'sigma-sealed-retired/1' and body['goal'] == STEM
+        assert body['reason'] == 'folded into the owner file'
+        assert body['generation'] == rec['generation']
+        assert body['files'] == {k: v['sha256'] for k, v in rec['files'].items()} and body['files']
+        assert body['retired_at'] == '1970-01-01T00:33:20Z'
+        assert not sealed_file(repo[1]).exists()
+        assert oct(tombstone(repo[1]).stat().st_mode & 0o777) == '0o600'
+
+    def test_afterwards_the_goal_is_not_sealed_and_the_tombstone_is_invisible_to_the_readers(self, repo):
+        retire = _require_retire()
+        do_seal(repo)
+        retire(repo[1], STEM, 'folded')
+        assert st.is_sealed(repo[1], STEM) is False
+        assert st.read_record(repo[1], STEM) is None
+
+    def test_a_tombstone_alone_never_arms_the_gates(self, repo):
+        _require_retire()
+        tombstone(repo[1]).parent.mkdir(parents=True, exist_ok=True)
+        tombstone(repo[1]).write_text('{}')
+        assert st.is_sealed(repo[1], STEM) is False
+
+    def test_a_crash_at_the_unlink_leaves_the_goal_sealed_and_a_rerun_succeeds(self, repo, monkeypatch):
+        retire = _require_retire()
+        do_seal(repo)
+        real = os.unlink
+
+        def boom(path, *a, **k):
+            if str(path) == str(sealed_file(repo[1])):
+                raise OSError('disk gone')
+            return real(path, *a, **k)
+        monkeypatch.setattr(os, 'unlink', boom)
+        with pytest.raises(st.SealRefused) as info:
+            retire(repo[1], STEM, 'folded')
+        assert info.value.clause == 'record'
+        assert sealed_file(repo[1]).exists() and tombstone(repo[1]).exists()      # still sealed, still re-runnable
+        monkeypatch.setattr(os, 'unlink', real)
+        retire(repo[1], STEM, 'folded')
+        assert not sealed_file(repo[1]).exists()
+
+    def test_a_crash_at_the_tombstone_write_leaves_the_record_untouched(self, repo, monkeypatch):
+        retire = _require_retire()
+        do_seal(repo)
+        before = sealed_file(repo[1]).read_bytes()
+
+        def boom(*a, **k):
+            raise OSError('disk full')
+        monkeypatch.setattr(STATE, 'atomic_write_text', boom)
+        with pytest.raises(st.SealRefused) as info:
+            retire(repo[1], STEM, 'folded')
+        assert info.value.clause == 'record'
+        assert sealed_file(repo[1]).read_bytes() == before and not tombstone(repo[1]).exists()
+
+    def test_a_symlinked_record_is_refused(self, repo, tmp_path):
+        retire = _require_retire()
+        do_seal(repo)
+        real = tmp_path / 'elsewhere.json'
+        real.write_text(sealed_file(repo[1]).read_text())
+        sealed_file(repo[1]).unlink()
+        sealed_file(repo[1]).symlink_to(real)
+        with pytest.raises(st.SealRefused) as info:
+            retire(repo[1], STEM, 'folded')
+        assert info.value.clause == 'not-sealed'
+        assert real.exists()
+
+    def test_the_sealed_test_files_are_never_touched(self, repo):
+        retire = _require_retire()
+        do_seal(repo)
+        before = acceptance_hashes(repo[0])
+        retire(repo[1], STEM, 'folded')
+        assert acceptance_hashes(repo[0]) == before and before
+
+    def test_a_corrupt_regular_record_still_arms_the_gates_so_it_can_be_retired(self, repo):
+        retire = _require_retire()
+        do_seal(repo)
+        sealed_file(repo[1]).write_text('{nope')
+        body = retire(repo[1], STEM, 'record was corrupt')
+        assert body['files'] == {} and body['generation'] is None
+        assert not sealed_file(repo[1]).exists() and tombstone(repo[1]).exists()

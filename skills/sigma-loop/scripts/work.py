@@ -4022,6 +4022,20 @@ def _sealed_pr_refusal(sdlc_dir, config, rec, goal):
         return f"SEALED REFUSED: could not verify the seal ({type(exc).__name__}: {exc}); {_SEALED_PARK} (nothing pushed)"
 
 
+def seal_retire(sdlc_dir, goal, reason):
+    """#855: `work.py seal-retire` -> `(exit_code, text)`. 0 = retired (text = the tombstone JSON), 4 = refused.
+    Works with `gates.sealed_acceptance.enabled` off (it is cleanup, never a gate). Appends one action-log row
+    (goal, reason, time) so the disarm is visible outside this worktree. The sealed agent can run it too: an
+    audit trail, not access control (D-11)."""
+    try:
+        body = sealed_tests.retire(sdlc_dir, stem(goal), reason)
+    except sealed_tests.SealRefused as exc:
+        return 4, f"seal-retire: REFUSED [{exc.clause}]: {str(exc).split(']: ', 1)[-1]}"
+    _load("actionlog").safe_append(sdlc_dir, goal, "gate", gate="merge", verdict="warn",
+                                   why=f"sealed acceptance retired: reason={body['reason']}")
+    return 0, json.dumps(body, sort_keys=True)
+
+
 def _seal_tests_refusal(sdlc_dir, config, goal, **seams):
     """#853 (slice A of #558): `work.py seal-tests` -> `(exit_code, text)`. Gate OFF is inert (0). Every
     refusal is `seal-tests: REFUSED [<clause>]: ...` (3 = a precondition before any spawn; 4 = the rest, some also before any spawn). All logic and its limits
@@ -8554,6 +8568,9 @@ _COMMANDS = {"start": start, "commit": commit, "pr": pr, "rebase": rebase,
 _SEAL_TESTS_USAGE = ("usage: work.py seal-tests <sdlc_dir> <goal>   (opt-in: gates.sealed_acceptance.enabled; "
                      "inert and exit 0 with it off; run it after an approving plan-review; exit 3 = a precondition refused "
                      "before any spawn, exit 4 = other refusals, some also before any spawn; see seal_tests.py)")
+_SEAL_RETIRE_USAGE = ("usage: work.py seal-retire <sdlc_dir> <goal> --reason \"<why>\"   (disarms the sealed-test gates "
+                      "for one goal once its tests are folded into the owner file; exit 4 = refused; works with the "
+                      "gate off; available to every agent, an audit trail not access control)")
 _RECORD_PLAN_REVIEW_USAGE = ("usage: work.py record-plan-review <sdlc_dir> <goal> --verdict "
                              "SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST --plan-sha256 <hex> "
                              "[--agent-id <reviewer agentId>] [--reason \"<text>\"]")
@@ -8602,6 +8619,7 @@ def main(argv):
             "record-review": _RECORD_REVIEW_USAGE,
             "line-hash": _LINE_HASH_USAGE,
             "seal-tests": _SEAL_TESTS_USAGE,
+            "seal-retire": _SEAL_RETIRE_USAGE,
         }
         print(usage.get(command, "usage: work.py start|commit|pr|rebase|post-review|merge|finish <sdlc_dir> <goal>"))
         return 0
@@ -8730,6 +8748,13 @@ def main(argv):
             print(f"work: {exc}", file=sys.stderr)
             return 1
         code, text = _seal_tests_refusal(argv[2], config, argv[3])
+        print(text, file=sys.stdout if code == 0 else sys.stderr)
+        return code
+    if len(argv) >= 2 and argv[1] == "seal-retire":             # #855: dispatched OUTSIDE `_COMMANDS`; own exit codes
+        if len(argv) < 4 or "--reason" not in argv:
+            print(_SEAL_RETIRE_USAGE, file=sys.stderr)
+            return 2
+        code, text = seal_retire(argv[2], argv[3], _flag(argv, "--reason"))
         print(text, file=sys.stdout if code == 0 else sys.stderr)
         return code
     if len(argv) >= 2 and argv[1] == "quality-waive":           # #1637: an owner's lever, never the loop's
@@ -8918,6 +8943,7 @@ def main(argv):
           "       work.py record-plan-review <sdlc_dir> <goal> --verdict SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST "
           "--plan-sha256 <hex> [--reason \"<text>\"]\n"
           "       work.py seal-tests <sdlc_dir> <goal>   (opt-in, gates.sealed_acceptance.enabled)\n"
+          "       work.py seal-retire <sdlc_dir> <goal> --reason \"<why>\"   (fold sealed tests, then disarm the gates)\n"
           "       work.py quality-waive <sdlc_dir> <goal> --metric <name> --reason \"<why>\"   "
           "(an owner's lever; the loop never runs it)\n"
           "       work.py root <sdlc_dir> <goal>\n"
