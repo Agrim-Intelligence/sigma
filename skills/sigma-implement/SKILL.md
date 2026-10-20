@@ -48,7 +48,8 @@ it tests the right thing. Wrote code before the test? Delete it and re-derive fr
    is the same list `sigma-review` axis 6 will judge by. Long Method, Large Class, Long Parameter List,
    Primitive Obsession (a unit doing too much) · Feature Envy, Inappropriate Intimacy, Message Chains,
    Middle Man (units too entangled) · Duplicate Code, Dead Code, Speculative Generality (code that
-   should not exist). Fix it now, unless `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/zones.py" check --goal "$goal" --diff`
+   should not exist). The diff is yours: remove only what your change orphaned, and name
+   pre-existing dead code in the review rather than deleting it. Fix it now, unless `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/zones.py" check --goal "$goal" --diff`
    prints the file as a legacy row without `intent: yes`: there change only what the goal needs.
    With no such row, or if it could not run, this rule holds.
 
