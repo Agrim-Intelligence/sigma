@@ -1,6 +1,6 @@
 ---
 name: sigma-dag
-description: Report the stored dependency map: state, stuck and active chains, cycles. Use for map questions or /sigma-dag.
+description: "Report the stored dependency map: state, stuck and active chains, cycles. Use for map questions or /sigma-dag."
 allowed-tools: Bash(python3 *)
 ---
 
