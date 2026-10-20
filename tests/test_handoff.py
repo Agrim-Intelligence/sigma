@@ -1887,6 +1887,7 @@ def test_run_gh_attaches_the_short_hint_separately_from_the_full_message(monkeyp
     def fake_run(cmd, capture_output, text):
         class P:
             returncode = 1
+            stdout = ""
             stderr = "  could not add assignees to issue: 'x' is not an assignable user  \n"
         return P()
 
