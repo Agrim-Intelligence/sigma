@@ -73,6 +73,9 @@ class World:
         self.wt = tmp_path / 'wt850'
         self.sdlc = self.proj / '.sdlc'
         git(self.proj, 'init', '-q', '-b', 'main')
+        git(self.proj, 'config', '--local', 'user.email', 't@t')      # the gesture child strips GIT_*: identity must be repo-local
+        git(self.proj, 'config', '--local', 'user.name', 't')
+        git(self.proj, 'config', '--local', 'commit.gpgsign', 'false')
         (self.proj / 'pkg_mod.py').write_text('def f():\n    return 1\n')
         (self.proj / '.gitignore').write_text('.sdlc/\n')
         git(self.proj, 'add', '-A')
@@ -484,6 +487,132 @@ class TestDocumentedGesture:
         w = World(tmp_path, sealed=False)
         done = gesture(w, 'pr')
         assert 'SEALED REFUSED' not in done.stdout + done.stderr
+
+
+@pytest.mark.skipif(WIN, reason='posix fixtures')
+class TestControls:
+    """#855: clauses the #850 tests did not each cover alone. Every test here names, in its docstring, the single
+    clause whose break turns it red; `docs/sealed-tests-controls.md` records the observed red run."""
+
+    def test_sealed_is_checked_before_secrets_and_its_paths_are_unstaged(self, w):
+        """Order clause (sealed before `_secret_refusal`): drift AND a secret-shaped file in one commit must report
+        the sealed refusal and reset the sealed paths, not stop at the secret refusal with the drift still staged."""
+        (w.wt / FILE).write_text(SRC.replace('== 2', '== 3'))
+        (w.wt / '.env').write_text('API_TOKEN=abcdefghijklmnop0123456789\n')
+        done = gesture(w, 'commit', '--message', 'feat: both')
+        assert done.returncode == 4 and 'SEALED REFUSED:' in done.stdout, done.stdout + done.stderr
+        assert FILE not in w.staged()
+
+    def test_a_foreign_schema_with_well_formed_files_is_still_a_record_problem(self, w):
+        """`_existing` schema clause alone: a record that parses and carries a right-looking `files` map but
+        names another schema must refuse (the `files` shape check would otherwise be the only thing refusing)."""
+        path = w.sdlc / 'state' / 'sealed' / (GOAL + '.json')
+        rec = json.loads(path.read_text())
+        rec['schema'] = 'other/1'
+        path.write_text(json.dumps(rec))
+        out = commit_gate(w)
+        assert out.startswith('SEALED REFUSED:') and 'record' in out
+
+    def test_an_executable_bit_alone_is_refused_on_the_gesture(self, w):
+        """`check` exec-bit clause: chmod +x with identical bytes."""
+        os.chmod(w.wt / FILE, 0o755)
+        done = gesture(w, 'commit', '--message', 'chore: mode')
+        assert done.returncode == 4 and 'differs ' + FILE in done.stdout, done.stdout + done.stderr
+        assert 'chmod 644' in done.stdout
+
+    def test_verify_debris_in_the_sealed_dir_does_not_refuse(self, w):
+        """`is_debris` tolerance clause: `.pytest_cache` and `__pycache__/x.pyc` after a verify run are not unexpected."""
+        (w.wt / DIR / '.pytest_cache').mkdir()
+        (w.wt / DIR / '.pytest_cache' / 'v').write_text('1')
+        (w.wt / DIR / '__pycache__').mkdir()
+        (w.wt / DIR / '__pycache__' / 'x.pyc').write_bytes(b'\0')
+        w.stage_all()
+        assert commit_gate(w) == ''
+
+    def test_a_non_pyc_file_in_pycache_is_unexpected(self, w):
+        """`is_debris` strictness clause: only `*.pyc` directly under `__pycache__` is debris."""
+        (w.wt / DIR / '__pycache__').mkdir()
+        (w.wt / DIR / '__pycache__' / 'notes.txt').write_text('x')
+        out = commit_gate(w)
+        assert out.startswith('SEALED REFUSED:') and 'unexpected ' + DIR + '/__pycache__' in out
+
+    def test_pr_names_the_committed_tree_first_even_when_every_later_check_would_also_fail(self, w, monkeypatch):
+        """Order clauses of `_sealed_pr_refusal` (HEAD tree < working tree < opt-in < green run), each weakened to
+        membership by this one case: HEAD tampered, the working tree tampered differently, no opt-in, a red runner.
+        The message must be the HEAD-tree one and the runner must never be asked."""
+        (w.wt / FILE).write_text(SRC.replace('== 2', '== 3'))
+        git(w.wt, 'add', '-A')
+        git(w.wt, 'commit', '-q', '-m', 'raw')
+        (w.wt / FILE).write_text(SRC.replace('== 2', '== 4'))
+        ran = []
+        monkeypatch.setattr(work.sealed_tests, 'run_green', lambda *a, **k: ran.append(1) or {
+            'green': False, 'failing': [{'test': NODE, 'why': 'x'}], 'detail': ''})
+        out = pr_gate(w)
+        assert 'the committed tree at HEAD differs' in out and 'working tree' not in out
+        assert ran == []
+
+    def test_pr_names_the_working_tree_before_the_opt_in_and_the_opt_in_before_the_green_run(self, w, monkeypatch):
+        """Order clauses, second half: working tree differs + no opt-in -> the working-tree message; clean tree + no
+        opt-in -> the opt-in message with the runner never asked."""
+        ran = []
+        monkeypatch.setattr(work.sealed_tests, 'run_green', lambda *a, **k: ran.append(1) or {
+            'green': False, 'failing': [{'test': NODE, 'why': 'x'}], 'detail': ''})
+        (w.wt / DIR / 'extra.py').write_text('x = 1\n')
+        assert 'the working tree (pytest runs it) differs' in pr_gate(w)
+        (w.wt / DIR / 'extra.py').unlink()
+        assert pr_gate(w).startswith('SEALED REFUSED: shell-policy opt-in missing')
+        assert ran == []
+
+
+@pytest.mark.skipif(WIN, reason='posix fixtures')
+class TestRetireGesture:
+    """#855: `work.py seal-retire .sdlc <goal> --reason ...` and the fold it exists for, on the documented gesture."""
+
+    def fold(self, w):
+        """The maker's move: the sealed test folded into an owner test file, the sealed dir deleted."""
+        git(w.wt, 'rm', '-q', '-r', '--', DIR)
+        (w.wt / 'tests').mkdir(exist_ok=True)
+        (w.wt / 'tests' / 'test_owner.py').write_text(SRC)
+
+    def test_a_missing_reason_is_a_usage_error_exit_2(self, w):
+        done = gesture(w, 'seal-retire')
+        assert done.returncode == 2 and 'usage: work.py seal-retire' in done.stderr
+        assert (w.sdlc / 'state' / 'sealed' / (GOAL + '.json')).exists()
+
+    def test_an_unsealed_goal_is_refused_exit_4(self, tmp_path):
+        w = World(tmp_path, sealed=False)
+        done = gesture(w, 'seal-retire', '--reason', 'folded')
+        assert done.returncode == 4 and 'seal-retire: REFUSED [not-sealed]' in done.stderr
+
+    def test_a_blank_reason_is_refused_exit_4(self, w):
+        done = gesture(w, 'seal-retire', '--reason', '   ')
+        assert done.returncode == 4 and 'REFUSED [no-reason]' in done.stderr
+
+    def test_the_happy_path_exit_0_prints_the_tombstone_and_works_with_the_gate_off(self, w):
+        assert 'sealed_acceptance' not in (w.sdlc / 'config.json').read_text()          # gate off: cleanup still works
+        done = gesture(w, 'seal-retire', '--reason', 'folded into the owner file')
+        assert done.returncode == 0, done.stderr
+        assert json.loads(done.stdout)['reason'] == 'folded into the owner file'
+        assert not (w.sdlc / 'state' / 'sealed' / (GOAL + '.json')).exists()
+        assert (w.sdlc / 'state' / 'sealed' / (GOAL + '.retired.json')).exists()
+
+    def test_it_appends_an_action_log_row_with_the_reason(self, w):
+        (w.sdlc / 'config.json').write_text(json.dumps({'work': {'enabled': True}, 'action_log': {'enabled': True}}))
+        done = gesture(w, 'seal-retire', '--reason', 'folded for the log')
+        assert done.returncode == 0, done.stderr
+        log = (w.sdlc / 'state' / 'log' / (GOAL + '.jsonl')).read_text()
+        assert 'sealed acceptance retired' in log and 'folded for the log' in log
+
+    def test_the_fold_commit_is_refused_before_retire_and_lands_after_it(self, w):
+        self.fold(w)
+        before = gesture(w, 'commit', '--message', 'refactor: fold sealed tests')
+        assert before.returncode == 4 and 'SEALED REFUSED:' in before.stdout
+        done = gesture(w, 'seal-retire', '--reason', 'folded into tests/test_owner.py')
+        assert done.returncode == 0, done.stderr
+        after = gesture(w, 'commit', '--message', 'refactor: fold sealed tests')
+        assert after.returncode == 0 and 'committed on sdlc/850' in after.stdout, after.stdout + after.stderr
+        assert 'SEALED REFUSED' not in after.stdout
+        assert not (w.wt / DIR).exists() and (w.wt / 'tests' / 'test_owner.py').exists()
 
 
 def test_review_skill_names_maker_edit_of_sealed_test_as_bug():

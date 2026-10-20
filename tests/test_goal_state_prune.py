@@ -413,3 +413,21 @@ def test_sealed_record_is_pruned_via_the_file_families_entry(sdlc, tmp_path):
     out = _sweep(tmp_path)
     assert not made[0].exists()
     assert len(out["removed"]) == 1
+
+
+def test_retired_tombstone_is_pruned_with_its_goal_and_the_extra_stem_is_kept_cleanly(sdlc, tmp_path):
+    """#855: `sealed/<stem>.retired.json` goes with its goal. The `.json` family also yields the stem
+    `<stem>.retired` from that name: it must be kept quietly (no raise), never mistaken for a goal."""
+    _done(sdlc, "10")
+    made = _files(sdlc, "10", families=("sealed/{g}.retired.json",))
+    out = _sweep(tmp_path)
+    assert not made[0].exists()
+    assert len(out["removed"]) == 1
+    assert out["kept"].get("not-terminal") == 1          # the stray `10.retired` stem: kept, counted, no raise
+
+
+def test_a_young_tombstone_is_kept_for_its_grace_window(sdlc, tmp_path):
+    _done(sdlc, "10")
+    made = _files(sdlc, "10", age=time.time(), families=("sealed/{g}.retired.json",))
+    _sweep(tmp_path)
+    assert made[0].exists()

@@ -36,7 +36,7 @@ _HERE = pathlib.Path(__file__).resolve().parent
 FILE_FAMILIES = (("verify", ".json"), ("landing", ".json"), ("propagation", ".json"),
                  ("escalation", ".json"), ("unit-tracking", ".attempt"), ("phase", ".json"),
                  ("call-runs", ".verify.json"), ("call-runs", ".merge.json"), ("call-runs", ".verify.lock"), ("sealed", ".json"),
-                 ("seal-attempts", ".attempt"))
+                 ("sealed", ".retired.json"), ("seal-attempts", ".attempt"))
 MIN_AGE_SECONDS = 7 * 86400
 RUN_STOP_KEEP_DAYS = 30
 DEFAULT_LIMIT = 200
