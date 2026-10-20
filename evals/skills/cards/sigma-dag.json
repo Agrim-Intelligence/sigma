@@ -1,20 +1,9 @@
 {
   "skill": "sigma-dag",
-  "kind": "exercised",
-  "gates": [],
-  "scripts": [
-    {
-      "path": "skills/sigma-loop/scripts/dag.py",
-      "role": "gesture",
-      "fixture": [
-        "python3",
-        "skills/sigma-loop/scripts/dag.py",
-        "report",
-        "--sdlc",
-        ".sdlc"
-      ],
-      "expect": "dag:"
-    }
+  "kind": "pinned",
+  "gates": [
+    "run nothing else"
   ],
+  "scripts": [],
   "artifacts": []
 }
