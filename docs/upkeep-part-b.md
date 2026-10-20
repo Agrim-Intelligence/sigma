@@ -26,7 +26,7 @@ version heading, the unit's new entries are filed under Unreleased above that re
 as they are, and an entry the base already has is dropped by its text; an edit to an existing line, a link footer or an
 unknown heading still parks.
 
-Level 1 also takes two append-only files (#1515): a dated log with `## YYYY-MM` sections (lines unioned per section, sections in
+Level 1 also takes two append-only files (#1515): a dated log with `## YYYY-MM` or `## YYYY-MM-DD ...` sections (#1949: a day-form heading is one entry, so two entries on one date both stay; lines unioned per section, sections in
 date order) and a bullet-list file (the base side's order, then the unit's new items). Only when both sides purely added lines and
 no line of either side is lost; an edit or removal on either side parks exactly as before. The record, backup ref and
 `sigma-resolution:` trailer are the changelog path's.
@@ -91,6 +91,34 @@ whole session shares one wall clock (`timeout_minutes`): each stop gets what is 
 the `session` key runs the plain export exactly as before. Files a later stop's tree no longer holds are not removed
 from the session copy; the whole directory is removed when the pass ends.
 
+## Turn on agent resolution
+
+The agent level (`upkeep.conflicts.resolve` `agent`) is off until you choose how the resolver and the reviewer log in. Pick one.
+
+**Scrubbed (the default, `upkeep.conflicts.agent.login` `"scrubbed"`).** The session gets a throwaway home and a throwaway
+configuration directory, so the CLI's own login is not found. Name one environment variable that holds the model login:
+
+```json
+{ "upkeep": { "enabled": true, "conflicts": { "resolve": "agent", "agent": { "credential_var": "MODEL_LOGIN_VAR" } } } }
+```
+
+**Host (`"login": "host"`, opt-in).** The resolver, the reviewer and the logged-in preflight run on the watcher's own `HOME` and
+`CLAUDE_CONFIG_DIR`, so the login you already did with the CLI is used and no variable is needed:
+
+```json
+{ "upkeep": { "enabled": true, "conflicts": { "resolve": "agent", "agent": { "login": "host" } } } }
+```
+
+What host mode exposes: the session can read the watcher user's CLI profile, settings and memory, because they are in that
+home. Every other wall stays: the edit-only tool allowlist with `acceptEdits`, the network prefix, the timeout, the per-sweep
+cap, the spend keys, the confined scratch copy, and no git, gh or ssh credential variable (`GH_*`, `GITHUB_*`, `SSH_*`,
+`GIT_*`). `credential_var` is still passed if you also set it. A host run is charged the per-unit cap, or nothing when no cap is
+set, because the shared transcript store is never priced. The model tiers are capped by the repo's `model_selection_max_tier`
+(default `opus`): a `model` or `reviewer.model` above it is lowered to it, never raised. The doctor rows `resolver auth` and
+`resolver configured` read "host login: logged in as <account type>" and never print a credential. A unit whose preflight finds
+no login parks with "resolver cli is not logged in under the host login". On macOS the CLI keeps its login in the keychain, which the session wall denies and keeps denying (it also holds the git host token). Host mode therefore passes `USER` and `LOGNAME`, and hands the walled session the CLI's own `CLAUDE_CODE_OAUTH_TOKEN` when the watcher has it (made once with `claude setup-token`); the unit that finds no login parks naming that command. Only that one variable travels, never a `GH_*`, `GITHUB_*`, `SSH_*` or `GIT_*` one. UNVERIFIED on a real macOS CLI: the recorded `claude auth status` inside the wall is owner-run. The recorded real-model run of this mode is owner-run
+after landing; until it is recorded, host mode is proven against a fake CLI only.
+
 ## Landing a unit
 
 A guarded landing of a whole unit, behind the same gate, is run by the landing engine
@@ -135,7 +163,7 @@ job. A host limit was seen: branch names that start with `refs/` are rejected.
 - The chat door against a chat service.
 - Branch rulesets and bypass actors (a private repository without a paid plan has none).
 
-Until an operator approves a kept throwaway repository and its spend, treat Level 2 as proven against a fake only.
+The recorded real-model run, for both login modes, is owner-run after landing; until it is recorded, treat Level 2 as proven against a fake only.
 
 **Model login (#1691).** The resolver and the reviewer run in a scrubbed environment, where the CLI's own login is not found.
 Set `upkeep.conflicts.agent.credential_var` to the NAME of one environment variable that holds the model login (never a

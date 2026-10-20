@@ -49,7 +49,10 @@ are in the [configuration reference](configuration.md).
 
 ## Reading the map
 
-All of these read the stored file and write nothing. Run them from the project root, or pass
+`/sigma-dag` is the one gesture: it runs `dag.py report` (`<N>` for the chain behind a goal, `--html` for the
+offline pages) and prints the stored map's state, stuck and active chains, cycles and what finished this month,
+or one line with the exact fix when there is nothing to read. It reads the stored file and writes nothing.
+The verbs below are what it is built from. All of these read the stored file and write nothing. Run them from the project root, or pass
 `--sdlc <dir>` to point at another `.sdlc`. Outputs below are from a six-node fixture map, with
 issue numbers replaced by placeholders.
 
@@ -200,7 +203,7 @@ whole-sweep call count falls only by the unpark pass.
 ## Limits
 
 - Edges that exist only in a comment, and weak phrases, are not in the map; they show up as `comment-only`
-  disagreements in shadow. `deps.py report` lists them per goal, and `deps.py mark` writes one into the body as
+  disagreements in shadow. `deps.py report` lists them per goal (`deps.py report <sdlc_dir> --label <label>` or `--chain <N>` does a whole label or chain in one process, one JSON line per member), and `deps.py mark` writes one into the body as
   a `Blocked by` line, which the map reads. The map also reads `blocked on` and `blocked until`, and the
   follow-up forms (`follow-up to` and its variants, with nothing but spaces before the number), from a body.
 - A priority change made only on the board is seen only by the hourly read.
@@ -210,3 +213,17 @@ whole-sweep call count falls only by the unpark pass.
   root until older goals drain.
 - The refresh is one writer at a time by design; a sibling refresher reads the existing file and does
   not wait.
+
+## The snapshot on the ledger branch
+
+With `ledger.enabled` true and the mode not `off`, each save of the stored map also writes `dag/map.json` in the ledger worktree: the same fields as `.sdlc/state/dag.json` plus a host token, whole file, last writer wins. `sync.py publish` pushes it, and `DAG.md` is built from it (with `Built by` and `Snapshot age` lines) instead of from history alone. A missing, damaged or older local map loads the newer snapshot; with the ledger off nothing is written or read there. Measured only by offline fake and real-git tests. Each history record carries `u` (the source issue's `updated_at`) and an `id`, a short hash of the event, its numbers and `u`; `dag.py history --all` and the other ledger readers apply each id once, and the snapshot records `history_through`, the newest id it includes, so a reader applies only later entries. An older record without an id gets the same one computed on read.
+
+### One refresher per repository
+
+With the same two conditions, a machine that is due first takes a lease (`dag/lease/<writer>.json` on the ledger branch, one file per writer, valid for the TTL plus a margin of the larger of five minutes and 10 percent of the TTL), reads GitHub, and publishes the snapshot. Another machine folds the snapshot in and makes no GitHub call while the snapshot is younger than the TTL or an unexpired lease is held by someone else; two machines that write at once both see the same two files after the next pull and agree on the earliest. A holder that dies simply lapses and the next due machine takes over. `dag.py refresh --force` and `dag.py rebuild` read on this machine regardless and take the lease. With the ledger off nothing changes and no lease is written.
+
+Reads per hour per repository, computed on the test scenario (two machines, a 60 minute TTL, a tick every five minutes for two hours): before, each machine reads once an hour, 2 in total per hour (4 collections in the two hours); after, the team reads once an hour (2 collections in the two hours). The live number across real machines is not measured. Scale: the lease directory holds at most one small file per writer, so it grows with machines, not issues.
+
+### Who refreshes, on the doctor and the report
+
+With the ledger on, the doctor's `dag map` row and `dag.py report` end with the map's source (`ledger` when the snapshot was newer than this machine's own file, else `local`), the snapshot's own age and builder, and the lease holder with time remaining, marked `(this machine refreshes)` when it is you. The row fails, naming `dag.py refresh --force`, when the snapshot is over three TTLs old, no unexpired lease exists and a watcher heartbeat or loop session is live; a snapshot that old under a live holder is a slow refresher and is not failed (provisional, owner to ratify). Local files only, no GitHub call. With the ledger off the row is unchanged.

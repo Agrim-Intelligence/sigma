@@ -1743,6 +1743,7 @@ of settings that contradicts itself closes the whole block, and `/sigma-doctor` 
 | backup.former_prefixes | [] | list of names | namespaces an earlier product wrote, pruned the same way |
 | conflicts.resolve | "off" | off, mechanical, agent | how far a unit conflict may be resolved |
 | conflicts.mechanical_without_verify | false | boolean | lets Level 1 resolve a changelog conflict when no verify command is set; see `docs/upkeep-part-b.md` |
+| conflicts.union_paths | [] | list of file names | files whose two-sided pure additions Level 1 unions line by line; an edit or removal still parks |
 | conflicts.agent.model / reviewer.model | "sonnet" | haiku, sonnet, opus, fable | resolver and reviewer tiers for Level 2 |
 | conflicts.agent.max_budget_usd_per_unit / spend_ceiling_usd_per_day | null | positive dollars | both must be set or Level 2 behaves as off |
 | conflicts.agent.timeout_minutes / max_units_per_sweep | 30 / 5 | 1 to 240 / 1 to 100 | wall clock per run, units per sweep |
@@ -2189,6 +2190,16 @@ Two things about it that are easy to get wrong:
   infers past membership. The entry is hand-editable by design (§8), and a human who knows which
   goals belong to the unit can add them; what removes the need is upstream, in the stderr line the
   first such pick now prints (§14), while the correction still costs nothing.
+- **Since #1941 a pick no longer writes the registry in the root checkout.** `work.py start` makes
+  the pick-time membership write (and the cross-repo copy's read) in the GOAL'S WORKTREE, after the
+  worktree is cut, as a tracked edit on the goal branch; `work.commit()`'s `git add -A` carries it
+  to the unit branch with the goal. A goal that never lands writes membership nowhere shared, and
+  the root checkout stays clean, so `git pull --ff-only` there works. Goals of one unit amend the
+  same shard, so a rebase can conflict on `.sdlc/features/`: `work.py`'s `_registry_rescue` (and
+  `_stash_pop_registry_rescue` for an uncommitted edit) takes upstream's bytes and re-records the
+  goal, and only when every unmerged path is under `.sdlc/features/`; any other conflict aborts as
+  before. A root already dirty from an earlier version keeps the gesture below. Measured on a real
+  git fixture; not measured at fleet scale.
 - **Nothing commits the registry after the very first write, and that first commit is a human's,
   not the kit's** (#1565). §14 step 3's "and you commit them" is the ONLY commit this kit ever
   describes; every later pick's `sync_at_pick` amends the same shards again, and no code path here

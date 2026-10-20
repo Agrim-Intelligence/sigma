@@ -348,7 +348,7 @@ def check_tests(path, base, ours, theirs, resolved):
 
 # ------------------------------------------------------------------------------------------------ append-only union (#1515)
 
-_DATED = re.compile(r"^## (\d{4}-\d{2})\b")
+_DATED = re.compile(r"^## (\d{4}-\d{2}(-\d{2})?)\b")
 _BULLET = re.compile(r"^\s*[-*] \S")
 
 
@@ -402,12 +402,40 @@ def _sections(lines):
     for ln in lines:
         hit = _DATED.match(ln)
         if hit:
-            key = hit.group(1)
+            key = ln.strip() if hit.group(2) else hit.group(1)
             if key in out:
                 return None
             out[key] = []
         out[key].append(ln)
     return out
+
+
+def _date_of(key):
+    """The `YYYY-MM` or `YYYY-MM-DD` a section key leads with (#1949: a day-form key is the whole heading line)."""
+    return key.removeprefix("## ")[:10] if key.startswith("## ") else key
+
+
+def _without_own_heading(key, sb, so, st):
+    """#1968: theirs' lines of section `key`; when both sides added the same new day heading, theirs' copy of the
+    heading (and the blank lines after it) is left out so the merged section holds ONE heading and both bullet sets."""
+    mine = st.get(key, [])
+    if key.startswith("## ") and key not in sb and key in so and mine and mine[0].strip() == key:
+        mine = list(mine[1:])
+        while mine and not mine[0].strip():
+            mine.pop(0)
+    return mine
+
+
+def line_union(base, ours, theirs):
+    """#1968: the generic line union of two pure additions to `base` -> the text, or None. Base order is kept, ours
+    additions stay where ours put them, then the lines theirs added that ours lacks; a duplicate added line collapses.
+    None when either side edited or removed a base line, or when the result would drop a line of either side."""
+    b, o, t = (str(x).split("\n") for x in (base, ours, theirs))
+    merged = _merge_lines(b, o, t, True)
+    if merged is None:
+        return None
+    text = "\n".join(merged) + "\n"
+    return None if would_drop(text, ours, theirs) else text
 
 
 def append_union(base, ours, theirs):
@@ -426,15 +454,17 @@ def append_union(base, ours, theirs):
         sb, so, st = _sections(b), _sections(o), _sections(t)
         if None in (sb, so, st) or not set(sb) <= set(so) & set(st):
             return None
-        keys = sorted((set(so) | set(st)) - {""})
+        keys = list(dict.fromkeys(k for seq in (sb, so, st) for k in seq if k))
         for seq in (sb, so, st):
-            order = [k for k in seq if k]
+            order = [_date_of(k) for k in seq if k]
             if len(order) > 1:
-                keys.sort(reverse=order == sorted(order, reverse=True))
+                keys.sort(key=_date_of, reverse=order == sorted(order, reverse=True))
                 break
+        else:
+            keys.sort(key=_date_of)
         parts = []
         for key in [""] + keys:
-            got = _merge_lines(sb.get(key, []), so.get(key, []), st.get(key, []), False)
+            got = _merge_lines(sb.get(key, []), so.get(key, []), _without_own_heading(key, sb, so, st), False)
             if got is None:
                 return None
             parts.append(got)

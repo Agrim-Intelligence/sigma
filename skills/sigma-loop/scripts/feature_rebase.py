@@ -1625,11 +1625,12 @@ def _level1(run, cwd, path, base_ref, report, level1):
     when the caller must describe and park the stop as before. On a refusal the conflict is restored when it can be
     (so the description is of the real stop) and `report["why"]` carries the code."""
     prove = _prove()
-    if not prove.eligible(run, path):
+    if not prove.eligible(run, path, union_paths=level1.get("union_paths") or ()):
         if level1.get("level2") is not None:
             return _level2(run, path, report, level1)
         return None
-    out = prove.resolve_stops(run, path, level1["union"], level1["run_id"], rebase_stopped)
+    out = prove.resolve_stops(run, path, level1["union"], level1["run_id"], rebase_stopped,
+                              union_paths=level1.get("union_paths") or ())
     if not out["refusal"]:
         return {"run_id": level1["run_id"], "stops": out["stops"], "files": out["files"]}
     report["why"] = "level 1 refused (%s): %s" % (out["refusal"].get("code"), out["refusal"].get("detail"))
@@ -1691,6 +1692,16 @@ def _session_wall_prefix(launcher, root, scratch_parent):
     return launcher.session_wall(sys.platform, shutil.which, os.path.expanduser("~"), session, [scratch_parent])[0]
 
 
+def _model_ceiling(config):
+    """The repo's `model_selection_max_tier` (default opus; junk keeps the default), through the loop's pinned mirror of predict.max_tier."""
+    return _load("tier_escalation").ceiling(config if isinstance(config, dict) else {})
+
+
+def _capped_tier(tier, ceiling):
+    order = _load("tier_escalation").PRICE_ORDER
+    return ceiling if order.index(tier) > order.index(ceiling) else tier
+
+
 def _default_level2_plan(config, sdlc_dir=None, cwd=None):
     """The Level 2 plan from configuration, or None (off) for any missing piece. No model is called here."""
     if sdlc_dir is None or level2_off_reason(config) is not None:
@@ -1710,10 +1721,13 @@ def _default_level2_plan(config, sdlc_dir=None, cwd=None):
     common = dict(state_dir=os.path.join(str(sdlc_dir), *LEVEL2_SPEND_REL.split("/")), repo_root=str(cwd) if cwd else None,
                   binary=shutil.which("claude"), flags=(), credential_var=s["conflicts.agent.credential_var"], scratch_parent=os.path.join(root, "scratch"), rates=None,
                   ceiling_machine_usd=ceiling, ceiling_team_usd=ceiling, budget_seconds=5.0, home=os.path.expanduser("~"),
+                  login=None if s["conflicts.agent.login"] == "scrubbed" else s["conflicts.agent.login"],
                   timeout=int(s["conflicts.agent.timeout_minutes"]) * 60, cap_usd=budget, sdlc_dir=str(sdlc_dir))
     # the reviewer gets half the per-unit budget when one is set: its cap must be smaller than the resolver's
-    review_model = launcher.CATALOG[s["conflicts.agent.reviewer.model"]]      # reviewer.enabled is validated, never honoured: a push needs a review
-    return {"sdlc_dir": str(sdlc_dir), "launch": dict(common, model=launcher.CATALOG[s["conflicts.agent.model"]]),
+    ceiling_tier = _model_ceiling(config)                      # #1946: the repo's model ceiling caps both models, never raises them
+    resolve_model = launcher.CATALOG[_capped_tier(s["conflicts.agent.model"], ceiling_tier)]
+    review_model = launcher.CATALOG[_capped_tier(s["conflicts.agent.reviewer.model"], ceiling_tier)]      # reviewer.enabled is validated, never honoured: a push needs a review
+    return {"sdlc_dir": str(sdlc_dir), "launch": dict(common, model=resolve_model),
             "review_launch": dict(common, model=review_model, directory=os.path.join(root, "review"), cap_usd=review_cap), "review_cap_usd": review_cap,
             "review_model": review_model, "resolver_root": os.path.join(root, "resolver"), "limits": None, "host": "claude",
             "environ": None, "config": config, "max_units_per_sweep": int(s["conflicts.agent.max_units_per_sweep"]),
@@ -3021,6 +3035,7 @@ def _level1_options(config, sdlc_dir=None, cwd=None):
                 "verify_command": verify if isinstance(verify, str) else None,
                 "verify_timeout": int(settings["verify.timeout_minutes"]) * 60,
                 "allow_no_verify": settings["conflicts.mechanical_without_verify"] is True,
+                "union_paths": tuple(settings["conflicts.union_paths"]),
                 "level2": _level2_plan(config, sdlc_dir, cwd)}
     except Exception:                     # noqa: BLE001 - a doubtful gate reads closed
         return None
