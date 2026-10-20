@@ -77,7 +77,7 @@ MAX_ITEMS = 300
 MAX_MORE = 20
 TRUSTED = ("OWNER", "MEMBER", "COLLABORATOR")
 #: A comment that starts like this is Sigma's own fixed text, not a person's remark.
-SIGMA_HEADS = ("Sigma is arming", "Auto-unparked by Sigma", "Auto-resumed by Sigma", "Reconciled by Sigma",
+BOT_COMMENT_HEADS = ("Sigma is arming", "Auto-unparked by Sigma", "Auto-resumed by Sigma", "Reconciled by Sigma",
                "Backlog cross-check:", "Promoted to", "Returned to", "Parked via /sigma-promote",
                "Dependency marker added")
 #: Sigma's park and fail prefixes contain "needs"; they are stripped, the reason after them is kept.
@@ -257,7 +257,7 @@ def _clean(body):
     for p in OFFBOARD_PREFIXES:
         if head.startswith(p):
             return head[len(p):COMMENT_CHARS + len(p)]
-    if any(head.startswith(h) for h in SIGMA_HEADS):
+    if any(head.startswith(h) for h in BOT_COMMENT_HEADS):
         return None
     return head[:COMMENT_CHARS]
 

@@ -161,8 +161,9 @@ def test_github_mode_is_done_only_after_the_pr_merged(github_run):
 
 
 def test_github_bootstrap_does_not_recreate_lifecycle_labels(github_run):
-    """#304: blind hot-path creates make 34 calls; init alone needs the 13 bootstrap writes."""
-    assert github_run["gh_calls"]["label create"] == 13
+    """#304: blind hot-path creates make 34 calls; init alone needs the 14 bootstrap writes (13, plus
+    `sdlc:checkpoint` since #1904 made it a lifecycle label)."""
+    assert github_run["gh_calls"]["label create"] == 14
 
 
 def test_every_readme_init_gesture_ran_from_the_repository_root(github_run):
