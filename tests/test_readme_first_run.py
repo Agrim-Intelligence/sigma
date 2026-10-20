@@ -513,7 +513,6 @@ VERSION_ALLOW = {
     ("docs/chain.md", "1.0.17"): "the release the public regression scenario was measured red on: a historical fact",
     ("docs/dag.md", "1.0.17"): "the release the map shipped in, named as the boundary after which the flip may be made",
     ("docs/dag.md", "0.35"): "a measured page-build duration in seconds, not a Sigma release",
-    ("docs/parallelism.md", "3.2.7"): "a measured tool version, not a Sigma release: the vitest the worker variables were checked on",
     ("docs/configuration.md", "1.0.15"): "the shipped release that raised the classifier per-call default (#1471), "
                                          "named as the boundary of the old value",
     ("contract/README.md", "1.0.0"): "the first plugin release the event contract was frozen in: a historical fact, not the current version",

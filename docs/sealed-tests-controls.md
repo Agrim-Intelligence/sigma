@@ -111,7 +111,7 @@ python3 -m pytest --collect-only -q tests/acceptance
 ```
 
 Measured now: 0 files and 0 sealed goals; 661 tracked `tests/test_*.py` files for context. A synthetic floor of 20 files
-with 2 trivial tests each collected and ran in 0.02 s of pytest time, about 0.12 s wall including interpreter start. That is
+with 2 trivial tests each collected and ran in 20 ms of pytest time, about 120 ms wall including interpreter start. That is
 collection overhead only and is not a per-goal figure.
 
 Ceiling, derived from the breaker contract and not measured: at most 14 files per goal (`breaker._MAX_BLOCKS`, 32 KiB each),
