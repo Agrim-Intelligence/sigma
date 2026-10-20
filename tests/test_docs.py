@@ -1752,7 +1752,8 @@ def test_the_dossier_contract_pins_the_same_artifact_headings_the_skill_mandates
     skill_skeleton = goal_design.split("```markdown", 1)[1].split("```", 1)[0]
     contract_skeleton = DOSSIER[DOSSIER.index("### 5d."):DOSSIER.index("### 5e.")]
     contract_skeleton = contract_skeleton.split("```markdown", 1)[1].split("```", 1)[0]
-    for heading in ("## Intent", "## Premise check", "## Functional requirements", "## Queries run",
+    for heading in ("## Intent", "## Premise check", "## Functional requirements",
+                    "## Quality requirements", "## Queries run",
                     "## Seeds",
                     "## Blast radius",
                     "## Components", "## Out of scope", "## Doubts",
@@ -2648,6 +2649,96 @@ def test_the_contract_skeleton_orders_functional_requirements_between_premise_an
     i = [sk.index(h) for h in ("## Premise check", "## Functional requirements", "## Queries run")]
     assert i == sorted(i), i
     assert "Slice | Covers | Requirements | Depends on" in sk
+
+
+def _contract_skeleton():
+    return DOSSIER[DOSSIER.index("### 5d."):DOSSIER.index("### 5e.")].split("```markdown", 1)[1].split("```", 1)[0]
+
+
+def _contract_5d():
+    return DOSSIER[DOSSIER.index("### 5d."):DOSSIER.index("### 5e.")]
+
+
+def test_the_contract_skeleton_orders_quality_requirements_between_functional_requirements_and_queries():
+    """#1780. ORDER pin on the contract's own §5d skeleton, mirroring the skill's."""
+    sk = _contract_skeleton()
+    i = [sk.index(h) for h in ("## Functional requirements", "## Quality requirements", "## Queries run")]
+    assert i == sorted(i), i
+
+
+def test_skill_and_contract_skeletons_list_the_same_headings_in_the_same_order():
+    """#1780, AC-1. The two copyable skeletons are one schema written twice: compare heading names in
+    order (trailing glosses, which only the contract carries, are dropped). Order-sensitive on purpose."""
+    def names(fence):
+        return [re.split(r"\s{2,}", ln[3:].strip())[0] for ln in fence.splitlines() if ln.startswith("## ")]
+    skill = GOAL_DESIGN_ARTIFACT.split("```markdown", 1)[1].split("```", 1)[0]
+    assert names(skill) == names(_contract_skeleton())
+
+
+def _quality_bank_slugs():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "goal_design_docs_1780", ROOT / "skills" / "sigma-goal-design" / "scripts" / "goal_design.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return [c["id"] for c in m.nfr_bank()["categories"]]
+
+
+def _contract_quality_bullet():
+    lead = "- **`Quality requirements` is one row per quality category"
+    sec = _contract_5d()
+    assert lead in sec, "the contract's quality rules bullet is gone"
+    return lead + sec.split(lead, 1)[1].split("\n- **", 1)[0]
+
+
+def _slug_listing_findings(text):
+    flat = " ".join(text.split()).replace("*", "")
+    bad = [s for s in _quality_bank_slugs() if "_" in s and s in flat]
+    ticked = [s for s in _quality_bank_slugs() if "`%s`" % s in text]
+    return bad + (ticked if len(ticked) > 1 else [])
+
+
+def test_the_contract_quality_rules_bullet_cites_both_verbs_and_the_honest_limits():
+    bullet = _contract_quality_bullet()
+    flat = " ".join(bullet.split()).replace("*", "")
+    for needle in ("nfr-bank", "quality", "small", "medium", "large", "Container | Threat | Mitigation",
+                   "reviewing model", "form, not truth", "self-reported", "unmeasured"):
+        assert needle in flat, "the contract bullet never says %r" % needle
+    assert "python3 skills/sigma-goal-design/scripts/goal_design.py quality .sdlc/design/<n>.md" in flat
+    assert not _slug_listing_findings(bullet), _slug_listing_findings(bullet)
+    assert not re.search(r"\b[A-Z]{1,3}-\d+\b", bullet), "the contract bullet mints an id-shaped token"
+
+
+def test_the_contract_in_brief_paragraph_names_the_quality_targets_line():
+    sec = _contract_5d()
+    para = sec.split("is a required sibling, same commit, same directory", 1)[1].split("\n\n", 1)[0]
+    flat = " ".join(para.split())
+    assert "quality targets" in flat and "answered as a scenario" in flat
+    assert "Never read by any script" in flat
+    assert not _slug_listing_findings(para), _slug_listing_findings(para)
+
+
+def test_walkthrough_names_the_quality_requirements_section():
+    para = DOSSIER_WALK.split("### The artifact has a fixed shape, and that is on purpose", 1)[1].split("###", 1)[0]
+    flat = " ".join(para.split()).replace("*", "")
+    assert "Quality requirements" in flat and "`quality`" in flat
+    assert "Requirements" in flat and "FR-n" in flat
+    assert not re.search(r"\.sdlc/design/\d", flat), "the walkthrough cites a concrete design path"
+    assert "REJECT is enforced" not in flat and "REJECT that follows is the reviewing model" in flat
+
+
+def test_changelog_unreleased_has_one_quality_requirements_entry():
+    from changelog_layout import entries_naming, simulate_release
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    entries = entries_naming(text, "(#1780)")
+    assert len(entries) == 1, entries
+    entry = entries[0]
+    assert "\n" not in entry.rstrip("\n"), "the entry is not a single line"
+    assert entry.startswith("- **")
+    assert text.count("(#1780)") == 1
+    flat = entry.lower()
+    assert "reviewing model" in flat and "form, not truth" in flat, "the entry never states its limit"
+    assert entries_naming(simulate_release(text), "(#1780)") == entries
 
 
 def test_docs_state_reject_depends_on_reviewer_obeying_prose():

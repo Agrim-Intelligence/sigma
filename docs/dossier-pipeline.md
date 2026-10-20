@@ -454,6 +454,7 @@ language, no citations.
 ## Intent
 ## Premise check         (`- **PC-1.** … — **verified** | **falsified** | **unverifiable**: …`)
 ## Functional requirements  (`- **FR-1.** <EARS sentence>`, or a single `- None.`)
+## Quality requirements  (table: Category | Answer | Source | Stimulus | Environment | Response | Response measure | Evidence)
 ## Queries run
 ## Seeds                 (table: ID | Seed | Found in round | Swept in round | Status | Carried as)
 ## Blast radius          (table: ID | Component | Site | What it is | Why affected)
@@ -513,6 +514,20 @@ The rules about that skeleton, each of which a real run got wrong before it was 
   .sdlc/design/<n>.md` checks all of it and exits 2 naming each offender: an FR in no slice row, an
   undeclared token, an `FR-n` in `Depends on`, a duplicate slice label, a non-EARS sentence, a short or empty row, a missing section. Designs written
   before #659 have no such heading; they are not re-reviewed and not rewritten.
+- **`Quality requirements` is one row per quality category, each answered as a measurable scenario,
+  a reasoned N/A or an open Doubt** (#1780). The categories, the scenario fields, the STRIDE letters
+  and the answer forms come from `python3 skills/sigma-goal-design/scripts/goal_design.py nfr-bank`,
+  not from memory; rows are keyed by the category slug and carry no id. An N/A needs a reason of three
+  or more words (the literal `N/A: small lane` is permitted in the small lane, never required, a
+  violation in medium and large); an open row names a Doubt that is a bullet in `Doubts`; an answered
+  row fills every scenario field, gives a Response measure with a digit or a `test:` form, and cites
+  its evidence. The lane is the self-reported header `Lane`, and the large lane also requires a
+  `Container | Threat | Mitigation` table and a `security` row that is not N/A.
+  `python3 skills/sigma-goal-design/scripts/goal_design.py quality .sdlc/design/<n>.md` checks it and
+  exits 2 on any violation. It checks form, not truth, and reads one file (at most 1 MiB); that
+  review (whose prose for this check lands in a later slice) then returns REJECT rests on the reviewing model following the review prose, and
+  `mark-designed` does not refuse. The token cost of answering every row is unmeasured. Designs written
+  before this section are not re-reviewed and not rewritten.
 - **`Out of scope` is what makes the `converged` verdict auditable** (#1975). Every excluded hit as
   `X-n` with its round and its reason, per §5c; one entry may cover a group under a stated rule with
   a count, since a broad query otherwise makes the section unwritable. §7b reads the exclusions of
@@ -534,7 +549,8 @@ whether to confirm it, and the two audiences take different documents. Rules the
 deliberately exempt from: every codename glossed in plain English on first use and used that way
 thereafter; no `BR-n`/`D-n`/`B-n` ids, no `file:line`, no query text; one page; a fixed shape (what
 was checked, what it found split into needs-no-ruling/needs-a-ruling, what a person must decide as
-plain questions, the plan as a dependency table, any correction to the source stated once); a
+plain questions, the plan as a dependency table, any correction to the source stated once, and,
+only when a quality row is answered as a scenario, a quality targets line with the numbers kept); a
 `capped` sweep stated in its own first line, for the identical reason §5c gives the main comment.
 Never read by any script — `compile_plan.py` and §7a look only at the main artifact.
 
