@@ -4287,6 +4287,86 @@
       "count": 1,
       "gate": "one atomic write of `.sdlc/state/chain-active.json` (chain numbers, pid, heartbeat, issue numbers only), under the lock; reached only when `chain.parallel` or `chain.max_active` is configured, off by default",
       "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sealed_tests.py",
+      "function": "seal",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "seal() is not called by the work.py commit/pr gates (they call check/check_tree/run_green); its one caller is seal_tests.py (`work.py seal-tests`, behind gates.sealed_acceptance.enabled, default off, #853); writes only inside a tempfile.TemporaryDirectory it created (copytree of the sealed files into the extracted base tree) and the one seal record under .sdlc/state/sealed/ via state.atomic_write_text, last",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sealed_tests.py",
+      "function": "retire",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "reached only from `work.py seal-retire` (an explicit, reasoned operator or maker verb, never run by the loop; works with gates.sealed_acceptance.enabled off because it is cleanup); refuses a blank reason, a goal with no live seal record and a symlinked path; writes one tombstone `.sdlc/state/sealed/<stem>.retired.json` via state.atomic_write_text, FIRST (0600), so a crash leaves the goal sealed and the verb re-runnable",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sealed_tests.py",
+      "function": "retire",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "unlinks exactly the one live seal record `.sdlc/state/sealed/<stem>.json` (a regular file, never a symlink), LAST and only after the tombstone is on disk; never touches the sealed test files; the same record-delete disarm D-11 names, now recorded and reasoned",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/breaker_run.py",
+      "function": "_remove",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "removes only a directory whose basename starts `sigma-breaker-`, the empty working directory or brief directory this module created with tempfile.mkdtemp; never a caller-supplied path of any other name",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/breaker_run.py",
+      "function": "run",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "writes the brief text into a fresh `sigma-breaker-in-` temp directory outside the breaker's working directory; reached only from seal_tests.py behind gates.sealed_acceptance.enabled (default off)",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/seal_tests.py",
+      "function": "remove_files",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "removes only the relative paths this same seal-tests call just wrote under tests/acceptance/<goal>/ in the goal worktree, after a refusal or an error",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/seal_tests.py",
+      "function": "write_attempts",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "work.py seal-tests only (gates.sealed_acceptance.enabled, default off); one atomic write of the integer attempts counter under .sdlc/state/seal-attempts/<goal>.attempt, lstat-checked for symlinks first, written before the breaker is spawned, pruned with the goal",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/seal_tests.py",
+      "function": "write_files",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "work.py seal-tests only (gates.sealed_acceptance.enabled, default off); clears the previous sealed files (re-seal) inside tests/acceptance/<goal>/ of the goal worktree only, after the up-front symlink refusal",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/seal_tests.py",
+      "function": "write_files",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "work.py seal-tests only (gates.sealed_acceptance.enabled, default off); clears a stray subdirectory inside tests/acceptance/<goal>/ of the goal worktree only (re-seal), after the up-front symlink refusal; never a symlink",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/seal_tests.py",
+      "function": "write_files",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "work.py seal-tests only (gates.sealed_acceptance.enabled, default off); creates tests/acceptance/<goal>/ in the goal worktree (never the main checkout) and writes breaker files that passed breaker.validate_output and the AC<n> name rule, from Python, through state.atomic_write_text, after the up-front symlink refusal",
+      "risk": "medium"
     }
   ]
 }

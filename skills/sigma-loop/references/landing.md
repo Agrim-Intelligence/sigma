@@ -94,6 +94,8 @@ With `verify.enforce`, `work.py pr` exits **4** without planned-node assertion-r
 proof. Run `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" verify .sdlc "$goal"` at both stages.
 Only `--no-tests <reason>` bypasses that proof; its verbatim PR-body reason never bypasses
 verification, acceptance, or plan review.
+Exit **4** `SEALED REFUSED:` normally means restore from the commit the refusal names, else park; do NOT `record`, never edit sealed tests. Exception: text naming
+the shell-policy opt-in; its lever is the operator's opt-in, not parking.
 
 **Put the plan on the branch before that first `commit`** — copy `.sdlc/plans/<goal-stem>.md` from
 the main checkout to the SAME relative path inside the worktree (`commit`'s `git add -A` runs in

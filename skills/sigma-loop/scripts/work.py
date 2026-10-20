@@ -83,6 +83,8 @@ ledger = _load("ledger")
 hsg = _load("hard_stop_guard")      # rulebook slice 10: a no-op until hard_stops.enabled is true
 legacy = _load("legacy")             # #239: PR directives/markers written under the previous name
 scrub_module = _load("scrub")
+sealed_tests = _load("sealed_tests")   # #850: the commit/pr seal gates (all runner and tree logic lives there)
+shell_policy = _load("shell_policy")     # #850: the pr green run honours the operator opt-in `loop.py red`/`verify` honour
 post_guard = _load("post_guard")      # #375: opt-in refusal of private-reference text (SIGMA_LEAK_PATTERNS)
 scrub = scrub_module.scrub
 gh_session = _load("gh_session")     # #78: tell a Remote session's gh proxy block apart from a real
@@ -246,6 +248,66 @@ ENFORCEMENT_GATES = (
                   "wide `COLUMNS` also reaches the tests under proof, so width-sensitive output "
                   "(argparse help, `shutil.get_terminal_size`) can differ from a developer's shell; "
                   "only one pytest release was measured"},
+    {"control": "Sealed acceptance tests unchanged at commit", "function": "_sealed_commit_refusal",
+     "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
+     "mechanism": "refuses `work.py commit` (exit 4, `SEALED REFUSED:`) when the goal has a seal record and "
+                  "any file under `tests/acceptance/<stem>/` is added, modified, deleted, replaced or has an "
+                  "executable bit relative to the sealed sha256 hashes, naming each path and kind with a "
+                  "per-kind fix; only that directory's index entries are unstaged (other staged paths stay staged), and nothing is committed; "
+                  "a goal with no seal record, and staged paths outside that directory, commit as before",
+     "condition": "active only for a goal that has a seal record, and the record is agent-writable, so "
+                  "deleting it disarms the gate (the D-11 ceiling; the configured record-required check of "
+                  "slice C closes it); local evidence, not tamper-proof; a raw `git commit` in the worktree "
+                  "bypasses this gate and is caught only at `work.py pr`; compares the working tree, so a "
+                  "path git ignores is judged by the files on disk"},
+    {"control": "Sealed acceptance tests unchanged and green at PR", "function": "_sealed_pr_refusal",
+     "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
+     "mechanism": "refuses `work.py pr` (exit 4, `SEALED REFUSED:`, nothing pushed) for a goal with a seal "
+                  "record unless the COMMITTED tree at HEAD matches the seal (missing, differing or unexpected "
+                  "sealed paths named; a gitignored sealed file on disk does not count), the working tree "
+                  "matches too, the operator made the `sigma.allowRepositoryShellCommands` opt-in, and the "
+                  "sealed tests pass at HEAD in the goal worktree (skipped, xfailed, errored or deleted "
+                  "tests are not a pass); the failing test is named; `--no-tests` does not bypass it",
+     "condition": "active only for a goal that has a seal record; the record is agent-writable, so deleting "
+                  "it disarms the gate (D-11 ceiling); local evidence; checked at `work.py pr` only, not at "
+                  "`merge()` or a `work.py rebase` force-push, and a raw `git push` bypasses it; the seal "
+                  "covers only `tests/acceptance/<stem>/`, so conftest files in its parent "
+                  "directories, `pytest.ini` or `pyproject` settings and plugins loaded from the working tree can still influence the green "
+                  "verdict; the stored blob is compared, so a text/eol/filter conversion shows as `differs` "
+                  "with an explanation, and `.gitattributes` is read from the worktree not the compared "
+                  "rev while `core.attributesFile` is not seen; sealed tests are model-authored code run "
+                  "with operator privileges and no sandbox; the red run and the green run may use "
+                  "different interpreters; time and memory of a real run are unmeasured"},
+    {"control": "Sealed acceptance tests authored by an author-blind breaker (opt-in)",
+     "function": "_seal_tests_refusal", "kind": "python-gate", "hosts": "all",
+     "enabled_by": ("work.enabled", "gates.sealed_acceptance.enabled"), "settings": ("review.timeout_seconds",),
+     "mechanism": "`work.py seal-tests` runs after an approving plan-review: it builds the breaker brief from "
+                  "the acceptance record (read from the main checkout), spawns the breaker in an empty "
+                  "temporary directory in a process group that is killed whole on timeout, validates the "
+                  "file blocks it prints (AST parse, paths confined to `tests/acceptance/<stem>/`, "
+                  "`test_acc_<stem>_AC<n>_*.py` names), writes them from Python into the goal worktree and "
+                  "seals them; REFUSES with exit 3 for a precondition checked before any spawn (a non-pytest "
+                  "or absent verify command, a plan-review that is missing or stale, a non-actionable "
+                  "criterion) and exit 4 for a re-seal once implement has started, a host with no breaker "
+                  "route (a Claude Code host: no `claude` entry exists, #537 is not built), the attempts "
+                  "cap (a third re-seal) or an unreadable attempts counter (all four also checked before "
+                  "any spawn, nothing spent), and, at spawn time, an unattended first run without a "
+                  "recorded spend approval, a runner failure and a test that passes on the base commit "
+                  "(the attempts counter has advanced); inert (exit 0) with the gate off",
+     "condition": "this is slice A of the story: it REPORTS a non-actionable criterion and refuses, it does "
+                  "not record a plan defect or return the goal to plan, there is no `--no-seal` and no "
+                  "phase-gate step, and the commit and PR gates still activate only when a seal record "
+                  "exists, so deleting the record still disarms them (slice C closes that); per-criterion "
+                  "coverage is deferred to #535; the re-seal-after-implement guard reads the action log and is BLIND "
+                  "when it is off or unreadable (only the cap then bounds a rewrite); the unattended "
+                  "spend consult covers the first breaker run only (one approval, up to 3 runs), so an "
+                  "attended first run means later unattended re-seals are not consulted; concurrent "
+                  "`seal-tests` runs for one goal are not serialized (the counter is read and written "
+                  "without a lock and the session lease is machine-wide capacity, not a per-goal mutex), "
+                  "so the cap can be exceeded by the number of concurrent runs; the empty working directory does not stop a host CLI "
+                  "reading the worktree by absolute path, and the breaker keeps the caller's HOME, so its "
+                  "credentials are reachable; the verify-command pytest check is a heuristic; the "
+                  "end-to-end run against a real host is UNMEASURED (only a fake CLI has run)"},
     {"control": "Plan review before implementation", "function": "_plan_review_refusal",
      "kind": "python-gate", "hosts": "all",
      "enabled_by": ("work.enabled", "gates.plan_review.enabled"), "settings": (),
@@ -3725,6 +3787,9 @@ def commit(sdlc_dir, config, goal, run=None, message=""):
     staged = run(path, ["git", "diff", "--cached", "--name-only"])
     if not staged:
         return "nothing to commit"
+    refusal = _sealed_commit_refusal(sdlc_dir, rec, goal, run)     # #850: AFTER `add -A`, so it can undo the staging
+    if refusal:
+        return refusal
     refusal = _secret_refusal(path, staged, config, run)
     if refusal:
         return refusal
@@ -3867,6 +3932,115 @@ def verification_plan(sdlc_dir, goal, root):
         raise ValueError(f"main and worktree plans differ ({main} vs {branch}); copy the one you want "
                          "over the other, then re-run `loop.py red` or `loop.py verify`")
     return branch or main
+
+
+_SEALED_PARK = "park the goal (record parked with the reason)"
+
+
+def _sealed_timeout_seconds(config):
+    """The green run's budget, the SAME rule as `loop._verify_timeout_seconds` (`verify.timeout_minutes`, an int
+    in 1..1440, bool rejected, default 60). Copied rather than imported: loop.py loads this module at its top
+    level, so the reverse load would recurse; a test pins the two together."""
+    minutes = (config.get("verify") or {}).get("timeout_minutes")
+    ok = isinstance(minutes, int) and not isinstance(minutes, bool) and 1 <= minutes <= 1440
+    return (minutes if ok else 60) * 60
+
+
+def _sealed_problem_lines(problems, worktree, sdlc_dir, goal_stem):
+    """One `  <kind> <path> -- <remedy>` line per problem. ONE shared 200-probe budget for every remedy, so
+    many problem paths cannot multiply the history walk."""
+    seal = sealed_tests.read_record(sdlc_dir, goal_stem)
+    budget = {"left": 200}
+    lines = []
+    for problem in problems:
+        text = sealed_tests.remedy(problem, worktree, seal, budget)
+        why = problem.get("why")
+        lines.append(f"  {problem['kind']} {problem['path']} — {text}" + (f" ({why})" if why else ""))
+    return "\n".join(lines)
+
+
+def _sealed_commit_refusal(sdlc_dir, rec, goal, run):
+    """#850: refuse `work.py commit` when this goal has a seal record and the working tree's sealed
+    acceptance directory no longer matches it. Runs AFTER `git add -A`, so the staged index is the thing
+    being protected and is reset, per path, exactly as `_secret_refusal` resets (`_unstage`). TOTAL: any
+    failure while checking is itself a refusal, and the unstage runs on every path after the add. "" only
+    for a goal with no seal record (zero git calls) or a tree that matches. Activation = the record exists,
+    so deleting the record disarms the gate (the D-11 ceiling; slice C's configured check closes it)."""
+    sdlc_dir, goal_stem = os.path.abspath(sdlc_dir), stem(goal)
+    if not sealed_tests.is_sealed(sdlc_dir, goal_stem):
+        return ""
+    try:
+        path = rec["worktree"]
+        got = sealed_tests.check(path, sdlc_dir, goal_stem)
+        body = "" if got["sealed"] else _sealed_problem_lines(got["problems"], path, sdlc_dir, goal_stem)
+    except Exception as exc:                # noqa: BLE001 - total, as main() is: a check that failed is a refusal
+        body = f"  could not verify the seal ({type(exc).__name__}: {exc}); {_SEALED_PARK}"
+    if not body:
+        return ""
+    try:
+        unstaged = _unstage(rec["worktree"], [f"tests/acceptance/{goal_stem}"], run)
+    except Exception:                       # noqa: BLE001 - a cleanup that did not happen is reported, not raised
+        unstaged = False
+    ending = (f"Nothing was committed. Only the index entries under tests/acceptance/{goal_stem}/ were reset "
+              "(unstaged); any other staged paths remain staged. Every file is still on disk, untouched." if unstaged else
+              f"Nothing was committed. The index could NOT be cleaned up, so the paths under tests/acceptance/{goal_stem}/ "
+              "are STILL STAGED — unstage them yourself; any other staged paths also remain staged. "
+              "Every file is still on disk, untouched.")
+    return (f"SEALED REFUSED: the sealed acceptance tests under tests/acceptance/{goal_stem}/ are the acceptance "
+            f"proof and the maker does not change them; they differ from the seal.\n{body}\n{ending}")
+
+
+def _sealed_pr_refusal(sdlc_dir, config, rec, goal):
+    """#850: refuse `work.py pr` (nothing pushed) unless, for a goal with a seal record, (1) the COMMITTED
+    tree at HEAD matches the seal (catches a raw `git commit` that bypassed `commit`), (2) the working tree
+    matches too (pytest executes the working tree, which porcelain does not fully see), (3) the operator made
+    the shell-policy opt-in, and (4) the sealed tests PASS at HEAD, naming the failing test. Order is
+    cheap -> expensive, so the green run is never spent on a tree that differs. TOTAL like the commit variant.
+    `--no-tests` bypasses only the test-first proof, never this. Limits: local evidence; a raw `git push`
+    bypasses both gates; `merge()` and `work.py rebase` do not re-run it."""
+    sdlc_dir, goal_stem = os.path.abspath(sdlc_dir), stem(goal)
+    if not sealed_tests.is_sealed(sdlc_dir, goal_stem):
+        return ""
+    try:
+        path = rec["worktree"]
+        for compare, where in ((sealed_tests.check_tree, "the committed tree at HEAD"),
+                               (sealed_tests.check, "the working tree (pytest runs it)")):
+            got = compare(path, sdlc_dir, goal_stem)
+            if not got["sealed"]:
+                return (f"SEALED REFUSED: {where} differs from the seal for tests/acceptance/{goal_stem}/.\n"
+                        f"{_sealed_problem_lines(got['problems'], path, sdlc_dir, goal_stem)}\n(nothing pushed)")
+        if not shell_policy.repository_shell_commands_allowed(project_root(sdlc_dir)):
+            return ("SEALED REFUSED: shell-policy opt-in missing. The lever is the operator opt-in ("
+                    + shell_policy.refusal_message() + "), NOT parking. (nothing pushed)")
+        green = sealed_tests.run_green(path, sdlc_dir, goal_stem, timeout=_sealed_timeout_seconds(config))
+        if green["green"]:
+            return ""
+        lines = "\n".join(f"  FAILED {f['test']} - {f['why']}" for f in green["failing"]) or f"  {green['detail']}"
+        return (f"SEALED REFUSED: the sealed tests do not pass at HEAD.\n{lines}\n"
+                f"Fix the code (the sealed tests are not edited), or {_SEALED_PARK} (nothing pushed)")
+    except Exception as exc:                # noqa: BLE001 - total, as main() is: an unverifiable seal is a refusal
+        return f"SEALED REFUSED: could not verify the seal ({type(exc).__name__}: {exc}); {_SEALED_PARK} (nothing pushed)"
+
+
+def seal_retire(sdlc_dir, goal, reason):
+    """#855: `work.py seal-retire` -> `(exit_code, text)`. 0 = retired (text = the tombstone JSON), 4 = refused.
+    Works with `gates.sealed_acceptance.enabled` off (it is cleanup, never a gate). Appends one action-log row
+    (goal, reason, time) so the disarm is visible outside this worktree. The sealed agent can run it too: an
+    audit trail, not access control (D-11)."""
+    try:
+        body = sealed_tests.retire(sdlc_dir, stem(goal), reason)
+    except sealed_tests.SealRefused as exc:
+        return 4, f"seal-retire: REFUSED [{exc.clause}]: {str(exc).split(']: ', 1)[-1]}"
+    _load("actionlog").safe_append(sdlc_dir, goal, "gate", gate="merge", verdict="warn",
+                                   why=f"sealed acceptance retired: reason={body['reason']}")
+    return 0, json.dumps(body, sort_keys=True)
+
+
+def _seal_tests_refusal(sdlc_dir, config, goal, **seams):
+    """#853 (slice A of #558): `work.py seal-tests` -> `(exit_code, text)`. Gate OFF is inert (0). Every
+    refusal is `seal-tests: REFUSED [<clause>]: ...` (3 = a precondition before any spawn; 4 = the rest, some also before any spawn). All logic and its limits
+    live in `seal_tests.py`; this is the registered seam `ENFORCEMENT_GATES` names."""
+    return _load("seal_tests").run(sdlc_dir, goal, config=config, **seams)
 
 
 def _test_first_refusal(sdlc_dir, config, rec, goal, run, no_tests=None):
@@ -4167,6 +4341,10 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None):
     test_first_refusal = _test_first_refusal(sdlc_dir, config, rec, goal, run, no_tests)
     if test_first_refusal:
         return test_first_refusal
+
+    sealed_refusal = _sealed_pr_refusal(sdlc_dir, config, rec, goal)       # #850: independent of `--no-tests`
+    if sealed_refusal:
+        return sealed_refusal
 
     refusal = (_hs_push_stop(sdlc_dir, config, rec, f"git push -u {remote} {rec['branch']}")
                or _hs_diff_stop(config, run, path, ["git", "diff", f"{remote}/{base}...HEAD"], ("tamper_oversight",)))
@@ -8387,6 +8565,12 @@ _COMMANDS = {"start": start, "commit": commit, "pr": pr, "rebase": rebase,
              "post-review": post_review, "merge": merge, "finish": finish}
 
 
+_SEAL_TESTS_USAGE = ("usage: work.py seal-tests <sdlc_dir> <goal>   (opt-in: gates.sealed_acceptance.enabled; "
+                     "inert and exit 0 with it off; run it after an approving plan-review; exit 3 = a precondition refused "
+                     "before any spawn, exit 4 = other refusals, some also before any spawn; see seal_tests.py)")
+_SEAL_RETIRE_USAGE = ("usage: work.py seal-retire <sdlc_dir> <goal> --reason \"<why>\"   (disarms the sealed-test gates "
+                      "for one goal once its tests are folded into the owner file; exit 4 = refused; works with the "
+                      "gate off; available to every agent, an audit trail not access control)")
 _RECORD_PLAN_REVIEW_USAGE = ("usage: work.py record-plan-review <sdlc_dir> <goal> --verdict "
                              "SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST --plan-sha256 <hex> "
                              "[--agent-id <reviewer agentId>] [--reason \"<text>\"]")
@@ -8434,6 +8618,8 @@ def main(argv):
             "quality-waive": _QUALITY_WAIVE_USAGE,
             "record-review": _RECORD_REVIEW_USAGE,
             "line-hash": _LINE_HASH_USAGE,
+            "seal-tests": _SEAL_TESTS_USAGE,
+            "seal-retire": _SEAL_RETIRE_USAGE,
         }
         print(usage.get(command, "usage: work.py start|commit|pr|rebase|post-review|merge|finish <sdlc_dir> <goal>"))
         return 0
@@ -8552,6 +8738,25 @@ def main(argv):
             return 2
         print(json.dumps(result, sort_keys=True))
         return 0
+    if len(argv) >= 2 and argv[1] == "seal-tests":              # #853: dispatched OUTSIDE `_COMMANDS`; gate OFF is inert
+        if len(argv) != 4:
+            print(_SEAL_TESTS_USAGE, file=sys.stderr)
+            return 2
+        try:
+            config = state.load_config(argv[2])
+        except (state.ConfigMissing, state.ConfigInvalid) as exc:
+            print(f"work: {exc}", file=sys.stderr)
+            return 1
+        code, text = _seal_tests_refusal(argv[2], config, argv[3])
+        print(text, file=sys.stdout if code == 0 else sys.stderr)
+        return code
+    if len(argv) >= 2 and argv[1] == "seal-retire":             # #855: dispatched OUTSIDE `_COMMANDS`; own exit codes
+        if len(argv) < 4 or "--reason" not in argv:
+            print(_SEAL_RETIRE_USAGE, file=sys.stderr)
+            return 2
+        code, text = seal_retire(argv[2], argv[3], _flag(argv, "--reason"))
+        print(text, file=sys.stdout if code == 0 else sys.stderr)
+        return code
     if len(argv) >= 2 and argv[1] == "quality-waive":           # #1637: an owner's lever, never the loop's
         if len(argv) < 4 or "--metric" not in argv or "--reason" not in argv:
             print(_QUALITY_WAIVE_USAGE, file=sys.stderr)
@@ -8729,7 +8934,7 @@ def main(argv):
         # specifically, NEVER on the bare `REFUSED — ` that three other refusals in this file use:
         # those change no state, so they correctly stay exit 0, and no test would have caught the
         # difference (they all assert the string, never the code).
-        if str(result).startswith((_STALE_RESUME_REFUSAL_PREFIX, "TEST-FIRST REFUSED:")):
+        if str(result).startswith((_STALE_RESUME_REFUSAL_PREFIX, "TEST-FIRST REFUSED:", "SEALED REFUSED:")):
             return 4
         return 0
     print("usage: work.py start|commit|pr|rebase|post-review|merge|finish <sdlc_dir> <goal>\n"
@@ -8737,6 +8942,8 @@ def main(argv):
           "         post-review --verdict approve|block|unblock --evidence <path> [--reason \"<changes>\"]\n"
           "       work.py record-plan-review <sdlc_dir> <goal> --verdict SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST "
           "--plan-sha256 <hex> [--reason \"<text>\"]\n"
+          "       work.py seal-tests <sdlc_dir> <goal>   (opt-in, gates.sealed_acceptance.enabled)\n"
+          "       work.py seal-retire <sdlc_dir> <goal> --reason \"<why>\"   (fold sealed tests, then disarm the gates)\n"
           "       work.py quality-waive <sdlc_dir> <goal> --metric <name> --reason \"<why>\"   "
           "(an owner's lever; the loop never runs it)\n"
           "       work.py root <sdlc_dir> <goal>\n"

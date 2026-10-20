@@ -54,7 +54,19 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/sealed_tests.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/breaker.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/breaker_run.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/seal_tests.py",
       "role": "library"
     },
     {
