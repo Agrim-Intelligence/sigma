@@ -2167,7 +2167,17 @@ def _picked_actions(plan, state_by_issue, assignee, goal_label, parked_label, bl
             if not value:
                 continue
             label = f"{prefix}{value}"
-            if label not in state["labels"]:
+            # #1920: an issue ends with exactly ONE priority label. The plan's priority replaces any
+            # other `priority:*` the issue carries in the same swap (and heals a double that is already
+            # there), because every reader takes the best rank, so a stale lower label left behind made
+            # the goal run at a priority nobody chose. `model:*` keeps the plain add.
+            stale = sorted(l for l in state["labels"] if prefix == "priority:" and l.startswith(prefix)
+                           and l != label)
+            if stale:
+                add = [] if label in state["labels"] else [label]
+                actions.append({"action": "swap-label", "issue": n, "detail": _swap_detail(add, stale),
+                                "add": add, "remove": stale, "result": None, "error": None})
+            elif label not in state["labels"]:
                 actions.append({"action": "add-label", "issue": n, "detail": label,
                                 "result": None, "error": None})
     return actions
@@ -2241,7 +2251,8 @@ def _label_conflict_notices(plan, state_by_issue):
     labels API returns them, so a double tier feeds a downstream field whose value is effectively
     arbitrary -- not cosmetic. Report-only: named here, surfaced in `render_actions()` and in
     `enact()`'s own `result["degraded"]`, NEVER as an executable action -- it cannot affect the
-    exit code or the "second apply = zero actions" invariant."""
+    exit code or the "second apply = zero actions" invariant. #1920: for `priority:*` the action now
+    replaces the old value, so the notice reports the replacement instead of a residual."""
     notices = []
     for item in (plan.get("picked") or []):
         n = str(item.get("issue"))
@@ -2253,9 +2264,10 @@ def _label_conflict_notices(plan, state_by_issue):
                 continue
             current = _label_value(state["labels"], prefix)
             if current and current != value:
-                notices.append(f"#{n}: plan wants {prefix}{value} but already carries "
-                               f"{prefix}{current} — left both in place (add-only); "
-                               "resolve by hand if this is unintended")
+                # #1920: priority is now replaced in the same swap, so the notice says so; model keeps add-only.
+                tail = ("replaced by the plan's value" if prefix == "priority:"
+                        else "left both in place (add-only); resolve by hand if this is unintended")
+                notices.append(f"#{n}: plan wants {prefix}{value} but already carries {prefix}{current} — {tail}")
     return notices
 
 

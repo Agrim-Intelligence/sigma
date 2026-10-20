@@ -22,6 +22,12 @@
   dag.py stuck [--json] [--sdlc DIR]
                                 decision roots holding other work, most freeing first
 
+  dag.py html (--goal N | --all) [--out DIR] [--titles FILE] [--sdlc DIR]
+                                one self-contained, offline HTML page per chain (a goal and its open
+                                prerequisites, the set `chain.py plan` reads), plus an index with `--all`;
+                                default `<sdlc>/state/dag-html/`; reads only the stored map, no network
+                                (#1924, see dag_html.py)
+
 `chain`, `chains` and `stuck` exit 0 answered, 2 goal unknown to the map, 3 map unusable (the line
 says why), 4 mode off (one line). `--verify` re-reads open members live, at most 50.
 
@@ -200,11 +206,22 @@ def main(argv=None):
     tp = sub.add_parser("stuck", help="decision roots holding other work, most freeing first")
     tp.add_argument("--json", action="store_true")
     tp.add_argument("--sdlc", default=None, help="the .sdlc directory (default: ./.sdlc)")
+    wp = sub.add_parser("html", help="write one offline HTML page per chain (and an index with --all)")
+    which = wp.add_mutually_exclusive_group(required=True)
+    which.add_argument("--goal", type=int, help="the page of one goal and its open prerequisites")
+    which.add_argument("--all", action="store_true", help="a page per end goal, and an index")
+    wp.add_argument("--out", default=None, help="the output directory (default: <sdlc>/state/dag-html)")
+    wp.add_argument("--titles", default=None, help="a JSON file of titles, {\"<number>\": \"<title>\"}; the map holds none")
+    wp.add_argument("--sdlc", default=None, help="the .sdlc directory (default: ./.sdlc)")
     args = ap.parse_args(argv)
     sdlc = args.sdlc or os.path.join(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd(), ".sdlc")
     if args.verb in ("chain", "chains", "stuck"):
         out, code = _query(args.verb, args, sdlc)
         print(out)
+        return code
+    if args.verb == "html":
+        lines, code = _load("dag_html").run(sdlc, args.goal, args.all, args.out, args.titles)
+        print("\n".join(lines))
         return code
     if args.verb == "history":
         out, code = history(sdlc, args.month, args.all)

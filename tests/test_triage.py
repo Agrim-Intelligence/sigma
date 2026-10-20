@@ -3102,6 +3102,48 @@ def test_picked_actions_unpark_readds_goal_label_and_drops_parked_label():
     assert not any("sdlc:in-progress" in (a["detail"] or "") for a in actions)
 
 
+# --- #1920: a picked issue ends with exactly ONE priority label ------------------------------------
+# `_picked_actions` used to add the plan's priority whenever that exact label was missing and never
+# removed the others, so an issue filed with one priority and picked at another ended with two;
+# every reader then takes the best rank, so the goal ran at a priority nobody chose.
+
+
+def _pri_actions(labels, priority="P1"):
+    triage = _mod("triage")
+    state_by_issue = {"42": {"labels": set(labels), "assignees": set(), "body": ""}}
+    item = _picked_item(42)
+    item["priority"] = priority
+    return triage._picked_actions(_plan(picked=[item]), state_by_issue, None, "sdlc:goal", "sdlc:parked")
+
+
+def test_picked_priority_replaces_the_other_priority_label_in_one_swap():
+    actions = _pri_actions({"sdlc:goal", "priority:P3"})
+    assert [(a["action"], a["detail"]) for a in actions] == [("swap-label", "+priority:P1 -priority:P3")]
+    assert actions[0]["add"] == ["priority:P1"] and actions[0]["remove"] == ["priority:P3"]
+
+
+def test_picked_priority_removes_every_stale_priority_label():
+    actions = _pri_actions({"sdlc:goal", "priority:P3", "priority:P4"})
+    assert actions[0]["add"] == ["priority:P1"] and actions[0]["remove"] == ["priority:P3", "priority:P4"]
+
+
+def test_picked_priority_heals_a_double_when_the_wanted_label_is_already_there():
+    actions = _pri_actions({"sdlc:goal", "priority:P1", "priority:P3"})
+    assert [(a["action"], a["detail"]) for a in actions] == [("swap-label", "-priority:P3")]
+
+
+def test_picked_priority_is_idempotent_and_adds_plainly_when_none_exists():
+    assert _pri_actions({"sdlc:goal", "priority:P1"}) == []
+    plain = _pri_actions({"sdlc:goal"})
+    assert [(a["action"], a["detail"]) for a in plain] == [("add-label", "priority:P1")]
+
+
+def test_picked_priority_never_touches_other_prefixed_labels():
+    actions = _pri_actions({"sdlc:goal", "priority:P3", "model:sonnet"})
+    assert all("model:" not in (a["detail"] or "") for a in actions)
+    assert actions[0]["remove"] == ["priority:P3"]
+
+
 # --- #1358: `_bucket_parked` (survey) now surfaces a `sdlc:blocked`-only issue in the pickable
 # 'parked' bucket too -- `enact` must be able to clear THAT label as well, or picking one would add
 # `sdlc:goal` back without ever removing `sdlc:blocked`, leaving both present at once (the exact
@@ -3245,10 +3287,10 @@ def test_edge_actions_blocked_side_outside_picked_is_never_touched():
 # --- report-only notices: F4 (label conflict), F5 (stale marker) -----------------------------------
 
 
-def test_label_conflict_notice_names_both_values_while_the_add_only_action_still_fires():
-    """F4 (670-plan-review.md, binding, ruling on Open Decision 3): no removal -- the plan's OWN
-    value is still added (that IS 'add only what's missing'); the notice is additional, surfacing
-    the resulting double-tier residual, never a substitute for the action."""
+def test_label_conflict_notice_names_both_values_while_the_swap_replaces_the_stale_one():
+    """F4 (670-plan-review.md) said: no removal, notice only. #1920 reverses that for priority: the
+    notice stays, and the action now REPLACES the stale value in one swap, because a double was
+    never visible to anyone and every reader takes the best rank of the two."""
     triage = _mod("triage")
     state_by_issue = {"42": {"labels": {"priority:P3"}, "assignees": set(), "body": ""}}
     plan = _plan(picked=[_picked_item(42, priority="P1")])
@@ -3256,9 +3298,11 @@ def test_label_conflict_notice_names_both_values_while_the_add_only_action_still
     notices = triage._label_conflict_notices(plan, state_by_issue)
     assert len(notices) == 1
     assert "priority:P1" in notices[0] and "priority:P3" in notices[0] and "#42" in notices[0]
+    assert "replaced" in notices[0] and "left both" not in notices[0]
 
     actions = triage._picked_actions(plan, state_by_issue, None, "sdlc:goal", "sdlc:parked")
-    assert any(a["detail"] == "priority:P1" for a in actions)
+    assert [(a["action"], a["detail"]) for a in actions if "priority:" in a["detail"]] == [
+        ("swap-label", "+priority:P1 -priority:P3")]
 
 
 def test_label_conflict_notice_silent_when_values_match_or_absent():
@@ -3498,9 +3542,9 @@ def test_enact_makes_zero_ledger_calls(monkeypatch):
     triage.enact(".sdlc", config, plan, apply=True, run=_enact_runner(views={"10": _view_json()}))
 
 
-def test_enact_result_carries_degraded_notices_alongside_the_add_only_action():
+def test_enact_result_carries_degraded_notices_alongside_the_priority_swap():
     """F4 + F5 together: a conflicting label produces BOTH the notice (never suppressing the
-    normal add-only action for the plan's OWN value) and a stale-marker notice; notices never
+    action for the plan's OWN value, now a swap, #1920) and a stale-marker notice; notices never
     themselves become action-list entries."""
     triage = _mod("triage")
     plan = _plan(picked=[_picked_item(42, priority="P1")], edges=[])
@@ -3512,7 +3556,8 @@ def test_enact_result_carries_degraded_notices_alongside_the_add_only_action():
     assert len(result["degraded"]) == 2
     assert any("priority:P1" in n and "priority:P3" in n for n in result["degraded"])
     assert any("#99" in n for n in result["degraded"])
-    assert any(a["action"] == "add-label" and a["detail"] == "priority:P1" for a in result["actions"])
+    assert any(a["action"] == "swap-label" and a["detail"] == "+priority:P1 -priority:P3"
+               for a in result["actions"])
     assert all(a["action"] in triage.ENACT_ACTIONS for a in result["actions"])
 
 

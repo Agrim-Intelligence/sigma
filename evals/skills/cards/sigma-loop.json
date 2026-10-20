@@ -78,7 +78,31 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/chain_asks.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/chain_checkpoint.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/chain_closed.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/chain_enact.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/chain_forecast.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/chain_parallel.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/chain_reads.py",
       "role": "library"
     },
     {
@@ -87,6 +111,10 @@
     },
     {
       "path": "skills/sigma-loop/scripts/chain_status.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/chain_waits.py",
       "role": "library"
     },
     {
@@ -151,6 +179,10 @@
     },
     {
       "path": "skills/sigma-loop/scripts/dag_history.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/dag_html.py",
       "role": "library"
     },
     {

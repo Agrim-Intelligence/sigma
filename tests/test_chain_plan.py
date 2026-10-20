@@ -234,8 +234,13 @@ def test_plan_is_read_only(tmp_path):
     assert calls and all(a[0] == "api" and a[a.index("--method") + 1] == "GET" for a in calls)
     rec = pathlib.Path(base) / "state" / "chains" / "c1.json"
     text = rec.read_text()
-    assert "SECRET" not in text and "legacy column" not in text
+    assert "SECRET" not in text            # no title and no body, ever
     doc = json.loads(text)
+    # the one exception, asked for by the sheet: a parked member's recorded park question, ONE cut-short line under
+    # `park_why`, so the sheet (which reads only the record) can say why it is parked
+    why = [m["park_why"] for m in doc["members"] if m.get("park_why")]
+    assert why and all("legacy column" in w and len(w) <= 140 for w in why)
+    assert text.count("legacy column") == len(why)
     assert doc["goal"] == 1 and [m["number"] for m in doc["members"]] == [4, 3, 2, 1]
     assert doc["calls"]["total"] == p["calls"]["total"] and 1 <= doc["calls"]["total"] <= len(calls)
     keys = set()
@@ -346,11 +351,13 @@ def test_measured_calls_for_10_30_50_member_chains(tmp_path, capsys):
         _save_map(mbase, [_mnode(i) for i in range(1, k + 1)], [(i, i + 1) for i in range(1, k)])
         mcalls = []
         t = time.perf_counter()
-        mp = _plan(mbase, k, [], mcalls)
+        mp = _plan(mbase, k, _line_issues(k), mcalls)
         map_ms = (time.perf_counter() - t) * 1000
         assert len(mp["members"]) == k and mp["source"] == "map"
-        assert mp["calls"]["total"] == len(mcalls) == 0
-        rows.append((k, 0, map_ms, len(calls), live_ms))
+        # #1902: the map names the chain with no call, then ONE issue GET per member reads its comments for
+        # waits no edge says (a member without comments costs that one request; the fake's have none)
+        assert mp["calls"]["total"] == len(mcalls) == k and mp["complete"] is True
+        rows.append((k, k, map_ms, len(calls), live_ms))
     with capsys.disabled():
         print("\nchain plan measured (counting fake; local wall time only, network not measured)")
         print("members | map calls | map local ms | live calls | live local ms")

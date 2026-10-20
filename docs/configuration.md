@@ -87,7 +87,7 @@ The `rulebook` block (records, hard stops, autonomy levels, the applier, rules, 
 import) is described key by key in [the Decision Rulebook guide](decision-rulebook.md#configuration-reference). The
 `upkeep` block (the 12-hour window, backups, conflicts) is described in
 [the Upkeep guide](upkeep.md#configuration-reference). Both ship off. The priority rule for blockers
-(`discovery.blocker_promotion.mode`, on by default) is in [backlog.md](backlog.md). The `discovery.dag.*` keys (the stored dependency map) are used in [dag.md](dag.md). The other `chain.*` keys (`max_goals`, `max_added`, `freeze`, `max_reasks`, `parallel`, `max_active`, `max_usd`, `max_minutes`, `stale_minutes`) are listed with their defaults, beside every `discovery.dag.*` key, in [the dependency map and Sigma Chain](dependency-map-and-chain.md#configuration-reference).
+(`discovery.blocker_promotion.mode`, on by default) is in [backlog.md](backlog.md). The `discovery.dag.*` keys (the stored dependency map) are used in [dag.md](dag.md). The other `chain.*` keys (`paid_labels`, `max_goals`, `max_added`, `freeze`, `max_reasks`, `parallel`, `max_active`, `max_usd`, `max_minutes`, `stale_minutes`) are listed with their defaults, beside every `discovery.dag.*` key, in [the dependency map and Sigma Chain](dependency-map-and-chain.md#configuration-reference).
 
 ## Rulebook rollout notes
 

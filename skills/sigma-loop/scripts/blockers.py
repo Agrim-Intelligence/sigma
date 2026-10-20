@@ -67,6 +67,7 @@ NEEDS_HUMAN = "needs_human"  # LEGACY, never returned by classify now. a HUMAN f
 ROUTED = "routed"            # someone else's; grant membership and address it to them
 UNMANAGED = "unmanaged"      # not in Sigma's world at all; surface, never adopt
 STALE = "stale"              # closed -- not a blocker
+CHECKPOINT = "checkpoint"    # #1904: waits for a unit to land or a person to close it; never picked, never granted membership
 
 #: Labels that PROVE Sigma owns an issue. Deliberately just the two filing-time provenance
 #: labels -- NOT "any `sdlc:*` label", which is what this test used to be and which was a
@@ -92,7 +93,7 @@ _PROVENANCE = (handoff.FOLLOWUP_LABEL, handoff.DEPENDENCY_LABEL)
 PARK_REASONS = ("permissions", "knowledge", "known-blocker")
 
 
-def classify(state, goal_label, proposed_label, parked_label, followup_label, me):
+def classify(state, goal_label, proposed_label, parked_label, followup_label, me, checkpoint_label=None):
     """Pure. `state` is `{"labels": set(), "assignees": [logins], "closed": bool}` -> a verdict.
 
     Deliberately pure and separately tested from anything that writes: every verdict below decides
@@ -103,6 +104,8 @@ def classify(state, goal_label, proposed_label, parked_label, followup_label, me
     names = set(state.get("labels") or ())
     if parked_label in names:
         return CHAINED                       # BEFORE the promotion test -- see the constant block
+    if checkpoint_label and checkpoint_label in names:
+        return CHECKPOINT                    # #1904: not Sigma's to work, so no membership is ever granted
     # Legacy label (rulebook slice 18): the confirmation label is NO LONGER a classification
     # row. A filed follow-up is already a goal, so nothing new carries the label; a leftover is
     # classified by its OTHER labels (provenance -> ROUTED, which grants membership and, in `_act`,
@@ -146,7 +149,8 @@ def verdict_for(source, config, ref, run=None):
     if state is None:
         return UNMANAGED, None
     return classify(state, source.goal_label, source.proposed_label, source.parked_label,
-                    handoff.FOLLOWUP_LABEL, ledger.actor(config, run)), state
+                    handoff.FOLLOWUP_LABEL, ledger.actor(config, run),
+                    checkpoint_label=getattr(source, "checkpoint_label", None)), state
 
 
 def _state(source, number):
@@ -235,6 +239,9 @@ def _act(source, goal, ref, verdict, state, goal_label, proposed_label, sdlc_dir
     if verdict == CHAINED:
         return ("#%s is parked — a human owns that decision, so this chain needs one too. "
                 "Run /sigma-unpark on #%s." % (ref, ref)), False
+    if verdict == CHECKPOINT:
+        return ("#%s is a checkpoint — met when its unit lands or a person closes it, so it is never "
+                "picked and no membership is granted" % ref), False
     if verdict == UNMANAGED:
         return ("#%s carries no Sigma label and nobody is assigned — it is outside the loop's "
                 "world, so it will not be picked up on its own" % ref), False
