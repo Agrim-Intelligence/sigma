@@ -26,6 +26,7 @@ import test_label_answer as tla  # noqa: E402
 from test_label_drain_arm import DW  # noqa: E402
 
 NOW = tca.NOW
+KEPT_5 = "#5 is parked and you answered to keep it parked; release it (answer `release it`) to include it"
 PARK = "Parked by Sigma: waiting on the other issue.\nsigma-qkind: dependency"
 
 
@@ -139,7 +140,7 @@ def test_forecast_equals_run(tmp_path, runner, width, finish, cycles):
     # and both are what the fixture says, so two wrong answers cannot agree
     assert sorted(fc["finish"]) == sorted(finish) and fc["cycles"] == cycles, fc
     assert act["picked"] == sorted(finish) and act["state"] == "stuck" and act["reason"] == "decision", act
-    assert act["detail"] == "#5 is parked and needs an answer" == fc["detail"]
+    assert act["detail"] == KEPT_5 == fc["detail"]      # --defaults kept #5 parked: the stop says so
     assert fc["width"] == width
 
 
@@ -173,7 +174,7 @@ def test_markers_and_line(tmp_path):
                    1: ("after", [2, 4, 6, 7, 8])}, got
     fc = _forecast(ch, base, "alice")
     assert fc["line"] == ("a run from alice can finish 3 of 8 before it stops on decision: "
-                          "#4 someone else's (assigned to someone else), #5 needs decision (parked), "
+                          "#4 someone else's (assigned to someone else), #5 needs decision (parked; you answered to keep it parked), "
                           "#6 needs decision (an upper-tier issue, plan its slices)"), fc["line"]
     got = {m["number"]: m["marker"] for m in _forecast(ch, base, "bob")["members"]}
     assert got[4] == "ready now" and got[3] == got[8] == "someone else's"
@@ -365,7 +366,7 @@ def test_comparison_goes_red_when_the_rules_diverge(tmp_path, monkeypatch):
     # (a) the run's stuck rule changed in `run` only
     ch, base, fk = _scene(tmp_path / "a", _backlog())
     fc = _forecast(ch, base, "alice")
-    monkeypatch.setattr(ch, "_stuck", lambda p, failure, unconfirmed, held=(), declined=(): ("held-gate", "#1 is held by a gate"))
+    monkeypatch.setattr(ch, "_stuck", lambda p, failure, unconfirmed, held=(), declined=(), kept=(), waiting=None: ("held-gate", "#1 is held by a gate"))
     assert "reason" in _diff(fc, _drive(ch, base, fk, "alice"))
     monkeypatch.undo()
     # (b) the run's pick ignoring the assignee filter

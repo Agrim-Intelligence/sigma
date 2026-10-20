@@ -1,9 +1,10 @@
 """#1585: `chain.py sheet` and `chain.py answer` -- every decision a chain needs, in front of the person
 together, before anything is changed.
 
-The sheet reads only the local chain record. `answer` writes only that record, and hands a parked member's
-answer to the existing unpark resolve path (a stateful fake `gh`; no network). Controls (each clause alone,
-then restored): give the cap a default; let approval ignore one question kind; drop the unanswered check."""
+The sheet reads only the local chain record. `answer` writes only that record: a parked member is asked ONE question
+(release it, or keep it parked) whose answer `arm` enacts (a stateful fake `gh`; no network). Controls (each clause
+alone, then restored): give the cap a default; let approval ignore one question kind; drop the unanswered check;
+fold the park questions into a group."""
 import json
 import pathlib
 import subprocess
@@ -92,8 +93,8 @@ Done prerequisites: #4
 Runs ahead of: 0 higher-priority open goal(s)
 
 Decisions (3 open of 3):
-  1. [dependency:2] A blocking issue is still open. Do you want to wait for it, work around it, or drop this?
-     options: wait for it (recommended) / work around it / drop this
+  1. [park:2] #2 is parked: Parked by Sigma: waiting on the other issue. Release it into this chain, or keep it parked and the chain stops before it and before #1, which waits on it?
+     options: keep it parked (recommended) / release it
   2. [label_set:c1] Arm the unarmed issues in this set?
      options: arm them (recommended) / arm only the ones that can start / leave them
   3. [cap:c1] What cap applies to this chain? (a positive whole number; no estimate exists yet, so there is no default)
@@ -101,15 +102,14 @@ Decisions (3 open of 3):
 
 Writes that follow approval:
   - record each answer in .sdlc/state/chains/c1.json (numbers and labels only)
-  - #2: the Q&A block and one comment through the unpark resolve path; its labels change only if the answer starts it again
-  - answers to an undeclared-kind or spend question are recorded here only: declaring the kind and writing the spend marker belong to a later slice
+  - a paid step answered anything but "go ahead" is skipped by every run cycle; the answer decides only whether a run may claim it
   - after approval, `chain.py arm` creates the label chain:1 if it is missing
   - #2: add label chain:1
   - #3: add label chain:1
   - #1: add label chain:1
   - arming, per member below: add sdlc:goal, priority P2 only if it has none, assign you only if nobody is assigned, never edit the body; one comment with issue numbers only
   - #3: arm it and add one comment
-  - nothing else: an upper-tier, parked or assigned-elsewhere member is labelled, never armed; starting the members belongs to a later slice
+  - nothing else: an upper-tier member, one you keep parked and one held by someone you wait for are labelled, never armed; starting the members belongs to a later slice
 
 Nothing has been changed yet.
 """
@@ -120,13 +120,14 @@ def test_sheet_golden(tmp_path):
     assert _chain().sheet(base, 1, now=NOW + 300) == GOLDEN
 
 
-def test_answered_not_asked(tmp_path):
+def test_a_parked_member_is_asked_whether_to_release_it_even_when_its_route_was_answered(tmp_path):
+    """The old per-kind route question is gone from a chain: one question says why it is parked and asks release or
+    keep, whatever an earlier round recorded on the issue (a recorded route answer is no answer to THIS question)."""
     base, _fk = _scene(tmp_path, answered=True)
     assert next(r for r in _rec(base)["members"] if r["number"] == 2)["answered"] is True
     text = _chain().sheet(base, 1, now=NOW)
-    assert "[dependency:2]" not in text and "Decisions (2 open of 2)" in text
-    # and it does not block approval: only the other two are needed
-    res = _chain().answer(base, 1, {"label_set:c1": "leave them", "cap:c1": "5"})
+    assert "[park:2]" in text and "[dependency:2]" not in text and "Decisions (3 open of 3)" in text
+    res = _chain().answer(base, 1, {"park:2": "keep it parked", "label_set:c1": "leave them", "cap:c1": "5"})
     assert res["state"] == "approved" and res["open"] == []
 
 
@@ -137,31 +138,22 @@ def test_defaults_leave_cap_open(tmp_path):
     assert res["open"] == ["cap:c1"] and "cap:c1" not in rec["answers"]
     assert rec["state"] == "awaiting-answers"
     assert rec["answers"]["label_set:c1"] == "arm them"        # the recommended (first) option
-    assert rec["answers"]["dependency:2"] == "wait for it"
+    assert rec["answers"]["park:2"] == "keep it parked"        # nothing is released unasked
 
 
 def _blocks(fk, n):
     return [c for c in fk.stored_comments(n)] + [fk.body(n)]
 
 
-def test_parked_answer_recorded(tmp_path):
+def test_a_parked_answer_is_recorded_and_writes_nothing_before_approval(tmp_path):
+    """The answer is the record's only change: no Q&A block, no comment, no label before the chain is approved."""
     base, fk = _scene(tmp_path)
-    res = _chain().answer(base, 1, {"dependency:2": "wait for it"}, run=fk)
-    assert res["results"][0]["outcome"] == "resolved"
-    # the same Q&A block the unpark flow writes, from a second, untouched fixture
-    other = tmp_path / "other"
-    other.mkdir()
-    base2, fk2 = _scene(other)
-    cfg = json.loads((pathlib.Path(base2) / "config.json").read_text())
-    up = _unpark()
-    src = _mod("sources").GitHubSource(cfg, run=fk2)
-    r = up.resolve(base2, cfg, 2, {"route": "wait for it"}, "keep-parked", source=src, apply=True)
-    assert r["outcome"] == "kept-parked"
-    assert fk.body(2) == fk2.body(2) and "wait for it" in fk.body(2)
-    assert fk.stored_comments(2)[1:] == fk2.stored_comments(2)[1:] and len(fk.stored_comments(2)) == 2
-    assert _rec(base)["answers"]["dependency:2"] == "wait for it"
-    # nothing was written to the other members
-    assert fk.stored_comments(1) == [] and fk.stored_comments(3) == []
+    before = (fk.body(2), fk.stored_comments(2), fk.stored_comments(1), fk.stored_comments(3))
+    for choice in ("release it", "keep it parked"):
+        res = _chain().answer(base, 1, {"park:2": choice}, run=fk)
+        assert res["errors"] == [] and res["results"][0]["outcome"] == "recorded"
+        assert _rec(base)["answers"]["park:2"] == choice
+    assert fk.writes() == [] and (fk.body(2), fk.stored_comments(2), fk.stored_comments(1), fk.stored_comments(3)) == before
 
 
 def _full_record(base):
@@ -175,7 +167,7 @@ def _full_record(base):
     return rec
 
 
-KINDS = ["dependency", "label_set", "irreversible", "cross_unit", "upper_tier", "cap"]
+KINDS = ["park", "label_set", "irreversible", "cross_unit", "upper_tier", "cap"]
 
 
 @pytest.mark.parametrize("alone", KINDS)
@@ -185,7 +177,7 @@ def test_approval_requires_all(tmp_path, alone):
     ch = _chain()
     qs, openq = ch.open_questions(_rec(base))
     assert {q["kind"] for q in openq} == set(KINDS)
-    pick = {"dependency": "wait for it", "label_set": "leave them", "irreversible": "leave it",
+    pick = {"park": "keep it parked", "label_set": "leave them", "irreversible": "leave it",
             "cross_unit": "keep going", "upper_tier": "leave it", "cap": "7"}
     for q in qs:
         if q["kind"] == "irreversible":
@@ -204,23 +196,23 @@ def test_approval_refuses_an_incomplete_plan_and_bad_answers(tmp_path):
     base, fk = _scene(tmp_path)
     ch = _chain()
     before = _tree(base)
-    for bad in ({"cap:c1": "lots"}, {"cap:c1": "0"}, {"dependency:2": "maybe"}, {"nope:1": "x"}):
+    for bad in ({"cap:c1": "lots"}, {"cap:c1": "0"}, {"park:2": "maybe"}, {"nope:1": "x"}):
         assert ch.answer(base, 1, bad, run=fk)["errors"]
         assert _tree(base) == before and fk.stored_comments(2) == [KIND_DEP]
     rec = _rec(base)
     rec["complete"] = False
     _put(base, rec)
-    res = ch.answer(base, 1, {"label_set:c1": "leave them", "cap:c1": "5", "dependency:2": "work around it"},
-                    run=fk)
+    res = ch.answer(base, 1, {"label_set:c1": "leave them", "cap:c1": "5", "park:2": "release it"}, run=fk)
     assert res["open"] == [] and res["state"] == "awaiting-answers"
     assert ch.main(["chain.py", "answer", base, "1", "--defaults", "--partial"]) == 2
 
 
 def _many(base, n):
+    """n members held by a gate (one `scope_hold` question each, the same options)."""
     rec = _rec(base)
-    rec["members"] = [{"number": 100 + i, "verdict": "parked", "kind": "dependency", "labels": [],
-                       "waits_on": [], "depth": 0, "prio": None} for i in range(n)]
-    rec["cross_unit"], rec["done"] = [], []
+    rec["members"] = [{"number": 100 + i, "verdict": "held-by-gate", "kind": None, "labels": [], "waits_on": [],
+                       "depth": 0, "prio": None} for i in range(n)]
+    rec["cross_unit"], rec["done"], rec["closed_gates"] = [], [], []
     _put(base, rec)
 
 
@@ -229,18 +221,48 @@ def test_grouping(tmp_path):
     ch = _chain()
     _many(base, 24)                                   # 24 + the cap = 25: not over the line
     text = ch.sheet(base, 1, now=NOW)
-    assert "grouped" not in text and "[dependency:100]" in text
+    assert "grouped" not in text and "[scope_hold:100]" in text
     _many(base, 25)                                   # 25 + the cap = 26
     text = ch.sheet(base, 1, now=NOW)
-    assert "grouped by kind" in text and "[group:dependency]" in text
-    assert "[dependency:100]" not in text and "applies to 25 questions" in text
-    assert "wait for it (recommended)" in text
-    res = ch.answer(base, 1, {"group:dependency": "work around it", "cap:c1": "3"}, run=fk)
+    assert "grouped by kind" in text and "[group:scope_hold]" in text
+    assert "[scope_hold:100]" not in text and "applies to 25 questions" in text
+    res = ch.answer(base, 1, {"group:scope_hold": "drop this", "cap:c1": "30"}, run=fk)
     assert res["errors"] == [] and res["state"] == "approved"
     answers = _rec(base)["answers"]
-    assert len([k for k in answers if k.startswith("dependency:")]) == 25
-    assert fk.writes() == []                          # "work around it" resolves nothing on GitHub
+    assert len([k for k in answers if k.startswith("scope_hold:")]) == 25
+    assert fk.writes() == []                          # an answer is a local record
     assert ch.answer(base, 1, {"group:upper_tier": "x"}, run=fk)["errors"]
+
+
+def test_a_question_that_names_its_members_is_never_folded_into_a_group(tmp_path):
+    """A spend, closed-prerequisite or unit-boundary question prints what it is about; a group would print only a count."""
+    base, fk = _scene(tmp_path)
+    rec = _rec(base)
+    rec["members"] = [{"number": 100 + i, "verdict": "armed", "kind": None, "labels": [], "waits_on": [], "depth": 0,
+                       "prio": None, "spend": True} for i in range(30)]
+    rec["done"] = []
+    rec["cross_unit"] = [{"from": 100 + i, "to": 101 + i, "units": ["a", "b"]} for i in range(10)]
+    rec["closed_gates"] = [{"prerequisite": 500 + i, "followups": [900 + i], "question": False, "dependents": [100 + i]}
+                           for i in range(10)]
+    _put(base, rec)
+    text = _chain().sheet(base, 1, now=NOW)
+    assert "grouped" not in text and "applies to" not in text.replace("What cap applies to", "")
+    assert all("[irreversible:%d]" % (100 + i) in text for i in range(30))
+    assert all("[closed_gate:%d]" % (500 + i) in text for i in range(10))
+
+
+def test_a_parked_member_is_never_folded_into_a_group(tmp_path):
+    """Each park question carries its own reason: past the grouping line it still prints one question per member."""
+    base, fk = _scene(tmp_path)
+    rec = _rec(base)
+    rec["members"] = [{"number": 100 + i, "verdict": "parked", "kind": "dependency", "labels": [], "waits_on": [],
+                       "depth": 0, "prio": None, "park_why": "reason %d." % i} for i in range(30)]
+    rec["cross_unit"], rec["done"] = [], []
+    _put(base, rec)
+    text = _chain().sheet(base, 1, now=NOW)
+    assert "grouped" not in text
+    assert all("[park:%d]" % (100 + i) in text and "reason %d." % i in text for i in range(30))
+    assert "applies to 30 questions" not in text and "share these options" not in text
 
 
 def test_sheet_read_only(tmp_path, monkeypatch, capsys):
@@ -261,8 +283,9 @@ def test_sheet_read_only(tmp_path, monkeypatch, capsys):
 def test_no_free_text_is_posted(tmp_path):
     base, fk = _scene(tmp_path)
     secret = "pay the invoice at the usual place"
-    assert _chain().answer(base, 1, {"dependency:2": secret}, run=fk)["errors"]
-    res = _chain().answer(base, 1, {"dependency:2": "wait for it"}, run=fk)
+    assert _chain().answer(base, 1, {"park:2": secret}, run=fk)["errors"]
+    res = _chain().answer(base, 1, {"park:2": "keep it parked"}, run=fk)
     assert res["errors"] == []
     posted = "\n".join(fk.stored_comments(2)[1:] + [fk.body(2)])
     assert secret not in posted and "issue 2" not in posted       # only the bank option, never a title or free text
+    assert fk.writes() == []

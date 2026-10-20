@@ -97,6 +97,10 @@ def test_a_negation_in_an_earlier_sentence_does_not_cancel_a_later_wait():
     assert _cw().find("It is not ready. It waits for #12.") == [("12", "waiting-for")]
 
 
+def test_a_negation_before_a_semicolon_does_not_cancel_a_wait_after_it():
+    assert _cw().find("It isn't ready; waits for #12") == [("12", "waiting-for")]
+
+
 def test_a_negation_far_from_the_trigger_does_not_cancel_it():
     text = "This is not about the old design at all but the new ruling means it waits for #12"
     assert _cw().find(text) == [("12", "waiting-for")]

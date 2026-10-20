@@ -423,7 +423,10 @@ def test_the_sheet_has_one_block_for_all_unconfirmed_waits(tmp_path):
     assert "#1 waits on #5" in block and "#2 waits on #6" in block and "#2 waits on #7" in block
     assert "deps.py mark <sdlc_dir> <goal> <ref>" in block and "dismiss-text blocked-by <ref>" in block
     assert text.index("Unconfirmed waits") < text.index("Decisions (")
-    assert "[unconfirmed" not in text and "wait:" not in text.split("Decisions (")[1].split("Writes that")[0]
+    # each wait on an OPEN issue in the chain is a question of its own under one heading (confirm or dismiss)
+    decisions = text.split("Decisions (")[1].split("Writes that")[0]
+    assert all("[wait:%s]" % w in decisions for w in ("1-5", "2-6", "2-7"))
+    assert decisions.count("Unconfirmed waits (3, read from comments or loose wording)") == 1
     assert "Nothing has been changed yet." in text
 
 

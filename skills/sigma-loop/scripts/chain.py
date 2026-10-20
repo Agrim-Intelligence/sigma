@@ -15,12 +15,10 @@
 
 `plan` and `sheet` are READ-ONLY toward GitHub. Every call they make goes through `_GetOnly`, which raises
 on anything that is not an explicit `gh api ... --method GET`: no `gh issue ...` verb, no GraphQL, no body
-flag. `answer` is the one verb that reaches GitHub: it hands a parked member's bank-option answer to
-`unpark.resolve` (the Q&A block, one comment, and a label change only if the answer starts the member
-again); it never posts free text, and the write-surface scanner does not see this path, so this paragraph
-and the sheet's own list of writes are its record. `arm` is the verb that creates the label `chain:<root>`,
-adds it to the members and arms them: a new GitHub write path, reached only after approval (see ARM). The local write is the record `<sdlc_dir>/state/chains/c<N>.json` (issue numbers, verdict words, labels and the
-assignees' logins only; never a title, a body, a comment or a question), written only for a plan that was produced, never for a refusal.
+flag. `answer` and `approve` write the local record only: no GitHub write exists before `arm`. `arm` is the verb that
+reaches GitHub: it first enacts the answers that are not a label (`chain_enact`: release a parked member through
+the unpark gesture, take a member over, write or dismiss a prose wait), then creates the label `chain:<root>`,
+adds it to the members and arms them (see ARM). The local write is the record `<sdlc_dir>/state/chains/c<N>.json` (issue numbers, verdict words, labels, the assignees' logins and, for a parked member, one cut-short line saying why it is parked; never a title, a body, a comment or a question), written only for a plan that was produced, never for a refusal.
 
 CLOSURE. From the stored dependency map in one local read (`dag_chain`; the members' comments are read after,
 see WAITS), bounded by `chain.max_members`
@@ -77,19 +75,26 @@ the record already answers (a parked member whose own question has a recorded an
 this record) is not asked. More than 25 questions are grouped by kind; the per-member `owner_gate` and `not_goal`
 questions (#1903, #1905) are grouped whenever two or more share their options.
 
-ANSWER. Records answers in the chain record, nothing else locally. A parked member's answer is handed to
-`unpark.resolve`, the verb `/sigma-unpark` uses, so the issue gets the identical recorded Q&A block. Every
-answer is a bank option (or, for the cap, a positive integer), never free text, so nothing a person typed
-is posted on a public repository. `--defaults` accepts the recommended (first) option of every question
-except one that has none (the cap, a spend question, a follow-up waiting for its owner: `NO_DEFAULT`). The state is `approved` only when no blocking
-question is open and the plan is complete. `--partial` is refused for now.
+ANSWER. Records answers in the chain record, nothing else, locally AND on GitHub: nothing is written to an issue
+before `arm`. Every answer is a bank option (or, for the cap, a positive integer), never free text, so nothing a
+person typed is posted on a public repository. `--defaults` accepts the recommended (first) option of every question
+except one that has none (the cap, a spend question, a follow-up waiting for its owner: `NO_DEFAULT`). The state is
+`approved` only when no blocking question is open and the plan is complete. `--partial` is refused for now.
+
+ASKED UP FRONT (`chain_asks`). The sheet asks every question the run needs, deep members as well as near ones, so
+the run discovers none: `park:<n>` (release a parked member into the chain, or keep it parked), `wait:<a>-<b>` (confirm
+or dismiss a prose wait whose blocker is open), `elsewhere:<n>` (wait for the member somebody else holds, or take it
+over), the spend question for a declared paid line or a `chain.paid_labels` label, the cap, a unit boundary. Each
+answer is enacted, none is "recorded here only"; the forecast, `arm` and `run` read the record as the answers leave it
+(`chain_asks.view`), so the forecast equals the run.
 
 APPROVE (#1587). A local state change only: sets the record's state to `approved` when no blocking question
 is open and the plan is complete, and refuses (naming the open ids) otherwise. No `gh` call.
 
 ARM (#1587). Refuses, before a single `gh` call of any kind, unless the record's state is `approved`, the
 plan is complete and no question is open: before approval no GitHub write exists in any verb. After it,
-`arm` (a) creates the label `chain:<root>` only when a read says it is missing (never removes or deletes it,
+`arm` (0) enacts the answers that are not a label, before anything else (`chain_enact`: each step reads the member's
+current state first, so a re-run finds nothing to do, and a failed step is reported and stamps nothing), (a) creates the label `chain:<root>` only when a read says it is missing (never removes or deletes it,
 never repaints it), (b) adds it to every open member, (c) for each unarmed member the answers allow
 (`label_set:c<N>` says `leave them`: none; `arm only the ones that can start`: those waiting on no member)
 posts ONE fixed comment (issue numbers only, no title or free text) and arms it through the label drain's
@@ -185,6 +190,8 @@ chain_checkpoint = _load("chain_checkpoint")
 chain_closed = _load("chain_closed")
 chain_forecast = _load("chain_forecast")
 chain_reads = _load("chain_reads")
+chain_asks = _load("chain_asks")
+chain_enact = _load("chain_enact")
 dag_store = dag_chain.dag_store
 dag_core = dag_chain.dag_core
 
@@ -316,6 +323,9 @@ def _brief_kinds(rows, sdlc, config, source):
         try:
             b = unpark.brief(sdlc, config, r["number"], source=source)
             r["kind"] = b.get("reason_class") if b.get("kind_declared") else "undeclared"
+            r["park_why"] = chain_asks.park_why(b, unpark._keys_only(config))      # one cut-short line, for the sheet
+            if not b.get("kind_declared"):
+                r["kind_guess"] = chain_asks.kind_guess(b)          # the kind a release declares
             if b.get("kind_declared"):
                 slot = unpark.route_slot(r["kind"]) or unpark.CLOSING_QUESTION
                 r["answered"] = slot["id"] in (b.get("prior_answers") or {})
@@ -474,6 +484,14 @@ def _plan_map(sdlc, goal, config, ro, source, now, m, bound, cache=None):
     if out["unconfirmed_waits"]:      # #1902: the map holds no comment or prose, so only the live read can follow them
         raise _NeedsLive("%d wait(s) written only in comments or loose wording, which the map does not hold"
                          % len(out["unconfirmed_waits"]))
+    if chain_asks.paid_labels(config):
+        # a paid step marked only by a label is found from the member's labels, which the map does not hold
+        if len(rows) <= min(LIVE_MAX_MEMBERS, bound):
+            raise _NeedsLive("chain.paid_labels needs each member's labels, which the map does not hold")
+        out["complete"] = False
+        out["stops"] = ["chain.paid_labels is set, the map holds no labels and the chain is too big for the live "
+                        "read: paid steps marked only by a label cannot be found"]
+        return out
     if getattr(source, "assignee", None) and len(rows) <= min(LIVE_MAX_MEMBERS, bound):
         # a run applies the assignee filter and the map holds no assignees: a forecast from this plan could not apply
         # it and would promise work the runner may not take. A chain too big for the live read keeps the map plan and
@@ -575,7 +593,8 @@ def _plan_live(sdlc, goal, config, ro, source, bound, cache=None):
         units[n] = ld._unit(issue, judge.features)
         weak += _weak_count(issue, goal, blocker_scan)
         row = {"number": n, "verdict": verdict, "labels": sorted(names), "prio": prio,
-               "spend": ld._spend_text(issue.get("body"), hard_stop, config) is not None,
+               "spend": ld._spend_text(issue.get("body"), hard_stop, config) is not None
+               or chain_asks.carries_paid_label(names, config),
                "assignees": sorted({(a.get("login") if isinstance(a, dict) else str(a)).casefold()
                                     for a in issue.get("assignees") or [] if a}),          # #1907: for a forecast
                "in_progress": source.in_progress_label in names, "blocked": source.goal_blocked_label in names}
@@ -642,6 +661,10 @@ def _resolve(sdlc_dir, goal, config, run, now):
     """The open closure of `goal` as a plan dict, and the read-only runner that served it. Writes nothing."""
     sources, state = _load("sources"), _load("state")
     max_members = _max_members(config)
+    try:
+        chain_asks.paid_labels(config)
+    except ValueError as exc:
+        raise ChainRefused(str(exc))
     ro = _GetOnly(run or sources._run_gh)
     source = sources.GitHubSource(config, run=ro)
     why = None
@@ -732,7 +755,8 @@ def _held(rec, assume=False):
     ans = rec.get("answers") or {}
     return {d for w in rec.get("closed_gates") or []
             if ans.get("closed_gate:%d" % w["prerequisite"]) == CLOSED_GATE_OPTIONS[0]
-            or (assume and ans.get("closed_gate:%d" % w["prerequisite"]) is None) for d in w["dependents"]}
+            or (assume and ans.get("closed_gate:%d" % w["prerequisite"]) is None) for d in w["dependents"]} \
+        | set(chain_asks.stopped_here(rec))         # a unit boundary the person answered "stop here" about
 
 
 def _declined(rec):
@@ -745,22 +769,31 @@ def _declined(rec):
             if r.get("spend") and ans.get("irreversible:%d" % r["number"]) not in (None, ok)}
 
 
-def _row_for_questions(r):
-    return {"number": r["number"], "verdict": r["verdict"], "waiting_on": list(r.get("waits_on") or []),
+def _row_for_questions(r, legacy_parked=False):
+    """The row the label drain's question list reads. A parked member's own questions (its kind, its route) are not
+    asked of a chain: `park:N` replaces them (see `chain_asks`), so the row is shown to the drain as armed.
+    `legacy_parked` keeps them for a prerequisite that joins a running chain (the growth delta)."""
+    verdict = "armed" if r["verdict"] == "parked" and not legacy_parked else r["verdict"]
+    return {"number": r["number"], "verdict": verdict, "waiting_on": list(r.get("waits_on") or []),
             "labels": r.get("labels") or [], "kind": r.get("kind"), "question": ""}
 
 
-def questions_of(rec, config=None):
+def questions_of(rec, config=None, legacy_parked=False):
     """-> the ordered decisions a chain record needs, each
     {id, kind, ask, options, unblocks, recommended, hidden}. `hidden` marks one the data already answers
-    (it is not asked and does not block). Pure: reads only the record."""
+    (it is not asked and does not block). Pure: reads only the record. Every question here changes what `arm` or
+    `run` does: the parked, someone else's, prose-wait and paid questions of `chain_asks` are asked up front,
+    for deep members as for near ones, so the run discovers none (`legacy_parked`: the growth delta's old shape)."""
     ld, unpark = label_drain, _load("unpark")
     goal, rows = rec["goal"], rec["members"]
     label = "c%d" % goal
-    qs = ld.questions(label, [_row_for_questions(r) for r in rows], [], {}, config or {})
+    qrows = [_row_for_questions(r, legacy_parked) for r in rows]
+    qs = ld.questions(label, qrows, [], {}, config or {})
     have = {q["id"] for q in qs}
     by = {r["number"]: r for r in rows}
-    deps = ld._dependents([_row_for_questions(r) for r in rows], [])
+    deps = ld._dependents(qrows, [])
+    if not legacy_parked:
+        qs = chain_asks.park_questions(rec) + chain_asks.elsewhere_questions(rec) + qs
     for r in sorted(rows, key=lambda x: x["number"]):                # a spend question, as the drain asks it
         qid = "irreversible:%d" % r["number"]
         if r.get("spend") and r["verdict"] not in ("upper-tier", "closed") and qid not in have:
@@ -770,13 +803,15 @@ def questions_of(rec, config=None):
                        "note": ld.SPEND_NOTE})
     for x in rec.get("cross_unit") or []:
         qs.append({"id": "cross_unit:%d-%d" % (x["from"], x["to"]), "kind": "cross_unit",
-                   "ask": "#%d (unit %s) waits on #%d (unit %s): its change reaches #%d only when that unit "
-                          "lands. Keep going or stop here?" % (x["from"], x["units"][0], x["to"], x["units"][1],
-                                                                x["from"]),
+                   "ask": "#%d (unit %s) waits on #%d (unit %s): its change reaches #%d only when unit %s "
+                          "lands. Keep going or stop here? (Stop here: the run holds #%d and what waits behind it.)"
+                          % (x["to"], x["units"][1], x["from"], x["units"][0], x["to"], x["units"][0], x["to"]),
                    "options": list(CROSS_UNIT_OPTIONS), "unblocks": [x["from"], x["to"]]})
     for w in rec.get("closed_gates") or []:          # #1906: advisory; one question per closed prerequisite
         qs.append({"id": "closed_gate:%d" % w["prerequisite"], "kind": "closed_gate", "ask": _closed_gate_ask(w),
                    "options": list(CLOSED_GATE_OPTIONS), "unblocks": sorted(w["dependents"])})
+    if not legacy_parked:
+        qs += chain_asks.wait_questions(rec)
     end = by.get(goal) or {}
     if end.get("verdict") == "upper-tier":
         qs.append({"id": "upper_tier:%d" % goal, "kind": "upper_tier",
@@ -790,7 +825,9 @@ def questions_of(rec, config=None):
         q["recommended"] = q["options"][0] if q["options"] and q["kind"] not in NO_DEFAULT else None
         row = by.get(int(q["id"].split(":", 1)[1])) if q["kind"] in unpark.QUESTIONS \
             and q["id"].split(":", 1)[1].isdigit() else None
-        q["hidden"] = bool(row and row.get("answered") and row.get("verdict") == "parked")
+        # a recorded answer to a parked member's OWN route question hides only that question (the growth delta's old
+        # shape). On a chain no such question exists, and a spend question with the same id must still be asked.
+        q["hidden"] = bool(legacy_parked and row and row.get("answered") and row.get("verdict") == "parked")
     return qs
 
 
@@ -798,7 +835,7 @@ def _groups(qs):
     """-> {group id: [question ids]} for kinds with 2+ open questions sharing one option set."""
     by_key, out = collections.OrderedDict(), {}
     for q in qs:
-        if q["options"] and not q["hidden"]:
+        if q["options"] and not q["hidden"] and q["kind"] not in chain_asks.UNGROUPED:
             by_key.setdefault((q["kind"], tuple(q["options"])), []).append(q["id"])
     seen = collections.Counter()
     for (kind, _o), ids in by_key.items():
@@ -904,9 +941,10 @@ def _writes(rec, qs, config=None):
                 and (rows.get(int(tail)) or {}).get("verdict") == "parked":
             out.append("#%s: the Q&A block and one comment through the unpark resolve path; its labels change "
                        "only if the answer starts it again" % tail)
-    out.append("answers to an undeclared-kind or spend question are recorded here only: declaring the kind "
-               "and writing the spend marker belong to a later slice")
+    out.append("a paid step answered anything but \"go ahead\" is skipped by every run cycle; the answer decides only "
+               "whether a run may claim it")
     out.append("after approval, `chain.py arm` creates the label %s if it is missing" % chain_label(goal))
+    out += chain_asks.write_lines(rec)
     promoted = _promoted(rec)
     held = [r for r in rec["members"] if r["verdict"] in label_drain.GATED_KIND and r["number"] not in promoted]
     out += [_label_line(r["number"], goal) for r in rec["members"]
@@ -917,8 +955,8 @@ def _writes(rec, qs, config=None):
     scope = _arm_scope(rec)
     out += [_arm_line(r["number"]) for r in rec["members"]
             if r["number"] in scope or (r["number"] in promoted and r["number"] not in _held(rec))]
-    out.append("nothing else: an upper-tier, parked or assigned-elsewhere member is labelled, never armed; "
-               "starting the members belongs to a later slice")
+    out.append("nothing else: an upper-tier member, one you keep parked and one held by someone you wait for are "
+               "labelled, never armed; starting the members belongs to a later slice")
     waiting = sorted(_held(rec) & {r["number"] for r in rec["members"]})
     if waiting:
         out.append("%s is kept waiting on a closed prerequisite's open follow-up or question (your answer): labelled, "
@@ -936,6 +974,13 @@ def _writes(rec, qs, config=None):
     return out
 
 
+#: What the sheet prints when a question lists no options. Only the cap is a number; any other question without a
+#: listed option is free text, which the sheet cannot take (an answer is a listed option, never typed text), so it
+#: says where such a question is answered instead of offering a number.
+_NO_OPTIONS = {"cap": "none, answer with a positive whole number"}
+_NO_OPTIONS_OTHER = "none listed: this one is answered in your own words through /sigma-unpark, not on this sheet"
+
+
 def _decision_lines(n, ident, q, ans, ids=None):
     """The sheet's lines for one decision, shared by the full sheet and the growth delta."""
     opts = " / ".join(o + (" (recommended)" if o == q["recommended"] else "") for o in q["options"])
@@ -943,7 +988,7 @@ def _decision_lines(n, ident, q, ans, ids=None):
     L = ["  %d. [%s] %s%s" % (n, ident, q["ask"], done)]
     if ids:
         L.append("     applies to %d questions: %s" % (len(ids), ", ".join(ids)))
-    L.append("     options: %s" % (opts or "none, answer with a positive whole number"))
+    L.append("     options: %s" % (opts or _NO_OPTIONS.get(q["kind"], _NO_OPTIONS_OTHER)))
     if q.get("note"):
         L.append("     note: %s" % q["note"])
     return L
@@ -980,7 +1025,7 @@ def _unblock_blocks(rec, members, fc):
         if gates or rec.get("closed_skipped"):
             out.append("  " + _closed_counts(rec))
         for x in xs:
-            out.append("  Cross-unit: #%d (%s) waits on #%d (%s)" % (x["from"], x["units"][0], x["to"], x["units"][1]))
+            out.append("  Cross-unit: #%d (%s) waits on #%d (%s)" % (x["to"], x["units"][1], x["from"], x["units"][0]))
     out += chain_waits.sheet_block(rec)
     if cps:         # #1904: their own block; they are never worked
         out += ["", "Checkpoints (never worked; met when their unit lands on the integration branch, or when a person "
@@ -1006,14 +1051,16 @@ def render_sheet(rec, now, config=None, runner=None):
     qs, openq = open_questions(rec, config)
     shown = [q for q in qs if not q["hidden"]]
     ans = rec.get("answers") or {}
-    members = rec["members"]
+    vrec = chain_asks.view(rec)         # the record as the answers leave it: the forecast is computed from them
+    members = vrec["members"]
     units = sorted({r["unit"] for r in members if r.get("unit")}, key=str.lower)
     src = ("map, age %s" % _age(rec["map_age_seconds"])) if rec.get("source") == "map" \
         else "live (map: %s)" % rec.get("source_reason")
     age = _age(now - rec["planned_at"]) if isinstance(rec.get("planned_at"), int) else "unknown"
     depth = max([r["depth"] for r in members] or [0])
     ahead = rec.get("higher_priority_ahead")
-    fc = chain_forecast.forecast(rec, config, runner, _held(rec, True), _declined(rec), _held(rec, True) - _held(rec))
+    fc = chain_forecast.forecast(vrec, config, runner, _held(rec, True), _declined(rec), _held(rec, True) - _held(rec),
+                                 _cap_of(rec, config))
     L = ["Chain sheet for #%d" % rec["goal"],
          "End goal: #%d (%s)" % (rec["goal"], next((r["verdict"] for r in members if r["number"] == rec["goal"]),
                                                     "not in the plan")),
@@ -1021,7 +1068,7 @@ def render_sheet(rec, now, config=None, runner=None):
          "Source: %s; planned %s ago; plan %s" % (src, age, "complete" if rec.get("complete") else "INCOMPLETE"),
          "State: %s" % rec.get("state", "planned")]
     L += chain_forecast.answer_lines(fc)                                                    # #1908: first
-    L += _unblock_blocks(rec, members, fc)
+    L += _unblock_blocks(vrec, members, fc)
     L.append("Done prerequisites: %s" % _ids(rec.get("done") or []))
     L.append("Runs ahead of: %s higher-priority open goal(s)" % ("an unknown number of" if ahead is None else ahead))
     for e in rec.get("externals") or []:
@@ -1041,8 +1088,13 @@ def render_sheet(rec, now, config=None, runner=None):
         first = next(q for q in shown if q["id"] == ids[0])
         put(gid, dict(first, ask=first["ask"] if first["kind"] in GROUP_ALWAYS else
                       "%d questions of kind %s share these options" % (len(ids), first["kind"]), note=None), ids)
+    waits_head = False
     for q in shown:
         if q["id"] not in grouped_ids:
+            if q["kind"] == chain_asks.WAIT and not waits_head:         # one heading over every prose wait
+                waits_head = True
+                L.append("  Unconfirmed waits (%d, read from comments or loose wording): confirm each real one, "
+                         "dismiss a wrong one" % len([x for x in shown if x["kind"] == chain_asks.WAIT]))
             put(q["id"], q)
     L += ["", "Writes that follow approval:"] + ["  - " + w for w in _writes(rec, qs, config)]
     L += ["", "Nothing has been changed yet."]
@@ -1229,6 +1281,12 @@ def arm(sdlc_dir, goal, dry_run=False, config=None, run=None, now=None):
     judge, scope = ld._Judge(sdlc_dir, config, source), _arm_scope(rec)
     answers, held = rec.get("answers") or {}, _held(rec)
     refused, notes, per_member = [], [], []
+    # the first pass: what the person's answers ask for besides a label (release, take over, confirm, dismiss). Each
+    # step reads the member's current state, so the second pass below sees it as it stands after them.
+    pre, pre_refused, pre_notes = chain_enact.enact(sdlc_dir, config, rec, source, rd, dry_run)
+    refused += pre_refused
+    notes += pre_notes
+    changing = {int(a["issue"]) for a in pre if a["action"] in ("unpark", "take-over")}
     for r in rec["members"]:
         n = r["number"]
         try:
@@ -1262,7 +1320,8 @@ def arm(sdlc_dir, goal, dry_run=False, config=None, run=None, now=None):
                     acts.append(_act("comment", n, text))
                 acts += _goal_label_last(prepared[n][1], source.goal_label)
         elif verdict in ld._REFUSED:
-            refused.append({"issue": n, "verdict": verdict, "reason": detail or verdict})
+            if not (dry_run and n in changing):     # a dry run still sees the state the first pass is about to change
+                refused.append({"issue": n, "verdict": verdict, "reason": detail or verdict})
         per_member.append(acts)
     actions = []
     if not exists:
@@ -1277,7 +1336,7 @@ def arm(sdlc_dir, goal, dry_run=False, config=None, run=None, now=None):
                 make["result"], make["error"] = "failed", str(exc)
         actions.append(make)
         if make["result"] == "failed":
-            return {"label": label, "apply": not dry_run, "actions": actions,
+            return {"label": label, "apply": not dry_run, "actions": pre + actions,
                     "refused": sorted(refused, key=lambda x: x["issue"]), "notes": notes}
     for acts in per_member:
         for a in acts:                  # one member: label, comment, then arming; stop at its first failure
@@ -1285,11 +1344,21 @@ def arm(sdlc_dir, goal, dry_run=False, config=None, run=None, now=None):
             actions.append(done)
             if done["result"] == "failed":
                 break
+    actions = pre + actions
     if not dry_run and not any(a["result"] == "failed" for a in actions):
         rec["armed_at"] = rec.get("armed_at") or _iso(time.time() if now is None else now)
         _save(sdlc_dir, goal, rec)          # #1588: `run` starts only from a chain that finished arming
     return {"label": label, "apply": not dry_run, "actions": actions,
             "refused": sorted(refused, key=lambda x: x["issue"]), "notes": notes}
+
+
+#: arm's first-pass actions (`chain_enact`) and the sheet's wording of each, so the dry run prints what the sheet listed
+_ANSWER_LINES = {
+    "unpark": lambda a: chain_asks.release_line(int(a["issue"])),
+    "take-over": lambda a: "#%s: %s" % (a["issue"], a["detail"]),
+    "confirm-wait": lambda a: "#%s: %s (the marker `deps.py mark` writes) and one note" % (a["issue"], a["detail"]),
+    "dismiss-wait": lambda a: "#%s: %s (one comment, the dismissal marker)" % (a["issue"], a["detail"]),
+}
 
 
 def render_arm(res):
@@ -1298,6 +1367,8 @@ def render_arm(res):
     for a in res["actions"]:
         if a["action"] == "create-label":
             key, line = ("create",), "create label %s" % res["label"]
+        elif a["action"] in _ANSWER_LINES:
+            key, line = (a["issue"], a["action"], a["detail"]), _ANSWER_LINES[a["action"]](a)
         elif a["action"] == "add-label" and a["detail"] == res["label"]:
             key, line = (a["issue"], "label"), _label_line(int(a["issue"]), goal)
         else:
@@ -1408,7 +1479,7 @@ _GROW_WHY = {"bound": "the chain has already taken in its limit of additions",
 def _own_questions(goal, rows, config):
     """-> the decisions a new prerequisite carries by itself (its kind, its spend), asked of no one else."""
     nums = {str(r["number"]) for r in rows}
-    return [q for q in questions_of({"goal": goal, "members": [dict(r) for r in rows]}, config)
+    return [q for q in questions_of({"goal": goal, "members": [dict(r) for r in rows]}, config, legacy_parked=True)
             if q["kind"] != "cap" and q["id"].split(":", 1)[1] in nums]
 
 
@@ -1554,13 +1625,27 @@ def _closed_counts(p):
         p.get("closed_checked") or 0, len(sk), " (%s)" % _ids(sk) if sk else "")
 
 
-def _stuck(p, failure, unconfirmed, held=(), declined=()):
+def answered_cap(rec):
+    return chain_asks.answered_cap(rec)
+
+
+def _cap_of(rec, config=None):
+    """-> (the cap a run enforces, how many goals a run would hold) for the forecast, or None when there is none.
+    The count is the one `run` hands `chain_spend.admit`: every member but a checkpoint or one nobody promoted."""
+    cap = chain_asks.effective_cap(rec, config)
+    if not cap:
+        return None
+    never = _never_labelled(rec)
+    return cap, len([r for r in rec["members"] if r["number"] not in never])
+
+
+def _stuck(p, failure, unconfirmed, held=(), declined=(), ctx=None):
     """-> (reason, detail), ONE reason from STUCK_REASONS for an empty pick with members still open. A failed
     read comes first (nothing else can be trusted); the rest is `chain_forecast.stuck_reason`, the rule the
     forecast shares (#1907)."""
     if failure is not None:
         return _why_failed(failure), "a read or the pick failed"
-    return chain_forecast.stuck_reason(p, unconfirmed, held, declined)
+    return chain_forecast.stuck_reason(p, unconfirmed, held, declined, ctx)
 
 
 def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=None, sweep=None,
@@ -1578,6 +1663,7 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
         raise ChainRefused("chain #%d is not %s; nothing was started"
                            % (goal, "armed (run `chain.py arm`)" if rec.get("state") == "approved"
                               else "approved (state %s)" % rec.get("state", "planned")))
+    vrec = chain_asks.view(rec)         # the record as the answers leave it; `rec` is only what is saved
     blk = dict(rec.get("run") or {})
     if blk.get("state") == "stopped":
         raise ChainRefused("chain #%d is stopped; `chain.py resume` first; nothing was started" % goal)
@@ -1587,7 +1673,7 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
     if blk.get("state") == "done":
         return res
     label = chain_label(goal)
-    never = _never_labelled(rec)         # #1904: a checkpoint is never claimed; #1903/#1905: a left-out member is never labelled
+    never = _never_labelled(vrec)        # #1904: a checkpoint is never claimed; #1903/#1905: a left-out member is never labelled
     recorded = [r["number"] for r in rec["members"] if r["number"] not in never]
     width, locked = 1, chain_parallel.engaged(config)
     if locked:                  # #1590: before any write or claim; a refused cycle starts nothing
@@ -1602,9 +1688,13 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
     except Exception:           # noqa: BLE001 - fail open, like the loop's own sweep
         skip = frozenset()
     cfg = json.loads(json.dumps(config))
-    if blk.get("cap"):
+    cap = blk.get("cap") or chain_asks.effective_cap(rec, config)    # `resume --cap` overrides the answer and the config
+    if cap:
         cfg.setdefault("chain", {})
-        cfg["chain"] = dict(cfg["chain"] if isinstance(cfg["chain"], dict) else {}, max_goals=blk["cap"])
+        cfg["chain"] = dict(cfg["chain"] if isinstance(cfg["chain"], dict) else {}, max_goals=cap)
+        blk["cap_in_force"] = cap       # informational, rewritten every cycle; `cap` itself is only `resume --cap`'s
+    else:
+        blk.pop("cap_in_force", None)
     blk["cycle"] = res["cycle"] = res["cycle"] + 1
     ok, why = _load("chain_spend").admit(sdlc_dir, cfg, {"members": recorded, "approved_at": rec.get("approved_at")},
                                          now=now)
@@ -1634,7 +1724,7 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
         p = label_drain.plan(sdlc_dir, label, config=config, run=run)
         open_now = {r["number"] for r in p["members"]}
         res["added"] = sorted(open_now - known)
-        confirmed = _confirm_closed(run, config, (known | _blockers_of(rec, never)) - open_now - already)
+        confirmed = _confirm_closed(run, config, (known | _blockers_of(vrec, never)) - open_now - already)
     except Exception as exc:    # noqa: BLE001 - reported as the stuck reason only if the pick finds nothing
         failure = exc
     closed_new = sorted(confirmed)
@@ -1647,9 +1737,9 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
         # #1902: a wait the plan read from prose or a comment is in the record but not in the gate the picker
         # uses, so hold back every member whose such blocker is not confirmed closed
         done = set(blk["closed"])
-        hidden = _hidden_waits(rec)
+        hidden = _hidden_waits(vrec)
         skip = skip | frozenset(str(n) for n in open_now if any(b not in done for b in hidden.get(n, ())))
-        gone = _blockers_of(rec, never) - done
+        gone = _blockers_of(vrec, never) - done
         have = {r["number"] for r in p.get("outside") or []}
         by = {r["number"]: r for r in rec["members"]}
         p["outside"] = list(p.get("outside") or []) + [
@@ -1657,7 +1747,7 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
             for n in sorted(gone) if n not in have and n not in open_now]
     pick_kw, waiting, note = {}, None, ""
     if width > 1 and p is not None and failure is None:
-        pick_kw, waiting, note = _width_plan(sdlc_dir, rec, cfg, p, open_now, recorded, width)
+        pick_kw, waiting, note = _width_plan(sdlc_dir, vrec, cfg, p, open_now, recorded, width)
     got = set()
     if waiting is None:
         try:
@@ -1698,10 +1788,11 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
                 reason, detail = "decision", "; ".join(parts)
             else:
                 if p is not None:   # the record's waits, so the stop names the roots (the forecast's rows carry them)
-                    waits = {r["number"]: r.get("waits_on") or [] for r in rec["members"]}
+                    waits = {r["number"]: r.get("waits_on") or [] for r in vrec["members"]}
                     p = dict(p, members=[dict(r, waits_on=waits.get(r["number"], r.get("waits_on") or []))
                                          for r in p["members"]])
-                reason, detail = _stuck(p, failure, unconfirmed, _held(rec), _declined(rec)) \
+                reason, detail = _stuck(p, failure, unconfirmed, _held(rec), _declined(rec),
+                                        chain_asks.stop_context(rec)) \
                     if (p is not None or failure is not None) else ("degraded-read", "no read")
                 if p is not None and failure is None and reason != "degraded-read":
                     others, more = chain_forecast.other_roots(p, detail)
@@ -1853,7 +1944,7 @@ def render(p, forecast=None):
     for e in p["edges"]:
         lines.append("edge #%d -> #%d (%s)" % (e["from"], e["to"], e["tag"]))
     for x in p["cross_unit"]:
-        lines.append("cross-unit: #%d (%s) waits on #%d (%s)" % (x["from"], x["units"][0], x["to"], x["units"][1]))
+        lines.append("cross-unit: #%d (%s) waits on #%d (%s)" % (x["to"], x["units"][1], x["from"], x["units"][0]))
     for i in p["priority_inversions"]:
         lines.append("priority inversion: #%d (%s) blocks #%d (%s); reported, not changed"
                      % (i["blocker"], i["blocker_prio"] or "none", i["dependent"], i["dependent_prio"] or "none"))
@@ -1933,8 +2024,9 @@ def main(argv, run=None, now=None, pick=None):
     try:
         p = plan(args[1], int(args[2]), run=run, now=now)
         if want_forecast:
-            p["forecast"] = chain_forecast.forecast(p, _load("state").load_config(args[1]), runner, _held(p, True),
-                                                    _declined(p), _held(p, True) - _held(p))
+            p["forecast"] = chain_forecast.forecast(chain_asks.view(p), _load("state").load_config(args[1]), runner,
+                                                    _held(p, True), _declined(p), _held(p, True) - _held(p),
+                                                    _cap_of(p, _load("state").load_config(args[1])))
     except ChainRefused as exc:
         print("chain.py: %s" % exc, file=sys.stderr)
         return 2
@@ -2003,6 +2095,7 @@ def _main_arm(args, run):
         goal = _chain_arg(rest[1])
         if verb == "approve":
             print("chain #%d: %s" % (goal, approve(rest[0], goal)["state"]))
+            print(_forecast_text(rest[0], goal), end="")
             return 0
         res = arm(rest[0], goal, dry_run=dry, run=run)
     except ChainRefused as exc:
@@ -2034,6 +2127,16 @@ def _main_html(rest):
     lines, code = _load("dag_html").run_plan(pos[0], goal, opts.get("--out"), opts.get("--titles"))
     print("\n".join(lines), file=sys.stdout if code == 0 else sys.stderr)
     return code
+
+
+def _forecast_text(sdlc_dir, goal):
+    """The forecast of the record as the answers leave it, as the sheet prints it. `approve` shows it so the person
+    sees how far the run they just approved will get, from the answers they gave."""
+    rec = _read_record(_record_path(sdlc_dir, goal))
+    config = _load("state").load_config(sdlc_dir)
+    fc = chain_forecast.forecast(chain_asks.view(rec), config, None, _held(rec, True), _declined(rec),
+                                 _held(rec, True) - _held(rec), _cap_of(rec, config))
+    return "\n".join(chain_forecast.answer_lines(fc)) + "\n"
 
 
 def _main_sheet(args, run, now):

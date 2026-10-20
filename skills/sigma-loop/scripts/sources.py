@@ -1510,6 +1510,10 @@ class GitHubSource:
         assignees = [assignees] if isinstance(assignees, str) else list(assignees)
         return gh_api.add_assignees(self._run, self._n(number), assignees, **self._write_kw())
 
+    def _issue_remove_assignees(self, number, assignees):
+        assignees = [assignees] if isinstance(assignees, str) else list(assignees)
+        return gh_api.remove_assignees(self._run, self._n(number), assignees, **self._write_kw())
+
     def _issue_create(self, title, body, labels=()):
         """-> the REST issue dict, or the URL string if the ONE `gh issue create` fallback ran."""
         labels = list(labels)
