@@ -713,3 +713,21 @@ def test_rename_out_of_code_is_read_as_a_code_change(case, monkeypatch):
     w, config, run, calls = none_case(case, monkeypatch, ['docs/x.md'])
     w.pr(case[1], config, '42', run=run)
     assert any(a[:4] == ['git', 'diff', '--name-only', '--no-renames'] for a in calls)
+
+
+def test_1970_a_docs_only_goal_in_a_unit_carries_the_registry_and_is_still_docs_only():
+    """#1941 x #1942: a unit goal's commit holds the registry shard and page; they are not code."""
+    rg = _load_red_green_1970()
+    unit_goal = ["README.md", ".sdlc/features/units/voice.json", ".sdlc/features/voice.md"]
+    assert rg.docs_only(unit_goal)
+    assert not rg.docs_only(unit_goal + ["skills/sigma-loop/scripts/work.py"])
+    assert not rg.docs_only([".sdlc/features/../config.json"])
+
+
+def _load_red_green_1970():
+    import importlib.util, pathlib as _p
+    path = _p.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts" / "red_green.py"
+    spec = importlib.util.spec_from_file_location("red_green", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod

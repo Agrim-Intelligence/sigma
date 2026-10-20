@@ -55,12 +55,13 @@ What stays unchanged:
 - **Nothing left in the root checkout by a landing (#1941, #1947, #1938).** The pick-time registry write rides the
   goal's own commit, decision records stay off the default branch, and the applier's runtime files are ignored.
 - **An empty backlog builds a usable, empty map (#1933).**
+- **A docs-only goal inside a unit is still docs-only (#1970):** the unit registry counts as documentation.
 - **Label plans re-read a listing that may lag a label write (#1943).**
 - **A docs-only plan reaches `work.py pr` without `--no-tests` (#1942),** and the PR is titled after the goal, not
   the last fix-up commit (#1014).
 - **An epic-shaped issue with no upper-tier label is refused by promote and listed by the doctor (#1948).**
 - **Upkeep's mechanical level unions two-sided additions under dated headings (#1949)** and, opt-in, in files listed
-  under `upkeep.conflicts.union_paths` (#1968).
+  under `upkeep.conflicts.union_paths` (#1968), keeping each side's new lines where that side put them.
 
 ## Sigma Chain reads a real backlog better
 

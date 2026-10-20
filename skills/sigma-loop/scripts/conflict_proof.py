@@ -426,15 +426,35 @@ def _without_own_heading(key, sb, so, st):
     return mine
 
 
+def _gaps(side, base):
+    """A pure addition's new lines per gap of `base` (len(base) + 1 lists, gap k before base line k), or None when
+    `base` is not a subsequence of `side` (an edit or a removal)."""
+    gaps, i = [[] for _ in range(len(base) + 1)], 0
+    for ln in side:
+        if i < len(base) and ln == base[i]:
+            i += 1
+        else:
+            gaps[i].append(ln)
+    return gaps if i == len(base) else None
+
+
 def line_union(base, ours, theirs):
-    """#1968: the generic line union of two pure additions to `base` -> the text, or None. Base order is kept, ours
-    additions stay where ours put them, then the lines theirs added that ours lacks; a duplicate added line collapses.
-    None when either side edited or removed a base line, or when the result would drop a line of either side."""
+    """#1968: the generic line union of two pure additions to `base` -> the text, or None. Base order is kept and each
+    side's new lines stay in the gap of `base` where that side put them (in a shared gap, ours first), so a line added
+    inside a list stays inside the list; a line both sides added appears once. None when either side edited or removed
+    a base line, or when the result would drop a line of either side."""
     b, o, t = (str(x).split("\n") for x in (base, ours, theirs))
-    merged = _merge_lines(b, o, t, True)
-    if merged is None:
+    go, gt = _gaps(o, b), _gaps(t, b)
+    if go is None or gt is None:
         return None
-    text = "\n".join(merged) + "\n"
+    mine = {ln for gap in go for ln in gap if ln.strip()}
+    merged = []
+    for k in range(len(b) + 1):
+        merged += go[k] + [ln for ln in gt[k] if not ln.strip() or ln not in mine]
+        if k < len(b):
+            merged.append(b[k])
+    text = "\n".join(merged)
+    text = text if text.endswith("\n") else text + "\n"
     return None if would_drop(text, ours, theirs) else text
 
 

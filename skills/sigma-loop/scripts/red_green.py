@@ -32,7 +32,9 @@ def digest(path):
 
 
 _NONE = re.compile(r'none: (\S.*)')
-_DOC_DIRS = ('docs/', '.sdlc/plans/', '.sdlc/research/', '.sdlc/acceptance/')
+#: #1970: `.sdlc/features/` is the unit registry, which #1941 puts in every unit goal's own commit; it is Sigma's
+#: membership record, not code, so a docs-only goal inside a unit is still docs-only.
+_DOC_DIRS = ('docs/', '.sdlc/plans/', '.sdlc/research/', '.sdlc/acceptance/', '.sdlc/features/')
 _DOC_SUFFIXES = ('.md', '.txt', '.png', '.svg')
 
 

@@ -60,9 +60,16 @@ def test_a_list_of_names_is_accepted_and_reaches_the_level1_options():
 
 # ------------------------------------------------------------------ the pure union
 
-def test_line_union_keeps_base_order_then_ours_then_theirs_and_collapses_duplicates():
+def test_line_union_keeps_each_addition_where_its_side_put_it_and_collapses_duplicates():
     got = proof.line_union(PROSE, "intro\nmiddle\nours\nend\n", "intro\ntheirs\nmiddle\nours\nend\n")
-    assert got == "intro\nmiddle\nours\nend\ntheirs\n"
+    assert got == "intro\ntheirs\nmiddle\nours\nend\n"
+
+
+def test_line_union_keeps_additions_inside_a_registry_list():
+    """Validation finding: both sides register a new code in a list; the union must stay inside the brackets."""
+    base_ = "CODES = [\n    'A0',\n]\n"
+    got = proof.line_union(base_, "CODES = [\n    'A0',\n    'B1',\n]\n", "CODES = [\n    'A0',\n    'C1',\n]\n")
+    assert got == "CODES = [\n    'A0',\n    'B1',\n    'C1',\n]\n"
 
 
 @pytest.mark.parametrize("o,t", [("intro\nMIDDLE\nend\nours\n", PROSE + "theirs\n"),
@@ -102,7 +109,7 @@ def test_a_listed_file_with_two_sided_additions_is_unioned_end_to_end(tmp_path, 
                                          "intro\nmiddle\nupstream\nend\n")
     assert report["outcome"] == m.REBASED and report["resolved"]["level"] == 1, report.get("why")
     text = base._git(w.local, "show", "origin/%s:notes.txt" % lv.FEATURE)
-    assert text + "\n" == "intro\nmiddle\nupstream\nend\nunit\n"
+    assert text + "\n" == "intro\nmiddle\nupstream\nunit\nend\n"     # both added after "middle": both stay there
 
 
 def test_an_unlisted_file_parks_untouched(tmp_path, monkeypatch):
