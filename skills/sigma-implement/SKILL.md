@@ -41,15 +41,14 @@ it tests the right thing. Wrote code before the test? Delete it and re-derive fr
    `test_a_member_beyond_the_window_is_still_reachable_by_its_label` drifted, during #1829's own
    implementation (PR #1838), to a fixture totaling exactly the 200-item `_BACKLOG_FETCH_CAP` —
    true but vacuous, its widening-query assertion holding without the widening query ever running.
-   The corrected test's own docstring records an independent post-implementation review catching
+   The test's docstring records an independent review catching
    it; the fix added a standing assertion.
 2. **GREEN** — write the *minimal* code to pass. Run it. All green.
-3. **REFACTOR** — clean up while staying green. "Clean up" is not a feeling; it is this list, and it
-   is the same list `sigma-review` axis 6 will judge by. Long Method, Large Class, Long Parameter List,
+3. **REFACTOR** — clean up while staying green. "Clean up" is not a feeling; it is this list, the
+   one `sigma-review` axis 6 judges by. Long Method, Large Class, Long Parameter List,
    Primitive Obsession (a unit doing too much) · Feature Envy, Inappropriate Intimacy, Message Chains,
    Middle Man (units too entangled) · Duplicate Code, Dead Code, Speculative Generality (code that
-   should not exist). The diff is yours: remove only what your change orphaned, and name
-   pre-existing dead code in the review rather than deleting it. Fix it now, unless `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/zones.py" check --goal "$goal" --diff`
+   should not exist). Remove only what your change orphaned; report other dead code. Fix it now, unless `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/zones.py" check --goal "$goal" --diff`
    prints the file as a legacy row without `intent: yes`: there change only what the goal needs.
    With no such row, or if it could not run, this rule holds.
 
