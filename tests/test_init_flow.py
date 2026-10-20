@@ -41,7 +41,7 @@ GITHUB_URL = "https://github.com/%s.git" % REPO
 
 LABELS = ("sdlc:goal", "sdlc:in-progress", "sdlc:parked", "sdlc:blocked", "sdlc:blocking",
           "sdlc:needs-label", "sdlc:designed", "sdlc:needs-unit",
-          "sdlc:needs-triage", "priority:P0", "priority:P1", "priority:P2", "priority:P3")
+          "sdlc:needs-triage", "sdlc:checkpoint", "priority:P0", "priority:P1", "priority:P2", "priority:P3")
 
 posix_only = pytest.mark.skipif(os.name == "nt", reason="PATH fake `gh` is a shebang script")
 

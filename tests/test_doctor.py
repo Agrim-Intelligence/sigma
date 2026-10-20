@@ -8093,3 +8093,35 @@ def test_deny_list_row_text_is_a_check_not_an_unconditional_instruction():
     row = src[i:i + 900]
     assert "irreversible action" in row and "needs no change" in row
     assert "-- run `unpark.py declare .sdlc <issue> irreversible`." not in row
+
+
+# --- #1920: an issue carrying two priority labels is listed -------------------------------------
+def _double_prio(by_rank):
+    """Run `_double_priority_issues` over issues grouped by the priority label each carries."""
+    from test_unpark import _runner, _config
+    d = _doc()
+    by_label = {"priority:P%d" % r: json.dumps([{"number": n, "labels": []} for n in nums])
+                for r, nums in by_rank.items()}
+    for r in range(5):
+        by_label.setdefault("priority:P%d" % r, "[]")
+    run = _runner(by_label=by_label)
+    return d._double_priority_issues(_config(), {"repo": "acme/widget"}, lambda argv: run(argv[1:]))
+
+
+def test_issue_on_two_priority_lists_is_reported_as_a_double():
+    assert _double_prio({1: [7, 9], 3: [7, 11], 4: [12]}) == ([7], False)
+
+
+def test_single_priority_issues_report_nothing():
+    assert _double_prio({1: [7], 2: [8], 3: [9]}) == ([], False)
+
+
+def test_three_priority_labels_on_one_issue_is_still_one_entry():
+    assert _double_prio({0: [5], 1: [5], 2: [5]}) == ([5], False)
+
+
+def test_double_priority_row_names_the_repair_and_is_warn_only():
+    src = D.read_text()
+    i = src.index('"no open issue carries two priority labels"')
+    row = src[i:i + 1100]
+    assert "best rank" in row and "remove" in row

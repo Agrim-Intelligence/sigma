@@ -104,7 +104,9 @@ def _scene(tmp_path, approve=True, issues=None, **fk_kw):
     _chain().plan(base, 1, run=fk, now=NOW)
     if approve:
         _chain().answer(base, 1, defaults=True, run=fk)
-        res = _chain().answer(base, 1, {"cap:c1": "5"}, run=fk)
+        # `--defaults` never decides the fate of a follow-up waiting for its owner (#1908): the person leaves it out
+        left = {q["id"]: "leave it out" for q in _chain().open_questions(_rec(base), {})[1] if q["kind"] == "owner_gate"}
+        res = _chain().answer(base, 1, dict(left, **{"cap:c1": "50"}), run=fk)
         assert res["state"] == "approved", res
     fk.calls.clear()
     fk.write_count = 0

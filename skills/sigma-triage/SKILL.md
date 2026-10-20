@@ -183,11 +183,14 @@ the docs" — and **skips writing the real marker** (`**Blocked by:** #N`). Cons
 may not be parked by `backlog_check`, and the wave can run out of order. Verify edges in the
 question round. See the "Known caveat" in `docs/planning-the-backlog.md` for more detail.
 
-**Conflicting label notice (F4):** If a picked issue already carries a conflicting `priority:*` or
+**Conflicting label notice (F4):** If a picked issue already carries a different `priority:*` or
 `model:*` label (same prefix, different value), `enact` prints a **report-only notice** naming both
-values — it does not modify or remove the existing label; the plan's label is still added, so the
-issue temporarily carries both. This is not an error; it alerts you to a labeling inconsistency.
-Resolve by hand (edit the label on the issue directly), then re-apply the plan.
+values. For `priority:*` the plan's value now **replaces** the old one in the same swap (and a double
+the issue already carries is cleaned up on the next apply), because every reader takes the best rank
+of two labels and a stale one left behind makes the goal run at a priority nobody chose (#1920).
+Picking an issue in a plan is the approval, as it is for the lifecycle labels. `model:*` keeps the
+older behaviour: the plan's label is added and the notice asks you to resolve the other by hand.
+`/sigma-doctor` lists any open issue that still carries two priority labels.
 
 **Stale blocker notice (F5):** If a goal body asserts a blocker (`#N`) that is not in this plan's
 edge set, `enact` prints a **report-only notice** stating "body asserts blocker #N, not in this

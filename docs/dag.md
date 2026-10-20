@@ -64,6 +64,45 @@ dependency map: age 1m, 6 nodes, 6 edges
 only verbs here that touch the network. `dag.py history [--month YYYY-MM] [--all]` prints the local
 history records, with `--all` adding every writer's records from the ledger worktree.
 
+## See a chain: one HTML page per chain
+
+`dag.py html` draws a chain so a person can see its shape. It reads only the stored map, makes no GitHub call
+and writes one self-contained page per chain.
+
+```
+python3 skills/sigma-loop/scripts/dag.py html --goal <N> [--titles <file>] [--out <dir>]
+python3 skills/sigma-loop/scripts/dag.py html --all [--titles <file>] [--out <dir>]
+```
+
+- **A chain** is one goal and the open prerequisites it waits on: the members Sigma Chain's plan reads from the
+  map (the page calls the plan's own closure code, not a copy). `--all` writes a page for every end goal (the
+  `ends` of `dag.py chains`) plus `index.html`: end goal, open members, depth, what holds it, how many need a
+  decision and how far a run can get. Two end goals that share a prerequisite are two pages; a whole
+  connected group is never drawn as one picture.
+- **The picture.** Blockers on the left, the work that waits on them to the right, one column per depth, laid out
+  in Python (an edge that crosses columns runs in a channel, the order in a column is swept to cut crossings).
+  A header names the goal, members, depth, what holds the chain and the forecast line; a legend lists the
+  states and edge styles; click a member for its number, title, state, why it is held, what it waits on and what
+  it frees. Zoom and pan with the buttons, the wheel and a drag; `Fit` shows the whole chain. Light and dark
+  themes follow the system, with a `Theme` button.
+- **States** use the plan's own markers (`ready now`, `after #N`, `needs decision`, `someone else's`,
+  `checkpoint`, `not workable`) plus `closed` (hidden behind "show closed", on the left), `outside` (an open pull
+  request) and `cycle`. From the map alone only a member's life is known, so the markers are the map's reading;
+  the live plan also sees assignees, checkpoints and not-a-goal labels, and the page says so. Edges: solid for
+  one written in an issue body, dotted for any other recorded source, dashed for an unconfirmed wait (live plan
+  only: a map page has none).
+- **Titles.** The map holds no titles, so a page names members by number unless you pass `--titles <file>`,
+  a JSON object `{"<number>": "<title>"}` (or a list of `{number, title}`, 4 MiB at most). A title is shortened to
+  100 characters and any URL is removed. No issue body is read or written.
+- **Offline.** One file, inline SVG, CSS and a little JavaScript; no library, no network at view time, no link.
+- **Where it goes.** `<sdlc>/state/dag-html/` by default (gitignored). `--out` inside a git checkout that does not
+  ignore it is refused, so a page never dirties the root checkout. An earlier page is overwritten, never deleted.
+- **Bounds.** A page is readable to 80 open members (`MEMBER_CAP`); a larger chain is still written, with a notice
+  at the top. Measured on one synthetic shape (shallow, no tangle): 80 members 58 KB, 400 members 248 KB in
+  0.06 s, 1,000 members 612 KB in 0.35 s; a tangled chain was not measured. `tests/test_dag_html.py` bounds a
+  400-member page at 1.5 MB. `--all` costs the sum of its chains. A map that is not fresh is still drawn, with the
+  reason at the top. Exit 0 written, 2 the goal is unknown, closed or a pull request, 3 no readable map, 4 mode off.
+
 ## The chain query contract
 
 `dag.py chain <goal> --json` prints the full chain of a goal: every unresolved transitive blocker,

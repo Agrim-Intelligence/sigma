@@ -144,7 +144,7 @@ class Scenario:
         assert self.step("sheet") == 0, self.out
         self.sheet_seconds = time.perf_counter() - t0
         assert re.search(r"\[cross_unit:\d+-\d+\]", self.out), "the sheet asks no cross-unit question"
-        for needle in ("[merge_conflict:4]", "[cap:c1]"):
+        for needle in ("[park:4]", "[cap:c1]"):
             assert needle in self.out, "the sheet does not ask %s:\n%s" % (needle, self.out)
         # the probe: nothing writes before approval (not part of the documented sequence)
         assert self.step("arm", log=False) == 2 and self.fk.writes() == [] and self.fk.created == [], \
@@ -152,11 +152,11 @@ class Scenario:
         assert self.step("run", log=False) == 2 and self.fk.writes() == []
         assert self.step("answer", "--defaults") == 0, self.out
         answers = self.tmp / "answers.json"
-        answers.write_text(json.dumps({"cap:c1": "10"}))
+        answers.write_text(json.dumps({"park:4": "release it", "cap:c1": "10"}))   # --defaults keeps it parked
         assert self.step("answer", "--answers", str(answers)) == 0, self.out
         assert self.step("approve") == 0, self.out
-        # the only write so far is the parked member's unpark answer; no chain label exists yet
-        assert self.fk.created == [] and not [w for w in tca._writes(self.fk) if w[2] == "chain:1"], self.fk.writes()
+        # nothing was written to GitHub by the sheet, the answers or the approval: the release is enacted by `arm`
+        assert self.fk.writes() == [] and self.fk.created == [], self.fk.writes()
         assert self.step("arm") == 0, self.out
 
     def cycle(self, want_rc, want_state, want_picked=None):

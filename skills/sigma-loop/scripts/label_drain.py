@@ -257,6 +257,17 @@ def closure(seed_numbers, get, preloaded=None, max_depth=MAX_DEPTH, max_pulled=M
             "stops": list(dict.fromkeys(stops)), "pulled": pulled}
 
 
+def assignee_gate(logins, me):
+    """-> (verdict, detail) when the assignee filter keeps the picker off an issue assigned to `logins`, else
+    None. `me` None (an unresolved login) fails open, like the picker. The one copy of this clause: `_Judge`
+    and the chain forecast (#1907) both call it."""
+    if me and not logins:
+        return "unassigned", "unassigned; the picker only takes issues assigned to %s" % me
+    if me and me.casefold() not in {x.casefold() for x in logins}:
+        return "assigned-elsewhere", "assigned to %s, not %s" % (", ".join(logins), me)
+    return None
+
+
 class _Judge:
     """Per-run verdict context: the source's label names, config, and lazily resolved login."""
 
@@ -275,8 +286,9 @@ class _Judge:
                 self._login = None
         return self._login
 
-    def verdict(self, issue):
-        """-> (verdict, detail) for one open issue. Order: the first that applies wins."""
+    def verdict(self, issue, by_assignee=True):
+        """-> (verdict, detail) for one open issue. Order: the first that applies wins. `by_assignee=False`
+        leaves the assignee clause out (the chain forecast re-applies it for another runner, #1907)."""
         names = _names(issue)
         if str(issue.get("state") or "").lower() == "closed":
             return "closed", ""
@@ -285,15 +297,24 @@ class _Judge:
             return "upper-tier", "labelled %s; the picker never takes it" % tier
         if self.source.parked_label in names:
             return "parked", "carries %s" % self.source.parked_label
+        cp = getattr(self.source, "checkpoint_label", None)
+        if cp and cp in names:                               # #1904: never picked, never armed, with or without a goal label
+            return "checkpoint", "a checkpoint: met when its unit lands or a person closes it; never worked"
+        proposed = getattr(self.source, "proposed_label", None)
+        if proposed and proposed in names:                   # #1905: with or without a goal label the queue refuses it
+            return "awaiting-owner", ("carries %s: waiting for its owner to confirm it; approving a run or a chain "
+                                      "is not that confirmation" % proposed)
         if self.source.goal_label not in names:
+            blocking = getattr(self.source, "blocking_label", None)
+            if blocking and blocking in names:           # #1903: other work waits on it, yet it was never a goal
+                return "not-a-goal", ("carries %s but not %s; nobody can start it until a person decides"
+                                      % (blocking, self.source.goal_label))
             return "unarmed", "no %s label" % self.source.goal_label
         logins = [(a.get("login") if isinstance(a, dict) else str(a)) for a in (issue.get("assignees") or [])]
-        if getattr(self.source, "assignee", None):
-            me = self.login()
-            if me and not logins:
-                return "unassigned", "unassigned; the picker only takes issues assigned to %s" % me
-            if me and me.casefold() not in {x.casefold() for x in logins}:
-                return "assigned-elsewhere", "assigned to %s, not %s" % (", ".join(logins), me)
+        if by_assignee and getattr(self.source, "assignee", None):
+            gate = assignee_gate(logins, self.login())
+            if gate:
+                return gate
         held = self._gate(issue, names)
         if held:
             return "held-by-gate", held
@@ -325,6 +346,12 @@ def _done_when_missing(body, acceptance):
         return acceptance.criteria(body or "") is None
     except ValueError:
         return True                # #1811: a list acceptance refuses cannot be verified once picked
+
+
+#: #1903: verdicts that are never armed by a default. verdict -> the question kind that asks about it (the
+#: kind is also the id of its bank entry), and the one option that arms it. Every other option leaves it as is.
+GATED_KIND = {"not-a-goal": "not_goal", "awaiting-owner": "owner_gate"}
+ARM_ANSWER = {"not_goal": "arm it as a goal", "owner_gate": "promote it"}
 
 
 def _unit(issue, features):
@@ -389,6 +416,8 @@ def plan(sdlc_dir, label, config=None, run=None, hide_answered=True):
         row = {"number": n, "title": scrub(str(issue.get("title") or "")), "verdict": verdict,
                "detail": detail, "waiting_on": waiting, "unresolved": unres,
                "dropped_closed": sorted(set(clo["closed"].get(n, [])))}
+        if verdict == "checkpoint":                        # #1904: is it met? (local reads only)
+            row["checkpoint"] = _light("chain_checkpoint").status(sdlc_dir, config, _unit(issue, features))
         if node["outside"]:
             row["depth"] = node["depth"]
             row["verdict"], row["own_verdict"] = "outside", verdict
@@ -647,10 +676,20 @@ def questions(label, rows, outside, paid_bodies, config):
             add("scope_hold:%d" % r["number"], "scope_hold", r.get("labels"), slot["ask"],
                 slot["options"], [r["number"]] + deps[r["number"]])
     slots = {s["id"]: s for s in unpark.QUESTIONS["label_set"]}
+
+    def gated_question(r, verdict, unblocks):
+        kind, slot = GATED_KIND[verdict], slots[GATED_KIND[verdict]]
+        add("%s:%d" % (kind, r["number"]), kind, r.get("labels"), slot["ask"], slot["options"], unblocks)
+
+    for r in sorted(rows, key=lambda x: x["number"]):                     # #1903: one question per such member
+        if r["verdict"] in GATED_KIND:
+            gated_question(r, r["verdict"], [r["number"]] + deps[r["number"]])
     for r in sorted(outside, key=lambda x: x["number"]):
         own, n = r.get("own_verdict"), r["number"]
         if own == "parked":
             own_question(r)
+        elif own in GATED_KIND:
+            gated_question(r, own, deps[n])
         elif own == "assigned-elsewhere":
             add("dependency:%d" % n, "dependency", r.get("labels"), slots["taken"]["ask"],
                 slots["taken"]["options"], deps[n])
@@ -683,7 +722,7 @@ def _reason(row, in_progress, blocked_overlay):
     if v == "parked":
         q = row.get("question") or ""
         return "parked (%s)%s" % (row.get("kind") or "undeclared", ": " + q[:140] if q else "")
-    if v in ("unarmed", "unassigned", "assigned-elsewhere", "held-by-gate"):
+    if v in ("unarmed", "unassigned", "assigned-elsewhere", "held-by-gate", "checkpoint") + tuple(GATED_KIND):
         return "%s: %s" % (v, row["detail"])
     if in_progress:
         return "in progress (claimed by a run)"
@@ -760,7 +799,7 @@ def render_status(p):
 # --- arm (#1577) ---------------------------------------------------------------------------------
 
 DEFAULT_PRIORITY = "P2"
-_REFUSED = ("upper-tier", "parked", "assigned-elsewhere", "held-by-gate")
+_REFUSED = ("upper-tier", "parked", "assigned-elsewhere", "held-by-gate") + tuple(GATED_KIND)
 
 
 def arm_settings(config):
@@ -793,7 +832,8 @@ def _prepare(source, triage, gh_api, label, cfg, todo, refused, notes):
                             "assigned to %s, not %s" % (", ".join(sorted(map(str, state["assignees"]))), me)})
             continue
         item = {"issue": n}
-        armed = source.goal_label in state["labels"]     # #1807: only the assignee is missing
+        # #1807: only the assignee is missing. #1905: a leftover confirmation label is still to be stripped.
+        armed = source.goal_label in state["labels"] and source.proposed_label not in state["labels"]
         if not armed and not any(l.startswith(prefix) for l in state["labels"]):
             name = prefix + cfg["default_priority"]
             if name not in label_ok:
@@ -840,14 +880,16 @@ def _apply(source, triage, pre_by_issue, apply):
     return actions
 
 
-def arm(sdlc_dir, label, apply=False, config=None, run=None, only=None):
+def arm(sdlc_dir, label, apply=False, config=None, run=None, only=None, promote=()):
     """Arm what `plan()` calls unarmed, reusing `triage.compute_actions` / `triage.apply_actions`.
 
     -> {"label", "apply", "actions": [triage action dicts], "refused": [{"issue", "verdict",
     "reason"}], "notes": [str]}. Dry-run (the default) hands the source a read-only runner, so a write
     call is impossible rather than merely skipped. Never edits a body, creates or removes a label, or
     deletes. `only` (a set of issue numbers, `answer` #1580) restricts the arming to those issues.
-    Raises what `plan()` raises."""
+    `promote` (#1903) names the issues a person answered "arm it" about; a member whose verdict is in
+    `GATED_KIND` (not a goal) is armed only when it is named there, and is otherwise listed as refused,
+    with or without `apply`. Raises what `plan()` raises."""
     sources, triage = _load("sources"), _load("triage")
     gh_api = _load("gh_api")
     config = config if config is not None else _load("state").load_config(sdlc_dir)
@@ -863,7 +905,12 @@ def arm(sdlc_dir, label, apply=False, config=None, run=None, only=None):
     for r in p["members"] + p["outside"]:
         outside = r["verdict"] == "outside"
         v = r["own_verdict"] if outside else r["verdict"]
-        if v in _REFUSED:
+        if v in GATED_KIND and r["number"] in promote:
+            v = "unarmed"                  # #1903: the person was asked and answered; arm it like any unarmed one
+        if v == "checkpoint":              # #1904: not a goal and never becomes one; not an error either
+            notes.append("#%d is a checkpoint; never armed (met when its unit lands or a person closes it)"
+                         % r["number"])
+        elif v in _REFUSED:
             refused.append({"issue": r["number"], "verdict": v, "reason": r["detail"] or v})
         elif v in ("unarmed", "unassigned"):
             if not outside:
@@ -908,6 +955,8 @@ def pull(sdlc_dir, label, ref, for_goal, config=None, run=None):
         return out("closed")
     if label in _names(issue):
         return out("already")
+    if verdict == "checkpoint":
+        return out("refused", "checkpoint: %s" % detail)
     if verdict in _REFUSED:
         return out("refused", "%s: %s" % (verdict, detail or verdict))
     if verdict in ("unarmed", "unassigned") and not cfg["arm_pulled_blockers"]:
@@ -994,6 +1043,9 @@ def _lookup(qid, p, label, config=None):
             "assigned-elsewhere", "upper-tier"):
         slot_id = "taken" if r["own_verdict"] == "assigned-elsewhere" else "upper"
         opts = list(next(s for s in unpark.QUESTIONS["label_set"] if s["id"] == slot_id)["options"])
+    elif kind in GATED_KIND.values() and (r.get("own_verdict") or r["verdict"]) in GATED_KIND \
+            and GATED_KIND[r.get("own_verdict") or r["verdict"]] == kind:
+        opts = list(next(sl for sl in unpark.QUESTIONS["label_set"] if sl["id"] == kind)["options"])
     elif kind in unpark.QUESTIONS:
         opts = unpark.valid_options(kind)
     else:
@@ -1148,6 +1200,13 @@ def answer(sdlc_dir, label, answers, dry_run=False, config=None, run=None):
                 ok, lines = _spend_effect(n, q.get("unblocks"), p, source, config, _token(label), dry_run)
             else:
                 lines = ["no marker written"]
+        elif kind in GATED_KIND.values():                 # #1903: only the arming answer arms; nothing else is written
+            if choice == ARM_ANSWER[kind]:
+                armed = arm(sdlc_dir, label, apply=not dry_run, config=config, run=base, only={n}, promote={n})
+                lines = [l.strip() for l in render_arm(armed).splitlines()[1:]]
+                ok = not any(a["result"] == "failed" for a in armed["actions"])
+            else:
+                lines = ["answer recorded only: #%s is left as it is; Sigma does not relabel or close it for you" % n]
         elif kind == "kind":
             if row is not None and row.get("kind") == "undeclared":
                 if dry_run:
@@ -1172,7 +1231,8 @@ def answer(sdlc_dir, label, answers, dry_run=False, config=None, run=None):
             res["lines"] = lines + ["no decision record written"]
             continue
         if not recorded_by_effect:
-            lines += record(q, kind if kind != "kind" else choice, choice)
+            lines += record(q, "needs_decision" if kind in GATED_KIND.values() else kind if kind != "kind" else choice,
+                            choice)
         res["lines"] = lines
         answered.add(qid)
     after = p if dry_run else plan(sdlc_dir, label, config=config, run=base, hide_answered=False)

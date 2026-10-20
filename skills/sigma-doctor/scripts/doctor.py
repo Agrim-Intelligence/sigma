@@ -2125,6 +2125,27 @@ def _mis_kinded_hardstop_parks(cfg, gh_cfg, run, cap=20):
         return None
 
 
+def _double_priority_issues(cfg, gh_cfg, run, cap=500):
+    """#1920: open issues that carry more than one `priority:P0`..`P4` label. -> (numbers, partial), or
+    None when a read could not be made. READ-ONLY. GitHub cannot filter on "has two of these labels", so
+    this reads each of the five priority labels once (REST pages of 100) and keeps the issues that appear
+    in two or more; at most `cap` per label, `partial` True when a label hit the cap, so a large repo is
+    told it was only partly read rather than shown a clean row."""
+    try:
+        src = _load_loop_script("sources").GitHubSource(cfg, run=_raising_gh(run))
+        seen, partial = {}, False
+        for rank in range(5):
+            rows = _list(run, gh_cfg, ["number"], [f"{src.priority_prefix}P{rank}"], cap=cap)
+            if rows is None:
+                return None
+            partial = partial or len(rows) >= cap
+            for it in rows:
+                seen.setdefault(it["number"], set()).add(rank)
+        return sorted(n for n, ranks in seen.items() if len(ranks) > 1), partial
+    except Exception:
+        return None
+
+
 def _dependency_marker_scan(gh_cfg, bchk_cfg, run):
     """An issue with a comment matching `backlog_check._BLOCK_RE` ("blocked by #N" / "depends on #N"
     / ...) but NO matching marker in its own body is likely a human-authored dependency, left via the
@@ -2288,6 +2309,10 @@ def _unreachable_blocker_scan(gh_cfg, run):
     legacy confirmation label and deliberately no goal label (`handoff.py`), and something later
     declares itself blocked by it.
 
+    A CHECKPOINT (`checkpoint_label`, #1904) is the one intended exception: it stands for "a unit's code is on
+    the integration branch", nobody works it, and it is met by the unit landing or a person closing it, so
+    it is not a deadlock and is not reported here.
+
     Report-only, and deliberately so: auto-adding `goal_label` would defeat the very approval gate
     that put the issue in this state. `/sigma-promote`'s `deadlocked` bucket is the route out.
 
@@ -2295,6 +2320,7 @@ def _unreachable_blocker_scan(gh_cfg, run):
     (silent), never a false alarm."""
     blocking = gh_cfg.get("blocking_label", "sdlc:blocking")
     goal = gh_cfg.get("goal_label", "sdlc:goal")
+    checkpoint = gh_cfg.get("checkpoint_label", "sdlc:checkpoint")
     issues = _list(run, gh_cfg, ["number", "labels"], [blocking])
     if issues is None:
         return []
@@ -2304,7 +2330,7 @@ def _unreachable_blocker_scan(gh_cfg, run):
             continue
         names = [(l.get("name") or "") if isinstance(l, dict) else str(l or "")
                  for l in (i.get("labels") or [])]
-        if goal not in names:
+        if goal not in names and checkpoint not in names:       # #1904: a checkpoint is met, never worked
             flagged.append(i.get("number"))
     return flagged
 
@@ -3858,6 +3884,18 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
                                 + " -- review each; if it really is an irreversible action, declare it with "
                                 "`unpark.py declare .sdlc <issue> irreversible`; a machine park (conflict, "
                                 "failing check) needs no change."))
+
+            # #1920: two priority labels on one issue. Every reader takes the best rank, so nothing breaks
+            # visibly while the board fills with priorities nobody chose. Warn only; no write.
+            dp = _double_priority_issues(cfg, gh_disc, run)
+            if dp is not None and dp[0]:
+                out.append(_chk("no open issue carries two priority labels", False,
+                                "issue(s) with more than one priority label: #"
+                                + ", #".join(str(n) for n in dp[0][:10])
+                                + (f" (+{len(dp[0]) - 10} more)" if len(dp[0]) > 10 else "")
+                                + (" (a priority label hit the read cap; there may be more)" if dp[1] else "")
+                                + " -- the loop reads the best rank of the two. Keep the one you mean and remove "
+                                "the other; a triage `enact` now replaces the old label itself."))
 
             # #389: NOT gated on backlog_check.enabled (nor on the `project` block above) -- a repo with
             # backlog_check OFF has zero auto-skip happening at all, so this is arguably more useful
