@@ -15,6 +15,13 @@ import pytest
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import resource_mode  # noqa: E402
 import test_doctor as td  # noqa: E402
+import git_identity_support  # noqa: E402  (#1572)
+
+
+@pytest.fixture(autouse=True)
+def _scoped_git_identity_1572(tmp_path_factory, monkeypatch):
+    """#1572: a test here points HOME at a fixture; any git it reaches gets a scoped identity, never the host's."""
+    git_identity_support.scoped_git_identity(tmp_path_factory.mktemp("git-identity"), monkeypatch)
 
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 

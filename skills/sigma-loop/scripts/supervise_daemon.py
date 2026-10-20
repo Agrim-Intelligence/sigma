@@ -159,6 +159,14 @@ def _session_model():
     return mod
 
 
+def _read_session_cfg(sdlc_dir):
+    """The project config for the session-model choice (#1951), read only; an unreadable file is {}."""
+    try:
+        return json.loads((pathlib.Path(sdlc_dir) / "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
 def _split_claude_cmd(cmd):
     """Word-split `SIGMA_CLAUDE_CMD` for `subprocess.run`. POSIX: `shlex.split(cmd)`,
     unchanged. win32 (#2494): `shlex.split(cmd, posix=False)` so backslashes in a Windows path
@@ -570,10 +578,7 @@ def main(argv):
     # operator's and is never rewritten. A bad key refuses loudly (exit 2); an unreadable
     # config just means no flag.
     if legacy.getenv("SIGMA_CLAUDE_CMD") is None and host == "claude":      # #1961: an empty command is the operator's, left empty
-        try:
-            session_cfg = json.loads((pathlib.Path(sdlc_dir) / "config.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            session_cfg = {}
+        session_cfg = _read_session_cfg(sdlc_dir)
         try:
             session_model = _session_model().effective(session_cfg)
         except ValueError as exc:
