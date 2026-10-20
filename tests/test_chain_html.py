@@ -212,7 +212,7 @@ def test_a_question_badge_sits_on_its_node(tmp_path):
     base, _fk = tcs._scene(tmp_path)
     page = _page(base)
     want = _sheet_questions(base)
-    dep = next(n for n, v in want.items() if "[dependency:2]" in v)
+    dep = next(n for n, v in want.items() if "[park:2]" in v)               # the parked member's own question
     cap = next(n for n, v in want.items() if "[cap:c1]" in v)
     node2 = re.search(r'<g class="n [^"]*" data-n="2".*?</g></g>', page, re.S).group(0)
     assert re.search(r'<g class="qb[^"]*" data-q="%d" data-n="2"' % dep, node2)
@@ -237,6 +237,7 @@ def test_an_answered_question_shows_its_recorded_answer(tmp_path):
 def test_the_page_holds_the_sheets_unconfirmed_block_and_writes(tmp_path):
     page = htmllib.unescape(_page(_deep(tmp_path)))
     assert "Unconfirmed waits (3)" in page and "#1 waits on" in page
+    assert '<li class="qh">Unconfirmed waits (' in page        # the heading inside the decisions, shown not refused
     assert "Writes that follow approval" in page and "record each answer in .sdlc/state/chains/c1.json" in page
 
 

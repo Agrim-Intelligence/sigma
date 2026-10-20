@@ -466,6 +466,7 @@ main.plan{grid-template-columns:minmax(0,1fr) 420px}
 .q.answered{border-left-color:var(--ready-s)}.q.answered b{color:var(--muted)}
 .q.on{background:var(--decision-f);border-color:var(--accent);border-left-color:var(--accent)}
 .q:focus-visible{outline:2px solid var(--accent)}
+.qh{margin:10px 0 6px;color:var(--muted);font-size:12.5px;font-weight:600}
 .n .qb{cursor:pointer}.n .qb circle{fill:var(--accent);stroke:var(--bg);stroke-width:1.5}
 .n .qb text{fill:var(--bg);font-size:10.5px;font-weight:700;text-anchor:middle;pointer-events:none}
 .n .qb.done circle{fill:var(--closed-s)}.n .qb.on circle{stroke:var(--ink);stroke-width:2.5}
@@ -770,6 +771,7 @@ def render_index(rows, repo, stamp_built, age, fresh, titled):
 # ------------------------------------------------------------------ the plan page (`chain.py html`)
 
 _ITEM = re.compile(r"^  (\d+)\. \[([^\]]+)\] ")
+_SECTION = re.compile(r"^  ([A-Z][^:]*\(\d+[,)].*)$")     # a heading inside the decision block, e.g. the prose waits'
 _APPLIES = re.compile(r"^applies to \d+ questions: (.*)$")
 
 
@@ -793,13 +795,18 @@ def read_sheet(text):
                 break
             out.append(ln)
         return out
-    items = []
+    items, section = [], None
     for ln in lines[i + 1:j]:
         if not ln.strip():
             continue
         m = _ITEM.match(ln)
         if m:
-            items.append({"n": int(m.group(1)), "ident": m.group(2), "first": ln.strip(), "more": [], "ids": []})
+            items.append({"n": int(m.group(1)), "ident": m.group(2), "first": ln.strip(), "more": [], "ids": [],
+                          "section": section})
+            continue
+        h = _SECTION.match(ln)
+        if h:
+            section = h.group(1)
         elif ln.startswith("     ") and items:
             items[-1]["more"].append(ln.strip())
             a = _APPLIES.match(ln.strip())
@@ -944,10 +951,15 @@ def _plan_header(model, repo):
 
 def _questions_html(model):
     """The questions panel: each as the sheet prints it (number, id, ask, any recorded answer, options, note)."""
-    qs = model["questions"]
-    items = "".join('<li class="q%s" data-q="%d" tabindex="0" role="button"><b>%s</b>%s</li>'
-                    % (" answered" if q["answered"] else "", q["n"], _esc(q["first"]),
-                       "".join("<span>%s</span>" % _esc(x) for x in q["more"])) for q in qs)
+    qs, parts, section = model["questions"], [], None
+    for q in qs:
+        if q.get("section") and q["section"] != section:        # a heading the sheet prints inside its decisions
+            parts.append('<li class="qh">%s</li>' % _esc(q["section"]))
+        section = q.get("section")
+        parts.append('<li class="q%s" data-q="%d" tabindex="0" role="button"><b>%s</b>%s</li>'
+                     % (" answered" if q["answered"] else "", q["n"], _esc(q["first"]),
+                        "".join("<span>%s</span>" % _esc(x) for x in q["more"])))
+    items = "".join(parts)
     return ('<section id="qs"><h2>%s</h2><p class="sub">%s</p><ul>%s</ul></section>'
             % ("%d question%s before anything is armed" % (len(qs), "" if len(qs) == 1 else "s") if qs
                else "No questions before anything is armed", _esc(model["plan"]["decisions"]), items))
