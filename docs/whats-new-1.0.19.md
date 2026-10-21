@@ -93,14 +93,16 @@ What stays unchanged:
 
 ## Upkeep host login
 
-- **Opt-in `upkeep.conflicts.agent.login: "host"` (#1946, #1963, #1966).** The resolver, the reviewer and the
-  logged-in preflight use the watcher's own `HOME` and `CLAUDE_CONFIG_DIR`; every other wall stays (the confined
-  copy, the tool allowlist, no git, gh or ssh credential, the timeout and the spend keys), and the model tiers are
-  capped by `model_selection_max_tier`. On macOS the CLI keeps its login in the keychain, which the session wall
-  denies, so host mode hands the session `CLAUDE_CODE_OAUTH_TOKEN` when the watcher has it (made once with
-  `claude setup-token`); without it the unit parks and the reason names that command in full.
-- **Proven against a fake CLI only.** A real-CLI run on macOS parked before any model call, as designed, when no
-  token variable was set. The recorded real-model run is still to be done.
+- **Opt-in `upkeep.conflicts.agent.login: "host"` (#1946, #1979).** The resolver and the reviewer log in exactly as your
+  own headless `claude -p` sessions do, from the watcher's profile, with no token to make or export. They run with no OS
+  wall and in the CLI's restricted mode: no shell or code-running tool, file tools confined to the session's throwaway
+  copy, no MCP servers, hooks, instruction files or skills. The timeout, the spend caps, the check that only conflicted
+  files changed, the test proof and the separate reviewer all stay; the model tiers are capped by
+  `model_selection_max_tier`.
+- **Proven with a real model.** On a throwaway repository a two-sided conflict was resolved, proved by the tests,
+  approved by the reviewer, pushed through the backup push, and the parked-unit issue was released. That run also found
+  and fixed the dropped-line check refusing every merged line of an edit/edit conflict. The scrubbed mode with the macOS
+  wall still has no recorded real-model run.
 
 ## Also in this release
 
@@ -109,6 +111,6 @@ What stays unchanged:
 
 ## Not in this release
 
-- A recorded real-model run of upkeep host login (above).
+- A recorded real-model run of upkeep's scrubbed mode with the macOS wall.
 - Live measurements of the GraphQL budget, the shared map's read count across machines, and Chain's read cache.
 - A dependency written only as a slice code with no issue number anywhere is still not read.

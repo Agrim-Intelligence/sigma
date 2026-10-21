@@ -98,6 +98,9 @@ CONFIRMED_FLAGS = {
     "--no-session-persistence": "no transcript written; " + _PROBED,
     "--add-dir": "extra directory; " + _PROBED,
     "--append-system-prompt": "appended system prompt; " + _PROBED,
+    "--restricted": "no code-running tools, file tools confined to the working directory, settings files ignored; "
+                    "measured in upkeep-host-login-run.md",
+    "--disable-slash-commands": "no skills or commands; measured in upkeep-host-login-run.md",
 }
 #: Design flags still UNVERIFIED, refused by name: `--bare` did not authenticate with the subscription login in the probe.
 UNVERIFIED_FLAGS = ("--bare",)
@@ -188,9 +191,21 @@ CREDENTIAL_DIRS = (".ssh", ".config/gh", ".git-credentials", ".gitconfig", ".net
 SESSION_TOOLS = "Read,Edit,Write,Glob,Grep"
 
 
+#: Measured against the real CLI (docs/launch/evidence/upkeep-host-login-run.md): `--allowedTools` only pre-approves
+#: tools and removes none, so a session with no wall still had Bash and could read and write outside its copy.
+#: `--restricted` removes the code-running tools, confines the file tools to the working directory and ignores the
+#: settings files; `--tools` names the exact set; `--strict-mcp-config`, an empty `--setting-sources` and
+#: `--disable-slash-commands` drop MCP servers, hooks, instruction files and skills. Added whenever no wall confines
+#: the session: always in host-login mode, and on a platform that has no wall.
+RESTRICTED_ARGV = ("--restricted", "--tools", SESSION_TOOLS, "--strict-mcp-config", "--setting-sources", "",
+                   "--disable-slash-commands")
+
+
 def session_argv(walled):
-    """The session permission flags: Bash only when a wall confines it; without one the tool is removed (#1693)."""
-    return ("--permission-mode", "acceptEdits", "--allowedTools", SESSION_TOOLS + (",Bash" if walled else ""))
+    """The session permission flags: Bash only when a wall confines it (#1693); without one, the CLI's restricted mode
+    removes it and every other code-running tool, and confines the file tools to the session's copy."""
+    base = ("--permission-mode", "acceptEdits", "--allowedTools", SESSION_TOOLS + (",Bash" if walled else ""))
+    return base if walled else base + RESTRICTED_ARGV
 
 
 def _quote(text):

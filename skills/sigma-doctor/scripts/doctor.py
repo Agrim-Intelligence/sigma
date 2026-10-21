@@ -1966,8 +1966,9 @@ def _resolver_auth_row(launcher, binary, var, runner=None, which=None, login=Non
         parent = tempfile.gettempdir()
         scratch, _ = launcher.make_scratch(parent, "")       # the launcher's own scratch tree, removed by its own remover
         try:
-            wall = launcher.session_wall(sys.platform, which or shutil.which, os.path.expanduser("~"), str(scratch), [parent])[0]
-            kw = {"prefix": wall} if wall else {}                # #1713: the session's own confinement where one exists
+            wall = None if login == "host" else launcher.session_wall(sys.platform, which or shutil.which,
+                                                                       os.path.expanduser("~"), str(scratch), [parent])[0]
+            kw = {"prefix": wall} if wall else {}                # #1713: probed the way the session runs (host: no wall)
             got = (runner or launcher.auth_info)(launcher.build_env(scratch, var, os.environ, login), binary, str(scratch), **kw)
             ok, kind = got if isinstance(got, tuple) else (got, None)
         finally:
@@ -1977,9 +1978,8 @@ def _resolver_auth_row(launcher, binary, var, runner=None, which=None, login=Non
     if login == "host":                     # #1946: the watcher's own login; only the account TYPE is ever named
         return _chk("resolver auth: " + ("host login: logged in as %s" % (kind or "an account of unknown type") if ok
                                          else "host login: not logged in") + " (route: %s)" % route, bool(ok),
-                    "log the host CLI in as the user that runs the watcher (on macOS run `claude setup-token` and export "
-                    "CLAUDE_CODE_OAUTH_TOKEN for the watcher: the keychain is denied inside the wall), or set conflicts.agent.login back to scrubbed; "
-                    "the live run against a real CLI is Awaiting (owner-gated)")
+                    "log the host CLI in as the user that runs the watcher (run `claude` once and sign in), or set "
+                    "conflicts.agent.login back to scrubbed")
     return _chk("resolver auth: " + ("logged in in the scrubbed environment" if ok else "not logged in in the scrubbed environment")
                 + " (route: %s)" % route, bool(ok), fix)
 
@@ -2053,11 +2053,15 @@ def _resolver_rows(base, cfg, which, cheap_only, now=None, auth_runner=None):
                          "check conflicts.agent in .sdlc/config.json"))
         rows.append(_chk("resolver spend: " + ("finite caps configured" if finite else "no spend limit configured (each run bounded by timeout_minutes only)"),
                          True, "optional: set conflicts.agent.max_budget_usd_per_unit and spend_ceiling_usd_per_day to cap spend"))
-        wall_label = launcher.session_wall(sys.platform, which, os.path.expanduser("~"), "session")[1]       # #1693
+        wall_label = (None if settings.get("conflicts.agent.login") == "host"      # host login builds no wall (#1946)
+                      else launcher.session_wall(sys.platform, which, os.path.expanduser("~"), "session")[1])       # #1693
+        restricted = ("the CLI's restricted mode: no shell or code-running tools, file tools confined to the session's copy, "
+                      "no MCP servers, hooks, instruction files or skills")
         rows.append(_chk("resolver session confinement: " + (
             "%s (reads of credential directories denied, writes only in the session, network only to port 443 and not filtered by host; PROVISIONAL, live run owner-gated)" % wall_label
             if wall_label else
-            "none on this platform, so the session runs WITHOUT the Bash tool (edit tools only; nothing else can reach credentials or the network)"),
+            ("host login, no OS wall: " if settings.get("conflicts.agent.login") == "host" else "no OS wall on this platform: ")
+            + restricted),
             True, "informational"))
         spent = _resolver_spend_today(pathlib.Path(base).joinpath(*rebase.LEVEL2_SPEND_REL.split("/")), launcher, now)
         if spent is None:

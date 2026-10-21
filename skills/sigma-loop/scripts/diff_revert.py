@@ -438,7 +438,15 @@ def production_changed(paths, sdlc_name=".sdlc"):
     Docs count: a test may read them. False means nothing was reverted, so survival proves nothing."""
     test_path = _sibling("tamper_scan")._TEST_PATH
     prefix = sdlc_name.strip("/") + "/"
-    return any(p and not test_path.search(p) and not p.startswith(prefix) for p in paths)
+    return any(p and not test_path.search(p) and not p.startswith(prefix) and not _generated(p) for p in paths)
+
+
+def _generated(path):
+    """A Python bytecode cache or a test-runner cache: written by running the tests themselves, untracked and never code.
+    In a repository that does not ignore them they appear among the changed paths, and counting them made a tests-only
+    goal read as a production change."""
+    parts = path.replace("\\", "/").split("/")
+    return path.endswith((".pyc", ".pyo")) or "__pycache__" in parts or ".pytest_cache" in parts
 
 
 def _hunks(diff):

@@ -214,15 +214,27 @@ configuration directory, so the CLI's own login is not found. Name one environme
 { "upkeep": { "enabled": true, "conflicts": { "resolve": "agent", "agent": { "login": "host" } } } }
 ```
 
-What host mode exposes: the session can read the watcher user's CLI profile, settings and memory, because they are in that
-home. Every other wall stays: the edit-only tool allowlist with `acceptEdits`, the network prefix, the timeout, the per-sweep
-cap, the spend keys, the confined scratch copy, and no git, gh or ssh credential variable (`GH_*`, `GITHUB_*`, `SSH_*`,
-`GIT_*`). `credential_var` is still passed if you also set it. A host run is charged the per-unit cap, or nothing when no cap is
-set, because the shared transcript store is never priced. The model tiers are capped by the repo's `model_selection_max_tier`
-(default `opus`): a `model` or `reviewer.model` above it is lowered to it, never raised. The doctor rows `resolver auth` and
-`resolver configured` read "host login: logged in as <account type>" and never print a credential. A unit whose preflight finds
-no login parks with "resolver cli is not logged in under the host login". On macOS the CLI keeps its login in the keychain, which the session wall denies and keeps denying (it also holds the git host token). Host mode therefore passes `USER` and `LOGNAME`, and hands the walled session the CLI's own `CLAUDE_CODE_OAUTH_TOKEN` when the watcher has it (made once with `claude setup-token`); the unit that finds no login parks naming that command. Only that one variable travels, never a `GH_*`, `GITHUB_*`, `SSH_*` or `GIT_*` one. UNVERIFIED on a real macOS CLI: the recorded `claude auth status` inside the wall is owner-run. The recorded real-model run of this mode is owner-run
-after landing; until it is recorded, host mode is proven against a fake CLI only.
+What host mode is: the resolver and the reviewer are `claude -p` sessions that log in exactly as your own headless sessions
+do, from the watcher's own profile (the macOS keychain included), with no token to make or export. They run with no OS wall
+(on macOS the wall denies the keychain, and with it the login) and in the CLI's restricted mode instead: `--restricted`
+(no shell or other code-running tool, file tools confined to the session's throwaway copy, settings files ignored),
+`--tools Read,Edit,Write,Glob,Grep`, `--strict-mcp-config` (no MCP servers), an empty `--setting-sources` (no hooks or
+instruction files) and `--disable-slash-commands`. Measured with the real CLI (see
+[the run](launch/evidence/upkeep-host-login-run.md)): the session logged in, resolved a conflict in its copy, could not
+read or write a file outside it, had no shell and loaded no instruction file; `--allowedTools` alone removes nothing, which
+is why the restricted flags are always passed when no wall confines a session. Every other wall stays: the timeout, the
+per-sweep cap, the spend keys, the post-run check that only conflicted files changed, the test proof, the separate
+reviewer, and no git, gh or ssh credential variable (`GH_*`, `GITHUB_*`, `SSH_*`, `GIT_*`). A host run is charged the
+per-unit cap (the reviewer half of it), or nothing when no cap is set, because the shared transcript store is never priced.
+The model tiers are capped by the repo's `model_selection_max_tier` (default `opus`): a `model` or `reviewer.model` above it
+is lowered to it, never raised. The doctor rows `resolver auth` and `resolver configured` read "host login: logged in as
+<account type>" and never print a credential; `resolver session confinement` reads "host login, no OS wall: the CLI's
+restricted mode". A unit whose preflight finds no login parks with "resolver cli is not logged in under the host login":
+run `claude` once as the user that runs the watcher and sign in. `credential_var` is still passed if you also set it.
+
+One real-model run of host mode is recorded: on a throwaway repository a two-sided conflict was resolved, proved by the
+tests, approved by the reviewer, pushed through the backup push, and the parked-unit issue was released
+([the run](launch/evidence/upkeep-host-login-run.md)). The scrubbed mode with the macOS wall has no recorded real-model run.
 
 ## The lease
 

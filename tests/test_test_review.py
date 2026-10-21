@@ -601,3 +601,13 @@ def test_post_review_still_refuses_block_against_an_approval(tmp_path):
     evidence, head = _review_chain(d, goal, "approve")
     out, calls = _post(d, goal, "block", evidence, head)
     assert out == "review evidence does not match this goal and verdict" and not any(map(_posted, calls))
+
+
+def test_bytecode_and_runner_caches_are_never_production():
+    """The tests-only goal above wrote `__pycache__` files by running its own tests; they are not a production change.
+    Written explicitly here, so this holds whether or not the host writes bytecode."""
+    dr = _load("diff_revert")
+    assert dr.production_changed(["tests/test_more.py", "pkg/__pycache__/calc.cpython-313.pyc",
+                                  "tests/__pycache__/test_more.cpython-313-pytest-8.4.2.pyc",
+                                  ".pytest_cache/v/cache/nodeids", "pkg/legacy.pyc"]) is False
+    assert dr.production_changed(["tests/test_more.py", "pkg/calc.py"]) is True

@@ -130,6 +130,15 @@ def resolves(rig):
 # --------------------------------------------------------------------------- 1: one session across the replay
 
 
+def S_L():
+    import importlib.util, pathlib as _p
+    path = _p.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts" / "feature_upkeep_launcher.py"
+    spec = importlib.util.spec_from_file_location("feature_upkeep_launcher", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def test_a_multi_commit_replay_is_resolved_in_one_session_dir_with_context_and_pushed_once(srig, tmp_path, wired_s):
     rig, m = srig, wired_s
     w = two_commit_world(mk(tmp_path / "w"))
@@ -139,7 +148,9 @@ def test_a_multi_commit_replay_is_resolved_in_one_session_dir_with_context_and_p
     first, second = resolves(rig)
     assert first["cwd"] == second["cwd"] and first["cwd"].endswith(os.sep + "session")
     assert not os.path.exists(first["cwd"])                                  # removed when the pass ended
-    assert second["argv"][-4:] == ["--permission-mode", "acceptEdits", "--allowedTools", "Read,Edit,Write,Glob,Grep"]
+    tail = ["--permission-mode", "acceptEdits", "--allowedTools", "Read,Edit,Write,Glob,Grep"]
+    tail += list(S_L().RESTRICTED_ARGV)       # no wall here, so the CLI's restricted mode removes the shell and confines files
+    assert second["argv"][-len(tail):] == tail
     assert ".sigma-context/stop0" in first["stdin"] and ".sigma-context/stop1" in second["stdin"]
     ctx = second["ctx"]
     assert ctx[".sigma-context/stop1/message.txt"].startswith("feat: second step")

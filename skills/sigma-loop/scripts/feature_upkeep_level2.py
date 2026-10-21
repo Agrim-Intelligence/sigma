@@ -377,19 +377,54 @@ def sweep_take(sdlc_dir, unit, limit):
         return False
 
 
-def dropped_unit_lines(base, theirs, resolved):
+_WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|[0-9]+")
+
+
+def _changed_base_ranges(base_lines, side_lines):
+    """The base line ranges `side` replaced, deleted or inserted at, as (start, end) pairs (an insert is (i, i))."""
+    import difflib
+    ops = difflib.SequenceMatcher(None, base_lines, side_lines, autojunk=False).get_opcodes()
+    return [(i1, i2, j1, j2) for tag, i1, i2, j1, j2 in ops if tag != "equal"]
+
+
+def _contested_lines(base, side, other):
+    """The trimmed lines `side` wrote in a region of the base that `other` ALSO changed (an edit/edit conflict there):
+    no correct resolution can keep both versions of such a line word for word."""
+    b, s, o = (str(t).splitlines() for t in (base, side, other))
+    theirs = _changed_base_ranges(b, o)
+    out = collections.Counter()
+    for i1, i2, j1, j2 in _changed_base_ranges(b, s):
+        if any(k1 <= max(i2, i1) and i1 <= max(k2, k1) for k1, k2, _a, _b in theirs):
+            out.update(l.strip() for l in s[j1:j2] if l.strip())
+    return out
+
+
+def dropped_unit_lines(base, theirs, resolved, other=None):
     """The lines the unit added (its side against the common base, whitespace-trimmed, blanks ignored) that the resolved text
-    no longer holds, as many times as the unit added them."""
+    no longer holds, as many times as the unit added them.
+
+    With `other` (the integration side), a line the unit wrote where the integration side ALSO changed the same base lines
+    (both sides edited one import list, one argument list) is kept when every word it introduced (absent from the base)
+    is still in the resolved text: such a line cannot survive word for word in any correct merge, and the proof and the
+    reviewer judge the merge itself. A line only the unit touched must still survive word for word."""
     def lines(text):
         return collections.Counter(l.strip() for l in str(text).splitlines() if l.strip())
     have, added = lines(resolved), lines(theirs) - lines(base)
-    return [line for line, n in sorted(added.items()) if have[line] < n]
+    lost = [line for line, n in sorted(added.items()) if have[line] < n]
+    if other is None or not lost:
+        return lost
+    contested = _contested_lines(base, theirs, other)
+    base_words, kept_words = set(_WORD.findall(str(base))), set(_WORD.findall(str(resolved)))
+    def accounted(line):
+        new_words = set(_WORD.findall(line)) - base_words
+        return contested[line] > 0 and bool(new_words) and new_words <= kept_words
+    return [line for line in lost if not accounted(line)]
 
 
-def dropped_base_lines(base, ours, resolved):
+def dropped_base_lines(base, ours, resolved, other=None):
     """The lines the integration (base) side added against the merge base (whitespace-trimmed, blanks ignored, as a multiset)
     that the resolved text no longer holds. Same rule as `dropped_unit_lines`, applied to the other side (#1536)."""
-    return dropped_unit_lines(base, ours, resolved)
+    return dropped_unit_lines(base, ours, resolved, other)
 
 
 DROPPED_FILE = "dropped-by-delete.txt"      # #1716: the session's list, under its stop's context directory in the copy
@@ -721,7 +756,7 @@ def resolve_stop(run, path, plan, evidence, stamped):
         if problem is None:
             for name in conflicted:
                 seen = resolved_text[name] or ""
-                lost = dropped_unit_lines(texts[name][0], texts[name][2], seen)
+                lost = dropped_unit_lines(texts[name][0], texts[name][2], seen, texts[name][1])
                 if lost and delete_case(name) == "integration-deleted":     # #1716 rule 1
                     gone = unaccounted_lines(_line_counts(texts[name][2]) - _line_counts(texts[name][0]),
                                              elsewhere_counts(run, path, conflicted, resolved_text, name))
@@ -744,7 +779,7 @@ def resolve_stop(run, path, plan, evidence, stamped):
         if problem is None:
             for name in conflicted:
                 seen = resolved_text[name] or ""
-                lost = dropped_base_lines(texts[name][0], texts[name][1], seen)
+                lost = dropped_base_lines(texts[name][0], texts[name][1], seen, texts[name][2])
                 if lost and delete_case(name) == "unit-deleted":            # #1716 rule 2: elsewhere only, never a list
                     lost = unaccounted_lines(_line_counts(texts[name][1]) - _line_counts(texts[name][0]),
                                              elsewhere_counts(run, path, conflicted, resolved_text, name))
