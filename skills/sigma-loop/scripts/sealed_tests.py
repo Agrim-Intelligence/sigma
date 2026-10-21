@@ -306,7 +306,7 @@ def seal(root, sdlc_dir, stem, *, base_ref, plan_hash, route, timeout, exemption
         env["COLUMNS"] = "240"        # pytest truncates the FAILED reason to the terminal width
         env["HOME"] = tempfile.mkdtemp(prefix="home-", dir=tmp)
         base_args = [python, "-m", "pytest"]
-        ver = _step(run, base_args + ["--version"], tree, deadline, env, "pytest --version")
+        ver = _step(run, base_args + ["-o", "addopts=", "--version"], tree, deadline, env, "pytest --version")  # the repo's addopts is parsed even for --version
         if ver.code != 0:
             raise SealRefused("runner-unusable", "%s -m pytest --version exited %s" % (python, ver.code))
         match = re.search(r"pytest\s+(\S+)", ver.out or "")
@@ -610,7 +610,7 @@ def run_green(root, sdlc_dir, stem, *, timeout, run=None):
         env["PYTHONPYCACHEPREFIX"] = tempfile.mkdtemp(prefix="pycache-", dir=os.path.realpath(tmp))
         python = None
         for cand in candidates:
-            ver = _step(run, [cand, "-m", "pytest", "--version"], root, deadline, env, "pytest --version")
+            ver = _step(run, [cand, "-m", "pytest", "-o", "addopts=", "--version"], root, deadline, env, "pytest --version")
             if ver.code == 0:
                 python = cand
                 break

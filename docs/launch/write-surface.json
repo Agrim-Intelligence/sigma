@@ -538,6 +538,22 @@
     },
     {
       "path": "skills/sigma-loop/scripts/dag_store.py",
+      "function": "publish_snapshot",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ledger.enabled is exactly true and discovery.dag.mode is not off and the ledger worktree exists; one atomic write of dag/map.json in the ledger worktree, rebuilt from the closed-vocabulary map fields and one host token, never a title or free text",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/dag_lease.py",
+      "function": "_write",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "reached only through acquire, which returns before any write unless ledger.enabled is exactly true, discovery.dag.mode is not off and the ledger worktree exists; one atomic write of this writer's own dag/lease/<writer>.json (writer, taken_at, expires_at), never another writer's file",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/dag_store.py",
       "function": "refresh_lock",
       "rule": "fs-write",
       "count": 1,
@@ -681,6 +697,14 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/dag_lease.py",
+      "function": "_write",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "reached only through acquire, which returns before any write unless ledger.enabled is exactly true, discovery.dag.mode is not off and the ledger worktree exists; one atomic write of this writer's own dag/lease/<writer>.json (writer, taken_at, expires_at), never another writer's file",
+      "risk": "low"
+    },
+    {
       "path": "skills/sigma-loop/scripts/dag_store.py",
       "function": "refresh_lock",
       "rule": "fs-write",
@@ -750,6 +774,14 @@
       "rule": "fs-remove",
       "count": 2,
       "gate": "person-run archive library function (no command runs it); records part enabled; removes only record files older than records.archive_after_days after they are written into a yearly archive file under the lock",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/decision_store.py",
+      "function": "publish_branch",
+      "rule": "git-ref-write",
+      "count": 1,
+      "gate": "person-run `publish <state-folder> --branch` or the default-branch hint; records part enabled; moves only the local branch `sigma/records` (compare-and-swap on its old tip) to a commit of the records, autonomy and rulebook paths built in a temporary index; never HEAD, never a push",
       "risk": "high"
     },
     {
@@ -3909,7 +3941,7 @@
       "function": "_write_atomic",
       "rule": "fs-write",
       "count": 1,
-      "gate": "rulebook.autonomy.applier.enabled is exactly true; writes one ask file or the tick heartbeat in the autonomy folder by temp file and atomic replace; a link folder is refused",
+      "gate": "rulebook.autonomy.applier.enabled is exactly true; writes one ask file in the autonomy folder, or the tick heartbeat or sync cursor in the git-ignored state/autonomy folder, by temp file and atomic replace; a link folder is refused",
       "risk": "medium"
     },
     {
@@ -3990,6 +4022,14 @@
       "rule": "fs-remove",
       "count": 1,
       "gate": "runs only after a refresh that saved the dependency map (discovery.dag.mode is not off); removes only the one file state/dag-unchecked.json under the runtime state directory, a list of number pairs the saved refresh has just examined",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/dag_lease.py",
+      "function": "_write",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "reached only through acquire, which returns before any write unless ledger.enabled is exactly true, discovery.dag.mode is not off and the ledger worktree exists; one atomic write of this writer's own dag/lease/<writer>.json (writer, taken_at, expires_at), never another writer's file",
       "risk": "low"
     },
     {
@@ -4270,6 +4310,22 @@
       "rule": "fs-write",
       "count": 1,
       "gate": "one atomic, symlink-refusing write of the small window stamp under `.sdlc/state`; never raises",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/chain_read_cache.py",
+      "function": "save",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "the rename that replaces `.sdlc/state/chain-reads.json` with the temporary file this same save just wrote, and the removal of that temporary file when the write or the rename fails; removes no other file",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/chain_read_cache.py",
+      "function": "save",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "one atomic write of `.sdlc/state/chain-reads.json` (issue numbers, update stamps and the comment text already read from GitHub; a cache of reads, bounded by entry count, byte size and a maximum age); reached only by an explicit `chain.py plan` run; any failure is ignored and the plan reads fresh; no GitHub call and no write to GitHub",
       "risk": "low"
     },
     {

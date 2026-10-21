@@ -155,6 +155,14 @@ def _scripts_load_fresh_at_test_time(request):
     _script_cache.fresh = True
 
 
+# #1939 follow-up: the per-account GraphQL bucket (gh_quota) lives in the machine-wide resource state folder, and a
+# test run wrote this machine's real bucket. Set before any script is collected: every test gets a session temp
+# folder unless the caller set one; tests of the default location pass their own env or monkeypatch it already.
+if not os.environ.get("SIGMA_RESOURCE_DIR"):
+    import tempfile
+    os.environ["SIGMA_RESOURCE_DIR"] = tempfile.mkdtemp(prefix="sigma-test-resource-")
+
+
 def pytest_configure(config):
     config.addinivalue_line(
         "markers",

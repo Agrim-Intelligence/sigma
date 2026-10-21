@@ -75,7 +75,7 @@ run that stops on something the sheet never asked is a defect. A question is ask
 |---|---|---|---|
 | `park:<n>` | a parked member: why it is parked (its recorded park question, else the first line of its park note or body, cut to 140 characters; withheld when the decision records are keys-only) and who waits behind it | `keep it parked`: the chain stops before it and the members that wait on it, named | `release it`: the existing atomic unpark gesture (`unpark.resolve`, decision `unpark`: one label swap, the Q&A block, one comment); an undeclared kind is declared with the recommended guess |
 | `wait:<a>-<b>` | a wait read only from prose or a comment, whose blocker is **open** and in the chain and whose edge the explicit edges do not already imply (a wait on a closed issue is only shown) | `confirm it`: the marker `deps.py mark` writes (`**Blocked by:** #b` in the body, one note) | `dismiss it`: the dismissal marker (`backlog_check.dismiss_comment`, posted the way `loop.py note` posts it); the plan, the forecast and the run drop the wait |
-| `elsewhere:<n>` | a member assigned to someone else, or in progress in another session | `wait for them`: the run pauses there and says whose it is | `take it over`: assign the runner, then remove the old assignee (one assignee). Never offered for a member in progress: only `wait for them` is, and the sheet says why |
+| `elsewhere:<n>` | a member assigned to someone else, or in progress in another session | `wait for them`: the run pauses there and says whose it is | `take it over`: assign the runner, then remove the old assignee (one assignee). The runner is the `--as` login the plan was made for, not the login that ran `plan`; the ask says "Planned by X for Y" when they differ. Never offered for a member in progress: only `wait for them` is, and the sheet says why |
 | `irreversible:<n>` | a paid step: a declared paid line in the body, or a label listed in `chain.paid_labels` | none: never defaulted | `go ahead`; anything else is skipped by every run cycle |
 | `cap:c<n>` | every chain | none: never defaulted | the answer is the goal cap the run enforces (`chain_spend.admit`); the tighter of it and `chain.max_goals` wins, and the forecast models it |
 | `cross_unit:<a>-<b>` | an edge between two units | `keep going` | `stop here`: the dependent and what waits behind it are held (labelled, never armed, skipped by every run cycle) |
@@ -127,6 +127,18 @@ starts early), follows it to the issue it names so that issue and what it waits 
 sheet lists every one in a block of its own. Follow-up wording ("filed as a follow-up to #N") stays a **weak
 mention**: advisory, never an edge.
 
+Five more wordings are read the same way (#1940), each only ever an unconfirmed wait. `slice-chain`: "S2a, S2b and
+S2c must precede S2d" (also "... must land before S2d"), read only when every code of the chain is written with its
+issue number in the same text as `S2a (#N)`; one unresolved code reads nothing from that sentence. `slice-on`:
+"S4b on S4a (#N)". `waiting-on`: "waiting on #N", from a comment only. `gates`: "#N gates #M", from a comment
+only; provisional until the owner ratifies it, and it reads both #N and #M as waits. `reversed-waits-on`: "the
+story #N waits on" at a clause end, not when a reference follows. The two comment-only forms are read only from
+the trusted authors above, never from a body or from anyone else.
+
+Two wordings are not read, because there is nothing to resolve: a slice code with no issue number ("built in S7"),
+and a ruling named in words ("depends on rulings in the <name> item"). Write the issue number, or settle the wait
+with `deps.py mark`.
+
 The block names the two ways to settle a wait: `deps.py mark <sdlc_dir> <goal> <ref> <reason...>` for a real one
 (it becomes a body edge every reader trusts), or the dismissal marker from `backlog_check.py dismiss-text
 blocked-by <ref>` for a wrong one (the plan stops reading it); run `chain.py plan` again after either. Only
@@ -153,6 +165,8 @@ really get, before anything is armed:
 | `someone else's` | assigned to another login, or already in progress |
 | `checkpoint` | never worked: met when its unit lands or a person closes it |
 | `not workable` | held by a gate, a paid step the owner answered not to run, carries the blocked label, waits on a prerequisite outside the chain, or could not be read |
+
+A member counts as in progress only while a live holder backs the label: a registered worker whose process is alive on this machine, or an unexpired claim in the team ledger. With the ledger on and neither, or with it off and a worker marker that is definitively dead, the label is stale: the member is not treated as someone else's, and the sheet names it with the `loop.py release` gesture. With the ledger off and no marker the planner cannot tell another machine's work from a leftover, so the member stays in progress, and so does any member whose evidence could not be read.
 
 A member that carries the blocked label because of waits on other members of the chain is classified by those
 waits (`after #N`) and is counted as finishing once they do: Sigma's own sweep sets that label and clears it when the
@@ -309,6 +323,12 @@ stateful fake of the host, with no network.
 - GitHub calls for `plan`: 9 (counted from the fake's call log; it was 7 before the reader for waits written in prose
   or a comment, which adds the issue read and the comment page of the one member that has a comment; the
   closed-prerequisite check adds none here because the scenario has no closed prerequisite).
+- GitHub calls for a second plan on the on-disk read cache (#1936; `skills/sigma-loop/scripts/chain_read_cache.py`,
+  file `.sdlc/state/chain-reads.json`, keyed by issue number and exact `updated_at`, at most 900 seconds old, 400
+  entries, 8 MiB): before, 9 for the first plan and 9 for a second overlapping plan; after, 9 for the first and
+  second overlapping plan: 7 (counted from the fake's call log with the fake serving `updated_at`; the member with a
+  comment is not read again). A fake that serves no `updated_at` gets no hit, so its second plan is 9. The saving on
+  a live repository is not measured.
 - Time to the sheet: measured as wall time on the fake, which is not meaningful against a live host.
   It is not measured live.
 - Estimate versus actual spend: not measured (the scratch ledger holds no priced goals).

@@ -986,6 +986,33 @@ def publish_receipt(sdlc_dir, receipt_path, config=None, run=None, attempts=PUSH
     return "receipt pending: publish acknowledgement failed"
 
 
+def _dead_pid_paths(path, who, config):
+    """#1932: entries files whose writer has stopped, as strings relative to the worktree root.
+
+    `ledger.files_for(who)` only claims the files of THIS actor, and a file left by a stopped
+    process is staged by nobody once its pid is gone: it sat untracked and the next `pull` was
+    deferred ("You have unstaged changes"). A file is swept when its name is
+    `<actor>-<host>.<pid>.jsonl` with THIS machine's host token (any actor name, the `_this_clones`
+    precedent: the actor can resolve differently between runs), and a
+    pid `ledger.pid_alive` says is gone (so never this process). A live pid's file, another host's file (its pid means
+    nothing here) and a legacy pid-only name are never swept. Best effort: any error sweeps nothing."""
+    try:
+        host = ledger._host_token(config)
+        found = []
+        for p in sorted((path / ledger.ENTRIES).glob("*.jsonl")):
+            stem = p.name[:-len(".jsonl")]
+            actor, _, instance = stem.rpartition("-")
+            token, dot, pid = instance.rpartition(".")
+            if not (actor and dot and pid.isdigit() and token == host):
+                continue
+            if ledger.pid_alive(int(pid)):     # this process is alive too, so its own file is never swept
+                continue
+            found.append(str(p.relative_to(path)))
+        return found
+    except Exception:                            # noqa: BLE001 - a sweep must never break publish
+        return []
+
+
 def publish(sdlc_dir, config, run=None, attempts=PUSH_ATTEMPTS, channel=LEDGER):
     """Render TEAM.md, commit MY entries file(s) + the rolled-up view, and fast-forward both onto
     the ops branch — so a lead can read one file on the branch instead of five.
@@ -1012,10 +1039,13 @@ def publish(sdlc_dir, config, run=None, attempts=PUSH_ATTEMPTS, channel=LEDGER):
     try:
         who = ledger.actor(config)
         mine = _staged_paths(path, ledger.ENTRIES, who)
+        mine += [r for r in _dead_pid_paths(path, who, config) if r not in mine]      # #1932
         # #1623: the dependency map's history stream rides along. A change that is only there must
         # still push, so the early return waits for both.
         dag_mine = [str(p.relative_to(path)) for p in ledger.dag_files_for(path, who)]
-        if not mine and not dag_mine:
+        snap = ["dag/map.json"] if (path / "dag" / "map.json").is_file() else []     # #1956
+        lease = _load("dag_lease").mine(path, config)                                # #1957
+        if not mine and not dag_mine and not snap and not lease:
             return "nothing to publish"
         # #2574/S1-G3: THE EVENTS STREAM IS NO LONGER STAGED. It used to be
         # `to_stage += _staged_paths(path, ledger.EVENTS, who)`, which published a machine's events to
@@ -1023,7 +1053,7 @@ def publish(sdlc_dir, config, run=None, attempts=PUSH_ATTEMPTS, channel=LEDGER):
         # publishing: the journal is local-only, at `.sdlc/events/`, which is not in this worktree at
         # all. Nothing already on the branch is removed — a teammate's clone still pulls it, and it is
         # still read for one release.
-        to_stage = list(mine) + dag_mine
+        to_stage = list(mine) + dag_mine + snap + lease
         if _ensure_gitattributes(path):
             to_stage.append(".gitattributes")
         _write_team(sdlc_dir, path)
@@ -1067,9 +1097,11 @@ def _write_dag(path, config):
         if dag_history._load("dag_store").mode(config) == "off":
             return False
         recs = dag_history.read_all(path)
-        if not recs:
+        snap, built_by = dag_history._load("dag_store").read_snapshot_at(path)      # #1956
+        if not recs and snap is None:
             return False
-        (pathlib.Path(path) / "DAG.md").write_text(dag_render.render(recs), encoding="utf-8")
+        text = dag_render.render(recs) if snap is None else dag_render.render(recs, snap, built_by, time.time())
+        (pathlib.Path(path) / "DAG.md").write_text(text, encoding="utf-8")
         return True
     except Exception:                            # noqa: BLE001 - DAG.md is a view; it never fails a publish
         return False

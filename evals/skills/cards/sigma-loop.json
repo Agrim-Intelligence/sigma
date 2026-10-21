@@ -744,6 +744,30 @@
     {
       "path": "skills/sigma-loop/scripts/spend_cap.py",
       "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/chain_read_cache.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/dag_lease.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/dag_report.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/dag_source.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/gh_quota.py",
+      "role": "library"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/loop_session_model.py",
+      "role": "gesture"
     }
   ],
   "artifacts": [

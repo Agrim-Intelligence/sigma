@@ -348,7 +348,7 @@ def check_tests(path, base, ours, theirs, resolved):
 
 # ------------------------------------------------------------------------------------------------ append-only union (#1515)
 
-_DATED = re.compile(r"^## (\d{4}-\d{2})\b")
+_DATED = re.compile(r"^## (\d{4}-\d{2}(-\d{2})?)\b")
 _BULLET = re.compile(r"^\s*[-*] \S")
 
 
@@ -402,12 +402,60 @@ def _sections(lines):
     for ln in lines:
         hit = _DATED.match(ln)
         if hit:
-            key = hit.group(1)
+            key = ln.strip() if hit.group(2) else hit.group(1)
             if key in out:
                 return None
             out[key] = []
         out[key].append(ln)
     return out
+
+
+def _date_of(key):
+    """The `YYYY-MM` or `YYYY-MM-DD` a section key leads with (#1949: a day-form key is the whole heading line)."""
+    return key.removeprefix("## ")[:10] if key.startswith("## ") else key
+
+
+def _without_own_heading(key, sb, so, st):
+    """#1968: theirs' lines of section `key`; when both sides added the same new day heading, theirs' copy of the
+    heading (and the blank lines after it) is left out so the merged section holds ONE heading and both bullet sets."""
+    mine = st.get(key, [])
+    if key.startswith("## ") and key not in sb and key in so and mine and mine[0].strip() == key:
+        mine = list(mine[1:])
+        while mine and not mine[0].strip():
+            mine.pop(0)
+    return mine
+
+
+def _gaps(side, base):
+    """A pure addition's new lines per gap of `base` (len(base) + 1 lists, gap k before base line k), or None when
+    `base` is not a subsequence of `side` (an edit or a removal)."""
+    gaps, i = [[] for _ in range(len(base) + 1)], 0
+    for ln in side:
+        if i < len(base) and ln == base[i]:
+            i += 1
+        else:
+            gaps[i].append(ln)
+    return gaps if i == len(base) else None
+
+
+def line_union(base, ours, theirs):
+    """#1968: the generic line union of two pure additions to `base` -> the text, or None. Base order is kept and each
+    side's new lines stay in the gap of `base` where that side put them (in a shared gap, ours first), so a line added
+    inside a list stays inside the list; a line both sides added appears once. None when either side edited or removed
+    a base line, or when the result would drop a line of either side."""
+    b, o, t = (str(x).split("\n") for x in (base, ours, theirs))
+    go, gt = _gaps(o, b), _gaps(t, b)
+    if go is None or gt is None:
+        return None
+    mine = {ln for gap in go for ln in gap if ln.strip()}
+    merged = []
+    for k in range(len(b) + 1):
+        merged += go[k] + [ln for ln in gt[k] if not ln.strip() or ln not in mine]
+        if k < len(b):
+            merged.append(b[k])
+    text = "\n".join(merged)
+    text = text if text.endswith("\n") else text + "\n"
+    return None if would_drop(text, ours, theirs) else text
 
 
 def append_union(base, ours, theirs):
@@ -426,15 +474,17 @@ def append_union(base, ours, theirs):
         sb, so, st = _sections(b), _sections(o), _sections(t)
         if None in (sb, so, st) or not set(sb) <= set(so) & set(st):
             return None
-        keys = sorted((set(so) | set(st)) - {""})
+        keys = list(dict.fromkeys(k for seq in (sb, so, st) for k in seq if k))
         for seq in (sb, so, st):
-            order = [k for k in seq if k]
+            order = [_date_of(k) for k in seq if k]
             if len(order) > 1:
-                keys.sort(reverse=order == sorted(order, reverse=True))
+                keys.sort(key=_date_of, reverse=order == sorted(order, reverse=True))
                 break
+        else:
+            keys.sort(key=_date_of)
         parts = []
         for key in [""] + keys:
-            got = _merge_lines(sb.get(key, []), so.get(key, []), st.get(key, []), False)
+            got = _merge_lines(sb.get(key, []), so.get(key, []), _without_own_heading(key, sb, so, st), False)
             if got is None:
                 return None
             parts.append(got)

@@ -32,6 +32,17 @@ def swap(args, labels=None, calls=None, repo_args=("--repo", "o/r")):
         # `_owner_name` falls back to this when discovery.github.repo is unset (the shipped default,
         # and what most of these fixtures use).
         return json.dumps({"owner": {"login": "o"}, "name": "r"})
+    m = re.fullmatch(r"repos/[^/]+/[^/]+/labels/([^/]+)", str(args[1])) if len(args) >= 2 and args[0] == "api" else None
+    if m:
+        # #1939: `label_exists` is one REST GET now. Same model as the GraphQL lookup: every name
+        # resolves unless a test opted it into _UNKNOWN_LABELS, which answers a 404 like gh does.
+        from urllib.parse import unquote
+        name = unquote(m.group(1))
+        if name in _UNKNOWN_LABELS:
+            exc = RuntimeError("gh: Not Found (HTTP 404)")
+            exc.hint = "gh: Not Found (HTTP 404)"
+            raise exc
+        return json.dumps({"name": name})
     if not (len(args) >= 2 and args[0] == "api" and args[1] == "graphql"):
         return None
     doc = next((a[len("query="):] for a in args if str(a).startswith("query=")), "")
@@ -306,7 +317,7 @@ def rest_write(args, calls=None, repo_args=("--repo", "o/r"), labels=None, me="o
     f = _fields(args)
     rec = calls.append if calls is not None else (lambda c: None)
     if kind == "user":
-        return json.dumps({"login": me})
+        return me + "\n" if "--jq" in args else json.dumps({"login": me})   # #1934: `--jq .login` prints the bare login
     if kind == "label_get":
         if extra in missing_labels:
             e = RuntimeError("gh: Not Found (HTTP 404)")

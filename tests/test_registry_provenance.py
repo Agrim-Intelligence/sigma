@@ -55,8 +55,10 @@ def _goals(w, rel=SHARD, unit="voice"):
 def _dirty(w):
     """A pick, the §15 commit, a second pick: both registry files carry Sigma's own dirt."""
     assert w.start("100").startswith("worktree")
+    w.legacy_pick(100)
     w.commit_registry()
     assert w.start("101").startswith("worktree")
+    w.legacy_pick(101)
     assert w.porcelain().splitlines() == [" M " + SHARD, " M " + PAGE], w.porcelain()
 
 
@@ -122,6 +124,7 @@ def test_concurrent_registry_writers_never_make_a_root_check_refuse_smoke(tmp_pa
             pytest.skip("no fcntl: provenance records are unserialised here by design (plan §4)")
         w = World(tmp_path).build()
         assert w.start("100").startswith("worktree")
+        w.legacy_pick(100)
         w.sigma_shard_write("200", unit="billing")
         w.commit_registry()
         assert w.porcelain() == ""
@@ -158,6 +161,7 @@ def test_head_at_the_anchor_survives_more_writes_than_the_cap(tmp_path, capfd):
     with registry_root.drained(capfd):
         w = World(tmp_path).build()
         assert w.start("100").startswith("worktree")
+        w.legacy_pick(100)
         w.commit_registry()
         for goal in range(1000, 1300):
             w.sigma_shard_write(goal)
@@ -175,6 +179,7 @@ def test_a_mid_chain_commit_survives_the_cap_once_a_check_has_seen_it(tmp_path, 
             pytest.skip("no fcntl: compaction needs the record's lock (plan §2b)")
         w = World(tmp_path).build()
         assert w.start("100").startswith("worktree")
+        w.legacy_pick(100)
         for goal in range(1000, 1010):
             w.sigma_shard_write(goal)
         w.commit_registry()
@@ -247,6 +252,7 @@ def test_a_record_that_cannot_be_written_never_fails_the_registry_write(tmp_path
     with registry_root.drained(capfd) as out:
         w = World(tmp_path).build()
         assert w.start("100").startswith("worktree")
+        w.legacy_pick(100)
         w.commit_registry()
         blocker = w.root / registry_root.RECORD_DIR
         if blocker.is_dir():

@@ -1,0 +1,9 @@
+{
+  "skill": "sigma-dag",
+  "kind": "pinned",
+  "gates": [
+    "run nothing else"
+  ],
+  "scripts": [],
+  "artifacts": []
+}

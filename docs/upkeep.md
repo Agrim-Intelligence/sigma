@@ -196,6 +196,34 @@ confirmation label instead). More detail is in [upkeep-part-b.md](upkeep-part-b.
 A refused replay that would delete content the branch has (a `would-drop`) is a blocked pass, not a clean one.
 Details are in branching-model.md section 3b.
 
+## Turn on agent resolution
+
+The agent level (`upkeep.conflicts.resolve` `agent`) is off until you choose how the resolver and the reviewer log in. Pick one.
+
+**Scrubbed (the default, `upkeep.conflicts.agent.login` `"scrubbed"`).** The session gets a throwaway home and a throwaway
+configuration directory, so the CLI's own login is not found. Name one environment variable that holds the model login:
+
+```json
+{ "upkeep": { "enabled": true, "conflicts": { "resolve": "agent", "agent": { "credential_var": "MODEL_LOGIN_VAR" } } } }
+```
+
+**Host (`"login": "host"`, opt-in).** The resolver, the reviewer and the logged-in preflight run on the watcher's own `HOME` and
+`CLAUDE_CONFIG_DIR`, so the login you already did with the CLI is used and no variable is needed:
+
+```json
+{ "upkeep": { "enabled": true, "conflicts": { "resolve": "agent", "agent": { "login": "host" } } } }
+```
+
+What host mode exposes: the session can read the watcher user's CLI profile, settings and memory, because they are in that
+home. Every other wall stays: the edit-only tool allowlist with `acceptEdits`, the network prefix, the timeout, the per-sweep
+cap, the spend keys, the confined scratch copy, and no git, gh or ssh credential variable (`GH_*`, `GITHUB_*`, `SSH_*`,
+`GIT_*`). `credential_var` is still passed if you also set it. A host run is charged the per-unit cap, or nothing when no cap is
+set, because the shared transcript store is never priced. The model tiers are capped by the repo's `model_selection_max_tier`
+(default `opus`): a `model` or `reviewer.model` above it is lowered to it, never raised. The doctor rows `resolver auth` and
+`resolver configured` read "host login: logged in as <account type>" and never print a credential. A unit whose preflight finds
+no login parks with "resolver cli is not logged in under the host login". On macOS the CLI keeps its login in the keychain, which the session wall denies and keeps denying (it also holds the git host token). Host mode therefore passes `USER` and `LOGNAME`, and hands the walled session the CLI's own `CLAUDE_CODE_OAUTH_TOKEN` when the watcher has it (made once with `claude setup-token`); the unit that finds no login parks naming that command. Only that one variable travels, never a `GH_*`, `GITHUB_*`, `SSH_*` or `GIT_*` one. UNVERIFIED on a real macOS CLI: the recorded `claude auth status` inside the wall is owner-run. The recorded real-model run of this mode is owner-run
+after landing; until it is recorded, host mode is proven against a fake CLI only.
+
 ## The lease
 
 Every push of a unit branch is a `--force-with-lease` on the exact tip the pass read. If the remote moved
@@ -292,6 +320,7 @@ key path. (`work.rebase_upkeep` has the opposite typo rule: an unrecognised valu
 | `backup.former_prefixes` | `[]` | list of `refs/<name>/backup/` | namespaces an earlier product wrote, pruned the same way |
 | `conflicts.resolve` | `"off"` | `off`, `mechanical`, `agent` | how far a unit conflict may be resolved; `agent` runs a capped headless resolver, see [Upkeep part B](upkeep-part-b.md) |
 | `conflicts.mechanical_without_verify` | `false` | boolean | lets the mechanical level run with no verify command |
+| `conflicts.union_paths` | `[]` | list of repo-relative file names | files whose two-sided pure additions the mechanical level unions line by line (base order kept, each side's new lines where that side put them, ours first in a shared gap, duplicates collapsed); a listed file with an edited or removed line, and any unlisted file outside the recognised append-only shapes, still parks |
 | `triggers.*`, `auto.*` | see branching-model.md 13e | | still read and validated for one release; they no longer schedule anything |
 
 Related keys outside the block: `work.base` (the default branch), `work.integration_base` (a unit branch that

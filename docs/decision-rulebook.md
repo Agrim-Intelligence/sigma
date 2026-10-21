@@ -85,7 +85,7 @@ Nothing below is needed for the rest of Sigma. Do the steps in order and stop wh
    before you open anything (see [Privacy](#privacy-on-public-repositories)).
 3. **Open records.** Set `rulebook.records.enabled` to `true`. From now on `/sigma-unpark`, `/sigma-promote`
    and the automatic sweep each write a record and one comment carrying its id. Commit the `decisions/` folder
-   (with `records.publish` on, a person-run gesture commits it for you; it never pushes).
+   (with `records.publish` on, a person-run gesture on a non-default branch commits it for you; on the default branch it commits nothing and prints the one command below; it never pushes).
 4. **Look at what you have.** Run `python3 skills/sigma-loop/scripts/decision_import.py plan .sdlc` to see what
    past decisions could be imported, then `apply` if you want them (see [Importing](#importing-past-decisions)).
 5. **Open autonomy (read-only effect).** Set `rulebook.autonomy.enabled` to `true`. Levels are now derived.
@@ -160,6 +160,15 @@ Housekeeping:
 - `records.publish` (the config template sets it to `true`; a config that omits the key leaves it off): a person-run unpark or rule approval **commits, never
   pushes,** the records folder, the `autonomy` folder and the rulebook file, and nothing else. It skips goal
   worktrees, unit branches and a detached HEAD.
+  **On the default branch it commits nothing** (#1947): a commit there would make the next `git pull --ff-only` refuse. The default
+  branch is the short name of `origin/HEAD` (else `origin/main`, `origin/master`; with no remote, `main` or `master`).
+  Instead the result is `reason: default-branch` plus the one command, and the gesture prints it once to stderr:
+  `python3 skills/sigma-loop/scripts/decision_store.py publish <sdlc_dir> --branch`. It writes the evidence paths onto a
+  local branch `sigma/records` with a temporary index and `commit-tree`, so HEAD, the index and the working tree do not move;
+  an unchanged tree makes no commit; it never pushes (push it yourself with `git push <remote> sigma/records`). The branch is
+  chosen over the ledger branch because the ledger is a separate sharing feature that may be off. PROVISIONAL, for the owner to ratify.
+  Not measured: the records stay untracked in the root working tree after `--branch`; Sigma does not clean them up, so after the
+  records branch lands, remove the byte-identical copies yourself if `git pull` refuses.
 
 ## Question kinds
 
@@ -222,7 +231,8 @@ Rules of the ladder:
 - Public visibility writes no watch comparisons, because they would carry the free-text choice.
 
 State lives in `.sdlc/autonomy/` as one small file per fact (`watch-<id>.json`, `veto-<id>.json`, plus the applier's
-`ask-<id>.json`, `applier-heartbeat.json` and `spot-counter.json`). The machine tag is a short hash of the host name.
+`ask-<id>.json` and `spot-counter.json`). The applier's heartbeat and sync cursor are runtime state and live in the
+git-ignored `.sdlc/state/autonomy/` instead (#1938). The machine tag is a short hash of the host name.
 
 ### Per-category thresholds
 
@@ -345,7 +355,7 @@ for applies that landed, and it is decided per action at apply time.
 A person's gesture on the same issue (unpark, keep-parked, promote, demote) closes the pending ask with their text.
 A keep-parked or demote on an issue whose ask was applied inside its window records the veto.
 
-The tick writes `applier-heartbeat.json`; the doctor reads a tick as dead when it is missing or older than
+The tick writes `applier-heartbeat.json` under `.sdlc/state/autonomy/` (git-ignored; an older copy in `.sdlc/autonomy/` is not read); the doctor reads a tick as dead when it is missing or older than
 `stale_after_intervals` (default 3) watch intervals. A dead tick is harmless: the goal stays parked. Applied asks with no
 pending veto are deleted after `prune_after_days` (default 30); answered and vetoed asks after two days.
 
@@ -631,7 +641,7 @@ All scripts are in `skills/sigma-loop/scripts/` unless noted.
 | migrate the old label | `promote.py migrate-confirmation` | see [above](#migrating-the-old-confirmation-label) |
 | draft and approve a rule | `rule_draft.py list`, `draft`, `approve` | see [Rules](#rules-drafting-and-approval) |
 | import | `decision_import.py scan`, `plan`, `apply` | see [Importing](#importing-past-decisions) |
-| publish records | `decision_store.py publish <sdlc_dir>` | the local commit that `records.publish` does for you |
+| publish records | `decision_store.py publish <sdlc_dir>` | the local commit that `records.publish` does for you (not on the default branch; add `--branch` for the local `sigma/records` branch) |
 | run the applier once | `applier.py [sdlc_dir]` | the watcher runs it each tick |
 | plan the applier without writing | `applier.py [sdlc_dir] --dry-run` | prints each action with rule, level and window |
 | open asks for existing parks | `applier.py sync [sdlc_dir]` | also runs before each tick |
