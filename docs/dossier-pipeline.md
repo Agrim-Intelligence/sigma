@@ -524,10 +524,11 @@ The rules about that skeleton, each of which a real run got wrong before it was 
   its evidence. The lane is the self-reported header `Lane`, and the large lane also requires a
   `Container | Threat | Mitigation` table and a `security` row that is not N/A.
   `python3 skills/sigma-goal-design/scripts/goal_design.py quality .sdlc/design/<n>.md` checks it and
-  exits 2 on any violation. It checks form, not truth, and reads one file (at most 1 MiB); that
-  review (whose prose for this check lands in a later slice) then returns REJECT rests on the reviewing model following the review prose, and
-  `mark-designed` does not refuse. The token cost of answering every row is unmeasured. Designs written
-  before this section are not re-reviewed and not rewritten.
+  exits 2 on any violation. It checks form, not truth, and reads one file (at most 1 MiB). §7a has the
+  reviewer run it and §7c makes a failure a REJECT ground, but that REJECT rests on the reviewing model
+  following the review prose; `mark-designed` does not refuse, and the end-to-end review is unmeasured.
+  The token cost of answering every row is also unmeasured. Designs written before this section
+  are not re-reviewed and not rewritten.
 - **`Out of scope` is what makes the `converged` verdict auditable** (#1975). Every excluded hit as
   `X-n` with its round and its reason, per §5c; one entry may cover a group under a stated rule with
   a count, since a broad query otherwise makes the section unwritable. §7b reads the exclusions of
@@ -765,6 +766,13 @@ REJECT depends on the reviewing model following this prose, and nothing in this 
 (`loop.py mark-designed` does not refuse; a hard gate is deferred). The end-to-end run of a real
 `/sigma-goal-review` with a model is unmeasured.
 
+**`Quality requirements` is checked by running the `quality` verb** (#1780):
+`python3 skills/sigma-goal-design/scripts/goal_design.py quality .sdlc/design/<n>.md`. Every
+violation it prints is reported verbatim before the brief is built, and a failed check is a §7c
+REJECT ground. **Be honest about the guarantee:** the verb names the category; that the verdict
+becomes REJECT depends on the reviewing model following this prose, and nothing in this kit enforces
+it (`loop.py mark-designed` does not refuse). The end-to-end review is unmeasured.
+
 **`Budget` is a claim you check by RE-RUNNING `sweep-budget`, not by reading it** (#2032). The field
 is self-reported — a pass that skips the verb and writes `3` from memory produces an artifact
 indistinguishable from a correct one — so this stage runs `goal_design.py sweep-budget` itself, with
@@ -804,7 +812,8 @@ disproved, and the comment is the only place the correction lands beside it.
   the slice count is plausible, and **nothing was adjudicated blocking**. Open-but-not-blocking
   items do not bar CONFIRM.
 - **REJECT** — also where an `FR-n` appears in no slice row (§7a; the reviewing model obeys this,
-  nothing in this kit enforces it). With concrete findings (`file:line` where applicable). Comment them on `#<n>`, write
+  nothing in this kit enforces it); likewise where the `quality` check fails (§7a; names the category;
+  the reviewing model obeys this, nothing in this kit enforces it). With concrete findings (`file:line` where applicable). Comment them on `#<n>`, write
   **no** label, and stop. Re-running Stage 1 against those findings is a human's next move or a
   later pick, not this skill's job. A target the retrofit gate parked **stays parked**. **§7g is
   that branch in full** — what it writes, what it deliberately does not, why zero tickets is the

@@ -49,6 +49,10 @@ the artifact's own claim — is in
 slice row, a non-EARS sentence, a malformed slice table, a missing `## Functional requirements`
 heading. An uncovered `FR-n` is a REJECT ground (2b). **Be honest about the guarantee:** the verb makes the violation unmissable and names each offending requirement, but that the verdict then becomes REJECT depends on the reviewing model following this prose; nothing in this kit enforces it (a hard refusal in `loop.py mark-designed` is deferred). The end-to-end run of a real `/sigma-goal-review` with a model is unmeasured.
 
+**Then run the quality check** — `python3 "${CLAUDE_SKILL_DIR}/../sigma-goal-design/scripts/goal_design.py" quality .sdlc/design/<n>.md`
+— and report every line it prints, verbatim, before building the brief. A failed check is a REJECT
+ground (2b) naming the category. That the verdict then becomes REJECT depends on the reviewing model following this prose; nothing in this kit enforces it, and the end-to-end review is unmeasured.
+
 ## 2. Assemble the independent brief and dispatch a fresh reviewer
 
 **The maker is never the checker.** Dispatch a genuinely fresh reviewer with no shared context to

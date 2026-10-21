@@ -2746,6 +2746,60 @@ def test_changelog_unreleased_has_one_quality_requirements_entry():
     assert entries_naming(simulate_release(text), "(#1780)") == entries
 
 
+def _doc_flat(s):
+    return " ".join(s.split()).replace("*", "")
+
+
+def test_docs_7a_quality_paragraph_states_unenforced_reject():
+    start = "**`Quality requirements` is checked by running the `quality` verb**"
+    assert start in DOSSIER, "7a quality paragraph missing"
+    flat = _doc_flat(start + DOSSIER.split(start, 1)[1].split("**`Budget` is a claim", 1)[0])
+    assert "nothing in this kit enforces it" in flat
+    assert "reviewing model" in flat
+    assert "unmeasured" in flat
+
+
+def test_docs_7c_reject_names_quality_check_and_its_limit():
+    sec = DOSSIER.split("### 7c.", 1)[1].split("### 7d.", 1)[0]
+    assert "- **REJECT**" in sec
+    flat = _doc_flat("- **REJECT**" + sec.split("- **REJECT**", 1)[1].split("\n\n", 1)[0])
+    assert "quality" in flat
+    assert "nothing in this kit enforces it" in flat[flat.index("quality"):]
+
+
+def test_docs_5d_quality_bullet_points_at_review_and_keeps_its_limits():
+    start = "- **`Quality requirements` is one row"
+    assert start in DOSSIER, "5d quality bullet missing"
+    flat = _doc_flat(start + DOSSIER.split(start, 1)[1].split("- **`Out of scope`", 1)[0])
+    for needle in ("7a", "7c", "reviewing model", "form, not truth", "unmeasured"):
+        assert needle in flat, needle
+
+
+def test_docs_dossier_pipeline_has_no_stale_later_slice_wording():
+    assert "prose for this check lands in a later slice" not in _doc_flat(DOSSIER)
+
+
+def test_writing_the_artifact_has_no_stale_later_slice_wording():
+    text = (ROOT / "skills/sigma-goal-design/references/writing-the-artifact.md").read_text(encoding="utf-8")
+    assert "lands (a later slice)" not in text
+
+
+def test_changelog_has_one_quality_review_entry_stating_its_limit():
+    from changelog_layout import entries_naming, simulate_release
+    text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    entries = entries_naming(text, "(#1781)")
+    assert len(entries) == 1, entries
+    entry = entries[0].split("\n\n", 1)[0]
+    assert "\n" not in entry.rstrip("\n"), "the entry is not a single line"
+    assert entry.startswith("- **")
+    assert text.count("(#1781)") == 1
+    assert "(#1780)" not in entry
+    flat = entry.lower()
+    for needle in ("quality", "reviewing model", "unmeasured"):
+        assert needle in flat, needle
+    assert entries_naming(simulate_release(text), "(#1781)") == entries
+
+
 def test_docs_state_reject_depends_on_reviewer_obeying_prose():
     """#659 candour: the machine half (the verb) is delivered; the REJECT verdict is the reviewing
     model following prose. This is a PIN that the sentence exists, not evidence that REJECT is enforced."""
