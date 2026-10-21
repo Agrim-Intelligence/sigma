@@ -1731,7 +1731,10 @@ def _default_level2_plan(config, sdlc_dir=None, cwd=None):
             "review_launch": dict(common, model=review_model, directory=os.path.join(root, "review"), cap_usd=review_cap), "review_cap_usd": review_cap,
             "review_model": review_model, "resolver_root": os.path.join(root, "resolver"), "limits": None, "host": "claude",
             "environ": None, "config": config, "max_units_per_sweep": int(s["conflicts.agent.max_units_per_sweep"]),
-            "session": True, "net_prefix": _session_wall_prefix(launcher, root, common["scratch_parent"])}
+            "session": True,
+            # host login: no OS wall (on macOS it denies the keychain the CLI keeps its login in); the session runs in the
+            # CLI's restricted mode instead (launcher.RESTRICTED_ARGV): no shell, file tools confined to its copy
+            "net_prefix": None if s["conflicts.agent.login"] == "host" else _session_wall_prefix(launcher, root, common["scratch_parent"])}
 
 
 LEVEL2_PLAN_FACTORY = _default_level2_plan

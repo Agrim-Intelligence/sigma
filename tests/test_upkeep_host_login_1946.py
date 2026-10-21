@@ -157,6 +157,14 @@ def test_the_shipped_plan_passes_host_login_to_resolver_and_reviewer_and_none_by
     assert plan["launch"]["login"] is None and plan["review_launch"]["login"] is None
 
 
+
+def test_a_host_plan_builds_no_wall_and_a_scrubbed_plan_keeps_it_where_the_platform_has_one(wired, tmp_path, monkeypatch):
+    """Host login runs the session without the OS wall, which on macOS denies the keychain the CLI keeps its login in;
+    scrubbed mode keeps the wall exactly as before."""
+    monkeypatch.setattr(wired, "_session_wall_prefix", lambda *a, **k: ["/usr/bin/sandbox-exec", "-p", "(version 1)"])
+    assert wired._default_level2_plan(agent_cfg(login="host"), sdlc_dir=str(tmp_path))["net_prefix"] is None
+    assert wired._default_level2_plan(agent_cfg(), sdlc_dir=str(tmp_path))["net_prefix"][0] == "/usr/bin/sandbox-exec"
+
 def _plan_models(wired, tmp_path, ceiling, **agent):
     cfg = agent_cfg(**agent)
     if ceiling is not None:
@@ -303,7 +311,9 @@ def test_a_host_launch_hands_the_token_to_the_session_and_scrubs_it_from_the_out
     assert "tok-1963" not in result.reason and "[removed]" in result.reason
 
 
-def test_the_doctor_host_probe_runs_inside_the_wall_and_its_fix_names_the_command(tmp_path, monkeypatch):
+def test_the_doctor_host_probe_runs_the_way_the_session_does_with_no_wall(tmp_path, monkeypatch):
+    """Host mode runs the session without the OS wall (it denies the keychain the CLI keeps its login in), so the
+    doctor probes without it too, and its fix names signing the CLI in, not a token."""
     monkeypatch.setattr(sys, "platform", "darwin")
     seen = []
 
@@ -314,8 +324,8 @@ def test_the_doctor_host_probe_runs_inside_the_wall_and_its_fix_names_the_comman
     cfg["upkeep"]["conflicts"]["agent"]["login"] = "host"
     rows = d._resolver_rows(R.project(tmp_path, cfg), cfg, lambda n: "/usr/bin/" + n, False, None, runner)
     auth = [c for c in rows if c["name"].startswith("resolver auth")][0]
-    assert seen and seen[0][0] == "/usr/bin/sandbox-exec" and "Library/Keychains" in seen[0][2]
-    assert "claude setup-token" in json.dumps(auth)
+    assert seen == [None]
+    assert "run `claude` once and sign in" in json.dumps(auth) and "setup-token" not in json.dumps(auth)
 
 # --------------------------------------------------------------------------- #1953: the doctor shows the capped model; the account type is allowlisted
 
@@ -337,3 +347,31 @@ def test_the_account_type_reads_unknown_for_a_value_off_the_allowlist(tmp_path):
     assert launcher.auth_info(dict(os.environ), str(stub), str(tmp_path)) == (True, None)
     stub.write_text('#!%s\nimport json\nprint(json.dumps({"loggedIn": True, "subscriptionType": "Max"}))\n' % sys.executable)
     assert launcher.auth_info(dict(os.environ), str(stub), str(tmp_path)) == (True, "max")
+
+
+def test_the_scrubbed_doctor_probe_still_runs_inside_the_wall(tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
+    seen = []
+
+    def runner(env, binary, cwd, timeout=None, prefix=None):
+        seen.append(prefix)
+        return False, None
+    d, cfg = R.doctor(), R.config()
+    d._resolver_rows(R.project(tmp_path, cfg), cfg, lambda n: "/usr/bin/" + n, False, None, runner)
+    assert seen and seen[0][0] == "/usr/bin/sandbox-exec" and "Library/Keychains" in seen[0][2]
+
+
+def test_a_host_plan_has_no_wall_and_its_session_runs_restricted(monkeypatch):
+    """The plan for host mode passes no wall prefix; the launcher then adds the restricted flags, never Bash."""
+    L_ = S.launcher() if hasattr(S, "launcher") else None
+    if L_ is None:
+        import importlib.util, pathlib as _p
+        path = _p.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts" / "feature_upkeep_launcher.py"
+        spec = importlib.util.spec_from_file_location("feature_upkeep_launcher", path)
+        L_ = importlib.util.module_from_spec(spec); spec.loader.exec_module(L_)
+    unwalled, walled = L_.session_argv(False), L_.session_argv(True)
+    assert "--restricted" in unwalled and "Bash" not in " ".join(unwalled)
+    assert unwalled[unwalled.index("--tools") + 1] == "Read,Edit,Write,Glob,Grep"
+    assert "--strict-mcp-config" in unwalled and "--disable-slash-commands" in unwalled
+    assert unwalled[unwalled.index("--setting-sources") + 1] == ""
+    assert "--restricted" not in walled and walled[-1].endswith(",Bash")
