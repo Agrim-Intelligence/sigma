@@ -481,6 +481,21 @@ def _branch_doc(sdlc_dir, goal, subdir):
     return None, ""
 
 
+def recorded_acceptance(sdlc_dir, goal):
+    """The goal's P1 acceptance record, parsed (`acceptance.parse`'s dict): the main checkout's copy,
+    else the copy committed on the goal's branch. Raises FileNotFoundError when neither exists and
+    ValueError when the one found is invalid. The brief and `review_tests` both read it here, so the
+    criteria a reviewer is shown and the ones its TEST-MAP is checked against cannot differ."""
+    reader = _load("acceptance")
+    try:
+        return reader.read(sdlc_dir, goal)
+    except FileNotFoundError:
+        _, recorded = _branch_doc(sdlc_dir, goal, "acceptance")
+        if not recorded:
+            raise
+        return reader.parse(recorded, reader.path(sdlc_dir, goal).stem)
+
+
 def phase_doc_file(sdlc_dir, goal, subdir):
     """The path of the artifact filed for this goal under `.sdlc/<subdir>/`, or None.
 
@@ -757,17 +772,19 @@ def brief(sdlc_dir, goal, phase, artifact="", repo_root=".", source=None):
 
     if phase in ("pr-review", "retro"):
         try:
-            reader = _load("acceptance")
-            try:
-                acceptance = reader.read(sdlc_dir, goal)["text"]
-            except FileNotFoundError:
-                _, recorded = _branch_doc(sdlc_dir, goal, "acceptance")
-                acceptance = reader.parse(recorded, reader.path(sdlc_dir, goal).stem)["text"]
+            acceptance = recorded_acceptance(sdlc_dir, goal)["text"]
         except (OSError, ValueError):
             acceptance = "MISSING OR INVALID: original acceptance was not recorded; do not claim achieved."
         parts.append("## Recorded acceptance (P1 intent)\nGrade each criterion against evidence "
                      "as achieved, partial, or diverged. Do not substitute the current issue text.\n\n"
                      + acceptance)
+    if phase in ("code-review", "pr-review"):
+        # #1964: the test-trust facts the verify already measured, and (with `review.test_review` on)
+        # the TEST-MAP instruction that makes the reviewer's criterion -> test map checkable.
+        try:
+            parts.append(_load("review_tests").facts(sdlc_dir, goal))
+        except Exception as exc:                      # noqa: BLE001 - the brief is fail-open
+            parts.append("## Test-trust facts\n- unreachable (%s)" % type(exc).__name__)
 
     parent = _parent(sdlc_dir, goal_body, source)
     if parent:

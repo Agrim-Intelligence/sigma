@@ -60,9 +60,8 @@ python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/reviewer.py" run .sdlc /tmp/b
   --scratch "$(pwd)/.sdlc/work/<goal>" --goal "<goal>" --phase review
 ```
 
-`check` and `run` exit non-zero if the brief NAMES a shared scratch path (`check` also if it cannot be read) — a file the maker can write and the
-reviewer would read is a maker→reviewer channel. It does not flag implementation
-content: a reviewer must see the diff, its artifact. A non-zero `check` blocks dispatch on every mechanism, `subagent` included: fix the brief, dispatch only after `check` exits 0.
+A non-zero `check` or `run` (the brief names a scratch path the maker can write, or cannot be
+read) blocks dispatch on every mechanism, `subagent` included: fix the brief first.
 
 **A diff-only review misses blast radius:** the diff is the *change*, the codebase is
 the *impact surface*. Before judging any change, read the code around it and grep every caller.
@@ -75,7 +74,7 @@ Pick the mode from the request:
 - **Whole-repo audit** — not this skill. A periodic sweep is
   `/sigma-audit`.
 - **Counter-review** — the user pasted an external review (Cursor, GPT, SonarQube, another agent):
-  evaluate each finding critically — accept what's right, push back on what's wrong, add what it missed.
+  see Counter-review below.
 
 ## 1. Quantitative pass (a KPI dashboard)
 Run `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/quality_delta.py" <goal>` from the work record's `worktree` (default `.sdlc/work/<goal>`) and quote its stdout verbatim.
@@ -166,7 +165,8 @@ Not every real finding should stop the change: a
 blocking finding costs a full fix -> push -> re-review round, and `work.max_review_cycles` (default 3)
 **parks the goal** once they run out.
 - **Blocking** — you wrote the failing case, and it is a **Bug** or **Missing**; a risk review
-  returned `critical`/`high`; or a project-rule violation (quote the rule). Your reasons ARE the fix instructions: write them so the next pass can act.
+  returned `critical`/`high`; or a project-rule violation (quote the rule). With `review.test_review`
+  on, a [test review](references/test-review.md) finding blocks too. Your reasons ARE the fix instructions: write them so the next pass can act.
 - **Follow-up** — real, but the change is better landed than held: **Concern**, **Coverage**, **Nit**
   — or a **Missing** you could not write a failing case for (an absent piece, like missing
   observability, that resists a probeable check). File it with `--label sdlc:followup` instead of blocking.

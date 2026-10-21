@@ -594,6 +594,10 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/review_tests.py",
+      "role": "gesture"
+    },
+    {
       "path": "skills/sigma-loop/scripts/reviewer.py",
       "role": "gesture"
     },

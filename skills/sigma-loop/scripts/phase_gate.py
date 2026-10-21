@@ -142,7 +142,7 @@ def status(sdlc_dir, config, goal):
                 fix = (_cmd("work.py", "record-plan-review <sdlc> <goal> --verdict SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST "
                             "--plan-sha256 <brief sha> --agent-id <reviewer agentId>") if ph == "plan_review" else
                        _cmd("work.py", "record-review <sdlc> <goal> --verdict APPROVE|SEND-BACK|BLOCK "
-                            "--agent-id <reviewer agentId>"))
+                            "--agent-id <reviewer agentId> [--review-output <file>]"))
             elif v.get("verdict") not in approving:
                 ok, detail = False, f"last verdict is {v.get('verdict')!r}, not approving"
                 fix = "fix what the reviewer found, then run a fresh independent review and record it"

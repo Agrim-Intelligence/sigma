@@ -278,6 +278,25 @@ ENFORCEMENT_GATES = (
                   "rev while `core.attributesFile` is not seen; sealed tests are model-authored code run "
                   "with operator privileges and no sandbox; the red run and the green run may use "
                   "different interpreters; time and memory of a real run are unmeasured"},
+    {"control": "Independent test review before a review approval (opt-in)",
+     "function": "_test_review_refusal", "kind": "python-gate", "hosts": "all",
+     "enabled_by": ("review.test_review",), "settings": (),
+     "mechanism": "the code-review and pr-review briefs carry the goal's test-trust facts (acceptance "
+                  "criteria with `AC-<n>` ids, the red-green proof, the flake verdict, diff-revert kills, "
+                  "survivors and survivors on changed lines) and, with the key on, ask the resolved "
+                  "author-blind reviewer for one `TEST-MAP AC-<n>:` line per criterion; `review_tests.py` "
+                  "then blocks a criterion with no line, `NONE`, an `UNTESTABLE` with no reason, only "
+                  "nonexistent tests or conflicting lines, a duplicate criterion id, and every diff-revert "
+                  "survivor on a line the goal changed that the reviewer did not accept with "
+                  "`SURVIVOR-OK <id>: <why>`; `work.py record-review --verdict APPROVE` refuses (and needs "
+                  "`--review-output <file>`), and a PR review's `approve` or `unblock` is written as "
+                  "`block` with the findings; `post-review` asked to approve a stored block posts the block",
+     "condition": "the TEST-MAP text, like the verdict, is relayed by the orchestrator on the subagent route "
+                  "and written by the maker on the inline route (#537); the evidence is the last verify's, "
+                  "not re-checked for freshness here; a missing or unmeasured diff-revert reads `partial` "
+                  "and does not refuse; test existence is an AST lookup for pytest ids and a file on a test "
+                  "path otherwise, and an inherited method reads missing; the catch rate and false-block rate "
+                  "are UNMEASURED: no goal has run with the key on"},
     {"control": "Sealed acceptance tests authored by an author-blind breaker (opt-in)",
      "function": "_seal_tests_refusal", "kind": "python-gate", "hosts": "all",
      "enabled_by": ("work.enabled", "gates.sealed_acceptance.enabled"), "settings": ("review.timeout_seconds",),
@@ -959,8 +978,36 @@ def run_resolved_review(sdlc_dir, goal, manifest_path, resolution_path, verdict=
     return _write_review_result(sdlc_dir, manifest, resolution_path, verdict, reason, waiver=waiver)
 
 
+def _test_review_refusal(sdlc_dir, goal, review_text):
+    """#1964: `(refusal, partial)` for an approving review verdict. `refusal` is None or why it may
+    not stand -- a criterion with no test that proves it, or a diff-revert survivor on a line the goal
+    changed (`review_tests.py`); `partial` is the line saying the survivor clause was not judged, for
+    the caller to record beside the verdict. Both None unless `review.test_review` is true. The
+    registered seam `ENFORCEMENT_GATES` names."""
+    return _load("review_tests").judge(sdlc_dir, goal, review_text)
+
+
+#: Under GitHub's 65,536-character comment limit with room for post_review's own header and marker.
+_MAX_POSTED_REASON = 60000
+
+
 def _write_review_result(sdlc_dir, manifest, resolution_path, verdict, reason, waiver=None):
-    """Persist the common immutable-generation binding for every host review handoff."""
+    """Persist the common immutable-generation binding for every host review handoff.
+
+    #1964: every PR review route lands here, so this is where an approving verdict (`approve`, or
+    `unblock`, which also lets the merge through) meets the test review. A blocking test review is
+    WRITTEN AS `block`, its findings ahead of the reviewer's text -- refusing instead would strand a
+    process-route review, whose verdict no flag can restate -- and the ordinary block -> fix -> fresh
+    generation cycle is the recovery. Only that downgrade direction exists."""
+    if verdict in ("approve", "unblock"):
+        refusal, partial = _test_review_refusal(sdlc_dir, manifest.get("goal"), reason)
+        if refusal:
+            print(f"work: the test review turned this `{verdict}` into a block:\n{refusal}\nIf the reviewer's "
+                  "output was summarised, record its full text instead (`--reason \"$(cat <file>)\"`): the "
+                  "TEST-MAP lines live there.", file=sys.stderr)
+            verdict, reason = "block", refusal + "\n\n" + (reason or "")
+        elif partial:
+            reason = (reason or "") + "\n\n" + partial      # where the owner reads the result
     result = {"generation_id": manifest["generation_id"], "brief_sha256": manifest["brief_sha256"],
               "pr": manifest.get("pr"), "head_sha": manifest.get("head_sha"),
               "resolution_sha256": hashlib.sha256(pathlib.Path(resolution_path).read_bytes()).hexdigest(),
@@ -1591,14 +1638,26 @@ def _north_star_state(sdlc_dir, rec):
     return state, " ".join(str(detail).split())[:200]
 
 
-def record_review(sdlc_dir, config, goal, verdict, agent_id="", reason=""):
+def record_review(sdlc_dir, config, goal, verdict, agent_id="", reason="", review_text=None):
     """Record the code-review verdict in the action log (#684) -- the only place a local-only goal,
     which has no PR, can show that an independent review ran and approved. Verdicts: APPROVE,
-    SEND-BACK, BLOCK. The record is agent-written (see phase_gate.py's honesty note)."""
+    SEND-BACK, BLOCK. The record is agent-written (see phase_gate.py's honesty note).
+
+    `review_text` (#1964) is the reviewer's full output, `--review-output <file>`: with
+    `review.test_review` on, an APPROVE whose test review blocks is refused, never recorded. Like the
+    verdict word beside it, it is agent-supplied."""
     pg = _load("phase_gate")
     mapped = pg.REVIEW_VERDICTS.get(str(verdict or "").strip().upper())
     if not mapped:
         raise ValueError(f"unknown review verdict {verdict!r}: one of " + ", ".join(pg.REVIEW_VERDICTS))
+    if mapped in pg.REVIEW_APPROVING:
+        refusal, partial = _test_review_refusal(sdlc_dir, goal, review_text)
+        if refusal:
+            raise ValueError(refusal + ("" if review_text is None else
+                                        "\nRecord `--verdict SEND-BACK` with these findings, fix them, then "
+                                        "review again."))
+        if partial:
+            print(f"work: {partial}", file=sys.stderr)
     # D2 round-3 F02 (owner ruling 2026-10-15): the approval is NOT held when the project rules cannot be
     # read, but the gap is RECORDED on the verdict row, not only said in the reviewer's prose. The rules
     # live in the north-star, so this is the same three-way check plan-review uses; absent/present add
@@ -7840,6 +7899,19 @@ def post_review(sdlc_dir, config, goal, run=None, verdict="", reason="", evidenc
         rebound = review_evidence(sdlc_dir, goal, manifest_path, result_path)
     except (OSError, ValueError) as exc:
         return f"review evidence is not bound to this goal's current review generation ({exc})"
+    if v in ("approve", "unblock") and rebound["verdict"] == "block":
+        # #1964: the stored result is a block (a reviewer's, or an approval the test review turned
+        # into one) while the caller asked to approve. Posting nothing here let the merge through
+        # under `require_review: changes`; posting the stored block is the only safe reading. The
+        # reverse -- approving what was stored as a block -- does not exist.
+        try:
+            stored = json.loads(pathlib.Path(result_path).read_text(encoding="utf-8")).get("reason")
+        except (OSError, ValueError):
+            stored = None
+        reason = (stored if isinstance(stored, str) else "")[:_MAX_POSTED_REASON]
+        print(f"work: post-review was asked for `{v}`, but this generation's result is a block; posting "
+              "the block", file=sys.stderr)
+        v = "block"
     if rebound["verdict"] != v:
         return "review evidence does not match this goal and verdict"
     if v == "unblock":
@@ -7869,6 +7941,10 @@ def post_review(sdlc_dir, config, goal, run=None, verdict="", reason="", evidenc
     # below already runs it through, applied here too so the PUBLIC PR comment gets the same guarantee
     # (previously only the ledger copy was scrubbed; the comment posted the raw reason verbatim).
     reason = scrub(reason or "")
+    # #1964: the merge gate reads the LAST marker line of the comment, so a reason quoting one (a
+    # reviewer's own text, stored whole when the test review turned an approval into a block) could
+    # turn this block into an unblock. `_line_directive` skips `>`-quoted lines; quote those lines.
+    reason = "\n".join("> " + line if _DIRECTIVE_RE.match(line) else line for line in reason.splitlines())
 
     cap = int(settings(config).get("max_review_cycles", 3) or 0)
     # F20/#343: `cap and cycles >= cap` below short-circuits false the instant `cap` is exactly 0, so a
@@ -8720,7 +8796,8 @@ _RECORD_PLAN_REVIEW_USAGE = ("usage: work.py record-plan-review <sdlc_dir> <goal
                              "SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST --plan-sha256 <hex> "
                              "[--agent-id <reviewer agentId>] [--reason \"<text>\"]")
 _RECORD_REVIEW_USAGE = ("usage: work.py record-review <sdlc_dir> <goal> --verdict "
-                        "APPROVE|SEND-BACK|BLOCK [--agent-id <reviewer agentId>] [--reason \"<text>\"]")
+                        "APPROVE|SEND-BACK|BLOCK [--agent-id <reviewer agentId>] [--reason \"<text>\"] "
+                        "[--review-output <file>]")
 _LINE_HASH_USAGE = ("usage: work.py line-hash <file> <line>  (prints the sha256 a "
                     "`work.allow_secret_content` entry names; never the line)")
 
@@ -8919,8 +8996,11 @@ def main(argv):
             return 2
         try:
             config = state.load_config(argv[2])
+            review_output = _flag(argv, "--review-output")
             row = record_review(argv[2], config, argv[3], _flag(argv, "--verdict"),
-                                agent_id=_flag(argv, "--agent-id"))
+                                agent_id=_flag(argv, "--agent-id"),
+                                review_text=(pathlib.Path(review_output).read_text(encoding="utf-8")
+                                             if review_output else None))
         except (state.ConfigMissing, OSError, ValueError, RuntimeError) as exc:
             print(f"work: {exc}", file=sys.stderr)
             return 2
