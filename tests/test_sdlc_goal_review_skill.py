@@ -1155,6 +1155,89 @@ def test_adjudication_lists_uncovered_fr_as_reject_ground():
     assert "nothing in this kit enforces it" in flat
 
 
+# ---- #1781: the quality check. Slices are RAW text anchored on the NEW paragraph, so the older #659
+# sentence beside it can never satisfy a quality assert. Pins that the prose exists, not that REJECT is enforced.
+
+def _q_slice(text, start, end, name):
+    assert start in text, (name, "start anchor missing", start)
+    sl = text.split(start, 1)[1]
+    assert end in sl, (name, "end anchor missing", end)
+    return _flat(start + sl.split(end, 1)[0])
+
+
+def _rt_q():
+    return _q_slice(READING_TARGET, "**`Quality requirements` is checked by RUNNING", "**`Out of scope`", "reading-the-target")
+
+
+def _sk_q():
+    return _q_slice(_BODY, "**Then run the quality check**", "\n## 2.", "SKILL.md")
+
+
+def _adj_q():
+    return _q_slice(ADJUDICATION, "A failed `quality` check", "\n\n**Why there is no third verdict", "adjudication")
+
+
+_QUALITY_GESTURE = 'goal_design.py" quality .sdlc/design/<n>.md'
+
+
+def test_goal_review_skill_step1_runs_quality_verb():
+    assert _QUALITY_GESTURE in _sk_q()
+
+
+def test_reading_the_target_runs_quality_verb():
+    assert _QUALITY_GESTURE in _rt_q()
+
+
+def test_adjudication_quality_names_slug_after_violation_marker():
+    assert "after `VIOLATION:`" in _adj_q()
+
+
+def test_reading_the_target_quality_names_slug_after_violation_marker():
+    assert "after `VIOLATION:`" in _rt_q()
+
+
+def test_goal_review_skill_step1_quality_failure_is_reject_ground():
+    flat = _sk_q()
+    assert "REJECT ground" in flat
+    assert "category" in flat
+
+
+def test_goal_review_skill_quality_paragraph_states_unenforced_reject():
+    flat = _sk_q()
+    assert "nothing in this kit enforces it" in flat
+    assert "reviewing model" in flat
+    assert "unmeasured" in flat
+
+
+def test_reading_the_target_quality_paragraph_states_unenforced_reject():
+    flat = _rt_q()
+    assert "nothing in this kit enforces it" in flat
+    assert "reviewing model" in flat
+    assert "unmeasured" in flat
+
+
+def test_reading_the_target_quality_paragraph_states_retrofit_note():
+    flat = _rt_q()
+    assert "written before this section" in flat
+    assert "not rewritten" in flat
+
+
+def test_adjudication_2b_quality_ground_names_the_category():
+    assert "category" in _adj_q()
+
+
+def test_adjudication_2b_quality_ground_states_unenforced_reject():
+    assert "nothing in this kit enforces it" in _adj_q()
+
+
+def test_adjudication_2a_buckets_open_quality_row_through_its_doubt_id():
+    assert "### 2a." in ADJUDICATION and "### 2b." in ADJUDICATION
+    flat = _flat(ADJUDICATION.split("### 2a.", 1)[1].split("### 2b.", 1)[0])
+    assert "open: D-n" in flat and "quality" in flat
+    assert "never given a new" in flat
+    assert "bucketed through that doubt id" in flat.lower()
+
+
 def test_confirm_md_pastes_served_block():
     flat = _flat(CONFIRM)
     assert "goal_design.py" in CONFIRM and " served " in CONFIRM

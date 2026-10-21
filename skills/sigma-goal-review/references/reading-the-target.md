@@ -104,6 +104,24 @@ Designs written before #659 have no such heading and are not re-reviewed or rewr
 reports the missing heading, and a reviewer reading one says so rather than inventing requirements.
 **Be honest about the guarantee:** the verb makes the violation unmissable and names each offending requirement, but that the verdict then becomes REJECT depends on the reviewing model following this prose; nothing in this kit enforces it (a hard refusal in `loop.py mark-designed` is deferred). The end-to-end run of a real `/sigma-goal-review` with a model is unmeasured.
 
+**`Quality requirements` is checked by RUNNING the verb, not by reading the table** (#1780).
+`goal-design` §5 writes one row per quality category, each a measurable scenario, a reasoned N/A or
+an open Doubt. Run, from the repo root:
+
+```
+python3 "${CLAUDE_SKILL_DIR}/../sigma-goal-design/scripts/goal_design.py" quality .sdlc/design/<n>.md
+```
+
+It exits 0 and prints `"ok": true`, or exits 2 and prints one `goal_design.py quality: VIOLATION: <slug>: <msg>` line
+per problem on stderr (the full JSON is still on stdout, and advisory `quality: warning:` lines may
+precede them). The category is the slug right after `VIOLATION:`, up to the next colon (`lane` and
+`quality_requirements` are not categories): a missing row, a missing or invalid `Lane`, a Response measure with no digit, a cell over
+the cap, a missing STRIDE table in the large lane, or a **missing** `## Quality requirements`
+heading. Report each verbatim as a schema violation before building the 2a brief and never
+adjudicate it away. A design written before this section has no heading; the verb reports it, the
+reviewer says so, and the design is not rewritten and nothing is invented.
+**Be honest about the guarantee:** the verb makes the violation unmistakable and names the category; that the verdict then becomes REJECT depends on the reviewing model following this prose, and nothing in this kit enforces it (`loop.py mark-designed` does not refuse; a hard gate is deferred). The end-to-end run of a real `/sigma-goal-review` with a model is unmeasured.
+
 **`Out of scope` is where you check the verdict `Sweep` reports** (#1975). `converged` is the design
 asserting its last sweep round found nothing new **in scope**, and until #1975 that word was the
 author's own after-the-fact call with nothing recording it — a pass could quiet its final round by

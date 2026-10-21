@@ -90,6 +90,7 @@ USAGE = """usage: init_flow.py [target_dir] [options]
                                  questions config.json does not already answer; never answers
                                  --board, --verify or a work flip, never changes a setting
   --demo --vision --codex --cursor   the opt-in scaffolds (see sdlc_init.py)
+  --architecture-doc             scaffold the architecture document at architecture.system_root
   --github-templates             also copy the .github/ issue templates + workflows
   --github                       shorthand: --mode github --github-templates (the pre-#236 flag)
   --ignore-scope tracked|local   where the runtime dirs are git-ignored (default tracked)
@@ -98,7 +99,7 @@ USAGE = """usage: init_flow.py [target_dir] [options]
 _VALUE = {"--mode", "--repo", "--work", "--verify", "--verify-command-file", "--board", "--ledger",
           "--ignore-scope"}
 _BOOL = {"--local-only", "--no-verify", "--yes", "--demo", "--vision", "--codex", "--cursor",
-         "--github-templates", "--github"}
+         "--github-templates", "--github", "--architecture-doc"}
 
 #: The start of board_setup.py's success-path note that mirroring is off (`create`); dropped from
 #: this flow's output when `--board yes` turns mirroring on right after it.
@@ -702,7 +703,8 @@ def main(argv):
     mode_lines = apply_config(sdlc, res, repo, repo_flag=bool(opts.get("repo")))
     cfg = _read_json(cfg_path)
     source = (cfg.get("discovery") or {}).get("source")
-    extras = {"--" + k for k in ("demo", "vision", "codex", "cursor") if opts.get(k)}
+    extras = {"--" + k for k in ("demo", "vision", "codex", "cursor", "architecture-doc")
+              if opts.get(k)}
     if source == "github":
         extras.add("--github")                           # only for the demo's gh-issue hint
     extras_refusal = None

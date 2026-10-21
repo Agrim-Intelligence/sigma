@@ -2,7 +2,7 @@
 
 The detail behind step 5 of [`../SKILL.md`](../SKILL.md): the full `.sdlc/design/<n>.md` heading
 schema (a contract with `goal-review`'s own step 1), the copyable artifact skeleton, the required
-`<n>-in-brief.md` sibling and its own stricter rules, and what each header field (`Sweep`, `Lane`,
+`<n>-in-brief.md` sibling and its own stricter rules, the quality requirements rules, and what each header field (`Sweep`, `Lane`,
 `Budget`, `Premise check`, `Out of scope`, id numbering) means and why it is mandatory.
 
 ---
@@ -40,6 +40,12 @@ premise below was falsified, say so in one clause and state the corrected one>
 
 ## Functional requirements
 - **FR-1.** <one EARS sentence: [WHEN|IF|WHILE|WHERE <condition>, ]THE <system> SHALL [NOT] <behaviour>>
+
+## Quality requirements
+| Category | Answer | Source | Stimulus | Environment | Response | Response measure | Evidence |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <slug from nfr-bank> | scenario | <who or what> | <the event> | <the conditions> | <what the system does> | <a number with its unit, or test: <name>> | BR-1, D-1 |
+<!-- one row per category, N/A and open rows too; the large lane adds a `Container | Threat | Mitigation` table below this one -->
 
 ## Queries run
 - `<the exact command>`        <!-- §2's verbatim record; this is the re-scan guarantee -->
@@ -114,8 +120,10 @@ artifact is deliberately exempt from:
   state plainly, the finding is really two findings, or belongs in the main artifact only.
 - **Fixed shape:** what was checked (one line — the scope, and how many sites); what it found,
   split cleanly into what needs no ruling and what does; what a person has to decide, as plain
-  questions, not `open_*` ids; the plan, as a table of what depends on what; and any correction to a
-  claim the source got wrong, stated once and named as a correction.
+  questions, not `open_*` ids; the plan, as a table of what depends on what; any correction to a
+  claim the source got wrong, stated once and named as a correction; and, only when a quality row is
+  answered as a scenario, one plain-language line of quality targets the design commits to, numbers kept
+  and no category slug or id.
 - **When `Sweep` is `capped`, this file says so in its own first line too** — the rule below about
   the comment applies here for the identical reason: the reader who stops after one line of THIS
   file must not be the one left thinking the mapping is complete.
@@ -266,6 +274,36 @@ it. The check is cheap and linear in the FR count n and slice rows m (measured: 
 a sentence over 2000 characters before any pattern runs, and warns above 50 FRs as a hint to
 decompose the target (that threshold is a judgement, not a measurement). FR bullets anywhere outside `## Functional requirements` are not read, so they are neither checked nor traced. A token repeated within one `Requirements` cell (`FR-1, FR-1`) is a violation. Designs written before #659 have no such heading; they are read without being re-reviewed and
 are not rewritten.
+
+**`Quality requirements` is one row per quality category, each answered as a measurable scenario, a
+reasoned N/A or an open Doubt** (#1780). Fetch the categories, the five scenario fields, the STRIDE
+letters and the three answer forms with `python3 "${CLAUDE_SKILL_DIR}/scripts/goal_design.py" nfr-bank`,
+never from memory, and key each row by the category slug that verb prints: the section has no
+row ids, presence, uniqueness and spelling are checked, row order is not. An answer is `scenario`
+(Source, Stimulus, Environment, Response and Response measure all filled), `N/A: <reason>`, or
+`open: D-<n>`; on an N/A or open row the five scenario cells are the dash character. A reason is at
+least three words and not a filler word; the literal `N/A: small lane` is permitted in the small lane,
+never required there, and a violation in medium and large. The lane is the header `Lane`, read as the
+whole value before the first `## ` heading and the same measured value the mapping reference tells you
+to write; a missing or unrecognised one is a violation and the rules then run as medium. The `--lane`
+flag overrides the rules only and is not the documented gesture. An answered row needs every field
+filled, a Response measure that carries a digit or starts `test:` followed by something, and an
+Evidence cell of `BR-n` (a row in Blast radius), `D-n` (a bullet in Doubts), `Dossier:<id>` (not
+verified), `file:line` or `file:line-line`, or the literal `agent-proposed`; the small lane needs at
+least one `BR-n` on every answered row. An open row's Doubt must be a bullet in `## Doubts`, so it
+reaches review through the bucketing review already does by id. In the large lane `security` may not be
+N/A and a STRIDE table is required, with the exact header `Container | Threat | Mitigation`, one row
+per container and threat letter, each container equal to a first cell of Components, and a mitigation
+or `ruled out: <reason>`; the single escape row `— | — | <reason>` replaces the table when no container
+applies. A STRIDE table is validated in every lane when it is present, and the check warns above 20
+containers. Run `python3 "${CLAUDE_SKILL_DIR}/scripts/goal_design.py" quality .sdlc/design/<n>.md`
+before publishing: it prints the violations and exits 2 on any. **Be honest about the guarantee:** it
+checks form, not truth (a digit in a Response measure proves nothing about the number), `Lane` is
+self-reported, and the check is a pure function of one file that reads at most 1 MiB and refuses a cell
+over 2000 characters. A failed check becomes a REJECT in goal-review only
+because the reviewing model follows that prose, and `mark-designed` does not refuse; nothing here makes the designer run the check.
+The token cost of answering every row is unmeasured. Designs written before this section existed have no
+such heading; they are read without being re-reviewed and are not rewritten.
 
 **`Depends on` carries slice ids from this same table, and nothing else** (#1956). One or more of
 this table's own `Slice` values, comma-separated — the cell is read by splitting on commas and
