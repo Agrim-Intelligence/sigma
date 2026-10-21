@@ -109,15 +109,10 @@ configuration directory, so the CLI's own login is not found. Name one environme
 { "upkeep": { "enabled": true, "conflicts": { "resolve": "agent", "agent": { "login": "host" } } } }
 ```
 
-What host mode exposes: the session can read the watcher user's CLI profile, settings and memory, because they are in that
-home. Every other wall stays: the edit-only tool allowlist with `acceptEdits`, the network prefix, the timeout, the per-sweep
-cap, the spend keys, the confined scratch copy, and no git, gh or ssh credential variable (`GH_*`, `GITHUB_*`, `SSH_*`,
-`GIT_*`). `credential_var` is still passed if you also set it. A host run is charged the per-unit cap, or nothing when no cap is
-set, because the shared transcript store is never priced. The model tiers are capped by the repo's `model_selection_max_tier`
-(default `opus`): a `model` or `reviewer.model` above it is lowered to it, never raised. The doctor rows `resolver auth` and
-`resolver configured` read "host login: logged in as <account type>" and never print a credential. A unit whose preflight finds
-no login parks with "resolver cli is not logged in under the host login". On macOS the CLI keeps its login in the keychain, which the session wall denies and keeps denying (it also holds the git host token). Host mode therefore passes `USER` and `LOGNAME`, and hands the walled session the CLI's own `CLAUDE_CODE_OAUTH_TOKEN` when the watcher has it (made once with `claude setup-token`); the unit that finds no login parks naming that command. Only that one variable travels, never a `GH_*`, `GITHUB_*`, `SSH_*` or `GIT_*` one. UNVERIFIED on a real macOS CLI: the recorded `claude auth status` inside the wall is owner-run. The recorded real-model run of this mode is owner-run
-after landing; until it is recorded, host mode is proven against a fake CLI only.
+Host mode runs the resolver and the reviewer as `claude -p` sessions on the watcher's own login, with no OS wall and in
+the CLI's restricted mode: no shell or code-running tool, file tools confined to the session's copy, no MCP servers,
+hooks, instruction files or skills. The full description, the measurements and the one recorded real-model run are in
+[upkeep](upkeep.md#turn-on-agent-resolution) and [the run](launch/evidence/upkeep-host-login-run.md).
 
 ## Landing a unit
 
@@ -157,13 +152,13 @@ job. A host limit was seen: branch names that start with `refs/` are rejected.
 
 **Not run, and so not claimed:**
 
-- The real-model run. Reasons: the flags beyond the launcher's confirmed table
-  are unverified and refused, and no credential route has been chosen.
-- A real-model resolver and reviewer.
+- A real-model run of the scrubbed mode with the macOS wall (host mode has one, above).
 - The chat door against a chat service.
 - Branch rulesets and bypass actors (a private repository without a paid plan has none).
 
-The recorded real-model run, for both login modes, is owner-run after landing; until it is recorded, treat Level 2 as proven against a fake only.
+One real-model run of host mode is recorded ([the run](launch/evidence/upkeep-host-login-run.md)): a two-sided conflict
+resolved, proved, approved and pushed, the parked issue released. The scrubbed mode with the macOS wall has no recorded
+real-model run; treat it as proven against a fake only.
 
 **Model login (#1691).** The resolver and the reviewer run in a scrubbed environment, where the CLI's own login is not found.
 Set `upkeep.conflicts.agent.credential_var` to the NAME of one environment variable that holds the model login (never a
