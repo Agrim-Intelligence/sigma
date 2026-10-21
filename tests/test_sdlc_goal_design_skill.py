@@ -1306,3 +1306,163 @@ def test_the_artifact_rule_runs_the_requirements_verb_and_is_candid():
 def test_skill_md_tells_the_designer_to_write_and_check_requirements():
     flat = " ".join(SKILL.split())
     assert "Functional requirements" in flat and 'goal_design.py" requirements' in flat
+
+
+# --------------------------------------------------------------- #1780: quality requirements (prose)
+
+#: The bold lead-in of the rules paragraph in the artifact reference. The paragraph is located by it,
+#: so a rewrite that loses the lead-in goes red here instead of silently measuring something else.
+_QUALITY_LEAD = "**`Quality requirements` is one row per quality category"
+
+
+def _bank_slugs():
+    """The eleven category slugs, derived from the engine so prose cannot drift from the bank."""
+    return [c["id"] for c in goal_design_py.nfr_bank()["categories"]]
+
+
+def _quality_rules():
+    assert _QUALITY_LEAD in ARTIFACT, "the Quality requirements rules paragraph lost its lead-in"
+    para = ARTIFACT.split(_QUALITY_LEAD, 1)[1].split("\n\n", 1)[0]
+    assert para.strip(), "the Quality requirements rules paragraph is empty"
+    return _QUALITY_LEAD + para
+
+
+def _flat(text):
+    return " ".join(text.split()).replace("*", "")
+
+
+def _assert_no_category_listing(text, where):
+    """Cite the verb, do not restate the bank. Plain words such as security or cost are ordinary
+    English, so the test looks for the underscore slugs (never ordinary words) and for more than one
+    backticked slug, which is what a list-like enumeration looks like."""
+    flat = _flat(text)
+    for slug in _bank_slugs():
+        if "_" in slug:
+            assert slug not in flat, "%s restates the category %s" % (where, slug)
+    ticked = [s for s in _bank_slugs() if "`%s`" % s in text]
+    assert len(ticked) <= 1, "%s lists category slugs: %s" % (where, ticked)
+
+
+def _in_brief_span():
+    schema = _section(ARTIFACT, "## 5. Write the artifact", "## 6. Handoff")
+    brief = schema.split("in-brief.md` is a required sibling", 1)[1]
+    return brief.split("`Doubts` and `Blockers` stay two headings", 1)[0]
+
+
+def _skill_quality_bullet():
+    assert "- **Quality requirements**" in SKILL, "SKILL.md step 3 lost the Quality requirements bullet"
+    bullet = SKILL.split("- **Quality requirements**", 1)[1]
+    return "- **Quality requirements**" + re.split(r"\n- \*\*|\n\n", bullet, maxsplit=1)[0]
+
+
+def _mapping_quality_paragraph():
+    lead = "**Which lane answers which quality rows.**"
+    assert lead in MAPPING, "the mapping reference lost the quality lane paragraph"
+    return lead + MAPPING.split(lead, 1)[1].split("\n\n", 1)[0]
+
+
+def test_quality_requirements_sits_between_functional_requirements_and_queries_run():
+    """ORDER, not membership: plain `in` stays green when the headings are swapped."""
+    fence = _schema_fence()
+    i = [fence.index(h) for h in ("## Functional requirements", "## Quality requirements", "## Queries run")]
+    assert i == sorted(i), "the skeleton's Quality requirements section is out of order: %r" % i
+
+
+def test_skill_skeleton_headings_equal_required_headings():
+    """One source of truth: the skeleton's `## ` headings, in order, are the engine's tuple. A
+    one-sided edit of the prose or of the engine goes red."""
+    headings = [ln[3:].strip() for ln in _schema_fence().splitlines() if ln.startswith("## ")]
+    assert headings == list(goal_design_py.REQUIRED_HEADINGS), headings
+
+
+def test_quality_rules_paragraph_cites_both_verbs_and_the_honest_limits():
+    flat = _flat(_quality_rules())
+    for needle in ("nfr-bank", "quality", "scenario", "N/A", "open", "Doubt",
+                   "small", "medium", "large", "Container | Threat | Mitigation",
+                   "form, not truth", "self-reported", "reviewing model", "unmeasured",
+                   "mark-designed", "1 MiB", "2000"):
+        assert needle in flat, "the rules paragraph never says %r" % needle
+    assert 'goal_design.py" quality .sdlc/design/<n>.md' in flat, \
+        "the documented gesture for the check is gone"
+    assert "--lane" in flat and "not the documented gesture" in flat, \
+        "the paragraph does not say --lane is an override and not the gesture"
+
+
+def test_quality_rules_paragraph_does_not_list_the_category_slugs():
+    _assert_no_category_listing(_quality_rules(), "the rules paragraph")
+
+
+def test_quality_rules_state_the_small_lane_literal_is_permitted_not_required():
+    flat = _flat(_quality_rules())
+    assert "N/A: small lane" in flat
+    assert "permitted in the small lane" in flat, "the paragraph never permits the literal in small"
+    assert "never required" in flat, "the paragraph never says the literal is not required"
+    assert "violation in medium and large" in flat, "the paragraph never says it is a violation elsewhere"
+
+
+def test_quality_prose_mints_no_row_id_and_cites_no_design_path():
+    spans = {"rules paragraph": _quality_rules(), "mapping paragraph": _mapping_quality_paragraph(),
+             "SKILL.md bullet": _skill_quality_bullet()}
+    for where, text in spans.items():
+        assert not re.findall(r"\b[A-Z]{1,3}-\d+\b", text), "%s mints an id-shaped token" % where
+        assert not re.search(r"\.sdlc/(design|plans|research|evidence)/\d", text), \
+            "%s cites a concrete design path" % where
+    # The skeleton's own Quality section: only the two ids the example row cites may appear in it.
+    qfence = _schema_fence().split("## Quality requirements", 1)[1].split("## Queries run", 1)[0]
+    assert set(re.findall(r"\b[A-Z]{1,3}-\d+\b", qfence)) <= {"BR-1", "D-1"}, \
+        "the skeleton's Quality section mints an id-shaped token"
+    # The in-brief line itself must carry no id; check the line, not the span's old prose.
+    line = [ln for ln in _in_brief_span().splitlines() if "quality targets" in ln.lower()]
+    assert line, "the in-brief rules lost the quality-targets line"
+    assert not re.search(r"\b[A-Z]{1,3}-\d+\b", " ".join(line))
+
+
+def test_in_brief_rules_carry_the_quality_targets_line():
+    flat = _flat(_in_brief_span())
+    assert "quality targets" in flat, "the in-brief fixed shape never names the quality targets line"
+    assert "answered as a scenario" in flat, "the line is not conditioned on a scenario row"
+    assert "numbers" in flat and "kept" in flat, "the line does not keep the numbers"
+    _assert_no_category_listing(_in_brief_span(), "the in-brief span")
+
+
+def test_mapping_reference_has_the_quality_lane_paragraph():
+    para = _mapping_quality_paragraph()
+    flat = _flat(para)
+    assert "Quality requirements" in flat
+    for lane in ("small", "medium", "large"):
+        # backticked: the bare word also occurs in "small-lane literal", which would hide a deleted lane
+        assert "On `%s`" % lane in flat, "the mapping paragraph never answers for the %s lane" % lane
+    assert "same `Lane` field" in flat or "same Lane field" in flat
+    assert "not a second sizing" in flat
+    assert not re.search(r"^\d+\. ", para, re.M), "a numbered line would be counted by the capped-list test"
+    assert "of these rather than one:" not in para
+
+
+def test_skill_step_three_names_quality_requirements_and_both_verbs():
+    bullet = _skill_quality_bullet()
+    flat = _flat(bullet)
+    assert "## Quality requirements" in flat
+    assert 'goal_design.py" nfr-bank' in flat and 'goal_design.py" quality' in flat
+    assert "never from memory" in flat
+    assert "before publishing" in flat and "exit 2" in flat
+    assert "references/writing-the-artifact.md" in bullet
+    assert "no id" in flat
+    assert len(bullet) < 1500, "the bullet is over its budget: %d characters" % len(bullet)
+    _assert_no_category_listing(bullet, "the SKILL.md bullet")
+    assert not re.search(r"\b[A-Z]{1,3}-\d+\b", bullet.replace("BR-n", "").replace("D-n", ""))
+    # the numbering paragraph says quality rows carry no id
+    numbering = SKILL.split("Seeds, Out of scope, Doubts and Blockers are **numbered**", 1)[1].split("\n\n", 1)[0]
+    assert "category" in numbering and "no id" in numbering.replace("**", "")
+    # step-three placement: the bullet sits inside step 3, after Components
+    step3 = _section(SKILL, "## 3. Blast radius", "## 4.")
+    assert "- **Quality requirements**" in step3
+    assert step3.index("- **Components**") < step3.index("- **Quality requirements**")
+
+
+def test_goal_design_skill_stays_inside_the_token_budget():
+    import importlib.util as _u
+    spec = _u.spec_from_file_location("skill_structure_1780", ROOT / "evals" / "skill_structure.py")
+    ss = _u.module_from_spec(spec)
+    spec.loader.exec_module(ss)
+    m = ss.measure(ROOT / "skills" / "sigma-goal-design")
+    assert m["est_tokens"] <= 5000, m

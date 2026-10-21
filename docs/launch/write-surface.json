@@ -322,6 +322,22 @@
     },
     {
       "path": "skills/sigma-init/scripts/sdlc_init.py",
+      "function": "scaffold_architecture_doc",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "opt-in --architecture-doc only; removes only the one file this call just created, after a failed write",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-init/scripts/sdlc_init.py",
+      "function": "scaffold_architecture_doc",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "opt-in --architecture-doc only; exclusive create (open mode x), never overwrites an existing file, refuses URL, .., absolute and .git/.sdlc roots before any write",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-init/scripts/sdlc_init.py",
       "function": "scaffold_codex",
       "rule": "fs-remove",
       "count": 2,
