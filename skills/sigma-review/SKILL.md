@@ -114,8 +114,8 @@ Where an axis's boundary is unclear, decide by the harm it names. Canon: [axes](
 7. **Intelligibility** — *correct but unreadable, so the next change breaks it.* Do names say what the
    thing does and what it mutates? Do comments explain WHY, not restate WHAT? Is any comment, docstring
    or README now FALSE because of this diff.
-8. **Test Adequacy** — *unverified, so the next change breaks it silently.* **Would it fail if the code were wrong?** A test that asserts a mock, or asserts the implementation
-   rather than the behaviour, is not coverage. Boundaries tested, not only the happy path.
+8. **Test Adequacy** — *unverified, so the next change breaks it silently.* **Would it fail if the code were wrong?** A test asserting a mock or the implementation, or
+   restating it (tautological), is not coverage. Boundaries tested, not only the happy path.
 
 Two gates run alongside the axes:
 - **Project-rule violations** — anything breaking the project's rules: the **north-star Architecture
