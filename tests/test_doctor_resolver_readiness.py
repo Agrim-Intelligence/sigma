@@ -187,5 +187,9 @@ def test_confinement_row_differs_with_and_without_a_wall(tmp_path, monkeypatch):
     monkeypatch.setattr(d.sys, "platform", "linux")
     bare = [c for c in rows(d, sdlc, cfg) if c["name"].startswith("resolver session confinement")]
     assert len(walled) == 1 == len(bare) and walled[0]["ok"] and bare[0]["ok"]
-    assert "sandbox-exec" in walled[0]["name"] and "PROVISIONAL" in walled[0]["name"] and "WITHOUT the Bash tool" not in walled[0]["name"]
-    assert "WITHOUT the Bash tool" in bare[0]["name"] and "sandbox-exec" not in bare[0]["name"]
+    assert "sandbox-exec" in walled[0]["name"] and "PROVISIONAL" in walled[0]["name"] and "restricted mode" not in walled[0]["name"]
+    assert "restricted mode" in bare[0]["name"] and "sandbox-exec" not in bare[0]["name"]
+    monkeypatch.setattr(d.sys, "platform", "darwin")
+    cfg["upkeep"]["conflicts"]["agent"]["login"] = "host"
+    host = [c for c in rows(d, sdlc, cfg) if c["name"].startswith("resolver session confinement")]
+    assert len(host) == 1 and "host login, no OS wall" in host[0]["name"] and "sandbox-exec" not in host[0]["name"]

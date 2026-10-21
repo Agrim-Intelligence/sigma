@@ -2786,7 +2786,9 @@ def clause(report):
     # no consumer on the pick path either, so a finding whose issue number lived only in a report
     # field made the operator go looking for the issue the line had just told them about.
     if report.get("resolved"):
-        said += " -- level 1 resolved the changelog conflict itself (run %s)" % report["resolved"]["run_id"]
+        level = report["resolved"].get("level")
+        said += (" -- level 2 resolved the conflict: an agent resolution, proved and approved by a separate reviewer (run %s)"
+                 if level == 2 else " -- level 1 resolved the conflict mechanically (run %s)") % report["resolved"]["run_id"]
     if report["issues"]:
         said += " -- filed as %s" % ", ".join("#%s" % one for one in report["issues"])
     if report["filing"] == ALREADY_FILED:
