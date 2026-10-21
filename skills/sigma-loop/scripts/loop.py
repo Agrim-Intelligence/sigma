@@ -6026,6 +6026,21 @@ def _diff_revert_verdict(sdlc_dir, goal, root, passed):
                             witness.source_hash(witness.test_source(node, root=root)),
                             detail="diff-revert (#2240): green with the goal's production code, "
                                    "red with it reverted to %s" % fork_out.strip()[:12])
+        # #1964: which survivors the goal itself wrote or edited. Only on a measured run, and only when
+        # the changed-path list is known: an unknown list leaves the field out, which the test review
+        # reads as "not judged", never as "no survivors". Its own try, after the witnesses, so a
+        # failure here never costs the kills above.
+        try:
+            paths = (diff_revert.changed_paths(root, fork_out.strip())
+                     if result["verdict"] != diff_revert.ABSENT else None)
+            if paths is not None:
+                production = diff_revert.production_changed(paths, pathlib.Path(sdlc_dir).name)
+                result["production_changed"] = production
+                result["changed_survivors"] = diff_revert.changed_survivors(
+                    root, fork_out.strip(),
+                    [t for t in result["survivors"] if t not in result.get("uncollected", ())]) if production else []
+        except Exception as exc:          # noqa: BLE001 - advisory, like the verdict around it
+            print(f"loop: changed-line survivors skipped (non-fatal): {exc}", file=sys.stderr)
         return result
     except Exception as exc:              # noqa: BLE001 - advisory; must never break a verify
         print(f"loop: diff-revert check skipped (non-fatal): {exc}", file=sys.stderr)

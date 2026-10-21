@@ -6886,7 +6886,8 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
          'config: "work": {"require_review": "approval"}  (off | changes | approval)'),
         ("independent review (advisory; the code cannot prove who reviewed)",
          _review_independence_state(cfg, sdlc_dir),
-         'config: "review": {"independent": true, "host": "auto", "command": "", "timeout_seconds": 900}'),
+         'config: "review": {"independent": true, "host": "auto", "command": "", "timeout_seconds": 900, '
+         '"test_review": false}  (test_review: true blocks an approval on an unmapped criterion, #1964)'),
         ("skill selection vs platform built-ins",
          "advisory — a plugin can't disable a built-in; Sigma prefers its own skills via sharp "
          "descriptions + per-skill resolution headers (no runtime API to detect a live conflict)",

@@ -48,6 +48,8 @@ under a `tests?/` directory) is reverted along with production code, and a new t
 will show as a false, uncredited "survivor" rather than a kill -- the safe direction, since it
 never fabricates a credit, but it is a real gap this module does not close.
 """
+import ast
+import importlib.util
 import os
 import pathlib
 import re
@@ -285,7 +287,7 @@ def _reclaim_stale(root, scratch, pid_alive, git_cmd=None):
 
 def run(sdlc_dir, goal, root, base_ref, tests, timeout=DEFAULT_TIMEOUT,
         git_cmd=None, run_cmd=None, pid_alive=None):
-    """-> {"verdict", "kills": [...ids], "survivors": [...ids], "reason", "ms"}.
+    """-> {"verdict", "kills": [...ids], "survivors": [...ids], "uncollected": [...ids], "reason", "ms"}.
 
     THREE STATES, SAME VOCABULARY AS #1933/#1934/#1935, AND `absent` IS NOT A PASS:
       verified    -- at least one of `tests` went RED against the reverted tree: a real kill.
@@ -298,8 +300,9 @@ def run(sdlc_dir, goal, root, base_ref, tests, timeout=DEFAULT_TIMEOUT,
     which tests are in play; that keeps the two checks unable to disagree about scope."""
     started = time.perf_counter()
 
-    def done(verdict, reason, kills=(), survivors=()):
+    def done(verdict, reason, kills=(), survivors=(), uncollected=()):
         return {"verdict": verdict, "kills": list(kills), "survivors": list(survivors),
+                "uncollected": list(uncollected),
                 "reason": reason, "ms": int((time.perf_counter() - started) * 1000)}
 
     tests = sorted(set(tests or []))
@@ -374,20 +377,130 @@ def run(sdlc_dir, goal, root, base_ref, tests, timeout=DEFAULT_TIMEOUT,
         extra = collector_failed - killed
         if extra:
             killed |= extra & _new_test_ids(gitc, root, fork, tests)
+        # #1964: failed to collect against the reverted tree but not credited as new -- these never
+        # stayed green, so `changed_survivors` must not call them survivors.
+        uncollected = [t for t in tests if t in extra and t not in killed]
         kills = [t for t in tests if t in killed]
         survivors = [t for t in tests if t not in killed]
         if kills:
             return done(VERIFIED,
                         "%d of %d touched test(s) went RED (failed, or could not even be "
                         "collected) with production code reverted" % (len(kills), len(tests)),
-                        kills, survivors)
+                        kills, survivors, uncollected)
         if collector_failed:
             return done(UNVERIFIED,
                         "%d touched test(s) share a collection error with the reverted tree but "
                         "none is individually new there -- not proven to exercise it"
-                        % len(survivors), kills, survivors)
+                        % len(survivors), kills, survivors, uncollected)
         return done(UNVERIFIED,
                     "all %d touched test(s) still pass with production code reverted -- not "
                     "proven to exercise it" % len(tests), kills, survivors)
     finally:
         cleanup(root, scratch, gitc)
+
+
+#: A `-U0` hunk header: `-<start>[,<count>] +<start>[,<count>]`.
+_HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.M)
+
+
+def _sibling(name):
+    spec = importlib.util.spec_from_file_location(name, pathlib.Path(__file__).with_name(name + ".py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _git_stdout(root, argv):
+    """`_git`, but stdout alone: what these readers parse must never include a stderr warning (an
+    autocrlf notice reads as a path, or as a line of the file being parsed)."""
+    try:
+        p = subprocess.run(["git", *argv], cwd=str(root), capture_output=True, text=True,
+                           timeout=_GIT_TIMEOUT)
+        return p.returncode, p.stdout or ""
+    except Exception as exc:                # noqa: BLE001 - an outage reads as a failed call
+        return None, str(exc)
+
+
+def changed_paths(root, fork):
+    """#1964: every path the working tree changed since `fork`, untracked files included, or None
+    when git could not say. NUL-separated, so a non-ASCII name is never C-quoted."""
+    code, diff = _git_stdout(root, ["diff", "--name-only", "-z", "--no-renames", fork])
+    code2, others = _git_stdout(root, ["ls-files", "--others", "--exclude-standard", "-z"])
+    if code != 0 or code2 != 0:
+        return None
+    return sorted({p for p in (diff + others).split("\0") if p})
+
+
+def production_changed(paths, sdlc_name=".sdlc"):
+    """#1964: True when any changed path is production -- neither a test (tamper_scan's own
+    `_TEST_PATH`, the rule that picked the tests in play) nor a record under the sdlc directory
+    (plans, research, acceptance and changelog fragments are tracked there and are never code).
+    Docs count: a test may read them. False means nothing was reverted, so survival proves nothing."""
+    test_path = _sibling("tamper_scan")._TEST_PATH
+    prefix = sdlc_name.strip("/") + "/"
+    return any(p and not test_path.search(p) and not p.startswith(prefix) for p in paths)
+
+
+def _hunks(diff):
+    """-> (fork-side lines, working-tree-side lines) a `-U0` diff touched. A pure deletion has no
+    working-tree line, so it is judged only on the fork side, where the deleted lines were."""
+    old, new = set(), set()
+    for m in _HUNK.finditer(diff):
+        a, b, c, d = (int(x) if x is not None else 1 for x in m.groups())
+        old.update(range(a, a + b))
+        new.update(range(c, c + d))
+    return old, new
+
+
+def _spans(text):
+    """{(Class, ..., name): (first decorator line, last line)} for every function in `text`."""
+    spans = {}
+
+    def walk(prefix, body):
+        for node in body:
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                first = min([node.lineno] + [d.lineno for d in node.decorator_list])
+                spans[prefix + (node.name,)] = (first, node.end_lineno)
+            elif isinstance(node, ast.ClassDef):
+                walk(prefix + (node.name,), node.body)
+    walk((), ast.parse(text).body)
+    return spans
+
+
+def _hit(span, lines):
+    return bool(span) and any(span[0] <= n <= span[1] for n in lines)
+
+
+def changed_survivors(root, fork, survivors):
+    """#1964: the `survivors` whose own test function the goal changed since `fork` -- each passes
+    with the production change reverted although the goal wrote or edited it, so it does not test
+    the change. An untouched sibling in the same file is NOT one: it was only in play because its
+    file was. A test is changed when a working-tree hunk falls inside its current span, or a
+    fork-side hunk inside its span at the fork (a deleted assertion or decorator); deleting a whole
+    neighbouring test marks nothing else. A file absent at the fork is changed throughout.
+    Two git calls per distinct file, the same bound as `_new_test_ids`.
+    ponytail: a failed `diff` reads as "changed throughout" -- the blocking direction, never a
+    silent pass."""
+    by_file = {}
+    for t in survivors:
+        by_file.setdefault(t.split("::", 1)[0], []).append(t)
+    flagged = set()
+    for rel, ids in by_file.items():
+        try:
+            spans = _spans((pathlib.Path(root) / rel).read_text(encoding="utf-8"))
+        except (OSError, SyntaxError, ValueError):
+            continue                        # it ran green, so it parses; a vanished file is no survivor
+        code, fork_text = _git_stdout(root, ["show", "%s:%s" % (fork, rel)])
+        dcode, diff = _git_stdout(root, ["diff", "-U0", "--no-color", "--no-ext-diff", "--no-renames",
+                                         fork, "--", rel])
+        whole = code != 0 or dcode != 0
+        old, new = _hunks("" if whole else diff)
+        try:
+            fork_spans = {} if whole else _spans(fork_text)
+        except (SyntaxError, ValueError):
+            fork_spans = {}
+        for t in ids:
+            key = tuple(part.split("[", 1)[0] for part in t.split("::")[1:])
+            if key in spans and (whole or _hit(spans[key], new) or _hit(fork_spans.get(key), old)):
+                flagged.add(t)
+    return [t for t in survivors if t in flagged]
