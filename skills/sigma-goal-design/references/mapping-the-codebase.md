@@ -3,7 +3,7 @@
 The detail behind step 2 of [`../SKILL.md`](../SKILL.md): sizing the target before sweeping it,
 resolving `mode` on each of the two paths, the exhaustive-over-seeds stopping rule, the
 `Every hit is accounted for` scope-exclusion accounting, and fetching the sweep-round budget from
-the engine rather than assuming or remembering it, and which lane answers which quality rows.
+the engine rather than assuming or remembering it.
 
 ---
 
@@ -33,14 +33,6 @@ exactly as `DEFAULT_LANE` already decides it for an ordinary goal.
   too (one round on a `small` lane, below). That is the whole remaining difference between the two
   modes: not how the pass is sized, but whether an under-sized target gets cut off and has to say
   `capped`.
-
-**Which lane answers which quality rows.** The `Lane` you write here is the same `Lane` field the
-`## Quality requirements` section is checked against, not a second sizing. On `small` all eleven rows are
-still written, because an absent row reads the same as an unconsidered one; a row answered as a scenario
-cites a `BR-n`, and any other row may use the small-lane literal or any valid reason. On `medium` every
-row is answered as a scenario, carries an N/A with a real reason, or is an `open: D-n` row. On `large` that holds too, plus the
-STRIDE table and a `security` row that is not N/A. The rules and both verbs are in
-[`writing-the-artifact.md`](writing-the-artifact.md).
 
 **Who resolves `mode`, on which path — and why `design-check` is not the place to ask.** On the
 **retrofit** path it is already resolved for you: `design_check` picked `full` or `lane` and

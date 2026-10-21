@@ -21,8 +21,6 @@ building it. Same `.sdlc/` layout, same spine — just a thicker context layer.
 1. **Scaffold the skeleton** if absent (skip-if-exists — never clobbers your edits):
    `python3 "${CLAUDE_SKILL_DIR}/../sigma-init/scripts/sdlc_init.py" . --vision`
    It writes `.sdlc/context/north-star.md` with four tiers to fill.
-   For the Architecture tier, `python3 "${CLAUDE_SKILL_DIR}/../sigma-init/scripts/sdlc_init.py" . --architecture-doc`
-   writes the architecture document skeleton under `architecture.system_root` and never overwrites one.
 2. **Draft from the repo first, then refine** — don't hand over a blank page. Read the README, the
    code structure, and recent git history, write a *first-pass draft* of each tier, then walk the user
    through refining it. Editing a draft beats filling a blank. Keep each short (direction, not a spec):

@@ -141,7 +141,6 @@ one is empty, and the slice table's columns (`Covers`, `Requirements`, `Depends 
 things downstream: `Requirements` carries the numbered `FR-n` behaviours the design promises, and a
 check run by goal-review reports any that no slice delivers (the REJECT that follows is the reviewing
 model obeying the docs; nothing in the kit enforces it).
-The skeleton also carries a `Quality requirements` section, one row per quality category with a measurable scenario or a reasoned N/A, which a `quality` run checks for form; how review treats it is stated where review is described, not claimed here.
 [§5d](dossier-pipeline.md#5d-the-artifact--sdlcdesignnmd-and-its-headings-are-a-contract) is the
 schema and the rules about it that real runs got wrong before they were pinned.
 

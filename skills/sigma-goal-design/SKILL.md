@@ -119,13 +119,6 @@ Produce, explicitly:
   belongs to.
 - **Components** — the higher-level pieces this intent actually spans (a module, a service, a
   cross-repo boundary) — not just individual files.
-- **Quality requirements** — `## Quality requirements`, one row per quality category, each a
-  measurable scenario, a reasoned N/A or an open Doubt. Fetch the categories with
-  `python3 "${CLAUDE_SKILL_DIR}/scripts/goal_design.py" nfr-bank` — never from memory — and run
-  `python3 "${CLAUDE_SKILL_DIR}/scripts/goal_design.py" quality .sdlc/design/<n>.md` before
-  publishing; exit 2 means violations. Rows carry no id. Written here, not at step 1, because the rows cite `BR-n` and
-  `D-n`, which exist only after the sweep. Rules in
-  [`references/writing-the-artifact.md`](references/writing-the-artifact.md).
 - **Out of scope** — every hit a recorded search query returned that you ruled OUT, with the round
   and the reason (§2). This is the complement of the blast radius, not a leftovers pile: together
   the two account for every hit, and that is what the quiet round is judged over.
@@ -137,7 +130,7 @@ Produce, explicitly:
 Seeds, Out of scope, Doubts and Blockers are **numbered** — `S-1`, `X-1`, `D-1`, `B-1`, upward in
 the order you write them — because every consumer of these lists has to cite items back and none
 can invent an id for itself. §5 is the rule; write the ids as you produce the lists, not afterwards. `## Premise
-check` (§1) is numbered the same way, `PC-1` upward. Quality rows are keyed by the category slug and carry no id.
+check` (§1) is numbered the same way, `PC-1` upward.
 
 ## 4. Detailed design + slice count
 
