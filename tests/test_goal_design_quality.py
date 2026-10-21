@@ -755,3 +755,97 @@ def test_ac5_documented_gesture_subprocess_red(tmp_path):
     complete = write(tmp_path, art(), "complete.md")
     r = subprocess.run([sys.executable, str(script), "quality", complete], capture_output=True, text=True, cwd=tmp_path)
     assert r.returncode == 0 and json.loads(r.stdout)["ok"] is True
+
+
+# ---- AC-5 (#1781): the quality gesture AS EACH REVIEW DOC GIVES IT, copied out and run. Not a proof
+# that a model REJECTs -- that is prose obedience; these only prove the command the docs print works.
+import shlex
+
+_REVIEW_REF = _ROOT / "skills/sigma-goal-review/references/reading-the-target.md"
+_REVIEW_SKILL = _ROOT / "skills/sigma-goal-review/SKILL.md"
+_DOSSIER = _ROOT / "docs/dossier-pipeline.md"
+_FORM_SKILL_DIR = r'python3 "\$\{CLAUDE_SKILL_DIR\}[^"]*goal_design\.py" quality \.sdlc/design/<n>\.md(?!\s+--)'
+_FORM_REPO = r"python3 skills/sigma-goal-design/scripts/goal_design\.py quality \.sdlc/design/<n>\.md(?!\s+--)"
+
+
+def _flat_slice(doc, start, end):
+    raw = doc.read_text(encoding="utf-8")
+    assert start in raw, (doc.name, "start anchor missing", start)
+    sl = raw.split(start, 1)[1]
+    sl = sl.split(end, 1)[0] if end in sl else sl
+    return " ".join(re.sub(r"\\\n\s*", " ", start + sl).split())
+
+
+def _documented_quality_line(doc, start, end, form):
+    flat = _flat_slice(doc, start, end)
+    hits = re.findall(form, flat)
+    assert hits, (doc.name, "no bare quality gesture in the slice")
+    line = hits[0].replace("${CLAUDE_SKILL_DIR}", str(_ROOT / "skills" / "sigma-goal-review"))
+    return line.replace("skills/sigma-goal-design", str(_ROOT / "skills" / "sigma-goal-design"))
+
+
+def _run_quality_line(line, tmp_path, text):
+    d = tmp_path / ".sdlc" / "design"
+    d.mkdir(parents=True)
+    (d / "660.md").write_text(text, encoding="utf-8")
+    argv = shlex.split(line.replace("<n>", "660"))
+    assert argv[0] == "python3"
+    return subprocess.run([sys.executable] + argv[1:], cwd=tmp_path, capture_output=True, text=True)
+
+
+_A = (_REVIEW_REF, "**`Quality requirements` is checked by RUNNING", "**`Out of scope`", _FORM_SKILL_DIR)
+_B = (_REVIEW_SKILL, "**Then run the quality check**", "\n## 2.", _FORM_SKILL_DIR)
+_C = (_DOSSIER, "**`Quality requirements` is checked by running the `quality` verb**", "**`Budget` is a claim", _FORM_REPO)
+
+
+def _red(form, tmp_path):
+    p = _run_quality_line(_documented_quality_line(*form), tmp_path, art(drop=("observability",)))
+    assert p.returncode == 2 and "observability" in p.stderr, (p.stdout, p.stderr)
+    assert json.loads(p.stdout)["ok"] is False
+
+
+def _green(form, tmp_path):
+    p = _run_quality_line(_documented_quality_line(*form), tmp_path, art())
+    assert p.returncode == 0, (p.stdout, p.stderr)
+    assert json.loads(p.stdout)["ok"] is True
+
+
+def _bare(form):
+    _documented_quality_line(*form)
+    assert "quality .sdlc/design/<n>.md --" not in _flat_slice(*form[:3])
+
+
+def test_ac5_review_reference_gesture_red(tmp_path):
+    _red(_A, tmp_path)
+
+
+def test_ac5_review_reference_gesture_green_twin(tmp_path):
+    _green(_A, tmp_path)
+
+
+def test_ac5_review_reference_gesture_is_the_bare_command():
+    _bare(_A)
+
+
+def test_ac5_review_skill_gesture_red(tmp_path):
+    _red(_B, tmp_path)
+
+
+def test_ac5_review_skill_gesture_green_twin(tmp_path):
+    _green(_B, tmp_path)
+
+
+def test_ac5_review_skill_gesture_is_the_bare_command():
+    _bare(_B)
+
+
+def test_ac5_dossier_7a_gesture_red(tmp_path):
+    _red(_C, tmp_path)
+
+
+def test_ac5_dossier_7a_gesture_green_twin(tmp_path):
+    _green(_C, tmp_path)
+
+
+def test_ac5_dossier_7a_gesture_is_the_bare_command():
+    _bare(_C)

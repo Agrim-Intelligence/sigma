@@ -300,7 +300,7 @@ containers. Run `python3 "${CLAUDE_SKILL_DIR}/scripts/goal_design.py" quality .s
 before publishing: it prints the violations and exits 2 on any. **Be honest about the guarantee:** it
 checks form, not truth (a digit in a Response measure proves nothing about the number), `Lane` is
 self-reported, and the check is a pure function of one file that reads at most 1 MiB and refuses a cell
-over 2000 characters. Once goal-review's prose for this check lands (a later slice), a failed check becomes a REJECT only
+over 2000 characters. A failed check becomes a REJECT in goal-review only
 because the reviewing model follows that prose, and `mark-designed` does not refuse; nothing here makes the designer run the check.
 The token cost of answering every row is unmeasured. Designs written before this section existed have no
 such heading; they are read without being re-reviewed and are not rewritten.
