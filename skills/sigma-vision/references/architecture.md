@@ -12,8 +12,7 @@ Read the repo and synthesize its *current* shape — do not invent an ideal:
 2. **Key files** — README, build / config files, entry points — for the stack and how it's wired.
 3. **Recent history** — `git log` over the recent window — for structural or quality changes in flight.
 4. **Existing rules** — any `CLAUDE.md` / `AGENTS.md` / architecture doc already in the repo (link to
-   them; do not duplicate). No architecture doc yet: `sdlc_init.py . --architecture-doc` scaffolds one
-   (see `docs/architecture-doc.md`).
+   them; do not duplicate).
 
 From those, extract:
 - the **layers** and the **dependency direction** (what may import or call what);

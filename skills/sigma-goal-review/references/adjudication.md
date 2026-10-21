@@ -76,9 +76,7 @@ Every `X-n` under `## Out of scope`, and every `PC-n` marked `unverifiable` unde
 check` — both are judgements the design made and offered up for disagreement, and a list nobody
 adjudicates is a list nobody wrote. Name each by its own id, exactly as you name a `D-3`; never
 renumber and never fold one into a Doubt's number. A `PC-n` marked **falsified** is not bucketed at
-all — it is settled, and §1 already says what to check about it instead. A quality row answered
-`open: D-n` is bucketed through that Doubt id, never given a new one; the checker already verifies
-the D-n exists.
+all — it is settled, and §1 already says what to check about it instead.
 
 ### 2b. The verdict
 
@@ -91,9 +89,6 @@ the D-n exists.
   violation, step 1) is a REJECT ground too: a promised behaviour no ticket will deliver. Name the
   `FR-n`. That the verdict follows the verb's exit code is the reviewing model obeying this prose;
   nothing in this kit enforces it.
-  A failed `quality` check (step 1) is a REJECT ground too: name the category from the slug right
-  after `VIOLATION:` (`lane` and `quality_requirements` are not categories). That the verdict follows the verb's exit code is the reviewing
-  model obeying this prose; nothing in this kit enforces it.
 
 **Why there is no third verdict, and why that is not a dodge.** The verdict's only mechanical
 consequence is the `sdlc:designed` overlay, and that overlay is a PRESENCE check: `loop.py`'s design
