@@ -129,6 +129,7 @@ def _apply(m, items, config, run, now):
                 "updated_at": it.get("updated_at") if isinstance(it.get("updated_at"), str) else None}
         if it.get("pull_request") is None:
             node["state"] = "closed" if it.get("state") == "closed" else "open"
+            dag_collect.keep_open_fields(node, it, (labels, in_progress, prefix, aliases))     # #1994
             return node
         node["kind"] = "pr"
         if reads[0] >= dag_collect.OUTSIDE_MAX:         # over the cap: unread, never resolving
@@ -148,6 +149,9 @@ def _apply(m, items, config, run, now):
             unit = dag_collect._unit(names)
             if unit:
                 node["unit"] = unit
+            if isinstance(it.get("assignees"), list):   # as `dag_collect.collect` stores them (#1982)
+                node["assignees"] = [a["login"] for a in it["assignees"]
+                                     if isinstance(a, dict) and isinstance(a.get("login"), str)]
             nodes[num] = node
             corpus[num] = it
         elif num in nodes:
@@ -166,7 +170,7 @@ def _apply(m, items, config, run, now):
             nodes[num] = outside_from(latest[num])
         elif reads[0] < dag_collect.OUTSIDE_MAX:
             reads[0] += 1
-            nodes[num], _ok = dag_collect._outside(run, repo, num, now)
+            nodes[num], _ok = dag_collect._outside(run, repo, num, now, (labels, in_progress, prefix, aliases))
         else:
             nodes[num] = {"number": num, "kind": "issue", "state": "unknown", "life": "none",
                           "prio": None, "in_corpus": False}

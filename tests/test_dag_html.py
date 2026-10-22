@@ -125,7 +125,7 @@ def test_members_equal_the_dag_chain_query(sdlc):
 
 
 def test_goal_in_the_middle_of_a_larger_chain_is_its_own_page(sdlc):
-    got = {n for n, d in _model(sdlc, 9)["nodes"].items() if d["m"] not in ("closed", "outside")}
+    got = {n for n, d in _model(sdlc, 9)["nodes"].items() if d["m"] not in ("closed", "outside", "waiting")}
     assert got == {5, 6, 9}
 
 
@@ -431,8 +431,10 @@ def test_cli_documented_gesture_makes_no_github_call(sdlc, tmp_path):
 def test_index_lists_members_depth_holders_and_decisions(sdlc):
     out = _run(sdlc, None, True)[2]
     index = (out / "index.html").read_text()
-    row = re.search(r'<tr><td><a href="chain-10.html">#10</a>.*?</tr>', index, re.S).group(0)
-    assert ">6<" in row and ">3<" in row and "#5 needs decision" in row and "0 of 6" in row
+    row = re.search(r'<tr[^>]*><td><a href="chain-10.html">#10</a>.*?</tr>', index, re.S).group(0)
+    cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+    assert cells[1:] == ["6", "3", "#5 needs decision; #6 needs decision", "2", "0 of 6"]   # members, depth, holders, decisions, done
+    assert re.match(r'<tr data-goal="10" data-open="6" data-top="[^"]*" data-who="[^"]+">', row)
     assert index.index("chain-10.html") < index.index("chain-20.html") < index.index("chain-30.html")
 
 
@@ -451,3 +453,27 @@ def test_the_plan_still_reads_the_same_closure(sdlc):
     assert [e["ref"] for e in out["externals"]] == ["#11"]
     with pytest.raises(chain.ChainRefused):
         chain.map_closure(m, 10, 3, True, NOW)                  # strict: over the bound is refused, not truncated
+
+
+def _with_assignees(nodes, logins):
+    out = []
+    for n in nodes:
+        n = dict(n)
+        if logins is not None:
+            n["assignees"] = list(logins)
+        out.append(n)
+    return out
+
+
+def test_a_page_whose_members_carry_assignees_says_it_is_drawn_for_no_runner(tmp_path):
+    sdlc = _store(tmp_path, _with_assignees(NODES, ["someone"]), EDGES)
+    notes = _model(sdlc, 10)["notes"]
+    assert any("drawn for no runner" in n or "for no runner" in n for n in notes), notes
+    assert not any("no member's node carries assignees" in n for n in notes), notes
+
+
+def test_a_page_whose_members_lack_the_assignee_key_keeps_the_no_assignees_reason(tmp_path):
+    sdlc = _store(tmp_path, _with_assignees(NODES, None), EDGES)
+    notes = _model(sdlc, 10)["notes"]
+    assert any("no member's node carries assignees" in n for n in notes), notes
+    assert not any("for no runner" in n for n in notes), notes
