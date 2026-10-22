@@ -10,7 +10,7 @@ In one paragraph: write a dependency as a `**Blocked by:** #N` line in the issue
 pick time, the map reads it on every refresh, and Chain reads it from the map. Other phrasings are read too,
 but only a few are trusted to make an edge; the rest are advisory, because a phantom edge parks a goal that
 nothing will unpark and can write to an unrelated issue. When a ticket states a dependency in prose or only in
-a comment, `deps.py report` shows every reference in it and `deps.py mark` turns the real ones into that line.
+a comment, `deps.py report` shows every reference in it and `deps.py mark` turns the real ones into that line. The report also flags a ref that waits back on the goal (`reverse`; on a weak ref the same text gives `likely-dependent`, the weak read being probably the wrong way round; a closed ref is skipped and counted in `reverse_skipped_closed`) and a body edge that only quotes another issue's marker (`quoted`); both are advisory.
 The map ships in `shadow` mode, where it watches and compares but decides nothing. Chain starts nothing by
 itself: every step is a command a person (or an agent told to) runs.
 
@@ -235,7 +235,10 @@ Commands run from the directory that holds `.sdlc`; scripts are under `skills/si
    `chain.py html <sdlc_dir> <goal>` after `plan` (see [chain](chain.md)).
 4. **Clean up prose dependencies.** For a goal whose ticket says what it waits for in words, run
    `deps.py report .sdlc <goal>` and `deps.py mark` for each real one. The loop's instructions do this per goal
-   before its pre-checks; doing it by hand first makes the shadow comparison cleaner.
+   before its pre-checks; doing it by hand first makes the shadow comparison cleaner. To sweep a band of goals, run
+   `deps.py report .sdlc --label <band> --sheet` (`--label` may repeat; the union is read once): the sheet lists each
+   goal's non-edge refs with their snippets, comment-edge first, then weak, then mention; decide per ref, then `deps.py mark`
+   each real wait. The sheet is a review aid and writes nothing.
 5. **Watch the shadow.** The doctor row `dag shadow` counts compared picks and disagreements by cause, and says
    whether the flip criterion is met (at least 7 days, at least 200 distinct compared picks, no `unknown`
    disagreement).
@@ -391,10 +394,13 @@ comment only a trusted person's. Leaving it out would plan a run that finishes e
 proceed (a private run of Chain's own rules once forecast 26 goals where a reading of the issues said 4 to 6; that run cannot be reproduced from this repository). The price:
 the issue an unconfirmed wait names joins the chain, so `arm` labels it and, if it is an unarmed goal, the label
 question covers it like any other. A cycle made only by prose is refused naming the members and the way out. The
-sheet lists every unconfirmed wait together, once, with the two ways to settle it:
+sheet lists every unconfirmed wait together, once, with the ways to settle it:
 
 - confirm a real one with `deps.py mark <sdlc_dir> <goal> <ref> <reason...>`, which writes the marker every reader
   trusts; run `chain.py plan` again and it is a body edge from then on;
+- lift a wrong `**Blocked by:** #N` line that is already written with `deps.py unmark <sdlc_dir> <goal> <ref> <reason...>`:
+  it removes that one line (an edge written in prose is reported and left to you), drops the stored map edge and
+  leaves a note with the reason;
 - dismiss a wrong one with `backlog_check.py dismiss-text blocked-by <ref>`, posted as a comment on the goal
   with `loop.py note`; the next plan stops reading it (and the gate stops treating it as a finding).
 
@@ -504,6 +510,7 @@ take the `.sdlc` directory as their first argument.
 | `chain.py html <sdlc_dir> <chain> [--out DIR] [--titles FILE]` | `chain.py`, `dag_html.py` | no | one offline page of the stored plan record: every member (prose-read waits dashed), edge and sheet question, numbered as the sheet numbers them; refuses with no plan; `chain-plan-<N>.html` |
 | `deps.py report <sdlc_dir> <goal>` | `deps.py` | reads | every reference in title, body and comments, classified |
 | `deps.py mark <sdlc_dir> <goal> <ref> <reason...>` | `deps.py` | reads, then one body write and one comment | writes `**Blocked by:** #N` |
+| `deps.py unmark <sdlc_dir> <goal> <ref> <reason...>` | `deps.py` | reads, then one body write and one comment | removes the `**Blocked by:** #N` line and the stored map edge; `ABSENT` writes nothing; a prose edge is reported, never edited |
 | `backlog_check.py dismiss-text <kind> <ref> [reason...]` | `backlog_check.py` | no | prints the marker that retires one finding |
 | `chain.py plan <sdlc_dir> <N> [--json]` | `chain.py`, `chain_waits.py` | reads | plan one chain, following and listing its unconfirmed waits; writes the local record |
 | `chain.py plan <sdlc_dir> --longest [--by freeing] [--json]` | `chain.py` | no | offer the top three end goals |

@@ -6,12 +6,17 @@ the refresh lock and publishes through `dag_store.save`. `dag.py rebuild` is the
 
 What it reads. Open issues for five label sets (goal, blocked, blocking, parked, follow-up), each its
 own list, through `gh_api.list_issues` (so `sources.fetch_issues_rest`): no assignee argument is ever
-sent, because the map is about structure, not about one owner. 2,000 issues per list at most; a list
+sent, because the map is about structure, not about one owner; each listed issue's own assignees
+are kept as a node field (no extra call). An OPEN outside issue keeps its assignees, priority and life too, from the
+payload its one read already holds (zero extra calls); a closed or merged outside node has none of the three, which
+reads as unknown. 2,000 issues per list at most; a list
 that reaches that cap marks the map `partial`, which `dag_store.usable` refuses. Per issue: life from
 `blockers.classify` plus the closed set of label states, priority from `discovery.priority_rank` with
 the repository's aliases and prefix, edges from `dag_core.edges_from` over title and body, and the
 outstanding ledger hand-offs when the ledger is on. A number named by an edge but absent from the
-lists is an outside node: read one by one, newest first, at most 25 per refresh; a resolved one stays
+lists is an outside node: read one by one, newest first, at most 25 per periodic refresh and at most
+`REBUILD_OUTSIDE_MAX` (500) per `dag.py rebuild`, which takes `--outside-max N` up to the hard cap
+`OUTSIDE_HARD_MAX` (2,000; a larger N is clamped to it and the report says so); a resolved one stays
 cached for seven days in the previous map, and the rest are reported `unread` (state `unknown`).
 Pull requests are read through the pulls endpoint: merged resolves, closed-unmerged does not, open is
 open, unreadable is unknown (`blocker_scan.closed_state` decides).
@@ -20,8 +25,11 @@ What it never does. A failed list, a non-list payload or an empty result never r
 the previous file stays byte-identical and the report carries the error class as `last_error`. With
 `discovery.dag.mode` off it reads nothing and writes nothing.
 
-Cost and scale: calls = sum of ceil(n/100) pages over the five lists + at most 25 outside issue reads
-(+1 pulls read for each pull request); at 10x the list pages dominate (about 20 per list at the cap).
+Cost and scale: calls = sum of ceil(n/100) pages over the five lists + at most `outside_max` outside
+issue reads (+1 pulls read for each pull request): 25 on the periodic refresh, 500 on a rebuild, 2,000
+at the hard cap. Outside numbers cost one read each: at 10x (250) a rebuild makes 250 reads; at 100x
+(2,500) it makes 500 and leaves 2,000 `unread` (2,000 reads, 500 unread, with `--outside-max 2000`);
+the periodic refresh stays at 25 at any size. The list pages dominate nothing there: about 20 per list at the cap.
 Not measured against a real repository here; that run is owner-gated.
 """
 import importlib.util
@@ -45,7 +53,9 @@ blocker_scan = dag_core.blocker_scan
 discovery = dag_core.discovery
 
 LIST_CAP = 2000                 # per label set; reaching it marks the map partial
-OUTSIDE_MAX = 25                # individual outside reads per refresh
+OUTSIDE_MAX = 25                # individual outside reads per periodic refresh
+REBUILD_OUTSIDE_MAX = 500       # ... per `dag.py rebuild` unless --outside-max says otherwise
+OUTSIDE_HARD_MAX = 2000         # no run reads more than this many outside numbers
 CLOSED_TTL = 7 * 86400          # a resolved outside node is not read again for this long
 FOLLOWUP_LABEL = "sdlc:followup"
 FEATURE_PREFIX = "feature:"
@@ -144,8 +154,26 @@ def _unit(names):
     return None
 
 
-def _outside(run, repo, number, now):
-    """`(node, ok)` for one number outside the lists. Unreadable is `unknown`, never a guess."""
+def _assignees(item):
+    return [a["login"] for a in item["assignees"] if isinstance(a, dict) and isinstance(a.get("login"), str)]
+
+
+def keep_open_fields(node, item, ctx):
+    """An OPEN outside issue keeps its assignees, priority and life from the payload in hand (#1994); a closed
+    one is left as it is. Shared with `dag_check`, so an incremental check and a rebuild give the same node."""
+    if node["state"] != "open":
+        return
+    labels, in_progress, prefix, aliases = ctx
+    names = _names(item)
+    node["life"], node["prio"] = _life(names, labels, in_progress), _prio(names, prefix, aliases)
+    if isinstance(item.get("assignees"), list):
+        node["assignees"] = _assignees(item)
+
+
+def _outside(run, repo, number, now, ctx=None):
+    """`(node, ok)` for one number outside the lists. Unreadable is `unknown`, never a guess. `ctx` is the
+    `(labels, in_progress, prefix, aliases)` the listed nodes use: an OPEN issue then keeps its assignees,
+    priority and life from the payload already read (#1994); a closed one gains nothing."""
     node = {"number": number, "kind": "issue", "state": "unknown", "life": "none", "prio": None,
             "in_corpus": False, "read_at": _iso(now)}
     try:
@@ -155,6 +183,8 @@ def _outside(run, repo, number, now):
     node["updated_at"] = item.get("updated_at") if isinstance(item.get("updated_at"), str) else None
     if "pull_request" not in item:
         node["state"] = "closed" if item.get("state") == "closed" else "open"
+        if ctx is not None:
+            keep_open_fields(node, item, ctx)
         return node, True
     node["kind"] = "pr"
     try:
@@ -196,9 +226,13 @@ def _handoff_edges(sdlc, config):
     return out
 
 
-def collect(sdlc, config, run=None, now=None, previous=None, cap=LIST_CAP):
-    """The report: `{map, calls, unread, last_error, partial}`; `map` is None when nothing may be
-    published (a failed list, a goal list empty beside non-empty others)."""
+def collect(sdlc, config, run=None, now=None, previous=None, cap=LIST_CAP, outside_max=None):
+    """The report: `{map, calls, unread, last_error, partial, clamped}`; `map` is None when nothing may be
+    published (a failed list, a goal list empty beside non-empty others). `outside_max` (default
+    `OUTSIDE_MAX`) is clamped to `OUTSIDE_HARD_MAX`; `clamped` holds the cap when it bound."""
+    limit = OUTSIDE_MAX if outside_max is None else max(0, int(outside_max))
+    clamped = OUTSIDE_HARD_MAX if limit > OUTSIDE_HARD_MAX else None
+    limit = min(limit, OUTSIDE_HARD_MAX)
     now = time.time() if now is None else now
     counted, calls = _counting(_strict(run or gh_api._default_run))
     repo = _gh(config).get("repo") or ""
@@ -206,7 +240,8 @@ def collect(sdlc, config, run=None, now=None, previous=None, cap=LIST_CAP):
     in_progress = _gh(config).get("in_progress_label", "sdlc:in-progress")
     prefix = _gh(config).get("priority_label_prefix", "priority:")
     aliases = _priority_aliases(config)
-    rep = {"map": None, "calls": calls, "unread": [], "last_error": None, "partial": False}
+    rep = {"map": None, "calls": calls, "unread": [], "last_error": None, "partial": False,
+           "clamped": clamped}
     items, partial, sizes = {}, False, {}
     try:
         for _name, label in label_sets(config):
@@ -233,6 +268,8 @@ def collect(sdlc, config, run=None, now=None, previous=None, cap=LIST_CAP):
         unit = _unit(names)
         if unit:
             node["unit"] = unit
+        if isinstance(it.get("assignees"), list):       # listed with the issue: no extra call
+            node["assignees"] = _assignees(it)
         nodes[num] = node
         edges += [(a, b, "body") for a, b, _p in
                   dag_core.edges_from("%s\n%s" % (it.get("title") or "", it.get("body") or ""), num)]
@@ -245,9 +282,9 @@ def collect(sdlc, config, run=None, now=None, previous=None, cap=LIST_CAP):
     for num in sorted({n for e in edges for n in e[:2]} - set(nodes), reverse=True):
         if num in known:
             nodes[num] = known[num]
-        elif reads < OUTSIDE_MAX:
+        elif reads < limit:
             reads += 1
-            nodes[num], _ok = _outside(counted, repo, num, now)
+            nodes[num], _ok = _outside(counted, repo, num, now, (labels, in_progress, prefix, aliases))
         else:
             rep["unread"].append(num)
             nodes[num] = {"number": num, "kind": "issue", "state": "unknown", "life": "none",
@@ -267,7 +304,7 @@ def _priority_aliases(config):
     return {str(k).strip().lower(): v for k, v in a.items()} if isinstance(a, dict) else {}
 
 
-def refresh(sdlc, config=None, run=None, now=None, cap=LIST_CAP):
+def refresh(sdlc, config=None, run=None, now=None, cap=LIST_CAP, outside_max=None):
     """Collect and publish under the refresh lock. `status`: `off`, `busy`, `kept` (nothing
     published, the old file untouched) or `saved`."""
     if config is None:
@@ -283,7 +320,7 @@ def refresh(sdlc, config=None, run=None, now=None, cap=LIST_CAP):
             return {"status": "busy", "calls": {c: 0 for c in _CLASSES}, "unread": [],
                     "last_error": None, "partial": False}
         previous, _why = dag_store.load(sdlc, config)
-        rep = collect(sdlc, config, run, now, previous, cap)
+        rep = collect(sdlc, config, run, now, previous, cap, outside_max)
         if rep["map"] is None:
             rep["status"] = "kept"
             return rep

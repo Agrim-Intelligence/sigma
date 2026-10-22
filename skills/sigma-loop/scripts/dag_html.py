@@ -8,7 +8,8 @@ something open, as `dag.py chains` lists them) and an index page.
 
 What a page holds, and only this: numbers, the optional titles the caller passes, the map's life, priority rank and
 unit token, the forecast markers and the edges. The map holds no title, label text or body, so a title comes only
-from `--titles FILE` (a JSON object `{"<number>": "<title>"}`, or a list of `{"number", "title"}`; 4 MiB at most) and
+from `--titles FILE`, else `<sdlc>/state/dag-titles.json` (made by `dag.py titles`, the one network verb; this
+module reads it and never calls GitHub; named on the page when older than the map) (a JSON object `{"<number>": "<title>"}`, or a list of `{"number", "title"}`; 4 MiB at most) and
 a page without it names members by number. A title is scrubbed: any URL and the letters `http` are neutralised, so
 no page carries a link or a network reference, and it is cut at 100 characters. No issue body is ever read here.
 
@@ -48,6 +49,16 @@ O(members + edges) for the rest; dummy slots are skipped (long edges drawn direc
 `DUMMY_CAP`. Measured on one synthetic shape (shallow, no tangle): 400 members 248 KB in 0.06 s, 1,000 members 612 KB in
 0.35 s; a tangled chain is not measured, and `tests/test_dag_html.py` bounds a 400-member page at 1.5 MB. `--all` is
 the sum of its chains, one page each.
+
+THE WORK THAT WAITS ON THE GOAL (#1986). Beyond the prerequisites, a `--goal` page also draws the goal's open
+dependents, transitive, in columns to its right: open issues only (never a closed one or a pull request), nearest
+first and ties by number, drawn muted as state `waiting`, each edge from the goal or another dependent tagged
+`holds`. The heading says how many open issues wait on the goal. `DEPENDENT_CAP` (40) is the most it draws; the
+count left out is written on the page ("N more open issues wait on #G and are not drawn (cap 40)"), never silently
+dropped. The prerequisite half is untouched: `open`, `depth`, `decisions`, `who` and the held-by list count only the
+members `chain.map_closure` returns. Size: the dependents add at most 40 nodes and their edges (about 25 KB) to a page.
+At 10x (400 dependents) and at 100x (4,000) the page still draws 40 and writes one count, so its size does not grow;
+the walk costs O(open dependents + their edges), a few milliseconds at 4,000 (reasoned from the loop, not timed).
 """
 import collections
 import html
@@ -74,10 +85,14 @@ chain_forecast = chain.chain_forecast
 dag_store = dag_chain.dag_store
 dag_core = dag_chain.dag_core
 
+DEPENDENT_CAP = 40              # open dependents of the goal a page draws; the rest are counted and written, not drawn
 MEMBER_CAP = 80                 # open members a page draws readably; over it the page still writes, with a notice
 DUMMY_CAP = 6000                # layout slots for long edges; past it they are drawn direct, and the page says so
 TITLES_MAX_BYTES = 4 * 1024 * 1024
 TITLE_CHARS = 100
+STALE_TITLES = ("The titles file is older than the map, so a newer member may be named by number. Refresh it "
+                "with dag.py titles.")
+UNASSIGNED, UNKNOWN = "(unassigned)", "(unknown)"    # index tokens: not login-shaped, so no login can collide
 SWEEPS, SWEEPS_BIG = 8, 2
 BIG_SEGMENTS = 3000
 NODE_W, NODE_H, DUMMY_H, GAP_Y, COL_GAP, MARGIN = 220, 78, 14, 14, 84, 28
@@ -117,6 +132,14 @@ def clean_title(text):
     return t if len(t) <= TITLE_CHARS else t[:TITLE_CHARS - 1].rstrip() + "\u2026"
 
 
+def _clean_login(x):
+    """A login as text: a plain login stays as it is; anything else is scrubbed like a title, has no space, and is
+    cut to the login length. Never a link."""
+    if isinstance(x, str) and dag_store._LOGIN.fullmatch(x):
+        return x
+    return "-".join(clean_title(x).split())[:39]
+
+
 def read_titles(path):
     """`{number: title}` from a JSON file, bounded; raises HtmlError 2 on anything but the two documented shapes."""
     try:
@@ -131,7 +154,9 @@ def read_titles(path):
         doc = json.loads(raw.decode("utf-8"))
     except (ValueError, UnicodeDecodeError):
         raise HtmlError(2, "dag html: the titles file is not JSON")
-    if isinstance(doc, dict):
+    if isinstance(doc, dict) and doc.get("schema") == "dag-titles/1" and isinstance(doc.get("titles"), dict):
+        pairs = list(doc["titles"].items())
+    elif isinstance(doc, dict):
         pairs = list(doc.items())
     elif isinstance(doc, list):
         pairs = [(i.get("number"), i.get("title")) for i in doc if isinstance(i, dict)]
@@ -146,6 +171,20 @@ def read_titles(path):
         if isinstance(v, str) and v.strip():
             out[n] = clean_title(v)
     return out
+
+
+def read_titles_file(path):
+    """`(titles, read_at_epoch_or_None)` from the `dag-titles/1` file `dag.py titles` writes. A missing, oversized
+    or unreadable file is `({}, None)`: the page is still drawn, named by number (no refusal for a file the caller
+    did not pass)."""
+    try:
+        titles = read_titles(path)
+        with open(path, "rb") as fh:
+            doc = json.loads(fh.read(TITLES_MAX_BYTES).decode("utf-8"))
+    except (HtmlError, OSError, ValueError):
+        return {}, None
+    at = dag_store.parse_ts(doc.get("read_at")) if isinstance(doc, dict) else None
+    return titles, at
 
 
 def check_out(out_dir):
@@ -215,12 +254,14 @@ def build(m, config, goal, titles=None, now=None, fresh=(True, "ok")):
         raise HtmlError(EXIT["refused"], "dag: #%d is a pull request, not a goal" % goal)
     fc = chain_forecast.forecast(out, config)
     marks = {x["number"]: x for x in fc["members"]}
+    amap = {n["number"]: n["assignees"] for n in m["nodes"] if isinstance(n.get("assignees"), list)}
     nodes = {}
     for r in out["members"]:
         mk = marks[r["number"]]
         nodes[r["number"]] = {"n": r["number"], "m": mk["marker"], "after": mk["after"], "why": mk["why"],
                               "life": r["life"], "prio": r["prio"], "unit": r.get("unit"),
-                              "depth": r["depth"]}
+                              "depth": r["depth"],
+                              "who": sorted({_clean_login(a) for a in amap[r["number"]]}) if r["number"] in amap else None}
     for n in out["done"]:
         nodes[n] = {"n": n, "m": "closed", "after": [], "why": "resolved", "life": None,
                     "prio": g.nodes[n].prio, "unit": None, "depth": 0}
@@ -234,8 +275,26 @@ def build(m, config, goal, titles=None, now=None, fresh=(True, "ok")):
                 nodes[n] = {"n": n, "m": "cycle", "after": [], "why": "in a dependency cycle; the plan refuses it",
                             "life": None, "prio": g.nodes[n].prio, "unit": None, "depth": 0}
     drawn = set(nodes)
-    edges = sorted({(a, b): "explicit" if esrc.get((a, b)) == "body" else "ledger"
-                    for a, b, _s in g.edges if a in drawn and b in drawn}.items())
+    # The work that waits on the goal: open issues only, nearest first (ties by number), at most DEPENDENT_CAP drawn.
+    dist, level, order = {goal: 0}, [goal], []
+    while level:
+        nxt = sorted({d for c in level for d in g.dependents[c]
+                      if d not in dist and d not in drawn and g.nodes[d].kind == "issue" and g.nodes[d].state == "open"})
+        for d in nxt:
+            dist[d] = dist[level[0]] + 1
+        order += nxt
+        level = nxt
+    waiting, left_out = len(order), max(0, len(order) - DEPENDENT_CAP)
+    for n in order[:DEPENDENT_CAP]:
+        nodes[n] = {"n": n, "m": "waiting", "k": "waiting", "after": [], "why": "waits on #%d, directly or through "
+                    "another issue" % goal, "life": g.nodes[n].life, "prio": g.nodes[n].prio, "unit": None,
+                    "depth": nodes[goal]["depth"] + dist[n]}
+    holders = {goal} | {n for n, d in nodes.items() if d["m"] == "waiting"}
+    drawn = set(nodes)
+    edges = sorted({(a, b): "holds" if a in holders and nodes[b]["m"] == "waiting"
+                    else "explicit" if esrc.get((a, b)) == "body" else "ledger"
+                    for a, b, _s in g.edges if a in drawn and b in drawn
+                    and not (nodes[b]["m"] == "waiting" and a not in holders)}.items())
     waits, frees = collections.defaultdict(list), collections.defaultdict(list)
     for (a, b), _t in edges:
         waits[b].append(a)
@@ -243,13 +302,17 @@ def build(m, config, goal, titles=None, now=None, fresh=(True, "ok")):
     for n, d in nodes.items():
         d["waits"], d["frees"] = sorted(waits[n]), sorted(frees[n])
         d["t"] = titles.get(n)
-    open_rows = [d for d in nodes.values() if d["m"] not in ("closed", "outside", "cycle")]
+    open_rows = [d for d in nodes.values() if d["m"] not in ("closed", "outside", "cycle", "waiting")]
     stops = [{"n": s["number"], "m": s["marker"], "why": s["why"]} for s in fc["stops"]]
+    ranked = [d["prio"] for d in open_rows if d["prio"]]
+    top = min(ranked, key=chain._rank) if ranked else ""
+    who = sorted({UNKNOWN if d["who"] is None else UNASSIGNED if not d["who"] else a
+                  for d in open_rows for a in (d["who"] or [None])})
     return {"goal": goal, "nodes": nodes, "edges": [(a, b, t) for (a, b), t in edges], "stops": stops,
             "forecast": fc["line"], "notes": fc["notes"], "reason": fc["reason"], "finish": len(fc["finish"]),
-            "open": len(open_rows), "closed": len(out["done"]), "outside": len(out["externals"]),
+            "waiting": waiting, "left_out": left_out, "open": len(open_rows), "closed": len(out["done"]), "outside": len(out["externals"]),
             "cycles": body["cycles"], "depth": max([d["depth"] for d in open_rows] or [0]),
-            "decisions": sum(1 for d in open_rows if d["m"] == "needs decision"),
+            "decisions": sum(1 for d in open_rows if d["m"] == "needs decision"), "top": top, "who": who,
             "over_cap": len(open_rows) > MEMBER_CAP, "titled": bool(titles),
             "built_at": out["map_built_at"], "age": out["map_age_seconds"], "fresh": fresh, "mode": None}
 
@@ -448,12 +511,15 @@ dd button{display:block;width:100%%;text-align:left;margin:3px 0}
 .c-cycle{--c-f:var(--cycle-f);--c-s:var(--cycle-s)}.c-cycle rect{stroke-dasharray:2 3}
 .c-paid{--c-f:var(--paid-f);--c-s:var(--paid-s)}.c-parked{--c-f:var(--parked-f);--c-s:var(--parked-s)}
 .c-notgoal{--c-f:var(--notgoal-f);--c-s:var(--notgoal-s)}.c-awaiting{--c-f:var(--awaiting-f);--c-s:var(--awaiting-s)}
+.c-waiting{--c-f:var(--closed-f);--c-s:var(--closed-s)}.c-waiting rect{stroke-dasharray:3 3}.n.c-waiting{opacity:.62}
+.e.holds{stroke-dasharray:1 5;opacity:.45}
 .sw.c-outside{border-style:dashed}.sw{background:var(--c-f);border-color:var(--c-s)}
 .e{fill:none;stroke:var(--edge);stroke-width:1.4;opacity:.7}
 .e.unconfirmed{stroke-dasharray:6 4}.e.ledger{stroke-dasharray:2 4}
 .e.ce,.n.cl{display:none}.show-closed .e.ce,.show-closed .n.cl{display:inline}
 .e.hot{stroke:var(--accent);stroke-width:2.6;opacity:1}.e.cool{opacity:.14}
 #arr path{fill:var(--edge)}
+.view{display:flex;flex-wrap:wrap;gap:8px 18px;margin:12px 24px 0;color:var(--muted)}
 table{border-collapse:collapse;margin:16px 24px;width:calc(100%% - 48px)}
 th,td{text-align:left;padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:top}
 th{color:var(--muted);font-weight:600;font-size:12.5px}td.num{text-align:right;font-variant-numeric:tabular-nums}
@@ -542,6 +608,7 @@ function select(n,pan,only){
  head.textContent=name(n);hint.hidden=true;body.textContent='';
  row('State',d.mk);row('Why',d.why||'nothing holds it');
  (d.ex||[]).forEach(function(r){row(r[0],r[1]);});
+ if('who' in d)row('Assignees',d.who===null?'assignee unknown (map predates this field)':d.who.length?d.who.join(', '):'unassigned');
  if(d.life)row('Life',d.life);if(d.prio)row('Priority',d.prio);if(d.unit)row('Unit',d.unit);
  var qs=about(n);if(qs.length)row('Questions','number '+qs.join(', ')+' in the list');
  row('Waits on',list(d.waits,function(m){return m+'>'+n;}));row('Frees',list(d.frees,function(m){return n+'>'+m;}));
@@ -579,6 +646,8 @@ def _data_json(model):
         nodes[str(n)] = {"t": d["t"], "mk": _shown(d), "why": d["why"], "life": d["life"], "prio": d["prio"],
                          "unit": d["unit"], "waits": d["waits"], "frees": d["frees"], "label": d.get("label"),
                          "ex": d.get("ex") or []}
+        if "who" in d:                     # members only; null is "unknown", [] is "unassigned"
+            nodes[str(n)]["who"] = d["who"]
     tags = {"%d>%d" % (a, b): t for a, b, t in model["edges"] if t != "explicit"}
     doc = {"goal": model["goal"], "nodes": nodes, "tags": tags,
            "questions": [{"n": q["n"], "id": q["ident"], "nodes": q["nodes"]} for q in model.get("questions") or []]}
@@ -638,6 +707,10 @@ def _node_svg(d, goal, xy, closed_blockers=0, badges=()):
         out.append('<text class="tag" x="%.1f" y="%.1f" text-anchor="end">GOAL</text>' % (x + NODE_W - 9, y + 18))
     for i, ln in enumerate(lines):
         out.append('<text x="%.1f" y="%.1f">%s</text>' % (x + 10, y + 34 + 14 * i, _esc(ln)))
+    if d.get("who") is not None and "who" in d and d["m"] not in ("closed", "outside", "cycle"):
+        line = ", ".join(d["who"]) or "unassigned"
+        out.append('<text class="mk" x="%.1f" y="%.1f">%s</text>'
+                   % (x + 10, y + 66, _esc(line if len(line) <= 24 else line[:23] + "\u2026")))
     out += _badges_svg(d["n"], x, y, list(badges))
     out.append("</g>")
     return "".join(out)
@@ -649,7 +722,10 @@ def _legend(model):
     text = dict(LEGEND, **model.get("legend_text", {}))
     out = "".join('<span><i class="sw c-%s"></i>%s (%d): %s</span>' % (CLASS[k], _esc(k), counts[k], _esc(text[k]))
                   for k, _v in LEGEND if counts[k] or k in ("ready now", "after", "needs decision"))
-    return out + "".join('<span><i class="ln %s"></i>%s: %s</span>' % (k, k, v) for k, v in EDGES)
+    if counts["waiting"]:
+        out += '<span><i class="sw c-waiting"></i>waiting (%d): open work that waits on the goal</span>' % counts["waiting"]
+    edges = EDGES + ((("holds", "waits on the goal (drawn muted)"),) if counts["waiting"] else ())
+    return out + "".join('<span><i class="ln %s"></i>%s: %s</span>' % (k, k, v) for k, v in edges)
 
 
 MAP_HINT = ("Waits written in prose or comments are not in the map, so they are not drawn here. "
@@ -677,16 +753,22 @@ def _header(model, repo):
         notices.append("The map is not fresh (%s); this page shows it as stored, age %s. Refresh it with dag.py "
                        "refresh --force." % (why, _age(model["age"]) if model["age"] is not None else "unknown"))
     if not model["titled"]:
-        notices.append("No titles were given (the map holds none), so members are named by number. Pass "
-                       "--titles FILE to add them.")
+        notices.append("No titles were given (the map holds none), so members are named by number. Run "
+                       "dag.py titles, or pass --titles FILE.")
+    if model.get("titles_stale"):
+        notices.append(STALE_TITLES)
+    if model.get("left_out"):
+        notices.append("%d more open issues wait on #%d and are not drawn (cap %d)."
+                       % (model["left_out"], model["goal"], DEPENDENT_CAP))
     if model.get("simple"):
         notices.append("Layout simplified: this chain is too large for channel routing, so long edges are drawn "
                        "straight and may cross nodes.")
     legend = _legend(model)
     goal = model["nodes"][model["goal"]]
     facts = ("<span><b>%d</b> open members</span><span>depth <b>%d</b></span><span><b>%d</b> closed prerequisites"
-             "</span><span><b>%d</b> need a decision</span><span>map built <b>%s</b>, age <b>%s</b></span>"
+             "</span><span><b>%d</b> need a decision</span>%s<span>map built <b>%s</b>, age <b>%s</b></span>"
              % (model["open"], model["depth"], model["closed"], model["decisions"],
+                "<span><b>%d</b> open issues wait on it</span>" % model["waiting"] if model.get("waiting") else "",
                 _esc(_stamp(model["built_at"])), _age(model["age"]) if model["age"] is not None else "unknown"))
     return ('<header class="top"><h1>Chain for #%d%s <small>%s</small></h1><div class="facts">%s</div>'
             '<div class="held">%s</div><div class="fc">%s</div>%s<div class="hint">%s</div>%s<div class="legend">%s</div>'
@@ -742,30 +824,73 @@ def render_page(model, repo=None):
                svg, _questions_html(model) if plan else "", _more_html(model) if plan else "", _data_json(model), JS))
 
 
-def render_index(rows, repo, stamp_built, age, fresh, titled):
+INDEX_JS = r"""
+function applyView(rows, sort, who, prio) {
+  var rank = function(t) { var m = /^P(\d+)$/.exec(t); return m ? +m[1] : 99; };
+  var out = rows.filter(function(r) { return (!who || r.who.indexOf(who) >= 0) && (!prio || r.top === prio); });
+  out.sort(function(a, b) {
+    var d = 0;
+    if (sort === 'priority') d = rank(a.top) - rank(b.top);
+    else if (sort === 'open') d = b.open - a.open;
+    return d || a.goal - b.goal;
+  });
+  return out;
+}
+(function() {
+  var tb = document.querySelector('tbody'), ctl = {};
+  ['sort', 'who', 'prio'].forEach(function(k) { ctl[k] = document.getElementById(k); });
+  var trs = [].slice.call(tb.rows).filter(function(tr) { return tr.dataset.goal; });
+  var rows = trs.map(function(tr) {
+    return {goal: +tr.dataset.goal, open: +tr.dataset.open, top: tr.dataset.top,
+            who: tr.dataset.who.split(' ').filter(Boolean), tr: tr};
+  });
+  function go() {
+    var v = applyView(rows, ctl.sort.value, ctl.who.value, ctl.prio.value);
+    trs.forEach(function(t) { t.hidden = true; });
+    v.forEach(function(r) { r.tr.hidden = false; tb.appendChild(r.tr); });
+  }
+  ['sort', 'who', 'prio'].forEach(function(k) { ctl[k].addEventListener('change', go); });
+})();
+"""
+
+
+def render_index(rows, repo, stamp_built, age, fresh, titled, stale=False):
     """The index page: one row per chain, linking its page."""
     notice = ""
     if not fresh[0]:
         notice += '<div class="notice">The map is not fresh (%s); the pages show it as stored.</div>' % _esc(fresh[1])
     if not titled:
-        notice += '<div class="notice">No titles were given (the map holds none). Pass --titles FILE to add them.</div>'
+        notice += '<div class="notice">No titles were given (the map holds none). Run dag.py titles, or pass --titles FILE.</div>'
+    if stale:
+        notice += '<div class="notice">%s</div>' % _esc(STALE_TITLES)
     trs = []
     for r in rows:
         held = "; ".join("#%d %s" % (s["n"], s["m"]) for s in r["stops"][:4]) or "nothing"
-        trs.append('<tr><td><a href="%s">#%d</a>%s</td><td class="num">%d%s</td><td class="num">%d</td><td>%s</td>'
+        trs.append('<tr data-goal="%d" data-open="%d" data-top="%s" data-who="%s"><td><a href="%s">#%d</a>%s</td><td class="num">%d%s</td><td class="num">%d</td><td>%s</td>'
                    '<td class="num">%d</td><td>%s</td></tr>'
-                   % (_esc(r["file"]), r["goal"], " " + _esc(r["title"]) if r["title"] else "", r["open"],
+                   % (r["goal"], r["open"], _esc(r.get("top", "")), _esc(" ".join(r.get("who", []))),
+                      _esc(r["file"]), r["goal"], " " + _esc(r["title"]) if r["title"] else "", r["open"],
                       " (over the cap)" if r["over_cap"] else "", r["depth"], _esc(held), r["decisions"],
                       _esc("%d of %d" % (r["finish"], r["open"]))))
+    people = sorted({w for r in rows for w in r.get("who", [])})
+    tops = sorted({r["top"] for r in rows if r.get("top")}, key=chain._rank)
+    opt = lambda v, label: '<option value="%s">%s</option>' % (_esc(v), _esc(label))
+    controls = ('<div class="view"><label>Sort <select id="sort">%s%s%s</select></label>'
+                '<label>Assignee <select id="who">%s</select></label>'
+                '<label>Priority <select id="prio">%s</select></label></div>'
+                % (opt("open", "open members"), opt("priority", "priority"), opt("goal", "goal number"),
+                   opt("", "any") + "".join(opt(w, w.strip("()")) for w in people),
+                   opt("", "any") + "".join(opt(t, t) for t in tops)))
     css = CSS % {"light": _vars("light"), "dark": _vars("dark")}
     return ('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" '
             'content="width=device-width,initial-scale=1"><title>Chains</title><style>%s</style></head><body>'
             '<header class="top"><h1>Chains <small>%s</small></h1><div class="facts"><span><b>%d</b> chains</span>'
-            '<span>map built <b>%s</b>, age <b>%s</b></span></div>%s</header><table><thead><tr><th>End goal</th>'
+            '<span>map built <b>%s</b>, age <b>%s</b></span></div>%s</header>%s<table><thead><tr><th>End goal</th>'
             '<th>Open members</th><th>Depth</th><th>Held by</th><th>Need a decision</th><th>A run can finish</th>'
-            '</tr></thead><tbody>%s</tbody></table></body></html>\n'
-            % (css, _esc(repo or ""), len(rows), _esc(stamp_built), age, notice,
-               "".join(trs) or '<tr><td colspan="6">No open end goal waits on anything open.</td></tr>'))
+            '</tr></thead><tbody>%s</tbody></table><script>%s</script></body></html>\n'
+            % (css, _esc(repo or ""), len(rows), _esc(stamp_built), age, notice, controls,
+               "".join(trs) or '<tr><td colspan="6">No open end goal waits on anything open.</td></tr>',
+               INDEX_JS))
 
 
 # ------------------------------------------------------------------ the plan page (`chain.py html`)
@@ -1021,11 +1146,19 @@ def run(sdlc, goal=None, all_=False, out_dir=None, titles_path=None, now=None):
         return ["dag html: give exactly one of --goal N or --all"], EXIT["refused"]
     try:
         m, _md, config, ok, why = _open(sdlc, now)
-        titles = read_titles(titles_path) if titles_path else {}
+        stale = False
+        if titles_path:
+            titles = read_titles(titles_path)
+        else:
+            titles, read_at = read_titles_file(str(pathlib.Path(sdlc) / "state" / "dag-titles.json"))
+            built = dag_store.parse_ts(m["header"].get("built_at"))
+            stale = bool(titles) and (read_at is None or (built is not None and read_at < built))
         out = pathlib.Path(out_dir) if out_dir else pathlib.Path(sdlc) / "state" / "dag-html"
         check_out(out)
         goals = [goal] if not all_ else end_goals(m)
         models = [build(m, config, n, titles, now, (ok, why)) for n in goals]
+        for model in models:
+            model["titles_stale"] = stale
     except HtmlError as exc:
         return [str(exc)], exc.code
     repo = m["header"].get("repo")
@@ -1041,12 +1174,13 @@ def run(sdlc, goal=None, all_=False, out_dir=None, titles_path=None, now=None):
                                                                                          MEMBER_CAP))
         rows.append({"file": name, "goal": model["goal"], "title": model["nodes"][model["goal"]]["t"],
                      "open": model["open"], "depth": model["depth"], "stops": model["stops"],
-                     "decisions": model["decisions"], "finish": model["finish"], "over_cap": model["over_cap"]})
+                     "decisions": model["decisions"], "finish": model["finish"], "over_cap": model["over_cap"],
+                     "top": model["top"], "who": model["who"]})
     if all_:
         rows.sort(key=lambda r: (-r["open"], r["goal"]))
         t = dag_store.stamp(m)
         dag_store.state.atomic_write_text(
             out / "index.html", render_index(rows, repo, _stamp(dag_store.parse_ts(m["header"].get("built_at"))),
-                                             _age(now - t) if t is not None else "unknown", (ok, why), bool(titles)))
+                                             _age(now - t) if t is not None else "unknown", (ok, why), bool(titles), stale))
         lines.append("wrote %s (%d chains)" % (out / "index.html", len(rows)))
     return lines, EXIT["ok"]

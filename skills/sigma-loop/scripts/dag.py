@@ -25,8 +25,11 @@
   dag.py html (--goal N | --all) [--out DIR] [--titles FILE] [--sdlc DIR]
                                 one self-contained, offline HTML page per chain (a goal and its open
                                 prerequisites, the set `chain.py plan` reads), plus an index with `--all`;
-                                default `<sdlc>/state/dag-html/`; reads only the stored map, no network
+                                default `<sdlc>/state/dag-html/`; reads only the stored map and the titles file `titles` made, no network
                                 (#1924, see dag_html.py)
+
+  dag.py titles [--sdlc DIR]    the one network verb of the pair: list open issue titles (REST, at most 50 calls)
+                                into `<sdlc>/state/dag-titles.json`, which `html` reads; never in the map (#1987)
 
   dag.py report [--goal N] [--md | --json] [--sdlc DIR]
                                 the whole map in one read-only report: state, the doctor's freshness and
@@ -85,21 +88,41 @@ def show(sdlc):
     return line + ", nothing to plan" if ok and not m["nodes"] else line
 
 
-def rebuild(sdlc):
-    """`(line, exit_code)`: the outcome and the call counts by class (list, read, pull)."""
+def _nonneg(text):
+    try:
+        n = int(text)
+    except ValueError:
+        n = -1
+    if n < 0:
+        raise argparse.ArgumentTypeError(f"expected a non-negative integer, got {text!r}")
+    return n
+
+
+def rebuild(sdlc, outside_max=None):
+    """`(line, exit_code)`: the outcome and the call counts by class (list, read, pull). Reads every
+    outside number up to `outside_max` (default `REBUILD_OUTSIDE_MAX`, hard cap `OUTSIDE_HARD_MAX`)."""
     dc = _load("dag_collect")
+    outside_max = dc.REBUILD_OUTSIDE_MAX if outside_max is None else outside_max
     try:                                                # #1957: take the lease, then read here regardless
         cfg = dc.dag_store.state.load_config(sdlc)
         if dc.dag_store.mode(cfg) != "off":
             _load("dag_lease").acquire(sdlc, cfg, time.time(), force=True)
     except Exception:
         pass
-    rep = dc.refresh(sdlc)
+    rep = dc.refresh(sdlc, outside_max=outside_max)
     if rep["status"] == "off":
         return "dag: off", 0
     c = rep["calls"]
     line = (f"dag rebuild: {rep['status']}, calls list {c['list']} read {c['read']} pull {c['pull']}, "
             f"unread {len(rep['unread'])}")
+    if rep.get("clamped"):
+        line += f", --outside-max clamped to {rep['clamped']}"
+    if rep["unread"]:                                   # say what to run, with the number that finishes it
+        want = c["read"] + len(rep["unread"])
+        if want > dc.OUTSIDE_HARD_MAX:
+            line += f", run `dag.py rebuild --outside-max {dc.OUTSIDE_HARD_MAX}` (more outside numbers than the hard cap)"
+        else:
+            line += f", run `dag.py rebuild --outside-max {want}`"
     if rep["partial"]:
         line += ", partial"
     if rep["last_error"]:
@@ -198,6 +221,8 @@ def main(argv=None):
     sp.add_argument("--sdlc", default=None, help="the .sdlc directory (default: ./.sdlc)")
     rp = sub.add_parser("rebuild", help="read GitHub and publish the map; print call counts by class")
     rp.add_argument("--sdlc", default=None, help="the .sdlc directory (default: ./.sdlc)")
+    rp.add_argument("--outside-max", type=_nonneg, default=None, metavar="N",
+                    help="read at most N outside numbers (default 500, hard cap 2000; larger is clamped)")
     fp = sub.add_parser("refresh", help="refresh the map when due (--force: now)")
     fp.add_argument("--force", action="store_true", help="refresh even when the map is fresh")
     fp.add_argument("--sdlc", default=None, help="the .sdlc directory (default: ./.sdlc)")
@@ -227,6 +252,8 @@ def main(argv=None):
     wp.add_argument("--out", default=None, help="the output directory (default: <sdlc>/state/dag-html)")
     wp.add_argument("--titles", default=None, help="a JSON file of titles, {\"<number>\": \"<title>\"}; the map holds none")
     wp.add_argument("--sdlc", default=None, help="the .sdlc directory (default: ./.sdlc)")
+    ttp = sub.add_parser("titles", help="read open issue titles into <sdlc>/state/dag-titles.json for html pages")
+    ttp.add_argument("--sdlc", default=None, help="the .sdlc directory (default: ./.sdlc)")
     pp = sub.add_parser("report", help="the stored map in one read-only report (markdown, or --json)")
     pp.add_argument("--goal", type=int, default=None, help="the chain behind this goal instead")
     fmt = pp.add_mutually_exclusive_group()
@@ -247,13 +274,17 @@ def main(argv=None):
         lines, code = _load("dag_html").run(sdlc, args.goal, args.all, args.out, args.titles)
         print("\n".join(lines))
         return code
+    if args.verb == "titles":
+        lines, code = _load("dag_titles").run(sdlc)
+        print("\n".join(lines))
+        return code
     if args.verb == "history":
         out, code = history(sdlc, args.month, args.all)
         if out:
             print(out)
         return code
     if args.verb == "rebuild":
-        line, code = rebuild(sdlc)
+        line, code = rebuild(sdlc, args.outside_max)
         print(line)
         return code
     if args.verb == "refresh":

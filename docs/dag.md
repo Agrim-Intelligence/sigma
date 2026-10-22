@@ -65,7 +65,7 @@ dependency map: age 1m, 6 nodes, 6 edges
 
 `dag.py rebuild` and `dag.py refresh [--force]` read GitHub (needs gh) and publish the map; they are the
 only verbs here that touch the network. `dag.py history [--month YYYY-MM] [--all]` prints the local
-history records, with `--all` adding every writer's records from the ledger worktree.
+history records, with `--all` adding every writer's records from the ledger worktree. `dag.py rebuild` reads every outside number up to 500 (`--outside-max N`, hard cap 2,000, larger values clamped) while the periodic refresh keeps 25, and its report prints `unread N` with the command to run when N is not 0.
 
 ## See a chain: one HTML page per chain
 
@@ -88,15 +88,33 @@ python3 skills/sigma-loop/scripts/dag.py html --all [--titles <file>] [--out <di
   states and edge styles; click a member for its number, title, state, why it is held, what it waits on and what
   it frees. Zoom and pan with the buttons, the wheel and a drag; `Fit` shows the whole chain. Light and dark
   themes follow the system, with a `Theme` button.
+- **The work that waits on the goal.** A `--goal` page also draws the goal's open dependents to its right, muted and
+  with edges tagged `holds`, at most 40 (the rest are counted on the page); the heading says how many wait on it.
 - **States** use the plan's own markers (`ready now`, `after #N`, `needs decision`, `someone else's`,
   `checkpoint`, `not workable`) plus `closed` (hidden behind "show closed", on the left), `outside` (an open pull
   request) and `cycle`. From the map alone only a member's life is known, so the markers are the map's reading;
   the live plan also sees assignees, checkpoints and not-a-goal labels, and the page says so. Edges: solid for
   one written in an issue body, dotted for any other recorded source, dashed for an unconfirmed wait (live plan
   only: a map page has none).
-- **Titles.** The map holds no titles, so a page names members by number unless you pass `--titles <file>`,
-  a JSON object `{"<number>": "<title>"}` (or a list of `{number, title}`, 4 MiB at most). A title is shortened to
+- **Titles.** The map holds no titles and never will; they come from a file beside it. `dag.py titles` reads the
+  open issues' titles once (REST, one call per 100 issues, at most 50 calls: 10 at 1,000 open issues, the cap at
+  5,000 and over, and it says how many were left out) and writes .sdlc/state/dag-titles.json atomically; a failed
+  listing keeps the old file. Only numbers in the map are kept, and a closed member's title is carried over from the
+  earlier file. `dag.py html` reads that file when it exists and makes no GitHub call; `--titles <file>`, a JSON
+  object `{"<number>": "<title>"}` (or a list of `{number, title}`, 4 MiB at most), wins when given. When the file's
+  `read_at` is older than the map's `built_at`, the page says so. Run `titles` before `html`. A title is shortened to
   100 characters and any URL is removed. No issue body is read or written.
+- **Assignees.** The map keeps each member's assignees (from the issue listings the refresh already reads: no extra
+  call; at most 20 per member, each a plain login or dropped). A member's node and its panel show them, or
+  "unassigned" for an empty list; a map written before this field draws "assignee unknown (map predates this
+  field)", because an absent field is not an empty one. A node cached from a map written before assignees existed keeps none, so it reads "assignee unknown" until a refresh lists its issue again (listed members every refresh; closed outside nodes up to seven days). An open outside issue (named by an edge, carrying none of the five list labels) keeps its assignees, priority and life from the one read it already costs; a closed or merged one has none of the three. A login is scrubbed like a title and is text, never a link.
+- **Index controls.** Each index row carries the top priority among its open members and the set of their
+  assignees (with `unassigned` and `unknown` as filter values). Sort by priority, open members or goal number;
+  filter by assignee and by priority. One inline function, `applyView`, does it; no network, no external file.
+- **Index growth.** Per row about 220 bytes (the row plus its four data attributes) and about 50 bytes per
+  distinct assignee login in the filter list, measured on synthetic rows: 100 chains 22 KB, 1,000 chains 222 KB
+  (10x), 10,000 chains 2.26 MB (100x). Linear in chains and logins; the page filters in the browser, so a 100x
+  index is also a 100x DOM. Not measured on a real board.
 - **Offline.** One file, inline SVG, CSS and a little JavaScript; no library, no network at view time, no link.
 - **Where it goes.** `<sdlc>/state/dag-html/` by default (gitignored). `--out` inside a git checkout that does not
   ignore it is refused, so a page never dirties the root checkout. An earlier page is overwritten, never deleted.
