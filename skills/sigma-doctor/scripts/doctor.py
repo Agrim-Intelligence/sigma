@@ -6918,14 +6918,88 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
     return rows
 
 
+#: #2002 (FR-32): what the lean release changes, for `doctor.py changes`. INFORMATIONAL: not a check() row, not
+#: a wizard step, no config key. `slice` is the lean-goals design slice (design/2000.md slice-count table)
+#: that lands it; `active` is False until that slice ships -- nothing here may read as shipped behaviour.
+#: Flip `active` in the slice that lands the behaviour, and no earlier.
+#: Slice owners (design/2000.md slice-count table): route marker, folded review, action_log-on (FR-96) = row 2;
+#: multi-PR = row 4; pre-implementation test review = row 7 (R11/D-30: it is independent of review.test_review);
+#: follow-ups in-goal = row 8; the 72h between-slices stall sweep = row 5b (FR-38, shown here as 5).
+LEAN_CHANGES = (
+    {"id": "route-marker", "slice": 2, "active": False,
+     "text": "new goals get a profile and route marker at classification; goals already mid-flight finish under the old phase rules"},
+    {"id": "folded-review", "slice": 2, "active": False,
+     "text": "a folded review is accepted by both plan gates"},
+    {"id": "action-log-on", "slice": 2, "active": False,
+     "text": "an absent action_log key is read as on for lean goals (FR-96); a per-goal log file then grows on disk"},
+    {"id": "multi-pr", "slice": 4, "active": False,
+     "text": "a goal may ship as several PRs (one per slice): Refs then Closes"},
+    {"id": "pre-impl-test-review", "slice": 7, "active": False,
+     "text": "a pre-implementation test review runs for lean goals, independent of review.test_review (R11)"},
+    {"id": "follow-ups-in-goal", "slice": 8, "active": False,
+     "text": "work found mid-goal becomes a slice of that goal instead of a new armed follow-up"},
+    {"id": "stall-sweep", "slice": 5, "active": False,
+     "text": "a goal between slices with no slice activity for 72 hours (fixed value, no config key) is parked as lean-stalled (slice 5b)"},
+)
+
+
+def lean_overrides(cfg):
+    """Config values the lean route overrides or reads differently, from the config as written. Pure: reads
+    with .get through `_block`, never writes, never loads another script. Each row is informational
+    (`ok` True, `fix` empty); `overridden` False means an explicit value the lean route respects."""
+    rows = []
+
+    def add(key, current, overridden, effect, slice_no):
+        rows.append({"key": key, "current": current, "overridden": overridden, "effect": effect,
+                     "slice": slice_no, "ok": True, "fix": ""})
+
+    if _block(cfg, "review").get("test_review") is False:
+        add("review.test_review", "false", True,
+            "overridden by lean route (planned, slice 7): the pre-implementation test review runs regardless; "
+            "the key keeps governing only the post-implementation test review (R11)", 7)
+    log = _block(cfg, "action_log")
+    if "enabled" not in log:
+        add("action_log", "absent", True,
+            "read as on for lean (FR-96) (planned, slice 2); today: off", 2)
+    elif log.get("enabled") is False:
+        add("action_log", "false", False,
+            "explicit false: respected by the lean route; its per-slice gate then refuses (FR-70, planned, slice 7)", 7)
+    return rows
+
+
+def lean_changes(sdlc_dir):
+    """-> (LEAN_CHANGES, lean_overrides(config)). One config.json read; nothing else."""
+    return LEAN_CHANGES, lean_overrides(_cfg(sdlc_dir))
+
+
+def _print_lean_changes(sdlc_dir):
+    problem = _config_json_problem(sdlc_dir)
+    if problem or not (pathlib.Path(sdlc_dir) / "config.json").exists():
+        print(problem or "no config.json under %s: run /sigma-init to scaffold .sdlc first" % sdlc_dir)
+        return 1
+    changes, overrides = lean_changes(sdlc_dir)
+    print("what the lean release changes (informational; read-only):")
+    for c in changes:
+        label = "ACTIVE in this build" if c["active"] else "PLANNED (slice %d, not in this build)" % c["slice"]
+        print("  [%s] %s" % (label, c["text"]))
+    print("\nyour config values the lean route overrides or reads differently:")
+    for o in overrides:
+        print("  %s: %s -> %s" % (o["key"], o["current"], o["effect"]))
+    if not overrides:
+        print("  none")
+    return 0
+
+
 USAGE = ("usage: doctor.py check [sdlc_dir] [--progress] | features [sdlc_dir] | hygiene [sdlc_dir] [repo_root]"
-         " | rules [sdlc_dir] [repo_root]")
+         " | rules [sdlc_dir] [repo_root] | changes [sdlc_dir]")
 
 
 def main(argv):
     if argv[1:] in (["-h"], ["--help"]):
         print(USAGE)
         return 0
+    if len(argv) >= 2 and argv[1] == "changes":
+        return _print_lean_changes(argv[2] if len(argv) > 2 else ".sdlc")
     if len(argv) >= 2 and argv[1] == "features":
         for name, state, enable in features(argv[2] if len(argv) > 2 else ".sdlc"):
             print(f"  {name}: {state}\n      enable/change: {enable}")
@@ -6959,6 +7033,8 @@ def main(argv):
         print("\nfeatures (doctor.py features for the enable one-liners):")
         for name, state, _ in features(argv[2] if len(argv) > 2 else ".sdlc"):
             print(f"  {name}: {state}")
+        print("\nlean release changes: run `doctor.py changes %s` (informational; not part of the count above)"
+              % (argv[2] if len(argv) > 2 else ".sdlc"))
         _print_hygiene(argv[2] if len(argv) > 2 else ".sdlc")
         _print_arch_advisory(arch)
         return 0

@@ -58,7 +58,7 @@ the design is local-only per its own Handoff). None of this has been done.
   (`feature_rebase.py:2169-2174,2563-2569`) calls the chokepoint with `upkeep_finding=True`, sometimes
   with a live `goal`. Under enforce, a rebase-conflict finding filed during a goal's pick would be
   refused as "in scope". **Change**: exempt `upkeep_finding` and `goal is None` explicitly in FR-19.
-  S-17: `skills/sigma-status/scripts/status.py` and the DAG collectors do not read `slices` at all, so
+  S-17: `skills/sigma-status/scripts/status.py` and the DAG readers do not read `slices` at all, so
   slice 5's done/total and scope-grew display is new work. **Change**: re-size slice 5 as large, or
   move the display (FR-21) into its own slice.
 - **F-4 (medium, PC-18 / D-4)**: the cohesion rules force extra chunks: a migration chunk, a contract
