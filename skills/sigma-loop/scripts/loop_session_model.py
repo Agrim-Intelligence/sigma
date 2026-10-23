@@ -11,6 +11,8 @@ that is matters. Three small pieces, all local and read-only:
   main transcript the way `phase_report.py` reads a phase. None when the host exposes none.
 * `verdict(observed, tiers)` - `ok`, `above-tier` (observed priced above EVERY dispatched tier)
   or `unavailable` with a named reason. Never a guess.
+* `context_reading(home)` - the session's current context in tokens, from a bounded tail of its own
+  Claude transcript or Codex rollout (#2026). `unavailable` when it cannot be read.
 
 Usage: loop_session_model.py check [sdlc_dir] [--warn-only]
 Prints one line (nothing at all with --warn-only unless the verdict is above-tier). Exit 0.
@@ -89,6 +91,61 @@ def _tail_lines(path):
         return []
     lines = data.decode("utf-8", errors="replace").splitlines()
     return lines[1:] if size > MAX_STREAM_BYTES else lines      # the first line of a cut read may be partial
+
+
+_CODEX_ID = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def context_reading(home=None):
+    """This host session's current context, read from a bounded tail of its own transcript (#2026).
+
+    Claude (`CLAUDE_CODE_SESSION_ID`, which wins when both hosts' ids are set): the LAST assistant
+    line in the tail, input + cache read + cache write. Codex (`CODEX_THREAD_ID`, else
+    `CODEX_SESSION_ID`): the LAST request's `input_tokens` alone, which already includes cached
+    tokens. Only the last MAX_STREAM_BYTES are read, so a 50 MB transcript costs what a 256 KiB one
+    does; a latest turn older than that tail reads `unavailable` rather than widening the read.
+
+    -> `{"source": "host", "tokens": N, "session": id}` or `{"source": "unavailable", "session":
+    id-or-None}`. `session` is the id only when it passed the same validation the lookup applies,
+    never an unsafe value. Counts only: no line text is returned. Never raises."""
+    session = None
+    try:
+        pr = _load(_HERE / "phase_report.py", "phase_report")
+        claude_id = pr._session_id()
+        if claude_id:
+            if pr._unsafe_id_reason(claude_id):
+                return {"source": "unavailable", "session": None}
+            session = claude_id
+            path = pr.find_claude_main_transcript(claude_id, home)
+            ocr = _load(_HERE / "orchestrator_context_report.py", "orchestrator_context_report")
+            turns = [pr.assistant_turn(line) for line in (_tail_lines(path) if path else [])]
+            turns = [turn for turn in turns if turn is not None]
+            if turns:
+                return {"source": "host", "tokens": ocr.context_tokens(turns[-1]["usage"]),
+                        "session": session}
+            return {"source": "unavailable", "session": session}
+        codex_id = pr._codex_session_id()
+        if not codex_id or not _CODEX_ID.fullmatch(codex_id):
+            return {"source": "unavailable", "session": None}
+        session = codex_id
+        path = pr._codex_rollout(codex_id, home=home)
+        tokens = None
+        for line in _tail_lines(path) if path else []:
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            kind, usage, _info = pr.codex_request_usage(obj)
+            pair = pr._codex_usage_pair(usage, modern=kind != "legacy") if kind else None
+            if pair is not None:
+                tokens = pair["input_tokens"]
+        if tokens is not None:
+            return {"source": "host", "tokens": tokens, "session": session}
+    except Exception:                                    # noqa: BLE001 - a meter never stops a pick
+        pass
+    return {"source": "unavailable", "session": session}
 
 
 def dispatched_tiers(sdlc_dir):

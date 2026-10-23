@@ -240,6 +240,17 @@ def test_fresh_newer_loop_heartbeat_suppresses_an_old_stale_session(tmp_path):
     assert _run(tmp_path) == ""
 
 
+def test_a_fresh_heartbeat_carrying_a_context_block_still_reads_fresh(tmp_path):
+    """#2026 pin: the meter adds a `context` block to the loop heartbeat; this tier reads
+    `last_seen` only and must stay silent for a fresh loop that carries one."""
+    _dead_loop(tmp_path, heartbeat_age=3600, pid=99999999)
+    state = tmp_path / ".sdlc" / "state"
+    (state / "heartbeat" / "99999999.json").write_text(json.dumps({
+        "pid": 99999999, "last_seen": time.time(),
+        "context": {"source": "host", "tokens": 84312, "session": "s", "first_pick": 70000, "at": time.time()}}))
+    assert _run(tmp_path) == ""
+
+
 def test_never_run_watcher_warns(tmp_path):
     # RED today, same reason as above. This is the state Q1 resolved to also warn on.
     ctx = _context(_run(_ledger(tmp_path)))                      # neither heartbeat nor pid file

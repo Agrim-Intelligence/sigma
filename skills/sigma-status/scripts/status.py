@@ -109,21 +109,19 @@ def _config(base):
 
 
 def _loop_heartbeat_segment(sdlc_dir, now=None):
-    """Newest loop heartbeat age for the status tail; empty means no managing loop evidence."""
-    now = time.time() if now is None else now
-    latest = None
-    directory = pathlib.Path(sdlc_dir) / "state" / "heartbeat"
-    for path in directory.glob("*.json") if directory.is_dir() else ():
-        try:
-            seen = json.loads(path.read_text()).get("last_seen")
-            if isinstance(seen, (int, float)) and not isinstance(seen, bool):
-                latest = seen if latest is None else max(latest, seen)
-        except (OSError, ValueError, TypeError):
-            pass
-    if latest is None:
+    """Newest loop heartbeat age and the managing session's context reading for the status tail;
+    empty means no managing loop evidence. #2026: the sibling sigma-log skill's
+    `loop_heartbeat_tail` is the one reader of `state/heartbeat` for both tails (this was a copy of
+    it), loaded the same way `_load_handoff` loads its sibling; an unloadable sibling yields an
+    empty segment rather than breaking the status line."""
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "sigma_log_for_status", _HERE.parent.parent / "sigma-log" / "scripts" / "log.py")
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m.loop_heartbeat_tail(sdlc_dir, now)
+    except Exception:  # noqa: BLE001 - a status line must survive a broken sibling
         return ""
-    age = max(0, int(now - latest))
-    return f"loop heartbeat: {age // 3600:02d}:{(age % 3600) // 60:02d}:{age % 60:02d} ago"
 
 
 def _github_counts(gh_cfg, run, config=None):

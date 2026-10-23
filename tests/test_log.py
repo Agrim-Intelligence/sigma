@@ -484,6 +484,21 @@ def test_slots_renders_a_contract_shaped_block_for_a_real_goal(tmp_path):
     assert out.rstrip().endswith("never what unblocks next.")
 
 
+def test_slots_tail_carries_the_orchestrator_context_reading(tmp_path):
+    """#2026: the reading rides the free-text tail (never a slot field, `render.py` declines
+    `tokens`), and the renderer accepts it."""
+    d = _sdlc(tmp_path)
+    _config(d, GITHUB_ON)
+    now = time.time()
+    _running_goal(d, "158", now, title="Extract the coherence validator")
+    hb = pathlib.Path(d) / "state" / "heartbeat"; hb.mkdir(parents=True)
+    (hb / "42.json").write_text(json.dumps({"pid": 42, "last_seen": now, "context": {
+        "source": "host", "tokens": 84312, "session": "s", "first_pick": 70000, "at": now}}))
+    tail = log.slots(d).rstrip().splitlines()[-1]
+    assert tail.endswith(", context 84,312 tokens at last pick (host)")
+    assert "loop heartbeat: 00:00:0" in tail
+
+
 def test_loop_heartbeat_tail_reports_age_without_calling_an_idle_loop_dead(tmp_path):
     d = _sdlc(tmp_path)
     hb = pathlib.Path(d) / "state" / "heartbeat"; hb.mkdir(parents=True)

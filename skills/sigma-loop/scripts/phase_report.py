@@ -28,6 +28,8 @@ HOST SUPPORT, PROBED NOT ASSUMED (see #1626's own issue body for the raw probe):
     events) and `turn_context.payload.model`. Select the exact session by Codex thread/session ID,
     never sum the whole rollout store. Codex cost remains unavailable because the bundled rate
     card contains Anthropic prices only; observed token counts and models are still reported.
+  - Both roots honour the host's own override first (#2026): `$CLAUDE_CONFIG_DIR/projects` before
+    `~/.claude/projects`, `$CODEX_HOME/sessions` before `~/.codex/sessions`.
   - Cursor / anything else: no known per-turn token store exists at all (probed: cursorDiskKV has
     zero token/usage keys). Resolves to the same tested `unavailable` path as "no source found".
 
@@ -413,28 +415,37 @@ def iter_assistant_turns(path):
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as fh:
             for raw_line in fh:
-                raw_line = raw_line.strip()
-                if not raw_line:
-                    continue
-                try:
-                    obj = json.loads(raw_line)
-                except ValueError:
-                    continue
-                if not isinstance(obj, dict) or obj.get("type") != "assistant":
-                    continue
-                message = get_dict(obj, "message")
-                if message is None or message.get("role") != "assistant":
-                    continue
-                model = get_str(message, "model")
-                if not model or model == _SYNTHETIC_MODEL:
-                    continue
-                ts = get_str(obj, "timestamp")
-                if not ts:
-                    continue
-                yield {"ts": norm_ts(ts), "model": model, "message_id": get_str(message, "id"),
-                       "usage": message.get("usage") or {}}
+                turn = assistant_turn(raw_line)
+                if turn is not None:
+                    yield turn
     except OSError:
         return
+
+
+def assistant_turn(raw_line):
+    """One transcript line -> `iter_assistant_turns`' turn dict, or None when the line is not a
+    real assistant turn or is malformed. Split out (#2026) so the context meter applies the same
+    line rule to a bounded tail that this module applies to a whole file."""
+    raw_line = raw_line.strip()
+    if not raw_line:
+        return None
+    try:
+        obj = json.loads(raw_line)
+    except ValueError:
+        return None
+    if not isinstance(obj, dict) or obj.get("type") != "assistant":
+        return None
+    message = get_dict(obj, "message")
+    if message is None or message.get("role") != "assistant":
+        return None
+    model = get_str(message, "model")
+    if not model or model == _SYNTHETIC_MODEL:
+        return None
+    ts = get_str(obj, "timestamp")
+    if not ts:
+        return None
+    return {"ts": norm_ts(ts), "model": model, "message_id": get_str(message, "id"),
+            "usage": message.get("usage") or {}}
 
 
 def _dedup_turns_by_message_id(turns):
@@ -579,6 +590,30 @@ def _home(home=None):
     return pathlib.Path(home) if home is not None else pathlib.Path.home()
 
 
+def _host_roots(env_var, home, dot_dir, leaf):
+    """`$<env_var>/<leaf>` then `<home>/<dot_dir>/<leaf>`, de-duplicated (#2026). The env root is
+    where the host writes when the operator moved its config dir; the home root keeps every caller
+    that sets only HOME working. Ids are UUIDs matched exactly, so searching both cannot cross
+    sessions, and de-duplication keeps `_codex_rollout`'s exactly-one-match rule intact when both
+    name the same directory."""
+    roots = [pathlib.Path(os.environ[env_var]) / leaf] if os.environ.get(env_var) else []
+    roots.append(_home(home) / dot_dir / leaf)
+    seen, unique = set(), []
+    for root in roots:
+        key = os.path.realpath(root)
+        if key not in seen:
+            seen.add(key); unique.append(root)
+    return unique
+
+
+def claude_projects_roots(home=None):
+    return _host_roots("CLAUDE_CONFIG_DIR", home, ".claude", "projects")
+
+
+def codex_sessions_roots(home=None):
+    return _host_roots("CODEX_HOME", home, ".codex", "sessions")
+
+
 def _unsafe_id_reason(value):
     """Shared path-component validator for `session_id`/`agent_id` before either reaches a
     filesystem join. Reuses `state.unsafe_goal_reason` — despite its name, that function's own
@@ -609,13 +644,13 @@ def find_claude_session_dir(session_id, home=None):
     the slug algorithm ever changes."""
     if _unsafe_id_reason(session_id):
         return None
-    projects = _home(home) / ".claude" / "projects"
-    if not projects.is_dir():
-        return None
-    for proj_dir in projects.iterdir():
-        candidate = proj_dir / session_id
-        if candidate.is_dir():
-            return candidate
+    for projects in claude_projects_roots(home):
+        if not projects.is_dir():
+            continue
+        for proj_dir in projects.iterdir():
+            candidate = proj_dir / session_id
+            if candidate.is_dir():
+                return candidate
     return None
 
 
@@ -637,13 +672,13 @@ def find_claude_main_transcript(session_id, home=None):
     plan-review, 2026-08-25."""
     if _unsafe_id_reason(session_id):
         return None
-    projects = _home(home) / ".claude" / "projects"
-    if not projects.is_dir():
-        return None
-    for proj_dir in projects.iterdir():
-        candidate = proj_dir / f"{session_id}.jsonl"
-        if candidate.is_file():
-            return candidate
+    for projects in claude_projects_roots(home):
+        if not projects.is_dir():
+            continue
+        for proj_dir in projects.iterdir():
+            candidate = proj_dir / f"{session_id}.jsonl"
+            if candidate.is_file():
+                return candidate
     return None
 
 
@@ -656,8 +691,8 @@ def _codex_rollout(session_id, home=None):
     """
     if not isinstance(session_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", session_id):
         return None
-    sessions = _home(home) / ".codex" / "sessions"
-    if not sessions.is_dir():
+    roots = [root for root in codex_sessions_roots(home) if root.is_dir()]
+    if not roots:
         return None
     pattern = f"rollout-*{session_id}.jsonl"
     matches = []
@@ -671,10 +706,11 @@ def _codex_rollout(session_id, home=None):
         return None
     for offset in (-1, 0, 1):
         local_day = day + datetime.timedelta(days=offset)
-        folder = sessions / local_day.strftime("%Y/%m/%d")
-        matches.extend(path for path in folder.glob(pattern)
-                       if path.stem == f"rollout-{session_id}"
-                       or path.stem.endswith(f"-{session_id}"))
+        for sessions in roots:
+            folder = sessions / local_day.strftime("%Y/%m/%d")
+            matches.extend(path for path in folder.glob(pattern)
+                           if path.stem == f"rollout-{session_id}"
+                           or path.stem.endswith(f"-{session_id}"))
     return matches[0] if len(matches) == 1 else None
 
 
@@ -737,6 +773,26 @@ def _codex_io(usage):
     return None if pair is None else (pair["input_tokens"], pair["output_tokens"])
 
 
+def codex_request_usage(obj):
+    """`(kind, usage, info)` for one parsed rollout line, or `(None, None, None)` when it carries no
+    per-request usage. `kind` is `record`, `event` or `legacy`; `usage` is unvalidated (pass it to
+    `_codex_usage_pair`); `info` is the event's info dict (its cumulative total drives de-dup).
+    Split out (#2026) so the context meter classifies a tail with the same rule."""
+    payload = obj.get("payload") or {}
+    if not isinstance(payload, dict):
+        return None, None, None
+    if obj.get("type") == "token_usage_record":
+        return "record", payload.get("usage"), None
+    if obj.get("type") == "event_msg" and payload.get("type") == "token_count":
+        info = payload.get("info") or {}
+        if isinstance(info, dict):
+            return "event", info.get("last_token_usage"), info
+        return None, None, None
+    if obj.get("type") == "token_count":
+        return "legacy", payload, None
+    return None, None, None
+
+
 def find_codex_token_totals(since_ts, home=None, session_id=None):
     """Count one Codex rollout's request deltas at or after the phase start.
 
@@ -784,16 +840,7 @@ def find_codex_token_totals(since_ts, home=None, session_id=None):
                 ts = obj.get("timestamp")
                 if not isinstance(ts, str) or norm_ts(ts) < since_norm:
                     continue
-                kind = None
-                usage = None
-                if obj.get("type") == "token_usage_record":
-                    kind, usage = "record", payload.get("usage")
-                elif obj.get("type") == "event_msg" and payload.get("type") == "token_count":
-                    info = payload.get("info") or {}
-                    if isinstance(info, dict):
-                        kind, usage = "event", info.get("last_token_usage")
-                elif obj.get("type") == "token_count":
-                    kind, usage = "legacy", payload
+                kind, usage, info = codex_request_usage(obj)
                 if kind is None:
                     continue
                 pair = _codex_usage_pair(usage, modern=kind != "legacy")
