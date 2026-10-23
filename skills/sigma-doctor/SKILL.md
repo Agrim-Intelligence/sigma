@@ -161,6 +161,9 @@ enforcement that does not hold (exit 1 only then):
 
 Grammar, severity and limits: [architecture rules](references/architecture-rules.md).
 
+Lean release changes (read-only):
+`python3 "${CLAUDE_SKILL_DIR}/scripts/doctor.py" changes .sdlc`
+
 ## Dispatch compliance — detection, never enforcement
 
 **`dispatch compliance (agent_dispatch/agent_done vs ledger phase boundaries, #1779)`** answers a
