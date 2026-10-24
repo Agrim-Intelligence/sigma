@@ -107,8 +107,10 @@ def test_codex_child_cannot_inherit_claude_host_identity():
     runtime = _runtime()
     child = runtime.codex_environment({"CLAUDECODE": "1", "CLAUDE_CODE_SESSION_ID": "old",
                                        "CLAUDE_SKILL_DIR": "/old", "CODEX_HOME": "/new",
+                                       "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "600000",   # #2028
                                        "SIGMA_HOST": "codex"})
     assert "CLAUDECODE" not in child and "CLAUDE_CODE_SESSION_ID" not in child
+    assert "CLAUDE_CODE_AUTO_COMPACT_WINDOW" not in child     # a Claude window never reaches Codex
     assert "CLAUDE_SKILL_DIR" not in child
     assert child["CODEX_HOME"] == "/new" and child["SIGMA_HOST"] == "codex"
     assert child["PYTHONDONTWRITEBYTECODE"] == "1"

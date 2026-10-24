@@ -24,6 +24,9 @@ Env:
   SIGMA_RUN_ID              — pre-set by an outer launcher to pin the run-id (see
                                     the #498 rationale below); left unset, this daemon
                                     generates one.
+  CLAUDE_CODE_AUTO_COMPACT_WINDOW — #2028: set in the CHILD's env only (never this process's)
+                                    from handoff.after_context_tokens, unless the operator set
+                                    the window; rule and limits in compact_window.py. Logged once.
 
 This is a straight port of `supervise.sh` (bash) to pure Python — same state files,
 same stdout/log routing, same exit codes on the three paths bash had, same anchored
@@ -154,6 +157,14 @@ legacy = _load_legacy()
 def _session_model():
     spec = importlib.util.spec_from_file_location(
         "loop_session_model", pathlib.Path(__file__).resolve().parent / "loop_session_model.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _compact_window():
+    spec = importlib.util.spec_from_file_location(
+        "compact_window", pathlib.Path(__file__).resolve().parent / "compact_window.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -618,9 +629,11 @@ def main(argv):
     # Never written to this process's own os.environ (H2 above) — built once and
     # handed explicitly to every subprocess launch below.
     child_env = {**os.environ, "SIGMA_RUN_ID": run_id}
+    repo_dir = pathlib.Path(sdlc_dir).resolve().parent
+    # #2028: the compaction safety net, on the child's dict only; the reason is logged below.
+    _, window_why = _compact_window().apply(child_env, _read_session_cfg(sdlc_dir), cmd, repo_dir)
 
     state = pathlib.Path(sdlc_dir) / "state"
-    repo_dir = pathlib.Path(sdlc_dir).resolve().parent
     log = state / "supervisor.log"
     tailf = state / "supervisor.tail"
     stopf = state / "supervisor.stop"
@@ -630,6 +643,10 @@ def main(argv):
     # an unwritable state/ dir (or a specific file inside it) doesn't heal itself mid-run, so
     # without this every one of up to `max_runs` iterations would re-print the same stderr line.
     warned = set()
+    try:                                     # log-only, once per daemon start (#2028)
+        _append(log, f"supervisor: compact window {window_why}")
+    except OSError as exc:
+        _warn_unwritable_once(warned, str(log), f"supervisor: cannot write {log} ({exc}) — continuing without it")
 
     attempt = 0
     runs = 0

@@ -33,6 +33,21 @@ CFG="$PROJECT/.sdlc/config.json"
 HOOK_DIR="$(dirname "$0")"
 PLUGIN_ROOT="$(dirname "$HOOK_DIR")"
 
+# #2028: the SessionStart payload (JSON with `source`: startup|resume|clear|compact|fork) arrives on
+# stdin. BOUNDED: a tty is never read, EOF returns at once, and a caller that leaves a pipe open
+# costs at most 2 s instead of hanging the session. HOOK_INPUT is set FIRST because bash 3.2 (macOS
+# /bin/bash) leaves the variable unset when `read -t` times out, and `set -u` would then kill the hook.
+HOOK_INPUT=""
+[ -t 0 ] || IFS= read -r -d '' -t 2 HOOK_INPUT || true
+
+# Sigma's standing-rules brief: ONE copy, read by the opt-in brief at the end of this file and by the
+# post-compaction tier below (#2028).
+export SIGMA_POLICY_BRIEF="Sigma SDLC is active in this repo. Work rides the loop: \
+Goal -> Research -> Plan -> Plan-Review -> Implement -> Review -> Retrospective. \
+Run /sigma-loop to drain the backlog autonomously, or /sigma-goal for a single goal. \
+Ground every change in .sdlc/context/north-star.md and the repo's CLAUDE.md. \
+Plan before editing source; every changed behavior carries a test; the reviewer should not be the author."
+
 command -v python3 >/dev/null 2>&1 || allow
 
 # --- The plugin under the previous name also active here (issues #240, #314) -----------------
@@ -66,6 +81,53 @@ except Exception:
 PY
 )" || HOOK_COEXIST_NOTICE=""
 fi
+
+# --- After a compaction: re-inject the rules and the live slots (#2028, design 2024 FR-6) -----------
+# ACCELERATOR only: the load-bearing context bound is the loop's own hand-off in Python (`loop.py
+# next`), on every host; this narrows what a compacted Claude session forgets. It fires ONLY on
+# `"source": "compact"`, in any ADOPTED repo, with no opt-in key and NO SIGMA_RUN_ID gate -- a
+# supervised orchestrator is exactly the session that compacts. It sits BEFORE every gated tier, so
+# a compaction never starts an upkeep sweep; the price is that an interactive compaction skips the
+# tiers below for that one start (upkeep, north-star, dag, wizard, stop-file, watcher staleness,
+# loop liveness, session model, kg) -- the next startup/resume reaches them, and /sigma-doctor
+# reports them. The bash `case` keeps every other start free of an extra python3. `log.py slots`
+# is bounded at 5 s (measured 0.30 s warm, 1.29 s cold), well inside hooks.json's 20 s.
+case "$HOOK_INPUT" in *compact*)
+if [ -f "$CFG" ] && python3 - "$PROJECT" "$PLUGIN_ROOT" "$HOOK_INPUT" <<'PY' 2>/dev/null
+import json, os, subprocess, sys
+project, plugin_root, raw = sys.argv[1:4]
+try:
+    source = json.loads(raw).get("source")
+except Exception:
+    sys.exit(1)                                    # malformed payload -> today's behaviour
+if source != "compact":
+    sys.exit(1)
+_notice = (os.environ.get("HOOK_COEXIST_NOTICE") or "") and os.environ["HOOK_COEXIST_NOTICE"] + "\n\n"
+log_py = os.path.join(plugin_root, "skills", "sigma-log", "scripts", "log.py")
+slots, why = "", ""
+try:
+    r = subprocess.run([sys.executable, log_py, "slots", os.path.join(project, ".sdlc")],
+                       capture_output=True, text=True, timeout=5)
+    slots = (r.stdout or "").strip() if r.returncode == 0 else ""
+    why = "no output" if r.returncode == 0 else f"exit {r.returncode}"
+except subprocess.TimeoutExpired:
+    why = "timed out after 5 s"
+except Exception as exc:
+    why = type(exc).__name__
+if not slots:
+    slots = f"Live slots unavailable ({why}); run: python3 {log_py} slots .sdlc"
+print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": (
+    _notice + os.environ["SIGMA_POLICY_BRIEF"] + "\n\n"
+    "Sigma: this session was just compacted. If it is running the loop, the goals in the slots "
+    "below are in flight -- do not re-dispatch one, and re-read the sigma-loop skill before the "
+    "next pick.\n\n" + slots)}}))
+sys.exit(0)
+PY
+then
+    exit 0
+fi
+;;
+esac
 
 # --- Upkeep window line and sweep start (issues #1224, #1387) --------------------------------------------------------
 # ACCELERATOR only: reports, never rebases or pushes. The facts and wording live in Sigma's own Python
@@ -385,13 +447,7 @@ warnings = []
 if not os.path.exists(os.path.join(project, ".sdlc", "context", "north-star.md")):
     warnings.append("no north-star yet - run /sigma-vision to set the direction the plan-review gate checks.")
 
-policy = (
-    "Sigma SDLC is active in this repo. Work rides the loop: "
-    "Goal -> Research -> Plan -> Plan-Review -> Implement -> Review -> Retrospective. "
-    "Run /sigma-loop to drain the backlog autonomously, or /sigma-goal for a single goal. "
-    "Ground every change in .sdlc/context/north-star.md and the repo's CLAUDE.md. "
-    "Plan before editing source; every changed behavior carries a test; the reviewer should not be the author."
-)
+policy = os.environ["SIGMA_POLICY_BRIEF"]
 if warnings:
     policy = "Sigma setup notes: " + " ".join(warnings) + "\n\n" + policy
 
