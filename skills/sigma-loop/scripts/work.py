@@ -4473,6 +4473,15 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None):
         body = _no_tests_body(current, no_tests)
         if body != current:
             run(path, ["gh", "api", endpoint, "--method", "PATCH", "-f", f"body={body}"])
+    # #2004 (FR-52): the measured diff by class, kept on the record; fail-open, a PR is never refused for it.
+    sc = _load("size_class")
+    try:
+        size = sc.measure(path, remote, base, config)
+    except Exception:                                   # noqa: BLE001 - an advisory measurement never blocks a PR
+        size = None
+    if size:
+        rec["size"] = size
+        _save(sdlc_dir, goal, rec)
     if _receipt_sharing_enabled(config):
         try:
             raw = json.loads(run(path, ["gh", "api", f"repos/{{owner}}/{{repo}}/pulls/{number}"]))
@@ -4484,7 +4493,7 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None):
             return f"receipt pending for PR #{number}: {status}"
     rec["pr"] = number
     _save(sdlc_dir, goal, rec)
-    return f"PR #{number}"
+    return f"PR #{number}" + sc.soft_cap_note(size)
 
 
 def gate(sdlc_dir, config, goal, run=None, sleep=time.sleep):
