@@ -125,6 +125,19 @@ def test_brief_embeds_log_slots_verbatim(lp, tmp_path):
     assert "\n".join(lines[at + 1:at + 1 + len(expected.splitlines())]) == expected
 
 
+def test_a_failing_command_helper_still_builds_the_brief(lp, tmp_path, monkeypatch):
+    real = lp._sibling
+
+    def sibling(skill, name):
+        if name == "verify_detect":
+            raise ImportError("no init skill")
+        return real(skill, name)
+    monkeypatch.setattr(lp, "_sibling", sibling)
+    base = _backlog(tmp_path)
+    line = _resume(lp._successor_brief(base, ["--feature", "voice"], {}))
+    assert line.endswith(f"next {base} --feature voice)") and "(Codex/Cursor: python3 " in line
+
+
 def test_a_failing_slots_reader_still_prints_the_brief(lp, tmp_path, capsys, monkeypatch):
     base = _handoff_backlog(lp, tmp_path)
 
@@ -289,7 +302,8 @@ def test_meter_writes_nothing_and_claims_nothing(lp, tmp_path, monkeypatch, caps
     assert "meter" not in lp._ARMS_CLAIM
 
 
-@pytest.mark.parametrize("bad", ["0", "-5", "abc", "1.5"])
+@pytest.mark.parametrize("bad", ["0", "-5", "abc", "1.5", "\u00b2", "9" * 5000],
+                         ids=["zero", "negative", "word", "fraction", "superscript", "5000-digits"])
 def test_meter_rejects_a_bad_baseline(lp, tmp_path, capsys, bad):
     rc, out, err = _meter(lp, capsys, _backlog(tmp_path), f"--baseline={bad}")
     assert rc == 2 and out == "" and len(err.strip().splitlines()) == 1
@@ -356,6 +370,14 @@ def test_skill_stop_relays_the_successor_brief():
     assert "successor brief" in " ".join(SKILL.read_text(encoding="utf-8").split())
 
 
+def _tree_outside_timing(base):
+    """Every path outside state/time/, with each file's mtime and size (a directory's own mtime
+    moves when state/time/ is created, so directories are compared by path only)."""
+    timing = pathlib.Path(base) / "state" / "time"
+    return sorted((str(p), p.stat().st_mtime_ns, p.stat().st_size) if p.is_file() else (str(p),)
+                  for p in pathlib.Path(base).rglob("*") if not p.is_relative_to(timing))
+
+
 GESTURE = "python3 <installed-sigma>/skills/sigma-loop/scripts/loop.py meter .sdlc --baseline <first reading>"
 
 
@@ -364,6 +386,7 @@ def test_the_documented_meter_gesture_runs(tmp_path, monkeypatch):
     assert len(found) == 1, found
     base = _backlog(tmp_path)
     _transcript(tmp_path, monkeypatch, 90_000)
+    before = _tree_outside_timing(base)
     line = (GESTURE.replace("<installed-sigma>", str(ROOT)).replace(" .sdlc ", f" {base} ")
             .replace("<first reading>", "1000"))
     argv = shlex.split(line)
@@ -371,4 +394,7 @@ def test_the_documented_meter_gesture_runs(tmp_path, monkeypatch):
     run = subprocess.run(argv, capture_output=True, text=True, env=dict(os.environ), timeout=60)
     assert run.returncode == 0, run.stderr
     assert METER.match(run.stdout.strip()), run.stdout
+    # The docs promise: nothing picked, claimed or recorded, apart from the bounded timing row
+    # every loop.py call writes under state/time/.
+    assert _tree_outside_timing(base) == before
     assert " source=host " in run.stdout

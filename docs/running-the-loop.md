@@ -112,9 +112,9 @@ Who acts on it depends on the host:
 - **Claude desktop app, attended:** an optional *supervisor session* that holds no goal state. When
   woken it reads the brief and the live slots, proposes the successor as a one-click card, and
   replaces itself the same way when its own meter crosses its threshold. A card is the only form the
-  app allows: in Omega's supervisor transcript (2026-10-24) all 10 launches on turns started by
-  another session's note or an event came back as proposal cards, and a direct start was refused
-  with "Start sessions only on the user's own words". Measured once, on that transcript; not re-run.
+  app allows on a turn another session's note or an event started: Omega's supervisor transcript
+  (2026-10-24) shows 10 launch attempts, none started unattended; one was refused outright with
+  "Start sessions only on the user's own words". Measured once, on that transcript; not re-run.
 - **Cursor and other hosts:** a person or a scheduler starts the next session from the brief.
 
 The attended supervisor, on each wake:
@@ -125,7 +125,8 @@ python3 <installed-sigma>/skills/sigma-loop/scripts/loop.py meter .sdlc --baseli
 ```
 
 `loop.py meter` is read-only: it prints this session's context, its hand-off threshold with its
-origin, and `verdict=under|over|unknown`, and never picks, claims or writes. `<first reading>` is the
+origin, and `verdict=under|over|unknown`. It picks, claims and records nothing, apart from the
+bounded timing row every `loop.py` call writes under `.sdlc/state/time/`. `<first reading>` is the
 `context=` value from the supervisor's own first wake (it never picks, so it has no recorded first
 pick). On a brief, propose its resume line as a new session; at `verdict=over`, propose its own
 successor the same way and stop. It never calls `next` and never claims.

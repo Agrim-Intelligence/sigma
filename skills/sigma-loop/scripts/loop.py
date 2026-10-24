@@ -7063,13 +7063,18 @@ def _successor_brief(sdlc_dir, argv_tail, config):
     files and this call's own argv -- the run's `--feature`/`--label` are persisted nowhere else.
     Host-neutral wording (PC-9: the desktop app cannot be told from the CLI). The last line always
     starts `open decisions:`: `supervise_classify._BRIEF` strips up to and including it before
-    probing for a usage limit, so slot titles and queue slugs cannot fake one. Never raises past
-    the slots read, and makes no network call."""
-    vd = _sibling("sigma-init", "verify_detect")
+    probing for a usage limit, so slot titles and queue slugs cannot fake one. Never raises:
+    an unloadable command helper or slots reader degrades to a plain line. No network call."""
+    try:
+        vd = _sibling("sigma-init", "verify_detect")
+        python, quote = vd.python_command(), vd._q
+    except Exception:                                    # noqa: BLE001 - a brief never costs the stop
+        import shlex
+        python, quote = "python3", lambda value: shlex.quote(str(value))
     flags = _flags(argv_tail)
-    scope = "".join(f" --{key} {vd._q(flags[key])}" for key in ("feature", "label")
+    scope = "".join(f" --{key} {quote(flags[key])}" for key in ("feature", "label")
                     if flags.get(key) not in (None, "true"))
-    fallback = f"{vd.python_command()} {vd._q(_HERE / 'loop.py')} next {vd._q(sdlc_dir)}{scope}"
+    fallback = f"{python} {quote(_HERE / 'loop.py')} next {quote(sdlc_dir)}{scope}"
     try:
         slots = _live_slots(sdlc_dir).rstrip("\n")
     except Exception as exc:                             # noqa: BLE001 - a brief never costs the stop
@@ -7104,7 +7109,11 @@ def _meter_line(sdlc_dir, argv_tail):
     raw = _flags(argv_tail).get("baseline")
     baseline = None
     if raw is not None:
-        baseline = _positive_int(int(raw)) if str(raw).isdigit() else None
+        # ASCII digits only, at most 12: `"²".isdigit()` is True, and a huge string would make
+        # int() raise past the one-line refusal below.
+        raw = str(raw)
+        baseline = (_positive_int(int(raw)) if raw.isascii() and raw.isdigit() and len(raw) <= 12
+                    else None)
         if baseline is None:
             return 2, "loop.py meter: --baseline needs a positive whole number of tokens"
     handoff = state.load_config(sdlc_dir).get("handoff")
