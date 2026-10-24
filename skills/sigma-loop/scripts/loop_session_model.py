@@ -100,6 +100,17 @@ def _tail_lines(path):
 _CODEX_ID = re.compile(r"[A-Za-z0-9_-]+")
 
 
+def _window(value):
+    """A host-reported window (an env string or a rollout int) as a positive int, else None (#2027)."""
+    if isinstance(value, bool):
+        return None
+    try:
+        number = int(value) if isinstance(value, (int, str)) else None
+    except ValueError:
+        return None
+    return number if number and number > 0 else None
+
+
 def context_reading(home=None):
     """This host session's current context, read from a bounded tail of its own transcript (#2026).
 
@@ -133,8 +144,13 @@ def context_reading(home=None):
             turns = [turn for turn in map(pr.assistant_turn, _tail_lines(path)) if turn is not None]
             if not turns:
                 return unavailable("no turn in tail")
-            return {"source": "host", "tokens": ocr.context_tokens(turns[-1]["usage"]),
-                    "session": session}
+            out = {"source": "host", "tokens": ocr.context_tokens(turns[-1]["usage"]),
+                   "session": session}
+            # #2027: the host's own compaction window, when one was set (operator or daemon)
+            window = _window(os.environ.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW"))
+            if window:
+                out["window"] = window
+            return out
         codex_id = pr._codex_session_id()
         if not codex_id:
             return unavailable("no session id")
@@ -144,7 +160,7 @@ def context_reading(home=None):
         path = pr._codex_rollout(codex_id, home=home)
         if path is None:
             return unavailable("no transcript")
-        tokens = None
+        tokens = window = None
         for line in _tail_lines(path):
             try:
                 obj = json.loads(line)
@@ -152,13 +168,17 @@ def context_reading(home=None):
                 continue
             if not isinstance(obj, dict):
                 continue
-            kind, usage, _info = pr.codex_request_usage(obj)
+            kind, usage, info = pr.codex_request_usage(obj)
             pair = pr._codex_usage_pair(usage, modern=kind != "legacy") if kind else None
             if pair is not None:
                 tokens = pair["input_tokens"]
+                window = _window((info or {}).get("model_context_window")) or window
         if tokens is None:
             return unavailable("no turn in tail")
-        return {"source": "host", "tokens": tokens, "session": session}
+        out = {"source": "host", "tokens": tokens, "session": session}
+        if window:                                       # #2027: the model window the rollout reports
+            out["window"] = window
+        return out
     except Exception:                                    # noqa: BLE001 - a meter never stops a pick
         return unavailable("error")
 

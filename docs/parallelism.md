@@ -92,7 +92,7 @@ carry no file-conflict graph: each gets its own worktree and PR, so overlap surf
 ordinary PR-rebase, not a silently lost edit.
 
 On a host without subagents, `/sigma-loop` calls `loop.py next` for one goal at a time and runs it
-inline. The code-level `HANDOFF` stops after 20 goals by default and directs a fresh `/sigma-loop`
+inline. The code-level `HANDOFF` stops at 20 goals or the context threshold by default and directs a fresh `/sigma-loop`
 session, bounding context on that host. With concurrent goal slots, the cap counts goals already
 completed and goals still running; a `HANDOFF` stops new claims while the orchestrator waits to
 record its active slots. Independent review still follows `reviewer.py resolve`.

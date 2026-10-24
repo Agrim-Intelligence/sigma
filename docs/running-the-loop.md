@@ -57,7 +57,9 @@ gap. Independently,
 a NEW `handoff.after_goals` ceiling (default 20, ON even when the
 key is absent — see `config.json.tmpl`) stops the ORCHESTRATING session itself after that many
 goals and hands off to a fresh one, so its own context never keeps growing across an unattended
-drain; `enabled: false` opts back into the old behaviour. Goal-count limits retain their count
+drain. It also hands off once the session's own measured context (Claude Code and Codex) reaches
+`handoff.after_context_tokens`, by default derived as 3x its first-pick context and capped at 45%
+of the host window; `enabled: false` opts back into the old behaviour. Goal-count limits retain their count
 throughout one session, including refills; a new session resets them. A stopped run is
 resume-safe (a budget stop, re-run, picks up
 where it left off).
@@ -88,7 +90,7 @@ review queue needs attention.
 | At a checkpoint | pauses for you | parks to the review queue, continues |
 | Approval | every gate | only what it parks |
 | Stops on | goal complete / you stop | backlog empty, per-run budget, or a context hand-off (then resumes fresh) |
-| Context bounded across goals | not yet — see issue tracker for the follow-up | goal count capped at 20 per session by default (`handoff.after_goals`); post-change token measurement pending |
+| Context bounded across goals | not yet — see issue tracker for the follow-up | the session hands off at 20 goals (`handoff.after_goals`) or once its measured context reaches the threshold (`handoff.after_context_tokens`, by default 3x its first-pick context, capped at 45% of the host window); Cursor has no meter and uses the goal count; post-change token measurement pending |
 | Irreversible action | asks you | asks the agent to park it (advice; a code check only when `rulebook.hard_stops.enabled` is true) |
 
 `/sigma-goal` claims its own named goal directly and is not driven by `loop.py next`/`next-batch`,
