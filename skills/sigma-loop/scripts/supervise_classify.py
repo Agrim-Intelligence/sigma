@@ -96,6 +96,12 @@ _HOLD_RETRY_RANGE = (30, 900)
 _LIMIT = re.compile(r"(usage|rate).{0,3}limit|limit (reached|exhausted|hit)|out of (usage|quota)|"
                     r"hit your.{0,12}limit|quota exceeded", re.I)
 _RESET_AT = re.compile(r"reset[s]?\s*(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", re.I)
+# #2029: the successor brief `loop.py` prints at HANDOFF, which the session relays into the final
+# message this tail is cut from. Its slot titles and review-queue slugs are free text ("rate-limited
+# ..."), so the usage-limit probes below skip its span. Both anchors are required: a brief cut before
+# its `open decisions:` line strips nothing, and the tail is `[^\n]*`, never `.*` under re.S, so a
+# real usage-limit line printed AFTER the brief is still seen.
+_BRIEF = re.compile(r"^\s*SUCCESSOR BRIEF:.*?^\s*open decisions:[^\n]*", re.S | re.M)
 # A clean, self-declared stop -- the loop naming its own blocker, whatever it is. NOT a crash.
 # Anchored to line start, same doctrine as _DONE/_BUDGET above: a marker is a LINE, not a
 # substring, so a MENTION or a QUOTE of one must never BE one (see the module docstring for the
@@ -150,8 +156,9 @@ def classify(tail_text, attempt=0, now=None, rng=None):
                                   "actually empty, treating as a transient failure")
     if _DONE.search(text):
         return ("done", 0, "the loop reported its own success stop")
-    if _LIMIT.search(text):
-        m = _RESET_AT.search(text)
+    probe = _BRIEF.sub("", text)        # #2029: the relayed brief's free text never fakes a limit
+    if _LIMIT.search(probe):
+        m = _RESET_AT.search(probe)
         if m:
             secs = _seconds_until(int(m.group(1)), int(m.group(2) or 0), m.group(3), now)
             return ("sleep", secs + jitter, f"usage limit — resuming after the stated reset (+{jitter}s jitter)")

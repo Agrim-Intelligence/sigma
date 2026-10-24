@@ -35,21 +35,8 @@ before claiming the next one. It counts completed goals plus goals still running
 Stop refilling slots, wait for every already-dispatched goal to finish, and record each outcome
 before retiring the orchestrator. Nothing below the gate mutates a goal it refuses.
 
-Print the literal command to run next, always — whether or not a supervisor is present.
-Run it in a **new host session** (a new Codex task or Claude conversation); repeating it in
-this same conversation would keep the orchestrator context that the hand-off is meant to clear:
-
-```
-/sigma-loop
-```
-
-(append the same `--feature <name>` this run used, if any — you already know it, it is whatever you
-were invoked with). Print it even under `supervise_daemon.py`, which relaunches a fresh session
-automatically on any non-`done` verdict (including this one, at the same short 60-second pause a
-budget stop gets — never the longer, "not a crash" pause an unrecognised stop gets): the line costs
-nothing when a human never reads it, and there is no reliable, host-agnostic way for the orchestrator
-to know whether one is watching, so printing it unconditionally is simpler and safer than guessing.
-A fresh `/sigma-loop` session starts at its normal ~80-100k-token baseline and picks up exactly where
-the backlog left off — nothing about `.sdlc/goals/`, the ledger, or an in-flight goal's own worktree
-depends on the orchestrating session surviving between goals; it is *bookkeeping only* that this
-session's own context ever needs to hold in the first place.
+The `HANDOFF` call printed a **successor brief** on stderr (`SUCCESSOR BRIEF:` through `open
+decisions:`): the resume command with this run's flags, live slots, open decisions. Relay it
+verbatim, last, always — even under `supervise_daemon.py`, which relaunches by itself; whether anyone
+reads it cannot be known. The successor runs in a **new host session**, never this conversation.
+Who starts it on each host: `docs/running-the-loop.md`, "Hand-off: who starts the next session".

@@ -164,8 +164,8 @@ the same way you would between goals in the single-goal path.
 
 **No subagent capability:** call `loop.py next` instead of `next-batch`, run steps 2-7 for that one
 goal inline, then call `next` again. Do not log a `goal-slot` dispatch or refill a nonexistent
-slot. The `HANDOFF` response stops the run before the next claim and prints `/sigma-loop` for a
-fresh-session continuation; the goal and context ceilings bound the inline session. Phase reviews
+slot. The `HANDOFF` response stops the run before the next claim and prints the successor brief
+for a fresh session; the goal and context ceilings bound the inline session. Phase reviews
 still use `reviewer.py resolve .sdlc` as step 3 requires. If that resolver refuses an independent
 review mechanism, park the goal instead of self-approving it.
 

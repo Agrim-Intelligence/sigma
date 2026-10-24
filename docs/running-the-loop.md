@@ -99,6 +99,51 @@ long conversation can still grow that conversation's context unbounded. Tracked 
 `/sigma-goal`'s own approval-gated, single-goal design needs a different answer than an autonomous
 loop's does, not merely the same mechanism wired in.
 
+## Hand-off: who starts the next session
+
+When `loop.py next` or `next-batch` returns `HANDOFF`, it prints a **successor brief** on stderr,
+built from local files and the call's own flags: the resume command with this run's `--feature` and
+`--label`, the live slots (`log.py slots`, verbatim), and the open decisions. Stdout stays the bare
+`HANDOFF`. The retiring session finishes its live goals; the brief reads the same on every host.
+Who acts on it depends on the host:
+
+- **Unattended, any host with a CLI:** `supervise_daemon.py` relaunches a fresh session by itself
+  (it relaunches bare `/sigma-loop`, without `--feature`/`--label`).
+- **Claude desktop app, attended:** an optional *supervisor session* that holds no goal state. When
+  woken it reads the brief and the live slots, proposes the successor as a one-click card, and
+  replaces itself the same way when its own meter crosses its threshold. A card is the only form the
+  app allows on a turn another session's note or an event started: Omega's supervisor transcript
+  (2026-10-24) shows 10 launch attempts, none started unattended; one was refused outright with
+  "Start sessions only on the user's own words". Measured once, on that transcript; not re-run.
+- **Cursor and other hosts:** a person or a scheduler starts the next session from the brief.
+
+The attended supervisor, on each wake:
+
+```
+python3 <installed-sigma>/skills/sigma-log/scripts/log.py slots .sdlc
+python3 <installed-sigma>/skills/sigma-loop/scripts/loop.py meter .sdlc --baseline <first reading>
+```
+
+`loop.py meter` is read-only: it prints this session's context, its hand-off threshold with its
+origin, and `verdict=under|over|unknown`. It picks, claims and records nothing, apart from the
+bounded timing row every `loop.py` call writes under `.sdlc/state/time/`. `<first reading>` is the
+`context=` value from the supervisor's own first wake (it never picks, so it has no recorded first
+pick). On a brief, propose its resume line as a new session; at `verdict=over`, propose its own
+successor the same way and stop. It never calls `next` and never claims.
+
+The pattern is cheap only if nothing wakes the supervisor. Omega's long-lived supervisor peaked at
+966,234 tokens, read 575.5M cached tokens and was woken 360 times by child notes. So:
+
+- Orchestrators message the supervisor **only at hand-off**, once, with the brief.
+- Goals inside an orchestrator run **as subagents**, never as separate sessions, so their progress
+  never wakes it.
+- The meter is valid only in a **top-level** session. A subagent's shell inherits its parent's
+  `CLAUDE_CODE_SESSION_ID`, so its reading is the parent's: never run `loop.py meter` from a
+  subagent.
+
+Nothing detects the desktop app: no documented signal tells it from the CLI. The undocumented
+`CLAUDE_CODE_ENTRYPOINT=claude-desktop` exists, and Sigma does not read it.
+
 ## The seven phases
 
 Each phase runs via one of Sigma's own `sigma-*` skills, on every host.

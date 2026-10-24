@@ -395,14 +395,14 @@ def _handoff_ceiling(handoff_config):
 #: turns, O = 2s..4s for a start of s tokens. A session growing r tokens per turn from s to T costs
 #: 0.05(s+T) + O*r/(T-s) per turn, least at T - s = sqrt(2*O*r/0.1). Measured 2026-10-24 on one
 #: machine: s ~88k (84,392..95,573 over 8 main transcripts; goal-slot subagents start at ~71k, see
-#: above), r = 0.9k..3.1k tokens per turn, giving T = 1.7s..2.7s; rounded UP to 3 because every
+#: above), r = 0.9k..3.1k tokens per turn, giving T = 1.6s..2.7s; rounded UP to 3 because every
 #: hand-off also drains live slots with no new claims, which the model does not price. CAVEATS: s
 #: was measured at each session's FIRST TURN, not its first pick (a first pick is somewhat larger,
 #: so the real threshold is larger); r was measured on general sessions, not loop orchestrators;
 #: orchestrator growth per goal is unmeasured. Re-derive from Epic 2018's baseline (D-6).
 #:
 #: FRACTION = 0.45. Host compaction on a 1M window was measured at 966,939 (~0.967W), so the 450k
-#: cap leaves >= 517k for the drain of live slots, or one whole inline goal (M4): 167 turns at the
+#: cap leaves ~517k for the drain of live slots, or one whole inline goal (M4): 167 turns at the
 #: highest measured mean growth. Slice 3 sets a compaction window only for an EXPLICIT key below
 #: 450k; a derived threshold gets none and relies on the host's own compaction. Where the cap binds
 #: (first_pick > 150k) the design's "peak below 50% of the window" bar is NOT met.
@@ -473,8 +473,9 @@ def _context_handoff_reason(handoff_config, context):
     when `tokens > first_pick`, so every session does at least one goal: without that, an explicit
     value below a fresh start or the Codex cap on a big repo would HANDOFF at the first pick with
     zero claims and the supervisor would relaunch every 60 s forever.
-    ponytail: a session that STARTS at or above its threshold still gets exactly one goal and then
-    HANDOFF, every session -- bounded, but expensive; a doctor warning is the follow-up."""
+    ponytail: a session that STARTS at or above its threshold still gets one first pick (one goal
+    or one batch) and then HANDOFF, every session -- bounded, but expensive; a doctor warning is
+    the follow-up."""
     if not isinstance(context, dict) or context.get("source") != "host":
         return None
     tokens, first = _positive_int(context.get("tokens")), _positive_int(context.get("first_pick"))
@@ -7034,6 +7035,113 @@ def _print_pick(kind, payload):
         print(f"{kind} ({payload})", file=sys.stderr)
 
 
+def _sibling(skill, name):
+    """A sibling skill's stdlib-only script module, loaded by path (the `predict.py` precedent)."""
+    path = _HERE.parent.parent / skill / "scripts" / f"{name}.py"
+    spec = importlib.util.spec_from_file_location(f"{name}_for_loop", path)
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+
+
+def _live_slots(sdlc_dir):
+    """`log.py slots` -- the constructed Block A -- for the successor brief."""
+    return _sibling("sigma-log", "log").slots(sdlc_dir)
+
+
+def _queued_parks(sdlc_dir):
+    """`## ` headings of the local review queue. Twin of `triage._review_queue_names`, inlined
+    because importing triage loads work, sources, ledger, watch and four more modules for a regex."""
+    try:
+        text = (pathlib.Path(sdlc_dir) / "state" / "review-queue.md").read_text(
+            encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    return re.findall(r"^## (.+)$", text, re.MULTILINE)
+
+
+def _successor_brief(sdlc_dir, argv_tail, config):
+    """#2029 (FR-7): what the next session needs, printed on stderr at HANDOFF, built from local
+    files and this call's own argv -- the run's `--feature`/`--label` are persisted nowhere else.
+    Host-neutral wording (PC-9: the desktop app cannot be told from the CLI). The last line always
+    starts `open decisions:`: `supervise_classify._BRIEF` strips up to and including it before
+    probing for a usage limit, so slot titles and queue slugs cannot fake one. Never raises:
+    an unloadable command helper or slots reader degrades to a plain line. No network call."""
+    try:
+        vd = _sibling("sigma-init", "verify_detect")
+        python, quote = vd.python_command(), vd._q
+    except Exception:                                    # noqa: BLE001 - a brief never costs the stop
+        import shlex
+        python, quote = "python3", lambda value: shlex.quote(str(value))
+    flags = _flags(argv_tail)
+    scope = "".join(f" --{key} {quote(flags[key])}" for key in ("feature", "label")
+                    if flags.get(key) not in (None, "true"))
+    fallback = f"{python} {quote(_HERE / 'loop.py')} next {quote(sdlc_dir)}{scope}"
+    try:
+        slots = _live_slots(sdlc_dir).rstrip("\n")
+    except Exception as exc:                             # noqa: BLE001 - a brief never costs the stop
+        slots = f"live slots: unavailable ({type(exc).__name__}); run log.py slots {sdlc_dir}"
+    if ((config or {}).get("discovery") or {}).get("source") == "github":
+        decisions = "parked goals: issues labelled sdlc:parked"
+    else:
+        names = _queued_parks(sdlc_dir)
+        shown = ", ".join(names[:10]) + (f" +{len(names) - 10} more" if len(names) > 10 else "")
+        decisions = (f"parked goals ever queued (review-queue.md, not pruned): {shown}" if names
+                     else "parked goals ever queued: none (review-queue.md)")
+    return "\n".join([
+        "SUCCESSOR BRIEF: this session stops claiming, finishes its live goals, then retires.",
+        "resume: start a NEW session (not this conversation) and run: "
+        f"/sigma-loop{scope} (Codex/Cursor: {fallback})",
+        "who starts it: supervise_daemon.py relaunches by itself (without --feature/--label); an "
+        "attended desktop supervisor session proposes it as a one-click card; otherwise a person "
+        "or a scheduler starts it.",
+        "live slots (finishing in this session; the successor will not pick them):",
+        slots,
+        "open decisions: " + decisions,
+    ])
+
+
+def _meter_line(sdlc_dir, argv_tail):
+    """#2029 (M7): `(exit, line)` for `loop.py meter` -- this host session's context now, its
+    hand-off threshold and where that came from. READ-ONLY: a fresh reading, never the heartbeat,
+    no claim, no watcher. Only a top-level session's reading is its own: a subagent's shell
+    inherits the parent's CLAUDE_CODE_SESSION_ID (M6). `--baseline` is the caller's own first
+    reading (a supervisor session never picks, so it has no heartbeat `first_pick`); it rides in a
+    context-shaped block because `_context_threshold` reads `first_pick` and `window` from one."""
+    raw = _flags(argv_tail).get("baseline")
+    baseline = None
+    if raw is not None:
+        # ASCII digits only, at most 12: `"²".isdigit()` is True, and a huge string would make
+        # int() raise past the one-line refusal below.
+        raw = str(raw)
+        baseline = (_positive_int(int(raw)) if raw.isascii() and raw.isdigit() and len(raw) <= 12
+                    else None)
+        if baseline is None:
+            return 2, "loop.py meter: --baseline needs a positive whole number of tokens"
+    handoff = state.load_config(sdlc_dir).get("handoff")
+    handoff = handoff if isinstance(handoff, dict) else {}
+    try:
+        reading = _load("loop_session_model").context_reading()
+    except Exception:                                    # noqa: BLE001 - a meter never raises
+        reading = {"source": "unavailable", "reason": "error"}
+    tokens = _positive_int(reading.get("tokens")) if reading.get("source") == "host" else None
+    found = _context_threshold(handoff, {**reading, "first_pick": baseline})
+    if handoff.get("enabled") is False:
+        origin = "handoff disabled"
+    elif _explicit_context_tokens(handoff) is not None:
+        origin = "handoff.after_context_tokens"
+    elif found is not None:
+        origin = f"derived from --baseline: {found[1]}"
+    elif "after_context_tokens" in handoff and baseline is not None:
+        origin = "handoff.after_context_tokens 0: context hand-off off"
+    else:
+        origin = "no baseline"
+    threshold = found[0] if found else None
+    verdict = ("unknown" if threshold is None or tokens is None
+               else "over" if tokens >= threshold else "under")
+    context = str(tokens) if tokens is not None else f"unavailable ({reading.get('reason') or 'unknown'})"
+    return 0, (f"meter: context={context} source={'host' if tokens is not None else 'unavailable'} "
+               f"threshold={threshold if threshold else 'none'} ({origin}) verdict={verdict}")
+
+
 #: #140 (amendment A): the ONLY kinds `emit` will write — a POSITIVE allowlist, not merely
 #: "whatever ledger.EVENT_KINDS accepts". `verify`/`slice`/`park`/`scan` are Class-1 events
 #: written exclusively by deterministic code (verify_goal, slices.py, pipeline.py, `record`'s
@@ -7149,7 +7257,7 @@ def _validate_event(kind, flags, kind_allowlist=None):
 
 USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> [--session-pid PID] | "
          "next <dir> [--skip a,b] [--feature NAME] [--label NAME] [--session-pid PID] [--trace] | "
-         "pick-trace-report <dir> | "
+         "pick-trace-report <dir> | meter <dir> [--baseline TOKENS] | "
          "next-batch <dir> [--skip a,b] [--feature NAME] [--label NAME] [--session-pid PID] [--max-concurrent N] | "
          "session-active <dir> | prune-state <dir> [--dry-run] [--keep-days N] [--limit N] | session-end <dir> [--session-pid PID] | "
          "claim <dir> <goal> [--session-pid PID] | "
@@ -7693,6 +7801,10 @@ def _dispatch(argv):
             print(f"nothing to reclaim for thread {thread!r}" if thread
                   else "nothing registered for this goal")
         return 1 if (not result["reclaimed"] and result["blocked"]) else 0
+    if len(argv) >= 3 and argv[1] == "meter":                 # #2029: read-only context reading
+        code, line = _meter_line(argv[2], argv[3:])
+        print(line, file=sys.stderr if code else sys.stdout)
+        return code
     if len(argv) >= 3 and argv[1] == "pick-trace-report":     # #1607: read-only; reads one state file
         sys.stdout.write(pick_trace.report(argv[2]))
         return 0
@@ -7723,6 +7835,8 @@ def _dispatch(argv):
                                extra_skip=skip, session_pid=session_pid)
         _print_pick(kind, payload)
         _phase_gate_notice(argv[2], config, kind, payload)
+        if kind == "HANDOFF":                               # #2029: stderr; stdout stays the bare token
+            print(_successor_brief(argv[2], argv[3:], config), file=sys.stderr)
         return 0
     if len(argv) >= 3 and argv[1] == "next-batch":  # F10.5-3/#375: up to parallel.goals.max_concurrent
         config = state.load_config(argv[2])         # goals to dispatch as concurrent worktree subagents
@@ -7743,10 +7857,14 @@ def _dispatch(argv):
                 print("loop: --max-concurrent needs a positive whole number", file=sys.stderr)
                 return 2
             asked = clamp_batch_width(config, asked)
+        handed_off = False
         for kind, payload in next_batch(argv[2], source, config, max_concurrent=asked, extra_skip=skip,
                                         session_pid=session_pid):
             _print_pick(kind, payload)
             _phase_gate_notice(argv[2], config, kind, payload)
+            handed_off = handed_off or kind == "HANDOFF"
+        if handed_off:                                      # #2029: once per call, after the picks
+            print(_successor_brief(argv[2], argv[3:], config), file=sys.stderr)
         return 0
     if len(argv) >= 3 and argv[1] == "reconcile-merges":   # #232: close goals whose PR has merged
         config = state.load_config(argv[2])
