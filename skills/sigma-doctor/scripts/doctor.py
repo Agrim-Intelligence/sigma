@@ -6373,7 +6373,27 @@ def _handoff_row_state(cfg):
                                                     # than imported -- doctor.py does not import loop.py
                                                     # (skills do not import each other's Python;
                                                     # north-star.md architecture rule #3)
-    return f"after_goals={after_goals}" if after_goals else "off"
+    goals = f"after_goals={after_goals}" if after_goals else "after_goals=off"
+    return f"{goals}; context={_handoff_context_state(block.get('after_context_tokens'))}"
+
+
+#: #2027: hand-kept mirrors of loop.py's CONTEXT_HANDOFF_MULTIPLE and CONTEXT_HANDOFF_WINDOW_FRACTION
+#: (x100), for the same no-import reason as above; `test_doctor_literals_match_loop_constants` syncs them.
+_CONTEXT_MULTIPLE = 3
+_CONTEXT_CAP_PERCENT = 45
+
+
+def _handoff_context_state(value):
+    """The context half of the row, read the way loop.py's `_explicit_context_tokens` reads it."""
+    derived = f"{_CONTEXT_MULTIPLE}x first pick, cap {_CONTEXT_CAP_PERCENT}% of window"
+    if value is None:
+        return derived
+    if not isinstance(value, bool) and isinstance(value, (int, float)):
+        if value == 0:
+            return "off"
+        if value > 0 and float(value).is_integer():
+            return str(int(value))
+    return f"derived (ignored: {value})"
 
 
 def _model_max_tier(cfg):
@@ -6760,9 +6780,9 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
          '`state.add_tokens` directly with each phase\'s real cost-equivalent tokens, '
          'unconditional on the journal being on; this row corroborates that via the '
          'journal\'s phase/spend events when it IS on, and says so honestly when it is not'),
-        ("hand-off (context bound, resets the session after N goals)",
+        ("hand-off (context bound, resets the session after N goals or at the context threshold)",
          _handoff_row_state(cfg),
-         'config: "handoff": {"enabled": false}  (or set "after_goals")'),
+         'config: "handoff": {"enabled": false}  (or set "after_goals" / "after_context_tokens")'),
         ("prompt-gate scope",
          "GLOBAL (env override)" if _legacy().getenv("SIGMA_GATE_GLOBAL") == "1"
          else "repo-scoped (speaks only where .sdlc/ exists)",

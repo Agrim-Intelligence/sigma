@@ -34,7 +34,7 @@ Then repeat until the helper says stop:
 
 1. With subagents: `goals=$(python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" next-batch .sdlc
    --session-pid "$PPID")`. Without subagents: use `next` with the same arguments, run its one
-   goal's steps 2–7 inline, then pick again. Both paths stop at `HANDOFF` after 20 goals; resume `/sigma-loop` in a fresh session. See `references/picking.md`.
+   goal's steps 2–7 inline, then pick again. Both paths stop at `HANDOFF` at the goal or context threshold; resume `/sigma-loop` in a fresh session. See `references/picking.md`.
 
    **1a. With subagents, dispatch every goal — one line or many** — each in a fresh subagent
    running steps 2–7 for that ONE goal, at its resolved tier (`references/picking.md`) (Codex:
@@ -46,7 +46,7 @@ Then repeat until the helper says stop:
    optional for a refill**: omitting either can re-dispatch a goal a sibling slot holds. Slot sizing, dispatch logging, releasing an undispatched goal: `references/picking.md`.
 2. Dispatch `goal` lines before a terminal line. If output is `DONE` (nothing pickable), `BUDGET` (iterations, wall-clock
    minutes, or reported tokens — each only when `config.json` sets it), or `HANDOFF` (a goal-count
-   hand-off, on by default) → STOP, and report the stderr `BUDGET (...)`/`HANDOFF (...)` line, which
+   or context hand-off, on by default) → STOP, and report the stderr `BUDGET (...)`/`HANDOFF (...)` line, which
    names which ceiling tripped. `HOLD` is never `DONE` or a stop (no claim, no spend): run
    `resource_lease.py wait --max 540`, then pick again.
 

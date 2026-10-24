@@ -27,9 +27,8 @@ shown as a `- tier:` line in the review queue and in the park comment — adviso
 for whoever reads the queue, never a routing decision the loop itself acts on.
 Parking is always correct over forcing an irreversible action to "finish" a goal.
 
-**On a `handoff` stop** (`config.json` → `handoff`, on by default at 20 goals — see
-`skills/sigma-init/templates/config.json.tmpl`'s own `_handoff` comment for why absence still means
-ON): this is a deliberate, healthy checkpoint, never a problem — the orchestrating session is being
+**On a `handoff` stop** (`config.json` → `handoff`, on by default at 20 goals or the
+context threshold): this is a deliberate, healthy checkpoint, never a problem — the orchestrating session is being
 retired ON PURPOSE, before its own accumulated context becomes the next 900k-token compaction. No
 goal is abandoned: `loop.py`'s own `_next()` only checks this ceiling BETWEEN claims, immediately
 before claiming the next one. It counts completed goals plus goals still running in this session.

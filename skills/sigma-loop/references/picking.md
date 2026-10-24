@@ -42,7 +42,7 @@ available, `next-batch` still returns exactly one line, byte-identical to plain 
 `next-batch` returns, one line or many, is dispatched to its own fresh subagent below — none run
 inline on hosts with subagents** (#2521). A host without subagents calls `next` for one goal and
 runs its steps 2-7 inline, then repeats in a fresh session after the code-level `HANDOFF` (20
-completed goals by default). Why: running every goal inline grew the orchestrating session without
+goals or the context threshold by default). Why: running every goal inline grew the orchestrating session without
 bound (measured: 13 of 18 sessions past 800k tokens were `/sigma-loop`/`/sigma-goal` sessions);
 dispatched, only the prompt and the returned summary land here (`references/running.md`).
 
@@ -165,13 +165,13 @@ the same way you would between goals in the single-goal path.
 **No subagent capability:** call `loop.py next` instead of `next-batch`, run steps 2-7 for that one
 goal inline, then call `next` again. Do not log a `goal-slot` dispatch or refill a nonexistent
 slot. The `HANDOFF` response stops the run before the next claim and prints `/sigma-loop` for a
-fresh-session continuation; the default 20-goal ceiling bounds the inline session. Phase reviews
+fresh-session continuation; the goal and context ceilings bound the inline session. Phase reviews
 still use `reviewer.py resolve .sdlc` as step 3 requires. If that resolver refuses an independent
 review mechanism, park the goal instead of self-approving it.
 
 2. If output is `DONE` (nothing pickable), `BUDGET` (a per-run budget hit: iterations, wall-clock
 minutes, or reported tokens — each only when `config.json` sets it), or `HANDOFF` (the per-session
-goal-count ceiling) → STOP new claims, finish any live goal slots, and report its stderr reason.
+goal or context ceiling) → STOP new claims, finish any live goal slots, and report its stderr reason.
 
 `HOLD` (no room) is not a stop, never `DONE`; nothing is claimed, no `budget` spent. Run
 `resource_lease.py wait --max 540`, then pick again.

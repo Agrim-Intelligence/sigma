@@ -40,7 +40,8 @@ GATE_NAME = re.compile(r"(_refusal|_gate|_hold|_guard)$|^gate$|blocked_by")
 KINDS = ("python-gate", "git-host", "claude-hook", "advice")
 KIND_LABEL = {"python-gate": "Python gate", "git-host": "git host",
               "claude-hook": "Claude Code hook", "advice": "advice"}
-HOSTS = {"all": "Claude Code, Cursor, Codex", "claude-code": "Claude Code only"}
+HOSTS = {"all": "Claude Code, Cursor, Codex", "claude-code": "Claude Code only",
+         "claude-code-codex": "Claude Code, Codex (Cursor: goal count only)"}   # #2027
 REQUIRED = ("control", "function", "kind", "hosts", "enabled_by", "mechanism")
 OPTIONAL = ("settings", "condition", "readme")
 TEXT_FIELDS = ("control", "function", "mechanism", "condition", "readme")

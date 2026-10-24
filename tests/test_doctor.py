@@ -1029,21 +1029,23 @@ def test_features_handoff_row_reports_the_default_when_the_key_is_absent(tmp_pat
     d = _doc()
     absent = _sdlc(tmp_path / "absent", {})
     rows = {name: state for name, state, _ in d.features(absent)}
-    assert rows["hand-off (context bound, resets the session after N goals)"] == "after_goals=20"
+    assert rows["hand-off (context bound, resets the session after N goals or at the context threshold)"] == (
+        "after_goals=20; context=3x first pick, cap 45% of window")
 
 
 def test_features_handoff_row_reports_off_when_explicitly_disabled(tmp_path):
     d = _doc()
     off = _sdlc(tmp_path / "off", {"handoff": {"enabled": False}})
     rows = {name: state for name, state, _ in d.features(off)}
-    assert rows["hand-off (context bound, resets the session after N goals)"] == "off"
+    assert rows["hand-off (context bound, resets the session after N goals or at the context threshold)"] == "off"
 
 
 def test_features_handoff_row_reports_a_configured_value(tmp_path):
     d = _doc()
     base = _sdlc(tmp_path, {"handoff": {"after_goals": 5}})
     rows = {name: state for name, state, _ in d.features(base)}
-    assert rows["hand-off (context bound, resets the session after N goals)"] == "after_goals=5"
+    assert rows["hand-off (context bound, resets the session after N goals or at the context threshold)"] == (
+        "after_goals=5; context=3x first pick, cap 45% of window")
 
 
 def test_doctor_handoff_default_matches_loop_pys_own_constant():

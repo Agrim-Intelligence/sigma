@@ -243,6 +243,14 @@ ENFORCEMENT_GATES = (
                   "reach the ceiling",
      "condition": "`handoff.after_goals` is checked first and wins a tie: at the shipped 20/20 the "
                   "stop reads HANDOFF, not BUDGET"},
+    {"control": "Session hand-off on measured context", "function": "_session_count_stop",
+     "kind": "python-gate", "hosts": "claude-code-codex", "enabled_by": ("handoff.enabled",),
+     "settings": ("handoff.after_context_tokens",),
+     "mechanism": "stops admitting goals once this session's own measured context reaches the "
+                  "threshold: `handoff.after_context_tokens`, else 3x its first-pick context capped "
+                  "at 45% of the host window; never at the session's own first pick",
+     "condition": "needs a meter reading (Claude Code transcript or Codex rollout); with none, only "
+                  "the goal count applies; checked before the goal count"},
     {"control": "Resource hold at pick", "function": "_resource_gate",
      "kind": "python-gate", "hosts": "all", "enabled_by": (),
      "settings": (),
@@ -377,6 +385,106 @@ def _handoff_ceiling(handoff_config):
         return None
     after_goals = handoff_config.get("after_goals", DEFAULT_HANDOFF_AFTER_GOALS)
     return after_goals or None
+
+
+#: #2027 (D-1, PROVISIONAL): the context hand-off threshold, when `handoff.after_context_tokens` is
+#: not set, is `min(MULTIPLE x first_pick, FRACTION x window)`.
+#:
+#: MULTIPLE = 3. Per orchestrator turn the whole context is re-read from cache at 0.1x the input
+#: price; a hand-off costs the successor's fresh start written at 2.0x (1h cache) plus its startup
+#: turns, O = 2s..4s for a start of s tokens. A session growing r tokens per turn from s to T costs
+#: 0.05(s+T) + O*r/(T-s) per turn, least at T - s = sqrt(2*O*r/0.1). Measured 2026-10-24 on one
+#: machine: s ~88k (84,392..95,573 over 8 main transcripts; goal-slot subagents start at ~71k, see
+#: above), r = 0.9k..3.1k tokens per turn, giving T = 1.7s..2.7s; rounded UP to 3 because every
+#: hand-off also drains live slots with no new claims, which the model does not price. CAVEATS: s
+#: was measured at each session's FIRST TURN, not its first pick (a first pick is somewhat larger,
+#: so the real threshold is larger); r was measured on general sessions, not loop orchestrators;
+#: orchestrator growth per goal is unmeasured. Re-derive from Epic 2018's baseline (D-6).
+#:
+#: FRACTION = 0.45. Host compaction on a 1M window was measured at 966,939 (~0.967W), so the 450k
+#: cap leaves >= 517k for the drain of live slots, or one whole inline goal (M4): 167 turns at the
+#: highest measured mean growth. Slice 3 sets a compaction window only for an EXPLICIT key below
+#: 450k; a derived threshold gets none and relies on the host's own compaction. Where the cap binds
+#: (first_pick > 150k) the design's "peak below 50% of the window" bar is NOT met.
+#:
+#: WINDOW: what the reading carries -- `CLAUDE_CODE_AUTO_COMPACT_WINDOW` on Claude (45% of whatever
+#: it names, the model window or the compaction point: the conservative reading either way), the
+#: rollout's `model_context_window` on Codex -- else 1,000,000, the largest host window: the cap
+#: only binds at first_pick > 150k, which only a window above 200k can hold.
+#: ponytail: on a 200k-window Claude model 3 x s (>= 213k) sits above the window, so host
+#: compaction and the goal count stay the bound there; set `handoff.after_context_tokens`.
+#: ponytail: `session_end` drops the heartbeat, so an end + start in one transcript re-baselines at
+#: the current context; that session then runs to the cap, not 3x its true start (bounded).
+CONTEXT_HANDOFF_MULTIPLE = 3
+CONTEXT_HANDOFF_WINDOW_FRACTION = 0.45
+CONTEXT_HANDOFF_FALLBACK_WINDOW = 1_000_000
+
+
+def _positive_int(value):
+    """`value` as a positive int, accepting an integral float (JSON tools emit `300000.0`); else None.
+    `bool` is refused before `int`, since `True` is an `int`."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return value if isinstance(value, int) and value > 0 else None
+
+
+def _explicit_context_tokens(handoff_config):
+    """PURE (#2027 D5): `handoff.after_context_tokens` as a positive int, or None -- for absent,
+    null, 0 (the context trigger off), bool, negative, non-integral and any other value. Slice 3
+    (the daemon's compaction window) applies the same rule."""
+    handoff_config = handoff_config if isinstance(handoff_config, dict) else {}
+    return _positive_int(handoff_config.get("after_context_tokens"))
+
+
+def _context_threshold(handoff_config, context):
+    """PURE, no I/O (#2027 D6; slice 4 imports it as `_context_threshold(config.get("handoff"),
+    baseline)`): `(threshold, basis)` or None.
+
+    `context` is the BASELINE reading: only its `first_pick` and `window` are read, never `tokens`
+    or `source`. None when `handoff.enabled is False` (as `_handoff_ceiling`), when
+    `after_context_tokens` is 0, or when there is neither a baseline nor an explicit key. An
+    explicit key wins, uncapped (the operator measured); otherwise `CONTEXT_HANDOFF_MULTIPLE x
+    first_pick`, capped at `CONTEXT_HANDOFF_WINDOW_FRACTION` of the window (see the constants)."""
+    handoff_config = handoff_config if isinstance(handoff_config, dict) else {}
+    if handoff_config.get("enabled") is False:
+        return None
+    raw = handoff_config.get("after_context_tokens")
+    if not isinstance(raw, bool) and isinstance(raw, (int, float)) and raw == 0:
+        return None
+    explicit = _explicit_context_tokens(handoff_config)
+    if explicit:
+        return explicit, "handoff.after_context_tokens"
+    context = context if isinstance(context, dict) else {}
+    first = _positive_int(context.get("first_pick"))
+    if first is None:
+        return None
+    window = _positive_int(context.get("window")) or CONTEXT_HANDOFF_FALLBACK_WINDOW
+    cap = int(window * CONTEXT_HANDOFF_WINDOW_FRACTION)
+    return (min(CONTEXT_HANDOFF_MULTIPLE * first, cap),
+            f"{CONTEXT_HANDOFF_MULTIPLE}x first pick {first:,}, cap {cap:,}")
+
+
+def _context_handoff_reason(handoff_config, context):
+    """The stderr reason when the CURRENT reading trips the context hand-off, else None (#2027 D7).
+
+    Only a `host` reading with `tokens` can trip ("meter unavailable: goal count only"), and only
+    when `tokens > first_pick`, so every session does at least one goal: without that, an explicit
+    value below a fresh start or the Codex cap on a big repo would HANDOFF at the first pick with
+    zero claims and the supervisor would relaunch every 60 s forever.
+    ponytail: a session that STARTS at or above its threshold still gets exactly one goal and then
+    HANDOFF, every session -- bounded, but expensive; a doctor warning is the follow-up."""
+    if not isinstance(context, dict) or context.get("source") != "host":
+        return None
+    tokens, first = _positive_int(context.get("tokens")), _positive_int(context.get("first_pick"))
+    found = _context_threshold(handoff_config, context)
+    if found is None or tokens is None or first is None or tokens <= first:
+        return None
+    threshold, basis = found
+    if tokens < threshold:
+        return None
+    return f"context {tokens:,} tokens >= handoff threshold {threshold:,} ({basis})"
 
 
 def _handoff_reason(cursor, handoff_config):
@@ -2494,7 +2602,7 @@ _TRACE_FORCED = [False]      # #1607: `next --trace` flips this for the process;
 
 
 def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_heartbeat=True, gate=True,
-          batch=None):
+          batch=None, context=None):
     """One pick: `_next_untraced`, bracketed by the opt-in pick trace (#1607, `pick_trace.py`).
     Off (the default) `rec` is the no-op `NULL`, the source's counter stays unset and nothing is
     written, so the pick is byte-identical to `_next_untraced`."""
@@ -2504,7 +2612,7 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
         saved, source.call_counter = source.call_counter, rec.count_args
     try:
         return _next_untraced(sdlc_dir, source, config, extra_skip, session_pid, refresh_heartbeat,
-                              gate, rec, batch)
+                              gate, rec, batch, context)
     finally:
         if hooked:
             source.call_counter = saved
@@ -2512,7 +2620,7 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
 
 
 def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_heartbeat=True,
-                   gate=True, rec=pick_trace.NULL, batch=None):
+                   gate=True, rec=pick_trace.NULL, batch=None, context=None):
     """(kind, goal_or_reason): 'goal' (+marks in_progress, the commit point — second element is
     the goal ref), 'DONE' (drained — second element None on a genuine empty read, or, #1084, a
     short degraded-read reason string when `source.read_degraded()` is True — mirrors BUDGET's own
@@ -2626,8 +2734,8 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
     session_pid = os.getppid() if session_pid is None else session_pid
     # A standalone picker pass is a loop tick, including an empty backlog. `next_batch` already
     # refreshed immediately before its one prologue sweep, so its slot calls opt out explicitly.
-    if refresh_heartbeat:
-        _record_context(sdlc_dir, session_pid)
+    if refresh_heartbeat:          # #2027: the one reading of this invocation, passed to every gate
+        context = _record_context(sdlc_dir, session_pid)
     refusal = _label_not_ready(sdlc_dir, source, config)       # #1579: --label only, claims nothing
     if refusal:
         return ("DONE", refusal)
@@ -2664,7 +2772,8 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
     # session's durable admissions, while resource ceilings read this session's own run (#955).
     cursor_for_sweep_gate = _session_cursor(sdlc_dir, session_pid)
     if not (_budget_resource_reason(cursor_for_sweep_gate, config.get("budget", {}))
-            or _session_count_stop(sdlc_dir, session_pid, config, cursor_for_sweep_gate)):
+            or _session_count_stop(sdlc_dir, session_pid, config, cursor_for_sweep_gate,
+                                   context=context)):
         _feature_needs_label_sweep(sdlc_dir, source, config)
         _feature_needs_unit_sweep(sdlc_dir, source, config)   # #2263
         # #232: close goals `record review` left waiting whose PR has since merged. Inside this
@@ -2786,7 +2895,7 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
             return ("BUDGET", reason)
         # #2521: HANDOFF wins a tie with max_iterations; both inspect this session's
         # settled plus active admissions. Another session's start cannot reset the count.
-        count_stop = _session_count_stop(sdlc_dir, session_pid, config, cursor)
+        count_stop = _session_count_stop(sdlc_dir, session_pid, config, cursor, context=context)
         if count_stop:
             _release_claim_lock(lock_fd)
             kind, reason = count_stop
@@ -2839,7 +2948,7 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
         # A batch can fill its last two slots, record one, and refill while the other is
         # still running: run_iteration alone then undercounts what this run admitted.
         try:
-            admission_stop = _reserve_goal_slot(sdlc_dir, session_pid, goal, config)
+            admission_stop = _reserve_goal_slot(sdlc_dir, session_pid, goal, config, context=context)
         except BaseException:
             _release_claim_lock(lock_fd)
             raise
@@ -3000,7 +3109,7 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
     # config; that amplification is an existing cost this must not copy.
     session_pid = os.getppid() if session_pid is None else session_pid
     # This prologue can be the only tick when reconciliation blocks or drains the batch.
-    _record_context(sdlc_dir, session_pid)
+    context = _record_context(sdlc_dir, session_pid)          # #2027: read once, passed to every slot
     _dag_first_pick(sdlc_dir, source, config)
     _dag_check_pick(sdlc_dir, config, source)
     batch = {"map": {}, "unparked": None}          # #1621: one map load, one unpark sweep per batch
@@ -3065,7 +3174,7 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
             slots -= held
     for _ in range(slots):
         kind, goal = _next(sdlc_dir, source, config, extra_skip=skip, session_pid=session_pid,
-                           refresh_heartbeat=False, gate=False, batch=batch)
+                           refresh_heartbeat=False, gate=False, batch=batch, context=context)
         if kind != "goal":
             picks.append((kind, goal))
             break
@@ -3163,7 +3272,7 @@ def _record_context(sdlc_dir, session_pid):
     except Exception:                                    # noqa: BLE001 - a meter never stops a pick
         reading = {"source": "unavailable", "session": None, "reason": "error"}
 
-    def _write():
+    def _block():
         try:
             old = json.loads(session_heartbeat_path(sdlc_dir, session_pid).read_text()).get("context")
         except (OSError, ValueError, AttributeError):
@@ -3173,13 +3282,22 @@ def _record_context(sdlc_dir, session_pid):
             first = old.get("first_pick")
         if first is None and reading.get("source") == "host":
             first = reading["tokens"]
-        return write_session_heartbeat(sdlc_dir, session_pid,
-                                       context={**reading, "first_pick": first, "at": time.time()})
+        return {**reading, "first_pick": first, "at": time.time()}
 
+    def _write():
+        block = _block()
+        write_session_heartbeat(sdlc_dir, session_pid, context=block)
+        return block
+
+    # #2027: returns the block (the one reading this invocation passes to every gate), or None.
     try:
         return _session_locked(sdlc_dir, int(session_pid), _write)
     except (OSError, TypeError, ValueError, RuntimeError):
-        return write_session_heartbeat(sdlc_dir, session_pid)
+        write_session_heartbeat(sdlc_dir, session_pid)
+        try:                       # the hand-off still sees the reading when the write could not land
+            return _block()
+        except Exception:                                # noqa: BLE001 - a meter never stops a pick
+            return None
 
 
 def refresh_registered_session_heartbeat(sdlc_dir, session_pid):
@@ -3678,8 +3796,15 @@ def _session_admission_snapshot(sdlc_dir, session_pid, config, cursor):
         return ("HANDOFF", str(exc) + "; start a fresh /sigma-loop session")
 
 
-def _session_count_stop(sdlc_dir, session_pid, config, cursor=None):
-    """The per-session goal-count stop; resource budgets are checked separately."""
+def _session_count_stop(sdlc_dir, session_pid, config, cursor=None, context=None):
+    """The per-session goal-count stop; resource budgets are checked separately.
+
+    #2027: the context hand-off is checked FIRST, ahead of the goal-count early return, so it still
+    runs with `after_goals: 0` and no `max_iterations`. `context` is the one meter reading this
+    invocation took (`_record_context`); this function never reads the meter or the heartbeat."""
+    trip = _context_handoff_reason(config.get("handoff"), context)
+    if trip:
+        return ("HANDOFF", trip)
     ceiling = _handoff_ceiling(config.get("handoff") or {})
     iterations = (config.get("budget") or {}).get("max_iterations")
     if not ceiling and not iterations:
@@ -3696,7 +3821,7 @@ def _session_count_stop(sdlc_dir, session_pid, config, cursor=None):
     return None
 
 
-def _reserve_goal_slot(sdlc_dir, session_pid, goal, config):
+def _reserve_goal_slot(sdlc_dir, session_pid, goal, config, context=None):
     """Atomically admit one goal against this session's completed plus active count.
 
     `next-batch` limits its initial batch, but the documented `next` refill also needs
@@ -3722,7 +3847,7 @@ def _reserve_goal_slot(sdlc_dir, session_pid, goal, config):
         resource_reason = _budget_resource_reason(cursor, budget)
         if resource_reason:
             return ("BUDGET", resource_reason)
-        stop = _session_count_stop(sdlc_dir, pid, config, cursor=cursor)
+        stop = _session_count_stop(sdlc_dir, pid, config, cursor=cursor, context=context)
         if stop:
             return stop
         current = (_session_admission_snapshot(sdlc_dir, pid, config, cursor)
