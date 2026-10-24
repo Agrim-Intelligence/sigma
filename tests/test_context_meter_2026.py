@@ -139,7 +139,7 @@ def test_meter_reads_only_the_tail(tmp_path, monkeypatch):
     config = _claude_env(tmp_path, monkeypatch)
     filler = {"type": "user", "message": {"role": "user", "content": "x" * 1000}}
     _claude_transcript(config, [_assistant(10, 20, 30)] + [filler] * 300)
-    assert lsm.context_reading(home=tmp_path / "home") == {"source": "unavailable", "session": SID}
+    assert lsm.context_reading(home=tmp_path / "home") == {"source": "unavailable", "session": SID, "reason": "no turn in tail"}
 
 
 def test_meter_ignores_a_partial_last_line(tmp_path, monkeypatch):
@@ -179,24 +179,24 @@ def test_meter_prefers_the_claude_session_when_both_are_set(tmp_path, monkeypatc
 
 def test_meter_without_any_session_id_is_unavailable(tmp_path, monkeypatch):
     _claude_env(tmp_path, monkeypatch, sid=None)
-    assert lsm.context_reading(home=tmp_path / "home") == {"source": "unavailable", "session": None}
+    assert lsm.context_reading(home=tmp_path / "home") == {"source": "unavailable", "session": None, "reason": "no session id"}
 
 
 def test_meter_with_no_transcript_is_unavailable(tmp_path, monkeypatch):
     _claude_env(tmp_path, monkeypatch)
-    assert lsm.context_reading(home=tmp_path / "home") == {"source": "unavailable", "session": SID}
+    assert lsm.context_reading(home=tmp_path / "home") == {"source": "unavailable", "session": SID, "reason": "no transcript"}
 
 
 def test_meter_with_only_malformed_lines_is_unavailable(tmp_path, monkeypatch):
     config = _claude_env(tmp_path, monkeypatch)
     path = _claude_transcript(config, [])
     path.write_text("not json\n{\"type\": \"assistant\"}\n[1, 2]\n")
-    assert lsm.context_reading(home=tmp_path / "home") == {"source": "unavailable", "session": SID}
+    assert lsm.context_reading(home=tmp_path / "home") == {"source": "unavailable", "session": SID, "reason": "no turn in tail"}
 
 
 def test_meter_never_records_an_unsafe_session_id(tmp_path, monkeypatch):
     _claude_env(tmp_path, monkeypatch, sid="../outside")
-    assert lsm.context_reading(home=tmp_path / "home") == {"source": "unavailable", "session": None}
+    assert lsm.context_reading(home=tmp_path / "home") == {"source": "unavailable", "session": None, "reason": "unsafe session id"}
 
 
 # --- Task 5: the heartbeat's context block and its first-pick baseline ---------------------------
@@ -391,9 +391,10 @@ def test_log_tail_shows_a_host_reading_as_of_the_last_pick(tmp_path):
 def test_log_tail_shows_an_unavailable_reading(tmp_path):
     log = _load("log", LOG)
     d = _heartbeats(tmp_path, {"pid": 1, "last_seen": 1000.0,
-                               "context": {"source": "unavailable", "session": None}})
+                               "context": {"source": "unavailable", "session": None,
+                                           "reason": "no transcript"}})
     assert log.loop_heartbeat_tail(d, now=1061.0) == \
-        "loop heartbeat: 00:01:01 ago, context unavailable at last pick"
+        "loop heartbeat: 00:01:01 ago, context unavailable at last pick (no transcript)"
 
 
 def test_log_tail_reads_the_context_of_the_newest_heartbeat(tmp_path):
@@ -460,3 +461,68 @@ def test_rewrites_measure_gaps_in_time_order_not_input_order():
     calls = [_call("2026-10-24 12:00:00", 0, 800), _call("2026-10-24 10:00:00", 0, 100)]
     assert ocr.rewrites_by_gap(calls)[2] == {"gap": "1h or more", "turns": 1, "rewrites": 1,
                                              "rewrite_tokens": 800}
+
+
+# --- Fix round 1 (PR review): line splitting, the never-raise guards, reasons -------------------
+
+def test_meter_splits_the_tail_on_newlines_only_claude(tmp_path, monkeypatch):
+    """A raw U+2028 inside the latest turn's text (JSON.stringify writes it unescaped) must not
+    split that line: str.splitlines() did, and the meter then reported the OLDER turn as host."""
+    config = _claude_env(tmp_path, monkeypatch)
+    path = _claude_transcript(config, [_assistant(10, 0, 0, mid="old")])
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(_assistant(7, 500, 70000, text="a\u2028b\u2029c\x85d", mid="new"),
+                            ensure_ascii=False) + "\n")
+    assert lsm.context_reading(home=tmp_path / "home")["tokens"] == 70507
+
+
+def test_meter_splits_the_tail_on_newlines_only_codex(tmp_path, monkeypatch):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    monkeypatch.setenv("CODEX_THREAD_ID", CODEX_ID)
+    path = _codex_rollout(tmp_path / "codex", [_codex_request(100, ts="2026-08-25T00:00:10Z")])
+    late = _codex_request(4000, ts="2026-08-25T00:00:20Z", total={"input_tokens": 4100, "output_tokens": 14})
+    late["payload"]["note"] = "x\u2028y"
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(late, ensure_ascii=False) + "\n")
+    assert lsm.context_reading(home=tmp_path / "home")["tokens"] == 4000
+
+
+def test_meter_turns_a_failing_lookup_into_unavailable(tmp_path, monkeypatch):
+    _claude_env(tmp_path, monkeypatch)
+    real = lsm._load
+
+    def load(path, name):
+        module = real(path, name)
+        if name == "phase_report":
+            def boom(*_a, **_k):
+                raise OSError("disk went away")
+            module.find_claude_main_transcript = boom
+        return module
+
+    monkeypatch.setattr(lsm, "_load", load)
+    assert lsm.context_reading(home=tmp_path / "home") == {
+        "source": "unavailable", "session": SID, "reason": "error"}
+
+
+def test_a_failing_meter_never_stops_a_pick_and_still_refreshes_the_heartbeat(tmp_path, monkeypatch):
+    import types
+    lp = _loop(); pid = os.getpid()
+    plain = _backlog(tmp_path / "plain", 1); lp.begin_run(plain, pid)
+    expected = pathlib.Path(_pick(lp, plain, pid)[1]).name
+    base = _backlog(tmp_path / "broken", 1); lp.begin_run(base, pid)
+    lp.write_session_heartbeat(base, pid, now=1.0)
+    real = lp._load
+
+    def load(name):
+        if name == "loop_session_model":
+            def boom():
+                raise RuntimeError("meter exploded")
+            return types.SimpleNamespace(context_reading=boom)
+        return real(name)
+
+    monkeypatch.setattr(lp, "_load", load)
+    picked = _pick(lp, base, pid)
+    assert (picked[0], pathlib.Path(picked[1]).name) == ("goal", expected)
+    beat = json.loads(lp.session_heartbeat_path(base, pid).read_text())
+    assert beat["last_seen"] > 1.0
+    assert (beat["context"]["source"], beat["context"]["reason"]) == ("unavailable", "error")

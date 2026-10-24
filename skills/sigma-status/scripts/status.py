@@ -1,7 +1,7 @@
 """Read-only backlog status: counts by goal status + run cursor + queue state. Zero-dep.
 (A 3-line frontmatter read is duplicated from sigma-loop's frontmatter.py on purpose — the two
 skills are independently installable units; sharing a lib across them would over-couple them.)"""
-import sys, pathlib, re, json, importlib.util, time
+import sys, pathlib, re, json, importlib.util
 
 _HERE = pathlib.Path(__file__).resolve().parent
 

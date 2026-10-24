@@ -89,8 +89,12 @@ def _tail_lines(path):
             data = handle.read()
     except OSError:
         return []
-    lines = data.decode("utf-8", errors="replace").splitlines()
-    return lines[1:] if size > MAX_STREAM_BYTES else lines      # the first line of a cut read may be partial
+    # Split the BYTES on b"\n" only, like a whole-file `for line in fh` read: str.splitlines() also
+    # breaks on U+2028/U+2029/U+0085/\x1c-\x1e, which JSON writers may leave raw inside a string,
+    # and would cut the latest turn in two so an older turn read as the latest (#2026 review).
+    raws = data.split(b"\n")
+    raws = raws[1:] if size > MAX_STREAM_BYTES else raws        # the first line of a cut read may be partial
+    return [raw.decode("utf-8", errors="replace") for raw in raws if raw.strip()]
 
 
 _CODEX_ID = re.compile(r"[A-Za-z0-9_-]+")
@@ -107,30 +111,41 @@ def context_reading(home=None):
 
     -> `{"source": "host", "tokens": N, "session": id}` or `{"source": "unavailable", "session":
     id-or-None}`. `session` is the id only when it passed the same validation the lookup applies,
-    never an unsafe value. Counts only: no line text is returned. Never raises."""
+    never an unsafe value. An unavailable reading also carries a short `reason`: `no session id`,
+    `unsafe session id`, `no transcript`, `no turn in tail` or `error`. Counts only: no line text
+    is returned. Never raises."""
     session = None
+
+    def unavailable(reason):
+        return {"source": "unavailable", "session": session, "reason": reason}
+
     try:
         pr = _load(_HERE / "phase_report.py", "phase_report")
         claude_id = pr._session_id()
         if claude_id:
             if pr._unsafe_id_reason(claude_id):
-                return {"source": "unavailable", "session": None}
+                return unavailable("unsafe session id")
             session = claude_id
             path = pr.find_claude_main_transcript(claude_id, home)
+            if path is None:
+                return unavailable("no transcript")
             ocr = _load(_HERE / "orchestrator_context_report.py", "orchestrator_context_report")
-            turns = [pr.assistant_turn(line) for line in (_tail_lines(path) if path else [])]
-            turns = [turn for turn in turns if turn is not None]
-            if turns:
-                return {"source": "host", "tokens": ocr.context_tokens(turns[-1]["usage"]),
-                        "session": session}
-            return {"source": "unavailable", "session": session}
+            turns = [turn for turn in map(pr.assistant_turn, _tail_lines(path)) if turn is not None]
+            if not turns:
+                return unavailable("no turn in tail")
+            return {"source": "host", "tokens": ocr.context_tokens(turns[-1]["usage"]),
+                    "session": session}
         codex_id = pr._codex_session_id()
-        if not codex_id or not _CODEX_ID.fullmatch(codex_id):
-            return {"source": "unavailable", "session": None}
+        if not codex_id:
+            return unavailable("no session id")
+        if not _CODEX_ID.fullmatch(codex_id):
+            return unavailable("unsafe session id")
         session = codex_id
         path = pr._codex_rollout(codex_id, home=home)
+        if path is None:
+            return unavailable("no transcript")
         tokens = None
-        for line in _tail_lines(path) if path else []:
+        for line in _tail_lines(path):
             try:
                 obj = json.loads(line)
             except ValueError:
@@ -141,11 +156,11 @@ def context_reading(home=None):
             pair = pr._codex_usage_pair(usage, modern=kind != "legacy") if kind else None
             if pair is not None:
                 tokens = pair["input_tokens"]
-        if tokens is not None:
-            return {"source": "host", "tokens": tokens, "session": session}
+        if tokens is None:
+            return unavailable("no turn in tail")
+        return {"source": "host", "tokens": tokens, "session": session}
     except Exception:                                    # noqa: BLE001 - a meter never stops a pick
-        pass
-    return {"source": "unavailable", "session": session}
+        return unavailable("error")
 
 
 def dispatched_tiers(sdlc_dir):

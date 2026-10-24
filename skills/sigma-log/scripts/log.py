@@ -785,7 +785,8 @@ def _context_clause(context):
     if context.get("source") == "host" and isinstance(tokens, int) and not isinstance(tokens, bool):
         return f", context {tokens:,} tokens at last pick (host)"
     if context.get("source") == "unavailable":
-        return ", context unavailable at last pick"
+        reason = context.get("reason")
+        return ", context unavailable at last pick" + (f" ({reason})" if isinstance(reason, str) and reason else "")
     return ""
 
 

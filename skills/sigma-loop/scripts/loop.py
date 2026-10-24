@@ -3161,7 +3161,7 @@ def _record_context(sdlc_dir, session_pid):
     try:
         reading = _load("loop_session_model").context_reading()
     except Exception:                                    # noqa: BLE001 - a meter never stops a pick
-        reading = {"source": "unavailable", "session": None}
+        reading = {"source": "unavailable", "session": None, "reason": "error"}
 
     def _write():
         try:
