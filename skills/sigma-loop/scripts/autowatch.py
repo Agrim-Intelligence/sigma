@@ -1052,7 +1052,8 @@ def _drive(sdlc_dir, config, settings, issue, next_hop, deps):
     # #2028 (design 2024 D-3): the compaction safety net, on the drive's own dict. A non-Claude
     # SIGMA_AUTOWATCH_CMD / drive_cmd also receives the variable; only Claude Code reads it, so it
     # is inert there, and any nested `claude -p` inherits it as intended.
-    _compact_window().apply(env, config, cmd_str, repo_root)
+    _, window_why = _compact_window().apply(env, config, cmd_str, repo_root)
+    print(f"autowatch: compact window {window_why}", file=sys.stderr)   # once per drive
     env["SIGMA_AUTOWATCH_HOP"] = str(next_hop)
     if not env.get("SIGMA_RUN_ID"):
         env["SIGMA_RUN_ID"] = f"autowatch-{os.getpid()}-{int(time.time())}"

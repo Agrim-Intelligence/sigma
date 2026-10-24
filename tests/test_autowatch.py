@@ -1089,3 +1089,11 @@ def test_drive_env_keeps_the_operators_window(tmp_path, monkeypatch):
                        seen.append(env) or _mark_done(d, "42") or (0, "{}")),
                    **_all_gates_pass_deps())
     assert seen[0]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == "250000"
+
+
+def test_drive_logs_the_window_reason_once(tmp_path, monkeypatch, capsys):
+    """PR #2035 review: like the supervisor, the drive says what it did with the window and why."""
+    cfg = _config(); cfg["handoff"] = {"after_context_tokens": 300000}
+    _drive_env(tmp_path, monkeypatch, cfg)
+    err = capsys.readouterr().err
+    assert err.count("autowatch: compact window") == 1 and "600000" in err

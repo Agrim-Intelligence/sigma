@@ -609,3 +609,20 @@ def test_slots_timeout_is_bounded(tmp_path):
     ctx = _context(out)
     assert BRIEF_MARKER in ctx and "Live slots unavailable (timed out after 5 s)" in ctx
     assert took < 15
+
+
+def test_compact_carries_the_coexist_notice(tmp_path):
+    """PR #2035 review: the compact tier reads HOOK_COEXIST_NOTICE from the environment, so it
+    must be exported BEFORE that tier -- or a compaction silently drops the old-plugin notice."""
+    hook = _scratch_plugin(tmp_path, "print('SLOTS')\n")
+    fake = hook.parent.parent / "skills" / "sigma-loop" / "scripts" / "coexist.py"
+    fake.parent.mkdir(parents=True)
+    fake.write_text("def warn_line(sdlc_dir):\n    return 'OLD PLUGIN ACTIVE'\n")
+    (tmp_path / "repo").mkdir()
+    project = _adopted(tmp_path / "repo")
+    env = {k: v for k, v in os.environ.items() if k not in ("SIGMA_RUN_ID", "SIGMA_ALLOW_COEXIST")}
+    env["CLAUDE_PROJECT_DIR"] = str(project)
+    p = subprocess.run(["bash", str(hook)], input=COMPACT, capture_output=True, text=True,
+                       env=env, timeout=30)
+    ctx = _context(p.stdout.strip())
+    assert "OLD PLUGIN ACTIVE" in ctx and BRIEF_MARKER in ctx and "SLOTS" in ctx
