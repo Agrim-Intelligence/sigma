@@ -81,6 +81,9 @@ except Exception:
 PY
 )" || HOOK_COEXIST_NOTICE=""
 fi
+# Exported HERE, before the compact tier reads it (PR #2035 review); the tiers below that append
+# to it stay exported, since bash re-exports an exported variable on every assignment.
+export HOOK_COEXIST_NOTICE
 
 # --- After a compaction: re-inject the rules and the live slots (#2028, design 2024 FR-6) -----------
 # ACCELERATOR only: the load-bearing context bound is the loop's own hand-off in Python (`loop.py

@@ -68,6 +68,7 @@ LIBRARY_ONLY = {
     "feature_land_merge",
     "feature_land_approval_prune",
     "conflict_state",
+    "compact_window",
     "dag_store", "dag_collect", "dag_refresh", "dag_lease", "dag_source",
     "dag_cycles",
     "dag_history", "dag_render",
