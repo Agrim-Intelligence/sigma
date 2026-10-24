@@ -237,8 +237,8 @@ Then repeat until the helper says stop:
 7. Loop.
 
 At STOP, print one machine-readable line FIRST — `LOOP STOP: backlog-empty`, `LOOP STOP: budget`, or
-`LOOP STOP: handoff` — then report: N done, M parked, K failed. On a `handoff` stop, ALSO print the
-literal resume command — `references/stopping.md`. If anything parked or failed, point the user to the items —
+`LOOP STOP: handoff` — then report: N done, M parked, K failed. On a `handoff` stop, ALSO relay the
+successor brief verbatim — `references/stopping.md`. If anything parked or failed, point the user to the items —
 `.sdlc/state/review-queue.md` in local mode, or the issues labelled `sdlc:parked` in github mode.
 Parking is always correct over forcing an irreversible action to "finish" a goal.
 The self-improving path — closing a knowledge-graph gap instead of stopping when the backlog is
