@@ -169,3 +169,16 @@ fails `exit=127` on the first real per-goal run. Use an absolute interpreter pat
 `PATH`, or a wrapper script (`/sigma-doctor` flags a relative one for you). And `work.py commit` stages
 with `git add -A`, so **anything your `verify_command` leaves behind must be gitignored** or it rides
 along into the PR (`.coverage`, `.pytest_cache/`, build output).
+
+## PR size classes and the soft cap
+
+`work.py pr` classifies every changed file of the committed diff (merge-base to HEAD, a rename by its new
+path) as handwritten, generated_or_mechanical, tests, docs or sensitive, and stores the counts on the
+goal's work record as `size`. A file is `tests` only by a test PATH and `generated_or_mechanical` only by a
+`work.generated_globs` glob (a list) or a header marker (`@generated`, `DO NOT EDIT`, `Code generated`) in
+its first 5 lines at HEAD; anything else is handwritten. `sensitive` uses the defaults of
+`risk-detect.sh` (its `.sdlc/**` and `docs/**` exclusions included; `risk-detect.conf` overrides are not
+read). The soft cap, `work.slice_pr_soft_cap` (default 400; a non-integer or non-positive value reads as
+400), counts handwritten plus sensitive lines; over it, the `pr` result gains an advisory note and nothing
+is refused. A diff that cannot be measured records no `size` and the PR opens unchanged. A header marker can
+make a hand-edited file read as generated, so treat the counts as a gauge, not a gate.
