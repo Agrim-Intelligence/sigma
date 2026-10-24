@@ -2627,7 +2627,7 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
     # A standalone picker pass is a loop tick, including an empty backlog. `next_batch` already
     # refreshed immediately before its one prologue sweep, so its slot calls opt out explicitly.
     if refresh_heartbeat:
-        write_session_heartbeat(sdlc_dir, session_pid)
+        _record_context(sdlc_dir, session_pid)
     refusal = _label_not_ready(sdlc_dir, source, config)       # #1579: --label only, claims nothing
     if refusal:
         return ("DONE", refusal)
@@ -3000,7 +3000,7 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
     # config; that amplification is an existing cost this must not copy.
     session_pid = os.getppid() if session_pid is None else session_pid
     # This prologue can be the only tick when reconciliation blocks or drains the batch.
-    write_session_heartbeat(sdlc_dir, session_pid)
+    _record_context(sdlc_dir, session_pid)
     _dag_first_pick(sdlc_dir, source, config)
     _dag_check_pick(sdlc_dir, config, source)
     batch = {"map": {}, "unparked": None}          # #1621: one map load, one unpark sweep per batch
@@ -3125,27 +3125,61 @@ def session_heartbeat_path(sdlc_dir, session_pid):
     return _session_heartbeat_dir(sdlc_dir) / (_session_marker_path(sdlc_dir, session_pid).stem + ".json")
 
 
-def write_session_heartbeat(sdlc_dir, session_pid, now=None, generation=None):
-    """Atomically refresh a loop heartbeat. A write failure is diagnostic-only, never a run stop."""
+def write_session_heartbeat(sdlc_dir, session_pid, now=None, generation=None, context=None):
+    """Atomically refresh a loop heartbeat. A write failure is diagnostic-only, never a run stop.
+
+    #2026: published through `state.session_write`, which keeps every key this call does not pass,
+    so the phase-boundary refresh and `session_start` (which pass only pid/last_seen/generation)
+    no longer wipe the `context` block `_record_context` writes, and a `next` refresh no longer
+    drops `generation`."""
     try:
         pid = int(session_pid)
         path = session_heartbeat_path(sdlc_dir, pid)
         path.parent.mkdir(parents=True, exist_ok=True)
-        seen = time.time() if now is None else float(now)
-        fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + f".{os.getpid()}.")
-        try:
-            with os.fdopen(fd, "w") as stream:
-                data = {"pid": pid, "last_seen": seen}
-                if generation:
-                    data["generation"] = generation
-                json.dump(data, stream)
-                stream.flush(); os.fsync(stream.fileno())
-            os.replace(tmp, path)
-        finally:
-            pathlib.Path(tmp).unlink(missing_ok=True)
+        data = {"pid": pid, "last_seen": time.time() if now is None else float(now)}
+        if generation:
+            data["generation"] = generation
+        if context is not None:
+            data["context"] = context
+        state.session_write(path, data)
         return True
     except (OSError, TypeError, ValueError):
         return False
+
+
+def _record_context(sdlc_dir, session_pid):
+    """Refresh this session's heartbeat with its current context reading (#2026, FR-1/FR-2).
+
+    The reading (`loop_session_model.context_reading`: a 256 KiB transcript tail, counts only) is
+    taken outside the lock; the read-modify-write of the block runs under the session's stripe
+    lock, the one `refresh_registered_session_heartbeat` and `session_start` hold for their own
+    writes, so neither can publish a heartbeat read before this write landed. `first_pick` is the
+    session's first host reading; it is carried while the transcript id is unchanged (an
+    `unavailable` reading in the same session keeps it) and restarts with a different id, because
+    the transcript, not the PID or the start generation, is the host session. Diagnostic-only:
+    any failure leaves at most a plain heartbeat refresh and never stops a pick."""
+    try:
+        reading = _load("loop_session_model").context_reading()
+    except Exception:                                    # noqa: BLE001 - a meter never stops a pick
+        reading = {"source": "unavailable", "session": None, "reason": "error"}
+
+    def _write():
+        try:
+            old = json.loads(session_heartbeat_path(sdlc_dir, session_pid).read_text()).get("context")
+        except (OSError, ValueError, AttributeError):
+            old = None
+        first = None
+        if isinstance(old, dict) and old.get("session") == reading.get("session"):
+            first = old.get("first_pick")
+        if first is None and reading.get("source") == "host":
+            first = reading["tokens"]
+        return write_session_heartbeat(sdlc_dir, session_pid,
+                                       context={**reading, "first_pick": first, "at": time.time()})
+
+    try:
+        return _session_locked(sdlc_dir, int(session_pid), _write)
+    except (OSError, TypeError, ValueError, RuntimeError):
+        return write_session_heartbeat(sdlc_dir, session_pid)
 
 
 def refresh_registered_session_heartbeat(sdlc_dir, session_pid):

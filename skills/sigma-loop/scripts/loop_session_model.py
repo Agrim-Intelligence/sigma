@@ -11,6 +11,8 @@ that is matters. Three small pieces, all local and read-only:
   main transcript the way `phase_report.py` reads a phase. None when the host exposes none.
 * `verdict(observed, tiers)` - `ok`, `above-tier` (observed priced above EVERY dispatched tier)
   or `unavailable` with a named reason. Never a guess.
+* `context_reading(home)` - the session's current context in tokens, from a bounded tail of its own
+  Claude transcript or Codex rollout (#2026). `unavailable` when it cannot be read.
 
 Usage: loop_session_model.py check [sdlc_dir] [--warn-only]
 Prints one line (nothing at all with --warn-only unless the verdict is above-tier). Exit 0.
@@ -87,8 +89,78 @@ def _tail_lines(path):
             data = handle.read()
     except OSError:
         return []
-    lines = data.decode("utf-8", errors="replace").splitlines()
-    return lines[1:] if size > MAX_STREAM_BYTES else lines      # the first line of a cut read may be partial
+    # Split the BYTES on b"\n" only, like a whole-file `for line in fh` read: str.splitlines() also
+    # breaks on U+2028/U+2029/U+0085/\x1c-\x1e, which JSON writers may leave raw inside a string,
+    # and would cut the latest turn in two so an older turn read as the latest (#2026 review).
+    raws = data.split(b"\n")
+    raws = raws[1:] if size > MAX_STREAM_BYTES else raws        # the first line of a cut read may be partial
+    return [raw.decode("utf-8", errors="replace") for raw in raws if raw.strip()]
+
+
+_CODEX_ID = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def context_reading(home=None):
+    """This host session's current context, read from a bounded tail of its own transcript (#2026).
+
+    Claude (`CLAUDE_CODE_SESSION_ID`, which wins when both hosts' ids are set): the LAST assistant
+    line in the tail, input + cache read + cache write. Codex (`CODEX_THREAD_ID`, else
+    `CODEX_SESSION_ID`): the LAST request's `input_tokens` alone, which already includes cached
+    tokens. Only the last MAX_STREAM_BYTES are read, so a 50 MB transcript costs what a 256 KiB one
+    does; a latest turn older than that tail reads `unavailable` rather than widening the read.
+
+    -> `{"source": "host", "tokens": N, "session": id}` or `{"source": "unavailable", "session":
+    id-or-None}`. `session` is the id only when it passed the same validation the lookup applies,
+    never an unsafe value. An unavailable reading also carries a short `reason`: `no session id`,
+    `unsafe session id`, `no transcript`, `no turn in tail` or `error`. Counts only: no line text
+    is returned. Never raises."""
+    session = None
+
+    def unavailable(reason):
+        return {"source": "unavailable", "session": session, "reason": reason}
+
+    try:
+        pr = _load(_HERE / "phase_report.py", "phase_report")
+        claude_id = pr._session_id()
+        if claude_id:
+            if pr._unsafe_id_reason(claude_id):
+                return unavailable("unsafe session id")
+            session = claude_id
+            path = pr.find_claude_main_transcript(claude_id, home)
+            if path is None:
+                return unavailable("no transcript")
+            ocr = _load(_HERE / "orchestrator_context_report.py", "orchestrator_context_report")
+            turns = [turn for turn in map(pr.assistant_turn, _tail_lines(path)) if turn is not None]
+            if not turns:
+                return unavailable("no turn in tail")
+            return {"source": "host", "tokens": ocr.context_tokens(turns[-1]["usage"]),
+                    "session": session}
+        codex_id = pr._codex_session_id()
+        if not codex_id:
+            return unavailable("no session id")
+        if not _CODEX_ID.fullmatch(codex_id):
+            return unavailable("unsafe session id")
+        session = codex_id
+        path = pr._codex_rollout(codex_id, home=home)
+        if path is None:
+            return unavailable("no transcript")
+        tokens = None
+        for line in _tail_lines(path):
+            try:
+                obj = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(obj, dict):
+                continue
+            kind, usage, _info = pr.codex_request_usage(obj)
+            pair = pr._codex_usage_pair(usage, modern=kind != "legacy") if kind else None
+            if pair is not None:
+                tokens = pair["input_tokens"]
+        if tokens is None:
+            return unavailable("no turn in tail")
+        return {"source": "host", "tokens": tokens, "session": session}
+    except Exception:                                    # noqa: BLE001 - a meter never stops a pick
+        return unavailable("error")
 
 
 def dispatched_tiers(sdlc_dir):
