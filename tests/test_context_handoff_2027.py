@@ -345,7 +345,7 @@ def test_codex_reading_carries_the_model_window_and_the_cap_uses_it(tmp_path, mo
     line["payload"]["info"]["model_context_window"] = 258400
     m26._codex_rollout(tmp_path / "codex", [line])
     reading = lp._load("loop_session_model").context_reading(home=tmp_path / "home")
-    assert reading["window"] == 258400 and reading["tokens"] == 120000
+    assert reading.get("window") == 258400 and reading.get("tokens") == 120000
     kind, reason = _stop(tmp_path, {}, {**reading, "first_pick": 60000})
     assert kind == "HANDOFF" and "116,280" in reason
 
@@ -354,7 +354,7 @@ def test_claude_reading_carries_the_auto_compact_window_env(tmp_path, monkeypatc
     m26._session_at(tmp_path, monkeypatch, 70000)
     lsm = lp._load("loop_session_model")
     monkeypatch.setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "420000")
-    assert lsm.context_reading()["window"] == 420000
+    assert lsm.context_reading().get("window") == 420000
     for bad in ("abc", "0", "-1", ""):
         monkeypatch.setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", bad)
         assert "window" not in lsm.context_reading(), bad
@@ -392,8 +392,8 @@ def _template():
 
 def test_template_ships_the_key_null_with_its_derivation():
     t = _template()
-    assert t["handoff"]["after_context_tokens"] is None
-    note = t["_handoff"]
+    assert t["handoff"].get("after_context_tokens", "absent") is None
+    note = t.get("_handoff", "")
     for needle in ("after_context_tokens", "3x", "45%", "first turn"):
         assert needle in note, needle
 
@@ -459,6 +459,6 @@ def test_doctor_row_states():
 
 def test_enforcement_table_has_the_context_row():
     table = (ROOT / "docs/enforcement.md").read_text()
-    row = next(line for line in table.splitlines()
-               if line.startswith("| Session hand-off on measured context |"))
+    row = next((line for line in table.splitlines()
+                if line.startswith("| Session hand-off on measured context |")), "")
     assert "_session_count_stop" in row and "Cursor: goal count only" in row
