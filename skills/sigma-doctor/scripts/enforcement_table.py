@@ -112,7 +112,8 @@ HOOK_FACTS = (
                   "start, which asks the agent to follow the conventions; warns, never blocks",
      "condition": "the brief needs `session_start.enabled`; separately, the ledger-watcher "
                   "staleness warning fires whenever `ledger.enabled` is `true`, with no key of "
-                  "its own",
+                  "its own; the post-compaction rules and live-slot re-injection needs no key and "
+                  "fires whenever `.sdlc/config.json` exists, supervised runs included",
      "readme": "SessionStart brief (opt-in)"},
 )
 

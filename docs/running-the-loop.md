@@ -67,6 +67,16 @@ tail: loop finished → stop; per-run budget → relaunch; **usage-limit exhaust
 stated reset time (+ jitter) and relaunches**; unknown crash → capped escalating backoff. Stop it
 any time with `touch .sdlc/state/supervisor.stop`. (Sleeping *machine* ≠ sleeping process — on a
 macOS laptop run it under `caffeinate -is`.)
+**Compaction safety net (#2028).** The supervisor and `autowatch.py`'s drive set
+`CLAUDE_CODE_AUTO_COMPACT_WINDOW` in the launched session's environment only when
+`handoff.after_context_tokens` is set and you have not set the window yourself (the env var, a
+`--autocompact` flag in the command, or `autoCompactWindow` in your user, project, local or
+file-based managed settings; MDM and server-managed policy cannot be detected). The value is
+`max(2 x after_context_tokens, 420,000)`, set only below 900,000; otherwise nothing is set and the
+host's own threshold applies. Subagents and nested `claude -p` inherit the variable, which is why
+the 420,000 floor exists: it is the measured p99 subagent peak (411,359 tokens over 6,906 subagent
+transcripts). After any compaction the SessionStart hook re-injects Sigma's rules and the live
+slot block, supervised runs included. Measured in temp-dir tests only, not in a live compaction.
 For Codex, follow the [Codex-only opt-in migration](codex-autonomy.md) first; it verifies the enabled
 Codex plugin and launches a fresh Codex session without changing Claude's installation.
 Run **`/sigma-status`** any time for backlog counts (pending / in-progress / done / parked / failed) + whether the

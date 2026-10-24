@@ -400,6 +400,71 @@ def test_supervisor_respects_an_externally_provided_run_id(tmp_path):
     assert _launcher_run_id(tmp_path, preset="outer-worker-7") == "outer-worker-7"
 
 
+
+# --------------------------------------------------------------------------- #2028: compact window
+# The daemon sets CLAUDE_CODE_AUTO_COMPACT_WINDOW in the CHILD's env (never its own os.environ) from
+# handoff.after_context_tokens, unless the operator set the window. The rule itself is unit-tested
+# in tests/test_compact_window.py; these prove the real launcher wires it.
+
+_MANAGED = ("/Library/Application Support/ClaudeCode/managed-settings.json",
+            "/etc/claude-code/managed-settings.json")
+
+
+def _launcher_window(tmp_path, config=None, preset=None, cmd_suffix=""):
+    """Run supervise_daemon.py once with a fake session that records the window it inherited.
+    Returns (seen value or "UNSET", supervisor.log text)."""
+    for path in _MANAGED:          # a real managed file naming the window would flip every case
+        if os.path.exists(path) and "utoCompactWindow" in open(path, errors="replace").read():
+            pytest.skip(f"this machine's {path} sets the window; the launcher correctly defers to it")
+    out = tmp_path / "seen-window.txt"
+    base = tmp_path / ".sdlc"; (base / "state").mkdir(parents=True)
+    if config is not None:
+        (base / "config.json").write_text(__import__("json").dumps(config))
+    fake = tmp_path / "fake-claude.sh"
+    fake.write_text('#!/usr/bin/env bash\n'
+                    f'printf "%s" "${{CLAUDE_CODE_AUTO_COMPACT_WINDOW-UNSET}}" > "{out}"\n'
+                    'echo "LOOP STOP: backlog-empty"\n')
+    fake.chmod(0o755)
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("SIGMA_RUN_ID", "CLAUDE_CODE_AUTO_COMPACT_WINDOW")}
+    env.update({"SIGMA_CLAUDE_CMD": f"{fake}{cmd_suffix}", "CLAUDE_CONFIG_DIR": str(tmp_path / "cfg"),
+                "SIGMA_SUPERVISE_MAX_RUNS": "1", "SIGMA_SUPERVISE_SLEEP_SCALE": "0"})
+    if preset is not None:
+        env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = preset
+    r = subprocess.run([sys.executable, str(S / "supervise_daemon.py"), str(base)],
+                       capture_output=True, text=True, env=env, timeout=60, cwd=str(tmp_path))
+    assert r.returncode == 0, r.stderr
+    return out.read_text(), (base / "state" / "supervisor.log").read_text()
+
+
+_A300K = {"handoff": {"after_context_tokens": 300000}}
+
+
+def test_window_set_from_after_context_tokens(tmp_path):
+    seen, log = _launcher_window(tmp_path, _A300K)
+    assert seen == "600000"
+    assert log.count("supervisor: compact window") == 1 and "600000" in log
+
+
+def test_window_not_set_without_after_context_tokens(tmp_path):
+    seen, log = _launcher_window(tmp_path)
+    assert seen == "UNSET" and "host's own threshold" in log
+
+
+def test_window_not_set_when_it_would_land_past_the_host_point(tmp_path):
+    seen, log = _launcher_window(tmp_path, {"handoff": {"after_context_tokens": 600000}})
+    assert seen == "UNSET" and "not below 900000" in log
+
+
+def test_operator_window_wins_over_the_derived_one(tmp_path):
+    assert _launcher_window(tmp_path, _A300K, preset="250000")[0] == "250000"
+
+
+def test_autocompact_flag_in_the_command_wins(tmp_path):
+    seen, log = _launcher_window(tmp_path, _A300K, cmd_suffix=" --autocompact 300k")
+    assert seen == "UNSET" and "--autocompact" in log
+
+
 # --------------------------------------------------------------------------- progress / blocked
 # These cover the two endings the classifier could not name, both of which it charged the
 # escalating CRASH ladder for. Measured live on 2026-08-04: a run that merged a PR and a run that
@@ -766,6 +831,8 @@ def test_the_shell_anchor_alone_resists_an_unsanitised_reason(tmp_path):
     (tmp_path / "legacy.py").write_text((S / "legacy.py").read_text())
     # #460: and the size-capped log rotation, loaded the same way.
     (tmp_path / "logroll.py").write_text((S / "logroll.py").read_text())
+    # #2028: and the compaction-window rule, loaded the same way.
+    (tmp_path / "compact_window.py").write_text((S / "compact_window.py").read_text())
 
     # Beside it: a stub classifier `_HERE` resolves to and calls instead of the real one. Ignores
     # argv entirely and always emits the same UNSANITIZED verdict line -- what `_ABNORMAL` printed

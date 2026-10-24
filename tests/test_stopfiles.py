@@ -30,6 +30,7 @@ def _doctor(repo):
 
 def _hook(repo):
     p = subprocess.run(["bash", str(HOOK)], cwd=repo, capture_output=True, text=True,
+                       stdin=subprocess.DEVNULL,   # #2028: the hook reads stdin (bounded)
                        env={**ENV, "CLAUDE_PROJECT_DIR": str(repo), "SIGMA_ALLOW_COEXIST": "1"})
     assert p.returncode == 0, p.stderr
     return p.stdout

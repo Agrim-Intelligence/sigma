@@ -1051,3 +1051,41 @@ def test_enforce_mode_with_no_headroom_defers_the_real_drive(tmp_path, monkeypat
     result = autowatch.tick(d, issue="42", run_drive=lambda *a, **k: calls.append(a) or (0, "{}"),
                             **_all_gates_pass_deps())
     assert result == "deferred: resource hold" and calls == []
+
+
+# ------------------------------------------------------------------ #2028: compact window on the drive
+# `_drive` is the second Claude launcher (design 2024 D-3): it applies the same rule as the daemon,
+# to the drive's own env dict. The rule is unit-tested in tests/test_compact_window.py.
+
+def _drive_env(tmp_path, monkeypatch, cfg):
+    monkeypatch.delenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", raising=False)
+    compact_window = autowatch._compact_window()
+    monkeypatch.setattr(compact_window, "MANAGED_SETTINGS_PATHS", ())
+    d = _sdlc(tmp_path, cfg)
+    seen = []
+    autowatch.tick(d, issue="42",
+                   run_drive=lambda cmd, prompt, cwd, env, timeout: (
+                       seen.append(env) or _mark_done(d, "42") or (0, "{}")),
+                   **_all_gates_pass_deps())
+    return seen[0]
+
+
+def test_drive_env_carries_the_window_from_after_context_tokens(tmp_path, monkeypatch):
+    cfg = _config(); cfg["handoff"] = {"after_context_tokens": 300000}
+    assert _drive_env(tmp_path, monkeypatch, cfg)["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == "600000"
+
+
+def test_drive_env_has_no_window_without_after_context_tokens(tmp_path, monkeypatch):
+    assert "CLAUDE_CODE_AUTO_COMPACT_WINDOW" not in _drive_env(tmp_path, monkeypatch, _config())
+
+
+def test_drive_env_keeps_the_operators_window(tmp_path, monkeypatch):
+    cfg = _config(); cfg["handoff"] = {"after_context_tokens": 300000}
+    monkeypatch.setenv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "250000")
+    d = _sdlc(tmp_path, cfg)
+    seen = []
+    autowatch.tick(d, issue="42",
+                   run_drive=lambda cmd, prompt, cwd, env, timeout: (
+                       seen.append(env) or _mark_done(d, "42") or (0, "{}")),
+                   **_all_gates_pass_deps())
+    assert seen[0]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == "250000"
