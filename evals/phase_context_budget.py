@@ -80,6 +80,9 @@ PHASES = {
         "files": ("skills/sigma-retro/SKILL.md", "skills/sigma-retro/references/selection.md"),
         "brief": "retro",
     },
+    # #2005 (design 2000.md D1): the pre-implementation test reviewer's payload. Budget-only -- no phase
+    # list knows it; its writer lands in slices 7/10, which may widen this file set (a justified raise).
+    "test-review-pre": {"files": ("skills/sigma-review/references/test-review.md",)},
 }
 
 

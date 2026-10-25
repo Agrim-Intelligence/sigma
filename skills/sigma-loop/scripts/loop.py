@@ -7262,7 +7262,7 @@ USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> [--se
          "session-active <dir> | prune-state <dir> [--dry-run] [--keep-days N] [--limit N] | session-end <dir> [--session-pid PID] | "
          "claim <dir> <goal> [--session-pid PID] | "
          "agent-start <dir> <goal> --pid PID [--thread T] | agent-reclaim <dir> <goal> [--thread T] | "
-         "phases <dir> <goal> | waive-phases <dir> <goal> research,retro --reason <why> | "
+         "phases <dir> <goal> | next-step <dir> <goal> | waive-phases <dir> <goal> research,retro --reason <why> | "
          "classify <dir> <goal> trivial|small|standard|heavy --rationale <why> | "
          "precheck <dir> <goal> | "
          "qc <dir> <goal> | decompose-check <dir> <goal> | design-check <dir> <goal> | "
@@ -7921,6 +7921,14 @@ def _dispatch(argv):
     if len(argv) >= 4 and argv[1] == "phases":      # #684: which SDLC phases are recorded, and the next step
         config = state.load_config(argv[2])
         print(_load("phase_gate").format_status(argv[2], config, argv[3]))
+        return 0
+    if len(argv) >= 4 and argv[1] == "next-step":   # #2005 FR-61: the goal's next steps, from its record
+        config = state.load_config(argv[2])
+        try:
+            print(_load("next_step").render(argv[2], config, argv[3]))
+        except ValueError as exc:
+            print(f"loop.py next-step: {exc}", file=sys.stderr)
+            return 2
         return 0
     if len(argv) >= 5 and argv[1] == "waive-phases":   # #684: the explicit, recorded trivial-goal lever
         config = state.load_config(argv[2])

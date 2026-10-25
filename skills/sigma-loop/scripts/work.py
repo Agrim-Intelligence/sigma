@@ -1588,6 +1588,23 @@ def _legacy_evidence(sdlc_dir, goal):
                and r.get("verdict") in _PLAN_REVIEW_APPROVING for r in _log_rows(sdlc_dir, goal))
 
 
+def classify_blocker(sdlc_dir, config, goal):
+    """(kind, reason) for why `classify` would refuse this goal whatever its profile -- kind `legacy`, `late`
+    or `nowhere` (no work record and no action log) -- or None when it would record. One check, read by `classify` and by `loop.py next-step`
+    (#2005), so the prompt never names a classify the verb refuses."""
+    if _legacy_evidence(sdlc_dir, goal):
+        return "legacy", ("legacy goal: its plan-review was approved before the lean route, so it finishes under "
+                          "the pre-upgrade phase rules (FR-33) and is not classified")
+    late = next((r.get("kind") for r in _log_rows(sdlc_dir, goal) if r.get("kind") in ("recorded", "merge_armed")),
+                None)
+    if late:
+        return "late", f"goal already has a `{late}` row: classification happens at pick, not after"
+    if not _record(sdlc_dir, goal) and not _load("actionlog").enabled_for(config, sdlc_dir, goal, kind="goal_class"):
+        return "nowhere", ("nothing can hold the route: no work record (run `work.py start` first) and "
+                           "action_log.enabled is false")
+    return None
+
+
 def classify(sdlc_dir, config, goal, profile, rationale, source="agent"):
     """Record the goal's profile on the lean route (FR-34, FR-53): work record (when one exists) and a
     `goal_class` action-log row. Returns (marker, warning); the caller writes `marker` as the timeline note.
@@ -1599,19 +1616,11 @@ def classify(sdlc_dir, config, goal, profile, rationale, source="agent"):
     rationale = " ".join(str(rationale or "").split())
     if not rationale:
         raise ValueError(f"--rationale is required: a short reason for the profile ({', '.join(PROFILES)})")
-    if _legacy_evidence(sdlc_dir, goal):
-        raise ValueError("legacy goal: its plan-review was approved before the lean route, so it finishes under "
-                         "the pre-upgrade phase rules (FR-33) and is not classified")
-    late = next((r.get("kind") for r in _log_rows(sdlc_dir, goal) if r.get("kind") in ("recorded", "merge_armed")),
-                None)
-    if late:
-        raise ValueError(f"goal already has a `{late}` row: classification happens at pick, not after")
+    blocked = classify_blocker(sdlc_dir, config, goal)
+    if blocked:
+        raise ValueError(blocked[1])
     al = _load("actionlog")
     rec = _record(sdlc_dir, goal)
-    log_on = al.enabled_for(config, sdlc_dir, goal, kind="goal_class")
-    if not rec and not log_on:
-        raise ValueError("nothing can hold the route: no work record (run `work.py start` first) and "
-                         "action_log.enabled is false")
     fields = {"route": LEAN_ROUTE, "profile": profile, "profile_source": source, "rationale": rationale}
     if rec:
         _save(sdlc_dir, goal, {**rec, **fields})

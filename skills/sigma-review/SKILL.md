@@ -74,7 +74,7 @@ Pick the mode from the request:
 - **Whole-repo audit** — not this skill. A periodic sweep is
   `/sigma-audit`.
 - **Counter-review** — the user pasted an external review (Cursor, GPT, SonarQube, another agent):
-  see Counter-review below.
+  [counter-review](references/counter-review.md).
 
 ## 1. Quantitative pass (a KPI dashboard)
 Run `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/quality_delta.py" <goal>` from the work record's `worktree` (default `.sdlc/work/<goal>`) and quote its stdout verbatim.
@@ -174,11 +174,6 @@ blocking finding costs a full fix -> push -> re-review round, and `work.max_revi
 Reporting a real finding as follow-up is a judgement you may make, except for a project-rule violation: that blocks unless the owners waive it. The failing-case rule binds this general review's findings; a dedicated risk review's `critical`/`high`
 blocks without one. A
 **Missing** with no constructible failing case is Follow-up per the bullet above, never dropped.
-
-## Counter-review
-When grading an external review, for each of its findings: **accept** (correct), **downgrade / reframe**
-(overstated), or **reject** (wrong) — with evidence — then add the **stronger findings it missed**. End
-with a one-line read on the reviewer's overall signal.
 
 ## In the loop
 Findings feed the Review phase; a real bug is a **SEND-BACK** (back to Implement). Verify any "fixed"
