@@ -238,8 +238,8 @@ Then repeat until the helper says stop:
 
 At STOP, print one machine-readable line FIRST — `LOOP STOP: backlog-empty`, `LOOP STOP: budget`, or
 `LOOP STOP: handoff` — then report: N done, M parked, K failed. On a `handoff` stop, ALSO relay the
-successor brief verbatim — `references/stopping.md`. If anything parked or failed, point the user to the items —
-`.sdlc/state/review-queue.md` in local mode, or the issues labelled `sdlc:parked` in github mode.
+successor brief verbatim — `references/stopping.md`. If anything parked or failed, point the user to
+`.sdlc/state/review-queue.md` (local) or the `sdlc:parked` issues (github).
 Parking is always correct over forcing an irreversible action to "finish" a goal.
 The self-improving path — closing a knowledge-graph gap instead of stopping when the backlog is
 empty but budget remains — and `supervise_daemon.py`: `references/stopping.md`.

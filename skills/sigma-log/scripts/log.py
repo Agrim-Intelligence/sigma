@@ -298,7 +298,7 @@ UNKNOWN_LINE = "action log state unknown -- slot detail unavailable"
 #: demoting a goal's marker.
 CODE_WRITTEN_KINDS = ("claimed", "worktree_start", "verify_run", "recorded", "gate",
                       "merge_armed", "merged", "decompose_check", "released", "agent_reclaimed",
-                      "phase", "verdict", "phase_waived")
+                      "phase", "verdict", "phase_waived", "goal_class")
 
 #: The §2 phase vocabulary (`ledger.PHASE_KINDS`, and the kind half of `render.PHASE_TOKENS`).
 #: Copied for the same reason; pinned by `test_phase_kinds_match_the_renderers_own_table`. Values
@@ -387,6 +387,7 @@ BOUNDED_FIELDS = {
     "phase": ("phase", "state"),
     "verdict": ("phase", "verdict", "route"),
     "phase_waived": ("phase",),
+    "goal_class": ("profile",),
     "file": ("path", "op"),
     "model_choice": ("model",),
     "agent_dispatch": ("role", "phase"),

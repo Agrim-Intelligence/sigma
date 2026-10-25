@@ -1521,6 +1521,124 @@ def plan_review_record_path(sdlc_dir, goal):
     return pathlib.Path(sdlc_dir) / "state" / "gates" / f"{goal_stem}.json"
 
 
+#: #2003 (lean goals slice 2, design 2000.md FR-33/34/53/96, BR-39/55): the route marker. A goal is on the lean
+#: route when its work record (or, with no record, its newest `goal_class` action-log row) says `lean/1`;
+#: anything else is LEGACY and keeps the 1.0.x rules. Additive: no key existed before, so absent = legacy.
+LEAN_ROUTE = "lean/1"
+PROFILES = ("trivial", "small", "standard", "heavy")
+FOLD_PROFILES = ("trivial", "small")
+#: The folded review (R5): a trivial/small lean goal's pre-implementation test review, written to the SAME gates
+#: record as plan-review, marked `fold`. Shape: {fold, route, verdict (pass|warn|block), plan_hash when a plan
+#: exists}. Its writer lands with the pre-implementation test review (slices 7/10); this slice is its reader.
+FOLD = "test_review_pre"
+_ROUTE_FIELDS = ("route", "profile", "profile_source", "rationale")
+
+
+def _log_rows(sdlc_dir, goal):
+    """This goal's action-log rows read straight from the JSONL (actionlog loads THIS module, so no `_load`)."""
+    try:
+        text = (pathlib.Path(sdlc_dir) / "state" / "log" / f"{stem(goal)}.jsonl").read_text(encoding="utf-8")
+    except OSError:
+        return []
+    rows = []
+    for line in text.splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def route_of(sdlc_dir, goal):
+    """{route, profile, rationale} for a lean goal, or None for a legacy one (FR-33/34/53). Never raises: an
+    unsafe goal is None (legacy), the fail-safe direction. Profile defaults to `standard` (FR-53).
+
+    The work record is the source; with no record carrying a route (work.enabled off, or after `finish`) the
+    newest `goal_class` row is. ponytail: that fallback is an O(rows) scan of ONE goal's log, run per
+    action-log append only when the `action_log` key is absent -- about 0.1 ms at a typical 50 rows, 1 ms at 500
+    (10x), 10 ms at 5000 (100x); O(n^2) over a goal's life on that path. Cache the answer if a goal ever logs
+    tens of thousands of rows."""
+    if state.unsafe_goal_reason(stem(goal)):
+        return None
+    rec = _record(sdlc_dir, goal) or {}
+    src = rec if rec.get("route") else next(
+        (r for r in reversed(_log_rows(sdlc_dir, goal)) if r.get("kind") == "goal_class"), {})
+    if src.get("route") != LEAN_ROUTE:
+        return None
+    profile = src.get("profile") if src.get("profile") in PROFILES else "standard"
+    return {"route": LEAN_ROUTE, "profile": profile, "rationale": src.get("rationale") or ""}
+
+
+def _legacy_evidence(sdlc_dir, goal):
+    """FR-33 cutover: a goal NOT on the lean route whose plan-review was already approved under 1.0.x -- an
+    approving gates record without `route`, or an approving plan_review verdict row. Such a goal finishes
+    under the pre-upgrade rules and is never classified. (Not read: the journal mirror, which is the ledger
+    events stream and may live on another branch -- a stated gap.)"""
+    if route_of(sdlc_dir, goal):
+        return False
+    try:
+        gate = json.loads(plan_review_record_path(sdlc_dir, goal).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        gate = None
+    if isinstance(gate, dict) and gate.get("verdict") in _PLAN_REVIEW_APPROVING and not gate.get("route"):
+        return True
+    return any(r.get("kind") == "verdict" and r.get("phase") == "plan_review"
+               and r.get("verdict") in _PLAN_REVIEW_APPROVING for r in _log_rows(sdlc_dir, goal))
+
+
+def classify(sdlc_dir, config, goal, profile, rationale, source="agent"):
+    """Record the goal's profile on the lean route (FR-34, FR-53): work record (when one exists) and a
+    `goal_class` action-log row. Returns (marker, warning); the caller writes `marker` as the timeline note.
+    Raises ValueError, writing nothing, for a bad profile or rationale, a legacy goal (FR-33), a goal already
+    recorded or merge-armed (a later internal row would undo goal_state_prune's terminal rule), or nowhere to
+    hold the route."""
+    if profile not in PROFILES:
+        raise ValueError(f"profile {profile!r} is not one of {', '.join(PROFILES)}")
+    rationale = " ".join(str(rationale or "").split())
+    if not rationale:
+        raise ValueError(f"--rationale is required: a short reason for the profile ({', '.join(PROFILES)})")
+    if _legacy_evidence(sdlc_dir, goal):
+        raise ValueError("legacy goal: its plan-review was approved before the lean route, so it finishes under "
+                         "the pre-upgrade phase rules (FR-33) and is not classified")
+    late = next((r.get("kind") for r in _log_rows(sdlc_dir, goal) if r.get("kind") in ("recorded", "merge_armed")),
+                None)
+    if late:
+        raise ValueError(f"goal already has a `{late}` row: classification happens at pick, not after")
+    al = _load("actionlog")
+    rec = _record(sdlc_dir, goal)
+    log_on = al.enabled_for(config, sdlc_dir, goal, kind="goal_class")
+    if not rec and not log_on:
+        raise ValueError("nothing can hold the route: no work record (run `work.py start` first) and "
+                         "action_log.enabled is false")
+    fields = {"route": LEAN_ROUTE, "profile": profile, "profile_source": source, "rationale": rationale}
+    if rec:
+        _save(sdlc_dir, goal, {**rec, **fields})
+    row = al.safe_append(sdlc_dir, goal, "goal_class", route=LEAN_ROUTE, profile=profile,
+                         rationale=rationale, source=source)
+    if not rec and not row:
+        raise ValueError("the goal_class row could not be written, and no work record holds the route")
+    warning = "" if row else ("action_log.enabled is false: the route is on the work record only, so no "
+                              "action-log row was written")
+    return f"sigma:route {LEAN_ROUTE} profile={profile} -- {rationale}", warning
+
+
+def _folded_review(sdlc_dir, goal):
+    """The approving folded-review gates record of a trivial/small lean goal, or None (BR-55)."""
+    route = route_of(sdlc_dir, goal)
+    if not route or route["profile"] not in FOLD_PROFILES:
+        return None
+    try:
+        rec = json.loads(plan_review_record_path(sdlc_dir, goal).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if (isinstance(rec, dict) and rec.get("fold") == FOLD and rec.get("route") == LEAN_ROUTE
+            and rec.get("verdict") in _PLAN_REVIEW_APPROVING):
+        return rec
+    return None
+
+
 def _relative_posix(path, base):
     """`path` relative to `base` (posix), or its own posix spelling when it is not under `base`."""
     try:
@@ -1594,6 +1712,8 @@ def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", 
               "plan": plan_rel, "plan_hash": sha,
               "reviewer_route": {key: route.get(key) for key in ("host", "mechanism", "verified")},
               "verdict": mapped}
+    if route_of(sdlc_dir, goal):           # #2003 BR-39: additive; absent means legacy
+        record["route"] = LEAN_ROUTE
     # D2 F03 (owner ruling 2026-10-14): plan-review judges correctness alone when the north-star is
     # `unreachable`, and that fact is RECORDED here, not only said in the reviewer's prose. Resolved
     # from the goal's worktree when there is one (the reviewer's own vantage), else the project root.
@@ -1605,7 +1725,7 @@ def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", 
     # #684: the action-log row `phase_gate.py` reads (the one that works with `work.enabled` off), written
     # BEFORE any other record so a refusal (an unverifiable reviewer id, a missing id on the subagent
     # route) leaves nothing behind: `gates.plan_review` must never see a verdict the gate refused.
-    if _load("actionlog").enabled(config):
+    if _load("actionlog").enabled_for(config, sdlc_dir, goal):      # #2003 FR-96
         _load("phase_gate").record_verdict(sdlc_dir, config, goal, "plan_review", mapped,
                                            agent_id=agent_id, plan_hash=sha)
     path = None
@@ -3032,7 +3152,29 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None):
     carried = (rec or {}).get("stale_resume_releases")
     if carried is not None:
         saved["stale_resume_releases"] = carried
+    # #2003 (FR-34, FR-53): a reattach carries the route marker; a FRESH cut of a goal with no 1.0.x plan-review
+    # evidence (FR-33) is classified lean/1, profile `standard` by default, until `loop.py classify` records the
+    # agent's own judgment. Into `saved` BEFORE `_save`, and the `goal_class` row BEFORE `worktree_start`, so
+    # FR-96 already reads the action log as on for this goal when the start row is written.
+    saved.update({k: rec[k] for k in _ROUTE_FIELDS if rec and k in rec})
+    # FR-53: `standard` is the default only when NO profile is recorded. `loop.py classify` accepts a goal with
+    # no work record (its `goal_class` row alone holds the route), so with no record a prior row is carried,
+    # never overwritten by a newer default row.
+    prior = route_of(sdlc_dir, goal) if rec is None else None
+    if prior:
+        row = next(r for r in reversed(_log_rows(sdlc_dir, goal)) if r.get("kind") == "goal_class")
+        saved.update({**prior, "profile_source": row.get("source") or "agent"})
+    classified = not reattached and rec is None and not prior and not _legacy_evidence(sdlc_dir, goal)
+    if classified:
+        saved.update({"route": LEAN_ROUTE, "profile": "standard", "profile_source": "default",
+                      "rationale": "no profile recorded"})
     _save(sdlc_dir, goal, saved)
+    if classified:
+        _load("actionlog").safe_append(sdlc_dir, goal, "goal_class", route=LEAN_ROUTE, profile="standard",
+                                       rationale="no profile recorded", source="default")
+        print(f"work: {goal} is on the lean route ({LEAN_ROUTE}), profile standard by default; record your "
+              f"judgment with `loop.py classify {sdlc_dir} {goal} trivial|small|standard|heavy --rationale "
+              "\"<why>\"`", file=sys.stderr)
     # Loaded lazily, here, not at module top level — actionlog.py itself loads work.py (for
     # work.stem()), so an eager module-level `_load("actionlog")` here would cycle. This runs for
     # both paths that reach this line (the direct-success add -b above, and the branch-outlived-
@@ -6199,6 +6341,10 @@ def _hard_plan_gate_refusal(sdlc_dir, config, rec, goal, run, check=None):
         # an org lock a file any member can `touch` does not get to waive the org's policy; the
         # hook reads the same org file and refuses the edit under the same rule.
         return ""
+    if not locked and _folded_review(sdlc_dir, goal):
+        # #2003 BR-55: a trivial/small lean goal's approving folded review stands in for the plan file. Not
+        # under an org lock, for the sentinel's reason: an agent-written record does not waive org policy.
+        return ""
     if _load("review_context").phase_doc_file(sdlc_dir, goal, "plans"):
         return ""
     if not _branch_touches_source(rec, run):
@@ -6267,6 +6413,21 @@ def _plan_review_refusal(sdlc_dir, config, rec, goal, run):
                 f"Hashed: {hashed}. Covers the goal's plan .md only — not {slices}, and not a "
                 "design PR's .sdlc/design/<n>.md.")
 
+    fold = _folded_review(sdlc_dir, goal)
+    if fold:
+        # #2003 BR-55: the folded review stands in for plan-review. With no plan it is enough; with a plan it
+        # must be bound to that plan's exact bytes, exactly as a plan-review record is.
+        if not published:
+            return ""
+        try:
+            current = rc.plan_sha256(published)
+        except OSError as exc:
+            return refuse(f"the plan could not be read ({exc})", f"make {published.as_posix()} readable")
+        if fold.get("plan_hash") != current:
+            return refuse("this goal's folded review is not bound to this plan (its recorded plan_hash is "
+                          f"{str(fold.get('plan_hash'))[:12]}…)",
+                          "re-run the pre-implementation test review against the current plan")
+        return ""
     if not published:
         if not record_file.exists():
             return ""

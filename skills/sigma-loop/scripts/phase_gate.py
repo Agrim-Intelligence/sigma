@@ -227,7 +227,7 @@ def start_refusal(sdlc_dir, goal, phase):
     if phase != "implement":
         return None
     config = _load("state").load_config(sdlc_dir)
-    if not gate_on(config) or not _load("actionlog").enabled(config):
+    if not gate_on(config) or not _load("actionlog").enabled_for(config, sdlc_dir, goal):
         return None
     if any(r.get("kind") == "verdict" and r.get("phase") == "plan_review"
            and r.get("verdict") in PLAN_REVIEW_APPROVING for r in _rows(sdlc_dir, goal)):
@@ -242,7 +242,7 @@ def refusal(sdlc_dir, config, goal):
     """None when the gate is off or satisfied; else the refusal text (names each fix and the lever)."""
     if not gate_on(config):
         return None
-    if not _load("actionlog").enabled(config):
+    if not _load("actionlog").enabled_for(config, sdlc_dir, goal):
         return ("gates.phase_record is on but action_log.enabled is not true, so the phases cannot be "
                 "verified: set action_log.enabled to true, or switch the gate off with "
                 "gates.phase_record.enabled: false (REFUSED rather than passed unverified)")
@@ -274,7 +274,7 @@ def format_status(sdlc_dir, config, goal):
 def record_verdict(sdlc_dir, config, goal, phase, verdict, agent_id="", plan_hash="", reason="", project_rules=""):
     """Write a `verdict` row (phase plan_review|review). Raises ValueError to refuse."""
     actionlog = _load("actionlog")
-    if not actionlog.enabled(config):
+    if not actionlog.enabled_for(config, sdlc_dir, goal):
         raise ValueError("action_log.enabled is not true: the verdict cannot be recorded in the action log")
     reviewer = _load("reviewer")
     route = reviewer.resolve(sdlc_dir).get("mechanism") or "inline"
@@ -310,7 +310,7 @@ def waive(sdlc_dir, config, goal, phases, reason):
     if bad or not phases:
         raise ValueError(f"only {', '.join(WAIVABLE)} can be waived (not {', '.join(bad) or 'nothing'}): "
                          "plan, plan-review, implement and review always run")
-    if not actionlog.enabled(config):
+    if not actionlog.enabled_for(config, sdlc_dir, goal):
         raise ValueError("action_log.enabled is not true: the waiver cannot be recorded")
     for p in phases:
         actionlog.append(sdlc_dir, goal, "phase_waived", "loop", phase=p, reason=reason)

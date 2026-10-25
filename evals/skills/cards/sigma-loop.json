@@ -646,6 +646,10 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/size_class.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/slack_client.py",
       "role": "gesture"
     },
