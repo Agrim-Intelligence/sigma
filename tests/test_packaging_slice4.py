@@ -88,8 +88,15 @@ def test_versions_aligned():
 def test_plan_review_dispositions_close_the_loop():
     """A FIX-FIRST that sends the plan back with no record of what happened to each finding is half
     a gate. Matters most in /sigma-loop, where no human adjudicates: without this, nothing stops the
-    loop from faithfully implementing a review finding that was simply wrong."""
+    loop from faithfully implementing a review finding that was simply wrong.
+
+    #2005 (D-34) moved the disposition rules to an on-demand reference: the guard proves they are both
+    present and reachable from SKILL.md (Structural over patchwork stays in SKILL.md, pinned elsewhere)."""
+    ref = ROOT / "skills" / "sigma-plan-review" / "references" / "disposition.md"
+    assert ref.is_file(), ref
     t = (ROOT / "skills" / "sigma-plan-review" / "SKILL.md").read_text()
+    assert "](references/disposition.md)" in t
+    t += ref.read_text()
     low = t.lower()
     for verdict in ("accept", "reject", "partially accept"):
         assert verdict in low, f"plan-review has no '{verdict}' disposition"

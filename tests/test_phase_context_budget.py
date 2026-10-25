@@ -33,7 +33,7 @@ def test_every_required_phase_has_a_visible_measurement_and_review_briefs_use_he
     measured = budget.measure_all(ROOT)
     assert set(measured) == {
         "orchestrator", "goal-slot", "research", "plan", "plan-review", "implement",
-        "review-pre-pr", "review-post-pr", "retro",
+        "review-pre-pr", "review-post-pr", "retro", "test-review-pre",
     }
     assert all(row["words"] > 0 and row["est_tokens"] > 0 for row in measured.values())
     assert "skills/sigma-loop/references/running.md" in measured["orchestrator"]["files"]
@@ -117,3 +117,37 @@ def test_documented_gate_turns_red_for_a_planted_500_word_running_reference():
         assert "goal-slot: measured words" in result.stdout
     finally:
         running.write_text(original, encoding="utf-8")
+
+
+#: #2005 FR-61: the measurement at the slice's base (`cf8b372`) for every phase whose prose it moved.
+_BASE_TOKENS = {"orchestrator": 32188, "goal-slot": 12416, "plan-review": 3653, "review-pre-pr": 6229,
+                "review-post-pr": 6307, "implement": 3050}
+_UNTOUCHED_BASE_TOKENS = {"research": 2999, "plan": 1239, "retro": 3886}
+
+
+def test_test_review_pre_phase_measures_the_test_review_reference():
+    """#2005 D1: a budget-only phase for the pre-implementation test reviewer's payload (provisional until
+    its writer lands in slices 7/10), with a committed ceiling within the 5% rule."""
+    budget = _load()
+    assert "test-review-pre" in budget.PHASES
+    assert budget.PHASES["test-review-pre"] == {"files": ("skills/sigma-review/references/test-review.md",)}
+    committed = json.loads(BUDGET.read_text(encoding="utf-8"))["phases"]
+    assert "ceiling" in committed.get("test-review-pre", {}), committed.keys()
+    assert not [f for f in budget.findings(ROOT, BUDGET) if f.startswith("test-review-pre")]
+
+
+def test_lean_prose_moves_lowered_every_touched_ceiling():
+    """#2005 FR-61: every phase the prose moves touched measures strictly below its base measurement, and
+    its committed ceiling was lowered below that base too; untouched phases did not grow; and (FR-61's own
+    words) no phase measures above its committed ceiling -- so putting back any one moved section is red even
+    where the slice's other edits in that phase net negative."""
+    budget = _load()
+    measured = budget.measure_all(ROOT)
+    committed = json.loads(BUDGET.read_text(encoding="utf-8"))["phases"]
+    for name, row in measured.items():
+        assert row["est_tokens"] <= committed[name]["ceiling"]["est_tokens"], (name, row, committed.get(name))
+    for name, base in _BASE_TOKENS.items():
+        assert measured[name]["est_tokens"] < base, (name, measured[name]["est_tokens"], base)
+        assert committed[name]["ceiling"]["est_tokens"] < base, (name, committed[name]["ceiling"], base)
+    for name, base in _UNTOUCHED_BASE_TOKENS.items():
+        assert measured[name]["est_tokens"] <= base, (name, measured[name]["est_tokens"], base)

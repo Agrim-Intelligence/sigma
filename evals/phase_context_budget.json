@@ -5,17 +5,18 @@
     "than five percent above the current measurement. To shrink a ceiling, change this record only",
     "after the corresponding prompt/reference reduction is measured. Do not raise it to absorb growth."
   ],
-  "measured_at": "2026-10-18",
-  "commit": "2ed837a6988dfc0614cc9c5bf150899c9b0df6ac",
+  "measured_at": "2026-10-25",
+  "commit": "cf8b37287a51037c13f3b735f75319222c6345b1",
   "phases": {
-    "orchestrator": {"ceiling": {"words": 19527, "est_tokens": 32422}},
-    "goal-slot": {"ceiling": {"words": 7456, "est_tokens": 12437}},
+    "orchestrator": {"ceiling": {"words": 18799, "est_tokens": 31524}},
+    "goal-slot": {"ceiling": {"words": 6953, "est_tokens": 11749}},
     "research": {"ceiling": {"words": 1958, "est_tokens": 3012}},
     "plan": {"ceiling": {"words": 778, "est_tokens": 1260}},
-    "plan-review": {"ceiling": {"words": 2255, "est_tokens": 3661}},
-    "implement": {"ceiling": {"words": 1892, "est_tokens": 3050}},
-    "review-pre-pr": {"ceiling": {"words": 3924, "est_tokens": 6243}},
-    "review-post-pr": {"ceiling": {"words": 3958, "est_tokens": 6310}},
-    "retro": {"ceiling": {"words": 2465, "est_tokens": 3934}}
+    "plan-review": {"ceiling": {"words": 2000, "est_tokens": 3335}},
+    "implement": {"ceiling": {"words": 1615, "est_tokens": 2630}},
+    "review-pre-pr": {"ceiling": {"words": 3789, "est_tokens": 6164}},
+    "review-post-pr": {"ceiling": {"words": 3825, "est_tokens": 6242}},
+    "retro": {"ceiling": {"words": 2465, "est_tokens": 3934}},
+    "test-review-pre": {"ceiling": {"words": 816, "est_tokens": 1309}}
   }
 }

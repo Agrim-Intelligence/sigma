@@ -332,33 +332,6 @@ path as always, never the worktree's stale copy of it. `loop.py verify` finds th
 itself. Feature off → work in the checkout exactly as before (goals then run one at a time) (the agent-start registration above
 still runs either way).
 
-**3b. Independent slices? Run the wave — don't queue it.** Once the plan exists, if it declared
-slices in `.sdlc/plans/<goal-stem>.slices.json`, compute the dispatch plan:
-`python3 "${CLAUDE_SKILL_DIR}/scripts/slices.py" plan .sdlc "$goal"` (on Codex add `--host codex
---goal-worktree <absolute-path> --tier <tier-or-off> --effort <effort>` using the goal worktree from `work.py start`). Before every Codex
-slice dispatch, resolve its goal or downgraded-step tier with its canonical effort: `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc --effort "<effort>"` and pass the returned model ID and effort to the subagent. Also give `slices.py plan` that source tier as
-`--tier <tier-or-off>`: it resolves the mapping itself before printing a `dispatch: session` command, so a raw or stale model ID cannot enter its fresh interactive Codex process.
-planning when `work.enabled` is off; run that goal as one unit. Without a goal worktree and readable
-manifest, the Codex session line refuses to give a runnable command.
-It groups the runnable slices
-into **waves** — each wave mutually non-conflicting by declared files, capped at
-`parallel.max_concurrent`. Do ONE wave at a time: dispatch each slice as a **subagent** (fresh
-context). The plan's `isolation: worktree` is a requirement, not proof the host provided it. If
-Codex's subagent tool shares the checkout, run those slices sequentially; concurrent work
-requires a distinct worktree for each slice and a verified landing path. For each dispatched slice:
-log the dispatch
-(`python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" log .sdlc "$goal" agent_dispatch --thread
-<slice-id> --role slice --phase implement --model <tier>`) and register it for the death-watch the same way 3a
-does, one level down (`python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" agent-start .sdlc "$goal"
---pid $PPID --thread <slice-id>` — giving intra-goal slice parallelism its own
-independently-tracked pid per thread). **`--model <tier>` is now REQUIRED on this dispatch too
-(#2514) — `loop.py log` refuses a `--role slice` dispatch with no `--model`.** `<tier>` here is the
-GOAL's own ceiling tier (the same `model_choice` value resolved at the top of this doc) unless
-this specific slice's plan step was itself downgraded via `resolve-step`, in which case pass that
-resolved tier instead. Land the wave — logging each landed slice first (`agent_done
---thread <slice-id> --role slice --result <...>`) — then re-run `plan` for the next. **Never**
-dispatch a slice with an unattended `claude -p` or `codex exec` — a second worker on one `.sdlc`
-breaks every state file here. A slice marked `dispatch: session` will not fit one subagent's
-context: **print the plan's interactive Claude or Codex command and let the human start it** —
-never start it yourself. No manifest, or `parallel.enabled` off → run the goal as one unit,
-exactly as before.
+**3b. Independent slices?** Once the plan exists (slices: `.sdlc/plans/<goal-stem>.slices.json`), run
+`python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" next-step .sdlc "$goal"` and follow its `slices:` lines
+(wave commands, logging, Codex model resolution, `dispatch: session`).

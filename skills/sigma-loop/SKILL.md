@@ -135,12 +135,11 @@ Then repeat until the helper says stop:
 
    **3b. Independent slices?** Run `slices.py plan .sdlc "$goal"` for a declared slices manifest;
    on Codex add `--host codex --goal-worktree <path> --tier <tier-or-off> --effort <effort>`; before dispatch run `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py"
-   host-model codex "<tier-or-off>" .sdlc --effort "<effort>"` and use its returned pair. With work off,
-   run one unit. Dispatch one wave at a time. Run Codex slices sharing a checkout
-   sequentially; concurrent slices need real `isolation: worktree`. For `dispatch: session`, print
+   host-model codex "<tier-or-off>" .sdlc --effort "<effort>"` and use its returned pair.
+   Dispatch one wave at a time; concurrent slices need real `isolation: worktree`. For `dispatch: session`, print
    the `claude --worktree` or Codex command and let the human start it. Never start unattended `claude -p` or
-   `codex exec` for a slice. Without a manifest or parallelism, run one unit. See
-   `references/running.md` for wave logging, death-watch, and commands.
+   `codex exec` for a slice. With work off, or no manifest or parallelism, run one unit. Logging and
+   commands (and `classify` when unclassified): `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" next-step .sdlc "$goal"`.
 
    **Blocked on someone else's AREA? Hand it off before you park** — use `handoff.py open`, THEN
    park this goal as normal. **Found something worth tracking that isn't a cross-area blocker? Never

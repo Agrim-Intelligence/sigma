@@ -514,6 +514,10 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/next_step.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/north_star.py",
       "role": "gesture"
     },
