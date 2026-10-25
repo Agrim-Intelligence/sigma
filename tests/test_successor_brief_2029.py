@@ -378,7 +378,7 @@ def _tree_outside_timing(base):
                   for p in pathlib.Path(base).rglob("*") if not p.is_relative_to(timing))
 
 
-GESTURE = "python3 <installed-sigma>/skills/sigma-loop/scripts/loop.py meter .sdlc --baseline <first reading>"
+GESTURE = "python3 <installed-sigma>/skills/sigma-loop/scripts/loop.py meter .sdlc --baseline <first-reading>"
 
 
 def test_the_documented_meter_gesture_runs(tmp_path, monkeypatch):
@@ -388,7 +388,7 @@ def test_the_documented_meter_gesture_runs(tmp_path, monkeypatch):
     _transcript(tmp_path, monkeypatch, 90_000)
     before = _tree_outside_timing(base)
     line = (GESTURE.replace("<installed-sigma>", str(ROOT)).replace(" .sdlc ", f" {base} ")
-            .replace("<first reading>", "1000"))
+            .replace("<first-reading>", "1000"))
     argv = shlex.split(line)
     argv[0] = sys.executable
     run = subprocess.run(argv, capture_output=True, text=True, env=dict(os.environ), timeout=60)

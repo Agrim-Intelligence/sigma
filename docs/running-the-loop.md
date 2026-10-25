@@ -121,12 +121,12 @@ The attended supervisor, on each wake:
 
 ```
 python3 <installed-sigma>/skills/sigma-log/scripts/log.py slots .sdlc
-python3 <installed-sigma>/skills/sigma-loop/scripts/loop.py meter .sdlc --baseline <first reading>
+python3 <installed-sigma>/skills/sigma-loop/scripts/loop.py meter .sdlc --baseline <first-reading>
 ```
 
 `loop.py meter` is read-only: it prints this session's context, its hand-off threshold with its
 origin, and `verdict=under|over|unknown`. It picks, claims and records nothing, apart from the
-bounded timing row every `loop.py` call writes under `.sdlc/state/time/`. `<first reading>` is the
+bounded timing row every `loop.py` call writes under `.sdlc/state/time/`. `<first-reading>` is the
 `context=` value from the supervisor's own first wake (it never picks, so it has no recorded first
 pick). On a brief, propose its resume line as a new session; at `verdict=over`, propose its own
 successor the same way and stop. It never calls `next` and never claims.
