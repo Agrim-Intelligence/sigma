@@ -145,39 +145,19 @@ it keeps no file, still mirrors the verdict to the journal, exits 0 and prints a
 that ran `work.py start`.
 
 ## 5. Disposition — closing the loop on a FIX-FIRST
-A verdict that sends the plan back is only half the gate. When the revised plan returns, **give every
-finding an explicit disposition** — otherwise the loop either swallows findings silently or obeys a
-wrong one. Each disposition needs its own `file:line`; "the review seems right" is not evidence.
-
-- **Accept** — the finding is real. Confirm it in the code first, then change the plan and cite what
-  confirmed it.
-- **Reject** — the finding is wrong or reads stale code. Confirm the *plan* was right, keep it
-  unchanged, and record why with evidence.
-- **Partially accept** — the concern is real but the suggested fix isn't. Adapt it; cite both the
-  concern and why the adjusted approach is better.
-
-**The review can also be wrong.** It is a hypothesis, as the plan was in §1. A finding that
-claims a file or function doesn't exist gets checked against the filesystem before it is accepted —
-a plan patched to satisfy a false finding is worse than the
-original.
+When the revised plan returns, give every finding an explicit disposition (accept, reject or
+partially accept, each with its own `file:line`): [disposition](references/disposition.md).
 
 **Structural over patchwork**, except in a legacy file without `intent: yes`, where the seam patch is
 the scope. If a finding proposes a one-site patch where a shared fix is feasible, reject the approach
 and propose the structural one. If patchwork is the right scope, say so and leave a tracked item
 for the structural fix; never let it pass unnamed.
 
-**Regen threshold.** If more than half the findings are substantive (not surface corrections like a
-stale line number or a renamed symbol), the plan has structural problems — say so and recommend
-regenerating it from the goal rather than patching.
-
-Carry the dispositions with the revised plan so the next review round starts from what was settled. When a later round contradicts an earlier decision, re-read the code, pick one direction on
-the evidence, and record the reversal.
-
 **Under `/sigma-loop`, a revision the current model tier cannot finish is escalated, not parked** —
 token budget and tier size are not park reasons (#2828). Run
 `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" escalate .sdlc "$goal" <tier> --after plan-review`
 and re-dispatch the plan revision at the tier its `ESCALATE <next>` names; on `CEILING`/`OFF` the
-revision loop above continues at the current tier. Interactive runs have a human at every send-back.
+revision loop continues at the current tier. Interactive runs have a human at every send-back.
 
 Record the rejections in the goal's audit trail —
 Run `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" note .sdlc "<goal>" - <<'SIGMA_NOTE'` with body `plan-review: <what was rejected and why>` (stdin, quoted heredoc; #713).

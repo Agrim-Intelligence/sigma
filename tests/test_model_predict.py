@@ -1,7 +1,7 @@
 """Model auto-selection predictor (sigma-model/predict.py): a deterministic goal->tier heuristic.
 Pins each tier, the upward conflict-resolution rule, and the default so a wording change that
 silently down-tiers hard work fails here."""
-import pathlib, importlib.util, json
+import pathlib, importlib.util, json, subprocess, sys
 
 P = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-model" / "scripts" / "predict.py"
 
@@ -1446,8 +1446,12 @@ def test_host_model_refuses_an_invalid_sibling_override():
             "model_host_overrides": {"codex": None}})
 
 
-def test_codex_dispatch_docs_invoke_the_host_model_resolver():
-    """The CLI is only a control if the gestures agents receive actually use it."""
+def test_codex_dispatch_docs_invoke_the_host_model_resolver(tmp_path):
+    """The CLI is only a control if the gestures agents receive actually use it.
+
+    #2005 (BR-16): running.md 3b's slice-wave prose moved into `loop.py next-step`'s slice block, so its
+    three asserts follow the gesture there -- rendered for a goal with a slices manifest -- and 3b keeps
+    only a pointer to next-step."""
     root = pathlib.Path(__file__).resolve().parent.parent / "skills"
     commands = {
         root / "sigma-model" / "SKILL.md":
@@ -1464,8 +1468,18 @@ def test_codex_dispatch_docs_invoke_the_host_model_resolver():
     running = (root / "sigma-loop" / "references" / "running.md").read_text(encoding="utf-8")
     assert '../sigma-model/scripts/predict.py" host-model codex' in running[
         running.index("**Per-STEP downgrade:"):]
-    slices = running[running.index("**3b. Independent slices?"):]
-    assert '../sigma-model/scripts/predict.py" host-model codex' in slices
+    stub = running[running.index("**3b. Independent slices?"):]
+    assert 'loop.py" next-step' in stub[:400]
+    sdlc = tmp_path / ".sdlc"
+    (sdlc / "plans").mkdir(parents=True)
+    (sdlc / "state").mkdir()
+    (sdlc / "config.json").write_text('{"work": {"enabled": true}, "parallel": {"enabled": true}}')
+    (sdlc / "plans" / "0001-x.slices.json").write_text('{"slices": []}')
+    rendered = subprocess.run([sys.executable, str(root / "sigma-loop" / "scripts" / "loop.py"), "next-step",
+                               str(sdlc), ".sdlc/goals/0001-x.md"], capture_output=True, text=True, cwd=tmp_path)
+    assert rendered.returncode == 0, rendered.stderr
+    slices = rendered.stdout
+    assert 'sigma-model/scripts/predict.py" host-model codex' in slices
     assert "--tier <tier-or-off>" in slices
     assert "`work.py start`). Before every Codex" in slices
     assert "into its fresh interactive Codex process rather than inheriting" not in slices

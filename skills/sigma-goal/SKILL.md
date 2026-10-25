@@ -121,8 +121,7 @@ counterpart to the autonomous `/sigma-loop`).
    During **Implement**, announce each plan step as you start it — `python3
    "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/phase_report.py" step .sdlc "<goal>" implement --num <n>
    --total <m> --phase-model --brief "<step>"` prints a `STEP <n>/<m>` banner with this phase's predicted tier and
-   writes nothing — as you follow `sigma-implement` (details:
-   `sigma-implement`'s `## Announce each step`).
+   writes nothing — as you follow `sigma-implement` (details: `loop.py next-step`).
 3. **Retrospective (Learn)** — after Review, run the **`sigma-retro`** executor: reflect on the
    structural + product debt the fix left behind, grade intent-vs-shipped, and route durable lessons to
    the right store (audit trail / north-star / standing rule). It's **advisory** — it records the

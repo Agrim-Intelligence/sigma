@@ -22,10 +22,9 @@ dump whole files or broad search output. Save bulky test or diagnostic output to
 scratch file and inspect its exit status and focused matches or a bounded tail. Do
 not hide failures; keep secrets out of the scratch file. Guidance, not a measured savings claim.
 
-This file is the whole Implement phase. Three sections further down are part of it:
-**`## Security defaults (fail-closed, untrusted input)`**, **`## Mutation testing (prove the
-guard, don't assert it)`** and **`## Announce each step`** (Sigma's console banner). Read them before
-you start, not after.
+This file is the whole Implement phase. Two sections further down are part of it:
+**`## Security defaults (fail-closed, untrusted input)`** and **`## Mutation testing (prove the
+guard, don't assert it)`**. Read them before you start, not after.
 
 Two things happen in this phase: **build test-first**, and **execute the plan step by step**.
 
@@ -89,36 +88,10 @@ Cheapest at write time, expensive at review, and the one thing a passing test ca
 ## Execute the plan, step by step
 1. **Load** the plan and **review it critically** — raise any concern *before* starting (last cheap
    moment to catch a bad plan; it must already carry an approving `sigma-plan-review` verdict, else stop and run it).
-2. For **each step**: announce it (`## Announce each step` below), do exactly what it says (steps
-   are bite-sized), **verify** it (run the check — see `sigma-verify`), then move on. Track progress
-   as you go.
+2. For **each step**: announce it (with a goal id, `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" next-step .sdlc "<goal>"`
+   prints the banner; `.sdlc` is the MAIN checkout's, by absolute path), do exactly what it says,
+   **verify** it (see `sigma-verify`), then move on, tracking progress.
 3. **Park, don't force** on anything irreversible or blocked (matches the loop's park rule).
-
-## Announce each step
-When this phase runs for a known goal, print each plan step's banner as you start it:
-
-```
-python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/phase_report.py" step .sdlc "<goal>" implement \
-  --num <n> --total <step count> --phase-model --brief "<what this step does>"
-```
-
-It prints `🟦 STEP <n>/<m> · #<goal> <title>`, then `🟦 P5 IMPLEMENT · <brief>`, then
-`requested host model: <id|unrecorded> · predicted model tier: <tier>`. The tier is the one
-`phase_report.py start` recorded for this phase, marked `(phase)`; if
-this step was resolved a tier of its own (`predict.py resolve-step`), pass `--model <tier>` and it is
-marked `(step)`. `--phase-model` asserts that this phase agent itself executes the step, so its
-requested host ID can be read from the phase start marker. For a separately dispatched step,
-replace that flag with both `--model <step-tier>` and `--host-model <exact-host-model-id>` from the
-step's dispatch call. Both are required so the banner cannot borrow the phase's tier either.
-Without either it prints `unrecorded`, never a guess. This is
-the requested model. `phase_report.py end` checks the phase agent's observed model, not a separately
-dispatched step's model. It writes nothing — no marker, no
-ledger event — so it cannot disturb the elapsed
-time and cost `end` measures. `--total` is optional; `--title` is the goal's title, as on
-`start`/`end`. `.sdlc` means the main checkout's: from a goal worktree use the absolute path your
-dispatch prompt gave you, or the tier reads `unrecorded` (and in github mode the title is lost too).
-The brief is capped at 88 characters. Best-effort: skip it with no goal id (a
-standalone `/sigma-implement`); never let it block a step.
 
 ## Mutation testing (prove the guard, don't assert it)
 A green suite says a guard exists; only reverting it and watching the right test fail proves it
