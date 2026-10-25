@@ -6945,11 +6945,11 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
 #: multi-PR = row 4; pre-implementation test review = row 7 (R11/D-30: it is independent of review.test_review);
 #: follow-ups in-goal = row 8; the 72h between-slices stall sweep = row 5b (FR-38, shown here as 5).
 LEAN_CHANGES = (
-    {"id": "route-marker", "slice": 2, "active": False,
+    {"id": "route-marker", "slice": 2, "active": True,
      "text": "new goals get a profile and route marker at classification; goals already mid-flight finish under the old phase rules"},
-    {"id": "folded-review", "slice": 2, "active": False,
+    {"id": "folded-review", "slice": 2, "active": True,
      "text": "a folded review is accepted by both plan gates"},
-    {"id": "action-log-on", "slice": 2, "active": False,
+    {"id": "action-log-on", "slice": 2, "active": True,
      "text": "an absent action_log key is read as on for lean goals (FR-96); a per-goal log file then grows on disk"},
     {"id": "multi-pr", "slice": 4, "active": False,
      "text": "a goal may ship as several PRs (one per slice): Refs then Closes"},
@@ -6979,7 +6979,8 @@ def lean_overrides(cfg):
     log = _block(cfg, "action_log")
     if "enabled" not in log:
         add("action_log", "absent", True,
-            "read as on for lean (FR-96) (planned, slice 2); today: off", 2)
+            "read as on for lean goals (FR-96); legacy goals: off; the live sigma-log view still reports it "
+            "off until a later slice", 2)
     elif log.get("enabled") is False:
         add("action_log", "false", False,
             "explicit false: respected by the lean route; its per-slice gate then refuses (FR-70, planned, slice 7)", 7)

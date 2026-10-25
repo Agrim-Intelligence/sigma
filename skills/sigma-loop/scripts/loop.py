@@ -7263,6 +7263,7 @@ USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> [--se
          "claim <dir> <goal> [--session-pid PID] | "
          "agent-start <dir> <goal> --pid PID [--thread T] | agent-reclaim <dir> <goal> [--thread T] | "
          "phases <dir> <goal> | waive-phases <dir> <goal> research,retro --reason <why> | "
+         "classify <dir> <goal> trivial|small|standard|heavy --rationale <why> | "
          "precheck <dir> <goal> | "
          "qc <dir> <goal> | decompose-check <dir> <goal> | design-check <dir> <goal> | "
           "spend-approval <dir> <goal> --action \"<text>\" [--class <name>] | "
@@ -7933,6 +7934,23 @@ def _dispatch(argv):
         print(f"loop: WAIVED phases {', '.join(done_)} for {argv[3]} -- reason: {flags.get('reason')} "
               "(recorded in the action log; plan, plan-review, implement and review are never waivable)",
               file=sys.stderr)
+        return 0
+    if len(argv) >= 5 and argv[1] == "classify":    # #2003 FR-34/53: the agent's profile on the lean route
+        config = state.load_config(argv[2])
+        try:
+            marker, warning = work.classify(argv[2], config, argv[3], argv[4], _flags(argv[5:]).get("rationale", ""))
+        except ValueError as exc:
+            print(f"loop.py classify: {exc}", file=sys.stderr)
+            return 2
+        if warning:
+            print(f"loop.py classify: {warning}", file=sys.stderr)
+        try:
+            sources.get_source(argv[2], config).note(argv[3], marker)      # the timeline marker (FR-34)
+        except Exception as exc:                # noqa: BLE001 - local record kept; the note is re-runnable
+            print(f"loop.py classify: recorded locally, but the timeline marker failed: {exc}", file=sys.stderr)
+            print("FAILED")
+            return 1
+        print(marker)
         return 0
     if len(argv) >= 5 and argv[1] == "note":        # record a journey-log / critical-insight note
         config = state.load_config(argv[2])

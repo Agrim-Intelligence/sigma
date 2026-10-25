@@ -39,7 +39,7 @@ def _changes_out(capsys, sdlc, doc=None):
 
 # --------------------------------------------------------------------------- (a) registry honesty
 
-def test_registry_entries_are_planned_slice_two_or_later_and_none_is_active_in_this_build():
+def test_registry_slice_two_entries_are_active_and_later_ones_planned():
     d = _doc()
     assert d.LEAN_CHANGES
     ids = [c["id"] for c in d.LEAN_CHANGES]
@@ -47,22 +47,27 @@ def test_registry_entries_are_planned_slice_two_or_later_and_none_is_active_in_t
     for c in d.LEAN_CHANGES:
         assert set(c) >= {"id", "text", "slice", "active"} and c["text"]
         assert isinstance(c["slice"], int) and not isinstance(c["slice"], bool) and c["slice"] >= 2
-    assert [c["id"] for c in d.LEAN_CHANGES if c["active"] is not False] == []   # slice 1 ships no lean route
+    # #2003 (slice 2) ships the route marker, the folded review and FR-96; nothing later is active yet.
+    assert sorted(c["id"] for c in d.LEAN_CHANGES if c["active"] is True) == ["action-log-on", "folded-review",
+                                                                              "route-marker"]
+    assert all(c["active"] is (c["slice"] == 2) for c in d.LEAN_CHANGES)
 
 
 def test_report_labels_come_from_active_and_slice(tmp_path, capsys):
     d = _doc()
     sdlc = _proj(tmp_path)
     rc, out = _changes_out(capsys, sdlc, d)
-    assert rc == 0 and "ACTIVE in this build" not in out
+    assert rc == 0
     for c in d.LEAN_CHANGES:
-        assert f"PLANNED (slice {c['slice']}, not in this build)" in out and c["text"] in out
-    d.LEAN_CHANGES = tuple(dict(c, active=True) if i == 0 else c for i, c in enumerate(d.LEAN_CHANGES))
+        line = next(ln for ln in out.splitlines() if c["text"] in ln)
+        if c["active"]:
+            assert "ACTIVE in this build" in line and "PLANNED" not in line
+        else:
+            assert f"PLANNED (slice {c['slice']}, not in this build)" in line
+    assert out.count("ACTIVE in this build") == sum(1 for c in d.LEAN_CHANGES if c["active"])
+    d.LEAN_CHANGES = tuple(dict(c, active=False) for c in d.LEAN_CHANGES)     # the label follows `active`
     rc, out = _changes_out(capsys, sdlc, d)
-    first = d.LEAN_CHANGES[0]
-    line = next(ln for ln in out.splitlines() if first["text"] in ln)
-    assert "ACTIVE in this build" in line and "PLANNED" not in line
-    assert out.count("ACTIVE in this build") == 1
+    assert "ACTIVE in this build" not in out
 
 
 # --------------------------------------------------------------------------- (b) overrides
@@ -81,10 +86,11 @@ def test_test_review_true_or_absent_is_not_reported_as_overridden():
     assert "review.test_review" not in _ov({"review": {}})
 
 
-def test_absent_action_log_is_read_as_on_for_lean_today_off():
+def test_absent_action_log_is_read_as_on_for_lean_goals():
     o = _ov({})["action_log"]
     assert o["overridden"] is True
-    assert "read as on for lean (FR-96)" in o["effect"] and "today: off" in o["effect"]
+    assert "read as on for lean goals (FR-96)" in o["effect"] and "legacy goals: off" in o["effect"]
+    assert "sigma-log" in o["effect"]                    # the live view still reports off (deferred)
 
 
 def test_explicit_action_log_values_are_reported_as_explicit_not_overridden():
@@ -162,7 +168,7 @@ def test_documented_changes_gesture_prints_both_sections_and_writes_nothing(tmp_
     home = tmp_path / "home"; home.mkdir()
     r = _run_documented(cmd, repo, home)
     assert r.returncode == 0, r.stderr
-    assert "PLANNED (slice" in r.stdout and "ACTIVE in this build" not in r.stdout
+    assert "PLANNED (slice" in r.stdout and "ACTIVE in this build" in r.stdout      # #2003: slice 2 is active
     assert "review.test_review: false -> overridden by lean route" in r.stdout
     assert "action_log: absent -> read as on for lean" in r.stdout
     assert (cfg.read_bytes(), cfg.stat().st_mtime_ns,

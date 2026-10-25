@@ -15,7 +15,7 @@ The contract enables downstream readers to read, validate, and ingest core recor
 
 ## Versioning
 
-**Contract Version:** 1.4.0 (defined in `VERSION` file)
+**Contract Version:** 1.5.0 (defined in `VERSION` file)
 
 **Versioning Rules:**
 
@@ -117,6 +117,11 @@ billable uncached input is `tokens_in - tokens_cached_in` and output is priced o
 `tokens_out`. Both are written only for a Codex-measured phase whose rollout reported
 `cached_input_tokens`; `"0"` is a measured zero, while an absent field means the split was not
 reported (Claude, unmeasured, or a rollout without the split). Old readers ignore them.
+
+### Lean route vocabulary (1.5.0)
+
+`gate_kinds` gains `test_review`, the lean route's pre-implementation test review (additive; older readers
+still work). The matching phase kind is not added yet: `phase_kinds` is also the output contract's P-token set.
 
 ### Events Kind Vocabulary
 
