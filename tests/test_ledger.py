@@ -1297,7 +1297,10 @@ def test_vocabulary_constants_match_spec_table():
         "verify", "risk_security", "risk_contract", "risk_migration", "risk_release", "risk_debug",
             # #1937: the diff-only test-tamper gate. Written by work.py's merge() ONLY -- kept out
             # of loop.py's _EMIT_GATE_KINDS so an agent cannot hand-write its own verdict.
-            "test_trust")
+            "test_trust",
+            # #2003 (lean goals): the pre-implementation test review's gate. Its PHASE_KINDS half waits for
+            # slice 3, because PHASE_KINDS is the output contract's closed P-token set.
+            "test_review")
     assert ledger.VERDICTS == ("pass", "block", "warn", "absent")
     assert ledger.REASON_CLASSES == (
         "irreversible", "needs_decision", "merge_conflict", "failing_check",

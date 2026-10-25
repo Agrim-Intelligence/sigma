@@ -87,13 +87,22 @@ def enabled(config):
     return settings(config).get("enabled") is True
 
 
+def enabled_for(config, sdlc_dir, goal, kind=None):
+    """`enabled` for ONE goal (#2003, FR-96, design D-29): an explicit `action_log.enabled` keeps today's strict
+    rule, true or not; an ABSENT key reads as on for a lean goal (and for its own `goal_class` row, which is what
+    makes it lean), off for a legacy one -- so a 1.0.x repo's legacy goals behave exactly as before."""
+    if "enabled" in settings(config):
+        return enabled(config)
+    return kind == "goal_class" or work.route_of(sdlc_dir, goal) is not None
+
+
 # --------------------------------------------------------------------------- vocabulary
 
 #: Mechanically-guaranteed, Python-layer-only kinds — reachable ONLY via `safe_append()`'s
 #: in-process call, never the CLI (see module docstring).
 INTERNAL_KINDS = ("claimed", "worktree_start", "verify_run", "recorded", "gate", "merge_armed",
                   "merged", "decompose_check", "released", "agent_reclaimed", "phase", "verdict",
-                  "phase_waived")
+                  "phase_waived", "goal_class")
 INTERNAL_FIELDS = {
     "claimed": (),
     # #1467: `base` and `base_resolved` joined this entry because they are the two facts a
@@ -134,6 +143,9 @@ INTERNAL_FIELDS = {
     "verdict": ("phase", "verdict", "route", "agent_id", "plan_hash", "verified", "waiver", "waiver_reason",
                 "project_rules"),
     "phase_waived": ("phase", "reason"),
+    # #2003 (FR-34, FR-53): the lean route marker -- `work.start`'s default (source `default`) or `loop.py
+    # classify` (source `agent`). `work.route_of` reads the newest one when no work record carries the route.
+    "goal_class": ("route", "profile", "rationale", "source"),
 }
 #: `gate.gate` restricted to these three for INTERNAL writes — the only gates this log records
 #: (work.py's merge/code_review/post_review call sites); mirrors ledger.py's own GATE_KINDS being
@@ -338,7 +350,7 @@ def append(sdlc_dir, goal, kind, actor, thread="main", now=None, **fields):
             "the resolved tier is already known at dispatch time")
     if kind in ACTION_KINDS and not str(fields.get("action") or "").strip():
         raise ValueError(f"{kind} requires --action <text> -- the net matches on that text")
-    if not enabled(config):
+    if not enabled_for(config, sdlc_dir, goal, kind):
         return None
     if kind not in ALL_KINDS:
         raise ValueError(f"unknown action-log kind {kind!r} (expected one of {', '.join(ALL_KINDS)})")

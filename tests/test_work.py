@@ -7133,7 +7133,8 @@ def test_ledger_is_byte_identical_across_a_full_actionlog_instrumented_sequence(
     # Non-vacuous on the OTHER side too: the action-log run actually recorded every one of these
     # call sites — so "no ledger change" is not simply "actionlog did nothing at all".
     kinds = {e["kind"] for e in actionlog.read_goal(d, goal)}
-    assert kinds == {"claimed", "worktree_start", "verify_run", "gate", "merged", "recorded"}
+    # #2003: a fresh start cut classifies the goal lean/1 (standard by default), one `goal_class` row.
+    assert kinds == {"claimed", "goal_class", "worktree_start", "verify_run", "gate", "merged", "recorded"}
 
 
 def test_actionlog_module_has_no_ledger_import():
@@ -7872,6 +7873,9 @@ def test_a_goal_declaring_no_unit_is_byte_identical_to_today(tmp_path):
     path = (pathlib.Path(d).parent / ".sdlc" / "work" / "1467").resolve()
     assert out == f"worktree {path} on sdlc/1467 (cut from origin/main)"
     rec = work._record(d, "1467")
+    # #2003: the lean route marker is a further ADDITIVE set of keys (FR-34/53), pinned exactly here.
+    assert {k: rec.pop(k) for k in work._ROUTE_FIELDS} == {
+        "route": "lean/1", "profile": "standard", "profile_source": "default", "rationale": "no profile recorded"}
     assert rec == {"worktree": str(path), "branch": "sdlc/1467", "base": "main",
                    "base_resolved": True, "remote": "origin", "pr": ""}
     assert set(rec) - {"base_resolved"} == {"worktree", "branch", "base", "remote", "pr"}
@@ -8324,9 +8328,10 @@ def test_a_failed_read_is_recorded_as_an_unresolved_base(tmp_path):
     difference has to survive somewhere a later step can act on."""
     d = _sdlc(tmp_path, FEAT)
     work.start(d, FEAT, "1467", run=_runner([("api repos/", RuntimeError("HTTP 404"))]))
-    assert work._record(d, "1467") == {"worktree": work._record(d, "1467")["worktree"],
-                                       "branch": "sdlc/1467", "base": "main",
-                                       "base_resolved": False, "remote": "origin", "pr": ""}
+    rec = {k: v for k, v in work._record(d, "1467").items() if k not in work._ROUTE_FIELDS}   # #2003: additive
+    assert rec == {"worktree": work._record(d, "1467")["worktree"],
+                   "branch": "sdlc/1467", "base": "main",
+                   "base_resolved": False, "remote": "origin", "pr": ""}
 
 
 def test_declaring_nothing_is_a_resolved_base_not_a_fallback(tmp_path):

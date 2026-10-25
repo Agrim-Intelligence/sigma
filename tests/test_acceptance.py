@@ -157,7 +157,7 @@ def test_documented_cli_local_capture(tmp_path):
 def test_contract_acceptance_entry_and_golden(tmp_path):
     ledger = load('ledger')
     assert 'acceptance' in ledger.KINDS
-    assert (ROOT / 'contract/VERSION').read_text().strip() == '1.4.0'
+    assert (ROOT / 'contract/VERSION').read_text().strip() == '1.5.0'
     entry = ledger.append(tmp_path, {'ledger': {'enabled': True, 'actor': 'test'}},
                           'acceptance', '42', ref='acceptance/42.md', acceptance_sha256='a' * 64)
     assert entry['acceptance_sha256'] == 'a' * 64
@@ -329,8 +329,9 @@ def test_parse_returns_drafted_and_old_record_stays_valid(tmp_path):
         a.parse(bad, '42')
 
 
-def test_contract_1_4_0_documents_drafted():
-    assert (ROOT / 'contract/VERSION').read_text().strip() == '1.4.0'
-    assert json.loads((ROOT / 'contract/vocabulary.json').read_text())['contract_version'] == '1.4'
+def test_contract_1_5_0_still_documents_drafted():
+    """#2003 bumped the contract to 1.5.0 (additive `test_review` gate); 1.4.0's `drafted` stays documented."""
+    assert (ROOT / 'contract/VERSION').read_text().strip() == '1.5.0'
+    assert json.loads((ROOT / 'contract/vocabulary.json').read_text())['contract_version'] == '1.5'
     readme = (ROOT / 'contract/README.md').read_text()
     assert 'drafted' in readme and '1.4.0' in readme and '(1.3.0)' not in readme
