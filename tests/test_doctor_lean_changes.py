@@ -47,10 +47,10 @@ def test_registry_slice_two_entries_are_active_and_later_ones_planned():
     for c in d.LEAN_CHANGES:
         assert set(c) >= {"id", "text", "slice", "active"} and c["text"]
         assert isinstance(c["slice"], int) and not isinstance(c["slice"], bool) and c["slice"] >= 2
-    # #2003 (slice 2) ships the route marker, the folded review and FR-96; nothing later is active yet.
+    # #2003 (slice 2) ships the route marker, the folded review and FR-96; #2006 (slice 4) the multi-PR goal.
     assert sorted(c["id"] for c in d.LEAN_CHANGES if c["active"] is True) == ["action-log-on", "folded-review",
-                                                                              "route-marker"]
-    assert all(c["active"] is (c["slice"] == 2) for c in d.LEAN_CHANGES)
+                                                                              "multi-pr", "route-marker"]
+    assert all(c["active"] is (c["slice"] in (2, 4)) for c in d.LEAN_CHANGES)
 
 
 def test_report_labels_come_from_active_and_slice(tmp_path, capsys):

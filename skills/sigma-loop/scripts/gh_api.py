@@ -1541,6 +1541,52 @@ def close_pr_gh(run, number, comment=None, repo=None, *, fallback_run=None, env=
                        env=env, sdlc_dir=sdlc_dir, now=now)
 
 
+def edit_pr_body(run, number, body, repo=None, *, fallback_run=None, env=None, sdlc_dir=None, now=None):
+    """#2006 (FR-36): replace PR `number`'s body. REST `PATCH pulls/N -f body=` (`-f`, never `-F`: a body starting
+    `@` or shaped like key=value stays literal text) through `_rest_write(idempotent=True)` -- writing the same body
+    twice is a no-op, so a 5xx may fall back ONCE to `gh pr edit N --body` (built here), per WRITE_POLICY and only
+    while `graphql_available(env)`. Success is ONLY a dict reply whose `body` equals the body sent; anything else
+    raises (never counted as written). -> {"body", "via"}. The number is validated before any call."""
+    n = _need_number(number)
+    if not isinstance(body, str):
+        raise _refuse("a string body is required")
+
+    def rest():
+        got = _json(run, ["api", _endpoint(repo, "pulls/%d" % n), "--method", "PATCH", "-f", "body=%s" % body])
+        if not isinstance(got, dict) or got.get("body") != body:
+            raise GhApiError("malformed REST body edit reply for PR #%d (the body sent is not the body returned)" % n)
+        return {"body": body, "via": "rest"}
+
+    def fallback():
+        _call(fallback_run or run, ["pr", "edit", str(n), *_repo_flag(repo), "--body", body])
+        return {"body": body, "via": "gh"}
+
+    return _rest_write("pr_edit", n, "PR #%d body edit" % n, "gh pr edit", rest, fallback, idempotent=True,
+                       env=env, sdlc_dir=sdlc_dir, now=now)
+
+
+_CLOSING_QUERY = ("query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name)"
+                  "{pullRequest(number:$number){closingIssuesReferences(first:50){nodes{number}}}}}")
+
+
+def closing_issue_numbers(run, number, repo=None):
+    """#2006 (D-41): the issue numbers GitHub's linker currently reads as closed by PR `number`
+    (`closingIssuesReferences`, GraphQL -- REST has no such field). `repo` None uses gh's `{owner}`/`{repo}`
+    placeholders. RAISES GhApiError on any reply that is not the documented shape: an unknown answer must never
+    read as "no closing reference". At most the first 50 references (a PR names one issue here)."""
+    n = _need_number(number)
+    owner, name = (repo.split("/", 1) if isinstance(repo, str) and "/" in repo else ("{owner}", "{repo}"))
+    got = _json(run, ["api", "graphql", "-f", "query=%s" % _CLOSING_QUERY, "-F", "owner=%s" % owner,
+                      "-F", "name=%s" % name, "-F", "number=%d" % n])
+    try:
+        nodes = got["data"]["repository"]["pullRequest"]["closingIssuesReferences"]["nodes"]
+        if not isinstance(nodes, list):
+            raise TypeError("nodes")
+        return [int(x["number"]) for x in nodes]
+    except (KeyError, TypeError, ValueError) as exc:
+        raise GhApiError("malformed closingIssuesReferences reply for PR #%d (%s)" % (n, type(exc).__name__)) from None
+
+
 # ---------------------------------------------------------------- PR reads, REST first (#895 slice 4a-1)
 
 # CLOSED whitelist: exactly the fields the migrated PR read sites request (4a-1: work.py merge_rights,

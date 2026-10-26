@@ -118,7 +118,9 @@ def test_no_parked_plus_label_pair():
     gh._set_board_status = lambda *a, **k: True
     gh.note = lambda goal, text: None
     assert _mod("gate_hold").park_for_gate(gh, "42", "scope_hold", "outside the unit") is True
-    assert swaps == [(["sdlc:parked"], sorted(["sdlc:goal", "sdlc:in-progress", "sdlc:blocked"]))]
+    # #2006: a park also strips the informational `sdlc:between-slices` (a parked goal is not between slices).
+    assert swaps == [(["sdlc:parked"], sorted(["sdlc:goal", "sdlc:in-progress", "sdlc:blocked",
+                                               "sdlc:between-slices"]))]
     assert all("sdlc:needs-confirmation" not in a + r for a, r in swaps)
 
 

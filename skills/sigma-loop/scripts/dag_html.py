@@ -255,11 +255,13 @@ def build(m, config, goal, titles=None, now=None, fresh=(True, "ok")):
     fc = chain_forecast.forecast(out, config)
     marks = {x["number"]: x for x in fc["members"]}
     amap = {n["number"]: n["assignees"] for n in m["nodes"] if isinstance(n.get("assignees"), list)}
+    between = {n["number"] for n in m["nodes"] if n.get("between_slices") is True}     # #2006 (FR-75)
     nodes = {}
     for r in out["members"]:
         mk = marks[r["number"]]
         nodes[r["number"]] = {"n": r["number"], "m": mk["marker"], "after": mk["after"], "why": mk["why"],
-                              "life": r["life"], "prio": r["prio"], "unit": r.get("unit"),
+                              "life": f"{r['life']}, between slices" if r["number"] in between else r["life"],
+                              "prio": r["prio"], "unit": r.get("unit"),
                               "depth": r["depth"],
                               "who": sorted({_clean_login(a) for a in amap[r["number"]]}) if r["number"] in amap else None}
     for n in out["done"]:

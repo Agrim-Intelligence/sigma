@@ -3072,6 +3072,13 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None):
         # this path did no fetch and no comparison at all, so a resumed goal ran P2 RESEARCH's blast
         # radius and P3's plan against whatever the worktree was last left at -- #1617 measured 78
         # commits. #1890 caught that at VERIFY, which is after the dossier and the plan are written.
+        # #2006 (D9a, plan-review B2): a multi-PR goal whose current slice PR already merged is BETWEEN slices; its
+        # branch is squash-merged history, so the stale-resume rebase below would replay it onto a base that holds
+        # it (a conflict parks the goal; a clean replay force-pushes the deleted remote branch back). Point at the
+        # next slice instead -- no rebase, no push, no unclaim. After the live-sibling check, so a sibling still blocks.
+        hold = _merged_slice_hold(sdlc_dir, config, goal, rec, run)
+        if hold:
+            return f"already started: {rec['worktree']} on {rec['branch']} — {hold}"
         stale = _stale_resume_refusal(sdlc_dir, config, goal, run=run)
         if stale:
             return stale
@@ -4436,7 +4443,7 @@ def _default_branch(path, run):
         return ""
 
 
-def _pr_body(path, run, remote, base, goal, config):
+def _pr_body(path, run, remote, base, goal, config, slice_final=None, slice_note=None):
     """The PR body: an issue link (github mode only) plus the branch's own commit messages — never
     `--fill`, which derives the body from those SAME commit messages but comes out empty whenever
     they have no body (#816: `commit()`'s own default, `f"sdlc: {stem(goal)}"`, guarantees that,
@@ -4470,10 +4477,18 @@ def _pr_body(path, run, remote, base, goal, config):
     THE HONEST HEADER CONTAINS NO `<keyword> #<n>` PAIR anywhere, which is what GitHub's linker
     actually matches — "closing keyword" as prose is fine, "closes #816" is not, and the difference
     is the whole point rather than a style preference. `Refs #<n>` still cross-references the issue,
-    so the PR remains visible from it exactly as before; only the CLAIM is withdrawn."""
+    so the PR remains visible from it exactly as before; only the CLAIM is withdrawn.
+
+    #2006 (FR-36, BR-69): `slice_final` is None for a single-PR goal (the text above, byte for byte). For a multi-PR
+    goal's slice it is False while any OTHER manifest slice has no merged PR -- `Refs #N` plus the lean paragraph
+    (`slice_note` = (id, k, n)), never a closing keyword, even on the default branch -- and True on the last one,
+    which takes the logic above (Closes only on the live default branch)."""
     ref = stem(goal)
     if not _reads_a_declaration(config, goal):
         header = ""
+    elif slice_final is False:
+        sid, k, n = slice_note or ("?", "?", "?")
+        header = _slice_refs_header(ref, sid, k, n)
     elif base == _default_branch(path, run):
         header = f"Closes #{ref}\n\n"
     else:
@@ -4505,6 +4520,305 @@ def _pr_title(path, run, remote, base, goal):
     if ref.isdigit() and f"#{ref}" not in title:
         title += f" (#{ref})"
     return title
+
+
+# --------------------------------------------------------------------------- #2006: the multi-PR goal (lean slice 4)
+#
+# A lean goal (FR-33: route marker present) with `work.enabled`, a GitHub issue and a slice manifest of two or more
+# slices ships ONE PR PER SLICE (design 2000.md FR-36/37/63/65/84/85/87). Everything below stands down -- returns the
+# single-PR answer -- when `multi_pr` is False, which IS the legacy / work-off / local-mode fallback (FR-39).
+
+#: The prefix of `done_refusal`'s multi-PR refusal; the run driver keys on it (never on prose).
+SLICES_PENDING = "slices pending: "
+SLICE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$")
+MANIFEST_UNREADABLE = "<manifest unreadable>"
+#: D-41 (owner-measured 2026-10-25 on throwaway draft PR #2055, base main, closed unmerged): GitHub re-parses closing
+#: keywords on a PR body edit in BOTH directions, but ASYNCHRONOUSLY -- a read taken right after an edit can be one
+#: edit stale (it shows the body BEFORE that edit); reads settled within ~6 s. So the switch sleeps SWITCH_PAUSE
+#: seconds BEFORE every read (a read right after the write is never trusted), says "confirmed" only after
+#: SWITCH_CONFIRM consecutive reads without the issue, and stops after SWITCH_REREADS reads (<= 12 s), reporting
+#: "unconfirmed" -- never a failure. Merge-time closing after such an edit is UNMEASURED.
+SWITCH_REREADS, SWITCH_PAUSE, SWITCH_CONFIRM = 4, 3, 2
+_SLICES_MOD = None
+
+
+def _slices_mod():
+    global _SLICES_MOD
+    if _SLICES_MOD is None:
+        _SLICES_MOD = _load("slices")       # lazy: only a lean multi-slice question needs it
+    return _SLICES_MOD
+
+
+def slice_branch(config, goal, slice_id):
+    """THE one home of a slice's branch name (D2): `<branch_prefix><stem>-s<id>` -- slice 5b adds the plan generation
+    here. Not `<prefix><stem>/<id>`: git cannot hold `sdlc/2006` and `sdlc/2006/a` at once. Raises ValueError for an
+    id that is not ref-safe (`slices.py` only strips ids): `^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$`, no `..`, not ending
+    `.lock` or `.`."""
+    sid = str(slice_id or "")
+    if not SLICE_ID_RE.match(sid) or ".." in sid or sid.endswith((".lock", ".")):
+        raise ValueError(f"slice id {slice_id!r} is not ref-safe (1-40 of A-Z a-z 0-9 . _ -, starting alphanumeric, "
+                         "no `..`, not ending `.lock` or `.`)")
+    return f"{settings(config)['branch_prefix']}{stem(goal)}-s{sid}"
+
+
+def _manifest_ids(sdlc_dir, goal):
+    """The manifest's slice ids in manifest order; RAISES on a broken manifest (the caller decides the fail side)."""
+    return [s["id"] for s in _slices_mod().load(sdlc_dir, goal)]
+
+
+def multi_pr(sdlc_dir, config, goal):
+    """D1: is this goal multi-PR? True iff lean (`route_of`), `work.enabled`, github mode with an issue-number stem
+    (`_reads_a_declaration`) and a LOCAL manifest of two or more slices. Never reads `parallel.enabled` and does not
+    fork `classify_blocker`. A RAISING manifest reads as multi-PR when the other three hold (F3): the close gates
+    then hold rather than open. Local reads only, never raises."""
+    try:
+        if not (enabled(config) and _reads_a_declaration(config, goal) and route_of(sdlc_dir, goal)):
+            return False
+    except Exception:                       # noqa: BLE001 - an unreadable predicate is the single-PR answer
+        return False
+    try:
+        return len(_manifest_ids(sdlc_dir, goal)) >= 2
+    except Exception:                       # noqa: BLE001 - F3: unknown is "gated", never "open"
+        return True
+
+
+def _slice_cwd(sdlc_dir, rec):
+    path = pathlib.Path((rec or {}).get("worktree", "") or "")
+    return str(path) if str(path) and path.is_dir() else str(project_root(sdlc_dir))
+
+
+def slice_done(sdlc_dir, config, goal, slice_id, run=None):
+    """D5 / FR-65: True iff GitHub shows a MERGED PR whose head is exactly this slice's branch AND that PR carries a
+    trusted `sigma:approve` (`_comment_directive`, reused: the trust clause is its `authorAssociation` filter;
+    `same_author` is not read, so a solo account's own approve still finishes a slice, as it merges a goal today).
+    False on a definite no. None (R1) when it cannot be told: an unsafe id, a failed PR read, unreadable comments.
+    `pulls?head=<owner>:` sees same-owner heads only (a fork PR on a same-named branch is invisible). Never reads the
+    local record's merge marks. Cost: 1 REST list + 1 PR read + paged comments."""
+    run = run or _run
+    try:
+        branch = slice_branch(config, goal, slice_id)
+    except ValueError:
+        return None
+    rec = _record(sdlc_dir, goal) or {}
+    cwd = _slice_cwd(sdlc_dir, rec)
+    try:
+        row = gh_api.pr_for_branch_gh(_pr_api_run(run, cwd), branch, ["number", "state", "mergedAt", "headRefName"],
+                                      "{owner}/{repo}")
+    except Exception:                       # noqa: BLE001 - R1: unknown, never "not done" and never "done"
+        return None
+    if not row or row.get("headRefName") != branch:
+        return False
+    if not (row.get("state") == "MERGED" or row.get("mergedAt")):
+        return False
+    try:
+        directive, _same_author = _comment_directive(dict(rec, worktree=cwd, pr=str(row["number"])), run)
+    except Exception:                       # noqa: BLE001 - ValueError: unreadable comments -> unknown
+        return None
+    return directive == "approve"
+
+
+def slice_states(sdlc_dir, config, goal, run=None, just_merged=None):
+    """[(slice id, True|False|None)] in manifest order -- [] when the goal is not multi-PR. `just_merged` (the slice
+    `merge()` itself just landed past its own review gate) counts as True without a re-read. A broken manifest is the
+    single row (MANIFEST_UNREADABLE, None). Never raises."""
+    if not multi_pr(sdlc_dir, config, goal):
+        return []
+    try:
+        ids = _manifest_ids(sdlc_dir, goal)
+    except Exception:                       # noqa: BLE001 - F3: fail closed
+        return [(MANIFEST_UNREADABLE, None)]
+    out = []
+    for sid in ids:
+        if just_merged is not None and sid == just_merged:
+            out.append((sid, True))
+            continue
+        try:
+            out.append((sid, slice_done(sdlc_dir, config, goal, sid, run=run)))
+        except Exception:                   # noqa: BLE001
+            out.append((sid, None))
+    return out
+
+
+def unmerged_slices(sdlc_dir, config, goal, run=None, just_merged=None):
+    """D6 / FR-63: THE close-gate check all three closers read (`merge()`, the merge-reconcile pass, CLI `record
+    done`): the manifest slice ids NOT done per `slice_done` -- an unknown (None) counts as unmerged, so unreadable
+    state keeps the issue open (F3). [] when the goal is not multi-PR (no read at all). Counts the LOCAL manifest
+    only; slice 6 extends this one function with the discovered slices of the manifest of record. Never raises."""
+    return [sid for sid, done in slice_states(sdlc_dir, config, goal, run=run, just_merged=just_merged)
+            if done is not True]
+
+
+def slice_progress(sdlc_dir, config, goal):
+    """LOCAL display facts for a multi-PR goal, no GitHub read: {"current", "ids", "k", "n", "merged"} where `merged`
+    lists the ids the local record marks merged (display only -- the gates read GitHub). None when not multi-PR or
+    the manifest cannot be read. Never raises."""
+    try:
+        if not multi_pr(sdlc_dir, config, goal):
+            return None
+        ids = _manifest_ids(sdlc_dir, goal)
+        rec = _record(sdlc_dir, goal) or {}
+        marks = rec.get("slices") if isinstance(rec.get("slices"), dict) else {}
+        current = rec.get("slice")
+        merged = [i for i in ids if isinstance(marks.get(i), dict) and marks[i].get("merged") is True]
+        return {"current": current, "ids": ids, "n": len(ids), "merged": merged,
+                "k": ids.index(current) + 1 if current in ids else None}
+    except Exception:                       # noqa: BLE001 - display only
+        return None
+
+
+def _slice_refs_header(ref, slice_id, k, n):
+    """The non-final slice header (BR-69): a cross-reference with NO `<keyword> #N` pair anywhere."""
+    return (f"Refs #{ref}\n\n"
+            f"This pull request is slice {slice_id}, {k} of {n}, of a goal that ships as one pull request per slice. "
+            f"Sigma keeps the issue open until every slice's pull request has merged, then closes it.\n\n")
+
+
+def _slice_refused_text(text):
+    return f"SLICE REFUSED: {text}"
+
+
+def slice_start(sdlc_dir, config, goal, run=None):
+    """`work.py slice <sdlc> <goal>` (D3): start the next slice of a multi-PR goal -- the first manifest slice (in
+    manifest order) whose PR is not done per `slice_done`. The FIRST slice is cut from the worktree's current HEAD
+    (it carries the research/plan/acceptance commits `pr()` checks for); later slices from `<remote>/<base>` after a
+    fetch (slice 1 has merged into it). An existing local slice branch is checked out, not recreated. The record
+    gets `slice`, `branch`, no `pr`, and `slices[<id>]` (history, display only), so every existing PR verb keeps
+    reading `rec["branch"]`/`rec["pr"]` unchanged; the first cut also keeps `goal_branch` for `finish()`.
+    Refused (`SLICE REFUSED:`, exit 2): not multi-PR, an unsafe or unreadable manifest, a flag awaiting the
+    merge-reconcile pass, a dirty worktree, the current slice's PR still open or unreadable, slice state unknown."""
+    run = run or _run
+    rec = _record(sdlc_dir, goal)
+    if not rec:
+        return _slice_refused_text("not started -- run `work.py start` first")
+    if not multi_pr(sdlc_dir, config, goal):
+        return _slice_refused_text(f"{stem(goal)} is not a multi-PR goal (lean route, work.enabled, a GitHub issue and a "
+                              "manifest of two or more slices) -- it runs as one PR; use `work.py pr`")
+    try:
+        ids = _manifest_ids(sdlc_dir, goal)
+    except Exception as exc:                # noqa: BLE001
+        return _slice_refused_text(f"the slice manifest cannot be read ({exc})")
+    for sid in ids:
+        try:
+            slice_branch(config, goal, sid)
+        except ValueError as exc:
+            return _slice_refused_text(f"{exc}; fix the manifest (no branch was created)")
+    if isinstance(rec.get("awaiting_merge"), dict):
+        return _slice_refused_text(f"slice {rec.get('slice')} PR #{rec.get('pr')} is awaiting merge -- the merge-reconcile "
+                              f"pass (`loop.py reconcile-merges {sdlc_dir}`) records it first")
+    path = rec["worktree"]
+    if run(path, ["git", "status", "--porcelain"]):
+        return _slice_refused_text(f"the worktree has uncommitted changes -- run `work.py commit {sdlc_dir} {goal}` first")
+    landing = None
+    if rec.get("pr"):
+        landing, why = pr_landing_state(sdlc_dir, rec, run)
+        if landing == OPEN_PR:
+            return _slice_refused_text(f"slice {rec.get('slice')} PR #{rec['pr']} is open -- merge it or record review first")
+        if landing not in (MERGED, CLOSED_PR):
+            return _slice_refused_text(f"could not read PR #{rec['pr']} ({why or landing}) -- retry")
+    target = None
+    for sid in ids:
+        done = slice_done(sdlc_dir, config, goal, sid, run=run)
+        if done is None:
+            return _slice_refused_text(f"slice {sid}'s state cannot be read on GitHub -- retry")
+        if done is False:
+            target = sid
+            break
+    if target is None:
+        return f"every slice of #{stem(goal)} has a merged, approved PR -- record done"
+    if target == rec.get("slice") and landing == MERGED:
+        return _slice_refused_text(f"slice {target} PR #{rec['pr']} merged without a trusted sigma:approve -- a human "
+                              "decides (record parked --qkind needs_decision)")
+    branch = slice_branch(config, goal, target)
+    first = not isinstance(rec.get("slices"), dict) or not rec["slices"]
+    try:
+        run(path, ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"])
+        exists = True
+    except Exception:                       # noqa: BLE001 - absent
+        exists = False
+    remote, base = rec["remote"], rec["base"]
+    if exists:
+        run(path, ["git", "checkout", branch])
+    elif first:
+        run(path, ["git", "checkout", "-b", branch])
+    else:
+        run(path, ["git", "fetch", remote, base])
+        run(path, ["git", "checkout", "-b", branch, f"{remote}/{base}"])
+    if first:
+        rec["goal_branch"] = rec["branch"]
+    # R1: the tip THIS slice was cut from -- a stale one would make a later `--onto` rebase replay commits that are
+    # already on the base. A branch that records no tip (not a unit base) drops the stale key.
+    rec.pop("cut_tip", None)
+    rec.update(_cut_tip_fields(config, run, path, remote, base))
+    marks = rec["slices"] if isinstance(rec.get("slices"), dict) else {}
+    marks[target] = dict(marks.get(target) or {}, branch=branch)
+    rec.update(slice=target, branch=branch, slices=marks)
+    for key in ("pr", "size"):
+        rec.pop(key, None)
+    _save(sdlc_dir, goal, rec)
+    k = ids.index(target) + 1
+    return f"slice {target} ({k} of {len(ids)}) on branch {branch}" + (" (checked out)" if exists else "")
+
+
+def mark_slice_merged(sdlc_dir, goal, sid):
+    """The LOCAL display mark (`slices[id].merged`) next-step, status and prune read; never a gate. Never raises."""
+    try:
+        rec = _record(sdlc_dir, goal)
+        if not rec or not sid:
+            return
+        marks = rec["slices"] if isinstance(rec.get("slices"), dict) else {}
+        marks[sid] = dict(marks.get(sid) or {}, merged=True)
+        _save(sdlc_dir, goal, dict(rec, slices=marks))
+    except Exception:                       # noqa: BLE001 - display only
+        pass
+
+
+def _mark_between_slices(sdlc_dir, config, goal):
+    """#2006 (FR-37, plan-review R3/N2): a non-final slice PR is open, so the goal carries the informational
+    between-slices label -- written through the source's ONE writer (`mark_between_slices`, loaded lazily like
+    `_stale_resume_refusal` loads it), never a second raw label write here. Best-effort: never fails the PR."""
+    try:
+        source = _load("sources").get_source(sdlc_dir, config)
+        if hasattr(source, "mark_between_slices"):
+            source.mark_between_slices(goal)
+    except Exception as exc:                # noqa: BLE001 - a display label never costs a PR
+        print(f"work: between-slices label for {stem(goal)} not written ({exc})", file=sys.stderr)
+
+
+def switch_pr_to_refs(sdlc_dir, config, goal, run=None, sleep=time.sleep):
+    """FR-36: rewrite the open slice PR's `Closes #N` header to the non-final Refs header (a slice discovered while
+    the last PR was open -- its caller lands with slices 6/8), write it with `gh_api.edit_pr_body`, then re-read
+    `closingIssuesReferences` under the D-41 rule above: sleep before EVERY read, SWITCH_CONFIRM consecutive reads
+    without the issue to confirm, at most SWITCH_REREADS reads; an unreadable read resets the streak.
+    -> "confirmed" | "unconfirmed after 4 reads" | "already refs" | "nothing to switch"; never raises for the lag.
+    MERGE-TIME closing on the default branch after such an edit is UNMEASURED: FR-63's gate stays the authority,
+    and Refs is always safe."""
+    run = run or _run
+    rec = _record(sdlc_dir, goal) or {}
+    ref = stem(goal)
+    if not (rec.get("pr") and rec.get("slice") and multi_pr(sdlc_dir, config, goal)):
+        return "nothing to switch"
+    api = _pr_api_run(run, _slice_cwd(sdlc_dir, rec))
+    n = int(str(rec["pr"]))
+    body = gh_api.view_pr_gh(api, n, ["body"]).get("body") or ""
+    head = f"Closes #{ref}"
+    if body.startswith(f"Refs #{ref}"):
+        return "already refs"
+    if not body.startswith(head):
+        return "nothing to switch"
+    ids = _manifest_ids(sdlc_dir, goal)
+    k = ids.index(rec["slice"]) + 1 if rec["slice"] in ids else "?"
+    rest = body[len(head):].lstrip("\n")
+    gh_api.edit_pr_body(api, n, _slice_refs_header(ref, rec["slice"], k, len(ids)) + rest)
+    streak = 0
+    for _ in range(SWITCH_REREADS):
+        sleep(SWITCH_PAUSE)                 # D-41: never trust a read taken right after the write
+        try:
+            streak = streak + 1 if int(ref) not in gh_api.closing_issue_numbers(api, n) else 0
+        except Exception:                   # noqa: BLE001 - an unreadable read confirms nothing
+            streak = 0
+        if streak >= SWITCH_CONFIRM:
+            return "confirmed"
+    return f"unconfirmed after {SWITCH_REREADS} reads"
 
 
 def pr(sdlc_dir, config, goal, run=None, no_tests=None):
@@ -4556,6 +4870,12 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None):
     rec = _record(sdlc_dir, goal)
     if not rec:
         return "not started — run `work.py start` first (nothing pushed)"
+    # #2006 (D4): a multi-PR goal publishes one slice at a time. Without a started slice the body could not say
+    # Refs or Closes, and a PR off the goal branch could never satisfy FR-65's slice-branch clause.
+    multi = multi_pr(sdlc_dir, config, goal)
+    if multi and not rec.get("slice"):
+        return (f"REFUSED — {stem(goal)} ships one PR per slice: run `work.py slice {sdlc_dir} {goal}` to cut the "
+                "next slice branch first (nothing pushed)")
     if state.enforce_enabled(config.get("verify")):
         acceptance_refusal = _load("acceptance").refusal(sdlc_dir, goal)
         if acceptance_refusal:
@@ -4614,10 +4934,24 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None):
                         "--jq", ".[0].number"])
     if not number:
         title = _pr_title(path, run, remote, base, goal)
-        body = _no_tests_body(_pr_body(path, run, remote, base, goal, config), no_tests)
+        slice_final = slice_note = None
+        if multi:
+            # "Last" = no OTHER manifest slice is unmerged (an unknown counts as unmerged): Closes is never written
+            # while another slice is open, whatever `needs` or the manifest order say. Refs is always safe.
+            others = [s for s in unmerged_slices(sdlc_dir, config, goal, run=run) if s != rec["slice"]]
+            slice_final = not others
+            try:
+                ids = _manifest_ids(sdlc_dir, goal)
+                slice_note = (rec["slice"], ids.index(rec["slice"]) + 1, len(ids))
+            except Exception:               # noqa: BLE001 - display only
+                slice_note = (rec["slice"], "?", "?")
+        body = _no_tests_body(_pr_body(path, run, remote, base, goal, config, slice_final=slice_final,
+                                       slice_note=slice_note), no_tests)
         number = run(path, ["gh", "api", "repos/{owner}/{repo}/pulls",
                             "-f", f"title={title}", "-f", f"body={body}", "-f", f"base={base}",
                             "-f", f"head={rec['branch']}", "--jq", ".number"])
+        if slice_final is False:
+            _mark_between_slices(sdlc_dir, config, goal)
     elif no_tests is not None:
         endpoint = f"repos/{{owner}}/{{repo}}/pulls/{number}"
         current = json.loads(run(path, ["gh", "api", endpoint])).get("body") or ""
@@ -4978,7 +5312,7 @@ def _diff_without_pr_refusal(rec, ref, run):
             f"`parked \"<why>\"`")
 
 
-def done_refusal(sdlc_dir, config, goal, run=None, landing=None):
+def done_refusal(sdlc_dir, config, goal, run=None, landing=None, slices_checked=False):
     """None iff `done` may be recorded for `goal`, else the reason to refuse -- #232: DONE MEANS
     MERGED. Called from loop.py's `record` dispatch before `_record()` runs, and by the
     merge-reconcile pass before it records the `done` a later merge earns.
@@ -5005,10 +5339,21 @@ def done_refusal(sdlc_dir, config, goal, run=None, landing=None):
 
     `landing` (#255): a `(state, detail)` pair the caller JUST read with `pr_landing_state` for this
     same record -- the merge-reconcile pass -- so the PR is not read a second time for one close.
-    Every other caller omits it and gets the read."""
+    Every other caller omits it and gets the read.
+
+    #2006 (FR-63, D6): FIRST, whatever the PR state, a multi-PR goal with a manifest slice lacking a merged,
+    trusted-approved PR is refused with a `SLICES_PENDING` reason -- before the no-PR early return, because a freshly
+    cut next slice has no PR and no diff (plan-review B1). This one check gates the CLI `record done`, the run
+    driver and the merge-reconcile pass. `slices_checked` skips it for a caller that just evaluated it."""
     if not enabled(config):
         return None
     run = run or _run
+    if not slices_checked:
+        pending = unmerged_slices(sdlc_dir, config, goal, run=run)
+        if pending:
+            return (f"{SLICES_PENDING}{stem(goal)} ships one PR per slice and these manifest slices have no merged, "
+                    f"trusted-approved PR: {', '.join(pending)} (FR-63). The issue stays open: start the next with "
+                    f"`work.py slice {sdlc_dir} {goal}`; done is recorded after the last slice merges")
     rec = _record(sdlc_dir, goal)
     if rec and not rec.get("pr"):
         return _diff_without_pr_refusal(rec, stem(goal), run)
@@ -5729,6 +6074,25 @@ def _behind_count(path, remote, base, run):
     return int(run(path, ["git", "rev-list", "--count", f"HEAD..{remote}/{base}"]))
 
 
+MERGED_SLICE_HOLD = "between slices: "
+
+
+def _merged_slice_hold(sdlc_dir, config, goal, rec, run):
+    """#2006 (D9a): a message (prefixed MERGED_SLICE_HOLD) when the record's CURRENT slice PR of a multi-PR goal has
+    merged -- the worktree sits on squash-merged history and must not be rebased or verified; the next step is
+    `work.py slice`. None otherwise, and None on any read failure (the existing paths then decide). One REST read,
+    only for a multi-PR goal with a slice PR on record."""
+    try:
+        if not (rec.get("slice") and rec.get("pr") and multi_pr(sdlc_dir, config, goal)):
+            return None
+        if pr_landing_state(sdlc_dir, rec, run)[0] != MERGED:
+            return None
+    except Exception:                          # noqa: BLE001 - unknown is "no hold"
+        return None
+    return (f"{MERGED_SLICE_HOLD}slice {rec['slice']} PR #{rec['pr']} has merged; run "
+            f"`work.py slice {sdlc_dir} {goal}` to cut the next slice (nothing rebased)")
+
+
 def ensure_fresh(sdlc_dir, config, goal, run=None):
     """Catch a worktree that has drifted behind its own base BEFORE the caller runs anything
     expensive against it (#1890) -- #1617 and #1829 each burned a full multi-hundred-second verify
@@ -5777,6 +6141,9 @@ def ensure_fresh(sdlc_dir, config, goal, run=None):
     path = pathlib.Path(rec.get("worktree", ""))
     if not path.is_dir():
         return None                            # feature off / worktree gone -- root() falls back too
+    hold = _merged_slice_hold(sdlc_dir, config, goal, rec, run)
+    if hold:                                   # #2006 (D9a): never rebase a squash-merged slice branch
+        return hold
     remote, base = rec.get("remote"), rec.get("base")
     if not remote or not base:
         return None                            # incomplete/legacy record -- nothing safe to compare
@@ -5874,6 +6241,8 @@ def _stale_resume_refusal(sdlc_dir, config, goal, run=None):
     doubly-failed path, never a wrong TRANSITION."""
     stale = ensure_fresh(sdlc_dir, config, goal, run=run)
     rec = _record(sdlc_dir, goal)
+    if stale and stale.startswith(MERGED_SLICE_HOLD):
+        return None                            # #2006 (N3): between slices is not stale -- never park on it
     if not stale:
         # A clean pass is proof of recovery: the bound above is on CONSECUTIVE failures.
         if rec is not None and rec.pop("stale_resume_releases", None) is not None:
@@ -7976,7 +8345,27 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # the call reads the issue's own state on EVERY base, never a base comparison — it does nothing
     # only when that read finds the issue already closed; otherwise (open, or unreadable) it sends
     # a close request and posts the audit comment. Returns a clause, never raises.
-    closed = _close_issue_the_base_cannot(config, rec, goal, run)
+    # #2006 (FR-63, D6): a multi-PR goal's issue closes only when its LAST slice lands. Nothing raised after the
+    # landing may escape: unreadable slice state skips the close (fail closed) and `record done` / the reconcile pass retry it.
+    # The slice merged HERE counts as done without a GitHub re-read only once its trusted `sigma:approve` is
+    # confirmed on this PR (`review_gate` does not run under `require_review: off`): an unapproved last slice
+    # would otherwise close the issue while `record done` refuses it forever.
+    sid = rec.get("slice")
+    try:
+        approved = bool(sid) and _comment_directive(rec, run)[0] == "approve"
+    except Exception:                       # noqa: BLE001 - unreadable comments: not confirmed
+        approved = False
+    try:
+        pending = unmerged_slices(sdlc_dir, config, goal, run=run, just_merged=sid if approved else None)
+    except Exception as exc:                # noqa: BLE001 - unmerged_slices never raises; belt and braces
+        pending = [f"slice state unreadable: {_first_line(exc)}"]
+    if sid and multi_pr(sdlc_dir, config, goal):
+        mark_slice_merged(sdlc_dir, goal, sid)          # R3: the local display mark status and prune read
+    if pending:
+        closed = (f" — slice {sid} merged; #{stem(goal)} stays open (unmerged: {', '.join(pending)}; FR-63), "
+                  f"next: `work.py slice {sdlc_dir} {goal}`")
+    else:
+        closed = _close_issue_the_base_cannot(config, rec, goal, run)
     # The first HONEST write site `merged` has ever had from the place that actually performed the
     # landing (F26/#344 only ever wrote `merge-armed` here; `done_refusal`'s own out-of-band write
     # is the only other one). Fail-open: a ledger problem must never turn a successful merge into a
@@ -7988,7 +8377,7 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
             _observe_confirmed_merge(sdlc_dir, config, goal, rec, run)
         except Exception as exc:
             print("merge observation pending: %s" % exc, file=sys.stderr)
-    actionlog.safe_append(sdlc_dir, goal, "merged", pr=rec["pr"])
+    actionlog.safe_append(sdlc_dir, goal, "merged", thread=str(sid) if sid else "main", pr=rec["pr"])
     _upkeep_merge_trigger(sdlc_dir, config)         # #1225: LAST effect; own guard, never alters the line below
     # The clause goes at the END, after `gate_detail`: SKILL.md's decision table routes on the
     # `PR #N merged (<method>) — …` opening, which stays exactly as it was.
@@ -8436,6 +8825,7 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
     # `force` exists precisely for the "get me out, whatever state this is in" case; bolting an
     # unconditional network call onto it would be a silent new dependency nobody asked for.
     if not force and branch and rec.get("pr") and (merged_before_cleanup or _pr_merged(sdlc_dir, rec, run)):
+        note += _finish_slice_branches(sdlc_dir, config, goal, rec, branch, run)        # #2006 (D15b)
         remote_deleted = _delete_remote_branch(project_root(sdlc_dir), branch, run, config=config,
                                                 base=rec.get("base"), sdlc_dir=sdlc_dir, goal=goal)
         try:
@@ -8450,6 +8840,32 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
             return f"removed {rec['worktree']}, deleted branch {branch}{note}"
         return f"removed {rec['worktree']}, deleted local branch {branch} (remote delete unconfirmed){note}"
     return f"removed {rec['worktree']}{note}"
+
+
+def _finish_slice_branches(sdlc_dir, config, goal, rec, current, run):
+    """#2006 (D15b, F2): a multi-PR goal leaves more than its current branch behind -- the goal branch the first slice
+    was cut from (local only: `pr()` refuses to publish it) and every earlier slice branch (local, plus the remote
+    one `merge()` already deleted unless a human merged it). Each delete is independent and best-effort; the
+    returned clause names only CONFIRMED deletes, and nothing here can fail `finish()`."""
+    root, gone = project_root(sdlc_dir), []
+    targets = []
+    goal_branch = rec.get("goal_branch")
+    if isinstance(goal_branch, str) and goal_branch and goal_branch != current:
+        targets.append((goal_branch, False))
+    marks = rec.get("slices") if isinstance(rec.get("slices"), dict) else {}
+    for entry in marks.values():
+        b = entry.get("branch") if isinstance(entry, dict) else None
+        if isinstance(b, str) and b and b != current and (b, True) not in targets:
+            targets.append((b, True))
+    for b, pushed in targets:
+        try:
+            if pushed:                      # False = already gone or refused; the local delete still runs
+                _delete_remote_branch(root, b, run, config=config, base=rec.get("base"), sdlc_dir=sdlc_dir, goal=goal)
+            run(root, ["git", "branch", "-D", b])
+            gone.append(b)
+        except Exception:                   # noqa: BLE001 - best-effort cleanup never fails a finish
+            continue
+    return f"; deleted slice branches {', '.join(gone)}" if gone else ""
 
 
 def prune_terminal_review_copies(sdlc_dir, goal):
@@ -8962,7 +9378,8 @@ def close_design(sdlc_dir, config, goal, run=None, comment=None, sleep=time.slee
     return f"closed PR #{pr['number']}"
 
 _COMMANDS = {"start": start, "commit": commit, "pr": pr, "rebase": rebase,
-             "post-review": post_review, "merge": merge, "finish": finish}
+             "post-review": post_review, "merge": merge, "finish": finish,
+             "slice": slice_start}      # #2006: the next slice of a lean multi-PR goal
 
 
 _SEAL_TESTS_USAGE = ("usage: work.py seal-tests <sdlc_dir> <goal>   (opt-in: gates.sealed_acceptance.enabled; "
@@ -9021,8 +9438,10 @@ def main(argv):
             "line-hash": _LINE_HASH_USAGE,
             "seal-tests": _SEAL_TESTS_USAGE,
             "seal-retire": _SEAL_RETIRE_USAGE,
+            "slice": "usage: work.py slice <sdlc_dir> <goal>   (a lean multi-PR goal: cut the next slice's branch; "
+                     "exit 2 = refused, nothing changed)",
         }
-        print(usage.get(command, "usage: work.py start|commit|pr|rebase|post-review|merge|finish <sdlc_dir> <goal>"))
+        print(usage.get(command, "usage: work.py start|commit|pr|rebase|post-review|merge|finish|slice <sdlc_dir> <goal>"))
         return 0
     if len(argv) >= 4 and argv[1] == "review-paths":
         manifest = _flag(argv, "--manifest")
@@ -9340,8 +9759,10 @@ def main(argv):
         # difference (they all assert the string, never the code).
         if str(result).startswith((_STALE_RESUME_REFUSAL_PREFIX, "TEST-FIRST REFUSED:", "SEALED REFUSED:")):
             return 4
+        if str(result).startswith("SLICE REFUSED:"):     # #2006: refused before any branch or record change
+            return 2
         return 0
-    print("usage: work.py start|commit|pr|rebase|post-review|merge|finish <sdlc_dir> <goal>\n"
+    print("usage: work.py start|commit|pr|rebase|post-review|merge|finish|slice <sdlc_dir> <goal>\n"
           "         start [--session-pid <pid>]   commit --message \"<text>\"   finish [--force]\n"
           "         post-review --verdict approve|block|unblock --evidence <path> [--reason \"<changes>\"]\n"
           "       work.py record-plan-review <sdlc_dir> <goal> --verdict SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST "
