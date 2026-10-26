@@ -32,6 +32,10 @@ ALLOW = Verdict(False, None, None, "", "")
 
 BODY_MARKER = "Raised automatically by the SDLC loop"
 OWN_LABEL_KEYS = ("goal_label", "parked_label", "follow_up_label")
+#: A release undoes Sigma's own claim or block, so the claim/block label itself marks the issue as one Sigma touched
+#: (#2063). Only `release` reads these: another write on an issue carrying just a claim label is still foreign.
+RELEASE_LABEL_KEYS = ("in_progress_label", "goal_blocked_label")
+HARD_STOP_QKIND = "needs_decision"
 _ALIAS = {"deploy": "production_change", "delete": "destroy", "overwrite": "rewrite_history",
           "spend": "spend", "migrate": "production_change"}
 
@@ -128,9 +132,9 @@ def guard(action_text, context, config):
         return Verdict(True, _hs().CANNOT_TELL, "error", "", "hard stop: cannot tell (guard error)")
 
 
-def _sigma_created(source, info):
+def _sigma_created(source, info, op=None):
     labels = {(l.get("name") if isinstance(l, dict) else l) for l in (info.get("labels") or [])}
-    own = {getattr(source, k, None) for k in OWN_LABEL_KEYS}
+    own = {getattr(source, k, None) for k in OWN_LABEL_KEYS + (RELEASE_LABEL_KEYS if op == "release" else ())}
     own.discard(None)
     if labels & own:
         return True
@@ -156,7 +160,7 @@ def guard_issue_write(source, issue, op, via_guard=False, config=None):
             return ALLOW
         try:
             info = source._read_issue(issue, ["labels", "body"])
-            created = _sigma_created(source, info)
+            created = _sigma_created(source, info, op)
         except Exception:
             created = False
         if created:
@@ -179,11 +183,20 @@ def is_sigma_issue(source, issue, config=None):
         return False
 
 
+def _qkind_line():
+    spec = importlib.util.spec_from_file_location("qkind", _HERE / "qkind.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m.render_line(HARD_STOP_QKIND)
+
+
 def park_issue(source, issue, verdict):
     """The guard's own park write: exempt from guarding (parking is the remedy). Best effort; never raises."""
     _IN_GUARD.append(1)
     try:
-        source.park(issue, verdict.reason)
+        # #2063: a typed park that asks its question. Untyped, it read as `unknown` and stopped the whole drain.
+        source.park(issue, "%s. A person must decide whether Sigma may write to this issue; answer with "
+                           "/sigma-unpark.\n%s" % (verdict.reason, _qkind_line()))
     except Exception:
         pass
     finally:
