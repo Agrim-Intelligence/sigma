@@ -47,7 +47,8 @@ python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" session-end .sdlc --
    subagent per phase, the worktree, Research to Review, Retrospective, then verify, commit, PR,
    post-PR review, merge and `record`. Follow them as written; nothing here restates them, with one
    change: where step 3 says to loop back to step 1 and take the next goal (a pre-check printed
-   `PARKED <reason>`), this run never loops back to step 1 — it ends there, **parked**. It never takes
+   `PARKED <reason>` or `BLOCKED <reason>`), this run never loops back to step 1 — it ends there,
+   **parked**. It never takes
    step 7 (no refill), never calls `next-batch`, and never calls `loop.py claim`.
 4. **End the session** with the `session-end` above, on every ending.
 5. **Say which ending**, as below.
@@ -73,7 +74,8 @@ Keyed on the last `record` verb. Which `work.py merge` line leads to which verb 
 |---|---|
 | `record done` succeeded | **merged** |
 | `record parked "<reason>" --qkind <kind>` | **parked** — `record` posts the reason on the issue |
-| a step-3 pre-check (`precheck`, `decompose-check`, `design-check`) printed `PARKED <reason>` | **parked** — the pre-check has already posted the reason on the issue |
+| a step-3 pre-check (`precheck`, `decompose-check`, `design-check`) printed `PARKED <reason>` or `BLOCKED <reason>` | **parked** — the pre-check has already posted the reason on the issue |
+| step 3a stopped: `agent-start` exited nonzero, or `work.py start` exited 4 | **failed (not started)** for `agent-start` (another live agent may own N); for exit 4, **parked** when it printed a conflict it parked, else **failed (not started)** — it has already released or parked N, so never `record` on top of it |
 | `record review` | **parked, awaiting merge (not `sdlc:parked`)** — `record review` posts why on the issue; see below |
 | `record failed "<reason>"` | **failed** — the reason is on the issue and in the final message |
 | the pick printed `loop.py: --land #<N> not taken (not started): <why>`, `BUDGET` or `HANDOFF`, or refused with exit 2 | **failed (not started)** — that line is the reason. Nothing was claimed. A refusal at attach, scope or owner may have left a hold and a comment on N, which say what a person must do; a re-run after they act takes N |
@@ -104,11 +106,17 @@ UNMEASURED live.
 A crashed or killed run leaves N carrying `sdlc:in-progress`, perhaps with a pushed branch or an open
 PR. A re-run then reports `not taken (not started): it carries sdlc:in-progress`, because `--land`
 never reclaims a claim — reclaiming is a sweep, and this run writes to N only through its own pick.
-The lever is a person's: look at the issue for an open PR (merge or close it), then run
-`python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" release .sdlc <N> "<why>"`, which removes
-the claim with an audit comment, and start `--land` again. With `ledger.enabled`, an unscoped
-`/sigma-loop` pick also reclaims a claim whose lease is older than `ledger.lease.ttl_hours`.
-UNMEASURED live.
+The lever is a person's, and it depends on the PR:
+
+- **The PR merged** (or the person merges it now): the work has landed. Close N if GitHub did not
+  (a `Refs #N` body never closes it). Do not re-run `--land`: it would redo merged work.
+- **The PR was closed, or there is none:** run
+  `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" release .sdlc <N> "<why>"`, which
+  removes the claim with an audit comment, then start `--land` again.
+
+An unscoped `/sigma-loop` pick reclaims a claim whose lease is older than `ledger.lease.ttl_hours`
+only where `ledger.enabled` is on and that checkout's ledger holds the dead run's claim, which a
+container's ledger is not guaranteed to reach. UNMEASURED live.
 
 ## In a Claude Code cloud session
 

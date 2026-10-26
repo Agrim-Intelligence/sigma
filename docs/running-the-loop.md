@@ -27,8 +27,9 @@ post-PR review, merge) — with no gate pauses, and parks wherever the loop woul
 
 > **While a `--land` run is active, no goal other than the one it names may be picked, and no other goal is written to.**
 
-The one exception: with `ledger.enabled`, the loop's verbs keep the ledger watcher alive, and its
-sweeps are its own. The run ends in exactly one of **merged**, **parked** (the reason is posted on the
+Three exceptions, named in the skill: the ledger watcher (`ledger.enabled`), whose sweeps are its
+own; new issues the run files through `handoff.py`; and, with `backlog_check.enabled`, the
+pre-check's resolution of N's own blockers. The run ends in exactly one of **merged**, **parked** (the reason is posted on the
 issue; "awaiting merge" is reported as parked too, with its reason) or **failed** (reason given;
 "not started" when the pick did not take N), and its final message says which. It needs
 `work.enabled: true` and `work.auto_merge` of `protected` or `always`, and refuses up front otherwise.

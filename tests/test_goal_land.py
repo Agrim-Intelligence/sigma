@@ -626,8 +626,8 @@ GOAL = "42"
 
 
 def _graphql_shaped(line):
-    return (line.startswith(("gh pr ", "gh issue ", "gh repo view")) or "graphql" in line
-            or line.startswith(("pr ", "issue ", "repo view")))
+    return (line.startswith(("gh pr ", "gh issue ", "gh repo view", "gh project ")) or "graphql" in line
+            or line.startswith(("pr ", "issue ", "repo view", "project ")))
 
 
 class CloudGitHub:
@@ -853,13 +853,25 @@ def test_park_reasons_are_surfaced_on_the_issue_and_in_the_final_message():
 def test_a_pre_check_park_ends_the_run_parked_and_never_loops_back():
     flat = _flat(LAND)
     assert "never loops back to step 1" in flat
-    assert "a step-3 pre-check (`precheck`, `decompose-check`, `design-check`) printed `PARKED <reason>` | **parked**" in flat
+    assert "a step-3 pre-check (`precheck`, `decompose-check`, `design-check`) printed `PARKED <reason>`" in flat
     assert "loop back to step 1" in _flat(LOOP_SKILL), "the loop step this overrides moved"
 
 
-def test_the_handoff_exception_is_named_beside_the_sentence():
-    after = _flat(SKILL).split(_flat(SENTENCE), 1)[1][:700]
+def test_the_handoff_and_blocker_exceptions_are_named_beside_the_sentence():
+    after = _flat(SKILL).split(_flat(SENTENCE), 1)[1][:900]
     assert "`handoff.py`" in after and "NEW issue, never an existing goal" in after
+    assert "`backlog_check.enabled`" in after and "blocker issues" in after
+
+
+def test_a_blocked_pre_check_and_a_step_3a_stop_have_endings():
+    flat = _flat(LAND)
+    assert "`PARKED <reason>` or `BLOCKED <reason>` | **parked**" in flat
+    assert '"BLOCKED "' in LOOP_PY, "precheck no longer prints BLOCKED; the row is stale"
+    assert "step 3a stopped: `agent-start` exited nonzero, or `work.py start` exited 4" in flat
+
+
+def test_the_crash_lever_never_reruns_merged_work():
+    assert "Do not re-run `--land`: it would redo merged work." in _flat(LAND)
 
 
 def test_a_crashed_run_names_its_lever():
