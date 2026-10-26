@@ -1813,6 +1813,159 @@ def test_doctor_trust_read_agrees_with_the_loops_own_policy():
         assert d._verify_trusted(pathlib.Path(t)) == sp.repository_shell_commands_allowed(t) is False
 
 
+# --- #2066: the trust row names its source; the hint offers the environment approval, hash only ---------------
+
+_APPROVAL_ENV = "SIGMA_TRUSTED_VERIFY_SHA256"
+_MARKED = "pytest -q --marker-XYZZY"
+
+
+def _sp():
+    spec = importlib.util.spec_from_file_location(
+        "shell_policy", D.parent.parent.parent / "sigma-loop" / "scripts" / "shell_policy.py")
+    sp = importlib.util.module_from_spec(spec); spec.loader.exec_module(sp)
+    return sp
+
+
+_TOKEN_ORIGIN = "".join(["https://x-access-token", ":", "ghs", "_TOKEN123", "@", "github.com/Owner/Repo.git"])
+
+
+def _origin_project(t, command=_MARKED, origin=_TOKEN_ORIGIN):
+    base = _git_project(t, {"enforce": True, "command": command})
+    subprocess.run(["git", "-C", t, "remote", "add", "origin", origin], check=True)
+    return base
+
+
+def test_trust_row_reports_the_environment_source(monkeypatch):
+    d = _doc()
+    with tempfile.TemporaryDirectory() as t:
+        base = _origin_project(t)
+        monkeypatch.setenv(_APPROVAL_ENV, _sp().approval_value("owner/repo", _MARKED))
+        row = _trust_row(d, base)
+        assert row["ok"] is True
+        assert "environment approval" in row["fix"] and "owner/repo" in row["fix"] and "git-local" not in row["fix"]
+
+
+def test_trust_row_reports_the_git_local_source():
+    d = _doc()
+    with tempfile.TemporaryDirectory() as t:
+        base = _origin_project(t)
+        subprocess.run(["git", "-C", t, "config", "--local", _TRUST_KEY, "true"], check=True)
+        row = _trust_row(d, base)
+        assert row["ok"] is True and "git-local" in row["fix"]
+
+
+def test_trust_hint_prints_the_value_never_the_command(monkeypatch):
+    d = _doc()
+    with tempfile.TemporaryDirectory() as t:
+        base = _origin_project(t)
+        value = _sp().approval_value("owner/repo", _MARKED)
+        fix = _trust_row(d, base)["fix"]
+        assert "%s=%s" % (_APPROVAL_ENV, value) in fix and "owner/repo" in fix
+        assert "XYZZY" not in fix and "TOKEN123" not in fix
+        monkeypatch.setenv(_APPROVAL_ENV, "tok-SECRET123")
+        fix = _trust_row(d, base)["fix"]
+        assert "malformed" in fix and "SECRET123" not in fix and value in fix
+
+
+def test_trust_hint_is_operator_only_and_says_inspect():
+    d = _doc()
+    with tempfile.TemporaryDirectory() as t:
+        fix = _trust_row(d, _origin_project(t))["fix"]
+        assert "inspect" in fix and "verify.command" in fix
+        assert "never an agent" in fix and "export " not in fix
+        assert "config --local %s true" % _TRUST_KEY in fix and "loop.py verify" in fix   # #615's pins hold
+
+
+@pytest.mark.parametrize("arrange, reason", [
+    ("mismatch", "does not match"),
+    ("vetoed", "false or not a boolean"),
+    ("sourced", ".claude/settings.json"),
+    ("no-origin", "does not name an owner/name"),
+])
+def test_trust_hint_names_the_reason(monkeypatch, arrange, reason):
+    d, sp = _doc(), _sp()
+    with tempfile.TemporaryDirectory() as t:
+        if arrange == "no-origin":
+            base = _git_project(t, {"enforce": True, "command": _MARKED})
+        else:
+            base = _origin_project(t, origin="https://github.com/Owner/Repo.git")
+        good = sp.approval_value("owner/repo", _MARKED)
+        monkeypatch.setenv(_APPROVAL_ENV, sp.approval_value("owner/repo", "other") if arrange == "mismatch" else good)
+        if arrange == "vetoed":
+            subprocess.run(["git", "-C", t, "config", "--local", _TRUST_KEY, "false"], check=True)
+        if arrange == "sourced":
+            settings = pathlib.Path(t) / ".claude" / "settings.json"
+            settings.parent.mkdir()
+            settings.write_text('{"env": {"%s": "x"}}' % _APPROVAL_ENV)
+            subprocess.run(["git", "-C", t, "add", "-f", ".claude/settings.json"], check=True)
+        row = _trust_row(d, base)
+        assert row["ok"] is False and reason in row["fix"], row["fix"]
+
+
+def test_doctor_trust_row_agrees_with_verify_decision(monkeypatch):
+    """The doctor reads the environment through shell_policy itself (one home); its row must say what the loop
+    would decide, across git-local states and environment values."""
+    d, sp = _doc(), _sp()
+    good = sp.approval_value("owner/repo", "pytest -q")
+    values = (None, "", good, sp.approval_value("owner/repo", "other"), good.upper(), good + "," + good)
+    for local in (None, "true", "false", "maybe"):
+        for value in values:
+            with tempfile.TemporaryDirectory() as t:
+                base = _origin_project(t, command="pytest -q", origin="https://github.com/Owner/Repo.git")
+                if local is not None:
+                    subprocess.run(["git", "-C", t, "config", "--local", _TRUST_KEY, local], check=True)
+                if value is None:
+                    monkeypatch.delenv(_APPROVAL_ENV, raising=False)
+                else:
+                    monkeypatch.setenv(_APPROVAL_ENV, value)
+                want = sp.verify_decision(pathlib.Path(t), ["pytest -q"]).source is not None
+                assert _trust_row(d, base)["ok"] is want, (local, value)
+
+
+def test_trust_row_without_shell_policy_is_git_local_only(monkeypatch):
+    d, sp = _doc(), _sp()
+    with tempfile.TemporaryDirectory() as t:
+        base = _origin_project(t, command="pytest -q", origin="https://github.com/Owner/Repo.git")
+        monkeypatch.setenv(_APPROVAL_ENV, sp.approval_value("owner/repo", "pytest -q"))
+        real = d._load_loop_script
+        def broken(name):
+            if name == "shell_policy":
+                raise ImportError("no shell_policy here")
+            return real(name)
+        monkeypatch.setattr(d, "_load_loop_script", broken)
+        assert _trust_row(d, base)["ok"] is False
+        subprocess.run(["git", "-C", t, "config", "--local", _TRUST_KEY, "true"], check=True)
+        assert _trust_row(d, base)["ok"] is True
+
+
+@pytest.mark.parametrize("command", [["pytest", "-q"], "pytest \udcff"], ids=["list", "lone-surrogate"])
+def test_a_bad_verify_command_never_crashes_the_trust_row_or_the_gesture(tmp_path, monkeypatch, command):
+    """S3 (diff review): repository input of the wrong type must give a red row and exit 2, never a traceback."""
+    d, sp = _doc(), _sp()
+    base = _origin_project(str(tmp_path), command=command, origin="https://github.com/Owner/Repo.git")
+    monkeypatch.setenv(_APPROVAL_ENV, sp.approval_value("owner/repo", "pytest -q"))
+    assert _trust_row(d, base)["ok"] is False
+    done = subprocess.run([sys.executable, "-I", str(D), "verify-approval", ".sdlc"], cwd=tmp_path,
+                          env=dict(os.environ, HOME=str(tmp_path / "home")), capture_output=True, text=True, timeout=60)
+    assert done.returncode == 2 and "Traceback" not in done.stderr, done.stderr
+
+
+def test_verify_approval_prints_the_value_never_the_command(tmp_path):
+    command = "uv run pytest -n {workers} --marker-XYZZY"
+    _origin_project(str(tmp_path), command=command)
+    env = dict(os.environ, HOME=str(tmp_path / "home"))
+    done = subprocess.run([sys.executable, "-I", str(D), "verify-approval", ".sdlc"], cwd=tmp_path, env=env,
+                          capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+    assert "repository: owner/repo" in done.stdout
+    assert "%s=%s" % (_APPROVAL_ENV, _sp().approval_value("owner/repo", command)) in done.stdout
+    assert "XYZZY" not in done.stdout + done.stderr and "TOKEN123" not in done.stdout + done.stderr
+    subprocess.run(["git", "-C", str(tmp_path), "remote", "remove", "origin"], check=True)
+    done = subprocess.run([sys.executable, "-I", str(D), "verify-approval", ".sdlc"], cwd=tmp_path, env=env,
+                          capture_output=True, text=True, timeout=60)
+    assert done.returncode == 2 and _APPROVAL_ENV + "=" not in done.stdout
+
+
 # --- ledger.autowatch: dashboard row + enabled-but-unwired warning (#1321) --------------------
 
 def test_features_autowatch_absent_block_is_off():

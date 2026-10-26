@@ -6389,8 +6389,14 @@ def red_goal(sdlc_dir, goal):
         print(f"loop.py red: unsafe goal {goal!r}: {reason}", file=sys.stderr)
         return 2
     root, _, _ = _verified_tree(sdlc_dir, stem)
-    if not shell_policy.repository_shell_commands_allowed(root):
-        print("loop.py red: " + shell_policy.refusal_message(), file=sys.stderr)
+    # #2066: the same decision `verify` asks, with the same declared commands; an unreadable declaration grants nothing.
+    try:
+        commands = state.declared_verify_commands(goal, state.load_config(sdlc_dir), sdlc_dir)
+    except Exception:                        # noqa: BLE001 - the environment approval then reads it as an error
+        commands = None
+    trust = shell_policy.verify_decision(root, commands, roots=(pathlib.Path(sdlc_dir).resolve().parent,))
+    if trust.source is None:
+        print("loop.py red: " + shell_policy.verify_refusal_message(trust), file=sys.stderr)
         return 2
     try:
         plan = work.verification_plan(sdlc_dir, stem, root)
@@ -6532,8 +6538,10 @@ def _verify_goal_body(sdlc_dir, goal, guard):
         print(f"loop.py verify: goal {goal!r} has no work record — verifying the PROJECT ROOT "
               f"({root}) at {head or 'unknown HEAD'}, NOT a goal worktree. If that checkout is "
               f"stale, this result is about the wrong code.", file=sys.stderr)
-    if not shell_policy.repository_shell_commands_allowed(root):
-        print("loop.py verify: " + shell_policy.refusal_message(), file=sys.stderr)
+    # #2066: the git-local grant, or an operator's environment approval of exactly these commands in this repository.
+    trust = shell_policy.verify_decision(root, commands, roots=(pathlib.Path(sdlc_dir).resolve().parent,))
+    if trust.source is None:
+        print("loop.py verify: " + shell_policy.verify_refusal_message(trust), file=sys.stderr)
         ledger.safe_append(sdlc_dir, "verify", goal, config=config, stream=ledger.EVENTS, exit=2)
         actionlog.safe_append(sdlc_dir, goal, "verify_run", exit=2)
         return 2
@@ -6646,7 +6654,7 @@ def _verify_goal_body(sdlc_dir, goal, guard):
                                "acceptance_sha256": acceptance_hash,
                                "verify_state": "pass" if proc.returncode == 0 else "fail",
                                "at": time.time(), "run": this_run, "pid": os.getpid(),
-                               "root": root, "head": head,
+                               "root": root, "head": head, "trust": trust.source,
                                "content": content_after,
                                "flake": flake,
                                "test_first": test_first,

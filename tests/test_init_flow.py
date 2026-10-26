@@ -1293,6 +1293,26 @@ def test_teammate_clone_with_a_committed_verify_command_is_told_to_trust_it(tmp_
 
 
 @posix_only
+def test_environment_approval_trusts_a_fresh_clone_without_git_local(tmp_path):
+    """#2066: a fresh clone (no git-local grant) whose environment approves this exact command for this repository
+    reads [ok] and verifies; an approval of another command reads [trust] and refuses. Real subprocesses."""
+    spec = importlib.util.spec_from_file_location("shell_policy", ROOT / "skills" / "sigma-loop" / "scripts" / "shell_policy.py")
+    sp = importlib.util.module_from_spec(spec); spec.loader.exec_module(sp)
+    cmd = "%s -c 'print(1)'" % sys.executable
+    t = _committed_verify_clone(tmp_path, cmd)
+    identity = sp.repository_identity(t["repo"])
+    assert identity
+    t["env"] = dict(t["env"], SIGMA_TRUSTED_VERIFY_SHA256=sp.approval_value(identity, cmd + " --other"))
+    assert "[trust] verify" in _verify_section(_rerun_init(t).stdout)
+    assert _run(t, [LOOP, "verify", ".sdlc", "0001-example"]).returncode == 2
+    t["env"]["SIGMA_TRUSTED_VERIFY_SHA256"] = sp.approval_value(identity, cmd)
+    section = _verify_section(_rerun_init(t).stdout)
+    assert "[ok] verify" in section and "[trust]" not in section, section
+    ok = _run(t, [LOOP, "verify", ".sdlc", "0001-example"])
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+
+
+@posix_only
 def test_trust_line_never_puts_the_repository_command_inside_the_gesture(tmp_path):
     """A committed command is hostile input: it must not read as part of a flag, an [ask] machine part or the
     gesture. It appears once, alone, as a JSON string."""

@@ -531,6 +531,54 @@ def test_red_refuses_when_repository_shell_commands_not_allowed(case, monkeypatc
     assert lp.shell_policy.refusal_message() in out(capsys)
 
 
+_APPROVAL_ENV = 'SIGMA_TRUSTED_VERIFY_SHA256'
+
+
+def _approved_red_env(case, monkeypatch, command='true'):
+    """#2066: no git-local grant; `origin` names owner/repo and the environment approves `command` there."""
+    lp = red_env(case, monkeypatch, allow=False)
+    subprocess.run(['git', '-C', str(case[0]), 'remote', 'add', 'origin', 'https://github.com/Owner/Repo.git'],
+                   check=True)
+    monkeypatch.setenv(_APPROVAL_ENV, lp.shell_policy.approval_value('owner/repo', command))
+    return lp
+
+
+def test_red_accepts_the_environment_approval(case, monkeypatch):
+    lp = _approved_red_env(case, monkeypatch)
+    assert lp.red_goal(case[1], '42') == 0
+    assert len(rows(case, NODE)) == 1
+
+
+def test_red_refuses_a_mismatched_or_widened_environment_approval(case, monkeypatch, capsys):
+    lp = _approved_red_env(case, monkeypatch, command='make test')
+    no_pytest(lp, monkeypatch)
+    assert lp.red_goal(case[1], '42') == 2
+    assert 'does not approve every command' in out(capsys)
+    monkeypatch.setenv(_APPROVAL_ENV, lp.shell_policy.approval_value('owner/repo', 'true'))
+    (case[1] / 'acceptance').mkdir()
+    (case[1] / 'acceptance' / '42.md').write_text(
+        '---\nkind: "acceptance"\ngoal: "42"\nverify_command: "echo widened"\n---\n'
+        '## Done when\n- [ ] it works\n- [ ] it is tested\n- [ ] it is documented\n')
+    assert lp.red_goal(case[1], '42') == 2
+    assert 'does not approve every command' in out(capsys)
+    (case[1] / 'acceptance' / '42.md').unlink()
+    goal = case[1] / 'goals' / '42.md'
+    goal.parent.mkdir(exist_ok=True)
+    goal.write_text('---\nid: 42\nstatus: pending\nverify_command: echo replaced\n---\n')
+    assert lp.red_goal(case[1], str(goal)) == 2
+    assert 'does not approve every command' in out(capsys)
+
+
+def test_red_reports_error_for_an_invalid_acceptance_record(case, monkeypatch, capsys):
+    lp = _approved_red_env(case, monkeypatch)
+    no_pytest(lp, monkeypatch)
+    (case[1] / 'acceptance').mkdir()
+    (case[1] / 'acceptance' / '42.md').write_text(
+        '---\nkind: "acceptance"\ngoal: "42"\nverify_command: 7\n---\n## Done when\n- [ ] x\n')
+    assert lp.red_goal(case[1], '42') == 2
+    assert 'could not be checked' in out(capsys)
+
+
 def _verify_receipt(lp, case, pid):
     path = lp._rr.receipt_path(case[1], '42', 'call-runs', 'verify')
     lp._rr.write(path, outcome='running', pid=pid, started_at=int(time.time()), timeout_seconds=3600,

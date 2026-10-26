@@ -393,6 +393,7 @@ _NOT_MARKERS = ("sigma-doctor", "sigma-doctor:", "sigma-init", "sigma-init:", "s
                 "sigma-upkeep-",   # new with #1085: a tempfile prefix for the replay worktree parent, not a marker
                 "sigma-sealed", "sigma-sealed-",   # new with #847: a state-record schema id and a tempdir prefix, not markers
                 "sigma-sealed-retired",   # new with #855: the tombstone's schema id, not a marker
+                "sigma-verify-approval",   # new with #2066: a hash domain prefix, never written as a marker
                 "sigma-breaker-",   # new with #853: a tempdir prefix for the breaker's empty working directory, not a marker
                 "sigma-reset-at:",   # new with #1563: a plain park-comment line, no legacy spelling
                 "sigma-extension")   # new with the quality checklist: the `origin` value of a category, data not a marker

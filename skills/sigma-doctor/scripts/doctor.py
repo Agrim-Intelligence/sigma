@@ -186,6 +186,106 @@ def _verify_trusted(repo):
     return r.returncode == 0 and r.stdout.strip().lower() == "true"
 
 
+_VERIFY_TRUST_ROW = "verify command trusted in this checkout"
+#: #2066: why an environment value that is set did not grant, as the doctor says it (shell_policy's reasons).
+_ENV_APPROVAL_STATES = {
+    "empty": "is set here but empty.",
+    "malformed": "is set here but malformed: it must be exactly one 64-character lowercase hex value.",
+    "mismatch": "is set here but does not match the current verify.command in %s (the command changed, or it "
+                "approves another).",
+    "vetoed": "is set here but this checkout's git-local sigma.allowRepositoryShellCommands is false or not a "
+              "boolean, which vetoes it.",
+    "repository-sourced": "is set here but the tracked file %s names it, and a repository cannot approve its own "
+                          "command.",
+    "location-variable": "is set here but %s set in the process environment would send git to another repository.",
+    "error": "is set here but could not be checked.",
+}
+
+
+def _verify_trust_row(project, command):
+    """#615/#2066: may `loop.py verify` run the configured command here, and on whose say-so? The environment
+    approval is read through sigma-loop's `shell_policy` itself (one home for it, never a copy); if that cannot be
+    loaded, only the git-local grant is read, so the row fails closed. The command is repository input and the
+    variable's value may be a mis-pasted secret: neither is ever printed, only the hash to set."""
+    try:
+        sp = _load_loop_script("shell_policy")
+        decision = sp.verify_decision(project, [command])
+    except Exception:                        # noqa: BLE001 - without the policy module only git-local can be read
+        sp = decision = None
+    source = decision.source if decision is not None else ("git-local" if _verify_trusted(project) else None)
+    if source == "git-local":
+        return {"name": _VERIFY_TRUST_ROW, "ok": True,
+                "fix": "trusted by this checkout's git-local grant (sigma.allowRepositoryShellCommands)"}
+    if source == "environment":
+        return {"name": _VERIFY_TRUST_ROW, "ok": True,
+                "fix": "trusted by the environment approval (%s) for %s" % (sp.TRUSTED_VERIFY_ENV, decision.detail)}
+    if not _in_git_worktree(project):
+        return _chk(_VERIFY_TRUST_ROW, False,
+                    "verify.command is set but this is not a Git worktree, so it can never be trusted "
+                    "and `loop.py verify` refuses it. Run Sigma inside the repository.")
+    gesture = ("inspect the verify command in .sdlc/config.json, then run once in this checkout: "
+               "git -C <project> config --local sigma.allowRepositoryShellCommands true "
+               "(git-local, so it is not committed or cloned; every checkout does this once). "
+               "Until then `loop.py verify` refuses the command.")
+    try:
+        return _chk(_VERIFY_TRUST_ROW, False, gesture + _environment_hint(sp, decision, project, command))
+    except Exception:                        # noqa: BLE001 - a command no value can be made for gets no hint
+        return _chk(_VERIFY_TRUST_ROW, False, gesture)
+
+
+def _environment_hint(sp, decision, project, command):
+    """The environment alternative for a refused row: for this repository only, operator-set, hash only."""
+    if sp is None:
+        return ""
+    identity = decision.detail if decision.reason == "mismatch" else sp.repository_identity(project)
+    if identity is None:
+        return (" An environment approval cannot apply here: this checkout's one local origin URL does not name an "
+                "owner/name repository.")
+    hint = (" Or, to approve this exact command for every checkout of %s in one environment (a Claude Code cloud "
+            "environment, say), the operator, never an agent, inspects verify.command in .sdlc/config.json and "
+            "then sets %s=%s in that environment's own settings (docs/cloud-sessions.md)."
+            % (identity, sp.TRUSTED_VERIFY_ENV, sp.approval_value(identity, command)))
+    state = _ENV_APPROVAL_STATES.get(decision.reason)
+    if state:
+        detail = identity if decision.reason == "mismatch" else json.dumps(str(decision.detail))
+        hint += " %s %s" % (sp.TRUSTED_VERIFY_ENV, state % detail if "%s" in state else state)
+    return hint
+
+
+def _verify_approval(sdlc_dir):
+    """#2066 `doctor.py verify-approval [sdlc_dir]`: the value an operator sets in an environment's own settings to
+    approve this checkout's verify.command for its repository. Prints the repository and the value, never the
+    command or the remote URL. Exit 2 when there is no command or no repository identity."""
+    command = _block(_cfg(sdlc_dir), "verify").get("command")
+    if not command:
+        print("verify-approval: no verify.command in %s/config.json, so there is nothing to approve" % sdlc_dir,
+              file=sys.stderr)
+        return 2
+    try:
+        sp = _load_loop_script("shell_policy")
+    except Exception as exc:                 # noqa: BLE001 - a partial install says so and prints no value
+        print("verify-approval: cannot load sigma-loop's shell_policy (%s)" % type(exc).__name__, file=sys.stderr)
+        return 2
+    identity = sp.repository_identity(pathlib.Path(os.path.abspath(sdlc_dir)).parent)
+    if identity is None:
+        print("verify-approval: this checkout's one local origin URL does not name an owner/name repository, so an "
+              "environment approval cannot apply here", file=sys.stderr)
+        return 2
+    try:
+        value = sp.approval_value(identity, command)
+    except Exception as exc:                 # noqa: BLE001 - a command that is not one valid UTF-8 string
+        print("verify-approval: no value can be made for this verify.command (%s)" % type(exc).__name__,
+              file=sys.stderr)
+        return 2
+    print("repository: " + identity)
+    print("%s=%s" % (sp.TRUSTED_VERIFY_ENV, value))
+    print("Inspect verify.command in .sdlc/config.json before approving it. Only the operator sets this, in the "
+          "environment's own settings (for a Claude Code cloud environment, its environment variables); an agent "
+          "never sets it. It approves this exact command in this repository only: a changed command needs a new "
+          "value.")
+    return 0
+
+
 def _in_git_worktree(repo):
     try:
         r = subprocess.run(["git", "-C", str(repo), "rev-parse", "--is-inside-work-tree"],
@@ -4455,19 +4555,9 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     # #615: a configured verify command only runs once THIS checkout granted the git-local trust (#422);
     # git config is not cloned, so every migrated repo and every teammate's new clone starts without it
     # and its first `loop.py verify` is refused (with enforce on, every goal stalls). Command text is
-    # repository input: it is never put in the fix line.
+    # repository input: it is never put in the fix line. #2066: an operator's environment approval also counts.
     if verify.get("command"):
-        project = pathlib.Path(os.path.abspath(sdlc_dir)).parent
-        trusted = _verify_trusted(project)
-        if _in_git_worktree(project):
-            gesture = ("inspect the verify command in .sdlc/config.json, then run once in this checkout: "
-                       "git -C <project> config --local sigma.allowRepositoryShellCommands true "
-                       "(git-local, so it is not committed or cloned; every checkout does this once). "
-                       "Until then `loop.py verify` refuses the command.")
-        else:
-            gesture = ("verify.command is set but this is not a Git worktree, so it can never be trusted "
-                       "and `loop.py verify` refuses it. Run Sigma inside the repository.")
-        out.append(_chk("verify command trusted in this checkout", trusted, gesture))
+        out.append(_verify_trust_row(pathlib.Path(os.path.abspath(sdlc_dir)).parent, verify.get("command")))
 
     # A backlog cross-check whose park_threshold sits BELOW its candidate threshold parks EVERYTHING it
     # finds — the opposite of "confident hits only". Flag it (only when the feature is actually on).
@@ -6938,13 +7028,15 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
 
 
 USAGE = ("usage: doctor.py check [sdlc_dir] [--progress] | features [sdlc_dir] | hygiene [sdlc_dir] [repo_root]"
-         " | rules [sdlc_dir] [repo_root]")
+         " | rules [sdlc_dir] [repo_root] | verify-approval [sdlc_dir]")
 
 
 def main(argv):
     if argv[1:] in (["-h"], ["--help"]):
         print(USAGE)
         return 0
+    if len(argv) >= 2 and argv[1] == "verify-approval":
+        return _verify_approval(argv[2] if len(argv) > 2 else ".sdlc")
     if len(argv) >= 2 and argv[1] == "features":
         for name, state, enable in features(argv[2] if len(argv) > 2 else ".sdlc"):
             print(f"  {name}: {state}\n      enable/change: {enable}")
