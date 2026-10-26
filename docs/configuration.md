@@ -140,3 +140,6 @@ gives the budget, the worst case and the owner-only `work.py quality-waive` verb
 park caused only by those counts waits for: `"park"` (default, PROVISIONAL) waits for a person, who is asked to arm it;
 `"defer"` lets the auto-unpark sweep re-arm it, highest priority first, once the counter has room (it needs the
 auto-unpark sweep to be on). A depth, deny-list or unreadable-counter park is never re-armed this way. Any other value reads `"park"`.
+A re-armed goal is held back from the same call's pick, like any goal the sweep unparks. A re-arm the counter cannot record
+is put back to parked and the pass stops there, so the cap holds even when the counter file cannot be written; the sweep
+reports it as a failed `count` action, and a later pass retries once the file is fixed.
