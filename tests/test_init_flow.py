@@ -206,7 +206,10 @@ if argv and argv[0] == "api":
         print(json.dumps(issue_json(n, s["issues"][n]))); sys.exit(0)
     else:
         unhandled(argv, "unmodelled endpoint")
-    print(json.dumps(items[(page - 1) * per_page: page * per_page])); sys.exit(0)
+    page_items = json.dumps(items[(page - 1) * per_page: page * per_page])
+    if "-i" in argv:                      # #2022: a conditional read asks for headers; answer like gh api -i (200, no ETag)
+        print("HTTP/2.0 200 OK\r\nContent-Type: application/json\r\n\r\n" + page_items); sys.exit(0)
+    print(page_items); sys.exit(0)
 unhandled(argv, "unmodelled verb")
 '''
 

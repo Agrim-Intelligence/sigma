@@ -18,6 +18,10 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-doctor/scripts/host_config_scan.py",
+      "role": "gesture"
+    },
+    {
       "path": "skills/sigma-doctor/scripts/migrate.py",
       "role": "gesture"
     }
