@@ -305,6 +305,24 @@ def _no_host_session_ids(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _restore_run_identity_env():
+    """`loop.py start|next --session-pid` run in-process exports SIGMA_RUN_ID (and `start` also
+    SIGMA_SESSION_GENERATION) into this process, so its own children inherit it. Unrestored, a later test in
+    the same worker inherits it too: a subprocess `loop.py next` then runs as a headless worker and skips the
+    knowledge-graph warning (test_kg_auto_refresh's once-a-day pick test failed after
+    test_context_handoff_2027's bare-handoff test on one xdist worker). Each test ends with the values it
+    started with."""
+    names = ("SIGMA_RUN_ID", "SIGMA_SESSION_GENERATION")
+    saved = {n: os.environ.get(n) for n in names}
+    yield
+    for n, value in saved.items():
+        if value is None:
+            os.environ.pop(n, None)
+        else:
+            os.environ[n] = value
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_graphql_capability_env(monkeypatch):
     """#801: a cloud/CI shell that exports CLAUDE_CODE_REMOTE or SIGMA_GH_GRAPHQL must not add a
     capability row to (or otherwise perturb) unrelated tests. Tests that want the signal set it."""
