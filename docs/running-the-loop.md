@@ -15,6 +15,25 @@ One goal through the engine, **pausing for your approval at each gate**. Take a 
 before "done"). It does **not** auto-proceed past checkpoints — you approve each one. The outcome is
 recorded to `.sdlc/` (`done`, or `parked` with a reason) so it shows in `/sigma-status`.
 
+### `/sigma-goal <N> --land` — one named goal, unattended
+
+The same run with nobody in the loop, for ONE GitHub issue you picked — built for starting one
+Claude Code cloud container per issue. It selects through the loop's own picker scoped to N
+(`loop.py next --land N`), so N is taken only when `/sigma-loop` would take it: open, labelled
+`sdlc:goal`, not parked, blocked, in progress or awaiting merge, with no open prerequisite and no
+live claim held by another run. It then runs `/sigma-loop`'s own per-goal steps for N — the phase
+subagents at the resolved tier, Plan-Review, review and verify, then the landing path (commit, PR,
+post-PR review, merge) — with no gate pauses, and parks wherever the loop would park.
+
+> **While a `--land` run is active, no goal other than the one it names may be picked, and no other goal is written to.**
+
+The one exception: with `ledger.enabled`, the loop's verbs keep the ledger watcher alive, and its
+sweeps are its own. The run ends in exactly one of **merged**, **parked** (the reason is posted on the
+issue; "awaiting merge" is reported as parked too, with its reason) or **failed** (reason given;
+"not started" when the pick did not take N), and its final message says which. It needs
+`work.enabled: true` and `work.auto_merge` of `protected` or `always`, and refuses up front otherwise.
+Details: `skills/sigma-goal/references/land.md`. Unmeasured in a real cloud container: fakes only.
+
 ### `/sigma-loop` — autonomous
 
 Pulls the backlog — local `.sdlc/goals/` files or [GitHub issues](backlog.md#your-backlog-local-files-or-github-issues) —
@@ -72,17 +91,17 @@ Codex plugin and launches a fresh Codex session without changing Claude's instal
 Run **`/sigma-status`** any time for backlog counts (pending / in-progress / done / parked / failed) + whether the
 review queue needs attention.
 
-| | `/sigma-goal` (interactive) | `/sigma-loop` (autonomous) |
-|---|---|---|
-| Scope | one goal | the whole `.sdlc/goals/` backlog |
-| At a checkpoint | pauses for you | parks to the review queue, continues |
-| Approval | every gate | only what it parks |
-| Stops on | goal complete / you stop | backlog empty, per-run budget, or a context hand-off (then resumes fresh) |
-| Context bounded across goals | not yet — see issue tracker for the follow-up | goal count capped at 20 per session by default (`handoff.after_goals`); post-change token measurement pending |
-| Irreversible action | asks you | asks the agent to park it (advice; a code check only when `rulebook.hard_stops.enabled` is true) |
+| | `/sigma-goal` (interactive) | `/sigma-goal <N> --land` (unattended) | `/sigma-loop` (autonomous) |
+|---|---|---|---|
+| Scope | one goal | one named GitHub issue, only if the loop would pick it | the whole `.sdlc/goals/` backlog |
+| At a checkpoint | pauses for you | parks it, and the run ends | parks to the review queue, continues |
+| Approval | every gate | only what it parks | only what it parks |
+| Stops on | goal complete / you stop | merged, parked or failed (named in its final message) | backlog empty, per-run budget, or a context hand-off (then resumes fresh) |
+| Context bounded across goals | not yet — see issue tracker for the follow-up | one goal per run | goal count capped at 20 per session by default (`handoff.after_goals`); post-change token measurement pending |
+| Irreversible action | asks you | as `/sigma-loop` | asks the agent to park it (advice; a code check only when `rulebook.hard_stops.enabled` is true) |
 
-`/sigma-goal` claims its own named goal directly and is not driven by `loop.py next`/`next-batch`,
-so the hand-off ceiling above does not reach it — a human re-running `/sigma-goal` many times in one
+`/sigma-goal` (without `--land`) claims its own named goal directly with `loop.py claim`, never
+through `loop.py next`/`next-batch`, so the hand-off ceiling above does not reach it — a human re-running `/sigma-goal` many times in one
 long conversation can still grow that conversation's context unbounded. Tracked separately, since
 `/sigma-goal`'s own approval-gated, single-goal design needs a different answer than an autonomous
 loop's does, not merely the same mechanism wired in.

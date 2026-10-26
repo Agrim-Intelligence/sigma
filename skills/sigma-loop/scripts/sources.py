@@ -1256,6 +1256,75 @@ class GitHubSource:
         # list, then the claim's own body/labels read) so the pick-time check costs zero calls.
         self.label_scope = None
         self._label_seen = {}
+        # #2065: the ONE issue this run may take (`--land <N>`, `/sigma-goal <N> --land`), or None.
+        # Same contract as `feature`/`label_scope`: set once through the module-level
+        # `scope_to_land`, and every use is guarded on it, so an unscoped run is byte-identical.
+        # `_land_memo` is that issue's one successful read for the current `next_pending` call;
+        # `_land_why` is why the most recent pick did not serve it (None when it did).
+        self.land_scope = None
+        self._land_memo = None
+        self._land_why = None
+
+    def scope_to_land(self, number):
+        """Confine every pick this source makes to issue `number`. Mechanism only; validation is
+        the module-level `scope_to_land`."""
+        self.land_scope = str(number)
+
+    def land_why(self):
+        """Why the most recent scoped pick did not serve the named issue, from its one read, or
+        None. Read by `loop._land_not_taken` for the one line a `--land` run ends on."""
+        return self._land_why
+
+    def _land_issue(self):
+        """#2065: the named issue, ONE REST `GET issues/<N>` per `next_pending` call -- never the
+        backlog list, whose 200-issue window does not bound a named goal. Only a successful read is
+        memoised, so `_fetch_pending`'s transient-error retry still re-reads; a raise propagates to
+        it exactly as a list-read failure does."""
+        if self._land_memo is None:
+            endpoint = ("repos/%s/issues/%s" % (self.repo, self.land_scope) if self.repo
+                        else "repos/{owner}/{repo}/issues/%s" % self.land_scope)
+            item = json.loads(self._run(["api", endpoint, "--method", "GET"]) or "null")
+            if not isinstance(item, dict):
+                raise RuntimeError("issue #%s read returned no issue object" % self.land_scope)
+            self._land_memo = item
+        return self._land_memo
+
+    def _land_rows(self, labels, record):
+        """The named issue as a one-row backlog read for `labels` -> `[issue]` or `[]`. Kept only
+        when it is open, not a pull request, and carries every queried label -- the three things
+        the list query itself filters on server-side; everything else (not-eligible labels, skip,
+        unit, assignee) is `_fetch_pending`'s own per-issue filter, which runs on it unchanged.
+        `record` is True for the base read only, so the blocking lane cannot overwrite the reason."""
+        item = self._land_issue()
+        names = {(l.get("name") if isinstance(l, dict) else l) for l in (item.get("labels") or [])}
+        state = str(item.get("state") or "").lower()
+        missing = [l for l in labels if l not in names]
+        served = str(item.get("number") or "")
+        # A redirected read (a transferred issue) answers with ANOTHER number; serving that would
+        # put the attach, scope and owner writes on an issue nobody named.
+        why = ("its read returned #%s instead" % (served or "?") if served != self.land_scope
+               else "it is %s" % (state or "not open") if state != "open"
+               else "it is a pull request" if "pull_request" in item
+               else "it is not labelled %s" % ", ".join(missing) if missing else None)
+        if record:
+            self._land_why = why
+        return [] if why else [item]
+
+    def _land_filtered_why(self, issue, skip, login):
+        """Why `_fetch_pending`'s per-issue filter dropped the named issue -- the same checks, in the
+        same order, worded. A description of that filter's verdict, never a second decision."""
+        names = {l.get("name") for l in (issue.get("labels") or [])}
+        held = [l for l in self.not_eligible_labels() if l in names]
+        if held:
+            return "it carries %s" % ", ".join(held)
+        if str(issue.get("number")) in skip:
+            return ("it is in this pick's skip set (awaiting merge on this checkout, in flight in "
+                    "another live session, or named by --skip)")
+        if not self._issue_in_feature(issue):
+            return "it is outside --feature %s" % self.feature
+        if login and login not in _logins(issue.get("assignees")):
+            return "it is not assigned to %s" % login
+        return None
 
     def scope_to_label(self, name):
         """Confine every pick this source makes to goals carrying label `name` as well as the goal
@@ -2446,6 +2515,8 @@ class GitHubSource:
         drag-order WITHIN one unit is a far smaller loss than getting membership wrong, and it
         lasts only as long as the flag does; an unscoped run on the same repo is untouched."""
         skip = {str(s) for s in skip}
+        if self.land_scope is not None:
+            return self._next_land(skip)
         board = None if (self.feature or self.label_scope) else self._board_queue()
         if board is None:
             return self._first_by_label(skip)
@@ -2456,6 +2527,31 @@ class GitHubSource:
         labelled = self._pending_by_label(skip, primary=False) or []
         uncarded = [i["number"] for i in labelled if int(i["number"]) not in carded]
         return str(uncarded[0]) if uncarded else None
+
+    def _next_land(self, skip):
+        """#2065: `next_pending` under `--land <N>` -> N when the loop would serve it, else None
+        with `land_why()` saying why. The label-queue rules decide (one read of N, the shared
+        per-issue filter). With a board, unscoped `/sigma-loop` serves only Ready cards and uncarded
+        goals, so a card in any other lane is not served either -- reported as such only when the
+        label read found N eligible, so the reason is the one that actually decided. `ready` holds
+        eligible Ready cards and `carded` every carded number, both ints (`_board_queue`).
+
+        Two known differences, both in the strict direction: a Ready card `_card_is_eligible` rejected
+        on the board's own (possibly stale) labels is reported as "not in the Ready lane"; and the
+        label read here is the primary picker's (`primary=True`), so an `@me` assignee that cannot be
+        resolved refuses rather than serving an unscoped read, where the unscoped board path's
+        uncarded fallback fails open."""
+        self._land_memo = self._land_why = None
+        board = self._board_queue()
+        picked = self._first_by_label(skip)
+        if picked is None or board is None:
+            return picked
+        ready, carded = board
+        number = int(self.land_scope)
+        if number in carded and number not in {int(n) for n in ready}:
+            self._land_why = "its board card is not in the Ready lane"
+            return None
+        return picked
 
     def read_degraded(self):
         """#905: True iff the MOST RECENT `next_pending()` call's underlying backlog read gave up
@@ -2588,7 +2684,10 @@ class GitHubSource:
             # no new state needed.
             unresolved = primary and bool(self.assignee) and login is None
             try:
-                issues = self._fetch_issues_rest(labels, self._BACKLOG_FETCH_CAP, assignee=login)
+                if self.land_scope is not None:       # #2065: the named issue, never the list
+                    issues = self._land_rows(labels, record=not extra_labels)
+                else:
+                    issues = self._fetch_issues_rest(labels, self._BACKLOG_FETCH_CAP, assignee=login)
             except Exception as exc:
                 # F4/F447: this is called first, every iteration — an unguarded raise here crashed
                 # run_loop's while-loop before a single goal could even be picked. A read we can't
@@ -2716,6 +2815,13 @@ class GitHubSource:
             if pending:
                 pending.sort(key=self._pick_key)            # priority, then bug, then oldest-first (see _pick_key)
                 return len(issues), pending
+            if self.land_scope is not None:
+                # #2065: one SUCCESSFUL read of the named issue is the answer. The retry-on-empty
+                # below insures a list read against a propagation blip; a single issue that read
+                # back filtered out is not empty-because-blip, and re-reading it would only sleep.
+                if issues and not extra_labels:
+                    self._land_why = self._land_filtered_why(issues[0], skip, login)
+                return len(issues), None
             if last_attempt or not retry_empty:
                 return len(issues), None
             # Loud even on the happy path's empty case — an operator watching stderr sees WHY a
@@ -6462,6 +6568,31 @@ def scope_to_label(source, name, feature=None):
              "rather than guessing. Nothing was queried for goals." % name))
     scope(name)
     return name
+
+
+class LandScopeError(ValueError):
+    """`--land` was handed something this run cannot honour. Its own type so the CLI turns it into
+    one stderr line and exit 2 rather than a traceback (same shape as `FeatureScopeError`)."""
+
+
+def scope_to_land(source, raw):
+    """#2065: confine `source` to ONE issue for this run -> the issue number as a string, or None
+    when `raw` is None. The ONE ENTRY POINT; mirrors `scope_to_feature`/`scope_to_label`.
+
+    Refused UP FRONT, before any query: a bare `--land` (which `_flags` hands over as "true"), a
+    value that is not an issue number (`#12` is accepted as `12`), and a source that cannot name an
+    issue -- a local-goals backlog's goals are files, and `/sigma-goal --land` lands GitHub issues."""
+    if raw is None:
+        return None
+    text = str(raw).strip().lstrip("#")
+    if not text.isdigit() or int(text) < 1:
+        raise LandScopeError("--land needs an issue number (e.g. --land 2065). Nothing was queried.")
+    scope = getattr(source, "scope_to_land", None)
+    if not callable(scope):
+        raise LandScopeError("--land needs discovery.source 'github'; this project's is "
+                             "'local-goals', whose goals are files, not issues. Nothing was queried.")
+    scope(str(int(text)))
+    return str(int(text))
 
 
 def local_goal_missing(sdlc_dir, config, goal):

@@ -4,6 +4,16 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`/sigma-goal <N> --land` takes one named issue to a merged PR with nobody in the loop (#2065).**
+  - **Selection** is the loop's own picker scoped to N: `loop.py next --land N`. N is taken only when `/sigma-loop` would take it. The rules, the per-issue filter, holds, lease, claim lock and board lane apply; the pick reads one REST issue, not the backlog list.
+  - **No other goal is touched.** The pick runs none of the sweeps that write to other goals. The two overlay-clearing sweeps run for N alone. The one named exception is the ledger watcher, when the ledger is on.
+  - **The run** then follows `/sigma-loop`'s own per-goal steps and landing path, by reference rather than as a copy. It has no gate pauses, and Plan-Review, review and verify still bind.
+  - **Endings:** exactly one of merged, parked (reason on the issue) or failed (reason given), named in the final message.
+  - **Refused up front** (exit 2): `--feature` or `--label` beside it, `next-batch`, a local-goals backlog, `work.enabled` off, and `work.auto_merge: off`.
+  - **Picker messages:** a goal not taken ends with a `--land #N not taken (not started): <why>` line on stderr.
+  - **Docs:** `docs/cloud-sessions.md` no longer says `require_review: approval` always parks in a cloud session; a trusted `sigma:approve` comment meets it (#1398).
+  - **Measured on fakes only:** the scoped pick, and the landing gestures from PR open to `record done` with every GraphQL-shaped call refused. Unmeasured in a real cloud container.
+
 ## 1.0.20 — 2026-10-22 — the dependency map's pages show assignees and the work that waits; one-run rebuild, titles without a hand-made file, deps review sheets, unmark and a direction-aware two-way flag
 
 - **A dag page says why the assignee filter is not applied, truthfully (#1997).** A page is drawn for no runner, so the map-life note now says so when the members' nodes do carry assignees, and keeps the no-assignees reason only when none does. Measured on fixtures only.
