@@ -1615,3 +1615,98 @@ def test_a_person_who_parks_again_after_a_rearm_is_not_overridden_2040(tmp_path,
 
 def au_marker_rearm():
     return _mod("auto_unpark").REARM_MARKER
+
+
+# ---- #2058: a re-arm the counter cannot record is put back, and the cooldown sees re-arms
+
+def _break_counter(tmp_path):
+    (tmp_path / "state" / "ai_filed_counter.json").write_text("{not json")     # unreadable after the plan
+
+
+def _rearmed_rows(tmp_path):
+    return [e for e in _mod("ledger").read_all(str(tmp_path)) if "re-armed" in str(e.get("why"))]
+
+
+def test_a_rearm_the_counter_cannot_record_is_put_back_2058(tmp_path, monkeypatch):
+    au, cfg = _fc_setup(tmp_path, monkeypatch, {"1": [_FC % "g1"]})
+    src = _FcSource()
+    rearms = au.compute_filing_cap_rearms(str(tmp_path), cfg, src, [_fc_issue(1, "P1")])
+    _break_counter(tmp_path)
+    done, landed = _apply(au, tmp_path, cfg, src, rearms, monkeypatch)
+    assert done == []
+    assert [(a["action"], a.get("add"), a.get("remove")) for a in landed] == [
+        ("swap-label", ["sdlc:goal"], ["sdlc:parked"]), ("swap-label", ["sdlc:parked"], ["sdlc:goal"])]
+    count = [a for a in rearms[0]["actions"] if a["action"] == "count"]
+    assert [a["result"] for a in count] == ["failed"]
+    assert "could not record" in count[0]["error"] and "put back to sdlc:parked" in count[0]["error"]
+    assert src.notes == [] and _rearmed_rows(tmp_path) == []
+    assert (tmp_path / "state" / "ai_filed_counter.json").read_text() == "{not json"
+
+
+def test_a_count_failure_stops_the_pass_2058(tmp_path, monkeypatch):
+    au, cfg = _fc_setup(tmp_path, monkeypatch, {"1": [_FC % "g1"], "2": [_FC % "g2"]})
+    src = _FcSource()
+    rearms = au.compute_filing_cap_rearms(str(tmp_path), cfg, src, [_fc_issue(1, "P1"), _fc_issue(2, "P2")])
+    _break_counter(tmp_path)
+    done, landed = _apply(au, tmp_path, cfg, src, rearms, monkeypatch)
+    assert done == [] and [a["issue"] for a in landed] == ["1", "1"]
+    assert [a["result"] for a in rearms[1]["actions"]] == ["skipped"]
+    assert "not attempted" in rearms[1]["actions"][0]["error"]
+
+
+def test_a_rearm_that_cannot_be_counted_or_put_back_says_so_2058(tmp_path, monkeypatch):
+    au, cfg = _fc_setup(tmp_path, monkeypatch, {"1": [_FC % "g1"]})
+    src = _FcSource()
+    rearms = au.compute_filing_cap_rearms(str(tmp_path), cfg, src, [_fc_issue(1, "P1")])
+    _break_counter(tmp_path)
+
+    def fake_apply(source, actions, apply):
+        back = lambda a: a.get("add") == ["sdlc:parked"]
+        return [dict(a, result="failed" if back(a) else "done", error="boom" if back(a) else None) for a in actions]
+    monkeypatch.setattr(au.triage, "apply_actions", fake_apply)
+    assert au.apply_filing_cap_rearms(str(tmp_path), cfg, src, rearms) == ["1"]     # armed, so the cooldown holds it
+    count = [a for a in rearms[0]["actions"] if a["action"] == "count"][0]
+    assert "armed but not counted" in count["error"]
+    assert [n for n, _t in src.notes] == ["1"]                  # the re-arm marker still guards a later park
+    assert ["NOT counted" in r["why"] for r in _rearmed_rows(tmp_path)] == [True]
+
+
+def test_a_put_back_moves_the_card_back_to_parked_2058(tmp_path, monkeypatch):
+    au, cfg = _fc_setup(tmp_path, monkeypatch, {"1": [_FC % "g1"]})
+    src = _FcSource()
+    src.board_active, src.col = True, {"ready": "Ready", "parked": "Parked"}
+    rearms = au.compute_filing_cap_rearms(str(tmp_path), cfg, src, [_fc_issue(1)])
+    _break_counter(tmp_path)
+    _done, landed = _apply(au, tmp_path, cfg, src, rearms, monkeypatch)
+    assert [(a["action"], a["detail"]) for a in landed if a["action"] == "set-status"] == [
+        ("set-status", "Ready"), ("set-status", "Parked")]
+
+
+def _sweep_with_rearm(monkeypatch, apply_rearms):
+    au = _mod("auto_unpark")
+    blocked = _blocked_issue(42, body="blocked by #7 until the base lands", labels=("sdlc:blocked",))
+    run = _label_aware_sweep_runner(by_label={"sdlc:parked": "[]", "sdlc:blocked": json.dumps([blocked])},
+                                    states={"7": "CLOSED"})
+    swap = {"action": "swap-label", "issue": "9", "detail": "+sdlc:goal -sdlc:parked", "add": ["sdlc:goal"],
+            "remove": ["sdlc:parked"], "result": None, "error": None}
+    plan = [{"issue": "9", "goal": "g9", "prio": None, "reason": "per-goal cap", "actions": [swap], "action": swap}]
+    monkeypatch.setattr(au, "compute_filing_cap_rearms", lambda *a, **k: plan)
+    monkeypatch.setattr(au, "apply_filing_cap_rearms", apply_rearms)
+    return au.sweep_unpark(".sdlc", _config(), apply=True, run=run)
+
+
+def test_the_cooldown_list_names_the_rearmed_goals_too_2058(monkeypatch):
+    def armed(sdlc_dir, config, source, rearms):
+        rearms[0]["actions"][0].update(result="done")
+        return ["9"]
+    result = _sweep_with_rearm(monkeypatch, armed)
+    assert result["unparked"] == ["9", "42"] and result["rearmed"] == ["9"]
+
+
+def test_a_raise_in_the_rearm_apply_costs_that_pass_only_2058(monkeypatch):
+    def boom(sdlc_dir, config, source, rearms):
+        raise RuntimeError("counter exploded")
+    result = _sweep_with_rearm(monkeypatch, boom)
+    assert result["unparked"] == ["42"] and result["rearmed"] == []
+    swap = [a for a in result["actions"] if a["issue"] == "9"]
+    assert [a["result"] for a in swap] == ["failed"] and "counter exploded" in swap[0]["error"]
