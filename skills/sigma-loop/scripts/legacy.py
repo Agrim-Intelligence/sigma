@@ -57,6 +57,8 @@ POST_RENAME_ENV = frozenset({"SIGMA_ALLOW_COEXIST", "SIGMA_HOST", "SIGMA_CODEX_C
                              "SIGMA_PICK_TRACE",
                              "SIGMA_LABEL_LAG_WAIT",   # #1943
                              "SIGMA_TRUSTED_VERIFY_SHA256",   # #2066: read directly, never a fallback spelling
+                             "SIGMA_GH_COMPONENT",
+                             "SIGMA_SDLC_DIR",   # #2019
                              "SIGMA_GH_ACCOUNT"})   # #375, #1607, #1939
 
 #: The schema ids (kind@version) whose spelling changed only in its brand segment. A previous-name id

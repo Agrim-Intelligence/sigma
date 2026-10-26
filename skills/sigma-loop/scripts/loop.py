@@ -49,6 +49,7 @@ def _host_model_config(config):
 state = _load("state")
 sources = _load("sources")          # backlog source: local files or GitHub issues (config-selected)
 legacy = _load("legacy")            # #239: markers written under the plugin's previous name
+gh_calls = _load("gh_calls")      # #2019: component attribution for the GitHub call counter
 pick_trace = _load("pick_trace")    # #1607: opt-in call-count + stage-seconds trace of a pick
 ledger = _load("ledger")            # team record (config-gated, default OFF; every call is fail-open)
 work = _load("work")                # per-goal worktree/branch/PR (config-gated, default OFF)
@@ -1249,7 +1250,7 @@ def reclaim_stale_claim_lock(sdlc_dir, goal, config):
     return True
 
 
-def _auto_unpark_sweep(sdlc_dir, config, run=None):
+def _auto_unpark_sweep(sdlc_dir, config, run=None, session_pid=None):
     """#1129/#1394: `discovery.auto_unpark.mode` (default 'on' since #1394), fail-open per-pick
     reconciliation -- re-examines `sdlc:blocked` GitHub issues whose recorded `blocked by #N` targets
     have all closed, and lifts the overlay so a LATER pick can pick one back up. An `sdlc:parked`
@@ -1277,7 +1278,13 @@ def _auto_unpark_sweep(sdlc_dir, config, run=None):
     try:
         if sources._auto_unpark(config) == "off":
             return frozenset()
-        result = _load("auto_unpark").sweep_unpark(sdlc_dir, config, apply=True, run=run)
+        why = sources.gh_quota.rest_deferral(config)         # #2023: below the REST reserve, defer
+        if why:
+            print(f"loop.py: auto-unpark sweep deferred: {why}", file=sys.stderr)
+            return frozenset()
+        with gh_calls.component("auto_unpark"):      # #2019: the run=None path reaches `gh` past every injected runner
+            result = _load("auto_unpark").sweep_unpark(sdlc_dir, config, apply=True, run=run,
+                                                       session_pid=session_pid)
         return frozenset((result or {}).get("unparked") or ())
     except Exception as exc:
         print(f"loop.py: auto-unpark sweep failed non-fatally ({exc}) — continuing", file=sys.stderr)
@@ -1388,6 +1395,10 @@ def _reconcile_sweep(sdlc_dir, config, run=None, now=None):
     line. A background reconciliation must never be what stops an unattended pick."""
     try:
         if _reconcile_mode(config) != "off" and _reconcile_due(sdlc_dir, config, now=now):
+            why = sources.gh_quota.rest_deferral(config, now=now)   # #2023: below the REST reserve, defer
+            if why:
+                print(f"loop.py: reconcile sweep deferred: {why}", file=sys.stderr)
+                return frozenset()
             result = _load("reconcile").sweep_reconcile(sdlc_dir, config, apply=True, run=run)
             _reconcile_stamp(sdlc_dir, now=now)
             return frozenset(a["issue"] for a in (result or {}).get("actions", [])
@@ -1669,6 +1680,43 @@ def _label_scope_ok(source, goal):
     print("loop.py: not claiming #%s — this run is confined to label %r and #%s no longer carries "
           "it. Left untouched (no claim); taking the next candidate" % (goal, wanted, goal),
           file=sys.stderr)
+    return False
+
+
+def _reread_labels(source, goal):
+    """#2022: one GET of the chosen issue (`fetch_body_labels`, which also refreshes the scope label's view).
+    -> the lower-cased label names, or None when the source cannot read one or the read failed."""
+    fetch = getattr(source, "reread_body_labels", None) or getattr(source, "fetch_body_labels", None)
+    if fetch is None:
+        return None
+    try:
+        data = fetch(goal)
+    except Exception:       # noqa: BLE001 - fail to the list read's labels
+        return None
+    if not isinstance(data, dict):
+        return None
+    return {str((l.get("name") if isinstance(l, dict) else l) or "").lower() for l in (data.get("labels") or [])}
+
+
+def _claimable_now(source, goal, names):
+    """#2022: may the chosen goal still be claimed, per a FRESH read of its labels? It must carry the goal
+    label and none of in-progress / blocked / parked. `names` None (no fresh read) leaves the list's verdict."""
+    if names is None:
+        return True
+    want = lambda l: str(l).lower() if l else None
+    if want(getattr(source, "goal_label", None)) and want(source.goal_label) not in names:
+        why = "no longer carries %s" % source.goal_label
+    else:
+        why = None
+        for attr in ("in_progress_label", "goal_blocked_label", "blocked_label", "parked_label"):
+            lab = want(getattr(source, attr, None))
+            if lab and lab in names:
+                why = "now carries %s" % lab
+                break
+    if why is None:
+        return True
+    print("loop.py: not claiming #%s — it %s since the list was read. Left untouched (no claim); "
+          "taking the next candidate" % (goal, why), file=sys.stderr)
     return False
 
 
@@ -2612,20 +2660,61 @@ def _next(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_hea
     if hooked:
         saved, source.call_counter = source.call_counter, rec.count_args
     try:
-        return _next_untraced(sdlc_dir, source, config, extra_skip, session_pid, refresh_heartbeat,
-                              gate, rec, batch, context)
+        with _read_once(source):              # #2022: one backlog read for every candidate of this pick
+            return _next_untraced(sdlc_dir, source, config, extra_skip, session_pid, refresh_heartbeat,
+                                  gate, rec, batch, context)
     finally:
         if hooked:
             source.call_counter = saved
         rec.end()
 
 
+@contextlib.contextmanager
+def _read_once(source):
+    """#2022: the source's one-pick read scope when it has one (`GitHubSource.read_once`); else a no-op."""
+    scope = getattr(source, "read_once", None)
+    if scope is None:
+        yield
+        return
+    with scope():
+        yield
+
+
+DEGRADED_WAIT_CAP = 1800        # #2023: PROVISIONAL (30 min, the drain rules' bound); owner to ratify
+
+
+def _degraded_epoch(now=None):
+    """#2023: the epoch a degraded pick may be retried at. gh_quota's recorded refusal (a hold written
+    from the refused response's own Retry-After / reset header) when one is held, else now plus gh_quota's
+    bounded primary default. Reads recorded state only: no GitHub call."""
+    now = time.time() if now is None else now
+    quota = sources.gh_quota
+    try:
+        wait = int(quota.held(now=now))
+    except Exception:                                       # noqa: BLE001 - unreadable state -> the default
+        wait = 0
+    return int(now + (wait if wait > 0 else quota.DEFAULT_PRIMARY))
+
+
+def wait_degraded(epoch, now=time.time, sleep=time.sleep, cap=DEGRADED_WAIT_CAP):
+    """#2023: the ONE bounded wait a degraded pick earns. Sleeps until `epoch`, never longer than `cap`
+    seconds (30 minutes), and not at all when the epoch is already past. `now`/`sleep` are injectable so a
+    test runs it on a fake clock. -> seconds waited."""
+    try:
+        until = float(str(epoch).strip())
+    except (TypeError, ValueError):
+        raise ValueError("wait-degraded needs a reset epoch (whole number), got %r" % (epoch,))
+    secs = int(min(max(0.0, until - now()), cap))
+    if secs > 0:
+        sleep(secs)
+    return secs
+
+
 def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, refresh_heartbeat=True,
                    gate=True, rec=pick_trace.NULL, batch=None, context=None):
     """(kind, goal_or_reason): 'goal' (+marks in_progress, the commit point — second element is
-    the goal ref), 'DONE' (drained — second element None on a genuine empty read, or, #1084, a
-    short degraded-read reason string when `source.read_degraded()` is True — mirrors BUDGET's own
-    shape), 'BUDGET' (second element a short diagnostic naming which ceiling tripped and the
+    the goal ref), 'DONE' (drained — second element None on a genuine empty read; #2023: a degraded read is no
+    longer DONE, it is 'DEGRADED' with the retry epoch as the second element), 'BUDGET' (second element a short diagnostic naming which ceiling tripped and the
     observed-vs-configured numbers, #411 — see `_budget_reason`; never None once budget genuinely
     trips), 'HANDOFF' (#2521, same shape as BUDGET's own diagnostic, from `_handoff_reason` — a
     deliberate, healthy context-bound stop). Precedence, most-checked-first: a REAL resource BUDGET
@@ -2751,10 +2840,10 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
         _reconcile_sweep(sdlc_dir, config)
     rec.mark("auto_unpark")
     if batch is None:
-        just_unparked = _auto_unpark_sweep(sdlc_dir, config)
+        just_unparked = _auto_unpark_sweep(sdlc_dir, config, session_pid=session_pid)
     else:
         if batch.get("unparked") is None:
-            batch["unparked"] = frozenset(_auto_unpark_sweep(sdlc_dir, config) or ())
+            batch["unparked"] = frozenset(_auto_unpark_sweep(sdlc_dir, config, session_pid=session_pid) or ())
         just_unparked = batch["unparked"]
     rec.mark("reclaim")
     just_reclaimed = _auto_reclaim_stale_claims(sdlc_dir, source, config)
@@ -2831,7 +2920,9 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
             # #905: the real production chokepoint for the budget-exhaustion run_stop -- both the CLI `next`
             # verb and `run_loop` pass through here, so wiring it once covers both drivers.
             _emit_run_stop_once(sdlc_dir, config, source, stop_class, session_pid=session_pid)
-            return ("DONE", "degraded read — backlog state unknown" if degraded else None)
+            if degraded:                       # #2023: never DONE for a read that gave up
+                return ("DEGRADED", _degraded_epoch())
+            return ("DONE", None)
         # #1499: FIRST, ahead of the lease read and the claim lock below, because the whole defect
         # was ordering -- a goal with an unsatisfied prerequisite used to be claimed and only then
         # discovered to be unworkable. Nothing above this line has touched the goal, so a hold
@@ -2961,21 +3052,18 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
             return admission_stop
         try:
             # #1575: an excluded goal must receive NO write, and `attach_at_pick` can write (attach
-            # label, refusal overlay + comment, no-unit handling). So the scope label is re-checked
-            # from a FRESH read BEFORE it. Cost: ONE extra `fetch_body_labels` read, on label-scoped
-            # runs only (`attach_at_pick` does its own read and cannot share this one); unscoped
-            # runs make exactly the same calls as before. A failed read falls back to the list
-            # read's labels (`scope_label_current`), and unknown means not-in-scope.
-            if getattr(source, "label_scope", None):
-                try:
-                    source.fetch_body_labels(goal)
-                except Exception:       # noqa: BLE001 - fail to the list read's labels, below
-                    pass
-                if not _label_scope_ok(source, goal):
-                    _cancel_goal_slot(sdlc_dir, session_pid, goal)
-                    _release_claim_lock(lock_fd)
-                    skip.add(goal)
-                    continue
+            # label, refusal overlay + comment, no-unit handling). So the claim re-reads the chosen
+            # goal's labels BEFORE it, UNCONDITIONALLY (#2022: one list now serves a whole batch, so a
+            # goal another machine claimed, blocked or parked after that list must be caught here).
+            # Cost: ONE single-issue GET per CLAIMED goal, not per candidate declined earlier. A failed
+            # read falls back to the list read's labels (`scope_label_current`; unknown = not-in-scope).
+            fresh = _reread_labels(source, goal)
+            if not _claimable_now(source, goal, fresh) or not _label_scope_ok(source, goal):
+                getattr(source, "drop_claim_read", lambda g: None)(goal)
+                _cancel_goal_slot(sdlc_dir, session_pid, goal)
+                _release_claim_lock(lock_fd)
+                skip.add(goal)
+                continue
             decision = feature_labels.attach_at_pick(sdlc_dir, source, goal, config)
             unit = _unit_at_pick(sdlc_dir, goal, config, decision)
             proceed = (decision.proceed
@@ -3173,20 +3261,21 @@ def next_batch(sdlc_dir, source, config, max_concurrent=None, extra_skip=(), ses
             if held >= slots:                # no free slot: a read-only answer, nothing is claimed
                 return [("FULL", "no free slots, %d in flight" % held)]
             slots -= held
-    for _ in range(slots):
-        kind, goal = _next(sdlc_dir, source, config, extra_skip=skip, session_pid=session_pid,
-                           refresh_heartbeat=False, gate=False, batch=batch, context=context)
-        if kind != "goal":
-            picks.append((kind, goal))
-            break
-        picks.append(("goal", goal))
-        skip.add(goal)
-        ranks = getattr(source, "dag_chain_ranks", None)
-        if ranks is not None:
-            try:
-                ranks.mark_in_flight(goal)
-            except Exception:                   # noqa: BLE001 - an order term never stops a batch
-                pass
+    with _read_once(source):                  # #2022: each backlog list is read once for the whole batch
+        for _ in range(slots):
+            kind, goal = _next(sdlc_dir, source, config, extra_skip=skip, session_pid=session_pid,
+                               refresh_heartbeat=False, gate=False, batch=batch, context=context)
+            if kind != "goal":
+                picks.append((kind, goal))
+                break
+            picks.append(("goal", goal))
+            skip.add(goal)
+            ranks = getattr(source, "dag_chain_ranks", None)
+            if ranks is not None:
+                try:
+                    ranks.mark_in_flight(goal)
+                except Exception:                   # noqa: BLE001 - an order term never stops a batch
+                    pass
     return picks
 
 
@@ -6822,6 +6911,7 @@ def run_loop(sdlc_dir, run_goal):
     _ensure_ledger_delivery(sdlc_dir, config)        # ...and notices when that flow has stalled (#2393)
     source = sources.get_source(sdlc_dir, config)   # one source per run (e.g. github labels ensured once)
     done = parked = failed = review = 0
+    degraded_waited = False   # #2023: one wait per degraded read
     poisoned = set()      # F4: goals neither record attempt below could record — skipped for the
                           # REST OF THIS RUN so a doubly-failing source can't spin on one goal forever
     while True:
@@ -6838,6 +6928,14 @@ def run_loop(sdlc_dir, run_goal):
         if kind == "HANDOFF":
             stopped = "handoff"
             break
+        if kind == "DEGRADED":      # #2023: wait ONCE until the reset epoch, then pick again; a second stops
+            if degraded_waited:
+                stopped = "degraded"
+                break
+            degraded_waited = True
+            wait_degraded(goal)
+            continue
+        degraded_waited = False
         result, detail = run_goal(goal)
         # #232: the programmatic driver never passes through the CLI `record done` refusal, so the
         # same rule is applied here: a `done` whose PR is not confirmed merged is recorded `review`
@@ -7037,6 +7135,9 @@ def _print_pick(kind, payload):
     pattern in `supervise_classify.py` (checked before `_DONE` there)."""
     if kind == "goal":
         print(payload)
+        return
+    if kind == "DEGRADED":                  # #2023: the reset epoch rides the token's own line
+        print(f"DEGRADED {payload}")
         return
     print(kind)
     if payload and kind in ("BUDGET", "DONE", "HANDOFF", "FULL", "HOLD"):
@@ -7265,7 +7366,7 @@ def _validate_event(kind, flags, kind_allowlist=None):
 
 USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> [--session-pid PID] | "
          "next <dir> [--skip a,b] [--feature NAME] [--label NAME] [--session-pid PID] [--trace] | "
-         "pick-trace-report <dir> | meter <dir> [--baseline TOKENS] | "
+         "pick-trace-report <dir> | gh-calls-report <dir> [--hours N] | cost-report <dir> | meter <dir> [--baseline TOKENS] | "
          "next-batch <dir> [--skip a,b] [--feature NAME] [--label NAME] [--session-pid PID] [--max-concurrent N] | "
          "session-active <dir> | prune-state <dir> [--dry-run] [--keep-days N] [--limit N] | session-end <dir> [--session-pid PID] | "
          "claim <dir> <goal> [--session-pid PID] | "
@@ -7285,7 +7386,7 @@ USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> [--se
          "escalate <dir> <goal> <tier> --after plan-review|code-review|pr-review | "
          "escalate <dir> <goal> --show | "
          "lane-tier <dir> <goal> <small|medium|large> <current-tier> | "
-         "verify <dir> <goal> | red <dir> <goal> | wait-call <dir> <goal> verify|merge [--max-seconds N] [--run-id ID]")
+         "verify <dir> <goal> | red <dir> <goal> | wait-call <dir> <goal> verify|merge [--max-seconds N] [--run-id ID] | wait-degraded <epoch>")
 
 
 _ESCALATE_USAGE = ("usage: loop.py escalate <dir> <goal> <current-tier> "
@@ -7643,6 +7744,20 @@ def _bootstrap_github_labels(sdlc_dir, config):
     return not failed
 
 
+def _print_host_config_findings(sdlc_dir):
+    """#2032: print the read-only host-config findings once on stderr (stdout carries the generation).
+    Informational: never blocks, never parks, never raises."""
+    try:
+        path = _HERE.parent.parent / "sigma-doctor" / "scripts" / "host_config_scan.py"
+        spec = importlib.util.spec_from_file_location("host_config_scan", path)
+        scanner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(scanner)
+        for line in scanner.lines(scanner.scan(pathlib.Path(sdlc_dir).resolve().parent)):
+            print("loop: " + line, file=sys.stderr)
+    except Exception:                         # noqa: BLE001 - a diagnostic never stops a start
+        pass
+
+
 def _dispatch(argv):
     if len(argv) >= 2 and argv[1] in ("start", "next", "next-batch", "claim", "session-end"):
         try:
@@ -7666,6 +7781,7 @@ def _dispatch(argv):
         for warning in _config_warnings(config):
             print("loop: " + warning, file=sys.stderr)       # surface the trap up front, not 40 goals in
         _coexist_notice(argv[2], "loop.py start")            # #314: a notice, never a refusal
+        _print_host_config_findings(argv[2])                 # #2032: informational, once per start
         coexist = _load("coexist")
         coexist.write_owner(argv[2])                         # Sigma owns this state dir now
         offer = coexist.takeover_line(argv[2])               # the dry-run command; never --apply
@@ -7813,6 +7929,19 @@ def _dispatch(argv):
         code, line = _meter_line(argv[2], argv[3:])
         print(line, file=sys.stderr if code else sys.stdout)
         return code
+    if len(argv) >= 3 and argv[1] == "gh-calls-report":       # #2019: read-only; reads one state file
+        hours = None
+        if "--hours" in argv:
+            try:
+                hours = float(argv[argv.index("--hours") + 1])
+            except (IndexError, ValueError):
+                print("usage: loop.py gh-calls-report <dir> [--hours N]", file=sys.stderr)
+                return 2
+        sys.stdout.write(gh_calls.report(argv[2], hours))
+        return 0
+    if len(argv) >= 3 and argv[1] == "cost-report":           # #2019: read-only; per-goal and per-lane cost
+        sys.stdout.write(_load("goal_cost").report(argv[2]))
+        return 0
     if len(argv) >= 3 and argv[1] == "pick-trace-report":     # #1607: read-only; reads one state file
         sys.stdout.write(pick_trace.report(argv[2]))
         return 0
@@ -8324,6 +8453,14 @@ def _dispatch(argv):
         return verify_goal(argv[2], argv[3])
     if len(argv) >= 4 and argv[1] == "red":         # #1673: record planned-test reds only; no loop trigger
         return red_goal(argv[2], argv[3])
+    if len(argv) >= 3 and argv[1] == "wait-degraded":   # #2023: the one bounded wait a DEGRADED pick earns
+        try:
+            waited = wait_degraded(argv[2])
+        except ValueError as exc:
+            print(f"loop.py: {exc}", file=sys.stderr)
+            return 2
+        print(f"waited {waited}s")
+        return 0
     if len(argv) >= 2 and argv[1] == "wait-call":   # #1650: bounded wait on a yielded verify / merge call
         return _wait_call(argv)
     print(USAGE, file=sys.stderr)

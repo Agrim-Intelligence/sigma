@@ -4,6 +4,7 @@ no priority. Driven through the real verbs with the fake-gh runner of test_block
 import json, pathlib, importlib.util
 
 import test_blocker_rank_writers as w
+from test_blocker_rank_writers import _sweep_state_in_tmp  # noqa: F401  (autouse: keeps the sweep stamp out of the repo)
 import test_handoff as th
 import gqlfake
 

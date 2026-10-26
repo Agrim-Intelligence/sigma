@@ -1280,6 +1280,27 @@ def _graphql_capability_rows(base, cfg, env=None):
                      "SIGMA_GH_GRAPHQL=on|off." % (res.get("source"), res.get("reason")))}]
 
 
+def _quota_rows(env=None, now=None):
+    """#2023: ONE advisory row with the REST core and GraphQL allowance and reset times recorded for the active
+    identity. Reads gh_quota's state file only: no GitHub call. 'not recorded yet' until a response header was seen."""
+    try:
+        quota = _load_loop_script("gh_quota")
+        got = quota.recorded_quota(env=env)
+    except Exception:                        # noqa: BLE001 - a check that cannot run says nothing
+        return []
+
+    def part(label, key):
+        item = got.get(key)
+        if not item:
+            return "%s: not recorded yet" % label
+        return "%s: %s of %s left, resets at epoch %s" % (label, item.get("remaining"), item.get("limit"),
+                                                          item.get("reset"))
+
+    return [{"name": "GitHub API quota (active identity)", "ok": True,
+             "fix": "%s; %s. Read from headers already seen (no extra call)." % (
+                 part("REST core", "core"), part("GraphQL", "graphql"))}]
+
+
 def _landing_rows(base, cfg, run, which):
     """#974: branch-creation ruleset rows. Silent when fine; one MISSING row per blocking ruleset (named, never its
     id); one hand-built advisory row (ok True, text shown) when anything could not be checked. Gated by the caller on
@@ -3363,6 +3384,90 @@ def _install_scope_row(repo_root, installed_plugins_path=None, agents_md=None):
     return _chk(f"sigma install scopes: {head} — {verdict}", False, " ".join(parts))
 
 
+def _plugin_scope_records(installed_plugins_path=None):
+    """#1913: `[(scope, version_text, install_path)]` for every install record of this plugin, or
+    **None** when the registry cannot be read (missing, unreadable, garbled, or no record of us).
+    None is "cannot tell", never "installed nowhere". Unknown fields are ignored."""
+    try:
+        raw = json.loads(pathlib.Path(
+            installed_plugins_path or _default_installed_plugins_path()).read_text(encoding="utf-8"))
+    except Exception:                        # noqa: BLE001 - missing/unreadable/unparseable
+        return None
+    plugins = raw.get("plugins") if isinstance(raw, dict) else None
+    if not isinstance(plugins, dict):
+        return None
+    out = []
+    for pid, entries in plugins.items():
+        if str(pid).split("@")[0] != _PLUGIN or not isinstance(entries, list):
+            continue
+        for e in entries:
+            if isinstance(e, dict):
+                out.append((str(e.get("scope") or "user"), str(e.get("version") or "?"),
+                            str(e.get("installPath") or "path not recorded")))
+    return out or None
+
+
+def _plugin_scope_rows(installed_plugins_path=None):
+    """#1913: one row per install scope (scope, version, path); a WARN row when two scopes list
+    different versions, naming both and the update command for the older one (compared as version
+    tuples, so 1.0.9 is older than 1.0.10 — not as text, and not by mere membership); one UNKNOWN row,
+    never OK, when there is no readable install registry. Read-only; `level` carries the verdict word."""
+    recs = _plugin_scope_records(installed_plugins_path)
+    if recs is None:
+        # ok=True keeps "cannot tell" out of the setup-gap count (an unreadable registry is not a
+        # failed setup), but the printed word is UNKNOWN: this row can never read as OK.
+        return [{"name": "plugin scopes: UNKNOWN (no readable install registry)", "ok": True,
+                 "level": "UNKNOWN",
+                 "fix": "cannot tell which scopes %s is installed under; run `claude plugin list` "
+                        "and check the versions by hand" % _PLUGIN}]
+    rows = [_chk(f"plugin scope: {sc} {ver} ({path})", True, "") for sc, ver, path in recs]
+    parsed = [(_version_tuple(ver), sc, ver) for sc, ver, _p in recs]
+    known = [t for t in parsed if t[0] is not None]
+    if len({t[0] for t in known}) > 1:
+        older = min(known, key=lambda t: t[0])
+        newer = max(known, key=lambda t: t[0])
+        rows.append(dict(_chk(
+            f"plugin scopes differ: {older[1]} {older[2]} vs {newer[1]} {newer[2]}", False,
+            f"update the older scope ({older[1]} {older[2]}): "
+            f"`claude plugin update {_PLUGIN}@{_PLUGIN} --scope {older[1]}` (then restart the session)"),
+            level="WARN"))
+    return rows
+
+
+#: The first release that ships `resource_guard.py`.
+_GUARD_FIRST_VERSION = "1.0.16"
+
+
+def _resource_guard_row(plugin_root=None):
+    """#1913: FAIL when the plugin root this doctor runs from has no `resource_guard.py` (its sibling
+    `loop.py` then runs without the guard). The root is derived from this file's own location."""
+    root = pathlib.Path(plugin_root) if plugin_root else pathlib.Path(__file__).resolve().parents[3]
+    present = (root / "skills" / "sigma-loop" / "scripts" / "resource_guard.py").is_file()
+    row = _chk("resource guard present", present,
+               f"this plugin install has no resource_guard.py; it first shipped in {_GUARD_FIRST_VERSION}: "
+               f"run `claude plugin update {_PLUGIN}@{_PLUGIN}` and restart the session")
+    return dict(row, level="OK" if present else "FAIL")
+
+
+def _host_config_rows(repo_root):
+    """#2032: one WARN row per host-config finding, one UNKNOWN row per config it could not read.
+    Read-only and value-free (`host_config_scan`); informational, never a failure of setup."""
+    spec = importlib.util.spec_from_file_location("host_config_scan",
+                                                  pathlib.Path(__file__).resolve().parent / "host_config_scan.py")
+    try:
+        scanner = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(scanner)
+        result = scanner.scan(repo_root)
+    except Exception:                         # noqa: BLE001 - one value-free row, never the text
+        return [{"name": "host config scan: not scanned: scanner error", "ok": False,
+                 "fix": "run host_config_scan.py directly to see the fault", "level": "UNKNOWN"}]
+    rows = [{"name": "host config %s %s: %s" % (f["rule"], f["severity"], f["file"]), "ok": False,
+             "fix": f["fix"], "level": "WARN"} for f in result["findings"]]
+    rows += [{"name": "host config not scanned: %s" % n["file"], "ok": False, "fix": n["reason"],
+              "level": "UNKNOWN"} for n in result["not_scanned"]]
+    return rows
+
+
 #: Every placeholder in each north-star tier, from the scaffolded template (sdlc_init.py's
 #: `_NORTH_STAR`) — short, distinctive prefixes (not the full strings) so a later wording tweak to
 #: the trailing text doesn't silently break the check. "filled" must clear EVERY tier (F33/#358): a
@@ -4034,6 +4139,7 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
         _progress("git and gh access")
         out.extend(_preflight_rows(base, cfg, run, which, injected, cheap_only))
         out.extend(_graphql_capability_rows(base, cfg))     # #801: advisory, detection only
+        out.extend(_quota_rows())                           # #2023: recorded quota, no call
         if _block(cfg, "work").get("enabled") and not cheap_only:
             _progress("landing rules")
             out.extend(_landing_rows(base, cfg, run, which))        # #974: branch-creation rulesets
@@ -4717,6 +4823,9 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
         scope_row = _install_scope_row(base.parent, installed_plugins_path, agents_md)
     if scope_row is not None:
         out.append(scope_row)
+    if plugin_host != "codex":
+        out.extend(_plugin_scope_rows(installed_plugins_path))
+    out.append(_resource_guard_row())
     if codex_cli_row is not None:
         out.append(codex_cli_row)
     # #1648: a WARNING (never a refusal) when Claude and Codex run different Sigma versions. Skipped under
@@ -7053,6 +7162,10 @@ def main(argv):
         finally:
             _PROGRESS_ON = False
             _ARCH_SHARED = None
+        try:                                  # #2032: report-only; a scanner fault never stops the check-up
+            checks = list(checks) + _host_config_rows(pathlib.Path(sdlc_arg).resolve().parent)
+        except Exception:                     # noqa: BLE001
+            pass
         gaps = [c for c in checks if not c["ok"]]
         for c in checks:
             # #1513 review fix: show `fix` whenever it's non-empty, not just when `ok` is False.
@@ -7064,7 +7177,7 @@ def main(argv):
             # and costs nothing, and the next hand-built row that needs it should not have to
             # rediscover that check() computed the advisory correctly and the printer dropped it
             # (confirmed live by Review, not read from a diff -- see PR discussion #1513).
-            print(f"  [{'OK ' if c['ok'] else 'MISSING'}] {c['name']}" + (f"  ->  {c['fix']}" if c["fix"] else ""))
+            print(f"  [{c.get('level') or ('OK ' if c['ok'] else 'MISSING')}] {c['name']}" + (f"  ->  {c['fix']}" if c["fix"] else ""))
         print(f"\nsigma-doctor: {len(checks) - len(gaps)}/{len(checks)} ready"
               + ("." if not gaps else f"; {len(gaps)} need the one-liner shown above."))
         print("\nfeatures (doctor.py features for the enable one-liners):")

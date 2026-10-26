@@ -2,6 +2,8 @@
 goal's rank in the same batch (`GitHubSource.raise_blocker_priority`, the #1406 rule)."""
 import json, pathlib, importlib.util
 
+import pytest
+
 import gqlfake
 
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
@@ -13,8 +15,16 @@ def _mod(name):
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
 
 
+@pytest.fixture(autouse=True)
+def _sweep_state_in_tmp(tmp_path, monkeypatch):
+    """#2021: the sweep writes its cache and interval stamp under the relative `.sdlc` these tests name; run
+    from a tmp cwd so that is never the repo's own (a stamp left there made the next run skip the sweep)."""
+    monkeypatch.chdir(tmp_path)
+
+
 def _config(mode=None):
-    cfg = {"discovery": {"source": "github", "github": {"repo": "acme/widget"}}}
+    cfg = {"discovery": {"source": "github", "github": {"repo": "acme/widget"},
+                         "auto_unpark": {"interval_minutes": 0}}}     # #2021: sweep on every call, as these tests assume
     if mode:
         cfg["discovery"]["blocker_promotion"] = {"mode": mode}
     return cfg

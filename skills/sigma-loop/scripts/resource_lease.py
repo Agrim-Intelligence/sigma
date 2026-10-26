@@ -257,8 +257,29 @@ def _load_leases(directory):
     return found
 
 
+def group_alive(group):
+    """True while any process of the process group `group` is alive (#1917). Signal 0 only, never a real signal.
+    No usable group id, or no process groups on this platform, is False: the lease then follows its pid alone."""
+    if not isinstance(group, int) or isinstance(group, bool) or group <= 1 or not hasattr(os, "killpg"):
+        return False
+    try:
+        os.killpg(group, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:   # PermissionError: the group exists (darwin also answers so for a zombie-only group)
+        return True
+    return True
+
+
 def _stale(record, now):
-    return record is None or not pid_alive(record["pid"]) or expired(record, now) or reused(record)
+    """A lease is stale when unreadable, or past its ttl (always, alive group or not), or its holder is gone AND the
+    process group of its command (recorded when the command started) is empty. A wrapper SIGKILLed while its command
+    runs leaves the group alive: the lease then stays until the group ends or the ttl passes (#1917)."""
+    if record is None or expired(record, now):
+        return True
+    if group_alive(record.get("group")):
+        return False
+    return not pid_alive(record["pid"]) or reused(record)
 
 
 def _tree_feet(record, held):
@@ -431,7 +452,7 @@ def admit(kind, want, repo, goal, pid=None, ttl=None, config=None, now=None, env
             since = previous.get("since") if previous.get("state") == "hold" else now
             _atomic_write(os.path.join(directory, "last.json"), {
                 "state": "hold", "since": since, "reason": choice.reason, "kind": kind, "goal": goal, "at": now,
-                "sample": sample.as_dict()})
+                "sample": sample.as_dict(), "critical": bool(previous.get("critical"))})   # #1914: refresh's debounce
             log_event(directory, {"event": "hold", "kind": kind, "goal": goal, "reason": choice.reason, "at": now})
             return choice
         n, est = choice
@@ -445,7 +466,7 @@ def admit(kind, want, repo, goal, pid=None, ttl=None, config=None, now=None, env
         _atomic_write(os.path.join(directory, "waiting.json"), waiting)
         _atomic_write(os.path.join(directory, "last.json"), {
             "state": "open", "since": now, "reason": "ok", "kind": kind, "goal": goal, "at": now,
-            "sample": sample.as_dict()})
+            "sample": sample.as_dict(), "critical": bool(previous.get("critical"))})   # #1914: refresh's debounce
         log_event(directory, {"event": "grant", "id": lease_id, "kind": kind, "goal": goal, "n": n, "at": now})
         return Grant(n, lease_id)
 

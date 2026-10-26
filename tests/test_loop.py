@@ -274,10 +274,9 @@ def test_next_returns_done_none_when_backlog_genuinely_empty():
         assert (kind, payload) == ("DONE", None)
 
 
-def test_next_returns_done_with_reason_when_the_read_is_degraded():
-    """#1084: a `read_degraded()`-True source must widen `_next()`'s DONE payload to a non-None
-    reason string, rather than reporting the same `("DONE", None)` a genuinely-empty backlog
-    would -- this is the tri-state contract's central claim."""
+def test_next_returns_degraded_epoch_when_the_read_is_degraded():
+    """#2023 (was #1084's DONE-with-reason): a `read_degraded()`-True source is never DONE; `_next()`
+    returns ("DEGRADED", <retry epoch>)."""
     with tempfile.TemporaryDirectory() as d:
         base = _backlog(d, 0)
         lp = _loop()
@@ -288,9 +287,8 @@ def test_next_returns_done_with_reason_when_the_read_is_degraded():
             def read_degraded(self): return True
 
         kind, payload = lp._next(base, DegradedSource(), lp.state.load_config(base))
-        assert kind == "DONE"
-        assert isinstance(payload, str)
-        assert "degraded" in payload
+        assert kind == "DEGRADED"
+        assert isinstance(payload, int) and payload > time.time() - 5
 
 
 def test_run_loop_drives_any_injected_source():    # loop.py is source-agnostic (local OR github)
@@ -2078,7 +2076,7 @@ def test_auto_unpark_sweep_calls_sweep_unpark_when_enabled(monkeypatch):
     calls = []
 
     class FakeAutoUnpark:
-        def sweep_unpark(self, sdlc_dir, config, apply=False, run=None):
+        def sweep_unpark(self, sdlc_dir, config, apply=False, run=None, **kw):
             calls.append((sdlc_dir, apply))
 
     real_load = lp._load
@@ -2119,7 +2117,7 @@ def test_next_runs_the_sweep_first_but_still_returns_its_own_pick(monkeypatch):
     order = []
 
     class FakeAutoUnpark:
-        def sweep_unpark(self, sdlc_dir, config, apply=False, run=None):
+        def sweep_unpark(self, sdlc_dir, config, apply=False, run=None, **kw):
             order.append("swept")
 
     real_load = lp._load
@@ -2152,7 +2150,7 @@ def test_next_holds_a_just_unparked_goal_back_from_its_own_pick(monkeypatch):
     flipped = {}                        # stand-in for the goal's real GitHub label state post-sweep
 
     class FakeAutoUnpark:
-        def sweep_unpark(self, sdlc_dir, config, apply=False, run=None):
+        def sweep_unpark(self, sdlc_dir, config, apply=False, run=None, **kw):
             assert apply is True        # #1129's sweep is always a live apply, never a dry-run, from _next()
             flipped["42"] = {"sdlc:goal"}                  # the mutation: sdlc:parked -> sdlc:goal, for real
             return {"apply": True, "checked": 1, "eligible": 1,
@@ -2187,11 +2185,11 @@ def test_a_just_unparked_goal_is_pickable_on_the_very_next_next_call(monkeypatch
     lp = _loop()
 
     class FirstCallUnparks:
-        def sweep_unpark(self, sdlc_dir, config, apply=False, run=None):
+        def sweep_unpark(self, sdlc_dir, config, apply=False, run=None, **kw):
             return {"apply": True, "checked": 1, "eligible": 1, "actions": [], "unparked": ["42"]}
 
     class SecondCallFindsNothingLeftToUnpark:
-        def sweep_unpark(self, sdlc_dir, config, apply=False, run=None):
+        def sweep_unpark(self, sdlc_dir, config, apply=False, run=None, **kw):
             return {"apply": True, "checked": 0, "eligible": 0, "actions": [], "unparked": []}
 
     real_load = lp._load
