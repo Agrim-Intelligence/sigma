@@ -86,7 +86,8 @@ EDGE_SOURCES = ("body", "comment", "timeline", "other")
 TOP_KEYS = ("schema", "header", "nodes", "edges")
 HEADER_KEYS = ("repo", "built_at", "refreshed_at", "last_ok_at", "last_error", "partial", "cursor",
                "etag", "checked_at")
-NODE_KEYS = ("number", "kind", "state", "life", "prio", "in_corpus", "updated_at", "unit", "assignees")
+NODE_KEYS = ("number", "kind", "state", "life", "prio", "in_corpus", "updated_at", "unit", "assignees",
+             "between_slices")    # #2006: additive, informational (a lean multi-PR goal between slices)
 EDGE_KEYS = ("blocker", "blocked", "source")
 PRIOS = ("P0", "P1", "P2", "P3", "P4")
 VOCAB = (SCHEMA,) + TOP_KEYS + HEADER_KEYS + NODE_KEYS + EDGE_KEYS + KINDS + STATES + LIVES + EDGE_SOURCES + PRIOS
@@ -209,6 +210,8 @@ def _clean_node(n):
     u = n.get("unit")
     if isinstance(u, str) and _UNIT.match(u):
         out["unit"] = u
+    if n.get("between_slices") is True:                 # #2006: only ever true; absent means not between slices
+        out["between_slices"] = True
     if isinstance(n.get("assignees"), list):            # absent stays absent: unknown is not unassigned
         out["assignees"] = [a for a in n["assignees"] if isinstance(a, str) and _LOGIN.fullmatch(a)][:MAX_ASSIGNEES]
     return out

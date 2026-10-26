@@ -1041,7 +1041,8 @@ def test_failures_wrap_without_retry_and_unparseable_json_raises():
 
 def test_only_the_probe_mentions_graphql():
     src = (S / "gh_api.py").read_text()
-    assert src.count('"graphql"') == 1
+    # #2006 (D-41): `closing_issue_numbers` is the one other, by necessity -- REST has no closingIssuesReferences.
+    assert src.count('"graphql"') == 1 + ("def closing_issue_numbers(" in src)
 
 
 # ---------------------------------------------------------------- list_issues_gh (#895 slice 2c)
@@ -2059,7 +2060,7 @@ def test_gate_closed_existing_pr_ops_are_byte_identical():
 def test_gh_api_adds_no_literal_gh_pr_list_and_no_graphql_string():
     src = (S / "gh_api.py").read_text()
     assert '"gh", "pr"' not in src and '"gh", "issue"' not in src
-    assert src.count('"graphql"') == 1
+    assert src.count('"graphql"') == 1 + ("def closing_issue_numbers(" in src)     # #2006: see above
 
 
 # ---------------------------------------------------------------- PR reads, REST first (#895 slice 4a-1)
@@ -3545,3 +3546,70 @@ def test_close_pr_gh_405_and_422_never_fall_back(hint):
     run = CFake(patch_exc=RuntimeError(hint))
     out = _close(run)
     assert isinstance(out, Exception) and run.fb() == []
+
+
+# ---------------------------------------------------------------- #2006: edit_pr_body / closing_issue_numbers (D-41)
+
+def _he2006(hint):
+    e = RuntimeError("gh api failed: " + hint)
+    e.hint = hint
+    return e
+
+
+def test_edit_pr_body_patches_over_rest_and_closing_issue_numbers_reads_graphql():
+    g = _mod("gh_api")
+    assert hasattr(g, "edit_pr_body"), "gh_api has no edit_pr_body"
+    body = "Refs #2006\n\n@file and key=val"
+    run = Fake(json.dumps({"number": 7, "body": body}))
+    out = g.edit_pr_body(run, 7, body, repo="o/r", env={})
+    assert out["via"] == "rest"
+    assert run.calls == [["api", "repos/o/r/pulls/7", "--method", "PATCH", "-f", "body=" + body]]
+    assert "-F" not in run.calls[0]                                  # -f: the body stays literal text
+    # success is ONLY a reply carrying the body that was sent
+    for reply in ("{}", "null", json.dumps({"number": 7, "body": "Closes #2006"})):
+        run = Fake(reply)
+        try:
+            g.edit_pr_body(run, 7, body, repo="o/r", env={})
+            raised = False
+        except Exception:                                            # noqa: BLE001
+            raised = True
+        assert raised and len(run.calls) == 1, reply
+    for bad in (0, -1, True, "7", None):                             # validated before any call
+        run = Fake("{}")
+        try:
+            g.edit_pr_body(run, bad, body, repo="o/r", env={})
+            raised = False
+        except Exception:                                            # noqa: BLE001
+            raised = True
+        assert raised and run.calls == [], bad
+    # idempotent: a 5xx falls back ONCE to `gh pr edit`, built inside gh_api; never without GraphQL
+    run = Fake(_he2006("gh: Server Error (HTTP 502)"), "")
+    assert g.edit_pr_body(run, 7, body, repo="o/r", env={})["via"] == "gh"
+    assert run.calls[1] == ["pr", "edit", "7", "--repo", "o/r", "--body", body]
+    run = Fake(_he2006("gh: Server Error (HTTP 502)"), "")
+    try:
+        g.edit_pr_body(run, 7, body, repo="o/r", env={"SIGMA_GH_GRAPHQL": "off"})
+        raised = False
+    except Exception:                                                # noqa: BLE001
+        raised = True
+    assert raised and len(run.calls) == 1
+    # closing_issue_numbers: the GraphQL closingIssuesReferences read (REST has no such field)
+    assert hasattr(g, "closing_issue_numbers"), "gh_api has no closing_issue_numbers"
+
+    def reply(nums):
+        return json.dumps({"data": {"repository": {"pullRequest": {"closingIssuesReferences": {
+            "nodes": [{"number": n} for n in nums]}}}}})
+    run = Fake(reply([2006]))
+    assert g.closing_issue_numbers(run, 7, repo="o/r") == [2006]
+    assert run.calls[0][:2] == ["api", "graphql"]
+    joined = " ".join(run.calls[0])
+    assert "closingIssuesReferences" in joined and "number=7" in joined and "owner=o" in joined
+    assert g.closing_issue_numbers(Fake(reply([])), 7, repo="o/r") == []
+    # unknown is never "no closing references": a malformed reply raises
+    for bad in ("{}", "null", json.dumps({"data": {"repository": {"pullRequest": None}}})):
+        try:
+            g.closing_issue_numbers(Fake(bad), 7, repo="o/r")
+            raised = False
+        except Exception:                                            # noqa: BLE001
+            raised = True
+        assert raised, bad

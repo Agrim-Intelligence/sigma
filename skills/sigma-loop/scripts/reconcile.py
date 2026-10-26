@@ -139,8 +139,13 @@ def _overlay_labels(source):
     left over in `primary`.
 
     #1579: delegates to `GitHubSource.overlay_labels()` for the reason `_primary_labels` does — one
-    definition of the vocabulary, not two that happen to agree today."""
-    return source.overlay_labels()
+    definition of the vocabulary, not two that happen to agree today.
+
+    #2006 (D-49): plus `between_slices_label`, named here EXPLICITLY because it is deliberately not one of
+    `overlay_labels()` (that set is the eligibility rule, and this label is read by no picker) -- so the census
+    classifies it and `_stale_on_closed` strips it from a closed issue like every other activity overlay."""
+    extra = getattr(source, "between_slices_label", None)
+    return (*source.overlay_labels(), *([extra] if extra else []))
 
 
 def _fetch_by_label(source, label, state="open"):

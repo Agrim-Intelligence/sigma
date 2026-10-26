@@ -333,11 +333,13 @@ def test_the_label_vocabulary_is_read_from_the_source_rather_than_restated():
     a test comparing both against the same literal tuple could never show."""
     rc = _mod("reconcile"); src = _src(_runner())
     assert rc._primary_labels(src, _config()) == src.membership_labels()
-    assert rc._overlay_labels(src) == src.overlay_labels()
+    # #2006 (D-49): plus the informational between-slices label, named explicitly -- it is not an overlay
+    # (no picker reads it) but the census and the closed-issue strip must see it.
+    assert rc._overlay_labels(src) == (*src.overlay_labels(), src.between_slices_label)
     src.membership_labels = lambda: ("only:membership",)
     src.overlay_labels = lambda: ("only:overlay",)
     assert rc._primary_labels(src, _config()) == ("only:membership",)
-    assert rc._overlay_labels(src) == ("only:overlay",)
+    assert rc._overlay_labels(src) == ("only:overlay", src.between_slices_label)
 
 
 def test_a_closed_parked_issue_keeps_its_park_and_loses_only_the_goal_label():

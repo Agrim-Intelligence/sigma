@@ -52,9 +52,35 @@ def _banner(sdlc_dir, goal):
     ]
 
 
+def _per_slice(work, sdlc_dir, goal, prog):
+    """#2006 (D14): a lean multi-PR goal ships one PR per slice -- the sequence, never the in-one-PR wave."""
+    wp = _HERE / "work.py"
+    return [
+        f"slices: one pull request per slice, in manifest order ({', '.join(prog['ids'])}). For each slice:",
+        f'  python3 "{wp}" slice "{sdlc_dir}" "{goal}"   (cuts the next slice branch; refuses while its PR is open)',
+        "  implement it test-first and review it, then:",
+        f'  python3 "{wp}" pr "{sdlc_dir}" "{goal}"   (Refs #N on every slice but the last, Closes #N on the last)',
+        "  merge it (work.py merge) or record review; never `record done` before the last slice has merged.",
+    ]
+
+
+def _between(work, sdlc_dir, config, goal):
+    """#2006 (D14): printed REGARDLESS of the implement mark -- the local record's current slice is merged, so the
+    next gesture is the next slice. A local read only (display); the gates read GitHub."""
+    prog = work.slice_progress(sdlc_dir, config, goal)
+    if not prog or not prog["current"] or prog["current"] not in prog["merged"] or not prog["k"]:
+        return []
+    return [f"between slices: slice {prog['current']} merged ({prog['k']} of {prog['n']}) per the local record; "
+            f'next: python3 "{_HERE / "work.py"}" slice "{sdlc_dir}" "{goal}", then start implement again']
+
+
 def _slices(work, slices, sdlc_dir, config, goal):
     if not work.enabled(config):
-        return ["slices: work.enabled is off -- run the goal as one unit"]
+        tail = ", slices in manifest order" if slices.manifest_path(sdlc_dir, goal).is_file() else ""
+        return ["slices: work.enabled is off -- run the goal as one unit" + tail]
+    prog = work.slice_progress(sdlc_dir, config, goal)
+    if prog:
+        return _per_slice(work, sdlc_dir, goal, prog)
     if not slices.manifest_path(sdlc_dir, goal).is_file() or not slices.parallel(config)[0]:
         return ["slices: none declared (or parallel.enabled off) -- run the goal as one unit"]
     loop = _HERE / "loop.py"
@@ -87,6 +113,7 @@ def render(sdlc_dir, config, goal):
         raise ValueError(f"unsafe goal {goal!r}: {reason}")
     phase_gate = _load("phase_gate")
     lines = [_route(work, sdlc_dir, config, goal), phase_gate.format_status(sdlc_dir, config, goal)]
+    lines += _between(work, sdlc_dir, config, goal)
     # implement counts as ended only while its LATEST start/end row is an end: a re-start after a
     # send-back brings the banner and the slice procedure back. `actionlog.read_goal` is the public
     # reader `phase_gate` itself wraps (malformed rows are skipped there, never a crash).

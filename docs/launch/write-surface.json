@@ -3001,6 +3001,22 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/work.py",
+      "function": "_finish_slice_branches",
+      "rule": "git-destructive",
+      "count": 1,
+      "gate": "reached only from `finish()` after a CONFIRMED merge of the goal's PR; acts only on a record carrying `goal_branch` / `slices` (written by `work.py slice` for a lean multi-PR goal): `git branch -D` of the goal branch and earlier slice branches, best-effort (#2006)",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/work.py",
+      "function": "switch_pr_to_refs",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "lean multi-PR (`work.multi_pr`) with a started slice and an open slice PR whose body starts `Closes #N`; PATCH pulls/N body via gh_api.edit_pr_body (idempotent; ONE `gh pr edit` fallback per the write policy), then at most 4 closingIssuesReferences reads, each after a 3 s sleep, two consecutive misses to confirm (D-41) (#2006)",
+      "risk": "medium"
+    },
+    {
       "path": "skills/sigma-loop/scripts/worktree_prune.py",
       "function": "_atomic_write",
       "rule": "fs-remove",

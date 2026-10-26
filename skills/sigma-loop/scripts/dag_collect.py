@@ -268,6 +268,8 @@ def collect(sdlc, config, run=None, now=None, previous=None, cap=LIST_CAP, outsi
         unit = _unit(names)
         if unit:
             node["unit"] = unit
+        if _gh(config).get("between_slices_label", "sdlc:between-slices") in names:
+            node["between_slices"] = True               # #2006: additive, informational; `life` stays in-progress
         if isinstance(it.get("assignees"), list):       # listed with the issue: no extra call
             node["assignees"] = _assignees(it)
         nodes[num] = node

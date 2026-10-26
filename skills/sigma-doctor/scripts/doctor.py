@@ -6951,7 +6951,7 @@ LEAN_CHANGES = (
      "text": "a folded review is accepted by both plan gates"},
     {"id": "action-log-on", "slice": 2, "active": True,
      "text": "an absent action_log key is read as on for lean goals (FR-96); a per-goal log file then grows on disk"},
-    {"id": "multi-pr", "slice": 4, "active": False,
+    {"id": "multi-pr", "slice": 4, "active": True,
      "text": "a goal may ship as several PRs (one per slice): Refs then Closes"},
     {"id": "pre-impl-test-review", "slice": 7, "active": False,
      "text": "a pre-implementation test review runs for lean goals, independent of review.test_review (R11)"},

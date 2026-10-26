@@ -499,6 +499,29 @@ the other `sdlc:*` labels by `sigma-init`. Nothing in Sigma adds the label: the 
 checkpoint" is recorded only, and a person adds the label. The full contract is in
 [the dependency docs](dependency-map-and-chain.md#checkpoints).
 
+## 2b-vii. `sdlc:between-slices` — informational, never an eligibility overlay
+
+Added with #2006 (lean goals slice 4). A lean goal whose slice manifest declares two or more slices ships one pull
+request per slice. From the moment a non-final slice's PR opens, through its merge and until the goal completes or
+is parked, its issue carries
+`sdlc:between-slices` (key `between_slices_label` under `discovery.github`) **beside** `sdlc:in-progress`, which it
+keeps the whole time:
+
+```
+   sdlc:goal + sdlc:in-progress + sdlc:between-slices
+        │
+        │   never picked: sdlc:in-progress alone keeps it off every picker (older Sigma releases included)
+        │   NOT in overlay_labels() / not_eligible_labels(): no picker reads this label at all
+        │   continued first by the machine that owns it (its next pick, before the backlog)
+        │
+        └── removed when the goal completes, is parked or demoted, and by the reconciler on a closed issue
+```
+
+It is display only: `/sigma-status` counts it (a subset of in-progress), the dependency map marks the node, and
+nothing decides anything from it. The issue stays open until every slice's PR has merged — non-final slice PRs
+say `Refs #N`, never a closing keyword. One writer (`GitHubSource.mark_between_slices`); created with the other
+`sdlc:*` labels.
+
 ## 2b-iv. Reviewer down — a park with the kind `reviewer_down`
 
 When `review.independent` is on and the resolved `process`/`command` reviewer FAILS (unauthenticated,
@@ -1203,9 +1226,9 @@ is *invisible* to it — the census exists specifically to hunt those down.
 ## 12. Labels outside the `sdlc:` prefix — `priority:*`, `model:*`, and yours
 
 Everything above is about the `sdlc:*` lifecycle labels. Those are the only labels Sigma
-**defines**: `_ensure_labels` seeds exactly ten — `sdlc:goal`, `sdlc:parked` and eight
+**defines**: `_ensure_labels` seeds exactly eleven — `sdlc:goal`, `sdlc:parked`, eight
 overlays (in-progress, blocked, blocking, needs-label, designed, needs-unit, needs-triage, checkpoint; `sdlc:designed` joined the table in #1826, `sdlc:needs-unit` in #2263,
-`sdlc:needs-triage` in #2364, `sdlc:checkpoint` in #1904) — and
+`sdlc:needs-triage` in #2364, `sdlc:checkpoint` in #1904) and the informational `sdlc:between-slices` (#2006, §2b-vii) — and
 nothing else (the legacy `sdlc:needs-confirmation` is created only on demand). Any other label on your board is yours.
 
 Two non-`sdlc:` prefixes appear in Sigma's own output, and they are **not** the same kind of

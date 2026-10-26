@@ -576,7 +576,9 @@ def promote(sdlc_dir, config, numbers, source=None, run=None, apply=True, demote
     # on an issue that is no longer a goal is the orphan shape the census exists to find.
     # #1006: with triage on (the default) a demotion parks rather than writing the legacy label.
     park_demote = demote and not _feature("file_triage").is_off(config)
-    add, remove = ((([source.parked_label] if park_demote else [proposed]), [goal, *source.overlay_labels()])
+    between = getattr(source, "between_slices_label", None)          # #2006: not an overlay, stripped all the same
+    add, remove = ((([source.parked_label] if park_demote else [proposed]),
+                    [goal, *source.overlay_labels(), *([between] if between else [])])
                    if demote else ([goal], [proposed]))
     verb = "demoted" if demote else "promoted"
 

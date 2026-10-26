@@ -41,7 +41,7 @@ REPO = "acme/app"
 #: Spelled out so this file stands alone (never imports sources.py to learn its own vocabulary).
 LIFECYCLE = ("sdlc:goal", "sdlc:in-progress", "sdlc:parked", "sdlc:blocked", "sdlc:blocking",
              "sdlc:needs-label", "sdlc:designed", "sdlc:needs-unit",
-             "sdlc:needs-triage", "sdlc:checkpoint")
+             "sdlc:needs-triage", "sdlc:checkpoint", "sdlc:between-slices")   # #2006: informational
 PRIORITY = ("priority:P0", "priority:P1", "priority:P2", "priority:P3")
 ALL_LABELS = LIFECYCLE + PRIORITY
 

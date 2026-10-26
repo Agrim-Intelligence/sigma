@@ -362,7 +362,8 @@ _CORE_LABELS = {"sdlc:goal", "sdlc:in-progress", "sdlc:parked", "sdlc:blocked", 
                 "sdlc:needs-label", "sdlc:designed",
                 "sdlc:needs-unit",   # #2263: the sibling overlay, same colour as sdlc:needs-label
                 "sdlc:needs-triage",  # #2363: tier 4 of feature_classify's chain, a distinct colour
-                "sdlc:checkpoint"}    # #1904: met when a unit lands or a person closes it
+                "sdlc:checkpoint",    # #1904: met when a unit lands or a person closes it
+                "sdlc:between-slices"}  # #2006: informational, a lean multi-PR goal between slice PRs
 
 
 def _github_cfg(repo="acme/app"):

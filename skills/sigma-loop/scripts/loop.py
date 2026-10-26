@@ -2293,8 +2293,9 @@ def _claim(sdlc_dir, source, goal, config, session_pid=None, why=None, mark=True
     existed (verified empirically, not assumed).
 
     `mark=False` (#2029) writes the LOCAL half only -- ledger, actionlog, session registry -- and
-    skips `mark_in_progress`, the one step of a claim that reaches OUTSIDE this machine. Only
-    `_ensure_claimed` ever passes it, and only for a target that is not a member of the backlog;
+    skips `mark_in_progress`, the one step of a claim that reaches OUTSIDE this machine. Two callers
+    pass it: `_ensure_claimed`, only for a target that is not a member of the backlog, and #2006's
+    `_continue_own_lean_goal`, whose goal already carries `sdlc:in-progress` between slices;
     see `_arming_may_mark`. The pick path (`_next`, the `claim` verb) never passes it and is
     byte-for-byte unchanged, because there membership is already proven -- `_fetch_pending` asks
     the server for `--label sdlc:goal` -- so marking IS picking.
@@ -2772,9 +2773,10 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
     # return `("HANDOFF", ...)` with no goal claimed. Count ceilings now read this
     # session's durable admissions, while resource ceilings read this session's own run (#955).
     cursor_for_sweep_gate = _session_cursor(sdlc_dir, session_pid)
-    if not (_budget_resource_reason(cursor_for_sweep_gate, config.get("budget", {}))
-            or _session_count_stop(sdlc_dir, session_pid, config, cursor_for_sweep_gate,
-                                   context=context)):
+    sweep_ok = not (_budget_resource_reason(cursor_for_sweep_gate, config.get("budget", {}))
+                    or _session_count_stop(sdlc_dir, session_pid, config, cursor_for_sweep_gate,
+                                           context=context))
+    if sweep_ok:
         _feature_needs_label_sweep(sdlc_dir, source, config)
         _feature_needs_unit_sweep(sdlc_dir, source, config)   # #2263
         # #232: close goals `record review` left waiting whose PR has since merged. Inside this
@@ -2784,6 +2786,14 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
     skip = (set(extra_skip) | just_unparked | just_reclaimed
             | _session_in_flight_goals(sdlc_dir, config)
             | _awaiting_merge_skip(sdlc_dir))           # #232: a PR awaiting merge is not pickable
+    # #2006 (FR-84): BEFORE `next_pending`, the owning machine continues its own lean multi-PR goal between slices.
+    # Only when the sweep gate passed: the step writes (a claim, a label, a done or a park).
+    if sweep_ok:
+        rec.mark("continue_own")
+        cont = _continue_own_lean_goal(sdlc_dir, source, config, skip, me, my_writer, lease, session_pid,
+                                       context)
+        if cont is not None:
+            return cont
     # #1499: THE BOARD-MIRROR CACHE FOR THIS WHOLE CALL, shared by every candidate -- a dict
     # lookup per candidate and nothing more. NOT one read: #1650 re-populates it from a forced
     # refetch when a hold is about to be reported, and `_pick_dependency_hold` does the same when
@@ -4877,6 +4887,7 @@ def _record_awaiting_merge(sdlc_dir, source, goal, detail="", retro_grade=None):
     signal unit completion. Returns "review"."""
     pr, first = work.mark_awaiting_merge(sdlc_dir, goal)
     note = _AWAITING_MERGE_NOTE.format(pr=pr) if first else None
+    _sync_between_slices(sdlc_dir, source, goal)
     try:
         if hasattr(source, "await_merge"):
             source.await_merge(goal, note)
@@ -4899,6 +4910,175 @@ def _record_awaiting_merge(sdlc_dir, source, goal, detail="", retro_grade=None):
         _sync_knowledge_notes(sdlc_dir, goal)
         _refresh_knowledge_graph(sdlc_dir, goal)
     return "review"
+
+
+def _claim_is_mine(sdlc_dir, config, goal, me, my_writer, lease):
+    """#2006 (FR-84, X3): THE NAMED SEAM for "the claim epoch is this machine's own". Slice 5b adds the epoch read
+    HERE. Today: no other actor (and no different live writer of mine) holds an open ledger lease on the goal --
+    the same `claim_belongs_to_me` reading the in-loop pick makes."""
+    holder_actor, holder_writer = lease.get(str(goal), (None, None))
+    return not holder_actor or ledger.claim_belongs_to_me(
+        holder_actor, holder_writer, me, my_writer,
+        live_worker_check=lambda g=goal: _goal_has_registered_worker(sdlc_dir, g, config))
+
+
+_TERMINAL_RECORDED = ("parked", "failed", "done")
+
+
+def _latest_recorded(sdlc_dir, goal):
+    rows = [r for r in actionlog.read_goal(sdlc_dir, goal) if r.get("kind") == "recorded"]
+    return rows[-1].get("result") if rows else None
+
+
+def _continue_candidates(sdlc_dir, config, skip, me, my_writer, lease, now):
+    """Local work records of lean multi-PR goals between slices that this machine may continue, as
+    (continue_checked_at, goal), cheapest filters first; no GitHub read."""
+    wdir = pathlib.Path(sdlc_dir) / "state" / "work"
+    out = []
+    for path in sorted(wdir.glob("*.json")) if wdir.is_dir() else ():
+        goal = path.stem
+        try:
+            rec = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(rec, dict) or not isinstance(rec.get("slices"), dict) or not rec["slices"]:
+            continue
+        if isinstance(rec.get("awaiting_merge"), dict) or goal in skip or work.stem(goal) in skip:
+            continue
+        checked = int(rec.get("continue_checked_at") or 0)
+        if checked and now - checked < work.MERGE_RECHECK_SECONDS:
+            continue
+        if not work.multi_pr(sdlc_dir, config, goal):
+            continue
+        if _latest_recorded(sdlc_dir, goal) in _TERMINAL_RECORDED:     # F1: a park / fail / done stands
+            continue
+        if not _claim_is_mine(sdlc_dir, config, goal, me, my_writer, lease):
+            continue
+        out.append((checked, goal))
+    return sorted(out)
+
+
+def _continue_own_lean_goal(sdlc_dir, source, config, skip, me, my_writer, lease, session_pid, context=None,
+                            now=None):
+    """#2006 (FR-84, FR-85, FR-87; D9/D10): the pick's first look, before `next_pending` -- this machine's own lean
+    multi-PR goal whose slice PR merged is continued, so a multi-PR goal is never re-queued behind the backlog.
+    -> the pick's return tuple (`("goal", g)`, or a BUDGET/HANDOFF stop) or None (nothing continued; pick as usual).
+
+    BOUNDED: at most ONE candidate is confirmed on GitHub per pick -- the least recently checked -- and none is
+    re-read inside `work.MERGE_RECHECK_SECONDS` (the stamp `continue_checked_at` is written before the read, so a
+    failing read is throttled too). Cost per pick: one issue read, one PR read, ~2 REST calls per manifest slice.
+
+    F1: a goal a human parked is never re-claimed -- the latest `recorded` row must not be parked/failed/done, AND
+    the issue must be OPEN, still carry `sdlc:in-progress` and carry neither the parked nor the blocked label; any
+    read failure skips the candidate. Then: the current slice PR must not be open (or unreadable); a definite
+    "merged without a trusted approve" parks needs_decision ONCE (the park strips `sdlc:in-progress` and records
+    `parked`, so the filters above exclude it afterwards); every slice done with the issue open records done (FR-87);
+    else, with at least one slice done: claim lock -> budget/count stops -> slot -> `_claim(mark=False)` (the label
+    is already on the issue) -> the between-slices label -> `("goal", goal)`."""
+    try:
+        if not work.enabled(config):
+            return None
+        now = int(now if now is not None else time.time())
+        found = _continue_candidates(sdlc_dir, config, skip, me, my_writer, lease, now)
+        if not found:
+            return None
+        goal = found[0][1]
+        rec = work._record(sdlc_dir, goal) or {}
+        work._save(sdlc_dir, goal, dict(rec, continue_checked_at=now))
+        reader = getattr(source, "issue_state_labels", None)
+        if reader is None:
+            return None
+        try:
+            state_now, names = reader(goal)
+        except Exception as exc:                 # noqa: BLE001 - unconfirmed is "skip", never "continue"
+            print(f"loop.py: continue {goal}: issue unreadable ({exc}) -- skipped this pick", file=sys.stderr)
+            return None
+        if (state_now != "OPEN" or getattr(source, "in_progress_label", None) not in names
+                or getattr(source, "parked_label", None) in names
+                or getattr(source, "goal_blocked_label", None) in names):
+            return None
+        landing = None
+        if rec.get("pr"):
+            landing, _why = work.pr_landing_state(sdlc_dir, rec, None)
+            if landing not in (work.MERGED, work.CLOSED_PR):
+                return None                      # still open, or unreadable: nothing to continue yet
+        states = work.slice_states(sdlc_dir, config, goal)
+        unknown = [sid for sid, done in states if done is None]
+        if not states or unknown:
+            if unknown:
+                print(f"loop.py: continue {goal}: slice state unreadable ({', '.join(unknown)}) -- skipped this "
+                      "pick", file=sys.stderr)
+            return None
+        by_id, current = dict(states), rec.get("slice")
+        if landing == work.MERGED and current in by_id and by_id[current] is False:
+            _record(sdlc_dir, source, goal, "parked",
+                    f"slice {current} PR #{rec.get('pr')} merged without a trusted sigma:approve",
+                    qkind="needs_decision")
+            return None
+        if all(done is True for _, done in states):
+            _record(sdlc_dir, source, goal, "done", f"every slice of #{work.stem(goal)} has a merged PR (FR-87)",
+                    merged_pr=True)
+            return None
+        if not any(done is True for _, done in states):
+            return None
+    except Exception as exc:                     # noqa: BLE001 - never costs the caller its pick
+        print(f"loop.py: continue-own-goal step skipped (non-fatal): {exc}", file=sys.stderr)
+        return None
+    lock_fd = _try_acquire_claim_lock(sdlc_dir, goal)
+    if lock_fd is None:
+        return None
+    try:
+        cursor = _session_cursor(sdlc_dir, session_pid)
+        reason = _budget_resource_reason(cursor, config.get("budget", {}))
+        if reason:
+            _emit_run_stop_once(sdlc_dir, config, source, "budget", why=reason, session_pid=session_pid)
+            return ("BUDGET", reason)
+        count_stop = _session_count_stop(sdlc_dir, session_pid, config, cursor, context=context)
+        if count_stop:
+            kind, why = count_stop
+            _emit_run_stop_once(sdlc_dir, config, source, kind.lower(), why=why, session_pid=session_pid)
+            return count_stop
+        admission_stop = _reserve_goal_slot(sdlc_dir, session_pid, goal, config, context=context)
+        if admission_stop:
+            kind, why = admission_stop
+            _emit_run_stop_once(sdlc_dir, config, source, kind.lower(), why=why, session_pid=session_pid)
+            return admission_stop
+        try:
+            _claim(sdlc_dir, source, goal, config, session_pid=session_pid, mark=False)
+        except BaseException:
+            _session_release(sdlc_dir, goal)
+            raise
+        try:
+            if hasattr(source, "mark_between_slices"):
+                source.mark_between_slices(goal)
+        except Exception as exc:                 # noqa: BLE001 - display label
+            print(f"loop.py: between-slices label for {goal} not written ({exc})", file=sys.stderr)
+        return ("goal", goal)
+    finally:
+        _release_claim_lock(lock_fd)
+
+
+def _current_slice_pr_open(sdlc_dir, goal):
+    """#2006: is the record's current slice PR positively OPEN? Never raises (unknown -> False)."""
+    try:
+        rec = work._record(sdlc_dir, goal) or {}
+        return bool(rec.get("pr")) and work.pr_landing_state(sdlc_dir, rec)[0] == work.OPEN_PR
+    except Exception:                             # noqa: BLE001
+        return False
+
+
+def _sync_between_slices(sdlc_dir, source, goal):
+    """#2006 (FR-75): a multi-PR goal whose current slice is NOT the last one (local read: another manifest slice is
+    not marked merged on the record) carries the informational between-slices label. Never raises; no GitHub read."""
+    try:
+        prog = work.slice_progress(sdlc_dir, state.load_config(sdlc_dir), goal)
+        if not prog or not prog["current"]:
+            return
+        if [i for i in prog["ids"] if i != prog["current"] and i not in prog["merged"]] and hasattr(
+                source, "mark_between_slices"):
+            source.mark_between_slices(goal)
+    except Exception as exc:                      # noqa: BLE001 - a display label never costs a record
+        print(f"loop.py record: between-slices label for {goal} not written ({exc})", file=sys.stderr)
 
 
 def _awaiting_merge_skip(sdlc_dir):
@@ -5115,7 +5295,11 @@ def _reconcile_one(sdlc_dir, config, source, goal, run, now, results):
     landing = work.pr_landing_state(sdlc_dir, rec, run)
     work.stamp_merge_check(sdlc_dir, goal, now=now, successful=landing[0] != work.UNKNOWN)
     if landing[0] == work.MERGED:
-        if work.done_refusal(sdlc_dir, config, goal, run=run, landing=landing):
+        # #2006 (FR-63, FR-85): a multi-PR goal's non-final slice is handled (or skipped) BEFORE `done_refusal`,
+        # whose own slice check would otherwise just refuse and leave the flag set forever.
+        if _reconcile_slice(sdlc_dir, config, source, goal, run, rec, pr, results):
+            return
+        if work.done_refusal(sdlc_dir, config, goal, run=run, landing=landing, slices_checked=True):
             return                               # not confirmed after all -- next pass
         failures = int(flag.get("close_failures") or 0)
         outcome = _record(sdlc_dir, source, goal, "done",
@@ -5135,6 +5319,44 @@ def _reconcile_one(sdlc_dir, config, source, goal, run, now, results):
     else:
         return
     results.append((goal, outcome, pr))
+
+
+def _reconcile_slice(sdlc_dir, config, source, goal, run, rec, pr, results):
+    """#2006 (FR-63, FR-85, D8): the merged-PR branch of `_reconcile_one` for a multi-PR goal. -> True when it
+    handled the goal (the caller returns), False for a single-PR goal or the LAST slice (the caller records done).
+
+      unreadable slice state -> one stderr line, nothing recorded, the flag kept (the next pass retries);
+      the merged slice has no trusted `sigma:approve` (a definite False, R1) -> parked needs_decision (X9);
+      another slice still unmerged -> NOT done: the flag is cleared, the work record, claim and checkout kept, a
+        `merged` action-log row on the slice's thread, the local display mark, the between-slices label, and the
+        results row `slice-merged`."""
+    states = work.slice_states(sdlc_dir, config, goal, run=run)
+    if not states:
+        return False
+    current = rec.get("slice")
+    unknown = [sid for sid, done in states if done is None]
+    if unknown:
+        print(f"merge reconcile: slice state unreadable for {goal} (slices {', '.join(unknown)}) -- left awaiting "
+              "merge", file=sys.stderr)
+        return True
+    by_id = dict(states)
+    if current in by_id and by_id[current] is False:
+        outcome = _record(sdlc_dir, source, goal, "parked",
+                          f"slice {current} PR #{pr} merged without a trusted sigma:approve", qkind="needs_decision")
+        results.append((goal, outcome, pr))
+        return True
+    if all(done is True for _, done in states):
+        return False
+    work.clear_awaiting_merge(sdlc_dir, goal)
+    actionlog.safe_append(sdlc_dir, goal, "merged", thread=str(current or "main"), pr=pr)
+    work.mark_slice_merged(sdlc_dir, goal, current)
+    try:
+        if hasattr(source, "mark_between_slices"):
+            source.mark_between_slices(goal)
+    except Exception as exc:                     # noqa: BLE001 - display label
+        print(f"loop.py: between-slices label for {goal} not written ({exc})", file=sys.stderr)
+    results.append((goal, "slice-merged", pr))
+    return True
 
 
 def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transition="park",
@@ -6813,7 +7035,7 @@ def run_loop(sdlc_dir, run_goal):
     _ensure_watcher(sdlc_dir, config)               # a loop trigger keeps the ledger flowing on its own
     _ensure_ledger_delivery(sdlc_dir, config)        # ...and notices when that flow has stalled (#2393)
     source = sources.get_source(sdlc_dir, config)   # one source per run (e.g. github labels ensured once)
-    done = parked = failed = review = 0
+    done = parked = failed = review = between = 0
     poisoned = set()      # F4: goals neither record attempt below could record — skipped for the
                           # REST OF THIS RUN so a doubly-failing source can't spin on one goal forever
     while True:
@@ -6836,7 +7058,20 @@ def run_loop(sdlc_dir, run_goal):
         # (open / unreadable) or `parked` (closed unmerged), never `done`.
         if result == "done" and work.enabled(config):
             refusal = work.done_refusal(sdlc_dir, config, goal)
-            if refusal:
+            if refusal and refusal.startswith(work.SLICES_PENDING):
+                # #2006 (FR-63, D6): a multi-PR goal with slices left is not done. With its current slice PR open
+                # it awaits that merge (`review`); otherwise nothing is recorded -- the goal keeps its claim and
+                # work record, its session slot is released, and the continue step of a LATER run resumes it
+                # (FR-84). Poisoned for THIS run: its worker just reported `done`, so re-serving it would spin.
+                if _current_slice_pr_open(sdlc_dir, goal):
+                    result, detail = "review", ""
+                else:
+                    print(f"loop: {goal} is between slices -- {refusal}", file=sys.stderr)
+                    _session_release(sdlc_dir, goal)       # its slot: a later session's continue step takes it
+                    poisoned.add(goal)                     # this run's worker just said "done" -- never re-serve
+                    between += 1
+                    continue
+            elif refusal:
                 result, detail = (("parked", refusal) if "closed without merging" in refusal
                                   else ("review", ""))
         try:
@@ -6876,6 +7111,8 @@ def run_loop(sdlc_dir, run_goal):
         parked += (outcome not in ("done", "failed", "review"))
     result = {"done": done, "parked": parked, "failed": failed, "review": review,
               "iterations": state.load_cursor(sdlc_dir)["iteration"], "stopped": stopped}
+    if between:
+        result["between_slices"] = between     # #2006: not a review, not a park -- continued on a later pick
     session_end(sdlc_dir, session_pid, generation=session_generation)
     return result
 
@@ -7872,7 +8109,9 @@ def _dispatch(argv):
         # The explicit gesture re-reads every flagged PR (still at most MERGE_RECONCILE_MAX_PER_PASS);
         # only the automatic triggers (`next`, the watch tick) honour the re-check interval.
         for goal, outcome, pr in _reconcile_awaiting_merges(argv[2], config, min_interval=0):
-            what = "merged" if outcome == "done" else "closed without merging"
+            what = "merged" if outcome == "done" else (
+                "merged; a slice -- the issue stays open" if outcome == "slice-merged"      # #2006
+                else "closed without merging")
             print(f"{goal} {outcome} (PR #{pr} {what})")
         return 0
     if len(argv) >= 4 and argv[1] == "qc":          # board-only: move a goal to QC at the Review phase

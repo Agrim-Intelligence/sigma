@@ -232,6 +232,9 @@ def _github_counts(gh_cfg, run, config=None):
     # real picker correctly refuses was still counted as ready. Same "0 on an unopted-in repo, so
     # the subtraction is a no-op there" property the sibling overlays already have.
     needs_triage = n("sdlc:goal", gh_cfg.get("needs_triage_label", "sdlc:needs-triage"))
+    # #2006 (FR-75): lean multi-PR goals between slices -- a SUBSET of `inprog` (they keep `sdlc:in-progress`), shown,
+    # never subtracted again from `pending`: the label is informational and no picker reads it.
+    between_slices = n("sdlc:goal", "sdlc:in-progress", gh_cfg.get("between_slices_label", "sdlc:between-slices"))
     # #1393: `pending` is what a human reads to decide whether the loop has anything to do, so it
     # must be the PICKER's eligibility rule and not a subset of it. Both of these carry `sdlc:goal`
     # and are refused by `_fetch_pending`, so counting them as ready overstates the queue: an issue
@@ -245,6 +248,7 @@ def _github_counts(gh_cfg, run, config=None):
                           - half_promoted - held),
             "in_progress": inprog, "parked": parked, "blocked": blocked,
             "needs_label": needs_label, "needs_unit": needs_unit, "needs_triage": needs_triage,
+            "between_slices": between_slices,
             "done": 0, "failed": 0, "proposed": max(0, proposed - promoted)}
 
 
@@ -464,7 +468,8 @@ def main(argv):
         print(warning, file=sys.stderr)
     s = summary(argv[1] if len(argv) > 1 else ".sdlc")
     legacy = f"{s['proposed']} legacy-proposed, " if s["proposed"] else ""   # leftovers only
-    line = (f"backlog: {legacy}{s['pending']} pending, {s['in_progress']} in-progress, "
+    between = f" ({s['between_slices']} between slices)" if s.get("between_slices") else ""   # #2006
+    line = (f"backlog: {legacy}{s['pending']} pending, {s['in_progress']} in-progress{between}, "
             f"{s['done']} done, {s['parked']} parked, {s['failed']} failed | "
             f"iteration {s['iteration']} | "
             f"review-queue: {'NEEDS ATTENTION' if s['queue_nonempty'] else 'empty'}")

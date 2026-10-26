@@ -197,6 +197,20 @@ def _regenerable(rel):
             or parts[-1] in _REGENERABLE_NAMES or rel.startswith(_REGENERABLE_PREFIXES))
 
 
+def _between_slices(ctx, stem, rec):
+    """#2006 (R3, F6): a lean multi-PR goal between slices keeps its checkout -- its branch has a merged PR, but the
+    goal's next slice still runs in it. True when the record lists slices and some manifest slice id is not marked
+    merged locally; an unreadable manifest is True too (fail closed). Local reads only."""
+    marks = rec.get("slices")
+    if not isinstance(marks, dict) or not marks:
+        return False
+    try:
+        ids = [s["id"] for s in _load("slices").load(ctx.sdlc, stem)]
+    except Exception:                                # noqa: BLE001 - unknown keeps the tree
+        return True
+    return any(not (isinstance(marks.get(i), dict) and marks[i].get("merged") is True) for i in ids)
+
+
 def _liveness_reason(ctx, stem):
     """None when nothing alive owns the goal, else 'live-agent' | 'live-session'."""
     agents = ctx.state_dir / "agents"
@@ -224,6 +238,8 @@ def _local_reason(ctx, stem, rec, raw):
         pass
     if isinstance(rec.get("awaiting_merge"), dict):
         return "awaiting-merge", path, None, None
+    if _between_slices(ctx, stem, rec):
+        return "between-slices", path, None, None
     why = _liveness_reason(ctx, stem)
     if why:
         return why, path, None, None

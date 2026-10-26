@@ -573,6 +573,10 @@ class LocalSource:
     def mark_qc(self, goal):
         pass            # QC is a board-only stage; the local source has no QC column
 
+    def mark_between_slices(self, goal):
+        """#2006: no-op -- a local goal is never multi-PR (no GitHub issue), and the label is display only."""
+        return None
+
     def await_merge(self, goal, note=None):
         """#232: local counterpart -- the goal stays `in_progress` (never re-offered by
         `next_pending`, never `done`) until the merge-reconcile pass observes its PR merged; the
@@ -981,7 +985,10 @@ class GitHubSource:
                      ("needs_triage_label", "5319e7"),
                      # #1904: a checkpoint (met when a named unit lands, or a person closes it). A
                      # different colour from every label above; see `checkpoint_label`.
-                     ("checkpoint_label", "c5def5"))
+                     ("checkpoint_label", "c5def5"),
+                     # #2006 (FR-75, D-48): informational -- a lean multi-PR goal between slice PRs. NOT an
+                     # eligibility overlay (see `between_slices_label`); its own colour.
+                     ("between_slices_label", "bfd4f2"))
     #: #230: the priority tiers bootstrapped alongside `_LABEL_COLORS` -- by `ensure_labels_report`
     #: only (setup, init --github, `loop.py start`), never by the hot-path `_ensure_labels` above,
     #: whose per-pick contract (and its tests) stays the lifecycle set alone. Without these an
@@ -1078,6 +1085,12 @@ class GitHubSource:
         # issue carrying it is excluded by `not_eligible_labels` even if someone also gave it
         # `goal_label`. It is met by the unit landing or by a person closing it (`chain_checkpoint`).
         self.checkpoint_label = gh.get("checkpoint_label", "sdlc:checkpoint")
+        # #2006 (FR-37, FR-75, PC-46, D-48, D-49): INFORMATIONAL -- a lean multi-PR goal with a non-final slice PR
+        # open or merged; it stays until the goal completes or is parked. It rides beside `sdlc:in-progress` (which keeps the goal off
+        # every picker, the 1.0.x rule) and is read by NO picker: deliberately absent from `overlay_labels()` and so
+        # from `not_eligible_labels()`. One writer (`mark_between_slices`); stripped by `complete()`, `park()`, the
+        # promote demote and the reconciler (`reconcile._overlay_labels` names it explicitly, D-49).
+        self.between_slices_label = gh.get("between_slices_label", "sdlc:between-slices")
         # #1351: the DERIVED, self-healing auxiliary label — applied to the BLOCKER issue itself
         # (not the blocked goal `goal_blocked_label` marks), for as long as at least one open issue
         # still references it via a live "Blocked by #N" marker. Also DISTINCT from `sdlc:dependency`
@@ -1826,9 +1839,16 @@ class GitHubSource:
         # Ask for exactly the labels this swap is about. `_label_node_ids` caches only what it
         # FOUND, so a name still missing here is genuinely absent from the repo -- no second
         # invalidate-and-refetch round is needed (or possible: the old one re-ran the same query).
-        missing = [l for l in (*add, *remove) if l not in ids]
+        # #2006: a REMOVE that names a label the repo does not have is already satisfied -- no issue can carry a
+        # label that does not exist -- so it is dropped rather than failing the whole swap. This is what lets a
+        # newer remove-list (`sdlc:between-slices` on `complete()`/park) run on a repo whose labels were seeded
+        # before it existed. An ADD of an unknown label still raises: Sigma never mints a label here.
+        missing = [l for l in add if l not in ids]
         if missing:
             raise RuntimeError(f"unknown label(s) on this repo: {', '.join(sorted(missing))}")
+        remove = [l for l in remove if l in ids]
+        if not add and not remove:
+            return True                                   # every named removal already holds
         for token in (node, *(ids[l] for l in (*add, *remove))):
             if not self._NODE_ID_RE.match(str(token)):
                 raise RuntimeError(f"refusing to inline a malformed node id: {token!r}")
@@ -3235,6 +3255,24 @@ class GitHubSource:
     def mark_qc(self, goal):
         self._set_board_status(goal, self.col["qc"])     # board-only: the Review / QC quality stage
 
+    def _between_label(self):
+        """`between_slices_label`, or None on an instance built without `__init__` (a falsy name is skipped by every
+        remove list), so the strip never costs a close or a park."""
+        return getattr(self, "between_slices_label", None)
+
+    def mark_between_slices(self, goal):
+        """#2006 (FR-37, FR-75): the ONE writer of `between_slices_label`. Adds it and removes NOTHING --
+        `mark_in_progress` stays the sole `sdlc:in-progress` writer, and the goal keeps that overlay between slices,
+        so no picker (1.0.x included, PC-45) serves it. Best-effort: a display label never costs a transition."""
+        return self._swap_labels_best_effort(goal, add=[self.between_slices_label], what="between-slices")
+
+    def issue_state_labels(self, goal):
+        """#2006 (D9/F1): (STATE, {label names}) from ONE issue read (`_read_issue`, REST first). RAISES on failure:
+        the continue step skips a goal it cannot confirm, never continues it on a guess."""
+        data = self._read_issue(goal, ["state", "labels"])
+        names = {str((l.get("name") if isinstance(l, dict) else l) or "") for l in (data.get("labels") or [])}
+        return str(data.get("state") or "").upper(), names
+
     def await_merge(self, goal, note=None):
         """#232: the goal's PR is open and awaiting a merge the loop does not perform now -- the
         goal is NOT done (done means merged), so the issue stays OPEN. Existing vocabulary only (no
@@ -3326,7 +3364,7 @@ class GitHubSource:
         # and with the membership rule, which reserves membership for work waiting to be PICKED.
         # A closed issue is waiting for nothing.
         self._swap_labels_best_effort(
-            goal, remove=[self.in_progress_label, self.goal_label], what="complete")
+            goal, remove=[self.in_progress_label, self.goal_label, self._between_label()], what="complete")
         self._set_board_status(goal, self.col["done"])
         self._archive_card(goal)
 
@@ -3470,7 +3508,7 @@ class GitHubSource:
         # MEMBERSHIP, so `goal_label` goes here and only here.
         landed = self._swap_labels_best_effort(
             goal, add=[self.parked_label],
-            remove=[self.goal_label, self.in_progress_label, self.goal_blocked_label],
+            remove=[self.goal_label, self.in_progress_label, self.goal_blocked_label, self._between_label()],
             what="park", quiet=rest_fallback)
         if not landed and rest_fallback:
             landed = self._park_labels_rest(goal)       # #1303: park only; REST = separate budget
@@ -3510,7 +3548,8 @@ class GitHubSource:
         add-first order, via the existing REST helpers. Returns whether it landed; never raises."""
         try:
             self._issue_add_labels(goal, [self.parked_label])
-            for name in (self.goal_label, self.in_progress_label, self.goal_blocked_label):
+            for name in (self.goal_label, self.in_progress_label, self.goal_blocked_label,
+                         self._between_label()):          # #2006 (R2): the REST twin strips it too
                 if name:
                     self._issue_remove_label(goal, name)
             return True

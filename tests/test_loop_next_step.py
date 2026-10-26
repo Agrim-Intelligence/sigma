@@ -290,3 +290,40 @@ def test_counter_review_is_a_linked_reference():
     skill = (base / "SKILL.md").read_text(encoding="utf-8")
     assert "## Counter-review" not in skill and "](references/counter-review.md)" in skill
     assert "stronger findings it missed" in ref.read_text(encoding="utf-8")
+
+
+# --------------------------------------------------------------------------- #2006: between slices (D14)
+
+def test_multi_pr_goal_prints_one_pr_per_slice_instead_of_the_wave(tmp_path):
+    """A lean multi-PR goal whose current slice is merged (local record): a `between slices:` line names the
+    next gesture REGARDLESS of the implement mark; a fresh `phase implement start` brings the banner back, and
+    the slices block is the per-slice PR sequence, not the in-one-PR wave."""
+    p = g._project(tmp_path, gate=None, extra={"work": {"enabled": True}, "parallel": {"enabled": True},
+                                               "discovery": {"source": "github"}})
+    sdlc = p / ".sdlc"
+    (sdlc / "plans" / "2006.slices.json").write_text(json.dumps([{"id": "a"}, {"id": "b"}, {"id": "c"}]))
+    rec = sdlc / "state" / "work" / "2006.json"
+    rec.parent.mkdir(parents=True, exist_ok=True)
+    rec.write_text(json.dumps({"worktree": str(p), "branch": "sdlc/2006-sa", "base": "main", "remote": "origin",
+                               "pr": "11", "route": "lean/1", "profile": "standard", "rationale": "r",
+                               "slice": "a", "slices": {"a": {"branch": "sdlc/2006-sa", "merged": True}}}))
+    log = sdlc / "state" / "log" / "2006.jsonl"
+    log.parent.mkdir(parents=True, exist_ok=True)
+
+    def mark(state):
+        with log.open("a") as handle:
+            handle.write(json.dumps({"ts": "2026-10-25T00:00:00.000Z", "goal": "2006", "actor": "loop",
+                                     "thread": "main", "kind": "phase", "phase": "implement",
+                                     "state": state}) + "\n")
+    mark("start")
+    mark("end")
+    out = _out(p, goal="2006")
+    line = _line(out, "between slices:")
+    assert "slice a merged (1 of 3)" in line and 'work.py" slice ".sdlc" "2006"' in line, line
+    assert "local record" in line, line
+    assert BANNER not in out, out
+    mark("start")                                       # the next slice's implement starts
+    out = _out(p, goal="2006")
+    assert BANNER in out and "between slices:" in out, out
+    assert "slices: one pull request per slice" in out and 'work.py" slice' in out, out
+    assert "before the last slice" in out and WAVE not in out, out
