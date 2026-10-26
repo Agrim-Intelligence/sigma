@@ -147,9 +147,10 @@
   {
    "compatible": true,
    "pattern": ".sdlc/events",
-   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing.",
+   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted #2040: auto_unpark.py::apply_filing_cap_rearms makes one fail-open ledger.safe_append (kind note, default stream) per filing_cap park it re-armed, and writes nothing else here.",
    "verdict": "directory",
    "vetted_writers": [
+    "skills/sigma-loop/scripts/auto_unpark.py::apply_filing_cap_rearms",
     "skills/sigma-loop/scripts/comment_watch.py::tick",
     "skills/sigma-loop/scripts/drift_watch.py::sweep",
     "skills/sigma-loop/scripts/handoff.py::_park",
@@ -174,9 +175,10 @@
    "compatible": false,
    "issue": "#515",
    "pattern": ".sdlc/events/*-*.*.jsonl",
-   "reason": "No sample reached this path and the writers differ; compatibility is unverified. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing.",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted #2040: auto_unpark.py::apply_filing_cap_rearms makes one fail-open ledger.safe_append (kind note, default stream) per filing_cap park it re-armed, and writes nothing else here.",
    "verdict": "unsampled",
    "vetted_writers": [
+    "skills/sigma-loop/scripts/auto_unpark.py::apply_filing_cap_rearms",
     "skills/sigma-loop/scripts/comment_watch.py::tick",
     "skills/sigma-loop/scripts/drift_watch.py::sweep",
     "skills/sigma-loop/scripts/handoff.py::_park",
@@ -373,9 +375,10 @@
   {
    "compatible": true,
    "pattern": ".sdlc/ledger/*",
-   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted (dag release): dag_history.py::_mirror, append and record_save write the dag history mirror under dag/YYYY-MM/ on the ledger branch, one file per writer process, only when the ledger is enabled; a path the predecessor never writes.",
+   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted (dag release): dag_history.py::_mirror, append and record_save write the dag history mirror under dag/YYYY-MM/ on the ledger branch, one file per writer process, only when the ledger is enabled; a path the predecessor never writes. Vetted #2040: auto_unpark.py::apply_filing_cap_rearms makes one fail-open ledger.safe_append (kind note, default stream) per filing_cap park it re-armed, and writes nothing else here.",
    "verdict": "directory",
    "vetted_writers": [
+    "skills/sigma-loop/scripts/auto_unpark.py::apply_filing_cap_rearms",
     "skills/sigma-loop/scripts/comment_watch.py::tick",
     "skills/sigma-loop/scripts/dag_history.py::_mirror",
     "skills/sigma-loop/scripts/dag_history.py::append",
@@ -403,9 +406,10 @@
    "compatible": false,
    "issue": "#515",
    "pattern": ".sdlc/ledger/*/*-*.*.jsonl",
-   "reason": "No sample reached this path and the writers differ; compatibility is unverified. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted (dag release): dag_history.py::_mirror, append and record_save write the dag history mirror under dag/YYYY-MM/ on the ledger branch, one file per writer process, only when the ledger is enabled; a path the predecessor never writes.",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted (dag release): dag_history.py::_mirror, append and record_save write the dag history mirror under dag/YYYY-MM/ on the ledger branch, one file per writer process, only when the ledger is enabled; a path the predecessor never writes. Vetted #2040: auto_unpark.py::apply_filing_cap_rearms makes one fail-open ledger.safe_append (kind note, default stream) per filing_cap park it re-armed, and writes nothing else here.",
    "verdict": "unsampled",
    "vetted_writers": [
+    "skills/sigma-loop/scripts/auto_unpark.py::apply_filing_cap_rearms",
     "skills/sigma-loop/scripts/comment_watch.py::tick",
     "skills/sigma-loop/scripts/dag_history.py::_mirror",
     "skills/sigma-loop/scripts/dag_history.py::append",
@@ -433,9 +437,10 @@
    "compatible": false,
    "issue": "#515",
    "pattern": ".sdlc/ledger/TEAM.md",
-   "reason": "No sample reached this path and the writers differ; compatibility is unverified. Vetted #1152 (refs #1142): sync.py::_save_uncommitted names TEAM.md only to SKIP it (`rel != \"TEAM.md\"`); it copies other files aside under .sdlc/state/orphaned/, which the predecessor never writes, so it does not write TEAM.md and cannot clobber the predecessor's copy. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing.",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified. Vetted #1152 (refs #1142): sync.py::_save_uncommitted names TEAM.md only to SKIP it (`rel != \"TEAM.md\"`); it copies other files aside under .sdlc/state/orphaned/, which the predecessor never writes, so it does not write TEAM.md and cannot clobber the predecessor's copy. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted #2040: auto_unpark.py::apply_filing_cap_rearms makes one fail-open ledger.safe_append (kind note, default stream) per filing_cap park it re-armed, and writes nothing else here.",
    "verdict": "unsampled",
    "vetted_writers": [
+    "skills/sigma-loop/scripts/auto_unpark.py::apply_filing_cap_rearms",
     "skills/sigma-loop/scripts/comment_watch.py::tick",
     "skills/sigma-loop/scripts/drift_watch.py::sweep",
     "skills/sigma-loop/scripts/handoff.py::_park",

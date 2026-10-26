@@ -64,8 +64,7 @@ Then repeat until the helper says stop:
    Full: `references/picking.md`.
 3. Otherwise, `deps.py report` (`references/picking.md`), then the **opt-in pre-checks, in order**,
    before any token. Each prints `OFF` (feature disabled), `PROCEED`, or `PARKED <reason>`. On **`PARKED <reason>`**:
-   **Do not research it: loop back to step 1** and take the next goal. (The park counts as one
-   iteration.)
+   **Do not research it: loop back to step 1** and take the next goal.
 
    ```
    result=$(python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" precheck .sdlc "$goal")        # duplicate  (backlog_check)
@@ -241,11 +240,9 @@ At STOP, print one machine-readable line FIRST — `LOOP STOP: backlog-empty`, `
 successor brief verbatim — `references/stopping.md`. If anything parked or failed, point the user to the items —
 `.sdlc/state/review-queue.md` in local mode, or the issues labelled `sdlc:parked` in github mode.
 Parking is always correct over forcing an irreversible action to "finish" a goal.
-The self-improving path — closing a knowledge-graph gap instead of stopping when the backlog is
-empty but budget remains — and `supervise_daemon.py`: `references/stopping.md`.
+Closing a knowledge-graph gap when the backlog is empty but budget remains, and `supervise_daemon.py`: `references/stopping.md`.
 
-**Wake-and-work setup (optional).** `ledger.autowatch` is one-time operator setup, not something
-you invoke mid-loop: [`AUTOWATCH.md`](AUTOWATCH.md).
+**Wake-and-work setup (optional).** One-time operator setup for `ledger.autowatch`: [`AUTOWATCH.md`](AUTOWATCH.md).
 
 **Inbound Slack commands (optional).** One-time setup for `slack_commands`:
 [`SLACK_COMMANDS.md`](SLACK_COMMANDS.md).
