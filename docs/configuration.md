@@ -45,6 +45,7 @@ Defaults below are what `/sigma-init` scaffolds (`config.json.tmpl`). Not everyt
 | `work.ci_required` | `true` | `false` makes GitHub CI optional: the merge gate stops waiting on, and parking for, failing or pending **non-required** checks (`mergeStateStatus` UNSTABLE), for teams whose real CI runs on Jenkins or another system after the feature branch is built. It never overrides GitHub: a check the base branch **requires** (BLOCKED) still parks and is named, because GitHub refuses that merge itself. Only a real boolean `false` turns it off. Measured by unit tests against stubbed GitHub replies only, not yet against a live repository |
 | `work.require_review` | `"changes"` | a real PR-review gate, independent of branch protection: `"changes"` parks on a Request-changes / unresolved thread; `"approval"` also requires an APPROVED PR before merging |
 | `budget.max_iterations` / `max_minutes` / `max_tokens` / `max_codex_raw_tokens` | 20 / 480 / 100,000,000 / 0 (off) | goals-per-session / wall-clock / priced Claude-equivalent / measured Codex raw phase-token admission ceilings (Codex counts `tokens_in + tokens_out`; cached input and reasoning output are subsets inside them, never added); each enforces only when set to a positive number |
+| `handoff` | on: `after_goals` 20, `after_context_tokens` `null` (derived) | the orchestrating session stops claiming and hands off to a fresh one after `after_goals` goals, or once its own measured context reaches `after_context_tokens` — when `null`, 3x the context at its first pick, capped at 45% of the host window (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`, the Codex model window, else 1,000,000); provisional, derivation in `config.json.tmpl`'s `_handoff`. A session never stops at its own first pick; an end + start in one conversation re-baselines and runs to the cap. Claude Code and Codex measure; Cursor uses the goal count only. On a 200k-window Claude model the derived value sits above the window: set `after_context_tokens`. `0` turns either trigger off; `enabled: false` turns both off |
 | `label_drain.default_priority` / `label_drain.arm_pulled_blockers` / `label_drain.kinds` | `P2` / `true` / `{}` | `label_drain.py arm <sdlc_dir> <label> --apply` (dry run without `--apply`) arms unarmed members of a run label: the goal label, no parked or blocked label, a priority label only when it has none (an existing one is kept, a missing label is never created). With `arm_pulled_blockers` an open blocker outside the label is armed too, gets the run label and one comment; an upper-tier, parked, gate-held or other-assignee issue is refused with a reason and not written. `kinds` maps exact run-label names to kinds (a label's kind is otherwise its name up to the first `:` or `/`). Wrong-typed values read as the defaults |
 | `knowledge_graph.enabled` | off | research capture + the self-improving graph |
 | `SIGMA_GATE_GLOBAL=1` (env) | unset | restores the always-on prompt gate (the reminder in every repository, adopted or not) |
@@ -132,3 +133,13 @@ head in scratch worktrees, one at a time, and prints base, head, delta and `bett
 the command environment, the limits and the recovery lever are in [quality-delta.md](quality-delta.md).
 With `gates.quality_ratchet.enabled`, `work.py merge` acts on `required` metrics; that section of the same page
 gives the budget, the worst case and the owner-only `work.py quality-waive` verb.
+
+## Filing caps: `ai_filed.on_cap`
+
+`ai_filed.max_per_goal` and `ai_filed.max_per_run` cap how many AI-filed issues are armed. `ai_filed.on_cap` says what a
+park caused only by those counts waits for: `"park"` (default, PROVISIONAL) waits for a person, who is asked to arm it;
+`"defer"` lets the auto-unpark sweep re-arm it, highest priority first, once the counter has room (it needs the
+auto-unpark sweep to be on). A depth, deny-list or unreadable-counter park is never re-armed this way. Any other value reads `"park"`.
+A re-armed goal is held back from the same call's pick, like any goal the sweep unparks. A re-arm the counter cannot record
+is put back to parked and the pass stops there, so the cap holds even when the counter file cannot be written; the sweep
+reports it as a failed `count` action, and a later pass retries once the file is fixed.

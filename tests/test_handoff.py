@@ -2905,7 +2905,7 @@ def test_higher_priority_filing_parks_the_newest_lowest_armed_one_1697(tmp_path)
     assert src.parked == []
     _r, src = _file(tmp_path, None, src=src, priority="P2", priority_requested=True)
     assert [g for g, _t in src.parked] == ["105"]          # the newest P3, not the new P2
-    assert "ai_filed.max_per_goal" in src.parked[0][1] and "ai_filed.max_per_run" in src.parked[0][1]
+    assert "per-goal cap" in src.parked[0][1] and "ai_filed.max_per_goal" in src.parked[0][1]
     assert src.created["goal_label"] is True
     # the parked entry no longer counts: the counter holds five armed filings, so the next P3 is parked itself
     _r, src = _file(tmp_path, None, src=src, priority="P3", priority_requested=True)
@@ -2961,3 +2961,113 @@ def test_handoff_marker_not_written_when_append_to_body_refuses(tmp_path):
     report = handoff.hand_off(sdlc, ON, "g.md", "engine", "needs a flag", source=src)
     assert any("machine-readable" in w for w in report["warnings"])
     assert src.blocked_goals == [] and src.body_appends == []
+
+
+# ---- #2039: the filing-cap park names the limit, the count, or the unreadable counter
+
+def test_per_goal_cap_park_names_limit_and_count_2039(tmp_path):
+    _five_armed(tmp_path, None)
+    _r, src = _file(tmp_path, None, priority="P2", priority_requested=True)
+    reason = src.parked[0][1]
+    assert "per-goal cap: 5 of 5" in reason and "ai_filed.max_per_goal" in reason
+    assert "max_per_run" not in reason
+
+
+def test_per_run_cap_park_names_limit_and_count_2039(tmp_path, monkeypatch):
+    monkeypatch.setattr(handoff, "_run_id", lambda: "run-2039")
+    cfg = {"ai_filed": {"max_per_run": 2}}
+    for i in range(2):
+        _file(tmp_path, cfg, priority="P2", goal=str(i + 100))
+    _r, src = _file(tmp_path, cfg, priority="P2", goal="300")
+    reason = src.parked[0][1]
+    assert "per-run cap: 2 of 2" in reason and "ai_filed.max_per_run" in reason
+    assert "max_per_goal" not in reason
+
+
+def test_unreadable_counter_park_names_relative_path_and_lever_2039(tmp_path):
+    st = tmp_path / "state"
+    st.mkdir()
+    bad = st / "ai_filed_counter.json"
+    bad.write_text("{not json")
+    _r, src = _file(tmp_path, None)
+    reason = src.parked[0][1]
+    assert "state/ai_filed_counter.json" in reason and str(tmp_path) not in reason
+    assert "repair or remove that one file" in reason
+    assert "per-goal" not in reason and "per-run" not in reason
+    assert bad.read_text() == "{not json"          # the filing's bump never overwrites it
+
+
+def test_eviction_reason_names_the_per_goal_cap_2039(tmp_path):
+    src = _NumberedSource()
+    for _ in range(5):
+        _file(tmp_path, None, src=src, priority="P3", priority_requested=True)
+    _r, src = _file(tmp_path, None, src=src, priority="P2", priority_requested=True)
+    reason = src.parked[0][1]
+    assert "per-goal cap: 5 of 5" in reason and "ai_filed.max_per_goal" in reason
+    assert "more urgent" in reason and "max_per_run" not in reason
+
+
+# ---- #2040: a park caused only by the count cap declares kind `filing_cap`
+
+def _kind(src, i=0):
+    return qkind_mod.parse_line(src.parked[i][1])
+
+
+qkind_mod = _mod("qkind")
+
+
+def test_per_goal_cap_park_declares_filing_cap_2040(tmp_path):
+    _five_armed(tmp_path, None)
+    _r, src = _file(tmp_path, None, priority="P2", priority_requested=True)
+    assert _kind(src) == "filing_cap"
+    assert "sigma-filing-goal: 42" in src.parked[0][1]
+
+
+def test_per_run_cap_park_declares_filing_cap_2040(tmp_path, monkeypatch):
+    monkeypatch.setattr(handoff, "_run_id", lambda: "run-2040")
+    cfg = {"ai_filed": {"max_per_run": 2}}
+    for i in range(2):
+        _file(tmp_path, cfg, priority="P2", goal=str(i + 100))
+    _r, src = _file(tmp_path, cfg, priority="P2", goal="300")
+    assert _kind(src) == "filing_cap"
+    assert "sigma-filing-goal: 300" in src.parked[0][1]
+
+
+def test_eviction_victim_park_declares_filing_cap_2040(tmp_path):
+    src = _NumberedSource()
+    for _ in range(5):
+        _file(tmp_path, None, src=src, priority="P3", priority_requested=True)
+    _r, src = _file(tmp_path, None, src=src, priority="P2", priority_requested=True)
+    assert _kind(src) == "filing_cap" and "sigma-filing-goal: 42" in src.parked[0][1]
+
+
+def test_depth_limit_park_keeps_needs_decision_2040(tmp_path):
+    _r, src = _file(tmp_path, {"ai_filed": {"max_depth": 0}})
+    assert "depth limit" in src.parked[0][1] and _kind(src) == "needs_decision"
+
+
+def test_depth_and_cap_together_keep_the_depth_kind_2040(tmp_path):
+    _five_armed(tmp_path, None)
+    _r, src = _file(tmp_path, {"ai_filed": {"max_depth": 0}}, priority="P2", priority_requested=True)
+    assert "depth limit" in src.parked[0][1] and _kind(src) == "needs_decision"
+    assert "sigma-filing-goal" not in src.parked[0][1]
+
+
+def test_deny_list_park_keeps_its_hardstop_kind_2040(tmp_path):
+    _five_armed(tmp_path, None)
+    _r, src = _file(tmp_path, None, why="needs a force push to the shared branch")
+    assert _kind(src) != "filing_cap" and _kind(src) is not None
+
+
+def test_permission_marker_park_keeps_its_kind_2040(tmp_path):
+    marker = "sigma:spend-" + "approved=lab1"
+    _r, src = _file(tmp_path, body=marker + "\nrest of the body")
+    assert _kind(src) == "irreversible"
+
+
+def test_unreadable_counter_park_keeps_needs_decision_2040(tmp_path):
+    st = tmp_path / "state"
+    st.mkdir()
+    (st / "ai_filed_counter.json").write_text("{not json")
+    _r, src = _file(tmp_path, None)
+    assert _kind(src) == "needs_decision"

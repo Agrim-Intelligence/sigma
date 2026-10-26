@@ -49,6 +49,7 @@ Never fabricates a number: a missing session, an empty transcript, or an unprice
 an honest reason (`unavailable`, `(partial — N of M unpriced)`), matching phase_report.py's own
 module-wide rule.
 """
+import datetime
 import json
 import os
 import pathlib
@@ -90,10 +91,6 @@ def _load(name):
     spec.loader.exec_module(m)
     _MODULE_CACHE[name] = m
     return m
-
-
-def _home(home=None):
-    return pathlib.Path(home) if home is not None else pathlib.Path.home()
 
 
 def iter_raw_assistant_calls(path):
@@ -174,14 +171,53 @@ def peak_context(calls):
     corrupted by an earlier duplicate content-block line reporting a higher instantaneous value
     than the final, complete one (see the mutation control,
     test_removing_dedup_inflates_peak_and_volume_to_the_wrong_over_counted_values)."""
-    pr = _load("phase_report")
-    peaks = []
-    for c in calls:
-        u = c["usage"]
-        peaks.append((pr.usage_value(u, ("input_tokens",)) or 0)
-                      + (pr.usage_value(u, ("cache_read_input_tokens",)) or 0)
-                      + (pr.usage_value(u, ("cache_creation_input_tokens",)) or 0))
+    peaks = [context_tokens(c["usage"]) for c in calls]
     return max(peaks) if peaks else 0
+
+
+def context_tokens(usage):
+    """input + cache_read + cache_creation of ONE call: the full prompt that call processed. Shared
+    by `peak_context`, `rewrites_by_gap` and the loop's context meter (#2026)."""
+    pr = _load("phase_report")
+    return ((pr.usage_value(usage, ("input_tokens",)) or 0)
+            + (pr.usage_value(usage, ("cache_read_input_tokens",)) or 0)
+            + (pr.usage_value(usage, ("cache_creation_input_tokens",)) or 0))
+
+
+#: (label, lower bound in seconds) for `rewrites_by_gap`: the two prompt-cache lifetimes, 5 minutes
+#: and 1 hour. A gap exactly on a bound belongs to the bucket that bound opens.
+_GAP_BUCKETS = (("under 5m", 0), ("5m to 1h", 300), ("1h or more", 3600))
+
+
+def rewrites_by_gap(calls):
+    """Full-context cache re-writes grouped by the idle gap before them (#2026, FR-8).
+
+    A call is a full-context re-write when its `cache_creation_input_tokens` is at least half its
+    context (`context_tokens`): the cache had expired and the history was written again rather
+    than read. Each call is bucketed by the gap since the previous timed call; the first call has
+    no gap and is not counted, nor is a call whose `ts` does not parse. Measured on this repo's
+    host (design PC-7): 91.7% of turns after a gap over 60 minutes were re-writes, 0.1-0.2% after
+    shorter ones -- any threshold near half separates them.
+    -> one `{"gap", "turns", "rewrites", "rewrite_tokens"}` row per bucket, in bucket order."""
+    pr = _load("phase_report")
+    rows = [{"gap": label, "turns": 0, "rewrites": 0, "rewrite_tokens": 0} for label, _ in _GAP_BUCKETS]
+    timed = []
+    for call in calls:
+        try:
+            timed.append((datetime.datetime.strptime(call["ts"], "%Y-%m-%d %H:%M:%S"), call))
+        except (TypeError, ValueError):
+            continue
+    timed.sort(key=lambda pair: pair[0])
+    for (before, _), (at, call) in zip(timed, timed[1:]):
+        gap = (at - before).total_seconds()
+        row = rows[max(i for i, (_, bound) in enumerate(_GAP_BUCKETS) if gap >= bound)]
+        row["turns"] += 1
+        written = pr.usage_value(call["usage"], ("cache_creation_input_tokens",)) or 0
+        context = context_tokens(call["usage"])
+        if context and written * 2 >= context:
+            row["rewrites"] += 1
+            row["rewrite_tokens"] += written
+    return rows
 
 
 def volume_totals(calls):
@@ -726,7 +762,8 @@ def build_report(sdlc_dir, session_id, since=None, until=None, goal=None, detail
     top_level_calls = dedup_calls(list(iter_raw_assistant_calls(top_level)))
     orch_calls = _filter_calls(top_level_calls, since_norm, until_norm)
     report = {"session": session_id, "since": since_norm, "until": until_norm,
-              "orchestrator": _scope_totals(orch_calls, rate_rows), "goals": [], "source": "ok"}
+              "orchestrator": _scope_totals(orch_calls, rate_rows), "goals": [], "source": "ok",
+              "rewrites_by_gap": rewrites_by_gap(orch_calls)}
     if session_dir is None:
         return report                       # orchestrator-only: no subagents/ tree to walk
     # Hoisted OUT of the per-window loop below (code review finding): walking every meta.json and
@@ -1036,17 +1073,17 @@ def resolve_session_id(explicit, home=None, repo_root=None):
     env = _session_id()
     if env:
         return env
-    projects = _home(home) / ".claude" / "projects"
-    if not projects.is_dir():
-        return None
     root = repo_root if repo_root is not None else _REPO_ROOT
     candidates = []
-    for proj_dir in projects.iterdir():
-        if not proj_dir.is_dir():
+    for projects in _load("phase_report").claude_projects_roots(home):     # #2026: CLAUDE_CONFIG_DIR too
+        if not projects.is_dir():
             continue
-        for f in proj_dir.glob("*.jsonl"):
-            if _session_file_belongs_to_repo(f, root):
-                candidates.append(f)
+        for proj_dir in projects.iterdir():
+            if not proj_dir.is_dir():
+                continue
+            for f in proj_dir.glob("*.jsonl"):
+                if _session_file_belongs_to_repo(f, root):
+                    candidates.append(f)
     if not candidates:
         return None
     newest = max(candidates, key=lambda p: p.stat().st_mtime)
@@ -1063,6 +1100,10 @@ def render_text(report):
     o = report["orchestrator"]
     lines.append(f"ORCHESTRATOR  calls={o['calls']}  peak_context={o['peak_context']:,}  "
                  f"volume={o['volume_total']:,}  {_cost_field(o)}")
+    if report.get("rewrites_by_gap"):
+        lines.append("RE-WRITES BY IDLE GAP  " + "  ".join(
+            f"{row['gap']}: {row['rewrites']} of {row['turns']} turns ({row['rewrite_tokens']:,} tokens)"
+            for row in report["rewrites_by_gap"]))
     for row in report["goals"]:
         lines.append("")
         lines.append(f"#{row['goal']} goal-slot (agent {row['agent_id']})  "

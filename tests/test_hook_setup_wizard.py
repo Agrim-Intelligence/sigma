@@ -24,6 +24,7 @@ def _run_hook(project_dir, path_prefix=None, **env):
         parts = [python_bin] + ([str(path_prefix)] if path_prefix is not None else [])
         path = os.pathsep.join(parts + ["/usr/bin", "/bin"])
         return subprocess.run(["bash", str(HOOK)], capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL,   # #2028: the hook reads stdin (bounded)
                               env={"CLAUDE_PROJECT_DIR": str(project_dir), "PATH": path,
                                    # #240: conftest's empty inventories, not the real home
                                    **{k: os.environ[k] for k in ("CLAUDE_CONFIG_DIR", "CODEX_HOME")
@@ -235,6 +236,7 @@ def test_missing_python3_still_exits_zero_with_valid_json(tmp_path, monkeypatch)
     # confirmed directly. /bin carries bash but never python3 (verified: python3 lives at
     # /usr/bin/python3 on this box), so this genuinely exercises "python3 missing", not "bash missing".
     p = subprocess.run(["bash", str(HOOK)], capture_output=True, text=True,
+                       stdin=subprocess.DEVNULL,   # #2028: the hook reads stdin (bounded)
                        env={"CLAUDE_PROJECT_DIR": str(tmp_path), "PATH": "/bin"},
                        timeout=15)
     assert p.returncode == 0

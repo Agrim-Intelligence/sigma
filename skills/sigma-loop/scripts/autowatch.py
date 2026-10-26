@@ -1023,6 +1023,20 @@ def _guard():
     return _GUARD[0]
 
 
+_COMPACT_WINDOW = []
+
+
+def _compact_window():
+    """compact_window, loaded once (#2028): the same window rule supervise_daemon.py applies."""
+    if not _COMPACT_WINDOW:
+        spec = importlib.util.spec_from_file_location(
+            "compact_window", pathlib.Path(__file__).resolve().parent / "compact_window.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        _COMPACT_WINDOW.append(module)
+    return _COMPACT_WINDOW[0]
+
+
 def _drive(sdlc_dir, config, settings, issue, next_hop, deps):
     run = deps.get("run_drive") or _run_drive
     cmd_str = _drive_cmd(settings)
@@ -1035,6 +1049,11 @@ def _drive(sdlc_dir, config, settings, issue, next_hop, deps):
         print("autowatch: " + shell_policy.refusal_message(), file=sys.stderr)
         return 2, "autowatch: " + shell_policy.refusal_message()
     env = dict(os.environ)
+    # #2028 (design 2024 D-3): the compaction safety net, on the drive's own dict. A non-Claude
+    # SIGMA_AUTOWATCH_CMD / drive_cmd also receives the variable; only Claude Code reads it, so it
+    # is inert there, and any nested `claude -p` inherits it as intended.
+    _, window_why = _compact_window().apply(env, config, cmd_str, repo_root)
+    print(f"autowatch: compact window {window_why}", file=sys.stderr)   # once per drive
     env["SIGMA_AUTOWATCH_HOP"] = str(next_hop)
     if not env.get("SIGMA_RUN_ID"):
         env["SIGMA_RUN_ID"] = f"autowatch-{os.getpid()}-{int(time.time())}"

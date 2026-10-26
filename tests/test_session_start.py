@@ -4,6 +4,8 @@ context before the first prompt. Guards: OFF by default (silent unless .sdlc/ AN
 output, the self-check warning, and fail-open."""
 import json, os, subprocess, pathlib, time, shutil
 
+import pytest
+
 HOOK = pathlib.Path(__file__).resolve().parent.parent / "hooks" / "session_start.sh"
 
 
@@ -237,6 +239,17 @@ def test_fresh_newer_loop_heartbeat_suppresses_an_old_stale_session(tmp_path):
     state = tmp_path / ".sdlc" / "state"
     (state / "sessions" / "99999998.active").write_text(json.dumps({"in_flight": [], "settled_admissions": 0}))
     (state / "heartbeat" / "99999998.json").write_text(json.dumps({"pid": 99999998, "last_seen": time.time()}))
+    assert _run(tmp_path) == ""
+
+
+def test_a_fresh_heartbeat_carrying_a_context_block_still_reads_fresh(tmp_path):
+    """#2026 pin: the meter adds a `context` block to the loop heartbeat; this tier reads
+    `last_seen` only and must stay silent for a fresh loop that carries one."""
+    _dead_loop(tmp_path, heartbeat_age=3600, pid=99999999)
+    state = tmp_path / ".sdlc" / "state"
+    (state / "heartbeat" / "99999999.json").write_text(json.dumps({
+        "pid": 99999999, "last_seen": time.time(),
+        "context": {"source": "host", "tokens": 84312, "session": "s", "first_pick": 70000, "at": time.time()}}))
     assert _run(tmp_path) == ""
 
 
@@ -474,3 +487,142 @@ def test_absent_north_star_adds_no_session_notice(tmp_path):
 def test_unreachable_north_star_announces_that_code_review_judged_no_project_rules(tmp_path):   # D2 round-3 F02
     ctx = _context(_run(_ns_project(tmp_path, broken=True)))
     assert "NOT judging project-rule conformance" in ctx
+
+
+# --- #2028: after a compaction, re-inject the rules and the live slots (FR-6) --------------------
+# The compact tier reads the SessionStart payload from stdin (bounded) and fires ONLY on
+# `"source": "compact"`, in any adopted repo, supervised runs included -- ahead of every
+# SIGMA_RUN_ID gate. Every other source falls through to the code above, unchanged.
+
+ROOT = HOOK.parent.parent
+LOG_PY = ROOT / "skills" / "sigma-log" / "scripts" / "log.py"
+BRIEF_MARKER = "reviewer should not be the author"
+COMPACT = '{"session_id": "s", "source": "compact"}'
+
+
+def _adopted(tmp_path):
+    (tmp_path / ".sdlc").mkdir()
+    (tmp_path / ".sdlc" / "config.json").write_text("{}")
+    return tmp_path
+
+
+def _slots_now(project):
+    return subprocess.run(["python3", str(LOG_PY), "slots", str(project / ".sdlc")],
+                          capture_output=True, text=True).stdout.strip()
+
+
+@pytest.mark.parametrize("run_id", ["supervise-1-2-3", None])
+def test_compact_reinjects_rules_and_live_slots(tmp_path, run_id):
+    project = _adopted(tmp_path)
+    extra = {"SIGMA_RUN_ID": run_id} if run_id else {}
+    ctx = _context(_run(project, payload=COMPACT, **extra))
+    assert BRIEF_MARKER in ctx
+    assert "just compacted" in ctx
+    slots = _slots_now(project)
+    assert slots and slots in ctx
+
+
+def test_compact_needs_an_adopted_repo(tmp_path):
+    assert _run(tmp_path, payload=COMPACT, SIGMA_RUN_ID="supervise-1-2-3") == ""
+
+
+@pytest.mark.parametrize("payload", [
+    '{"source": "startup"}', '{"source": "resume"}', '{"source": "clear"}', '{"source": "fork"}',
+    '{}', "not json", "[]", '{"note": "compact"}', '{"source": "compacted"}'])
+def test_other_sources_unchanged_when_supervised(tmp_path, payload):
+    assert _run(_adopted(tmp_path), payload=payload, SIGMA_RUN_ID="supervise-1-2-3") == ""
+
+
+def test_other_sources_unchanged_interactive(tmp_path):
+    project = _enabled(tmp_path)
+    assert _run(project, payload='{"source": "startup"}') == _run(project, payload="{}")
+
+
+def _bash_3():
+    """R1 (plan review): production runs `bash session_start.sh`, and macOS /bin/bash is 3.2,
+    whose `read -t` leaves the variable UNSET on timeout -- the case `set -u` kills. Bash 5
+    leaves it set, so only a 3.x bash can see the `HOOK_INPUT=""` guard go red."""
+    if os.path.exists("/bin/bash"):
+        version = subprocess.run(["/bin/bash", "-c", "echo $BASH_VERSION"],
+                                 capture_output=True, text=True).stdout.strip()
+        if version.startswith("3."):
+            return "/bin/bash"
+        pytest.skip(f"no bash 3.x to run the guard under: /bin/bash is {version}")
+    pytest.skip(f"no /bin/bash; bash on PATH is {shutil.which('bash')}")
+
+
+def test_unclosed_stdin_is_bounded(tmp_path):
+    """A caller whose stdin is a pipe it never closes must not hang the hook, and the hook must
+    still reach the opt-in brief (adopted, session_start.enabled, no SIGMA_RUN_ID)."""
+    bash = _bash_3()
+    project = _enabled(tmp_path)
+    env = {k: v for k, v in os.environ.items() if k != "SIGMA_RUN_ID"}
+    env["CLAUDE_PROJECT_DIR"] = str(project)
+    start = time.monotonic()
+    p = subprocess.Popen([bash, str(HOOK)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE, text=True, env=env)
+    try:
+        rc = p.wait(timeout=20)
+        out, err = p.stdout.read(), p.stderr.read()
+    finally:
+        if p.poll() is None:
+            p.kill()
+        p.stdin.close()
+    assert rc == 0, err
+    assert time.monotonic() - start < 12
+    assert BRIEF_MARKER in _context(out.strip())
+
+
+def _scratch_plugin(tmp_path, log_py_body):
+    """A plugin root holding a copy of the hook and a fake log.py, to drive the slots fallback."""
+    plugin = tmp_path / "plugin"
+    (plugin / "hooks").mkdir(parents=True)
+    shutil.copy(HOOK, plugin / "hooks" / "session_start.sh")
+    fake = plugin / "skills" / "sigma-log" / "scripts" / "log.py"
+    fake.parent.mkdir(parents=True)
+    fake.write_text(log_py_body)
+    return plugin / "hooks" / "session_start.sh"
+
+
+def _run_hook(hook, project, payload):
+    env = {k: v for k, v in os.environ.items() if k != "SIGMA_RUN_ID"}
+    env.update({"CLAUDE_PROJECT_DIR": str(project), "SIGMA_RUN_ID": "supervise-1-2-3"})
+    start = time.monotonic()
+    p = subprocess.run(["bash", str(hook)], input=payload, capture_output=True, text=True,
+                       env=env, timeout=30)
+    assert p.returncode == 0, p.stderr
+    return p.stdout.strip(), time.monotonic() - start
+
+
+def test_slots_failure_still_emits_the_brief(tmp_path):
+    hook = _scratch_plugin(tmp_path, "import sys\nsys.exit(3)\n")
+    (tmp_path / "repo").mkdir()
+    out, _ = _run_hook(hook, _adopted(tmp_path / "repo"), COMPACT)
+    ctx = _context(out)
+    assert BRIEF_MARKER in ctx and "Live slots unavailable (exit 3)" in ctx
+
+
+def test_slots_timeout_is_bounded(tmp_path):
+    hook = _scratch_plugin(tmp_path, "import time\ntime.sleep(30)\n")
+    (tmp_path / "repo").mkdir()
+    out, took = _run_hook(hook, _adopted(tmp_path / "repo"), COMPACT)
+    ctx = _context(out)
+    assert BRIEF_MARKER in ctx and "Live slots unavailable (timed out after 5 s)" in ctx
+    assert took < 15
+
+
+def test_compact_carries_the_coexist_notice(tmp_path):
+    """PR #2035 review: the compact tier reads HOOK_COEXIST_NOTICE from the environment, so it
+    must be exported BEFORE that tier -- or a compaction silently drops the old-plugin notice."""
+    hook = _scratch_plugin(tmp_path, "print('SLOTS')\n")
+    fake = hook.parent.parent / "skills" / "sigma-loop" / "scripts" / "coexist.py"
+    fake.parent.mkdir(parents=True)
+    fake.write_text("def warn_line(sdlc_dir):\n    return 'OLD PLUGIN ACTIVE'\n")
+    (tmp_path / "repo").mkdir()
+    project = _adopted(tmp_path / "repo")
+    env = {k: v for k, v in os.environ.items() if k not in ("SIGMA_RUN_ID", "SIGMA_ALLOW_COEXIST")}
+    env["CLAUDE_PROJECT_DIR"] = str(project)
+    p = subprocess.run(["bash", str(hook)], input=COMPACT, capture_output=True, text=True,
+                       env=env, timeout=30)
+    ctx = _context(p.stdout.strip())
+    assert "OLD PLUGIN ACTIVE" in ctx and BRIEF_MARKER in ctx and "SLOTS" in ctx

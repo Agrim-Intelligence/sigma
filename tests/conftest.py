@@ -295,6 +295,34 @@ def _no_host_plugin_inventory(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def _no_host_session_ids(monkeypatch):
+    """#2026: `loop.py next` reads the context of the host session named by these ids. Run from a
+    Claude Code or Codex shell, every `next` test would otherwise read the developer's own live
+    transcript or rollout. Tests that need one set their own."""
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    monkeypatch.delenv("CODEX_THREAD_ID", raising=False)
+    monkeypatch.delenv("CODEX_SESSION_ID", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _restore_run_identity_env():
+    """`loop.py start|next --session-pid` run in-process exports SIGMA_RUN_ID (and `start` also
+    SIGMA_SESSION_GENERATION) into this process, so its own children inherit it. Unrestored, a later test in
+    the same worker inherits it too: a subprocess `loop.py next` then runs as a headless worker and skips the
+    knowledge-graph warning (test_kg_auto_refresh's once-a-day pick test failed after
+    test_context_handoff_2027's bare-handoff test on one xdist worker). Each test ends with the values it
+    started with."""
+    names = ("SIGMA_RUN_ID", "SIGMA_SESSION_GENERATION")
+    saved = {n: os.environ.get(n) for n in names}
+    yield
+    for n, value in saved.items():
+        if value is None:
+            os.environ.pop(n, None)
+        else:
+            os.environ[n] = value
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_graphql_capability_env(monkeypatch):
     """#801: a cloud/CI shell that exports CLAUDE_CODE_REMOTE or SIGMA_GH_GRAPHQL must not add a
     capability row to (or otherwise perturb) unrelated tests. Tests that want the signal set it."""

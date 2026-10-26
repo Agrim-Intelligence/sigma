@@ -761,15 +761,33 @@ def loop_heartbeat_tail(sdlc_dir, now=None):
     """
     now = time.time() if now is None else now
     directory = pathlib.Path(sdlc_dir) / "state" / "heartbeat"
-    newest = None
+    newest, context = None, None
     for path in directory.glob("*.json") if directory.is_dir() else ():
         try:
-            seen = json.loads(path.read_text()).get("last_seen")
-            if isinstance(seen, (int, float)) and not isinstance(seen, bool):
-                newest = max(newest, seen) if newest is not None else seen
-        except (OSError, ValueError, TypeError):
+            data = json.loads(path.read_text())
+            seen = data.get("last_seen")
+            if isinstance(seen, (int, float)) and not isinstance(seen, bool) and (newest is None or seen > newest):
+                newest, context = seen, data.get("context")
+        except (OSError, ValueError, TypeError, AttributeError):
             pass
-    return "" if newest is None else "loop heartbeat: " + _format_ago(now - newest)
+    if newest is None:
+        return ""
+    return "loop heartbeat: " + _format_ago(now - newest) + _context_clause(context)
+
+
+def _context_clause(context):
+    """#2026: the managing session's own context, as `loop.py next` last measured it. "at last pick"
+    because a phase boundary refreshes `last_seen` without re-reading the transcript, so the
+    heartbeat's age is not the reading's age. A legacy heartbeat with no block adds nothing."""
+    if not isinstance(context, dict):
+        return ""
+    tokens = context.get("tokens")
+    if context.get("source") == "host" and isinstance(tokens, int) and not isinstance(tokens, bool):
+        return f", context {tokens:,} tokens at last pick (host)"
+    if context.get("source") == "unavailable":
+        reason = context.get("reason")
+        return ", context unavailable at last pick" + (f" ({reason})" if isinstance(reason, str) and reason else "")
+    return ""
 
 
 def _read_hold_record(base):

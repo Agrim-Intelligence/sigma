@@ -76,7 +76,9 @@ gap. Independently,
 a NEW `handoff.after_goals` ceiling (default 20, ON even when the
 key is absent — see `config.json.tmpl`) stops the ORCHESTRATING session itself after that many
 goals and hands off to a fresh one, so its own context never keeps growing across an unattended
-drain; `enabled: false` opts back into the old behaviour. Goal-count limits retain their count
+drain. It also hands off once the session's own measured context (Claude Code and Codex) reaches
+`handoff.after_context_tokens`, by default derived as 3x its first-pick context and capped at 45%
+of the host window; `enabled: false` opts back into the old behaviour. Goal-count limits retain their count
 throughout one session, including refills; a new session resets them. A stopped run is
 resume-safe (a budget stop, re-run, picks up
 where it left off).
@@ -86,6 +88,16 @@ tail: loop finished → stop; per-run budget → relaunch; **usage-limit exhaust
 stated reset time (+ jitter) and relaunches**; unknown crash → capped escalating backoff. Stop it
 any time with `touch .sdlc/state/supervisor.stop`. (Sleeping *machine* ≠ sleeping process — on a
 macOS laptop run it under `caffeinate -is`.)
+**Compaction safety net (#2028).** The supervisor and `autowatch.py`'s drive set
+`CLAUDE_CODE_AUTO_COMPACT_WINDOW` in the launched session's environment only when
+`handoff.after_context_tokens` is set and you have not set the window yourself (the env var, a
+`--autocompact` flag in the command, or `autoCompactWindow` in your user, project, local or
+file-based managed settings; MDM and server-managed policy cannot be detected). The value is
+`max(2 x after_context_tokens, 420,000)`, set only below 900,000; otherwise nothing is set and the
+host's own threshold applies. Subagents and nested `claude -p` inherit the variable, which is why
+the 420,000 floor exists: it is the measured p99 subagent peak (411,359 tokens over 6,906 subagent
+transcripts). After any compaction the SessionStart hook re-injects Sigma's rules and the live
+slot block, supervised runs included. Measured in temp-dir tests only, not in a live compaction.
 For Codex, follow the [Codex-only opt-in migration](codex-autonomy.md) first; it verifies the enabled
 Codex plugin and launches a fresh Codex session without changing Claude's installation.
 Run **`/sigma-status`** any time for backlog counts (pending / in-progress / done / parked / failed) + whether the
@@ -97,7 +109,7 @@ review queue needs attention.
 | At a checkpoint | pauses for you | parks it, and the run ends | parks to the review queue, continues |
 | Approval | every gate | only what it parks | only what it parks |
 | Stops on | goal complete / you stop | merged, parked or failed (named in its final message) | backlog empty, per-run budget, or a context hand-off (then resumes fresh) |
-| Context bounded across goals | not yet — see issue tracker for the follow-up | one goal per run | goal count capped at 20 per session by default (`handoff.after_goals`); post-change token measurement pending |
+| Context bounded across goals | not yet — see issue tracker for the follow-up | one goal per run | the session hands off at 20 goals (`handoff.after_goals`) or once its measured context reaches the threshold (`handoff.after_context_tokens`, by default 3x its first-pick context, capped at 45% of the host window); Cursor has no meter and uses the goal count; post-change token measurement pending |
 | Irreversible action | asks you | as `/sigma-loop` | asks the agent to park it (advice; a code check only when `rulebook.hard_stops.enabled` is true) |
 
 `/sigma-goal` (without `--land`) claims its own named goal directly with `loop.py claim`, never
@@ -105,6 +117,51 @@ through `loop.py next`/`next-batch`, so the hand-off ceiling above does not reac
 long conversation can still grow that conversation's context unbounded. Tracked separately, since
 `/sigma-goal`'s own approval-gated, single-goal design needs a different answer than an autonomous
 loop's does, not merely the same mechanism wired in.
+
+## Hand-off: who starts the next session
+
+When `loop.py next` or `next-batch` returns `HANDOFF`, it prints a **successor brief** on stderr,
+built from local files and the call's own flags: the resume command with this run's `--feature` and
+`--label`, the live slots (`log.py slots`, verbatim), and the open decisions. Stdout stays the bare
+`HANDOFF`. The retiring session finishes its live goals; the brief reads the same on every host.
+Who acts on it depends on the host:
+
+- **Unattended, any host with a CLI:** `supervise_daemon.py` relaunches a fresh session by itself
+  (it relaunches bare `/sigma-loop`, without `--feature`/`--label`).
+- **Claude desktop app, attended:** an optional *supervisor session* that holds no goal state. When
+  woken it reads the brief and the live slots, proposes the successor as a one-click card, and
+  replaces itself the same way when its own meter crosses its threshold. A card is the only form the
+  app allows on a turn another session's note or an event started: Omega's supervisor transcript
+  (2026-10-24) shows 10 launch attempts, none started unattended; one was refused outright with
+  "Start sessions only on the user's own words". Measured once, on that transcript; not re-run.
+- **Cursor and other hosts:** a person or a scheduler starts the next session from the brief.
+
+The attended supervisor, on each wake:
+
+```
+python3 <installed-sigma>/skills/sigma-log/scripts/log.py slots .sdlc
+python3 <installed-sigma>/skills/sigma-loop/scripts/loop.py meter .sdlc --baseline <first-reading>
+```
+
+`loop.py meter` is read-only: it prints this session's context, its hand-off threshold with its
+origin, and `verdict=under|over|unknown`. It picks, claims and records nothing, apart from the
+bounded timing row every `loop.py` call writes under `.sdlc/state/time/`. `<first-reading>` is the
+`context=` value from the supervisor's own first wake (it never picks, so it has no recorded first
+pick). On a brief, propose its resume line as a new session; at `verdict=over`, propose its own
+successor the same way and stop. It never calls `next` and never claims.
+
+The pattern is cheap only if nothing wakes the supervisor. Omega's long-lived supervisor peaked at
+966,234 tokens, read 575.5M cached tokens and was woken 360 times by child notes. So:
+
+- Orchestrators message the supervisor **only at hand-off**, once, with the brief.
+- Goals inside an orchestrator run **as subagents**, never as separate sessions, so their progress
+  never wakes it.
+- The meter is valid only in a **top-level** session. A subagent's shell inherits its parent's
+  `CLAUDE_CODE_SESSION_ID`, so its reading is the parent's: never run `loop.py meter` from a
+  subagent.
+
+Nothing detects the desktop app: no documented signal tells it from the CLI. The undocumented
+`CLAUDE_CODE_ENTRYPOINT=claude-desktop` exists, and Sigma does not read it.
 
 ## The seven phases
 

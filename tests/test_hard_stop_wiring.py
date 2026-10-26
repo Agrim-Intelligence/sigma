@@ -383,3 +383,35 @@ def test_feature_ification_snippet_stamps_inside_the_filing_scope():
     withs = [n for n in ast.walk(tree) if isinstance(n, ast.With)]
     assert any("filing_park" in ast.unparse(w.items[0].context_expr) and
                any("append_to_body" in ast.unparse(x) for x in w.body) for w in withs)
+
+
+# -- #2063: a release on an issue Sigma claimed is Sigma's own; the guard's park is typed and asks its question ----
+
+class ClaimStub(Stub):
+    in_progress_label, goal_blocked_label = "sdlc:in-progress", "sdlc:blocked"
+
+
+def test_release_of_a_claimed_issue_is_own_2063():
+    """Red without RELEASE_LABEL_KEYS: the claim label alone left the issue 'foreign' and the release parked."""
+    assert not G.guard_issue_write(ClaimStub(labels=["sdlc:in-progress"]), "5", "release").blocked
+    assert not G.guard_issue_write(ClaimStub(labels=["sdlc:blocked"]), "5", "release").blocked
+
+
+def test_claim_label_does_not_widen_other_writes_2063():
+    """Red when RELEASE_LABEL_KEYS is applied to every op: closing or noting a claimed human issue stays refused."""
+    for op in ("complete", "note", "park"):
+        assert G.guard_issue_write(ClaimStub(labels=["sdlc:in-progress"]), "5", op).blocked
+
+
+def test_release_of_an_unlabelled_foreign_issue_still_parks_2063():
+    assert G.guard_issue_write(ClaimStub(labels=["bug"]), "5", "release").blocked
+
+
+def test_guard_park_is_typed_and_asks_its_question_2063():
+    """Red on the untyped park: no sigma-qkind line, so the park counted as `unknown` and stopped the drain."""
+    qkind = _load("qkind")
+    s = ClaimStub(labels=["bug"])
+    assert sources.hsg.blocks_issue_write(s, "5", "release") is True
+    text = s.parks[0][1]
+    assert qkind.parse_line(text) == "needs_decision"
+    assert "/sigma-unpark" in text and "hard stop" in text

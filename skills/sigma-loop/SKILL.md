@@ -34,7 +34,7 @@ Then repeat until the helper says stop:
 
 1. With subagents: `goals=$(python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" next-batch .sdlc
    --session-pid "$PPID")`. Without subagents: use `next` with the same arguments, run its one
-   goal's steps 2–7 inline, then pick again. Both paths stop at `HANDOFF` after 20 goals; resume `/sigma-loop` in a fresh session. See `references/picking.md`.
+   goal's steps 2–7 inline, then pick again. Both paths stop at `HANDOFF` at the goal or context threshold; resume `/sigma-loop` in a fresh session. See `references/picking.md`.
 
    **1a. With subagents, dispatch every goal — one line or many** — each in a fresh subagent
    running steps 2–7 for that ONE goal, at its resolved tier (`references/picking.md`) (Codex:
@@ -46,7 +46,7 @@ Then repeat until the helper says stop:
    optional for a refill**: omitting either can re-dispatch a goal a sibling slot holds. Slot sizing, dispatch logging, releasing an undispatched goal: `references/picking.md`.
 2. Dispatch `goal` lines before a terminal line. If output is `DONE` (nothing pickable), `BUDGET` (iterations, wall-clock
    minutes, or reported tokens — each only when `config.json` sets it), or `HANDOFF` (a goal-count
-   hand-off, on by default) → STOP, and report the stderr `BUDGET (...)`/`HANDOFF (...)` line, which
+   or context hand-off, on by default) → STOP, and report the stderr `BUDGET (...)`/`HANDOFF (...)` line, which
    names which ceiling tripped. `HOLD` is never `DONE` or a stop (no claim, no spend): run
    `resource_lease.py wait --max 540`, then pick again.
 
@@ -64,8 +64,7 @@ Then repeat until the helper says stop:
    Full: `references/picking.md`.
 3. Otherwise, `deps.py report` (`references/picking.md`), then the **opt-in pre-checks, in order**,
    before any token. Each prints `OFF` (feature disabled), `PROCEED`, or `PARKED <reason>`. On **`PARKED <reason>`**:
-   **Do not research it: loop back to step 1** and take the next goal. (The park counts as one
-   iteration.)
+   **Do not research it: loop back to step 1** and take the next goal.
 
    ```
    result=$(python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" precheck .sdlc "$goal")        # duplicate  (backlog_check)
@@ -237,15 +236,13 @@ Then repeat until the helper says stop:
 7. Loop.
 
 At STOP, print one machine-readable line FIRST — `LOOP STOP: backlog-empty`, `LOOP STOP: budget`, or
-`LOOP STOP: handoff` — then report: N done, M parked, K failed. On a `handoff` stop, ALSO print the
-literal resume command — `references/stopping.md`. If anything parked or failed, point the user to the items —
+`LOOP STOP: handoff` — then report: N done, M parked, K failed. On a `handoff` stop, ALSO relay the
+successor brief verbatim — `references/stopping.md`. If anything parked or failed, point the user to the items —
 `.sdlc/state/review-queue.md` in local mode, or the issues labelled `sdlc:parked` in github mode.
 Parking is always correct over forcing an irreversible action to "finish" a goal.
-The self-improving path — closing a knowledge-graph gap instead of stopping when the backlog is
-empty but budget remains — and `supervise_daemon.py`: `references/stopping.md`.
+Closing a knowledge-graph gap when the backlog is empty but budget remains, and `supervise_daemon.py`: `references/stopping.md`.
 
-**Wake-and-work setup (optional).** `ledger.autowatch` is one-time operator setup, not something
-you invoke mid-loop: [`AUTOWATCH.md`](AUTOWATCH.md).
+**Wake-and-work setup (optional).** One-time operator setup for `ledger.autowatch`: [`AUTOWATCH.md`](AUTOWATCH.md).
 
 **Inbound Slack commands (optional).** One-time setup for `slack_commands`:
 [`SLACK_COMMANDS.md`](SLACK_COMMANDS.md).

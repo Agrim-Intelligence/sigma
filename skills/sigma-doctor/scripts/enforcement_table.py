@@ -40,7 +40,8 @@ GATE_NAME = re.compile(r"(_refusal|_gate|_hold|_guard)$|^gate$|blocked_by")
 KINDS = ("python-gate", "git-host", "claude-hook", "advice")
 KIND_LABEL = {"python-gate": "Python gate", "git-host": "git host",
               "claude-hook": "Claude Code hook", "advice": "advice"}
-HOSTS = {"all": "Claude Code, Cursor, Codex", "claude-code": "Claude Code only"}
+HOSTS = {"all": "Claude Code, Cursor, Codex", "claude-code": "Claude Code only",
+         "claude-code-codex": "Claude Code, Codex (Cursor: goal count only)"}   # #2027
 REQUIRED = ("control", "function", "kind", "hosts", "enabled_by", "mechanism")
 OPTIONAL = ("settings", "condition", "readme")
 TEXT_FIELDS = ("control", "function", "mechanism", "condition", "readme")
@@ -112,7 +113,8 @@ HOOK_FACTS = (
                   "start, which asks the agent to follow the conventions; warns, never blocks",
      "condition": "the brief needs `session_start.enabled`; separately, the ledger-watcher "
                   "staleness warning fires whenever `ledger.enabled` is `true`, with no key of "
-                  "its own",
+                  "its own; the post-compaction rules and live-slot re-injection needs no key and "
+                  "fires whenever `.sdlc/config.json` exists, supervised runs included",
      "readme": "SessionStart brief (opt-in)"},
 )
 
