@@ -218,8 +218,8 @@ Three exceptions, named rather than hidden: with `ledger.enabled`, the loop's ve
 watcher alive, a separate process whose own sweeps are not this run's; an issue the run files
 through `handoff.py` (a hand-off or a tracked follow-up) is a NEW issue, never an existing goal; and
 with `backlog_check.enabled`, the pre-check that finds N blocked resolves N's blockers, which writes
-to those blocker issues. `/sigma-loop`'s
-`references/picking.md` quotes the same words for the picker flag that enforces them
+to those blocker issues.
+`../sigma-loop/references/picking.md` quotes the same words for the picker flag that enforces them
 (`loop.py next --land`) — **quote it, never reword it.** The prerequisites, the gestures, how a
 decision is made with nobody to ask, and the endings the final message names are in
 [land](references/land.md).
