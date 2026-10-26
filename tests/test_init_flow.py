@@ -87,7 +87,17 @@ def issue_json(n, i):
     return {"number": int(n), "title": i.get("title", ""), "body": i.get("body", ""),
             "state": i.get("state", "open"), "labels": [{"name": l} for l in i["labels"]],
             "assignees": [{"login": a} for a in i.get("assignees", [])],
-            "html_url": "https://github.com/%s/issues/%s" % (s["repo"], n)}
+            "html_url": "https://github.com/%s/issues/%s" % (s["repo"], n),
+            "comments": len(issue_comments(n))}    # #2007: real REST always sends the COUNT
+
+
+def issue_comments(n):
+    """#2007: the REST comment rows posted to issue n (REST POST or `gh issue comment`), oldest first."""
+    bodies = [c[2] for c in s.get("comments", []) if c[:1] == ["api"] and c[1].endswith("/issues/%s/comments" % n)]
+    bodies += [flag(c, "--body") or "" for c in s.get("comments", []) if c[:3] == ["issue", "comment", str(n)]]
+    return [{"id": 900000 + k, "node_id": "IC_%s_%d" % (n, k), "user": {"login": "fake"}, "body": b,
+             "created_at": "2026-01-01T00:%02d:00Z" % (k % 60), "author_association": "OWNER"}
+            for k, b in enumerate(bodies)]
 
 
 argv = sys.argv[1:]
@@ -199,6 +209,11 @@ if argv and argv[0] == "api":
                  if i.get("state", "open") == f.get("state", "open")
                  and want.issubset(set(i["labels"]))
                  and (not who or who in i.get("assignees", []))]
+    elif re.fullmatch(r"repos/%s/issues/\d+/comments" % re.escape(repo), endpoint):
+        n = endpoint.split("/")[4]
+        if n not in s["issues"]:
+            sys.stderr.write("HTTP 404: Not Found\n"); sys.exit(1)
+        items = issue_comments(n)
     elif endpoint.startswith("repos/%s/issues/" % repo) and endpoint.count("/") == 4:
         n = endpoint.rsplit("/", 1)[1]
         if n not in s["issues"]:

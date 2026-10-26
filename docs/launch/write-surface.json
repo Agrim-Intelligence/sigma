@@ -3010,6 +3010,14 @@
     },
     {
       "path": "skills/sigma-loop/scripts/work.py",
+      "function": "_post_goal_marker",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "work.enabled; multi-PR lean goal; an approving non-fold plan-review bound to the plan committed on the pushed slice branch; one non-idempotent REST comment POST via gh_api.comment_issue; idempotent by payload digest",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/work.py",
       "function": "switch_pr_to_refs",
       "rule": "gh-api-write",
       "count": 1,

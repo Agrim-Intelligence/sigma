@@ -93,10 +93,22 @@ def verify_agent(agent_id):
     return "transcript", None
 
 
-def status(sdlc_dir, config, goal):
+#: #2007 (FR-80, R2): the implement/review row of an imported goal with no local row when no `run` was given --
+#: only `loop.py record done` passes one, so no display path ever reads GitHub from the gate.
+GITHUB_DEFERRED = "GitHub slice evidence is checked at loop.py record done (imported goal)"
+
+
+def status(sdlc_dir, config, goal, run=None):
     """-> {"rows": [(phase, ok, detail, fix)], "notes": [...]}. `ok` False rows are what `refusal`
-    reports. Pure read; never raises on a malformed log (a bad row is skipped by `read_goal`)."""
+    reports. Pure read; never raises on a malformed log (a bad row is skipped by `read_goal`).
+
+    #2007 (FR-80): a goal resumed from verified published goal evidence (`work.imported_evidence`) has research,
+    plan and plan-review satisfied by that import when it has no local row for them, and implement/review (with no
+    local row) by GitHub: every slice of the multi-PR goal has a merged PR carrying a trusted sigma:approve. That
+    read runs ONLY when `run` is passed; an unreadable read is not satisfied (fail closed)."""
     work = _load("work")
+    imp = work.imported_evidence(sdlc_dir, goal)
+    slices_done = None                      # computed once, on first need
     rc = _load("review_context")
     rows = [r for r in _rows(sdlc_dir, goal)             # a malformed row is skipped, never a crash
             if all(isinstance(r.get(k, ""), str) for k in ("phase", "agent_id", "verdict", "state"))]
@@ -122,6 +134,22 @@ def status(sdlc_dir, config, goal):
             out.append((ph, True, f"WAIVED: {why.get(ph) or 'no reason'}", ""))
             notes.append(f"{ph} waived ({why.get(ph) or 'no reason'})")
             continue
+        if imp and ((ph in ("research", "plan") and ph not in last_end)
+                    or (ph == "plan_review" and "plan_review" not in verdict)):
+            out.append((ph, True, f"IMPORTED: published goal evidence (comment {imp.get('comment')}, plan sha256 "
+                                  f"{imp['plan_sha256'][:12]}…)", ""))
+            continue
+        if imp and ((ph == "implement" and ph not in last_end) or (ph == "review" and "review" not in verdict)):
+            if run is None:
+                out.append((ph, False, GITHUB_DEFERRED, ""))
+                continue
+            if slices_done is None:
+                slices_done = work.multi_pr(sdlc_dir, config, goal) and \
+                    work.unmerged_slices(sdlc_dir, config, goal, run=run) == []
+            if slices_done:
+                out.append((ph, True, "GitHub slice evidence: every slice has a merged PR with a trusted "
+                                      "sigma:approve", ""))
+                continue
         if ph not in last_end:
             out.append((ph, False, "no phase end recorded",
                         f"dispatch ONE subagent for {ph}; bracket it: {start(ph)} ... {end(ph)}"))
@@ -226,6 +254,8 @@ def start_refusal(sdlc_dir, goal, phase):
     code is written; a live run recorded the verdict seconds after starting implement."""
     if phase != "implement":
         return None
+    if _load("work").imported_evidence(sdlc_dir, goal):     # #2007: plan-review came with the verified import
+        return None
     config = _load("state").load_config(sdlc_dir)
     if not gate_on(config) or not _load("actionlog").enabled_for(config, sdlc_dir, goal):
         return None
@@ -238,8 +268,10 @@ def start_refusal(sdlc_dir, goal, phase):
             "<reviewer agentId>`, then start implement (plan-review cannot be waived)")
 
 
-def refusal(sdlc_dir, config, goal):
-    """None when the gate is off or satisfied; else the refusal text (names each fix and the lever)."""
+def refusal(sdlc_dir, config, goal, run=None):
+    """None when the gate is off or satisfied; else the refusal text (names each fix and the lever). `run` reaches
+    `status` (only `loop.py record done` passes it); without it -- `work.py merge` -- an imported goal's missing
+    implement/review rows are refused with what to do on THIS machine, since nothing will read GitHub for them."""
     if not gate_on(config):
         return None
     if not _load("actionlog").enabled_for(config, sdlc_dir, goal):
@@ -247,7 +279,10 @@ def refusal(sdlc_dir, config, goal):
                 "verified: set action_log.enabled to true, or switch the gate off with "
                 "gates.phase_record.enabled: false (REFUSED rather than passed unverified)")
     try:
-        bad = [r for r in status(sdlc_dir, config, goal)["rows"] if not r[1]]
+        bad = [r if r[2] != GITHUB_DEFERRED else
+               (r[0], False, "no local phase row, and work.py merge does not read GitHub slice evidence (imported goal)",
+                "record implement and review on this machine before merging")
+               for r in status(sdlc_dir, config, goal, run=run)["rows"] if not r[1]]
     except Exception as exc:                  # noqa: BLE001 - an unreadable record is a refusal, never a pass
         return (f"the SDLC phase record could not be read ({type(exc).__name__}: {exc}); repair or move "
                 f".sdlc/state/log/<goal>.jsonl and re-record the phases ({_LEVER})")

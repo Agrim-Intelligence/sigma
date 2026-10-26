@@ -311,7 +311,19 @@ def issue_rest_obj(state, number):
         "labels": [{"name": l} for l in issue["labels"]],
         "title": issue.get("title", ""), "body": issue.get("body", ""),
         "assignees": [{"login": a} for a in issue.get("assignees", [])],
+        # #2007: real REST always sends the issue's comment COUNT (`gh_api.view_issue` pages by it).
+        "comments": len(issue.get("comments", [])),
     }
+
+
+def issue_rest_comments(state, number, page, per_page):
+    """#2007: one REST `issues/<n>/comments` page for an ISSUE -- what was posted to it, oldest first,
+    as the authenticated user (OWNER), with the fields real REST always sends."""
+    rows = [{"id": 900000 + i, "node_id": "IC_i%s_%d" % (number, i), "user": {"login": state["login"]},
+             "body": c["body"], "created_at": "2026-01-01T00:%02d:00Z" % (i % 60),
+             "author_association": c.get("assoc", "OWNER")}
+            for i, c in enumerate(map(_as_comment, state["issues"][number].get("comments", [])))]
+    return rows[(page - 1) * per_page: page * per_page]
 
 
 def cmd_label(state, argv, pos, flags):
@@ -609,7 +621,9 @@ def cmd_api(state, argv, pos, flags, multi):
             per_page, page = max(1, int(q.get("per_page", "30"))), max(1, int(q.get("page", "1")))
         except ValueError:
             per_page, page = 30, 1
-        emit(pr_rest_comments(state, m.group(1), page, per_page), flags.get("jq"), argv); return
+        rows = (issue_rest_comments if m.group(1) in state["issues"] and m.group(1) not in state["prs"]
+                else pr_rest_comments)(state, m.group(1), page, per_page)
+        emit(rows, flags.get("jq"), argv); return
     if endpoint == "repos/%s" % repo:
         ladder = ("pull", "triage", "push", "maintain", "admin")     # #895 4b-2: REST `permissions`
         top = {"READ": 0, "TRIAGE": 1, "WRITE": 2, "MAINTAIN": 3, "ADMIN": 4}[state.get("viewer_permission", "ADMIN")]
@@ -1542,5 +1556,6 @@ def test_issue_comment_field_post_without_method_is_recorded(tmp_path):
     assert json.loads(r.stdout) == {"body": "hello"}
     assert _read_state(world["state_path"])["issues"]["7"]["comments"] == ["hello"]
     assert _unhandled_lines(world) == []
-    assert json.loads(_fakegh(world, ["api", ep]).stdout) == []             # a plain read posts nothing
+    # a plain read posts nothing -- it reads back the one posted comment (#2007: issue comments are served)
+    assert [c["body"] for c in json.loads(_fakegh(world, ["api", ep]).stdout)] == ["hello"]
     assert _read_state(world["state_path"])["issues"]["7"]["comments"] == ["hello"]

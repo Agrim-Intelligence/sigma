@@ -43,6 +43,7 @@ feature branch stays open, and every goal declaring `Blocked by: #N` stays held 
 """
 import contextlib
 import decimal
+import fnmatch
 import importlib.util
 import hashlib
 import io
@@ -1591,7 +1592,11 @@ def _legacy_evidence(sdlc_dir, goal):
 def classify_blocker(sdlc_dir, config, goal):
     """(kind, reason) for why `classify` would refuse this goal whatever its profile -- kind `legacy`, `late`
     or `nowhere` (no work record and no action log) -- or None when it would record. One check, read by `classify` and by `loop.py next-step`
-    (#2005), so the prompt never names a classify the verb refuses."""
+    (#2005), so the prompt never names a classify the verb refuses. #2007: kind `imported` for a goal resumed from
+    verified published goal evidence."""
+    if imported_evidence(sdlc_dir, goal):
+        return "imported", ("resumed from published goal evidence: the route came with it and is never classified "
+                            "afresh (FR-90)")
     if _legacy_evidence(sdlc_dir, goal):
         return "legacy", ("legacy goal: its plan-review was approved before the lean route, so it finishes under "
                           "the pre-upgrade phase rules (FR-33) and is not classified")
@@ -1742,6 +1747,10 @@ def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", 
         rc._atomic_bytes(target, (json.dumps(record, sort_keys=True, separators=(",", ":"))
                                   + "\n").encode("utf-8"))
         path = str(target)
+        if mapped in _PLAN_REVIEW_APPROVING and rec.get("evidence"):
+            # #2007 (FR-79): a later approval republishes -- only once a slice was pushed (or evidence imported),
+            # never at plan-review time before any push (2000.md:1184).
+            _publish_best_effort(sdlc_dir, config, goal, rec, run or _run)
     elif not enabled(config):
         print("work: no record is kept: work.enabled is off, so no `work.py pr` reads one (the "
               "journal mirror, when enabled, still has the verdict).", file=sys.stderr)
@@ -1804,10 +1813,11 @@ def phase_gate_on(config):
     return _load("phase_gate").gate_on(config)
 
 
-def phase_record_refusal(sdlc_dir, config, goal):
+def phase_record_refusal(sdlc_dir, config, goal, run=None):
     """None when `gates.phase_record` is off or the goal's action log shows every phase (#684), else
-    the refusal text. The gate itself lives in phase_gate.py; this is the registered entry point."""
-    return _load("phase_gate").refusal(sdlc_dir, config, goal)
+    the refusal text. The gate itself lives in phase_gate.py; this is the registered entry point. `run` (#2007) is
+    passed only by `loop.py record done`, the one caller that may read GitHub slice evidence for an imported goal."""
+    return _load("phase_gate").refusal(sdlc_dir, config, goal, run=run)
 
 
 _GIT_LOCATION_ENV = frozenset((
@@ -3134,6 +3144,11 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None):
             fix = (f" -- check access to {s['remote']} (`git ls-remote {s['remote']}`), then re-run "
                    f"`work.py start {sdlc_dir} {goal}`")
         raise RuntimeError(f"{exc} — base {base!r} came from {provenance}{fix}") from exc
+    # #2007 (FR-74/FR-90): a goal the pick staged for resume is verified and imported BEFORE any worktree or branch
+    # exists, so a refused import leaves nothing behind and a retry starts clean.
+    pending = _pending_resume(sdlc_dir, goal) if rec is None else None
+    imported = (import_goal_evidence(sdlc_dir, config, goal, run, base_root, s["remote"], base, pending)
+                if pending else None)
     reattached = False                      # #2009: initialised HERE, not only in the except -- an
                                             # un-taken except would otherwise NameError on the
                                             # guard below, on the fresh-cut path every pick uses.
@@ -3180,7 +3195,12 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None):
     if prior:
         row = next(r for r in reversed(_log_rows(sdlc_dir, goal)) if r.get("kind") == "goal_class")
         saved.update({**prior, "profile_source": row.get("source") or "agent"})
-    classified = not reattached and rec is None and not prior and not _legacy_evidence(sdlc_dir, goal)
+    if imported:                            # FR-90: the route came with the evidence; never classified afresh
+        saved.update(route=LEAN_ROUTE, profile=imported["profile"], profile_source="imported",
+                     rationale="resumed from published goal evidence (FR-90)", epoch=pending["epoch"],
+                     evidence={"digest": None, "at": imported["imported_at"]})
+    classified = (not reattached and rec is None and not prior and not imported
+                  and not _legacy_evidence(sdlc_dir, goal))
     if classified:
         saved.update({"route": LEAN_ROUTE, "profile": "standard", "profile_source": "default",
                       "rationale": "no profile recorded"})
@@ -3203,7 +3223,7 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None):
     # that never commits never puts membership anywhere shared. Only a fresh cut records (a
     # reattach is a resume, which never rewrote it). Then out to the siblings, from the entry the
     # sync just wrote -- after it, never before (see `_propagate_registry`).
-    if not reattached:
+    if not reattached and not imported:     # #2007 (R4): the owner's first slice commit already carried membership
         wt_sdlc = path / pathlib.Path(sdlc_dir).resolve().relative_to(base_root)
         sync_note = _sync_registry(wt_sdlc, config, stem(goal), unit, run, path, s["remote"])
         sync_note += _propagate_registry(sdlc_dir, config, stem(goal), unit, run, path, s["remote"],
@@ -4007,6 +4027,8 @@ def commit(sdlc_dir, config, goal, run=None, message=""):
         return "not started — run `work.py start` first (nothing committed)"
     path = rec["worktree"]
     _copy_acceptance_into_worktree(sdlc_dir, rec, goal, run)    # #1474
+    if multi_pr(sdlc_dir, config, goal):                          # #2007 (B1): the manifest rides the slice commit
+        _copy_acceptance_into_worktree(sdlc_dir, rec, goal, run, subdir="plans")
     run(path, ["git", "add", "-A"])
     staged = run(path, ["git", "diff", "--cached", "--name-only"])
     if not staged:
@@ -4343,15 +4365,18 @@ def _acceptance_missing_from_branch(sdlc_dir, rec, goal, run):
     return _phase_doc_missing_from_branch(sdlc_dir, rec, goal, run, "acceptance", "acceptance record")
 
 
-def _copy_acceptance_into_worktree(sdlc_dir, rec, goal, run):
+def _copy_acceptance_into_worktree(sdlc_dir, rec, goal, run, subdir="acceptance"):
     """#1474: byte-copy the root `.sdlc/acceptance/<stem>.md` into the worktree so `git add -A` sees it.
+    #2007 (B1): `subdir="plans"` copies the root slice manifest `.sdlc/plans/<stem>.slices.json` the same way, so a
+    multi-PR goal's first slice commit carries the manifest its published evidence is verified against.
 
     Create-only: a worktree copy that already exists is never touched. Skipped when the repo's own
     ignore rules cover the path (the #1504 boundary `_phase_doc_missing_from_branch` draws), and a
     failure to read those rules fails open, as there. Never raises: commit must not strand on this."""
     try:
-        doc = _load("review_context").phase_doc_file(sdlc_dir, goal, "acceptance")
-        if not doc:
+        doc = (_load("review_context").phase_doc_file(sdlc_dir, goal, "acceptance") if subdir == "acceptance"
+               else _slices_mod().manifest_path(sdlc_dir, goal))
+        if not doc or not doc.is_file():
             return False
         rel = doc.resolve().relative_to(project_root(sdlc_dir)).as_posix()
         target = pathlib.Path(rec["worktree"], rel)
@@ -4648,6 +4673,300 @@ def unmerged_slices(sdlc_dir, config, goal, run=None, just_merged=None):
             if done is not True]
 
 
+# --------------------------------------------------------------------------- #2007: goal evidence + resume
+
+#: #2007 (E1, a cross-machine contract read by slices 5b/6/7): ONE trusted issue comment per publication,
+#: `<!-- sigma:goal-evidence {json} -->` + one prose line; the newest trusted one wins. The epoch marker
+#: (`{"v":1,"goal":"<n>","epoch":<int>,"reason":"resume"}`) is the FR-90 claim bump; 5a never fences on it.
+EVIDENCE_MARKER = "<!-- sigma:goal-evidence"
+EPOCH_MARKER = "<!-- sigma:epoch"
+PLAN_GENERATION = 1                         # 5b puts generations in branch names; constant until then
+RESTART_LEVER = ("loop.py resume <sdlc> <goal> --restart (slice 5b; until it ships, park the goal: "
+                 "loop.py record <sdlc> <goal> parked --qkind needs_decision)")
+_EVIDENCE_RE = re.compile(r"<!-- %s:goal-evidence (.*?) -->" % legacy.MARKER_PREFIX_RE, re.S)
+_EPOCH_RE = re.compile(r"<!-- %s:epoch (.*?) -->" % legacy.MARKER_PREFIX_RE, re.S)
+_HEX_OR_NONE = lambda v: v is None or bool(_SHA256_HEX.match(str(v)))        # noqa: E731
+_EVIDENCE_CHECKS = {
+    "v": lambda v: v == 1 and not isinstance(v, bool), "goal": lambda v: isinstance(v, str),
+    "research": lambda v: v is None or isinstance(v, str), "plan": lambda v: isinstance(v, str) and bool(v),
+    "ref": lambda v: isinstance(v, str) and bool(v), "plan_sha256": lambda v: bool(_SHA256_HEX.match(str(v))),
+    "acceptance_sha256": _HEX_OR_NONE, "verdict": lambda v: v in _PLAN_REVIEW_APPROVING,
+    "scope_fingerprint": lambda v: bool(_SHA256_HEX.match(str(v))),
+    "epoch": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 1,
+    "generation": lambda v: isinstance(v, int) and not isinstance(v, bool), "profile": lambda v: v in PROFILES}
+
+
+def _check_evidence(payload, goal):
+    """Raise ValueError unless `payload` is a well-formed E1 goal-evidence payload for this goal."""
+    if not isinstance(payload, dict):
+        raise ValueError(f"goal evidence for #{stem(goal)} is not a JSON object")
+    bad = sorted(k for k, ok in _EVIDENCE_CHECKS.items() if k not in payload or not ok(payload[k]))
+    if bad:
+        raise ValueError(f"goal evidence for #{stem(goal)} has a missing or malformed {', '.join(bad)}")
+    if payload["goal"] != stem(goal):
+        raise ValueError(f"goal evidence names #{payload['goal']}, not #{stem(goal)}")
+
+
+def _trusted_in_order(comments, goal):
+    """The trusted comments (FR-93: `sources.trusted_marker_comments`, which RAISES when trust cannot be judged)
+    in (createdAt, list position) order."""
+    trusted = _load("sources").trusted_marker_comments(comments, goal)
+    rows = [(str(c.get("createdAt") or ""), i, c) for i, c in enumerate(trusted) if isinstance(c, dict)]
+    return [c for _at, _i, c in sorted(rows, key=lambda r: (r[0], r[1]))]
+
+
+def _marker_json(match, what, goal):
+    try:
+        return json.loads(match.group(1))
+    except ValueError as exc:
+        raise ValueError(f"a trusted {what} marker on #{stem(goal)} is not valid JSON ({exc})") from None
+
+
+def newest_evidence(comments, goal):
+    """The newest trusted goal-evidence payload plus `"comment": <its id>`, or None when there is none. Reads only
+    through the trust filter (idempotent over an already-filtered list). A trusted marker whose JSON or fields are
+    wrong RAISES ValueError: what the newest publication says cannot be told (fail closed)."""
+    found = None
+    for c in _trusted_in_order(comments, goal):
+        m = _EVIDENCE_RE.search(str(c.get("body") or ""))
+        if m:
+            payload = _marker_json(m, "goal-evidence", goal)
+            _check_evidence(payload, goal)
+            found = dict(payload, comment=c.get("id"))
+    return found
+
+
+def current_epoch(comments, goal):
+    """The goal's claim epoch: max `epoch` over trusted epoch AND goal-evidence markers, 0 when none."""
+    top = 0
+    for c in _trusted_in_order(comments, goal):
+        body = str(c.get("body") or "")
+        for rx, what in ((_EPOCH_RE, "epoch"), (_EVIDENCE_RE, "goal-evidence")):
+            m = rx.search(body)
+            if m:
+                payload = _marker_json(m, what, goal)
+                e = payload.get("epoch") if isinstance(payload, dict) else None
+                if isinstance(e, int) and not isinstance(e, bool):
+                    top = max(top, e)
+    return top
+
+
+def epoch_marker(goal, epoch):
+    """The FR-90 epoch-bump comment body."""
+    data = json.dumps({"v": 1, "goal": stem(goal), "epoch": int(epoch), "reason": "resume"}, separators=(",", ":"))
+    return (f"{EPOCH_MARKER} {data} -->\nSigma resumed #{stem(goal)} on another claim (epoch {int(epoch)}); research, "
+            "plan and plan-review came with its published goal evidence.")
+
+
+def evidence_body(goal, payload):
+    """The goal-evidence comment body for `payload` (E1). A payload whose JSON holds `-->` is refused."""
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    if "-->" in text:
+        raise ValueError("goal evidence may not contain `-->`")
+    return (f"{EVIDENCE_MARKER} {text} -->\nSigma goal evidence for #{stem(goal)}: plan {payload['plan']} sha256 "
+            f"{payload['plan_sha256'][:12]}…, plan-review {payload['verdict']}, epoch {payload['epoch']}, generation "
+            f"{payload['generation']}. A machine resuming this goal verifies these against the remote branch.")
+
+
+def _evidence_payload(sdlc_dir, config, goal, rec, run):
+    """(payload, None) for this goal's E1 goal evidence, or (None, why nothing can be published). Only for a multi-PR
+    goal whose gates record holds an approving, non-folded verdict bound to a plan sha (D-56: a folded goal publishes
+    nothing), and only for bytes COMMITTED at the worktree's HEAD -- the branch `pr()` pushes -- read raw with
+    `git cat-file` (never disk bytes: eol rules could make the publisher and the resumer hash different bytes). The
+    plan there must hash to the approved sha, the manifest there must have the local scope, and the acceptance
+    record, when this goal has one, must be there too: otherwise a resumer could not verify what this says."""
+    if not multi_pr(sdlc_dir, config, goal):
+        return None, "not a multi-PR lean goal"
+    try:
+        gates = json.loads(plan_review_record_path(sdlc_dir, goal).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        gates = None
+    if not (isinstance(gates, dict) and gates.get("verdict") in _PLAN_REVIEW_APPROVING and not gates.get("fold")
+            and _SHA256_HEX.match(str(gates.get("plan_hash") or ""))):
+        return None, "no approving, non-folded plan-review record bound to a plan sha256"
+    rc, sl = _load("review_context"), _slices_mod()
+    name, wt, branch = pathlib.Path(sdlc_dir).resolve().name, rec["worktree"], rec["branch"]
+
+    def committed(rel):
+        return rc._git_bytes(wt, ["cat-file", "blob", f"HEAD:{rel}"])
+    found = rc.phase_doc_file(pathlib.Path(wt) / name, goal, "plans")
+    plan_rel = (pathlib.PurePosixPath(name) / "plans" / found.name).as_posix() if found else None
+    plan = committed(plan_rel) if plan_rel else None
+    if plan is None or hashlib.sha256(plan).hexdigest() != gates["plan_hash"]:
+        return None, f"the plan committed on {branch} is not the plan-review-approved bytes"
+    manifest_rel = f"{name}/plans/{stem(goal)}{sl.SUFFIX}"
+    manifest = committed(manifest_rel)
+    try:
+        scope = sl.scope_fingerprint(json.loads(manifest)) if manifest is not None else None
+        same = scope is not None and scope == sl.scope_fingerprint(sl.raw(sdlc_dir, goal))
+    except ValueError:
+        same = False
+    if not same:
+        return None, f"the slice manifest {manifest_rel} is not committed on {branch} with the local scope"
+    acceptance_rel = f"{name}/acceptance/{stem(goal)}.md"
+    accepted = committed(acceptance_rel)
+    if accepted is None and _load("acceptance").resolve(sdlc_dir, goal).exists():
+        return None, f"the acceptance record {acceptance_rel} is not committed on {branch}"
+    research = rc.phase_doc_file(sdlc_dir, goal, "research")
+    profile = (route_of(sdlc_dir, goal) or {}).get("profile")
+    if profile not in PROFILES:
+        return None, "no lean route recorded"
+    return {"v": 1, "goal": stem(goal), "plan": plan_rel, "ref": branch,
+            "research": (pathlib.PurePosixPath(name) / "research" / research.name).as_posix() if research else None,
+            "plan_sha256": gates["plan_hash"], "verdict": gates["verdict"],
+            "acceptance_sha256": hashlib.sha256(accepted).hexdigest() if accepted is not None else None,
+            "scope_fingerprint": scope, "epoch": rec.get("epoch") or 1, "generation": PLAN_GENERATION,
+            "profile": profile}, None
+
+
+def _post_goal_marker(config, goal, body, run, cwd):
+    """The one GitHub write of a goal-evidence publication: a REST issue comment (not idempotent; the caller's digest
+    stamp is what keeps a repeat `pr()` from posting it twice)."""
+    return gh_api.comment_issue(_pr_api_run(run, cwd), int(stem(goal)), body, _issue_repo(config))
+
+
+def publish_goal_evidence(sdlc_dir, config, goal, rec, run):
+    """#2007 (FR-79): publish this goal's evidence -> "published", "unchanged" (same payload digest already stamped
+    on `rec["evidence"]`, no POST), or the one-line reason nothing was published. Mutates and saves `rec`."""
+    payload, why = _evidence_payload(sdlc_dir, config, goal, rec, run)
+    if payload is None:
+        return why
+    body = evidence_body(goal, payload)
+    digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    if isinstance(rec.get("evidence"), dict) and rec["evidence"].get("digest") == digest:
+        return "unchanged"
+    _post_goal_marker(config, goal, body, run, rec["worktree"])
+    rec["evidence"] = {"digest": digest, "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    _save(sdlc_dir, goal, rec)
+    return "published"
+
+
+def _publish_best_effort(sdlc_dir, config, goal, rec, run):
+    """`publish_goal_evidence`, never raising: anything but published/unchanged is one stderr line. A PR is never
+    refused for its evidence; the next `work.py pr` retries."""
+    try:
+        out = publish_goal_evidence(sdlc_dir, config, goal, rec, run)
+    except Exception as exc:                # noqa: BLE001 - best-effort by design
+        out = f"{type(exc).__name__}: {_first_line(exc)}"
+    if out not in ("published", "unchanged"):
+        print(f"work: goal evidence for #{stem(goal)} not published ({out}); the next work.py pr retries",
+              file=sys.stderr)
+    return out
+
+
+def stage_resume(sdlc_dir, goal, evidence, epoch):
+    """FR-90, at the pick: hand the verified-trusted newest evidence and the bumped epoch to `start()` through
+    `state/imported/<stem>/pending.json`. While it exists and the goal has no work record, `start()` re-verifies and
+    re-imports from it (so neither a refused nor an interrupted import ever falls back to a fresh classification)."""
+    data = json.dumps({"evidence": evidence, "epoch": int(epoch)}, sort_keys=True) + "\n"
+    _load("review_context")._atomic_bytes(state.imported_path(sdlc_dir, goal, "pending.json"), data.encode("utf-8"))
+
+
+def _pending_resume(sdlc_dir, goal):
+    """The staged resume ({"evidence": {...}, "epoch": int}) or None when absent or malformed. Never raises."""
+    try:
+        data = json.loads(state.imported_path(sdlc_dir, goal, "pending.json").read_text(encoding="utf-8"))
+    except Exception:                       # noqa: BLE001 - absent or unreadable: no resume staged
+        return None
+    if isinstance(data, dict) and isinstance(data.get("evidence"), dict) and isinstance(data.get("epoch"), int):
+        return data
+    return None
+
+
+def import_goal_evidence(sdlc_dir, config, goal, run, root, remote, base, pending):
+    """FR-74 / FR-94: verify the staged goal evidence against THIS repository's refs and import it. Reads plan,
+    acceptance (when the evidence names a sha) and manifest as RAW blob bytes from the open slice PR head the evidence
+    names, else from `<remote>/<base>` (already fetched) -- never a local copy. Every sha256 and the manifest scope
+    fingerprint must match. Writes only `state/imported/<stem>/` and the gates record (`imported: true`, bound to the
+    VERIFIED plan sha), `evidence.json` last. Returns that evidence record; RAISES ValueError (`RESUME REFUSED`, the
+    restart lever named) on any mismatch, unsafe path or unreadable ref, having written nothing a reader keys on."""
+    def refuse(why):
+        raise ValueError(f"RESUME REFUSED: #{stem(goal)}: {why}. The published goal evidence does not verify against "
+                         f"this repository, so nothing was imported; to plan it afresh: {RESTART_LEVER}")
+    ev = pending["evidence"]
+    try:
+        _check_evidence(ev, goal)
+    except ValueError as exc:
+        refuse(str(exc))
+    rc, sl = _load("review_context"), _slices_mod()
+    name = pathlib.Path(sdlc_dir).resolve().name
+    parts = pathlib.PurePosixPath(ev["plan"]).parts
+    exact, pattern = rc._artifact_names(goal)
+    if not (len(parts) == 3 and parts[:2] == (name, "plans")
+            and (parts[2] in exact or (pattern and fnmatch.fnmatchcase(parts[2], pattern)))):
+        refuse(f"the evidence names plan {ev['plan']!r}, which is not this goal's plan under {name}/plans/")
+    ref = f"{remote}/{base}"
+    prefix = f"{settings(config)['branch_prefix']}{stem(goal)}-s"
+    candidate = ev["ref"]
+    try:
+        own = candidate.startswith(prefix) and slice_branch(config, goal, candidate[len(prefix):]) == candidate
+    except ValueError:
+        own = False
+    if own:
+        try:
+            row = gh_api.pr_for_branch_gh(_pr_api_run(run, str(root)), candidate, ["number", "state", "headRefName"],
+                                          "{owner}/{repo}")
+        except Exception as exc:            # noqa: BLE001 - fail closed: never guess which ref holds the plan
+            refuse(f"could not read the PR for {candidate} ({_first_line(exc)}) -- retry")
+        if row and row.get("state") == "OPEN" and row.get("headRefName") == candidate:
+            try:
+                run(str(root), ["git", "fetch", remote, candidate])
+            except Exception as exc:        # noqa: BLE001
+                refuse(f"could not fetch {candidate} ({_first_line(exc)}) -- retry")
+            ref = f"{remote}/{candidate}"
+
+    def blob(rel):
+        data = rc._git_bytes(root, ["cat-file", "blob", f"{ref}:{rel}"])
+        if data is None:
+            refuse(f"no remote ref holds {rel} ({ref})")
+        return data
+    sha = lambda data: hashlib.sha256(data).hexdigest()         # noqa: E731
+    plan = blob(ev["plan"])
+    if sha(plan) != ev["plan_sha256"]:
+        refuse(f"the plan {ev['plan']} on {ref} is not the published sha256 {ev['plan_sha256'][:12]}…")
+    accepted = None
+    if ev["acceptance_sha256"]:
+        accepted = blob(f"{name}/acceptance/{stem(goal)}.md")
+        if sha(accepted) != ev["acceptance_sha256"]:
+            refuse(f"the acceptance record on {ref} is not the published sha256 {ev['acceptance_sha256'][:12]}…")
+    manifest = blob(f"{name}/plans/{stem(goal)}{sl.SUFFIX}")
+    try:
+        scope = sl.scope_fingerprint(json.loads(manifest))
+    except ValueError:
+        scope = None
+    if scope != ev["scope_fingerprint"]:
+        refuse(f"the slice manifest on {ref} does not have the published scope fingerprint")
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    def put(file, data):
+        rc._atomic_bytes(state.imported_path(sdlc_dir, goal, file), data)
+    put("plan.md", plan)
+    if accepted is not None:
+        put("acceptance.md", accepted)
+    put("slices.json", manifest)
+    gates = {"at": now, "goal": str(goal), "plan": ev["plan"], "plan_hash": sha(plan), "verdict": ev["verdict"],
+             "route": LEAN_ROUTE, "imported": True, "evidence_comment": ev.get("comment")}
+    rc._atomic_bytes(plan_review_record_path(sdlc_dir, goal),
+                     (json.dumps(gates, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8"))
+    record = {**ev, "read_ref": ref, "epoch": pending["epoch"], "imported_at": now}
+    put("evidence.json", (json.dumps(record, sort_keys=True) + "\n").encode("utf-8"))
+    return record
+
+
+def imported_evidence(sdlc_dir, goal):
+    """The verified import (`evidence.json`) while the imported plan still hashes to its `plan_sha256`, else None.
+    What every gate that accepts imported research/plan/plan-review keys on. Never raises."""
+    try:
+        ev = json.loads(state.imported_path(sdlc_dir, goal, "evidence.json").read_text(encoding="utf-8"))
+        plan = state.imported_path(sdlc_dir, goal, "plan.md").read_bytes()
+    except Exception:                       # noqa: BLE001 - absent or unreadable: nothing imported
+        return None
+    if (isinstance(ev, dict) and _SHA256_HEX.match(str(ev.get("plan_sha256") or ""))
+            and hashlib.sha256(plan).hexdigest() == ev["plan_sha256"]):
+        return ev
+    return None
+
+
 def slice_progress(sdlc_dir, config, goal):
     """LOCAL display facts for a multi-PR goal, no GitHub read: {"current", "ids", "k", "n", "merged"} where `merged`
     lists the ids the local record marks merged (display only -- the gates read GitHub). None when not multi-PR or
@@ -4681,7 +5000,8 @@ def slice_start(sdlc_dir, config, goal, run=None):
     """`work.py slice <sdlc> <goal>` (D3): start the next slice of a multi-PR goal -- the first manifest slice (in
     manifest order) whose PR is not done per `slice_done`. The FIRST slice is cut from the worktree's current HEAD
     (it carries the research/plan/acceptance commits `pr()` checks for); later slices from `<remote>/<base>` after a
-    fetch (slice 1 has merged into it). An existing local slice branch is checked out, not recreated. The record
+    fetch (slice 1 has merged into it). An existing local slice branch is checked out, not recreated; with none, a
+    slice whose PR is already OPEN has that branch fetched and checked out and its PR reused (#2007, FR-64). The record
     gets `slice`, `branch`, no `pr`, and `slices[<id>]` (history, display only), so every existing PR verb keeps
     reading `rec["branch"]`/`rec["pr"]` unchanged; the first cut also keeps `goal_branch` for `finish()`.
     Refused (`SLICE REFUSED:`, exit 2): not multi-PR, an unsafe or unreadable manifest, a flag awaiting the
@@ -4729,34 +5049,63 @@ def slice_start(sdlc_dir, config, goal, run=None):
         return _slice_refused_text(f"slice {target} PR #{rec['pr']} merged without a trusted sigma:approve -- a human "
                               "decides (record parked --qkind needs_decision)")
     branch = slice_branch(config, goal, target)
-    first = not isinstance(rec.get("slices"), dict) or not rec["slices"]
+    history = isinstance(rec.get("slices"), dict) and bool(rec["slices"])
+    # #2007 (TD-5): only the manifest's FIRST slice is cut from HEAD -- a resumer with no local history whose target
+    # comes after a done slice cuts from the base like any later slice.
+    first = ids.index(target) == 0 and not history
     try:
         run(path, ["git", "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"])
         exists = True
     except Exception:                       # noqa: BLE001 - absent
         exists = False
     remote, base = rec["remote"], rec["base"]
+    reuse = None
+    if not exists:
+        # #2007 (FR-64): a slice whose PR is already open (another machine pushed it) is checked out and its PR reused,
+        # whichever slice it is -- never re-cut, never a duplicate PR. Unreadable refuses (fail closed).
+        try:
+            row = gh_api.pr_for_branch_gh(_pr_api_run(run, path), branch, ["number", "state", "headRefName"],
+                                          "{owner}/{repo}")
+        except Exception:                   # noqa: BLE001
+            return _slice_refused_text(f"could not read slice {target}'s PR -- retry")
+        if row and row.get("state") == "OPEN" and row.get("headRefName") == branch:
+            reuse = row
+    cut_ref = "HEAD"
     if exists:
         run(path, ["git", "checkout", branch])
+    elif reuse:
+        run(path, ["git", "fetch", remote, branch])
+        run(path, ["git", "checkout", "-b", branch, f"{remote}/{branch}"])
+        # R1: the reused PR tip is NOT where this slice was cut; its merge-base with the base is (a PR-tip cut tip
+        # would make `--onto` replay nothing). Unreadable -> no cut tip, the legacy replay.
+        try:
+            run(path, ["git", "fetch", remote, base])
+            cut_ref = str(run(path, ["git", "merge-base", "HEAD", f"{remote}/{base}"]) or "").strip() or None
+        except Exception:                   # noqa: BLE001
+            cut_ref = None
     elif first:
         run(path, ["git", "checkout", "-b", branch])
     else:
         run(path, ["git", "fetch", remote, base])
         run(path, ["git", "checkout", "-b", branch, f"{remote}/{base}"])
-    if first:
+    if not history:
         rec["goal_branch"] = rec["branch"]
     # R1: the tip THIS slice was cut from -- a stale one would make a later `--onto` rebase replay commits that are
     # already on the base. A branch that records no tip (not a unit base) drops the stale key.
     rec.pop("cut_tip", None)
-    rec.update(_cut_tip_fields(config, run, path, remote, base))
+    if cut_ref:
+        rec.update(_cut_tip_fields(config, run, path, remote, base, ref=cut_ref))
     marks = rec["slices"] if isinstance(rec.get("slices"), dict) else {}
     marks[target] = dict(marks.get(target) or {}, branch=branch)
     rec.update(slice=target, branch=branch, slices=marks)
     for key in ("pr", "size"):
         rec.pop(key, None)
+    if reuse:
+        rec["pr"] = str(reuse["number"])
     _save(sdlc_dir, goal, rec)
     k = ids.index(target) + 1
-    return f"slice {target} ({k} of {len(ids)}) on branch {branch}" + (" (checked out)" if exists else "")
+    return (f"slice {target} ({k} of {len(ids)}) on branch {branch}" + (" (checked out)" if exists else "")
+            + (f" (reusing open PR #{reuse['number']})" if reuse else ""))
 
 
 def mark_slice_merged(sdlc_dir, goal, sid):
@@ -4967,6 +5316,8 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None):
     if size:
         rec["size"] = size
         _save(sdlc_dir, goal, rec)
+    if multi:                                           # #2007 (FR-79): best-effort, never refuses the PR
+        _publish_best_effort(sdlc_dir, config, goal, rec, run)
     if _receipt_sharing_enabled(config):
         try:
             raw = json.loads(run(path, ["gh", "api", f"repos/{{owner}}/{{repo}}/pulls/{number}"]))
@@ -6723,8 +7074,8 @@ def _hard_plan_gate_refusal(sdlc_dir, config, rec, goal, run, check=None):
         # #2003 BR-55: a trivial/small lean goal's approving folded review stands in for the plan file. Not
         # under an org lock, for the sentinel's reason: an agent-written record does not waive org policy.
         return ""
-    if _load("review_context").phase_doc_file(sdlc_dir, goal, "plans"):
-        return ""
+    if _load("review_context").phase_doc_file(sdlc_dir, goal, "plans") or imported_evidence(sdlc_dir, goal):
+        return ""                           # #2007 (D-58): a verified imported plan is this goal's plan
     if not _branch_touches_source(rec, run):
         return ""
     # Deliberately NOT the hook's `plan_freshness_hours` window: at publish time an mtime test would

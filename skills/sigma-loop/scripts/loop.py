@@ -749,6 +749,45 @@ def _feature_owner():
     return _FEATURE_OWNER
 
 
+def _evidence_at_pick(sdlc_dir, source, goal, config):
+    """#2007 (FR-90, FR-93, FR-66): may this goal be claimed, given what its issue publishes? -> True to proceed.
+
+    Reads NOTHING unless work is on, the goal is a github issue (`work._reads_a_declaration`), the source has the
+    strict comment read, and this machine either has no work record for it or has one carrying an evidence stamp
+    (the owner picking it again after an unpark). Then one paged REST comment read: no trusted goal evidence is an
+    ordinary fresh goal. With evidence, the claim epoch is bumped with ONE epoch marker FIRST, and only once that
+    lands is the resume staged for `work.py start` (no record) or the owner's record re-stamped -- a failed marker
+    leaves neither. Any failure (unreadable comments, a marker whose trust cannot be judged, a malformed trusted
+    marker, a refused marker post) skips the goal with one stderr line: it is never classified afresh. Never
+    raises. Cost: one issue-comments read per claimed goal on that path; unmeasured against the rate limit (D-54)."""
+    try:
+        if not (work.enabled(config) and work._reads_a_declaration(config, goal)
+                and callable(getattr(source, "fetch_comments_strict", None))):
+            return True
+        rec = work._record(sdlc_dir, goal)
+        if rec is not None and not rec.get("evidence"):
+            return True
+        comments = source.fetch_comments_strict(goal)["comments"]
+        evidence = work.newest_evidence(comments, goal)
+        if evidence is None:
+            return True
+        epoch = work.current_epoch(comments, goal) + 1
+        if source.note(goal, work.epoch_marker(goal, epoch)) is False:    # the hard-stop guard's refusal
+            raise RuntimeError("the epoch marker was not posted")
+        if rec is None:
+            work.stage_resume(sdlc_dir, goal, evidence, epoch)
+        else:
+            rec["epoch"] = epoch
+            work._save(sdlc_dir, goal, rec)
+    except Exception as exc:                # noqa: BLE001 - unreadable evidence skips the goal, never classifies it
+        print(f"loop.py: not claiming #{goal} -- its published goal evidence cannot be read or acted on ({exc}); it "
+              "is never classified afresh (FR-90/FR-93); taking the next candidate", file=sys.stderr)
+        return False
+    print(f"loop.py: #{goal} has published goal evidence -- resuming at epoch {epoch}; research, plan and "
+          "plan-review are not re-run", file=sys.stderr)
+    return True
+
+
 def _owner_ok_at_pick(sdlc_dir, source, goal, config, unit):
     """#1479: was this issue FILED by somebody entitled to file against the unit it carries?
     -> True to proceed.
@@ -2992,7 +3031,8 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
                        and _feature_scope_ok(source, goal, unit)
                        and _label_scope_ok(source, goal)
                        and _scope_ok_at_pick(sdlc_dir, source, goal, config, unit)
-                       and _owner_ok_at_pick(sdlc_dir, source, goal, config, unit))
+                       and _owner_ok_at_pick(sdlc_dir, source, goal, config, unit)
+                       and _evidence_at_pick(sdlc_dir, source, goal, config))
         except BaseException:
             _cancel_goal_slot(sdlc_dir, session_pid, goal)
             _release_claim_lock(lock_fd)
@@ -8317,7 +8357,7 @@ def _dispatch(argv):
         # recorded lever. The refusal names each missing item and its fix.
         if argv[4] == "done":
             try:
-                phase_refusal = work.phase_record_refusal(argv[2], config, argv[3])
+                phase_refusal = work.phase_record_refusal(argv[2], config, argv[3], run=work._run)
             except ValueError as exc:
                 print(f"loop.py record: {exc}", file=sys.stderr)
                 return 2

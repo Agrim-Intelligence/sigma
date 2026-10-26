@@ -83,6 +83,7 @@ MARKERS = frozenset({
     "sigma-qkind:", "sigma-hardstop:", "sigma-filing-goal:", "<!-- sigma:filing-cap-rearmed", "sigma-depth:", "<!-- sigma:migrate-confirmation -->",
     "<!-- sigma:upkeep-finding -->",
     "sigma:waiting-on-dependency",
+    "<!-- sigma:goal-evidence", "<!-- sigma:epoch",
 })
 
 #: For a regex that must accept either spelling of a marker's brand segment.
