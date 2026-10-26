@@ -9,6 +9,7 @@ for docs/launch/evidence/d7-github-mode-refusals-*.md. The 403 and 404 texts are
 import importlib.util
 import json
 import os
+import re
 import pathlib
 import signal
 import subprocess
@@ -148,8 +149,9 @@ def test_loop_next_with_a_bad_token_prints_the_fix_and_keeps_the_done_tokens(tmp
         os.killpg(proc.pid, signal.SIGKILL)         # the group, so a regression fails instead of hanging
         proc.communicate()
         pytest.fail("loop.py next hung")
-    assert out.strip() == "DONE"                                       # supervise_classify's stdout token
-    assert "DONE (degraded read — backlog state unknown)" in err       # and its stderr line, unchanged
+    # #2023 (FR-7): a read that gave up prints `DEGRADED <retry-epoch>`, never DONE; the supervisor reads this token.
+    assert re.fullmatch(r"DEGRADED \d{9,12}", out.strip()), out
+    assert "DONE (degraded read" not in err                            # #2023: the old stderr line is gone with the DONE token
     assert "gh auth login" in err
     assert BAD in err
 

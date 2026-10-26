@@ -578,7 +578,9 @@
     "skills/sigma-loop/scripts/worktree_prune.py::after_start_or_done",
     "skills/sigma-loop/scripts/worktree_prune.py::main",
     "skills/sigma-loop/scripts/worktree_prune.py::sweep",
-    "skills/sigma-scope/scripts/assign.py::_start_drain"
+    "skills/sigma-scope/scripts/assign.py::_start_drain",
+    "skills/sigma-loop/scripts/auto_unpark.py::_stamp_sweep",
+    "skills/sigma-loop/scripts/sources.py::finish"
    ]
   },
   {

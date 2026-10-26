@@ -183,6 +183,7 @@ def test_doctor_rows(tmp_path, monkeypatch):
     _plant("R1", home, proj)
     _put(proj / ".mcp.json", "{broken")
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")   # #1572: no ambient git identity under the HOME override
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home / ".claude"))
     monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
     spec = importlib.util.spec_from_file_location("doctor_2032", ROOT / "skills/sigma-doctor/scripts/doctor.py")
@@ -199,6 +200,7 @@ def test_loop_start_prints_findings_once_and_continues(tmp_path, monkeypatch, ca
     home, proj = _dirs(tmp_path)
     _plant("R1", home, proj)
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")   # #1572: no ambient git identity under the HOME override
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(home / ".claude"))
     monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
     sdlc = proj / ".sdlc"
@@ -322,6 +324,7 @@ def test_both_server_keys_are_checked_independently(tmp_path):
 def test_doctor_scanner_fault_is_one_unknown_row(tmp_path, monkeypatch):
     home, proj = _dirs(tmp_path)
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")   # #1572: no ambient git identity under the HOME override
     spec = importlib.util.spec_from_file_location("doctor_2032b", ROOT / "skills/sigma-doctor/scripts/doctor.py")
     d = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(d)
