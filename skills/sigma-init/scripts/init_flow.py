@@ -503,7 +503,7 @@ def _verify_trust_lines(sdlc, command):
     gesture, not to re-run init. The key is read where `loop.py verify` and `verify_detect` read it: the
     directory holding `.sdlc`. The repository-controlled command is printed alone, as JSON, never inside the gesture."""
     repo = pathlib.Path(os.path.abspath(sdlc)).parent
-    if _sp.repository_shell_commands_allowed(repo):
+    if _sp.verify_decision(repo, [command]).source:     # #2066: git-local, or the environment approves this command
         return []
     head = ("  [trust] verify: a verify command is configured but this checkout has not granted it trust, so "
             "`loop.py verify` will refuse it (git-local, not committed or cloned; every checkout grants it once).")

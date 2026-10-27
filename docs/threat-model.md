@@ -40,7 +40,7 @@ and E (elevation of privilege).
 | TM-01 | T1 | Prompt injection (E) | An issue asks a phase agent to execute a command or edit labels. | none | high | #362 |
 | TM-02 | T1 | Phantom blocker write (T) | A confident `_BLOCK_RE` match writes a blocker edge to a third issue. | none | high | #362 |
 | TM-03 | T1 | Parser confusion (T) | A hostile `Feature:` marker or Slack argument changes routing. | none | med | #362 |
-| TM-04 | T2 | Repository-supplied value reaches a process or a file (E) | Any repository-supplied value that reaches a process or a file: a configured shell string or executable (`verify.command`, `review.command`, `knowledge_graph.builder`, `autowatch.drive_cmd`, `.sdlc/risk-detect.conf`), a git remote or branch that becomes an option (`work.remote`, `work.base`, `ledger.remote`, `ledger.branch`), an SMTP host or password variable (`notify.email`), and a committed symlink under `.sdlc/` that a write follows (#708). | `shell_policy.py` refuses repository-configured commands until an operator sets the Git-local opt-in at every sink above; a leading `-` in a git remote or branch is refused; `state.safe_state_open` refuses symlinks under `.sdlc/`; repo SMTP needs `SIGMA_ALLOW_REPO_SMTP=1` | med | #422, #707, #708, #710 |
+| TM-04 | T2 | Repository-supplied value reaches a process or a file (E) | Any repository-supplied value that reaches a process or a file: a configured shell string or executable (`verify.command`, `review.command`, `knowledge_graph.builder`, `autowatch.drive_cmd`, `.sdlc/risk-detect.conf`), a git remote or branch that becomes an option (`work.remote`, `work.base`, `ledger.remote`, `ledger.branch`), an SMTP host or password variable (`notify.email`), and a committed symlink under `.sdlc/` that a write follows (#708). | `shell_policy.py` refuses repository-configured commands until an operator sets the Git-local opt-in at every sink above. For the verify path only (`loop.py verify` and `loop.py red`), it also accepts an operator-owned environment value bound to the repository and the exact command (#2066), refused when a tracked host environment-config file names it (Sigma cannot tell an operator's export from an agent's); a leading `-` in a git remote or branch is refused; `state.safe_state_open` refuses symlinks under `.sdlc/`; repo SMTP needs `SIGMA_ALLOW_REPO_SMTP=1` | med | #422, #707, #708, #710 |
 | TM-05 | T3 | Hook-triggered command execution (E) | A host invokes a configured hook on a prompt or tool call. | `hooks/sigma_gate.sh:20` | med | — |
 | TM-06 | T4 | Credential exposure in logs (I) | A token-shaped value reaches a command or comment diagnostic. Coverage of every `gh` comment site is unverified. | `skills/sigma-loop/scripts/scrub.py:150` | med | — |
 | TM-07 | T4 | Remote webhook egress (I) | `channel_webhook_url` names an Internet host instead of the documented local adapter. | none | high | #358 |
@@ -83,6 +83,37 @@ whose repository configuration you have not reviewed.
 the same Git-local setting only after the operator confirms or supplies the
 command. They refuse to enable a command outside a Git worktree. `decline` and
 initial scaffolding never grant it.
+
+For an environment where every session starts from a fresh clone, an operator
+can instead approve the verify command once per environment (#2066):
+`SIGMA_TRUSTED_VERIFY_SHA256` set to the value
+`doctor.py verify-approval` prints, which is a hash of the repository's `origin`
+`owner/name` and the exact command. It grants `loop.py verify` and `loop.py red`
+only, while every command they are about to run matches; no other sink above
+reads it.
+
+Its ceiling is the operator-versus-agent line:
+- Sigma cannot tell whether a person or an agent exported the value, or
+  rewrote `origin`. The doctor, which an agent may run, prints the value. Skill
+  prose never names it, and every verify records which source granted it, but
+  that is friction, not a control.
+- A repository can fill the process environment from committed host
+  configuration. A tracked file at a declarative host env-config path that names
+  the variable refuses the approval (`repository-sourced`).
+  - That is a tripwire, not a boundary. A committed env block can already run
+    code (it can set `PATH` or `BASH_ENV`).
+  - The files are read when Sigma checks, not when the host launched.
+  - Not seen: code that builds the name at run time (hooks, setup scripts, CI
+    workflows), and directories between the repository top and the launch
+    directory.
+- The identity is the URL's last two path segments, whatever the host: the same
+  `owner/name` on another host or a mirror reads the same.
+- Sigma's git reads for it drop every `GIT_*` variable and ignore global config,
+  and a git location variable refuses.
+- The approval binds the command text, not the files it runs.
+
+Setup, refusals and residuals:
+[cloud sessions](cloud-sessions.md#cloud-environment-setup).
 
 ## The conflict resolver session
 

@@ -10,6 +10,84 @@ progress, not complete: the remaining PR reads (the sibling list R5, `reviewDeci
 by the REST refusal in a cloud session), PR writes (4b/4c) remain; the board is skipped, not migrated (slice 5, below).
 Slice 6 makes the loop-path skill prose REST-first (below). The end-to-end cloud run is UNMEASURED.
 
+## Cloud environment setup
+
+Every cloud session starts from a fresh clone, so it never has the per-checkout verify trust
+([upgrading](upgrading.md#verify-commands-need-a-one-time-per-checkout-trust)). Without it `loop.py verify` refuses
+the repository's verify command, and the goal never reaches a pull request. Instead of granting that trust in every
+container, the operator approves the command once, in the environment's own settings (#2066).
+
+1. In a checkout of the repository on your own machine, from its root, print the value:
+
+   ```
+   python3 -I <installed-sigma>/skills/sigma-doctor/scripts/doctor.py verify-approval .sdlc
+   ```
+
+   It prints `repository: <owner/name>` and `SIGMA_TRUSTED_VERIFY_SHA256=<value>`, never the command. Inspect
+   `verify.command` in `.sdlc/config.json` first: the value approves exactly that string, in exactly that
+   repository. `-I` keeps the repository's own files off Python's import path, so a planted `json.py` cannot run.
+   A failing `/sigma-doctor` trust row prints the same value.
+2. Add that `SIGMA_TRUSTED_VERIFY_SHA256=<value>` line to the environment's environment variables (for a Claude Code
+   cloud environment, its settings at claude.ai/code). Everyone using the environment can see it; it is a hash, not
+   a secret.
+
+**Only the operator sets it, never an agent**, and never from a file in the repository. Sigma cannot tell who
+exported the variable. An agent that exports it, or rewrites `origin`, has granted itself the approval; the
+doctor, which an agent may run, prints the value. So the rule is procedural: no skill names the variable (pinned
+by `tests/test_verify_env_trust_prose.py`), and every verify records in its evidence which source granted it
+(`"trust": "git-local"` or `"environment"`).
+
+**What it grants:** `loop.py verify` and `loop.py red` only, in a checkout whose one local `origin` URL names that
+`owner/name`, and only while every command they are about to run is the approved string.
+- A goal whose acceptance record or frontmatter adds its own `verify_command` is refused. In one private backlog
+  that was 34 of 214 acceptance records (16%, counted 2026-10-27); those goals still need the git-local grant.
+- Every other repository command still needs the git-local grant: pipeline checks, `review.command`, a custom
+  `knowledge_graph.builder`, `autowatch.drive_cmd`, the backlog embedder, `.sdlc/risk-detect.conf`, the unit and
+  upkeep rehearsal, `sigma-rebase`'s verify, and the sealed-acceptance PR gate.
+
+**Identity:** the identity is the `origin` URL's last two path segments, whatever the host. The same `owner/name` on
+another host, a mirror or a local path reads the same, so set the value only in an environment used for that
+repository.
+
+**What it does not bind:** the files the command runs. `bash scripts/verify.sh` runs whatever that file holds on
+the branch being verified, and the tests run as that branch wrote them, exactly as under the git-local grant.
+
+**When it refuses**, `loop.py verify` and `loop.py red` exit 2 and say why on stderr, and `/sigma-doctor` names the
+same reason. Neither ever prints the variable's value:
+- `empty`, `malformed`: it must be exactly one 64-character lowercase hex value, with no spaces, no newline and
+  no second value.
+- `mismatch`: the command changed, or the goal adds its own. A changed `verify.command` is a hard cutover: every
+  container refuses until the operator sets the new value, and a session already running may keep the old one.
+- `vetoed`: this checkout's git-local `sigma.allowRepositoryShellCommands` is `false` or not a boolean. An
+  explicit "no" always wins.
+- `no-identity`: no single local `origin` URL naming `owner/name`, or not a Git worktree. A checkout owned by
+  another user and marked safe only in `~/.gitconfig` also reads this way, because Sigma reads git here with
+  global config off; mark it safe in the system config instead.
+- `location-variable`: `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` or another git location variable is set. Every
+  other `GIT_*` variable is ignored by these reads.
+- `repository-sourced`: a tracked file at a host's environment-config path names the variable, so the repository
+  may have approved its own command. The paths are `.claude/settings.json`, `.claude/settings.local.json`,
+  `.devcontainer.json`, `.devcontainer/devcontainer.json`, `.devcontainer/*/devcontainer.json`,
+  `.vscode/settings.json`, `.env`, `.envrc`, the mise config files and `.codex/config.toml`, plus a symlinked or
+  submodule parent directory of any of them.
+  - Escaped or recased spellings are seen, and so are case variants of the paths (`.Claude/settings.json`), which a
+    case-insensitive filesystem (macOS by default) opens.
+  - It is a tripwire, not a boundary. A committed env block can already run code (it can set `PATH` or `BASH_ENV`),
+    and the files are read when Sigma checks, not when the host launched.
+  - Not seen:
+    - code that builds the name at run time: hooks, setup scripts, CI workflows, an `.envrc`, mise `env._.file`,
+      a devcontainer `--env-file`, compose `env_file`. A host that runs a repository's code has already given it
+      code execution;
+    - directories between the repository top and the launch directory, which mise and direnv also load.
+  - The mise paths come from mise's documentation and were not exercised.
+- `error`: something could not be checked.
+
+**Never in CI:** a CI job's environment comes from the repository's own workflow files.
+
+**Status: UNMEASURED in a real cloud environment.** Neither the clone's `origin` URL shape nor how the panel
+delivers values (trimming, reaching sessions already running) was observed. Every one of those failure modes
+refuses, and the doctor shows the identity it read and the value it expects.
+
 ## What the proxy blocks
 
 A cloud session puts a proxy in front of `api.github.com`. `skills/sigma-loop/scripts/gh_session.py`

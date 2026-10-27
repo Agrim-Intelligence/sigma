@@ -93,6 +93,11 @@ git -C <project> config --local sigma.allowRepositoryShellCommands true
 It covers the checkout's linked goal worktrees. Check it with `python3 <installed-sigma>/skills/sigma-loop/scripts/loop.py
 verify .sdlc <goal>`: it runs the command instead of refusing.
 
+Where every session starts from a fresh clone (a Claude Code cloud environment, say), the operator can approve the
+verify command once for the whole environment instead, in its own settings; see
+[cloud environment setup](cloud-sessions.md#cloud-environment-setup). That covers `loop.py verify` and `loop.py red`
+only, for that repository and that exact command; the per-checkout grant above still covers everything else.
+
 What tells you it is missing:
 
 - `/sigma-init`, re-run on the repository, prints a `[trust] verify` line with the command and this gesture instead

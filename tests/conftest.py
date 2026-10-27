@@ -188,6 +188,13 @@ def _no_host_leak_patterns(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_host_verify_approval(monkeypatch):
+    """#2066: a shell (a cloud environment, say) that exports SIGMA_TRUSTED_VERIFY_SHA256 must not grant or reword a
+    test's verify. Tests of the approval set it themselves."""
+    monkeypatch.delenv("SIGMA_TRUSTED_VERIFY_SHA256", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _resource_guard_off_by_default(monkeypatch):
     """#1600: the picker's resource gate reads the real machine; a loaded developer machine must not
     change an unrelated test's result. Tests of the gate itself set SIGMA_RESOURCE_MODE or the config key. A test that builds

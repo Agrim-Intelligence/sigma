@@ -4,6 +4,13 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Approve the verify command once per environment, not once per checkout (#2066).** A fresh cloud container never has the git-local verify trust, so its goal stopped at `loop.py verify`.
+  - The operator now sets `SIGMA_TRUSTED_VERIFY_SHA256` once in the environment's own settings, to the value `doctor.py verify-approval .sdlc` prints: a hash of the repository's `origin` `owner/name` and the exact `verify.command`.
+  - It grants `loop.py verify` and `loop.py red` only, and only while every command they are about to run is the approved one. A goal that adds its own `verify_command` is still refused, and every other repository command still needs the git-local grant, which is unchanged.
+  - Each of these refuses and is named on stderr and by `/sigma-doctor`, without printing the value: an empty, malformed or multiple value; another command or repository; a git-local `false`; a git location variable; a tracked host env-config file (such as `.claude/settings.json`) that names the variable.
+  - Verify evidence records which source granted the run (`"trust"`).
+  - Only the operator sets it: Sigma cannot tell who exported it, and no skill names it. Measured on fixtures only; the run in a real cloud environment is unmeasured. See [cloud environment setup](docs/cloud-sessions.md#cloud-environment-setup).
+
 - **`/sigma-goal <N> --land` takes one named issue to a merged PR with nobody in the loop (#2065).**
   - **Selection** is the loop's own picker scoped to N: `loop.py next --land N`. N is taken only when `/sigma-loop` would take it. The rules, the per-issue filter, holds, lease, claim lock and board lane apply; the pick reads one REST issue, not the backlog list.
   - **No other goal is touched.** The pick runs none of the sweeps that write to other goals. The two overlay-clearing sweeps run for N alone. The one named exception is the ledger watcher, when the ledger is on.
