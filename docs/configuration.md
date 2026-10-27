@@ -84,6 +84,16 @@ The `resource` block holds the limits `resource_guard.py` derives from the machi
 
 `loop.py verify` goes through admission under the resolved resource mode (`enforce` unless `resource.mode` or `SIGMA_RESOURCE_MODE` says otherwise); `off` runs the proving command exactly as before. Admitted, the command runs in its own process group (a killed caller takes the group with it) under the `verify.timeout_minutes` budget with a 64 KiB output tail. A `{workers}` token in `verify.command` or a goal's `verify_command` is replaced by the granted worker count (an integer only; other braces are left alone), and the child also gets `SIGMA_VERIFY_WORKERS` and `PYTEST_XDIST_AUTO_NUM_WORKERS` set to it. A literal `-n N` cannot be lowered: with a measured cost that N workers do not fit, verify holds instead of running fewer. A hold exits 5 with `RESOURCE-HOLD ... retry_after=<s>` on stderr, runs nothing and writes no evidence, so `record done` still refuses; retry after the stated time. (Exit 5 also still means `UNVERIFIED`, a flaky suite; the stderr prefix tells them apart.) The learned cost is the peak footprint of the verify's process tree divided by the larger of its workers and the number of sizeable processes in that tree (bytes per sizeable process; see the ring unit in [parallelism](parallelism.md#the-resource-guard-derived-limits-holds-shed)), sampled every 2 seconds, so a run shorter than that records its final reading only; a verify admission is also bounded by 1.5 times the largest whole-run peak seen.
 
+## Quota, sweep and reviewer-tier keys
+
+| Key | Default | What it sets |
+|---|---|---|
+| `gh_quota.rest_reserve_percent` | `10` (provisional) | a percentage of the REST core limit GitHub last reported in response headers already seen (never a fixed count). Below it the auto-unpark sweep and the reconcile sweep defer and log the reason with the reset time. With no header seen the quota is unknown and nothing is deferred. A bad value reads as 10 (#2023) |
+| `discovery.auto_unpark.interval_minutes` | `10` (provisional) | the auto-unpark sweep runs at most once per this many minutes; it also skips comments it has already read (#2021) |
+| `model_selection_reviewer_floor` | `"sonnet"` | under `model_selection: "auto"`, plan-review, review and pr-review never run below this tier (`haiku`, `sonnet`, `opus` or `fable`; an unknown value reads as `sonnet`). Signals may raise a reviewer above it, never lower it, and `model_selection_max_tier` still wins (#2020) |
+
+A backlog read that GitHub rate-limited or that came back incomplete makes `loop.py next` and `next-batch` print `DEGRADED <reset-epoch>` instead of `DONE`; the loop waits once (at most 30 minutes, provisional) and picks again, and a second `DEGRADED` stops the run with `stopped: degraded` (#2023). `/sigma-doctor` prints the recorded REST and GraphQL allowance and its reset. Read-only reports: `loop.py gh-calls-report <dir> [--hours N]` counts GitHub calls by component, and `loop.py cost-report <dir>` sums phase cost per goal and per lane (#2019).
+
 ## Where the optional features are documented
 
 The `rulebook` block (records, hard stops, autonomy levels, the applier, rules, the drift judge, the past-decision

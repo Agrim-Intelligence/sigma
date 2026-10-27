@@ -386,6 +386,10 @@ Own-branch carve-out: Sigma's own lease force-push of a branch under `own_branch
 `feature/<unit>` for a registered unit (`own_registered_units`, default true) is not classified, and a merge Sigma performs
 under `work.auto_merge` is own by chokepoint, not by pattern.
 
+Releasing a claim is also own: an issue carrying only Sigma's in-progress or blocked label is Sigma's for the `release` write
+(no other write), so a human-filed issue Sigma claimed is not parked for it (#2063). The park a hard stop does make states its
+question, points at `/sigma-unpark` and carries `sigma-qkind: needs_decision`.
+
 Where it applies: the commit, pull-request and rebase-push steps, and the issue writes Sigma performs itself. A command
 an agent runs by itself on a host without hooks stays advice. Kinds in `hard_stops.hardstop_kinds` (default
 `irreversible`) are capped at autonomy level 2 whether or not this part is open.

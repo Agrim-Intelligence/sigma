@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+## 1.0.21 — 2026-10-27 — unattended runs that cost less and fail loudly: counted GitHub calls, a rate-limited read says DEGRADED, a resource guard that keeps killed verifies leased, host-config checks, /sigma-goal --land and one-time cloud verify approval
+
 - **Approve the verify command once per environment, not once per checkout (#2066).** A fresh cloud container never has the git-local verify trust, so its goal stopped at `loop.py verify`.
   - The operator now sets `SIGMA_TRUSTED_VERIFY_SHA256` once in the environment's own settings, to the value `doctor.py verify-approval .sdlc` prints: a hash of the repository's `origin` `owner/name` and the exact `verify.command`.
   - It grants `loop.py verify` and `loop.py red` only, and only while every command they are about to run is the approved one. A goal that adds its own `verify_command` is still refused, and every other repository command still needs the git-local grant, which is unchanged.
@@ -17,7 +19,7 @@ All notable changes to Sigma are recorded here, newest first.
   - **The run** then follows `/sigma-loop`'s own per-goal steps and landing path, by reference rather than as a copy. It has no gate pauses, and Plan-Review, review and verify still bind.
   - **Endings:** exactly one of merged, parked (reason on the issue) or failed (reason given), named in the final message.
   - **Refused up front** (exit 2): `--feature` or `--label` beside it, `next-batch`, a local-goals backlog, `work.enabled` off, and `work.auto_merge: off`.
-  - **Picker messages:** a goal not taken ends with a `--land #N not taken (not started): <why>` line on stderr; a failed or rate-limited read of N is `DEGRADED <epoch>` (#2023), never `DONE`.
+  - **Picker messages:** a goal not taken ends with a `--land #N not taken (not started): <why>` line on stderr; a failed or rate-limited read of N is `DEGRADED <epoch>`, never `DONE`.
   - **Docs:** `docs/cloud-sessions.md` no longer says `require_review: approval` always parks in a cloud session; a trusted `sigma:approve` comment meets it (#1398).
   - **Measured on fakes only:** the scoped pick, and the landing gestures from PR open to `record done` with every GraphQL-shaped call refused. Unmeasured in a real cloud container.
 
