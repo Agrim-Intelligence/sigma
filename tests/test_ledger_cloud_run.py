@@ -3,7 +3,7 @@
 
 A fresh container: a clone with no `.sdlc/ledger` worktree and no watcher, `CLAUDE_CODE_REMOTE=true`, and a
 GitHub transport that REFUSES every GraphQL-shaped call. Real git against a local bare origin; the GitHub
-side is a fake. NOT proved here: a real cloud container, the real proxy, a real push of `sdlc-ledger` from
+side is a fake. NOT proved here: a real cloud container, the real proxy, a real push of the ledger branch from
 one (docs/cloud-sessions.md says so too).
 """
 import hashlib
@@ -30,6 +30,9 @@ def _mod(name):
     return m
 
 
+_BRANCH = "sdlc" + "-ledger"     # the default ledger branch name (sync.DEFAULT_BRANCH)
+
+
 def _git(cwd, *args):
     proc = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
     assert proc.returncode == 0, f"git {' '.join(args)}: {proc.stderr or proc.stdout}"
@@ -37,12 +40,12 @@ def _git(cwd, *args):
 
 
 def _origin_entries(origin):
-    names = subprocess.run(["git", "--git-dir", str(origin), "ls-tree", "-r", "--name-only", "sdlc-ledger"],
+    names = subprocess.run(["git", "--git-dir", str(origin), "ls-tree", "-r", "--name-only", _BRANCH],
                            capture_output=True, text=True).stdout.split()
     out = []
     for name in names:
         if name.startswith("entries/"):
-            body = subprocess.run(["git", "--git-dir", str(origin), "show", f"sdlc-ledger:{name}"],
+            body = subprocess.run(["git", "--git-dir", str(origin), "show", f"{_BRANCH}:{name}"],
                                   capture_output=True, text=True).stdout
             out += [json.loads(line) for line in body.splitlines() if line.strip()]
     return out

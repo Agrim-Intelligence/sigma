@@ -74,14 +74,14 @@ def _clone(tmp_path, origin, name, **ledger_cfg):
 
 def _origin_text(origin):
     """Every ledger entries line on origin's ops branch, as parsed dicts."""
-    names = subprocess.run(["git", "--git-dir", str(origin), "ls-tree", "-r", "--name-only", "sdlc-ledger"],
+    names = subprocess.run(["git", "--git-dir", str(origin), "ls-tree", "-r", "--name-only", sync.DEFAULT_BRANCH],
                            capture_output=True, text=True)
     if names.returncode != 0:
         return []
     out = []
     for name in names.stdout.split():
         if name.startswith("entries/") and name.endswith(".jsonl"):
-            body = subprocess.run(["git", "--git-dir", str(origin), "show", f"sdlc-ledger:{name}"],
+            body = subprocess.run(["git", "--git-dir", str(origin), "show", f"{sync.DEFAULT_BRANCH}:{name}"],
                                   capture_output=True, text=True).stdout
             out += [json.loads(line) for line in body.splitlines() if line.strip()]
     return out
@@ -265,11 +265,11 @@ def test_the_retry_pauses_with_jitter_and_stops_at_the_deadline(tmp_path):
     def sleep(attempt):
         pauses.append(attempt)
 
-    out = sync._push_with_retry(git, tmp_path, "origin", "sdlc-ledger", 12, sleep=sleep)
+    out = sync._push_with_retry(git, tmp_path, "origin", sync.DEFAULT_BRANCH, 12, sleep=sleep)
     assert out == "published" and calls["push"] == 5 and pauses == [0, 1, 2, 3]
     calls["push"] = -100                                    # now it never succeeds
     pauses.clear()
-    out = sync._push_with_retry(git, tmp_path, "origin", "sdlc-ledger", 6, sleep=sleep)
+    out = sync._push_with_retry(git, tmp_path, "origin", sync.DEFAULT_BRANCH, 6, sleep=sleep)
     assert out.startswith("publish deferred") and len(pauses) == 5, "bounded in count"
 
 
@@ -313,11 +313,11 @@ def test_a_worktree_left_mid_rebase_by_a_killed_git_is_cleared_before_publishing
     (owt / "README.md").write_text("their change\n", encoding="utf-8")
     _git(owt, "add", "-A")
     _git(owt, "commit", "-q", "-m", "theirs")
-    _git(owt, "push", "-q", "origin", "HEAD:sdlc-ledger")
+    _git(owt, "push", "-q", "origin", f"HEAD:{sync.DEFAULT_BRANCH}")
     (wt / "README.md").write_text("our change\n", encoding="utf-8")
     _git(wt, "add", "-A")
     _git(wt, "commit", "-q", "-m", "ours")
-    _git(wt, "fetch", "-q", "origin", "sdlc-ledger")
+    _git(wt, "fetch", "-q", "origin", sync.DEFAULT_BRANCH)
     assert _git(wt, "rebase", "origin/sdlc-ledger", check=False) is not None
     assert "rebase in progress" in _git(wt, "status", check=False) or (
         pathlib.Path(_git(wt, "rev-parse", "--git-path", "rebase-merge")).exists()), "precondition: mid-rebase"
