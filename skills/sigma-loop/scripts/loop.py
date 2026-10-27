@@ -146,7 +146,7 @@ def _ensure_watcher(sdlc_dir, config, spawn=None):
         sync = _load("sync")
         if not sync.is_worktree(sdlc_dir):
             return
-        if sync.self_created(sdlc_dir):
+        if getattr(sync, "self_created", lambda _d: False)(sdlc_dir):
             return               # #2076: the loop made this worktree to publish; `sync.py bootstrap` enrols
         _coexist_notice(sdlc_dir, "watcher start", once=True)   # #314: the shared lock decides
         launch = spawn or (lambda: subprocess.Popen(

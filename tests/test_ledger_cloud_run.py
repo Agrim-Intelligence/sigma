@@ -69,7 +69,7 @@ def container(tmp_path, monkeypatch):
     for k, v in (("user.email", "t@example.com"), ("user.name", "T"), ("commit.gpgsign", "false")):
         _git(repo, "config", k, v)
     cfg = {"discovery": {"source": "github", "github": {"repo": "acme/widget"}},
-           "ledger": {"enabled": True, "actor": "dana", "lease": {"ttl_hours": 0.0006}},
+           "ledger": {"enabled": True, "actor": "dana", "lease": {"ttl_hours": 1}},
            "work": {"enabled": True},
            "budget": {"max_iterations": 10}}
     base = repo / ".sdlc"
@@ -98,7 +98,7 @@ def container(tmp_path, monkeypatch):
     return lp, origin, repo, str(base), refused
 
 
-def test_claim_keep_alive_and_outcome_reach_origin_without_a_daemon_or_graphql(container, capsys):
+def test_claim_keep_alive_and_outcome_reach_origin_without_a_daemon_or_graphql(container, capsys, monkeypatch):
     lp, origin, repo, base, refused = container
     before = (_git(repo, "rev-parse", "HEAD"), _git(repo, "status", "--porcelain"),
               _git(repo, "diff", "--cached", "--name-only"))
@@ -111,8 +111,10 @@ def test_claim_keep_alive_and_outcome_reach_origin_without_a_daemon_or_graphql(c
         "a cloud container must not carry the plain hostname token"
     assert (pathlib.Path(base) / "ledger" / ".git").exists(), "the worktree was created from origin"
 
-    time.sleep(0.8)                                   # a third of the (test-sized) lease has passed
-    assert lp.main(["loop.py", "note", base, "10", "phase note"]) == 0
+    real_time = time.time                             # a third of the 1h lease (20 min) has passed: 22 min
+    with monkeypatch.context() as later:
+        later.setattr(time, "time", lambda: real_time() + 1300)
+        assert lp.main(["loop.py", "note", base, "10", "phase note"]) == 0
     assert "lease-renew" in [e["kind"] for e in _origin_entries(origin)]
 
     assert lp.main(["loop.py", "record", base, "10", "parked", "needs a person"]) == 0
