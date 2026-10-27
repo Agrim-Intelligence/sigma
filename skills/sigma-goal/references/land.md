@@ -4,7 +4,7 @@ The detail behind step 1's `--land` line in [`../SKILL.md`](../SKILL.md). Built 
 cloud container per issue, each started by a person who picked that issue; it runs the same on a
 laptop. It is `/sigma-loop` for exactly one goal: the loop's own picker, scoped to N, then the
 loop's own per-goal steps, with nothing copied out of them — so the two cannot drift apart. It lives
-here, not in SKILL.md or the loop's `picking.md`, because those load into every phase that runs and
+here, not in SKILL.md or the loop's `picking.md`, because those load into the orchestrator and goal-slot contexts by default and
 their size is budgeted (`evals/phase_context_budget.py`, #2075); only a `--land` run reads this.
 
 ## Contract
@@ -17,7 +17,7 @@ Three exceptions, named rather than hidden: with `ledger.enabled`, the loop's ve
 watcher alive, a separate process whose own sweeps are not this run's; an issue the run files
 through `handoff.py` (a hand-off or a tracked follow-up) is a NEW issue, never an existing goal; and
 with `backlog_check.enabled`, the pre-check that finds N blocked resolves N's blockers, which writes
-to those blocker issues. The picker flag that enforces the sentence is `loop.py next --land`; 
+to those blocker issues. The picker flag that enforces the sentence is `loop.py next --land`;
 `skills/sigma-loop/references/picking.md` points here. Quote the sentence, never reword it.
 
 ## Prerequisites

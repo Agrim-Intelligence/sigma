@@ -765,7 +765,7 @@ def test_land_prose_stays_out_of_the_budgeted_files():
     and pushed `evals/phase_context_budget.py` over its ceilings. The detail lives in land.md only."""
     for name, text in (("sigma-goal SKILL.md", SKILL), ("sigma-loop picking.md", PICKING)):
         assert _flat(SENTENCE) not in _flat(text), f"{name} carries the contract again; point at land.md"
-        assert "ledger watcher" not in text, f"{name} carries the exceptions again; point at land.md"
+        assert "ledger watcher" not in _flat(text), f"{name} carries the exceptions again; point at land.md"
 
 
 def test_step_one_routes_land_before_the_claim():
