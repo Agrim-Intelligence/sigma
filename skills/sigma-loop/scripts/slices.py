@@ -24,6 +24,7 @@ second worker on one `.sdlc`, which every state file in this kit assumes never h
 Default OFF (`parallel.enabled`): with no `parallel` block, and with no manifest beside the plan, the
 loop behaves exactly as it did before this module existed. Zero deps.
 """
+import hashlib
 import importlib.util
 import json
 import pathlib
@@ -188,21 +189,45 @@ def _normalise(item, index, path):
     }
 
 
+def raw(sdlc_dir, goal):
+    """The manifest as its parsed JSON list, un-normalised (unknown fields kept), `[]` when there is none.
+
+    #2007 (D-58): the main checkout's copy wins; with none, the copy a resume imported into
+    `state/imported/<stem>/slices.json` (verified against the published scope fingerprint) stands in.
+    A broken manifest RAISES and names the file, as `load` always did."""
+    path = manifest_path(sdlc_dir, goal)
+    if not path.exists():
+        path = state.imported_path(sdlc_dir, goal, "slices.json")
+        if not path.exists():
+            return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise ValueError(f"{path}: not valid JSON ({exc})") from None
+    if not isinstance(data, list):
+        raise ValueError(f"{path}: expected a list of slices, got {type(data).__name__}")
+    return data
+
+
 def load(sdlc_dir, goal):
     """The manifest as a normalised list, `[]` when there is none (the goal simply runs whole).
 
     A broken manifest RAISES and names the file: a slice plan that silently reads as empty would run
     the whole goal in one session while its author believed it was parallelised."""
     path = manifest_path(sdlc_dir, goal)
-    if not path.exists():
-        return []
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except ValueError as exc:
-        raise ValueError(f"{path}: not valid JSON ({exc})") from None
-    if not isinstance(raw, list):
-        raise ValueError(f"{path}: expected a list of slices, got {type(raw).__name__}")
-    return [_normalise(item, i, path) for i, item in enumerate(raw)]
+    return [_normalise(item, i, path) for i, item in enumerate(raw(sdlc_dir, goal))]
+
+
+def scope_fingerprint(manifest):
+    """#2007 (Q1): sha256 of the manifest's SCOPE -- the raw parsed list with every item's `status` removed, as
+    canonical JSON (sorted keys, compact, UTF-8). Raw, not `_normalise`d, so a field this version does not know
+    (slice 6's `tests`) still counts. A non-list raises ValueError."""
+    if not isinstance(manifest, list):
+        raise ValueError(f"a slice manifest is a list, got {type(manifest).__name__}")
+    scope = [{k: v for k, v in item.items() if k != "status"} if isinstance(item, dict) else item
+             for item in manifest]
+    text = json.dumps(scope, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 # --------------------------------------------------------------------------- validate

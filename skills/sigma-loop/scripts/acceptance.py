@@ -81,9 +81,18 @@ def criteria(text):
     return lines
 
 
+def resolve(sdlc_dir, goal):
+    """The record to read: the root copy when it exists, else the copy a resume imported (#2007, D-58), else
+    the root path (absent). `path()` stays the create target and the root-copy test."""
+    root = path(sdlc_dir, goal)
+    if root.exists():
+        return root
+    imported = _load('state').imported_path(sdlc_dir, goal, 'acceptance.md')
+    return imported if imported.exists() else root
+
+
 def read(sdlc_dir, goal):
-    file = path(sdlc_dir, goal)
-    return parse(_text(file), file.stem)
+    return parse(_text(resolve(sdlc_dir, goal)), path(sdlc_dir, goal).stem)
 
 
 def parse(text, goal_stem):

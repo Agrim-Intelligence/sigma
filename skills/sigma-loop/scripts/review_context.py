@@ -392,6 +392,16 @@ def _git_out(root, args):
     return proc.stdout if proc.returncode == 0 else None
 
 
+def _git_bytes(root, args):
+    """`_git_out`'s bytes twin: `git -C <root> <args>` stdout as RAW bytes (no decode, no strip), or None on any
+    failure. #2007: a sha256 over a blob read must hash exactly the bytes git holds."""
+    try:
+        proc = subprocess.run(["git", "-C", str(root), *args], capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return proc.stdout if proc.returncode == 0 else None
+
+
 def _branch_doc(sdlc_dir, goal, subdir):
     """(pointer, text) for this goal's phase artifact read from its own BRANCH, or (None, "").
 

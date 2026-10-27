@@ -1229,6 +1229,24 @@ def _queue(sdlc_dir, goal_path, reason, needs, tier=None):
         f.write(entry)
 
 
+#: #2007 (D-58, FR-94): the only files a resume writes for a goal it did not plan -- never the tracked
+#: `.sdlc/plans|acceptance|research`.
+IMPORTED_NAMES = frozenset({"pending.json", "evidence.json", "plan.md", "acceptance.md", "slices.json"})
+
+
+def imported_path(sdlc_dir, goal, name):
+    """`<sdlc>/state/imported/<stem>/<name>`: where a resume keeps the goal evidence it verified. The stem is
+    one safe path component (else ValueError) and `name` one of `IMPORTED_NAMES` (else ValueError)."""
+    text = str(goal)
+    stem = pathlib.Path(text).stem if text.endswith(".md") else text
+    reason = unsafe_goal_reason(stem)
+    if reason:
+        raise ValueError(f"unsafe goal {goal!r} for the imported goal evidence: {reason}")
+    if name not in IMPORTED_NAMES:
+        raise ValueError(f"{name!r} is not an imported goal-evidence file")
+    return pathlib.Path(sdlc_dir) / "state" / "imported" / stem / name
+
+
 def unsafe_goal_reason(stem):
     """None iff `stem` (an ALREADY goal-stem-reduced value — what a caller is about to embed as a
     single path component, not necessarily the raw caller-supplied goal) is safe, else the reason
