@@ -37,6 +37,8 @@ python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" session-end .sdlc --
    board, a card in the Ready lane or no card — then claims it and prints `<N>`. The model-tier line
    on stderr is the loop's; use it as the loop does. `HOLD` is not an ending: run
    `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/resource_lease.py" wait --max 540`, then pick
+   again. Nor is a first `DEGRADED <epoch>` (N's read failed or was rate-limited): run
+   `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" wait-degraded <epoch>` once, then pick
    again. Anything else is an ending (below). The pick runs none of the loop's sweeps that write to
    other goals; the two that clear a held goal's own overlay run for N alone.
 3. **Run steps 3 to 6 of [`/sigma-loop`](../../sigma-loop/SKILL.md) for N**, exactly as a goal slot
@@ -78,9 +80,9 @@ Keyed on the last `record` verb. Which `work.py merge` line leads to which verb 
 | step 3a stopped: `agent-start` exited nonzero, or `work.py start` exited 4 | **failed (not started)** for `agent-start` (another live agent may own N); for exit 4, **parked** when it printed a conflict it parked, else **failed (not started)** — it has already released or parked N, so never `record` on top of it |
 | `record review` | **parked, awaiting merge (not `sdlc:parked`)** — `record review` posts why on the issue; see below |
 | `record failed "<reason>"` | **failed** — the reason is on the issue and in the final message |
-| the pick printed `loop.py: --land #<N> not taken (not started): <why>`, `BUDGET` or `HANDOFF`, or refused with exit 2 | **failed (not started)** — that line is the reason. Nothing was claimed. A refusal at attach, scope or owner may have left a hold and a comment on N, which say what a person must do; a re-run after they act takes N |
+| the pick printed `loop.py: --land #<N> not taken (not started): <why>`, `BUDGET`, `HANDOFF` or a second `DEGRADED`, or refused with exit 2 | **failed (not started)** — that line is the reason. Nothing was claimed. A refusal at attach, scope or owner may have left a hold and a comment on N, which say what a person must do; a re-run after they act takes N |
 
-Not endings: `HOLD` (wait, then pick again), `REPAIR:` and `RERUN:` (the bounded CI-fix cycle), and
+Not endings: `HOLD` and a first `DEGRADED` (wait, then pick again), `REPAIR:` and `RERUN:` (the bounded CI-fix cycle), and
 a `record done` that is REFUSED — do what the refusal names; the ending is whichever `record` verb
 finally lands.
 

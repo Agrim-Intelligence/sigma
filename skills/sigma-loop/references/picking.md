@@ -218,8 +218,8 @@ attach, scope and owner checks; with a board, only a Ready card or no card. The 
 sweeps that write to other goals (the map refresh, reconcile, auto-unpark, stale-claim reclaim, the
 release of unstarted holds, merge-reconcile), and the two that clear a held goal's overlay run for N
 alone. When N is not taken, stdout is `DONE` and stderr ends with the line `loop.py: --land #<N> not
-taken (not started): <why>` (a read failure or a skipped board card may print its own line before
-it). Refused before any query, exit 2: `--feature` or `--label` beside it, a
+taken (not started): <why>` (a skipped board card may print its own line before it); when N's read
+failed or was rate-limited, stdout is `DEGRADED <epoch>` instead, handled as above. Refused before any query, exit 2: `--feature` or `--label` beside it, a
 local-goals backlog, `work.enabled` off, and `work.auto_merge: off`.
 
 3. Otherwise: first **cross-check the pick** (opt-in, `backlog_check.enabled`) — before spending a

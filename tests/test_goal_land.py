@@ -269,7 +269,8 @@ def test_a_goal_another_live_claim_holds_is_not_taken(monkeypatch, capsys):
     assert "another live claim holds it (bob)" in line, line
 
 
-def test_a_failed_read_ends_degraded_and_says_so(capsys):
+def test_a_failed_read_is_degraded_never_done_and_says_so(capsys):
+    """#2023's rule holds under the scope: a read that gave up is `DEGRADED <epoch>`, never `DONE`."""
     lp = _mod("loop")
     with tempfile.TemporaryDirectory() as d:
         base = _base(d)
@@ -283,7 +284,8 @@ def test_a_failed_read_ends_degraded_and_says_so(capsys):
         src = lp.sources.GitHubSource(cfg, run=run, sdlc_dir=base)
         src._BACKLOG_READ_RETRY_BASE = 0
         lp.sources.scope_to_land(src, N)
-        assert lp._next(base, src, cfg) == ("DONE", "degraded read — backlog state unknown")
+        kind, epoch = lp._next(base, src, cfg)
+        assert kind == "DEGRADED" and isinstance(epoch, int), (kind, epoch)
     line = next(l for l in capsys.readouterr().err.splitlines() if "--land #10 not taken" in l)
     assert "read failed" in line, line
 
@@ -840,7 +842,7 @@ def test_endings_are_keyed_on_the_record_verb_and_the_pickers_own_line():
     fmt = re.search(r'"loop\.py: (--land #%s not taken \(not started\)): ', LOOP_PY)
     assert fmt, "the picker's line moved in loop.py"
     assert fmt.group(1).replace("%s", "<N>") in flat, "land.md must quote the picker's own line"
-    for word in ("`HOLD`", "`REPAIR:`", "`RERUN:`"):
+    for word in ("`HOLD`", "`REPAIR:`", "`RERUN:`", "`DEGRADED <epoch>`", "wait-degraded <epoch>"):
         assert word in flat, f"{word} must be named as not an ending"
 
 
