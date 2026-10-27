@@ -1609,6 +1609,22 @@
       "risk": "high"
     },
     {
+      "path": "skills/sigma-loop/scripts/auto_unpark.py",
+      "function": "_write_json_atomic",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "the sweep's own state under .sdlc/state (auto-unpark-cache.json and auto-unpark-last.json), written atomically (temp file beside it, then replace); reached only by the auto-unpark sweep, which the loop gates on discovery.auto_unpark.mode and which chain.py and the sweep verb call directly; fail-open, an unwritable file costs one extra sweep; the temp file is removed only if the replace did not consume it",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/auto_unpark.py",
+      "function": "_write_json_atomic",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "the sweep's own state under .sdlc/state (auto-unpark-cache.json and auto-unpark-last.json), written atomically (temp file beside it, then replace); reached only by the auto-unpark sweep, which the loop gates on discovery.auto_unpark.mode and which chain.py and the sweep verb call directly; fail-open, an unwritable file costs one extra sweep; the temp file is removed only if the replace did not consume it",
+      "risk": "medium"
+    },
+    {
       "path": "skills/sigma-loop/scripts/loop.py",
       "function": "_reconcile_stamp",
       "rule": "fs-write",
@@ -1871,6 +1887,22 @@
       "count": 1,
       "gate": "removes only its own per-process temp file (hold.json.<pid>.tmp) when the write fails; same state folder as the write",
       "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/resource_guard.py",
+      "function": "write_incident",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "the watcher's refresh on a non-critical to critical transition, or the verify meter's shed; writes one incidents/<utc-stamp>-<n>.json by tmp file and atomic rename under the resource state folder (SIGMA_RESOURCE_DIR, else the XDG state home) outside every repository; at most 64 KB, command lines scrubbed, no environment; any failure is swallowed",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/resource_guard.py",
+      "function": "write_incident",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "removes only its own tmp file when the write fails and, past 20 files, the oldest *.json files of that incidents folder; never a directory",
+      "risk": "medium"
     },
     {
       "path": "skills/sigma-loop/scripts/resource_lease.py",
@@ -4278,6 +4310,38 @@
       "rule": "fs-write",
       "count": 1,
       "gate": "opt-in only (SIGMA_PICK_TRACE=1 or next --trace; never reached when off): appends one line with stage names, call counts and seconds, no issue text, to the pick-trace file under the runtime state directory; rotates it by rename at 1 MB",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sources.py",
+      "function": "_etag_save",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "runs on a next or next-batch pick only, through the real gh runner, when the runtime state directory exists: stores each backlog list page's ETag and body in pick-backlog-etags.json under it by tmp file and atomic rename; at most 8 queries kept, nothing written past 4 MB, any failure swallowed and the next read unconditional",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sources.py",
+      "function": "_etag_save",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "runs on a next or next-batch pick only, through the real gh runner, when the runtime state directory exists: stores each backlog list page's ETag and body in pick-backlog-etags.json under it by tmp file and atomic rename; at most 8 queries kept, nothing written past 4 MB, any failure swallowed and the next read unconditional",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/gh_calls.py",
+      "function": "flush",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "runs only inside a sigma script that already spawned a gh call, and only when the runtime state directory exists (SIGMA_SDLC_DIR or ./.sdlc): appends one line per hour, component and call class holding counts only (no arguments or issue text) to the gh-calls file there; rotates it by rename at 1 MB; any write failure is swallowed",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/gh_calls.py",
+      "function": "flush",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "runs only inside a sigma script that already spawned a gh call, and only when the runtime state directory exists (SIGMA_SDLC_DIR or ./.sdlc): appends one line per hour, component and call class holding counts only (no arguments or issue text) to the gh-calls file there; rotates it by rename at 1 MB; any write failure is swallowed",
       "risk": "medium"
     },
     {

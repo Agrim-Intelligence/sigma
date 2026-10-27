@@ -54,6 +54,14 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/gh_calls.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/goal_cost.py",
+      "role": "gesture"
+    },
+    {
       "path": "skills/sigma-loop/scripts/sealed_tests.py",
       "role": "library"
     },

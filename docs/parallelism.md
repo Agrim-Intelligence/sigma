@@ -170,6 +170,13 @@ constant copied from a laptop, and nothing here ever pauses a process.
   its workers and the most processes of its tree whose footprint was at least a quarter of the largest (a heuristic,
   so helpers do not count). A `verify` admission is also bounded by 1.5 times the largest whole-run peak, kept in the
   ring `verify_run`; with no `verify_run` data the bound is absent.
+- **A killed wrapper.** Before #1917 a `kill -9` of the verify wrapper freed its lease at once (its pid was dead) while the
+  command it started kept running, so a second verify was admitted on top of it: measured by
+  `tests/test_resource_lease_group.py`. The lease now records the command's process group when the command starts, and
+  stays held while any process of that group is alive (a signal-0 probe, never a real signal), until the group is empty
+  or the lease ttl (the verify timeout plus 60 seconds) passes, whichever is first. A lease with no recorded group, or a
+  platform without process groups, follows its pid alone as before. A group that outlives its wrapper therefore holds the
+  lease for at most the ttl; the wrapper's lifeline process stops that group after its grace in the usual case.
 - **What the guard cannot cover.** Tests you run by hand outside the verify wrapper; memory used by other
   programs; a host's own subagent fan-out; Windows (the guard refuses there rather than guess).
 - **Measured or not.** The macOS and Linux calibration runs are recorded in
@@ -198,6 +205,8 @@ like any other fresh identity, since the old entries are dropped rather than kep
 possible return. The cap must also exceed the working corpus, or it never converges: a backlog even
 one issue bigger than the cap re-embeds the overflow (`corpus − cap` calls) on every run instead of
 settling down, so raise the cap rather than let it thrash.
+
+When the machine turns critical, and when a verify is shed, the guard writes one `incidents/<utc-stamp>-<n>.json` next to `hold.json`: the largest processes with pid, parent pid, resident bytes, age, working folder and a scrubbed command line cut at 200 characters, no environment (#1914). At most 64 KB each, the 20 newest kept; `log.py slots` names the newest one under an hour old. The incident writer reads the process table through `resource_verify` (`ps`, and `lsof` for working folders), each with a timeout; those are the only child processes on this path, and the once-per-transition debounce flag lives in `last.json`, carried forward by the admit writers.
 
 ## Measuring a pick (opt-in, #1607)
 

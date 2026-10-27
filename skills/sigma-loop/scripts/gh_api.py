@@ -148,6 +148,7 @@ def _load(name):
 
 gh_session = _load("gh_session")
 post_guard = _load("post_guard")      # #375
+gh_calls = _load("gh_calls")          # #2019: count each spawned `gh` call by component
 
 CACHE_TTL_SECONDS = 900
 CACHE_FILE = "gh-capability.json"
@@ -258,6 +259,7 @@ GH_MISSING_HINT = ('`gh` is not on PATH -- install the GitHub CLI from https://c
 
 def _default_run(args):
     post_guard.check(args)                # #375: opt-in; a no-op unless SIGMA_LEAK_PATTERNS is set
+    gh_calls.count(args)                  # #2019
     try:
         proc = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=120)
     except FileNotFoundError as missing:
@@ -430,7 +432,7 @@ def view_issue(run, number, repo=None, comments="all"):
 # ---------------------------------------------------------------- gh-shape normaliser (#895)
 
 GH_FIELDS = ("number", "title", "state", "stateReason", "author", "closedAt", "body", "labels", "assignees", "comments",
-             "isPullRequest")
+             "isPullRequest", "updatedAt")
 
 
 def _check_fields(fields):
@@ -492,6 +494,9 @@ def to_gh_shape(issue, fields):
             out[f] = _login(issue.get("user"))
         elif f == "closedAt":
             out[f] = issue.get("closed_at")
+        elif f == "updatedAt":                      # #2021: absent stays absent, so a caller can tell "unknown"
+            if issue.get("updated_at"):
+                out[f] = issue["updated_at"]
         elif f == "body":
             if "body" not in issue:
                 raise GhApiError("malformed REST issue: no body key")
@@ -1201,6 +1206,10 @@ def conditional_get(endpoint, etag=None, fields=None, run=None):
         status, kind = classify(exc)
         raise GhApiError(str(exc), getattr(exc, "hint", None), status, kind) from exc
     status, headers, body = _split_response(out)
+    try:                                   # #2023: learn the quota from headers already received; no extra call
+        _load("gh_quota").note_headers(out)
+    except Exception:                      # noqa: BLE001 - recording never fails a read
+        pass
     if status == 304:
         return {"status": 304, "etag": headers.get("etag") or etag, "body": None, "not_modified": True}
     if rc != 0 or status is None or status >= 300:
@@ -1277,6 +1286,7 @@ def run_gh(args, timeout=120):
     (#895 slice 3b). Unlike `bounded_runner` it never raises on a non-zero exit, so a caller keeps the exit code and
     text. A timeout is the synthetic `(124, "", "gh: the call timed out after Ns")`; every other exception
     (a missing `gh`, say) propagates unchanged."""
+    gh_calls.count(args)                  # #2019
     try:
         proc = subprocess.run(gh_argv(args), capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -1295,6 +1305,7 @@ def bounded_runner(cwd=None, timeout=120, *, popen=None):
     popen = popen or subprocess.run
 
     def run(args):
+        gh_calls.count(args)              # #2019
         try:
             proc = popen(["gh", *args], capture_output=True, text=True, timeout=timeout, cwd=cwd)
         except subprocess.TimeoutExpired as exc:

@@ -511,6 +511,7 @@ VERSION_ALLOW = {
     ("docs/whats-new-1.0.20.md", "1.0.19"): "the previous release, named as the baseline this page describes changes from",
     ("docs/whats-new-1.0.15.md", "1.0.15"): "the release this page documents, named in its own title",
     ("docs/whats-new-1.0.16.md", "1.0.16"): "the release this page documents, named in its own title",
+    ("hooks/session_start.sh", "1.0.16"): "the shipped release that first carried the resource guard (#1913): a historical fact the notice names",
     ("docs/whats-new-1.0.17.md", "1.0.17"): "the release this page documents, named in its own title",
     ("docs/whats-new-1.0.18.md", "1.0.18"): "the release this page documents, named in its own title",
     ("docs/whats-new-1.0.19.md", "1.0.19"): "the release this page documents, named in its own title",
