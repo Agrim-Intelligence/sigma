@@ -1,9 +1,24 @@
 # `/sigma-goal <N> --land` — one named goal, unattended, to a merged PR
 
-The detail behind *`--land`* in [`../SKILL.md`](../SKILL.md). Built for one Claude Code cloud
-container per issue, each started by a person who picked that issue; it runs the same on a laptop.
-It is `/sigma-loop` for exactly one goal: the loop's own picker, scoped to N, then the loop's own
-per-goal steps, with nothing copied out of them — so the two cannot drift apart.
+The detail behind step 1's `--land` line in [`../SKILL.md`](../SKILL.md). Built for one Claude Code
+cloud container per issue, each started by a person who picked that issue; it runs the same on a
+laptop. It is `/sigma-loop` for exactly one goal: the loop's own picker, scoped to N, then the
+loop's own per-goal steps, with nothing copied out of them — so the two cannot drift apart. It lives
+here, not in SKILL.md or the loop's `picking.md`, because those load into the orchestrator and goal-slot contexts by default and
+their size is budgeted (`evals/phase_context_budget.py`, #2075); only a `--land` run reads this.
+
+## Contract
+
+This replaces SKILL.md's steps 1 to 5: no `loop.py claim`, no approvals, no gate pauses.
+
+> **While a `--land` run is active, no goal other than the one it names may be picked, and no other goal is written to.**
+
+Three exceptions, named rather than hidden: with `ledger.enabled`, the loop's verbs keep the ledger
+watcher alive, a separate process whose own sweeps are not this run's; an issue the run files
+through `handoff.py` (a hand-off or a tracked follow-up) is a NEW issue, never an existing goal; and
+with `backlog_check.enabled`, the pre-check that finds N blocked resolves N's blockers, which writes
+to those blocker issues. The picker flag that enforces the sentence is `loop.py next --land`;
+`skills/sigma-loop/references/picking.md` points here. Quote the sentence, never reword it.
 
 ## Prerequisites
 
@@ -39,8 +54,14 @@ python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" session-end .sdlc --
    `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/resource_lease.py" wait --max 540`, then pick
    again. Nor is a first `DEGRADED <epoch>` (N's read failed or was rate-limited): run
    `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" wait-degraded <epoch>` once, then pick
-   again. Anything else is an ending (below). The pick runs none of the loop's sweeps that write to
-   other goals; the two that clear a held goal's own overlay run for N alone.
+   again. Anything else is an ending (below). The pick reads N with one REST call, then applies the
+   same per-issue filter, dependency hold, lease, claim lock, budget, attach, scope and owner checks
+   as an unscoped pick. It runs none of the sweeps that write to other goals (the map refresh,
+   reconcile, auto-unpark, stale-claim reclaim, the release of unstarted holds, merge-reconcile);
+   the two that clear a held goal's own overlay run for N alone. When N is not taken, stdout is
+   `DONE` and stderr ends with `loop.py: --land #<N> not taken (not started): <why>`. It refuses
+   before any query, exit 2: `--feature` or `--label` beside it, `next-batch`, a local-goals
+   backlog, `work.enabled` off, and `work.auto_merge: off`.
 3. **Run steps 3 to 6 of [`/sigma-loop`](../../sigma-loop/SKILL.md) for N**, exactly as a goal slot
    does, and the references they name: [running](../../sigma-loop/references/running.md),
    [progress](../../sigma-loop/references/progress.md),

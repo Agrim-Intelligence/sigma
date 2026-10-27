@@ -206,21 +206,8 @@ drained unit from a drained board. Membership is the issue's `Feature:`/`Branch:
 unit is left untouched: not claimed, labelled, commented on or parked. An impossible unit name, and
 a bare `--feature`, are refused before any query. Open one with `/sigma-define`.
 
-**Confining one pick to one named issue: `--land <N>`** (`next` only; `next-batch` refuses it). It is
-how `/sigma-goal <N> --land` selects (`skills/sigma-goal/references/land.md`), and it states:
-
-> **While a `--land` run is active, no goal other than the one it names may be picked, and no other goal is written to.**
-
-The one exception: with `ledger.enabled`, the loop's verbs keep the ledger watcher alive, a separate
-process whose own sweeps are not this run's. N is served only when an unscoped pick would serve it —
-one REST read of N, then the same per-issue filter, dependency hold, lease, claim lock, budget,
-attach, scope and owner checks; with a board, only a Ready card or no card. The pick runs none of the
-sweeps that write to other goals (the map refresh, reconcile, auto-unpark, stale-claim reclaim, the
-release of unstarted holds, merge-reconcile), and the two that clear a held goal's overlay run for N
-alone. When N is not taken, stdout is `DONE` and stderr ends with the line `loop.py: --land #<N> not
-taken (not started): <why>` (a skipped board card may print its own line before it); when N's read
-failed or was rate-limited, stdout is `DEGRADED <epoch>` instead, handled as above. Refused before any query, exit 2: `--feature` or `--label` beside it, a
-local-goals backlog, `work.enabled` off, and `work.auto_merge: off`.
+**One named issue: `--land <N>`** (`next` only; `next-batch` refuses it) is how `/sigma-goal <N> --land`
+selects. Its contract, refusals and output: `skills/sigma-goal/references/land.md`.
 
 3. Otherwise: first **cross-check the pick** (opt-in, `backlog_check.enabled`) — before spending a
 token, run `result=$(python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" precheck .sdlc "$goal")`. It

@@ -4,6 +4,11 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The phase-context budget is green again after 1.0.21 (#2075).**
+  - **Cause:** `/sigma-goal --land`'s contract and picker detail had been copied into `skills/sigma-goal/SKILL.md` and the loop's `references/picking.md`, which the orchestrator and goal-slot contexts load by default. That pushed the goal-slot and orchestrator instruction bills over their committed ceilings, and `regression-control` refused the red baseline.
+  - **Fix:** the detail now lives in `skills/sigma-goal/references/land.md`, which only a `--land` run reads. Each of the two files keeps a one-line pointer.
+  - **Measured:** the ceilings are unchanged; goal-slot is 12436 of 12437 tokens and orchestrator 32386 of 32422.
+
 ## 1.0.21 — 2026-10-27 — unattended runs that cost less and fail loudly: counted GitHub calls, a rate-limited read says DEGRADED, a resource guard that keeps killed verifies leased, host-config checks, /sigma-goal --land and one-time cloud verify approval
 
 - **Approve the verify command once per environment, not once per checkout (#2066).** A fresh cloud container never has the git-local verify trust, so its goal stopped at `loop.py verify`.
