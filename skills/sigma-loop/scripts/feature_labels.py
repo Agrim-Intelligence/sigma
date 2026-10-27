@@ -723,7 +723,7 @@ def _still_held(source, issue):
     return False, "the label `%s` now exists" % label
 
 
-def resume_needs_label(sdlc_dir, source, config=None):
+def resume_needs_label(sdlc_dir, source, config=None, only=None):
     """Clear the `sdlc:needs-label` overlay from every goal whose missing-label problem is solved.
     Returns the sorted list of goals actually released.
 
@@ -750,13 +750,16 @@ def resume_needs_label(sdlc_dir, source, config=None):
     HONEST BOUND, the same one `_flag` states: read-then-write with nothing serialising two machines
     (or two `parallel.goals` slots), so overlapping windows can each post one audit comment. The
     label write is idempotent and the outcome is identical either way; the cost is a duplicate
-    comment, never a wrong state."""
+    comment, never a wrong state.
+
+    `only` (#2065): an issue number; every other held issue is passed over untouched. A `--land <N>`
+    pick passes it, so its run writes to N alone and a re-run after the person acts heals N itself."""
     if not _has_surface(source):
         return []
     released = []
     for issue in source.list_needs_label() or []:
         goal = str((issue or {}).get("number") or "")
-        if not goal:
+        if not goal or (only is not None and goal != str(only)):   # #2065: `--land` touches N only
             continue
         try:
             held, what = _still_held(source, issue)
@@ -804,7 +807,7 @@ def _still_held_no_unit(source, issue):
     return True, None
 
 
-def resume_needs_unit(sdlc_dir, source, config=None):
+def resume_needs_unit(sdlc_dir, source, config=None, only=None):
     """Clear the `sdlc:needs-unit` overlay from every goal whose no-declaration problem is solved.
     Returns the sorted list of goals actually released. Mirrors `resume_needs_label` exactly --
     same one-`gh issue list`-per-sweep cost shape, same "the label IS the attribution, no ledger
@@ -836,7 +839,7 @@ def resume_needs_unit(sdlc_dir, source, config=None):
     released = []
     for issue in source.list_needs_unit() or []:
         goal = str((issue or {}).get("number") or "")
-        if not goal:
+        if not goal or (only is not None and goal != str(only)):   # #2065: `--land` touches N only
             continue
         try:
             held, what = _still_held_no_unit(source, issue)

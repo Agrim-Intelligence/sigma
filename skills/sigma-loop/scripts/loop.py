@@ -1336,6 +1336,26 @@ def _dag_first_pick(sdlc_dir, source, config):
         pass
 
 
+def _land_not_taken(source, why, hold_written=False):
+    """#2065: the one stderr line a `--land <N>` pick ends on when N is not taken -> ("DONE", None).
+
+    Always `not started`: no claim was made. A refusal at attach, scope or owner can itself leave a
+    hold on N (an overlay or a park, with a comment), but whether it landed is not reported back to
+    the pick, so the line says it MAY have, and that the comment says what a person must do."""
+    n = source.land_scope
+    tail = ("; it may have left a hold and a comment on #%s, which say what a person must do" % n
+            if hold_written else "")
+    print("loop.py: --land #%s not taken (not started): %s%s" % (n, why, tail), file=sys.stderr)
+    return ("DONE", None)
+
+
+def _no_refresh(*_args, **_kwargs):
+    """#2065: the `refresh` a `--land` pick hands `dag_check.check` -- a full map refresh posts
+    comments on a dependency cycle's members, other goals. `refresh-requested` then returns before
+    `checked_at` advances, so the map hold falls back to the mirror, as for a stale map."""
+    return None
+
+
 def _dag_check_pick(sdlc_dir, config, source):
     """#1617: the cheap change check, once at the start of a pick (`dag_check.check`). Nothing happens, and
     `dag_check` is not even loaded, when `discovery.dag.mode` is written `off` or no stored map exists, so
@@ -1349,7 +1369,8 @@ def _dag_check_pick(sdlc_dir, config, source):
             return
         if not (pathlib.Path(sdlc_dir) / "state" / "dag.json").is_file():
             return
-        _load("dag_check").check(sdlc_dir, config, run=getattr(source, "_run", None))
+        _load("dag_check").check(sdlc_dir, config, run=getattr(source, "_run", None),
+                                 refresh=_no_refresh if getattr(source, "land_scope", None) else None)
     except Exception:                       # noqa: BLE001 - a change check never stops a pick
         pass
 
@@ -1582,7 +1603,9 @@ def _feature_needs_label_sweep(sdlc_dir, source, config):
     Fail-open in the same shape as the sweeps above it: a problem here costs one deferred release,
     never a pick."""
     try:
-        return feature_labels.resume_needs_label(sdlc_dir, source, config)
+        land = getattr(source, "land_scope", None)      # #2065: under --land, N's overlay only
+        return feature_labels.resume_needs_label(sdlc_dir, source, config,
+                                                **({"only": land} if land else {}))
     except Exception as exc:                # noqa: BLE001 - a sweep must never break the pick
         try:
             print(f"loop.py: needs-label sweep failed non-fatally ({exc})", file=sys.stderr)
@@ -1602,7 +1625,9 @@ def _feature_needs_unit_sweep(sdlc_dir, source, config):
     `no_dangling_goal_enabled` is False (the default) or the source lacks the method surface, so
     an adopter who never opted in pays nothing beyond one cheap attribute read per call, here."""
     try:
-        return feature_labels.resume_needs_unit(sdlc_dir, source, config)
+        land = getattr(source, "land_scope", None)      # #2065: under --land, N's overlay only
+        return feature_labels.resume_needs_unit(sdlc_dir, source, config,
+                                                **({"only": land} if land else {}))
     except Exception as exc:                # noqa: BLE001 - a sweep must never break the pick
         try:
             print(f"loop.py: needs-unit sweep failed non-fatally ({exc})", file=sys.stderr)
@@ -2830,24 +2855,34 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
     if refusal:
         return ("DONE", refusal)
     rec.mark("reconcile")
+    # #2065: under `--land <N>` the sweeps that WRITE TO OTHER GOALS do not run -- the map refresh
+    # (it comments on a cycle's members), reconcile, auto-unpark, stale-claim reclaim, the release of
+    # unstarted holds and the merge-reconcile pass below. "No other goal is written to" is the
+    # scope's contract; those sweeps are the full loop's and the watcher's housekeeping, not a
+    # one-goal run's. The per-goal gates that decide N itself all still run.
+    land = getattr(source, "land_scope", None)
     # #1621: with a `batch` dict (only `next_batch` passes one) its prologue already ran the four
     # steps below and the map is cached in `batch["map"]`; the auto-unpark sweep runs on the FIRST
     # slot call only, and its result is folded into every slot's skip. `batch=None` is the old path.
     if batch is None:
-        _dag_first_pick(sdlc_dir, source, config)
+        if land is None:
+            _dag_first_pick(sdlc_dir, source, config)
         _dag_check_pick(sdlc_dir, config, source)
         _dag_order_pick(sdlc_dir, config, source)
-        _reconcile_sweep(sdlc_dir, config)
+        if land is None:
+            _reconcile_sweep(sdlc_dir, config)
     rec.mark("auto_unpark")
-    if batch is None:
+    if land is not None:
+        just_unparked = frozenset()
+    elif batch is None:
         just_unparked = _auto_unpark_sweep(sdlc_dir, config, session_pid=session_pid)
     else:
         if batch.get("unparked") is None:
             batch["unparked"] = frozenset(_auto_unpark_sweep(sdlc_dir, config, session_pid=session_pid) or ())
         just_unparked = batch["unparked"]
     rec.mark("reclaim")
-    just_reclaimed = _auto_reclaim_stale_claims(sdlc_dir, source, config)
-    if refresh_heartbeat:                  # #1531: a standalone pick; next_batch ran it in its prologue
+    just_reclaimed = frozenset() if land is not None else _auto_reclaim_stale_claims(sdlc_dir, source, config)
+    if refresh_heartbeat and land is None:  # #1531: a standalone pick; next_batch ran it in its prologue
         rec.mark("release_unstarted")
         just_reclaimed = frozenset(just_reclaimed) | _release_held_unstarted(sdlc_dir, config)
     rec.mark("other")
@@ -2868,7 +2903,8 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
         _feature_needs_unit_sweep(sdlc_dir, source, config)   # #2263
         # #232: close goals `record review` left waiting whose PR has since merged. Inside this
         # gate because it WRITES to GitHub (closes issues) -- same #1468 rule as the two above.
-        _reconcile_awaiting_merges(sdlc_dir, config, source=source)
+        if land is None:                                      # #2065: other goals' PRs
+            _reconcile_awaiting_merges(sdlc_dir, config, source=source)
     me, my_writer, lease = _lease(sdlc_dir, config)
     skip = (set(extra_skip) | just_unparked | just_reclaimed
             | _session_in_flight_goals(sdlc_dir, config)
@@ -2885,6 +2921,16 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
         rec.mark("pending_fetch")
         goal = source.next_pending(skip=skip)
         rec.mark("other")
+        if goal is None and land is not None:
+            # #2065: the named goal was not served. Say why in the one line the run ends on; none
+            # of the unscoped DONE path below (the unlabelled-backlog census, the backlog-empty
+            # run_stop) describes a run that never had a backlog to drain.
+            if getattr(source, "read_degraded", lambda: False)():
+                # #2023: never DONE for a read that gave up -- the same one bounded wait and re-pick
+                # the unscoped picker earns; the line says why first.
+                _land_not_taken(source, "its read failed or was rate-limited, so its state is unknown")
+                return ("DEGRADED", _degraded_epoch())
+            return _land_not_taken(source, source.land_why() or "the loop would not serve it now")
         if goal is None:
             # #1499: `("DONE", None)` on a backlog where everything left is waiting on an open
             # prerequisite is technically true and practically misleading -- it is what made the
@@ -2923,6 +2969,9 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
             if degraded:                       # #2023: never DONE for a read that gave up
                 return ("DEGRADED", _degraded_epoch())
             return ("DONE", None)
+        if land is not None and str(goal) != land:   # #2065: a backstop, before anything touches it
+            return _land_not_taken(source, "the picker served #%s instead, which this run will not "
+                                           "touch" % goal)
         # #1499: FIRST, ahead of the lease read and the claim lock below, because the whole defect
         # was ordering -- a goal with an unsatisfied prerequisite used to be claimed and only then
         # discovered to be unworkable. Nothing above this line has touched the goal, so a hold
@@ -2934,6 +2983,8 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
             batch["map"].setdefault("dag_pick", gate["dag_pick"])
         rec.mark("gates")
         if hold:
+            if land is not None:                 # #2065: the first pass-over of N ends the pick
+                return _land_not_taken(source, "it waits on open prerequisite %s" % hold)
             subject, still = _hold_subject(source, goal)
             print("loop.py: not claiming %s — open prerequisite %s. Left untouched (%s, no claim); "
                   "taking the next candidate" % (subject, hold, still), file=sys.stderr)
@@ -2953,10 +3004,14 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
         if holder_actor and not ledger.claim_belongs_to_me(
                 holder_actor, holder_writer, me, my_writer,
                 live_worker_check=lambda g=goal: _goal_has_registered_worker(sdlc_dir, g, config)):
+            if land is not None:
+                return _land_not_taken(source, "another live claim holds it (%s)" % holder_actor)
             skip.add(goal)                      # another loop — or a live sibling of mine — owns this
             continue
         lock_fd = _try_acquire_claim_lock(sdlc_dir, goal)
         if lock_fd is None:
+            if land is not None:
+                return _land_not_taken(source, "a sibling on this machine is claiming it this instant")
             skip.add(goal)                      # a sibling on this machine won this exact instant
             continue
         # #1468 (review F4) / #2521 / #2515: nothing may mutate before a gate whose whole job is to
@@ -3066,11 +3121,17 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
                 continue
             decision = feature_labels.attach_at_pick(sdlc_dir, source, goal, config)
             unit = _unit_at_pick(sdlc_dir, goal, config, decision)
-            proceed = (decision.proceed
-                       and _feature_scope_ok(source, goal, unit)
-                       and _label_scope_ok(source, goal)
-                       and _scope_ok_at_pick(sdlc_dir, source, goal, config, unit)
-                       and _owner_ok_at_pick(sdlc_dir, source, goal, config, unit))
+            # #2065: the same five checks, in the same order, with the same short-circuit as the
+            # `and` chain this replaced -- written out so a `--land` run can name the one that refused.
+            refused = ("refused when its unit label was attached" if not decision.proceed
+                       else "outside --feature" if not _feature_scope_ok(source, goal, unit)
+                       else "outside --label" if not _label_scope_ok(source, goal)
+                       else "held by the unit's repository scope check"
+                       if not _scope_ok_at_pick(sdlc_dir, source, goal, config, unit)
+                       else "held by the owner check on who filed it"
+                       if not _owner_ok_at_pick(sdlc_dir, source, goal, config, unit)
+                       else None)
+            proceed = refused is None
         except BaseException:
             _cancel_goal_slot(sdlc_dir, session_pid, goal)
             _release_claim_lock(lock_fd)
@@ -3079,6 +3140,8 @@ def _next_untraced(sdlc_dir, source, config, extra_skip=(), session_pid=None, re
             break
         _cancel_goal_slot(sdlc_dir, session_pid, goal)
         _release_claim_lock(lock_fd)
+        if land is not None:                     # #2065: AFTER the refunds above, never before
+            return _land_not_taken(source, "it was %s" % refused, hold_written=True)
         skip.add(goal)
     # The lock's whole job is bridging the gap until a DURABLE claim exists — once mark_in_progress/
     # safe_append below have run, #374's own claim-interpretation takes over correctly for every
@@ -6984,7 +7047,7 @@ def run_loop(sdlc_dir, run_goal):
 #: `thread`, `session-pid`, `skip`). Computed from `ledger.EVENT_FIELDS`/`actionlog.AGENT_FIELDS`
 #: themselves, not re-listed, so this set can never drift from the real field vocabulary.
 _VALUE_FLAGS = frozenset(
-    {"pid", "thread", "session-pid", "session-generation", "skip", "feature", "label"}
+    {"pid", "thread", "session-pid", "session-generation", "skip", "feature", "label", "land"}
     | {f for fields in ledger.EVENT_FIELDS.values() for f in fields}
     | {f for fields in actionlog.AGENT_FIELDS.values() for f in fields}
 )
@@ -7078,14 +7141,44 @@ def _cli_label(argv_tail, source):
     return sources.scope_to_label(source, raw, feature=flags.get("feature"))
 
 
-def _cli_scopes(argv_tail, source):
-    """Apply `--feature` and `--label` -> exit code 2 (after printing one line) on a refusal, else
-    None. `--label` is validated first so a combined call is refused as such."""
+def _cli_land(argv_tail, source, config, verb):
+    """#2065: parse `--land <N>` off a CLI tail and confine `source` to issue N -> N, or None when
+    the flag is absent. Raises `sources.LandScopeError` (one stderr line, exit 2, before any query)
+    for: another scope beside it (one named goal is the narrowest scope there is), `next-batch` (one
+    goal is one line; `next` serves it), and a project with no landing path -- `work.enabled` off
+    opens no PR, and `work.auto_merge: off` leaves every PR for a person, so the run could never
+    end merged. Those two are what `/sigma-goal <N> --land` exists to reach, so they refuse loudly
+    rather than claim a goal the run cannot finish."""
+    flags = _flags(argv_tail)
+    if "land" not in flags:
+        return None
+    if "feature" in flags or "label" in flags:
+        raise sources.LandScopeError("--land cannot be combined with --%s: it names the one goal "
+                                     "already. Nothing was queried."
+                                     % ("feature" if "feature" in flags else "label"))
+    if verb != "next":
+        raise sources.LandScopeError("--land names one goal; use `loop.py next`, not `%s`. "
+                                     "Nothing was queried." % verb)
+    if not work.enabled(config):
+        raise sources.LandScopeError("--land needs work.enabled: true (it lands a pull request). "
+                                     "Nothing was queried.")
+    if work.policy(config) == work.OFF:
+        raise sources.LandScopeError("--land needs work.auto_merge 'protected' or 'always'; under "
+                                     "'off' every pull request is left for a person. Nothing was "
+                                     "queried.")
+    return sources.scope_to_land(source, flags["land"])
+
+
+def _cli_scopes(argv_tail, source, config=None, verb="next"):
+    """Apply `--land`, `--feature` and `--label` -> exit code 2 (after printing one line) on a
+    refusal, else None. `--land` is validated first, so a combined call is refused as such, and so is
+    `--label` before `--feature`."""
     try:
+        _cli_land(argv_tail, source, config or {}, verb)
         if "label" in _flags(argv_tail):
             _cli_label(argv_tail, source)
         _cli_feature(argv_tail, source)
-    except (sources.FeatureScopeError, sources.LabelScopeError) as exc:
+    except (sources.FeatureScopeError, sources.LabelScopeError, sources.LandScopeError) as exc:
         print(f"loop.py: {exc}", file=sys.stderr)
         return 2
     return None
@@ -7357,7 +7450,7 @@ def _validate_event(kind, flags, kind_allowlist=None):
 
 
 USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> [--session-pid PID] | "
-         "next <dir> [--skip a,b] [--feature NAME] [--label NAME] [--session-pid PID] [--trace] | "
+         "next <dir> [--skip a,b] [--feature NAME] [--label NAME] [--land N] [--session-pid PID] [--trace] | "
          "pick-trace-report <dir> | gh-calls-report <dir> [--hours N] | cost-report <dir> | meter <dir> [--baseline TOKENS] | "
          "next-batch <dir> [--skip a,b] [--feature NAME] [--label NAME] [--session-pid PID] [--max-concurrent N] | "
          "session-active <dir> | prune-state <dir> [--dry-run] [--keep-days N] [--limit N] | session-end <dir> [--session-pid PID] | "
@@ -7946,7 +8039,7 @@ def _dispatch(argv):
         # made, no side effect to undo. `get_source` is a pure constructor; moving it up changes no
         # call and no order.
         source = sources.get_source(argv[2], config)
-        if _cli_scopes(argv[3:], source) == 2:
+        if _cli_scopes(argv[3:], source, config, "next") == 2:
             return 2
         _ensure_watcher(argv[2], config)            # every loop trigger keeps the watcher (and the ledger) alive
         _ensure_ledger_delivery(argv[2], config)    # ...and notices when that flow has stalled (#2393)
@@ -7970,7 +8063,7 @@ def _dispatch(argv):
     if len(argv) >= 3 and argv[1] == "next-batch":  # F10.5-3/#375: up to parallel.goals.max_concurrent
         config = state.load_config(argv[2])         # goals to dispatch as concurrent worktree subagents
         source = sources.get_source(argv[2], config)
-        if _cli_scopes(argv[3:], source) == 2:      # #1661/#1575: same up-front refusal as `next`
+        if _cli_scopes(argv[3:], source, config, "next-batch") == 2:   # #1661/#1575/#2065: as `next`
             return 2
         _ensure_watcher(argv[2], config)
         _ensure_ledger_delivery(argv[2], config)    # ...and notices when that flow has stalled (#2393)
