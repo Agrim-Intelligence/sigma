@@ -168,7 +168,9 @@
     "skills/sigma-loop/scripts/sync.py::bootstrap",
     "skills/sigma-loop/scripts/work.py::_repair_review_post_effects",
     "skills/sigma-loop/scripts/work.py::post_review",
-    "skills/sigma-scope/scripts/assign.py::execute"
+    "skills/sigma-scope/scripts/assign.py::execute",
+    "skills/sigma-loop/scripts/ledger.py::renew_lease",
+    "skills/sigma-loop/scripts/loop.py::_main_body"
    ]
   },
   {
@@ -196,7 +198,9 @@
     "skills/sigma-loop/scripts/sync.py::bootstrap",
     "skills/sigma-loop/scripts/work.py::_repair_review_post_effects",
     "skills/sigma-loop/scripts/work.py::post_review",
-    "skills/sigma-scope/scripts/assign.py::execute"
+    "skills/sigma-scope/scripts/assign.py::execute",
+    "skills/sigma-loop/scripts/ledger.py::renew_lease",
+    "skills/sigma-loop/scripts/loop.py::_main_body"
    ]
   },
   {
@@ -388,9 +392,11 @@
     "skills/sigma-loop/scripts/handoff.py::_triage_finish",
     "skills/sigma-loop/scripts/ledger.py::append",
     "skills/sigma-loop/scripts/ledger.py::main",
+    "skills/sigma-loop/scripts/ledger.py::renew_lease",
     "skills/sigma-loop/scripts/ledger.py::safe_append",
     "skills/sigma-loop/scripts/loop.py::_claim",
     "skills/sigma-loop/scripts/loop.py::_dispatch",
+    "skills/sigma-loop/scripts/loop.py::_main_body",
     "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/loop.py::main",
     "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
@@ -419,9 +425,11 @@
     "skills/sigma-loop/scripts/handoff.py::_triage_finish",
     "skills/sigma-loop/scripts/ledger.py::append",
     "skills/sigma-loop/scripts/ledger.py::main",
+    "skills/sigma-loop/scripts/ledger.py::renew_lease",
     "skills/sigma-loop/scripts/ledger.py::safe_append",
     "skills/sigma-loop/scripts/loop.py::_claim",
     "skills/sigma-loop/scripts/loop.py::_dispatch",
+    "skills/sigma-loop/scripts/loop.py::_main_body",
     "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/loop.py::main",
     "skills/sigma-loop/scripts/phase_report.py::_record_end_usage",
@@ -460,7 +468,9 @@
     "skills/sigma-loop/scripts/sync.py::bootstrap",
     "skills/sigma-loop/scripts/work.py::_repair_review_post_effects",
     "skills/sigma-loop/scripts/work.py::post_review",
-    "skills/sigma-scope/scripts/assign.py::execute"
+    "skills/sigma-scope/scripts/assign.py::execute",
+    "skills/sigma-loop/scripts/ledger.py::renew_lease",
+    "skills/sigma-loop/scripts/loop.py::_main_body"
    ]
   },
   {
@@ -580,7 +590,12 @@
     "skills/sigma-loop/scripts/worktree_prune.py::sweep",
     "skills/sigma-scope/scripts/assign.py::_start_drain",
     "skills/sigma-loop/scripts/auto_unpark.py::_stamp_sweep",
-    "skills/sigma-loop/scripts/sources.py::finish"
+    "skills/sigma-loop/scripts/sources.py::finish",
+    "skills/sigma-loop/scripts/ledger.py::renew_lease",
+    "skills/sigma-loop/scripts/loop.py::_auto_reclaim_stale_claims",
+    "skills/sigma-loop/scripts/loop.py::_remote_expired_view",
+    "skills/sigma-loop/scripts/sync.py::publish_entry",
+    "skills/sigma-loop/scripts/sync.py::_mark_self_created"
    ]
   },
   {
@@ -842,7 +857,8 @@
     "skills/sigma-loop/scripts/loop.py::main",
     "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/phase_gate.py::record_verdict",
-    "skills/sigma-loop/scripts/phase_gate.py::waive"
+    "skills/sigma-loop/scripts/phase_gate.py::waive",
+    "skills/sigma-loop/scripts/loop.py::_main_body"
    ]
   },
   {
@@ -858,7 +874,8 @@
     "skills/sigma-loop/scripts/loop.py::main",
     "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/phase_gate.py::record_verdict",
-    "skills/sigma-loop/scripts/phase_gate.py::waive"
+    "skills/sigma-loop/scripts/phase_gate.py::waive",
+    "skills/sigma-loop/scripts/loop.py::_main_body"
    ]
   },
   {

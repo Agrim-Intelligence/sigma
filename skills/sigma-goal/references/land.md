@@ -138,8 +138,13 @@ The lever is a person's, and it depends on the PR:
   removes the claim with an audit comment, then start `--land` again.
 
 An unscoped `/sigma-loop` pick reclaims a claim whose lease is older than `ledger.lease.ttl_hours`
-only where `ledger.enabled` is on and that checkout's ledger holds the dead run's claim, which a
-container's ledger is not guaranteed to reach. UNMEASURED live.
+only where `ledger.enabled` is on and that checkout's ledger holds the dead run's claim. A run in a
+container now publishes its own claim, keep-alive (`lease-renew`, at most once per a third of the TTL) and
+outcome to origin's ledger without a watcher, so another machine sees a live claim as live, and a claim
+written on another machine is released only after a fresh read of origin's ledger branch still shows it
+expired (a failed read releases nothing). Lever for a run that left an entry unpublished: `python3
+"${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/sync.py" publish .sdlc`. UNMEASURED live: no real container has
+pushed the ledger branch under this; see [cloud sessions](../../../docs/cloud-sessions.md#the-team-ledger-from-a-cloud-container-2076).
 
 ## In a Claude Code cloud session
 

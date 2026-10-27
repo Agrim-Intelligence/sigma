@@ -751,6 +751,64 @@ the final message verbatim.
 
 What is still open is in "What remains (#895 slice 7)" below.
 
+## The team ledger from a cloud container (#2076)
+
+A cloud container is a fresh clone with no `.sdlc/ledger` worktree and no watcher, and it may be gone minutes after
+it opens its PR. With `ledger.enabled: true` the loop now publishes its own entries, so the claim, the keep-alive
+and the outcome reach the `sdlc-ledger` branch on origin without a daemon and without GraphQL:
+
+- **When.** At the claim, at each lease renewal, and at the outcome (`done`, `parked`, `failed`, the
+  awaiting-merge hold and `release`). Those verbs only mark the entry; the outermost `loop.py` call publishes ONE
+  time after the verb returns, so a `next-batch` pays once and no claim or merge lock is held across the network.
+- **The worktree.** When `.sdlc/ledger` is not a worktree it is created from origin through `sync.py init`
+  (plumbing only), and kept out of the code checkout's `git status` through `.git/info/exclude` when the repository
+  does not ignore it. The code checkout's HEAD, index and working tree are not touched.
+- **Bounded and fail-open.** Every git call shares one wall-time limit (`SIGMA_LEDGER_PUBLISH_DEADLINE`, default 90
+  seconds), runs in its own process group with no credential prompt, and is ended with SIGTERM and then SIGKILL on
+  overrun. A push that is refused or times out prints
+  `ledger: NOT published (<why>) -- no other machine can see this <entry> yet ...` on stderr, with any URL
+  credentials removed, and the run goes on; the entry stays on disk and the next loop step retries it.
+  `ledger.publish_on_write: false` keeps the old behaviour (nothing is published by the loop).
+- **No watcher in a cloud session.** `_ensure_watcher` returns early when `CLAUDE_CODE_REMOTE` is `true` or `1`: a
+  container can be gone before the next tick. On a laptop a live watcher still carries the entry and the loop does
+  not race it. A laptop whose ledger had no worktree now gets one on the first claim (the opt-in is
+  `ledger.enabled`), but a worktree the loop made for itself starts NO watcher (a marker,
+  `.sdlc/state/ledger-self-created`, says so); running `sync.py bootstrap .sdlc` (what `/sigma-ledger` runs) is the
+  explicit enrolment that clears it.
+- **A writer identity per container.** Every cloud container reports one hostname, so the host token (the middle of
+  `<actor>-<host>.<pid>`) is salted with an id that is the container's own: random, written once into the temporary
+  directory (published with a hard link, so no reader sees it half written), and read back only when it is 32 hex
+  digits. If that cannot be written the token falls back to a hash of the boot id and the start time of pid 1, which
+  is weaker on a shared kernel. A laptop's token is unchanged; `ledger.host_alias` is kept but gets four hex digits of
+  the container id appended in a cloud session.
+- **The keep-alive.** While a run holds a claim, `note`, `agent-start`, `agent-beat` and `verify` write a
+  `lease-renew` entry at most once per a third of the lease TTL (4 hours of the default 12). Another machine's reader
+  extends the lease only for a renewal by the holder: the same actor, the same machine and a compatible run (a run id
+  absent on either side is compatible). A renewal dated more than 15 minutes ahead of the reader's clock is not
+  believed. An older Sigma on another machine ignores `lease-renew` and keeps reaping, so upgrade readers first.
+- **A reclaim needs origin's word.** When `_auto_reclaim_stale_claims` finds an expired claim written on ANOTHER
+  machine, it fetches the ledger branch (read-only, no rebase, no worktree move), reads the entries from the fetched
+  ref, and releases only a claim that read still shows open and expired, using the actor and run origin shows. A
+  failed read, a missing branch or no remote releases nothing and prints why. Origin is asked at most once per sweep
+  and at most once per 5 minutes per checkout. A claim written on this machine, or by a pre-#540 writer with no
+  host, is released as before.
+
+MEASURED (offline, real git against a local bare origin; `tests/test_ledger_publish_entry.py`,
+`tests/test_ledger_cloud_claims.py`, `tests/test_ledger_cloud_run.py`): a fresh clone publishes its claim and leaves
+HEAD, index and status unchanged; 16 clones publishing 3 rounds at once land every entry (the old retry, five
+attempts with no pause, lost 25 to 27 of 48 in the same race); a refused push is printed and the run continues; a
+reclaim of another machine's claim is held back when origin shows a renewal.
+
+To check these claims on your own checkout, run
+`python3 -m pytest tests/test_ledger_lease_renew.py tests/test_ledger_cloud_claims.py tests/test_ledger_publish_entry.py tests/test_ledger_cloud_run.py`.
+Each guard was also broken on its own and seen to fail that gesture (see the pull request for the list).
+
+NOT MEASURED: no controlled run has pushed the ledger branch from a real Claude Code cloud container. An adopter's ledger
+branch holds many `sync.publish` commits authored from cloud sessions, which is evidence that pushes landed, not a
+measurement. The container-id file, the proxy's treatment of git over the remote, and the 90-second limit against a
+real remote are all untested there. Lever if a cloud run left an entry unpublished: `python3 sync.py publish .sdlc`
+in the checkout, or run `/sigma-ledger` once.
+
 ## What remains (#895 slice 7)
 
 Slice 7 made the `review_context.py` briefs REST-first (`gh api repos/{owner}/{repo}/pulls/N` with the diff Accept

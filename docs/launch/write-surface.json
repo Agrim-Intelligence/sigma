@@ -4503,6 +4503,62 @@
       "count": 2,
       "gate": "work.py seal-tests only (gates.sealed_acceptance.enabled, default off); creates tests/acceptance/<goal>/ in the goal worktree (never the main checkout) and writes breaker files that passed breaker.validate_output and the AC<n> name rule, from Python, through state.atomic_write_text, after the up-front symlink refusal",
       "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/ledger.py",
+      "function": "_write_marker",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ledger.enabled and a lease that expires; writes only the per-goal throttle marker under the runtime state directory, an OS error is swallowed",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/ledger.py",
+      "function": "container_id",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "CLAUDE_CODE_REMOTE true or 1 (a cloud session); writes one random id file for the container into the temporary directory, published with an exclusive hard link, an OS error falls back to a derived id",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/ledger.py",
+      "function": "container_id",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "CLAUDE_CODE_REMOTE true or 1 (a cloud session); removes only the temporary file this call created a moment before, an OS error is swallowed",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/loop.py",
+      "function": "_remote_expired_view",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ledger.enabled and a stale claim written on another machine; touches only the reclaim-confirmation cooldown marker under the runtime state directory, an OS error is swallowed",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sync.py",
+      "function": "_exclude_from_status",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ledger.enabled and ledger.publish_on_write and a first publish that created the ledger worktree; appends one line to the repository's own info/exclude so the worktree never shows in git status, never a tracked file, best effort",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sync.py",
+      "function": "_mark_self_created",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "ledger.enabled and a first publish that created the ledger worktree; writes one marker file under the runtime state directory so the loop starts no watcher for a worktree it made itself, an OS error is swallowed",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/sync.py",
+      "function": "bootstrap",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "explicit `sync.py bootstrap` (what /sigma-ledger runs); removes only the self-created marker under the runtime state directory, an OS error is swallowed",
+      "risk": "low"
     }
   ]
 }

@@ -45,7 +45,9 @@ except Exception:
     pass
 import subprocess
 import sys
+import tempfile
 import time
+import uuid
 
 #: Every kind a ledger line may carry. Small on purpose — an open vocabulary would make the
 #: team view unreadable within a week. `merged` records a PR the loop actually landed. `merge-armed`
@@ -56,7 +58,8 @@ import time
 #: receipt confirms the PR landed, carrying the stable key that prevents duplicate observations.
 #: Sibling pin: tests/test_ledger.py::test_vocabulary_constants_match_spec_table (this file) and
 #: contract/vocabulary.json's "entries_kinds" -- issue #298. Update both by hand.
-KINDS = ("claimed", "done", "parked", "failed", "handoff", "ack", "release", "note", "merged", "merge-armed", "acceptance")
+KINDS = ("claimed", "done", "parked", "failed", "handoff", "ack", "release", "note", "merged", "merge-armed", "acceptance",
+         "lease-renew")
 
 #: Lifecycle of a hand-off, from the point of view of the person it is addressed TO.
 STATES = ("open", "accepted", "deferred", "declined", "resolved")
@@ -820,11 +823,17 @@ def _host_token(config=None):
     name (`discovery.github.repo`) so the same machine reads as a different token in each repository."""
     alias = host_alias(config)
     if alias:
-        return alias
+        # #2076: in a cloud session the alias is kept (it hides the host name) but made unique per
+        # container, or several containers an operator gave one alias would read as one machine.
+        return alias[:HOST_ALIAS_MAX - 4] + container_id()[:4] if cloud_session() else alias
     try:
         name = platform.node() or ""
     except Exception:                # noqa: BLE001 - identity must never be what breaks an append
         name = ""
+    if cloud_session():
+        # #2076: every Claude Code cloud container reports one hostname, so the hostname says nothing
+        # about WHICH container wrote. Salt it with an id that is the container's own.
+        name = f"{name}\0container:{container_id()}"
     salt = ""
     if settings(config).get("salt_host_token") is True:
         gh = config.get("discovery", {}).get("github", {}) if isinstance(config.get("discovery"), dict) else {}
@@ -834,6 +843,77 @@ def _host_token(config=None):
 
 
 HOST_ALIAS_MAX = 12
+
+
+def cloud_session(env=None):
+    """True in a Claude Code cloud session: `CLAUDE_CODE_REMOTE` is `true` or `1` (the same signal
+    `gh_api` reads, environment only, no probe). `SIGMA_GH_GRAPHQL=off` alone is NOT a cloud session."""
+    value = str((os.environ if env is None else env).get("CLAUDE_CODE_REMOTE", "")).strip().lower()
+    return value in ("true", "1")
+
+
+def _container_id_path():
+    """Where this container's id lives: the temporary directory, which is container-local in a cloud
+    session and not shared between containers. One file per OS user."""
+    uid = os.getuid() if hasattr(os, "getuid") else 0
+    return pathlib.Path(tempfile.gettempdir()) / f"sigma-container-{uid}.id"
+
+
+_CONTAINER_ID_RE = re.compile(r"[0-9a-f]{32}")
+
+
+def container_id():
+    """An id that is the same for every process in this container and different between containers
+    (#2076). A random id is written once with an exclusive create, so two processes racing the first
+    call settle on one id; a file that does not read back as 32 hex digits is not trusted. When the
+    file cannot be read or created, the id is derived from what the kernel says about this boot and its
+    first process (boot id and the start time of pid 1): deterministic, so every process still agrees,
+    and different between containers that do not share a kernel start. Never raises."""
+    path = _container_id_path()
+    found = _read_container_id(path)
+    if found:
+        return found
+    # Publish the id with a hard link, never a bare exclusive create: a reader must not see the file
+    # empty between the create and the write, or it would fall back and one container would carry two
+    # tokens. The link fails if the path exists, so the first writer's id wins for everyone.
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+        fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(uuid.uuid4().hex)
+        try:
+            os.link(str(tmp), str(path))
+        except FileExistsError:
+            pass
+        finally:
+            try:
+                os.unlink(str(tmp))
+            except OSError:
+                pass
+    except OSError:
+        return _kernel_container_id()
+    return _read_container_id(path) or _kernel_container_id()
+
+
+def _read_container_id(path):
+    try:
+        text = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return text if _CONTAINER_ID_RE.fullmatch(text) else None
+
+
+def _kernel_container_id():
+    parts = []
+    for source in ("/proc/sys/kernel/random/boot_id", "/proc/1/stat"):
+        try:
+            raw = pathlib.Path(source).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        # /proc/1/stat: field 22 is the start time; the comm field may hold spaces, so cut after ')'
+        parts.append(raw.rpartition(")")[2].split()[19] if source.endswith("stat") and ")" in raw else raw.strip())
+    return hashlib.sha256("\0".join(parts).encode()).hexdigest()[:32]
 
 
 def host_alias(config):
@@ -1728,6 +1808,24 @@ def read_all(sdlc_dir, stream=ENTRIES):
     return out
 
 
+def entries_from_text(text):
+    """The entries in `text` (JSON lines from any source, such as a fetched ref), oldest first, under
+    `read_all`'s tolerance rules: a malformed line is skipped, never fatal."""
+    out = []
+    for line in str(text).splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            item = json.loads(line)
+        except (ValueError, RecursionError):
+            continue
+        if isinstance(item, dict) and item.get("kind"):
+            out.append(item)
+    out.sort(key=_sort_key)
+    return out
+
+
 def _seq(entry):
     """The tail of `id` after the last ':', 0 if not all-digits. Faithful port of
     a downstream reader's `_seq` (divergence 4): `tail.isdigit()` is NOT enough to make `int()` safe.
@@ -2261,6 +2359,24 @@ def _held(entries, now=None, ttl_seconds=None):
     return _held_full(entries, now, ttl_seconds)[0]
 
 
+#: how far ahead of the reader's clock a renewal's timestamp may be believed (#2076)
+RENEW_SKEW_SECONDS = 900
+
+
+def _renewal_is_holders(entry, current, claim_run):
+    """True iff a `lease-renew` entry comes from the claim's holder: the same actor, the same machine and
+    a compatible run (#2076, #616). A pid is not compared: every loop verb is a new process. The machine
+    is the writer's host token; a claim written before #540 has none and reads as compatible. A run id
+    absent on either side is compatible (`note`, `agent-start` and `verify` carry no --session-pid)."""
+    if entry.get("actor") != current[0]:
+        return False
+    claim_host, renew_host = writer_host(current[1]), writer_host(_writer(entry))
+    if claim_host is not None and claim_host != renew_host:
+        return False
+    renew_run = entry.get("run_id") or None
+    return claim_run is None or renew_run is None or claim_run == renew_run
+
+
 def _held_full(entries, now=None, ttl_seconds=None):
     """`_held()`'s own implementation, plus the `held_run` side-channel it needs for its pop
     decision but has never returned (see `_held()`'s own docstring for why widening its RETURNED
@@ -2280,6 +2396,18 @@ def _held_full(entries, now=None, ttl_seconds=None):
         if kind == "claimed":
             held[goal] = (entry.get("actor"), _writer(entry), entry.get("ts", ""))
             held_run[goal] = entry.get("run_id") or None
+        elif kind == "lease-renew":
+            # #2076/#616: the holder's keep-alive. Extends a held claim's timestamp, only for the same
+            # actor on the same machine in a compatible run; any other renewal, and a renewal for a
+            # goal nobody holds, is ignored. Never raises, and never moves a timestamp backwards.
+            current = held.get(goal)
+            if current is not None and _renewal_is_holders(entry, current, held_run.get(goal)):
+                # a renewal dated beyond the skew allowance is not believed: a skewed clock must not
+                # hold a claim for ever (it counts again only once real time reaches it)
+                stamp = _epoch(entry.get("ts", ""))
+                limit = (now if now is not None else time.time()) + RENEW_SKEW_SECONDS
+                if _epoch(current[2]) < stamp <= limit:
+                    held[goal] = (current[0], current[1], entry.get("ts", ""))
         elif kind in ("done", "parked", "failed", "release"):
             # the claimer finished, gave up, or (#841) explicitly released a claim that was never
             # started — `release` was declared in KINDS/SHARED_KINDS from the start for exactly
@@ -2386,6 +2514,73 @@ def expired_claim_run_ids(entries, now=None, ttl_seconds=None):
     held, held_run = _held_full(entries, now=now, ttl_seconds=None)   # every OPEN claim, any age
     cutoff = (now if now is not None else time.time()) - ttl_seconds
     return {goal: held_run.get(goal) for goal, v in held.items() if _epoch(v[2]) < cutoff}
+
+
+# --------------------------------------------------------------------------- lease renewal (#2076)
+
+
+def _renew_marker(sdlc_dir, goal):
+    return pathlib.Path(sdlc_dir) / "state" / f"lease-renew-{_safe_name(str(goal))}"
+
+
+def _marker_due(path):
+    """The epoch before which a renewal is not due, or None when the marker is absent or unreadable."""
+    try:
+        return float(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def renew_lease(sdlc_dir, config, goal, now=None, run=None):
+    """Write one `lease-renew` for a goal THIS process holds, at most once per a third of the lease TTL.
+    Returns the entry, or None when nothing was due or nothing could be written. NEVER raises.
+
+    The common call costs one `stat`: a per-goal marker under `state/` holds the epoch before which no
+    renewal is due, so the ledger is read at most once per third of the TTL per goal. A goal that is
+    unclaimed, finished, held by another actor, another machine or another run is not this process's to
+    renew. A lease that never expires (`ledger.lease.ttl_hours` 0 or false) needs no renewal.
+
+    A renewal is what lets another machine (whose ledger copy is fresher than any local worker marker
+    it could read) see the claim as live (#2076, #616). Publishing it is the caller's job."""
+    try:
+        if not enabled(config):
+            return None
+        ttl = lease_ttl_seconds(config)
+        if not ttl:
+            return None
+        clock = now if now is not None else time.time()
+        step = ttl / 3
+        marker = _renew_marker(sdlc_dir, goal)
+        due = _marker_due(marker)
+        if due is not None and clock < due:
+            return None
+        held, held_run = _held_full(read_all(sdlc_dir), now=clock, ttl_seconds=ttl)
+        claim = held.get(str(goal))
+        run_id = os.environ.get("SIGMA_RUN_ID") or None
+        holds = (claim is not None and claim[0] == actor(config, run)
+                 and writer_host(claim[1]) in (None, _host_token(config))
+                 and (held_run.get(str(goal)) is None or run_id is None or held_run[str(goal)] == run_id))
+        if not holds:
+            next_due = clock + step
+        elif clock - _epoch(claim[2]) < step:
+            next_due = _epoch(claim[2]) + step
+        else:
+            entry = append(sdlc_dir, config, "lease-renew", goal, run=run, now=clock, run_id=run_id)
+            next_due = clock + step
+            _write_marker(marker, next_due)
+            return entry
+        _write_marker(marker, next_due)
+        return None
+    except Exception:                # noqa: BLE001 - a keep-alive must never break a run
+        return None
+
+
+def _write_marker(path, due):
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(str(due), encoding="utf-8")
+    except OSError:
+        pass
 
 
 # --------------------------------------------------------------------------- render

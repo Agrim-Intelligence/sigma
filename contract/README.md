@@ -15,7 +15,7 @@ The contract enables downstream readers to read, validate, and ingest core recor
 
 ## Versioning
 
-**Contract Version:** 1.4.0 (defined in `VERSION` file)
+**Contract Version:** 1.5.0 (defined in `VERSION` file)
 
 **Versioning Rules:**
 
@@ -55,7 +55,7 @@ reading them:
 
 ### Entries Kind Vocabulary
 
-The entries stream carries 11 record kinds:
+The entries stream carries 12 record kinds:
 
 1. `claimed` — a goal claimed by a worker
 2. `done` — a goal completed
@@ -74,6 +74,21 @@ The entries stream carries 11 record kinds:
 11. `acceptance` — captured P1 intent, with `ref` to the Markdown record and `acceptance_sha256`
     (64 lowercase hexadecimal characters). Ledger opt-in controls this metadata only; the local
     Markdown record is written regardless. Commands and criteria are never copied into the ledger.
+
+12. `lease-renew` — the claim holder's keep-alive (added in 1.5.0, #2076). Same shape as any entry:
+    `{id, actor, ts, kind, goal}` with an optional `run_id`. A reader extends a held claim's lease to
+    the entry's `ts` only when the entry comes from the claim's holder: the same `actor`, the same
+    host token in the writer part of `id`, and a compatible `run_id` (equal, or absent on either side).
+    Any other `lease-renew` is ignored, as is one dated more than 15 minutes ahead of the reader's
+    clock, and a reader that does not know the kind ignores it. Written at most once per a third of
+    the lease TTL by the claim holder; not a team-view kind, so it does not appear in `TEAM.md`.
+
+### Lease renewal (1.5.0)
+
+Adding a record kind is a MINOR bump, approved on #393. Rollout order: a consumer that validates entries
+against 1.4 must accept 1.5 before a writer on 1.5 reaches its ledger, because a closed-vocabulary consumer
+can stall on an entry kind it does not know. An older Sigma that reads the ledger ignores `lease-renew`
+and so keeps treating a renewed claim as expired; upgrade readers first.
 
 ### Acceptance records (1.4.0)
 
