@@ -28,8 +28,10 @@ import fnmatch
 import importlib.util
 import os
 import pathlib
+import random
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -246,7 +248,12 @@ def _no_hooks_dir(cwd):
     return str(pathlib.Path(str(cwd)) / ".sigma-ledger-hooks-disabled")
 
 
-def _run_git(cwd, args):
+def _run_git(cwd, args, timeout=None):
+    """Run git. With `timeout` (seconds) the call is bounded (#2076): git runs in its own process
+    group with stdin closed and no credential prompt, and an overrun is sent SIGTERM (so git removes its
+    own lock files), then SIGKILL two seconds later, and raises `TimeoutError`."""
+    if timeout is not None:
+        return _run_git_bounded(cwd, args, timeout)
     # GIT_EDITOR=true for every call: nothing here ever wants an editor, and the knowledge channel's
     # `rebase --continue` after a resolved conflict DOES open one (merge backend) — an exported
     # GIT_EDITOR outranks `-c core.editor`, so an operator's `GIT_EDITOR=vim` would hang a captured
@@ -257,6 +264,36 @@ def _run_git(cwd, args):
     if proc.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)}: {(proc.stderr or proc.stdout).strip()}")
     return proc.stdout.strip()
+
+
+def _run_git_bounded(cwd, args, timeout):
+    env = dict(os.environ, GIT_EDITOR="true", GIT_TERMINAL_PROMPT="0")
+    proc = subprocess.Popen(
+        ["git", "-C", str(cwd), "-c", f"core.hooksPath={_no_hooks_dir(cwd)}", *args],
+        stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
+        start_new_session=True)
+    try:
+        out, err = proc.communicate(timeout=max(timeout, 0.01))
+    except subprocess.TimeoutExpired:
+        _end_group(proc)
+        raise TimeoutError(f"git {args[0]} did not finish within {timeout:.0f}s") from None
+    if proc.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)}: {(err or out).strip()}")
+    return out.strip()
+
+
+def _end_group(proc):
+    """SIGTERM the child's process group, wait two seconds, then SIGKILL it. Only a group Sigma started."""
+    try:
+        os.killpg(proc.pid, signal.SIGTERM)
+        try:
+            proc.communicate(timeout=2)
+            return
+        except subprocess.TimeoutExpired:
+            os.killpg(proc.pid, signal.SIGKILL)
+        proc.communicate(timeout=5)
+    except (ProcessLookupError, PermissionError, subprocess.TimeoutExpired, OSError):
+        pass
 
 
 def is_worktree(sdlc_dir, channel=LEDGER):
@@ -503,7 +540,7 @@ def init(sdlc_dir, config, run=None, channel=LEDGER):
     except Exception as exc:
         if _local_branch_exists(git, root, name):
             print(f"sigma: sync init: could not move local branch {name} onto {rem}/{name} "
-                  f"({str(exc)[:200]}); keeping it as it is", file=sys.stderr)
+                  f"({_scrub(exc, 200)}); keeping it as it is", file=sys.stderr)
         else:
             # #1142: the empty tree ONLY when the remote provably has no such branch, or there is no
             # remote at all. A failed fetch is not that answer -- it is how a single-branch clone
@@ -512,12 +549,12 @@ def init(sdlc_dir, config, run=None, channel=LEDGER):
             state = _remote_branch_state(git, root, rem, name)
             if state == "present":
                 raise RuntimeError(f"REFUSED: {rem} has {name} but it could not be fetched "
-                                   f"({str(exc)[:200]}); a second {name} started here could never be "
+                                   f"({_scrub(exc, 200)}); a second {name} started here could never be "
                                    "published (#1142) -- fix the fetch, then re-run "
                                    "`sync.py bootstrap .sdlc`") from exc
             if state == "unreadable":
                 raise RuntimeError(f"REFUSED: could not read {rem} to see whether it already has {name} "
-                                   f"({str(exc)[:200]}); not starting a history that could fork the "
+                                   f"({_scrub(exc, 200)}); not starting a history that could fork the "
                                    f"team's (#1142) -- re-run when {rem} is reachable") from exc
             empty = git(root, ["hash-object", "-t", "tree", "/dev/null"])
             commit = git(root, ["commit-tree", empty, "-m", f"{channel}: start the ops branch"])
@@ -735,8 +772,16 @@ def _record_push(git, path, rem, name, before):
         pass
 
 
+def _jitter_sleep(attempt, base=0.15, cap=3.0, rng=random.random, sleep=time.sleep):
+    """Full-jitter exponential backoff (#2076): a uniform pause in [0, min(cap, base * 2**attempt)].
+    Contenders that were rejected together do not retry together. Returns the pause (for tests)."""
+    pause = rng() * min(cap, base * (2 ** attempt))
+    sleep(pause)
+    return pause
+
+
 def _push_with_retry(git, path, rem, name, attempts, rebase_args=(), after_rebase=None,
-                     retry_hint="next record", on_conflict=None, channel=LEDGER):
+                     retry_hint="next record", on_conflict=None, channel=LEDGER, sleep=None):
     """Fast-forward push with a bounded fetch-rebase-retry; never forces. `rebase_args` and
     `after_rebase` are the ledger's `-X theirs` + TEAM.md regeneration; the knowledge channel passes
     neither (its notes union-merge through `.gitattributes`). `retry_hint` names when the caller's
@@ -753,6 +798,8 @@ def _push_with_retry(git, path, rem, name, attempts, rebase_args=(), after_rebas
             last = str(exc)
             if attempt == attempts - 1:
                 break
+            if sleep is not None:               # #2076: only a caller that opts in pauses between attempts
+                sleep(attempt)
             try:
                 _fetch(git, path, rem, name)
                 stop = _diverged(git, path, rem, name, "publish", channel)
@@ -1013,7 +1060,7 @@ def _dead_pid_paths(path, who, config):
         return []
 
 
-def publish(sdlc_dir, config, run=None, attempts=PUSH_ATTEMPTS, channel=LEDGER):
+def publish(sdlc_dir, config, run=None, attempts=PUSH_ATTEMPTS, channel=LEDGER, backoff=None):
     """Render TEAM.md, commit MY entries file(s) + the rolled-up view, and fast-forward both onto
     the ops branch — so a lead can read one file on the branch instead of five.
 
@@ -1075,8 +1122,12 @@ def publish(sdlc_dir, config, run=None, attempts=PUSH_ATTEMPTS, channel=LEDGER):
             git(path, ["add", *regen])
             git(path, ["commit", "--amend", "--no-edit"])
 
+    # #2076: real git (no injected runner) pauses with jitter between attempts, so clones rejected
+    # together do not retry together; an injected runner (every stub-driven test) never sleeps.
+    pause = _jitter_sleep if (backoff if backoff is not None else run is None) else None
     return _push_with_retry(git, path, rem, name, attempts, rebase_args=("-X", "theirs"),
-                            after_rebase=regenerate_team, retry_hint="next tick", channel=LEDGER)
+                            after_rebase=regenerate_team, retry_hint="next tick", channel=LEDGER,
+                            sleep=pause)
 
 
 def _write_team(sdlc_dir, path):
@@ -1344,6 +1395,11 @@ def bootstrap(sdlc_dir, config, run=None, channel=LEDGER):
     never a loop."""
     git = run or _run_git
     first = init(sdlc_dir, config, run=git, channel=channel)
+    if channel == LEDGER:
+        try:                                    # #2076: an explicit enrolment, so the watcher may start
+            _self_created_marker(sdlc_dir).unlink()
+        except OSError:
+            pass
     ch = _channel(channel, sdlc_dir, config)
     who = ledger.actor(config) if channel == LEDGER else None
     rerooted = _reroot_guarded(git, sdlc_dir, ch, who)
@@ -1784,6 +1840,193 @@ def publish_after_write(sdlc_dir, config, run=None, now=None, publish_fn=None):
     except Exception as exc:                # noqa: BLE001 - the write already succeeded; report, never raise
         return ("ledger: NOT published (%s) -- the entry is safely on disk, but no other machine "
                 "can see it yet; retry with `sync.py publish .sdlc`." % exc)
+
+
+# --------------------------------------------------------------- a run's own publish, without a daemon (#2076)
+#
+# A Claude Code cloud container has no `.sdlc/ledger` worktree and no watcher, and may be gone minutes
+# after it opens its PR. `publish_entry` is how the loop's claim, keep-alive and outcome reach the team
+# without either: create the worktree from origin, publish, and report. It is bounded in wall time and
+# fails open: a push that is refused or times out is PRINTED as not published and the run goes on.
+# UNMEASURED live: no real cloud container has pushed the ledger branch under this code (see
+# docs/cloud-sessions.md).
+
+DEFAULT_PUBLISH_DEADLINE_SECONDS = 90.0
+PUBLISH_ENTRY_ATTEMPTS = 12
+_URL_USERINFO = re.compile(r"(?i)(\b[a-z][a-z0-9+.-]*://)[^/@\s]+@")
+
+
+def publish_deadline_seconds():
+    """`SIGMA_LEDGER_PUBLISH_DEADLINE` (seconds, > 0) or the default. One deadline covers the whole step."""
+    try:
+        value = float(os.environ.get("SIGMA_LEDGER_PUBLISH_DEADLINE", ""))
+        return value if value > 0 else DEFAULT_PUBLISH_DEADLINE_SECONDS
+    except ValueError:
+        return DEFAULT_PUBLISH_DEADLINE_SECONDS
+
+
+def _scrub(text, cap=240):
+    """One line, URL credentials removed, capped: git's stderr can carry a tokenised remote URL."""
+    flat = " ".join(str(text).split())
+    flat = _URL_USERINFO.sub(r"\1***@", flat)
+    return flat if len(flat) <= cap else flat[:cap - 1] + "..."
+
+
+def _bounded_git(deadline_at, base=None):
+    """A git runner that stops at the shared deadline. `base` is an injected runner (tests)."""
+    def run(cwd, args):
+        remaining = deadline_at - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("the step's wall-time limit was reached")
+        return base(cwd, args) if base is not None else _run_git(cwd, args, timeout=remaining)
+    return run
+
+
+def _exclude_from_status(sdlc_dir, git):
+    """Keep `.sdlc/ledger` out of the code checkout's `git status` when the repository does not ignore
+    it, through `info/exclude` (never a tracked file). Best effort."""
+    root = project_root(sdlc_dir)
+    try:
+        rel = worktree(sdlc_dir).relative_to(root.resolve()).as_posix()
+        try:
+            git(root, ["check-ignore", "-q", rel + "/"])
+            return
+        except Exception:                       # noqa: BLE001 - not ignored: add it
+            pass
+        exclude = pathlib.Path(git(root, ["rev-parse", "--git-path", "info/exclude"]))
+        exclude = exclude if exclude.is_absolute() else root / exclude
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        have = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+        line = f"/{rel}/"
+        if line not in have.splitlines():
+            exclude.write_text(have + ("" if have.endswith("\n") or not have else "\n") + line + "\n",
+                               encoding="utf-8")
+    except Exception:                           # noqa: BLE001 - never what stops a publish
+        pass
+
+
+def publish_entry(sdlc_dir, config, what, run=None, publish_fn=None, deadline_seconds=None, now=None):
+    """Publish this run's pending ledger entries and return the one stderr line to print, or None when
+    there is nothing to say. NEVER raises. `what` names the entry for the message ("claim of #7").
+
+    None (nothing published, nothing to print) when the ledger is off, when `ledger.publish_on_write` is
+    false (the operator keeps the choice and batches to the watcher), and, on a LAPTOP only, when a live
+    watcher will carry it (two publishers would contend for the worktree's index lock). A cloud session
+    never defers: the container may be gone before the next tick, and the loop never starts a watcher
+    there. When `.sdlc/ledger` is not a worktree it is created from origin through `init`, never touching
+    the code checkout's HEAD, index or working tree. The whole step shares one wall-time deadline."""
+    try:
+        if not ledger.enabled(config) or not publish_on_write(config):
+            return None
+        if not ledger.cloud_session() and is_worktree(sdlc_dir):
+            if watcher_liveness(sdlc_dir, config, now=now)[0] == "live":
+                return None
+        limit = deadline_seconds if deadline_seconds else publish_deadline_seconds()
+        git = _bounded_git(time.monotonic() + limit, run)
+        pub = publish_fn or publish
+        if is_worktree(sdlc_dir) and run is None:
+            _abort_stale_rebase(sdlc_dir)
+        if not is_worktree(sdlc_dir):
+            init(sdlc_dir, config, run=git)
+            _mark_self_created(sdlc_dir)
+            _exclude_from_status(sdlc_dir, git)
+            _reroot_guarded(git, sdlc_dir, _channel(LEDGER, sdlc_dir, config), ledger.actor(config))
+        result = pub(sdlc_dir, config, run=git, attempts=PUBLISH_ENTRY_ATTEMPTS, backoff=True) \
+            if publish_fn is None else pub(sdlc_dir, config, run=git)
+        if result.startswith("publish refused") and publish_fn is None:      # a first-ever race: once
+            _reroot_guarded(git, sdlc_dir, _channel(LEDGER, sdlc_dir, config), ledger.actor(config))
+            result = pub(sdlc_dir, config, run=git, attempts=PUBLISH_ENTRY_ATTEMPTS, backoff=True)
+        if result in ("published", "nothing to publish"):
+            return f"ledger: published ({what}) -- the team can see it now." if result == "published" else None
+        return _not_published(what, result, limit)
+    except Exception as exc:                    # noqa: BLE001 - the entry is on disk; report, never raise
+        return _not_published(what, exc, deadline_seconds or publish_deadline_seconds())
+
+
+def _self_created_marker(sdlc_dir):
+    return pathlib.Path(sdlc_dir) / "state" / "ledger-self-created"
+
+
+def self_created(sdlc_dir):
+    """True when THIS loop made the ledger worktree for itself (`publish_entry`), rather than an operator
+    enrolling the clone with `bootstrap`. `_ensure_watcher` starts no daemon for it: creating a worktree
+    to publish a claim must not enrol the machine in a recurring background job."""
+    return _self_created_marker(sdlc_dir).exists()
+
+
+def _mark_self_created(sdlc_dir):
+    try:
+        marker = _self_created_marker(sdlc_dir)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("created by the loop's own publish (#2076); `sync.py bootstrap` clears this\n",
+                          encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _abort_stale_rebase(sdlc_dir):
+    """A git killed at the step's limit can leave the ledger worktree mid-rebase, which would defer every
+    later publish. Abort it first, on its own small budget, never on the exhausted one. Best effort."""
+    try:
+        path = worktree(sdlc_dir)
+        for name in ("rebase-merge", "rebase-apply"):
+            marker = pathlib.Path(_run_git(path, ["rev-parse", "--git-path", name], timeout=15))
+            if (marker if marker.is_absolute() else path / marker).exists():
+                _run_git(path, ["rebase", "--abort"], timeout=15)
+                return
+    except Exception:                           # noqa: BLE001 - the publish that follows reports what it can
+        pass
+
+
+def _not_published(what, why, limit):
+    return (f"ledger: NOT published ({_scrub(why)}) -- no other machine can see this {what} yet. "
+            f"The entry is safely on disk and the next loop step retries it "
+            f"(this step is limited to {limit:.0f}s of wall time).")
+
+
+def remote_expired(sdlc_dir, config, ttl_seconds, now=None, run=None, deadline_seconds=None):
+    """`(expired, run_ids, why)`: the claims a FRESH read of the ledger branch on `<remote>` shows held
+    and expired, as `ledger.expired_claims` / `expired_claim_run_ids` return them (so a caller releases
+    the claim origin shows, not the stale local one), or `(None, None, why)` when the read failed.
+    #2076, AC-6: a claim written on another machine looks stale here whenever this ledger copy is old,
+    so releasing it needs the remote's own word.
+
+    Read-only: it fetches the branch into its remote-tracking ref and reads the entries FROM that ref
+    (`git grep`), so it never rebases, never moves the ledger worktree, and never contends with a
+    watcher's index lock. Every git call goes through the bounded runner. A failed or timed-out fetch, a
+    missing branch or an unreadable ref is a failure, and a failure releases nothing."""
+    try:
+        if not ledger.enabled(config):
+            return None, None, "the ledger is off"
+        limit = deadline_seconds if deadline_seconds else publish_deadline_seconds()
+        git = _bounded_git(time.monotonic() + limit, run)
+        root, rem, name = project_root(sdlc_dir), remote(config), branch(config)
+        tracking = _fetch(git, root, rem, name)
+        text = git(root, ["grep", "-h", "-I", "-e", ".", tracking, "--", f"{ledger.ENTRIES}/"])
+        entries = ledger.entries_from_text(text)
+        return (ledger.expired_claims(entries, now=now, ttl_seconds=ttl_seconds),
+                ledger.expired_claim_run_ids(entries, now=now, ttl_seconds=ttl_seconds), "")
+    except Exception as exc:                    # noqa: BLE001 - cannot confirm: do not release
+        return None, None, f"could not read {remote_name_for_message(config)}: {_scrub(exc)}"
+
+
+def remote_name_for_message(config):
+    try:
+        return f"{remote(config)}/{branch(config)}"
+    except Exception:                           # noqa: BLE001
+        return "the ledger branch"
+
+
+def confirm_expired(sdlc_dir, config, goal, ttl_seconds, now=None, run=None, deadline_seconds=None):
+    """`(True, "")` only when a fresh read of origin's ledger branch still shows `goal` held and expired;
+    otherwise `(False, why)`. See `remote_expired`."""
+    expired, _runs, why = remote_expired(sdlc_dir, config, ttl_seconds, now=now, run=run,
+                                         deadline_seconds=deadline_seconds)
+    if expired is None:
+        return False, why
+    if str(goal) in expired:
+        return True, ""
+    return False, f"{remote_name_for_message(config)} shows #{goal} renewed, finished or released"
 
 
 _VERBS = {"init": init, "pull": pull, "publish": publish, "bootstrap": bootstrap}

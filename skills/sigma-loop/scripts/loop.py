@@ -86,6 +86,51 @@ def _coexist_notice(sdlc_dir, surface, once=False):
         pass
 
 
+#: #2076: entries this process wrote that have not been published yet, keyed by the `.sdlc` directory.
+#: `_claim`, `_record`, `_release` and the keep-alive only MARK an entry as pending; the outermost
+#: `main` flushes ONE publish after the verb returns. Never inside `_claim`, which runs under the
+#: per-goal claim lock, and never in the re-entrant `main` that holds the merge-reconcile lock: no lock
+#: is held across a network call, and `next-batch` pays once, not once per goal.
+_PENDING_PUBLISH = {}
+
+
+def _mark_publish(sdlc_dir, what):
+    try:
+        _PENDING_PUBLISH.setdefault(os.path.abspath(str(sdlc_dir)), []).append(what)
+    except Exception:                # noqa: BLE001 - bookkeeping must never stop a verb
+        pass
+
+
+def _flush_pending_publish(sdlc_dir):
+    """Publish what this process marked, once, and print the one line `sync.publish_entry` returns
+    (a failure is PRINTED as not published; the run continues). NEVER raises."""
+    try:
+        pending = _PENDING_PUBLISH.pop(os.path.abspath(str(sdlc_dir)), None)
+        if not pending:
+            return None
+        said = _load("sync").publish_entry(sdlc_dir, state.load_config(sdlc_dir),
+                                           "; ".join(dict.fromkeys(pending)))
+        if said:
+            print(said, file=sys.stderr)
+        return said
+    except Exception as exc:         # noqa: BLE001 - fail-open: the entry is on disk
+        try:
+            print(f"ledger: NOT published ({exc}) -- the entry is safely on disk", file=sys.stderr)
+        except Exception:
+            pass
+        return None
+
+
+def _renew_goal_lease(sdlc_dir, goal, config):
+    """The keep-alive (#2076, closes #616's writer half): at most one `lease-renew` per a third of the
+    lease TTL for a goal this process holds. Fail-open; marks the entry for the outermost flush."""
+    try:
+        if ledger.renew_lease(sdlc_dir, config, goal):
+            _mark_publish(sdlc_dir, f"keep-alive of {goal}")
+    except Exception:                # noqa: BLE001 - a keep-alive must never stop a verb
+        pass
+
+
 def _ensure_watcher(sdlc_dir, config, spawn=None):
     """Start the ledger watcher for this repo if it isn't already, so a loop trigger shares its trail
     without a separate step. Otherwise entries only ever get pushed when someone remembers to run the
@@ -96,9 +141,13 @@ def _ensure_watcher(sdlc_dir, config, spawn=None):
     try:
         if not ledger.enabled(config):
             return
+        if ledger.cloud_session():
+            return               # #2076: a container can be gone before the next tick; the loop publishes itself
         sync = _load("sync")
         if not sync.is_worktree(sdlc_dir):
             return
+        if sync.self_created(sdlc_dir):
+            return               # #2076: the loop made this worktree to publish; `sync.py bootstrap` enrols
         _coexist_notice(sdlc_dir, "watcher start", once=True)   # #314: the shared lock decides
         launch = spawn or (lambda: subprocess.Popen(
             [sys.executable, str(_HERE / "watch_daemon.py"), str(sdlc_dir)],
@@ -1457,6 +1506,31 @@ def _reconcile_stamp(sdlc_dir, now=None):
         pass
 
 
+#: #2076: origin is asked about stale claims from other machines at most this often per checkout, so a
+#: claim that origin keeps alive cannot cost a fetch on every pick.
+_RECLAIM_CONFIRM_COOLDOWN_SECONDS = 300
+
+
+def _remote_expired_view(sdlc_dir, config, ttl):
+    """`(expired, run_ids, why)` from a fresh read of origin's ledger branch, or `(None, None, why)`:
+    inside the cooldown, or when the read failed. Touches the cooldown marker BEFORE the read, as
+    `_ensure_ledger_delivery` does, so a hung or failing read is not retried on the next pick."""
+    marker = pathlib.Path(sdlc_dir) / "state" / "ledger-reclaim-confirm"
+    try:
+        age = time.time() - marker.stat().st_mtime
+    except OSError:
+        age = None
+    if age is not None and age < _RECLAIM_CONFIRM_COOLDOWN_SECONDS:
+        return None, None, "origin was read less than %d s ago and did not confirm it" % \
+            _RECLAIM_CONFIRM_COOLDOWN_SECONDS
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+    except OSError:
+        pass
+    return _load("sync").remote_expired(sdlc_dir, config, ttl)
+
+
 def _auto_reclaim_stale_claims(sdlc_dir, source, config):
     """#1198: the crash-safety half of the `in_progress_label` fix. `_fetch_pending` (sources.py)
     now excludes ANY GitHub issue carrying `in_progress_label` unconditionally — closing the gap
@@ -1573,11 +1647,27 @@ def _auto_reclaim_stale_claims(sdlc_dir, source, config):
         expired = ledger.expired_claims(entries, ttl_seconds=ttl)
         expired_runs = ledger.expired_claim_run_ids(entries, ttl_seconds=ttl)
         reclaimed = set()
-        for goal, (claim_actor, _writer, _ts) in expired.items():
+        remote_view = None                  # #2076: origin's own view, read at most once per sweep
+        my_host = ledger._host_token(config)
+        for goal, (claim_actor, writer, _ts) in expired.items():
             if _goal_has_registered_worker(sdlc_dir, goal, config):
                 continue                 # lease expired, but a genuine worker is still on it — leave it
+            claim_run = expired_runs.get(goal)
+            host = ledger.writer_host(writer)
+            if host is not None and host != my_host:
+                # #2076, AC-6: written on ANOTHER machine, so this copy of the ledger is only as fresh as
+                # its last pull. Release only what a fresh read of origin's branch still shows expired,
+                # and release THAT claim (its actor and run), not this copy's.
+                if remote_view is None:
+                    remote_view = _remote_expired_view(sdlc_dir, config, ttl)
+                theirs, their_runs, why = remote_view
+                if theirs is None or goal not in theirs:
+                    print(f"loop.py: not released #{goal}: its claim was written on another machine and "
+                          f"{why or 'origin does not show it as expired'}", file=sys.stderr)
+                    continue
+                claim_actor, claim_run = theirs[goal][0], their_runs.get(goal)
             _release(sdlc_dir, source, goal, reason="claim aged past the ledger lease TTL",
-                     claim_actor=claim_actor, claim_run=expired_runs.get(goal))
+                     claim_actor=claim_actor, claim_run=claim_run)
             reclaimed.add(goal)
         return frozenset(reclaimed)
     except Exception as exc:               # noqa: BLE001 - fail-open; see docstring
@@ -2395,6 +2485,7 @@ def _claim(sdlc_dir, source, goal, config, session_pid=None, why=None, mark=True
     # race this closes. None (unset) writes exactly as before -- append() drops a None/"" field.
     ledger.safe_append(sdlc_dir, "claimed", goal, config=config,
                        run_id=state.run_identity(), why=why)
+    _mark_publish(sdlc_dir, f"claim of {goal}")
     actionlog.safe_append(sdlc_dir, goal, "claimed")
     _session_claim(sdlc_dir, session_pid, goal)     # #1199: register in-flight for THIS session
 
@@ -5040,6 +5131,7 @@ def _record_awaiting_merge(sdlc_dir, source, goal, detail="", retro_grade=None):
     state.advance_cursor(sdlc_dir, f"last: {pathlib.Path(goal).name} -> review")
     why = detail or f"awaiting merge of PR #{pr}"
     ledger.safe_append(sdlc_dir, "parked", goal, why=why, run_id=state.run_identity())
+    _mark_publish(sdlc_dir, f"awaiting-merge hold of {goal}")
     if retro_grade is not None:
         ledger.safe_append(sdlc_dir, "retro", goal, stream=ledger.EVENTS, grade=retro_grade)
     actionlog.safe_append(sdlc_dir, goal, "recorded", result="review", detail=why)
@@ -5419,6 +5511,7 @@ def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transit
     # process's own terminal entry apart from a stale one written by a different concurrent
     # process of the same actor.
     ledger.safe_append(sdlc_dir, outcome, goal, why=detail or None, run_id=state.run_identity())
+    _mark_publish(sdlc_dir, f"{outcome} of {goal}")
     # #255 (3)/(5): the `awaiting_merge` flag ends HERE, right after the terminal ledger entry and
     # before the slow tail below (unit-completion signal, checkout release, KG hops) -- so a pass
     # killed in that tail by the watch tick's timeout never finds the flag and records `done` again.
@@ -5604,6 +5697,7 @@ def _release(sdlc_dir, source, goal, reason="", claim_actor=None, claim_run=None
     # from `claim_run` above, never from this `run_id` -- see `ledger._held()`'s own docstring.
     ledger.safe_append(sdlc_dir, "release", goal, why=reason or None, reclaimed_actor=claim_actor,
                         reclaimed_run=claim_run, run_id=state.run_identity())
+    _mark_publish(sdlc_dir, f"release of {goal}")
     actionlog.safe_append(sdlc_dir, goal, "released", reason=(reason or None))
     # #1391: `agent_end(sdlc_dir, goal)` USED TO RUN HERE, and it was the load-bearing step in a
     # real data-loss chain. A release is a RECLAIM ("this claim looked abandoned, put the goal
@@ -7752,6 +7846,16 @@ def _wait_call(argv):
 
 
 def main(argv, *, _merge_lock_held=False):
+    """The entry point: `_main_body`, then ONE flush of the ledger entries this process marked (#2076),
+    after every lock the body took has been released."""
+    try:
+        return _main_body(argv, _merge_lock_held=_merge_lock_held)
+    finally:
+        if len(argv) > 2 and argv[1] not in ("-h", "--help"):
+            _flush_pending_publish(argv[2])
+
+
+def _main_body(argv, *, _merge_lock_held=False):
     """Thin wrapper around `_dispatch` — the ONE place a never-`/sigma-init`'d `.sdlc` dir (no
     config.json at all) turns into a clear one-line stderr message instead of a raw traceback
     (#403). Every verb below calls `state.load_config` at some point before its own logic runs;
@@ -7781,7 +7885,7 @@ def main(argv, *, _merge_lock_held=False):
                     print(f"REFUSED: record done -- {why}; check the goal status and retry "
                           "after the holder finishes or locking is restored", file=sys.stderr)
                     return 4
-                return main(argv, _merge_lock_held=True)
+                return _main_body(argv, _merge_lock_held=True)
         return _dispatch(argv)
     except state.UnsafeStatePath as exc:
         print(f"loop.py: {exc}", file=sys.stderr)
@@ -7991,6 +8095,7 @@ def _dispatch(argv):
         if reason:
             print(f"loop.py agent-start: --thread {thread!r} is invalid: {reason}", file=sys.stderr)
             return 2
+        _renew_goal_lease(argv[2], argv[3], config)      # #2076
         if agent_start(argv[2], argv[3], pid, config, thread=thread) is False:
             print("loop.py agent-start: cannot register agent identity; a live different task "
                   "may own this goal/thread, or its marker is unreadable. If that task is dead, run "
@@ -8170,6 +8275,7 @@ def _dispatch(argv):
         # Piggybacking on work the agent already does beats asking agents to remember a new verb —
         # the marker's whole failure mode was that nothing ever refreshed it.
         agent_heartbeat_all(argv[2], argv[3])
+        _renew_goal_lease(argv[2], argv[3], config)     # #2076: the keep-alive rides the same free signal
         try:
             sources.get_source(argv[2], config).note(argv[3], sys.stdin.read() if (argv[4] == "-" and not sys.stdin.isatty()) else argv[4])   # `-`: stdin (#713)
         except Exception as e:
@@ -8187,6 +8293,7 @@ def _dispatch(argv):
         print("OK")
         return 0
     if len(argv) >= 4 and argv[1] == "agent-beat":  # #1391: explicit heartbeat for a long quiet stretch
+        _renew_goal_lease(argv[2], argv[3], state.load_config(argv[2]))      # #2076
         print("beat" if agent_heartbeat_all(argv[2], argv[3]) else "no marker registered")
         return 0
     if len(argv) >= 5 and argv[1] == "record":
@@ -8543,6 +8650,7 @@ def _dispatch(argv):
         _verify_cfg = state.load_config(argv[2])
         _ensure_watcher(argv[2], _verify_cfg)
         _ensure_ledger_delivery(argv[2], _verify_cfg)    # ...and notices when that flow has stalled (#2393)
+        _renew_goal_lease(argv[2], argv[3], _verify_cfg)  # #2076: a long verify must not let the claim lapse
         return verify_goal(argv[2], argv[3])
     if len(argv) >= 4 and argv[1] == "red":         # #1673: record planned-test reds only; no loop trigger
         return red_goal(argv[2], argv[3])

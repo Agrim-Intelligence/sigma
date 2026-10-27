@@ -10,3 +10,4 @@
 {"id":"dana:9","ts":"2026-08-01T11:15:00Z","actor":"dana","kind":"note","goal":"0298","future_experimental_field":"an older reader must ignore this, not fail"}
 {"id":"dana:10","ts":"2026-08-01T11:20:00Z","actor":"dana","kind":"merge-armed","goal":"0298","pr":298}
 {"id":"dana:11","ts":"2026-09-30T09:00:00Z","actor":"dana","kind":"acceptance","goal":"42","ref":"acceptance/42.md","acceptance_sha256":"7984dce72af34e8b7a78ef29e2ab282c7664e74375ea488b2e2b10efb9ab0767"}
+{"id":"dana:12","ts":"2026-10-27T09:00:00Z","actor":"dana","kind":"lease-renew","goal":"42","run_id":"s-1"}

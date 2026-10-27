@@ -1308,7 +1308,10 @@ def test_the_census_sees_both_stores_when_ledger_and_journal_are_on(on_case_worl
                 sigs.add("%s:%s" % (kind, e["state"]) if kind == "phase" and e.get("state") else kind)
     assert {"phase:start", "phase:end", "verify"}.issubset(sigs), sigs
 
-    assert not (sdlc / "ledger" / ".git").exists()
+    # #2076: with the ledger on, the loop's own first publish creates the ledger worktree from the remote
+    # (it used to stay a plain directory until someone ran `sync.py bootstrap`), and the entries it carried
+    # in are still read from the same path.
+    assert (sdlc / "ledger" / ".git").exists()
     assert on_case_world["obs"]["pr_state_after_merge"] == "MERGED"
     assert on_case_world["obs"]["unhandled_log"] == ""
 

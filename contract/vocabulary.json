@@ -1,5 +1,5 @@
 {
-  "contract_version": "1.4",
+  "contract_version": "1.5",
   "entries_kinds": [
     "claimed",
     "done",
@@ -11,7 +11,8 @@
     "note",
     "merged",
     "merge-armed",
-    "acceptance"
+    "acceptance",
+    "lease-renew"
   ],
   "entry_schemas": {
     "acceptance": {

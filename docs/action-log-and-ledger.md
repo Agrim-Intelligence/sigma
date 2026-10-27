@@ -148,7 +148,7 @@ python3 <installed-sigma>/skills/sigma-loop/scripts/ledger.py render  .sdlc --wr
 ```
 
 Write anything else explicitly — kinds are
-`claimed · done · parked · failed · handoff · ack · release · note`, and the code also accepts `merged`, `merge-armed` and `acceptance`:
+`claimed · done · parked · failed · handoff · ack · release · note`, and the code also accepts `merged`, `merge-armed`, `acceptance` and `lease-renew`:
 
 ```bash
 ledger.py append .sdlc note 0007-cache.md --why "spike looks viable"
@@ -198,6 +198,11 @@ under the old token are not this machine's until they expire. It is a one-time s
 setting once. Two machines sharing one alias is unsupported, since they would write the same file
 names. `/sigma-doctor` warns when `salt_host_token` is true and `discovery.github.repo` is unset,
 which silently gives the unsalted hash.
+
+In a Claude Code cloud session (`CLAUDE_CODE_REMOTE` true or 1) every container reports one host name, so the
+token is salted with an id that is the container's own, and two containers can no longer be one writer. A
+`host_alias` is kept there with four hex digits of the container id appended. A laptop's token is unchanged. See
+[cloud sessions](cloud-sessions.md#the-team-ledger-from-a-cloud-container-2076).
 
 Files written by older versions are still read and attributed by the `actor` field inside each line.
 `/sigma-doctor` reads the file names in the local copy of the ledger branch (at most 500) and warns
@@ -284,6 +289,27 @@ last-wins flag-parsing, no accumulation). The split happens in `track`'s own dis
 not in the shared flag parser every other verb uses. `--queue` is what sets the goal label — putting
 `sdlc:goal` in `--label` yourself overrides that and makes a queued issue pickable; let `--queue`
 own it.
+
+### Keeping a claim alive, and who may release one
+
+A claim is a lease: `ledger.lease.ttl_hours` (default 12) after the `claimed` entry's time, a claim that nothing
+renewed is expired. While a run holds a claim it writes a `lease-renew` entry (a twelfth entries kind, contract
+1.5.0) at goal boundaries (`note`, `agent-start`, `agent-beat`, `verify`), at most once per a third of the TTL. A
+reader extends the lease only for a renewal by the holder: the same actor, the same machine (the host token in the
+writer part of the entry id) and a compatible run. A renewal from anyone else is ignored, and so is one dated more
+than 15 minutes ahead of the reader's clock. `lease-renew` is not in `SHARED_KINDS`, so it never fills `TEAM.md`.
+
+The stale-claim sweep (`_auto_reclaim_stale_claims`) releases a claim written on THIS machine as it always did. A claim
+written on another machine is released only after a fresh, read-only fetch of the ledger branch on the remote still
+shows it open and expired; the release then names the actor and run origin shows. A failed fetch releases nothing and
+says why. Origin is asked at most once per sweep and once per 5 minutes per checkout. A machine running an older Sigma
+ignores `lease-renew` and may still release a renewed claim: upgrade the readers first.
+
+The run's own entries reach the branch without a watcher: the claim, each renewal and the outcome are published once
+per `loop.py` call (`sync.publish_entry`), bounded by `SIGMA_LEDGER_PUBLISH_DEADLINE` (90 s). A refused or timed-out
+push prints `ledger: NOT published (...)` and the run continues; `ledger.publish_on_write: false` turns this off. A
+worktree the loop creates for itself this way starts no watcher; `sync.py bootstrap .sdlc` (or `/sigma-ledger`) is the
+explicit enrolment that does.
 
 ### Sharing it — an ops branch that never touches your working tree
 
