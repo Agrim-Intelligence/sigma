@@ -4,10 +4,13 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+## 1.0.22 — 2026-10-27 — the phase-context budget is green again: the --land detail moved out of the files every goal loads
+
 - **The phase-context budget is green again after 1.0.21 (#2075).**
   - **Cause:** `/sigma-goal --land`'s contract and picker detail had been copied into `skills/sigma-goal/SKILL.md` and the loop's `references/picking.md`, which the orchestrator and goal-slot contexts load by default. That pushed the goal-slot and orchestrator instruction bills over their committed ceilings, and `regression-control` refused the red baseline.
   - **Fix:** the detail now lives in `skills/sigma-goal/references/land.md`, which only a `--land` run reads. Each of the two files keeps a one-line pointer.
   - **Measured:** the ceilings are unchanged; goal-slot is 12436 of 12437 tokens and orchestrator 32386 of 32422.
+  - **Two tests that were red on `main` since 1.0.21:** the context-trigger doc test read the wrong column of the run-modes table once `--land` added a column, and a link in the #2075 plan file pointed at the wrong relative path. A review file also named a retired internal prefix; it is reworded. All three are fixed; no shipped behaviour changed.
 
 ## 1.0.21 — 2026-10-27 — unattended runs that cost less and fail loudly: counted GitHub calls, a rate-limited read says DEGRADED, a resource guard that keeps killed verifies leased, host-config checks, /sigma-goal --land and one-time cloud verify approval
 

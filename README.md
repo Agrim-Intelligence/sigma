@@ -402,7 +402,7 @@ see which features are live for your config.
 | [Companion plugins](docs/companions.md) | the optional `code-review` plugin |
 | [Managed settings](docs/managed-settings.md) | enforce settings across an organisation |
 | [Zero-touch routines](docs/routines.md) | trigger the loop on a schedule |
-| [What is new in 1.0.21](docs/whats-new-1.0.21.md) | see every change in this release and what changes by default when you upgrade |
+| [What is new in 1.0.22](docs/whats-new-1.0.22.md) | see every change in this release and what changes by default when you upgrade |
 | [Decision Rulebook](docs/decision-rulebook.md) | record decisions, earn autonomy levels, add hard stops, import past decisions |
 | [Upkeep](docs/upkeep.md) | keep unit branches rebased on a 12-hour window, with backups |
 | [Configuration reference](docs/configuration.md) | see every flag and default |

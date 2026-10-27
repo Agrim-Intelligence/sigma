@@ -156,7 +156,7 @@ fix: test 10 also asserts that neither `command_sha256(c)` nor `c` appears for e
 hash to the message, and the test goes red.
 
 [S9] severity:low — input validation — `legacy.py:109-122` — If the variable is read through `legacy.getenv`, or
-registered in `FALLBACK_ENV`, two things change. `LOOPSMITH_TRUSTED_VERIFY_SHA256` would also grant. And
+registered in `FALLBACK_ENV`, two things change. the retired-prefix spelling of the variable would also grant. And
 `SIGMA_TRUSTED_VERIFY_SHA256=""` would count as unset and fall through to the retired spelling, turning the planned
 `empty` refusal into a grant. `POST_RENAME_ENV` (`legacy.py:49-53`) is the right registry, but no control pins it. —
 fix: `shell_policy` and the doctor read `environ.get(TRUSTED_VERIFY_ENV)` directly. Add a test that a matching

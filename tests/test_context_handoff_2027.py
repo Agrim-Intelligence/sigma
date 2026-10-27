@@ -411,7 +411,8 @@ def test_configuration_doc_has_one_handoff_row_matching_the_constants():
 def test_running_the_loop_row_describes_the_context_trigger():
     row = next(line for line in (ROOT / "docs/running-the-loop.md").read_text().splitlines()
                if line.startswith("| Context bounded across goals |"))
-    goal_cell, loop_cell = [cell.strip() for cell in row.strip("|").split("|")][1:3]
+    cells = [cell.strip() for cell in row.strip("|").split("|")]
+    goal_cell, loop_cell = cells[1], cells[3]   # columns: row label, /sigma-goal, --land, /sigma-loop
     assert "not yet" in goal_cell        # `/sigma-goal` is not driven by `next`: still unbounded
     assert "after_context_tokens" in loop_cell and "first-pick context" in loop_cell
 
