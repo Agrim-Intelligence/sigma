@@ -15,15 +15,12 @@ empty path. Claude keeps its provided value.
 Detailed selection triggers: [selection](references/selection.md).
 
 Drive a single goal through the SDLC, with the user in the loop (this is the interactive
-counterpart to the autonomous `/sigma-loop`). Under `--land` (below) nobody is in the loop: the one
-named goal runs unattended to a merged PR.
+counterpart to the autonomous `/sigma-loop`).
 
 1. Identify the goal: a path under `.sdlc/goals/` (preferred — so it's tracked) or inline text the
    user gives. If inline, offer to save it as the next `.sdlc/goals/NNNN-*.md`. **If the invocation
    carried `--feature <unit>`, selection is confined to that unit** — see *`--feature`* below, and
-   apply it before anything else in this step. **If it carried `--land`, selection is the loop's own
-   picker scoped to that one goal, and nothing below pauses** — follow
-   [land](references/land.md) instead of this step and the gates.
+   apply it before anything else in this step. `--land`: follow [land](references/land.md) instead.
 
    Then **claim it** — `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" claim .sdlc
    "<goal>"` — so the goal carries a real `claimed` lifecycle event and its autonomy span is
@@ -50,12 +47,12 @@ named goal runs unattended to a merged PR.
    know the intended model. **`/sigma-goal` dispatches each phase as its own subagent with the resolved
    `--model` override, exactly the same mechanism `/sigma-loop` uses** — the only behavioral difference
    from `/sigma-loop` is that you approve at each gate here, instead of the loop auto-proceeding between
-   dispatches (under `--land`, not even that). On Codex, run `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc --effort "<effort>"` before each dispatch and pass its exact model ID and the same selected reasoning effort as `../sigma-loop/references/running.md` describes; never pass the Claude tier as a Codex model ID. `off` resolves the versioned ordinary-work Codex default, never the parent session's model.
+   dispatches. On Codex, run `python3 "${CLAUDE_SKILL_DIR}/../sigma-model/scripts/predict.py" host-model codex "<tier-or-off>" .sdlc --effort "<effort>"` before each dispatch and pass its exact model ID and the same selected reasoning effort as `../sigma-loop/references/running.md` describes; never pass the Claude tier as a Codex model ID. `off` resolves the versioned ordinary-work Codex default, never the parent session's model.
    Use `fork_turns="none"` for each phase so it receives the goal, current
    phase, worktree and relevant artifact paths without copying this interactive session's history.
    Keep full evidence in the plan, review and verification artifacts; return a concise verdict and
    paths, then inspect the artifacts needed for the next gate.
-   Then drive the phases, pausing for the user at each gate (never under `--land`):
+   Then drive the phases, pausing for the user at each gate:
    **Goal** (restate) → **Research** (blast radius) → **Plan** → **Plan-Review** (use the
    `sigma-plan-review` skill — never skip) → **Implement** (test-first) → **Review** (evidence before
    "done") → **Retrospective** (step 3). Each phase runs via Sigma's own **executor** (`sigma-brainstorm` → Goal, `sigma-research` → Research, `sigma-plan` → Plan,
@@ -207,23 +204,6 @@ Then, in step 1:
 Everything after step 1 is unchanged: the same seven phases, the same gates, the same recording. The
 unit constrains which goal runs, never how it runs.
 
-## `--land` — one named goal to a merged PR, unattended
-
-`/sigma-goal 2065 --land` takes that ONE GitHub issue to a merged pull request with nobody in the
-loop, and stops only where `/sigma-loop` would park. **Without the flag none of this section applies.**
-
-> **While a `--land` run is active, no goal other than the one it names may be picked, and no other goal is written to.**
-
-Three exceptions, named rather than hidden: with `ledger.enabled`, the loop's verbs keep the ledger
-watcher alive, a separate process whose own sweeps are not this run's; an issue the run files
-through `handoff.py` (a hand-off or a tracked follow-up) is a NEW issue, never an existing goal; and
-with `backlog_check.enabled`, the pre-check that finds N blocked resolves N's blockers, which writes
-to those blocker issues.
-`../sigma-loop/references/picking.md` quotes the same words for the picker flag that enforces them
-(`loop.py next --land`) — **quote it, never reword it.** The prerequisites, the gestures, how a
-decision is made with nobody to ask, and the endings the final message names are in
-[land](references/land.md).
-
 ## Lane routing — ceremony proportional to the work
 
 Research sizes each goal into a lane; this is what consumes it. Without this step the lane is a label
@@ -241,7 +221,6 @@ where an unreviewed plan actually ships, because nobody looks twice at a change 
 
 An unsized goal resolves to **medium**, so an unknown goal gets more rigour rather than less.
 
-Unlike `/sigma-loop`, you do NOT auto-proceed past checkpoints — the user approves each gate
-(`--land` excepted).
+Unlike `/sigma-loop`, you do NOT auto-proceed past checkpoints — the user approves each gate.
 (The `../sigma-loop/scripts/loop.py` path reaches the sibling skill's recorder — both ship in one
 plugin under `skills/`, so the relative path is stable.)

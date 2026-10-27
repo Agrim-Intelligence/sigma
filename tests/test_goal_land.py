@@ -751,36 +751,45 @@ def _flat(text):
     return re.sub(r"\s+", " ", text)
 
 
-@pytest.mark.parametrize("name,text", [("sigma-goal SKILL.md", SKILL), ("sigma-loop picking.md", PICKING)])
-def test_both_skills_state_the_one_exclusivity_sentence_and_its_one_exception(name, text):
-    flat = _flat(text)
-    assert _flat(SENTENCE) in flat, f"{name} must quote the --land contract sentence verbatim"
-    after = flat.split(_flat(SENTENCE), 1)[1][:700]
-    assert "ledger watcher" in after, f"{name}: the watcher exception must sit directly under the sentence"
+def test_land_md_states_the_exclusivity_sentence_and_its_exceptions():
+    """#2075: ONE home. `land.md` is loaded only by a `--land` run, so the contract costs no phase
+    context budget; SKILL.md and picking.md point at it."""
+    flat = _flat(LAND)
+    assert _flat(SENTENCE) in flat, "land.md must state the --land contract sentence verbatim"
+    after = flat.split(_flat(SENTENCE), 1)[1][:1200]
+    assert "ledger watcher" in after, "the watcher exception must sit directly under the sentence"
 
 
-def test_step_one_routes_land_where_selection_happens():
+def test_land_prose_stays_out_of_the_budgeted_files():
+    """#2075: #2067 copied the contract into SKILL.md and picking.md, which phases load by default,
+    and pushed `evals/phase_context_budget.py` over its ceilings. The detail lives in land.md only."""
+    for name, text in (("sigma-goal SKILL.md", SKILL), ("sigma-loop picking.md", PICKING)):
+        assert _flat(SENTENCE) not in _flat(text), f"{name} carries the contract again; point at land.md"
+        assert "ledger watcher" not in text, f"{name} carries the exceptions again; point at land.md"
+
+
+def test_step_one_routes_land_before_the_claim():
+    """#2075: the pointer must come before `Then **claim it**`, or an agent claims N first and the
+    scoped pick then refuses it as in progress."""
+    pointer = "`--land`: follow [land](references/land.md) instead."
     step_one = SKILL.split("2. **Recall first**")[0]
     assert "1. Identify the goal" in step_one, "the step-1 anchor moved; this test is now vacuous"
-    assert "`--land`" in step_one and "references/land.md" in step_one
+    assert pointer in step_one
+    assert step_one.index(pointer) < step_one.index("Then **claim it**")
 
 
-@pytest.mark.parametrize("anchor", [
-    "Drive a single goal through the SDLC, with the user in the loop",
-    "the only behavioral difference",
-    "Then drive the phases, pausing for the user at each gate",
-    "Unlike `/sigma-loop`, you do NOT auto-proceed past checkpoints",
-], ids=["intro", "behavioral-difference", "drive-the-phases", "unlike-the-loop"])
-def test_every_always_pause_sentence_is_qualified_for_land(anchor):
-    flat = _flat(SKILL)
-    assert anchor in flat, f"anchor moved: {anchor!r}"
-    window = flat.split(anchor, 1)[1][:260]
-    assert "--land" in window, f"{anchor!r} still reads as always pausing; qualify it for --land"
+def test_land_md_replaces_the_interactive_steps_so_nothing_pauses():
+    """#2075: SKILL.md's "pauses at each gate" sentences carry no `--land` qualifier any more (no
+    budget for them); land.md says it replaces those steps, and step 1 says "instead"."""
+    flat = _flat(LAND)
+    assert "This replaces SKILL.md's steps 1 to 5: no `loop.py claim`, no approvals, no gate pauses." in flat
+    assert "**No gate pauses.**" in flat
 
 
 def test_land_reference_exists_and_is_linked():
     assert LAND, "skills/sigma-goal/references/land.md is missing"
     assert "](references/land.md)" in SKILL
+    assert "behind step 1's `--land` line" in _flat(LAND)
 
 
 def test_selection_is_the_scoped_picker_between_start_and_session_end():
@@ -793,9 +802,8 @@ def test_selection_is_the_scoped_picker_between_start_and_session_end():
     assert flat.index(start) < flat.index(pick) < flat.index(end)
 
 
-@pytest.mark.parametrize("name,text", [("land.md", LAND), ("SKILL.md --land section", "")])
-def test_no_other_selection_gesture_is_given(name, text):
-    text = text or SKILL.split("## `--land`", 1)[-1].split("\n## ", 1)[0]
+def test_no_other_selection_gesture_is_given():
+    text, name = LAND, "land.md"
     assert '/loop.py" claim' not in text and '/loop.py" next-batch' not in text, name
     for m in re.finditer(r'/loop\.py" next\b', text):
         assert text[m.end():m.end() + 15].startswith(" .sdlc --land"), text[m.start():m.end() + 40]
@@ -860,7 +868,7 @@ def test_a_pre_check_park_ends_the_run_parked_and_never_loops_back():
 
 
 def test_the_handoff_and_blocker_exceptions_are_named_beside_the_sentence():
-    after = _flat(SKILL).split(_flat(SENTENCE), 1)[1][:900]
+    after = _flat(LAND).split(_flat(SENTENCE), 1)[1][:1200]
     assert "`handoff.py`" in after and "NEW issue, never an existing goal" in after
     assert "`backlog_check.enabled`" in after and "blocker issues" in after
 
@@ -895,6 +903,14 @@ def test_the_awaiting_merge_lever_is_keyed_on_the_pr_body():
 def test_picking_documents_the_flag_on_next_only():
     flat = _flat(PICKING)
     assert "`--land <N>`" in flat and "/sigma-goal <N> --land" in flat and "`next-batch` refuses it" in flat
+    assert "`skills/sigma-goal/references/land.md`" in flat
+
+
+def test_the_picker_detail_moved_to_land_md():
+    flat = _flat(LAND)
+    for phrase in ("the map refresh, reconcile, auto-unpark, stale-claim reclaim",
+                   "`work.enabled` off, and `work.auto_merge: off`"):
+        assert phrase in flat, phrase
 
 
 def test_the_cloud_doc_names_land_and_no_longer_says_approval_parks():
