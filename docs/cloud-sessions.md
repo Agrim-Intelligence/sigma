@@ -430,8 +430,10 @@ says nothing.
 R4, the review gate: `reviewDecision` stays GraphQL (PR B moved only its CHANGES_REQUESTED half; see the PR B
 section below), because REST cannot derive APPROVED / REVIEW_REQUIRED (MEASURED: the branch-protection
 endpoint 404s, and rulesets are invisible to it). That residual `gh pr view <n> --json reviewDecision` read is
-skipped when GraphQL is unavailable and fails CLOSED under `require_review: approval`, so in a cloud session
-approval mode parks, never passes, even with a `sigma:approve` comment (a known limitation). `_unresolved_threads`
+skipped when GraphQL is unavailable. Under `require_review: approval` an unreadable decision is not an approval,
+so the gate then passes only on a trusted `sigma:approve` comment (OWNER, MEMBER or COLLABORATOR; #1398, `work.py`
+`review_gate`) and parks without one. (This paragraph said approval mode always parked in a cloud session; #1398
+changed that, and #2065 corrected the text.) `_unresolved_threads`
 stays GraphQL (REST has no `isResolved`) and fails open internally; in a cloud session unresolved threads stay
 invisible to the gate, while a native "Request changes" review is now visible over REST.
 
@@ -579,8 +581,9 @@ What a cloud session still CANNOT enforce or do after this slice (exact, none of
   no threads, so the merge may proceed; any comment, or an unreadable reply, REFUSES the merge (fail closed; hand
   resolve and merge, or re-run where GraphQL works). With GraphQL available nothing changes: `_unresolved_threads`
   runs and still fails open on a read error.
-- `reviewDecision` is unreadable, so `require_review: approval` parks in a cloud session; `changes` mode works from
-  the REST `pulls/N/reviews` list and the `sigma:` comments (now postable).
+- `reviewDecision` is unreadable, so in a cloud session `require_review: approval` is met only by a trusted
+  `sigma:approve` comment (#1398) and parks without one; `changes` mode works from the REST `pulls/N/reviews` list
+  and the `sigma:` comments (now postable).
 - The `--auto` arm is unavailable: a required check still pending after the 450s wait parks.
 - Deferred and still GraphQL: `verify_merge.py` (`merge_design` and `close_design` moved in 4b-3, below).
 
@@ -710,8 +713,9 @@ Grant breadth (decision): `Bash(gh api *)` allows any REST write and `gh api gra
 prose needs (issue and PR reads, the triage label POST). Revisit with a per-endpoint allowlist if the owner wants one.
 
 OFF (GraphQL): the Projects board is SKIPPED with one stderr notice per process (slice 5); `--auto` is not armed,
-so a pending required check is waited for (450 s) and then parks; `require_review: approval` parks
-(`reviewDecision` is unreadable), `changes` works; a PR with line comments needs a human (any comment refuses the
+so a pending required check is waited for (450 s) and then parks; `reviewDecision` is unreadable, so
+`require_review: approval` is met only by a trusted `sigma:approve` comment (the post-PR review posts one),
+`changes` works; a PR with line comments needs a human (any comment refuses the
 merge); thread resolution is unreadable; draft readiness and merge-queue landing are unavailable.
 
 OWNER SMOKE TEST (UNMEASURED until run):
@@ -727,6 +731,24 @@ Record: the Sigma version, the session transcript, the notice text, whether `GET
 `permissions`, whether the `{owner}/{repo}` placeholders resolved (or `GH_REPO` was needed), whether the rules read, the comment POST and the merge PUT passed the proxy, and every park reason
 verbatim.
 
+ONE GOAL, UNATTENDED, TO A MERGED PR: `/sigma-goal <N> --land` (#2065). For the owner who picks the issues and starts
+one cloud session per issue. It takes ONE named issue through the loop's own picker scoped to it (`loop.py next
+--land N`, REST: one issue read, the claim's label write falling back to REST), runs `/sigma-loop`'s per-goal steps
+with no gate pauses, then the landing path above, and ends in exactly one of merged, parked or failed. It needs
+`work.enabled: true` and `work.auto_merge` of `protected` or `always` (refused up front otherwise). Under
+`require_review: approval` the post-PR review's own `sigma:approve` comment satisfies the gate here. What parks in the
+cloud and not on a laptop: a required check still pending after 450 s, and any PR line comment. A PR left awaiting
+merge is not finished by any machine once the container is gone: GitHub closes the issue on merge only when the PR body
+says `Closes #N`. Details: `skills/sigma-goal/references/land.md`. Tested with fakes (`tests/test_goal_land.py`: the
+landing gestures from PR open to `record done` with every GraphQL-shaped call refused); UNMEASURED in a real cloud
+session.
+
+OWNER SMOKE TEST for `--land` (UNMEASURED until run): with `work.enabled: true`, `work.auto_merge: always` and
+`require_review: approval`, start one cloud session on ONE small `sdlc:goal` issue and run `/sigma-goal <N> --land`.
+Expected: the pick claims it, the phases run with no pause, a PR opens, a `sigma:approve` comment is posted, the merge
+lands by REST, the issue closes, and the final message says **merged**. Record what the smoke test above records, plus
+the final message verbatim.
+
 What is still open is in "What remains (#895 slice 7)" below.
 
 ## What remains (#895 slice 7)
@@ -740,7 +762,7 @@ stays UNMEASURED.
 Real cloud limits left in the merge path (from the code, not measured):
 - A pending required check parks: `--auto` is GraphQL, so with no GraphQL the merge parks after `gate()`'s own bounded REST wait.
 - Any PR line comment parks (thread resolution is GraphQL; without it only an empty `pulls/N/comments?per_page=1` list proves none).
-- `require_review: approval` parks (`reviewDecision` is GraphQL-only).
+- `require_review: approval` needs a trusted `sigma:approve` comment (`reviewDecision` is GraphQL-only; #1398).
 - `merge_rights` is REST but needs the token to receive `permissions` on `GET repos/{owner}/{repo}`: UNMEASURED; if absent it fails closed to `record review`.
 - Board work is skipped with one notice (slice 5), UNMEASURED live.
 
@@ -756,7 +778,7 @@ transport column is DERIVED from gh CLI behaviour, UNMEASURED (no call was run).
 | sources.py:1761, 1823, 3835; triage.py:2269 | label create | REST | no |
 | sources.py:2105, 3916, 3967, 3973, 4493, 4968, 4983, 5009, 5064, 5361 | project item-list / item-edit / item-add / field-list | GraphQL | no: board skipped with one notice |
 | sources.py:4174, 4182, 4202, 4214, 4242, 4310 | project create / link / list / view / field-create | GraphQL | no (setup only) |
-| work.py:5799 | pr view reviewDecision | GraphQL | guarded: approval mode parks |
+| work.py:5799 | pr view reviewDecision | GraphQL | guarded: skipped; approval mode needs a trusted `sigma:approve` |
 | work.py:5963 | pr list (sibling gate) | GraphQL | no (`unit_completion`, after done, decides nothing) |
 | work.py:6730 | pr merge --auto | GraphQL | guarded: only when GraphQL is available |
 | verify_merge.py:299, 324, 351 | pr ready / create / merge | GraphQL | no (human-attended rebase) |
