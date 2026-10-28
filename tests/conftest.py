@@ -35,12 +35,14 @@ rot" property this buys is that no NEW call site through the shared, already-uni
 `subprocess.run` seam can silently reach the network either, not that every conceivable process
 API is covered.
 """
+import atexit
 import gc
 import os
 import pathlib
 import subprocess
 import sys
 import types
+import weakref
 
 import pytest
 
@@ -179,6 +181,79 @@ def pytest_configure(config):
         "slow: a label for a test whose cost grows with the repository (#596); nothing deselects it, "
         "CI runs it, and it carries a large hang guard instead of a short limit.",
     )
+    config.addinivalue_line(
+        "markers",
+        "real_atexit: this test exercises the real atexit.register; the suite otherwise unregisters every "
+        "loop.py exit hook at teardown (#2081). Such a test removes its own callback.",
+    )
+
+
+#: the genuine builtin, captured when this file is imported, before anything wraps it
+_REAL_ATEXIT_REGISTER = atexit.register
+
+
+def _is_loop_exit_hook(func):
+    """True for a function defined in `sigma-loop/scripts/loop.py`, whichever copy of the module it came from."""
+    code = getattr(func, "__code__", None)
+    return code is not None and code.co_filename.replace(os.sep, "/").endswith("sigma-loop/scripts/loop.py")
+
+
+@pytest.fixture(autouse=True)
+def _loop_exit_hook_is_not_kept(request, monkeypatch):
+    """#2081: the first `_mark_publish` of a loaded `loop` copy arms an `atexit` hook (`loop._arm_exit_flush`). The suite
+    loads a FRESH `loop` copy per test and marks in-process in hundreds of tests, so left alone every marking
+    test would (a) keep its dead copy's whole namespace alive until pytest exits, because `atexit.register(fn)`
+    pins `fn.__globals__` (measured on `tests/test_merge_reconcile.py`, 59 tests, serial: peak RSS 276 MB with
+    no exit hook, 696 MB with the hook and no fixture, 272 MB with it; this file already records that a constant
+    worker count OOM-killed a 24 GB Mac), and (b) PUBLISH its marks when pytest exits (measured:
+    `ledger: published (claim of 10)` printed after the final pass line).
+    So the hook of a `loop.py` copy is unregistered at the end of the test that registered it. Product code
+    stays unaware of tests. Only `loop.py` callbacks are touched; a test that needs the real registration opts
+    out with `@pytest.mark.real_atexit` and removes its own callback."""
+    if request.node.get_closest_marker("real_atexit"):
+        monkeypatch.setattr(atexit, "register", _REAL_ATEXIT_REGISTER)       # the genuine builtin, not the backstop
+        yield
+        return
+    real = atexit.register
+    remembered = []
+
+    def register(func, *args, **kwargs):
+        if _is_loop_exit_hook(func):
+            remembered.append(func)
+        return real(func, *args, **kwargs)
+
+    monkeypatch.setattr(atexit, "register", register)
+    yield
+    for func in remembered:
+        atexit.unregister(func)
+    remembered.clear()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _loop_exit_hooks_backstop():
+    """The backstop of `_loop_exit_hook_is_not_kept`. A MODULE- or SESSION-scoped fixture is set up before the
+    function-scoped fixture of the first test that uses it, so a mark it makes registers an `atexit` hook the
+    function-scoped fixture never sees: that hook would stay for the whole run, collect every later mark made on
+    the shared `loop` copy and publish them when pytest exits. This wraps `atexit.register` for the whole
+    session and, at the end of it, unregisters whatever `loop.py` hook is still alive. WEAK references on
+    purpose: a strong one would pin every dead `loop` copy for the session and undo the function-scoped
+    fixture's whole point (the copy's namespace is what `atexit` pins). Marks made while a test module is still
+    being COLLECTED are not covered (none known)."""
+    kept = []
+
+    def register(func, *args, **kwargs):
+        result = _REAL_ATEXIT_REGISTER(func, *args, **kwargs)
+        if _is_loop_exit_hook(func):
+            kept.append(weakref.ref(func))
+        return result
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(atexit, "register", register)
+        yield
+        for ref in kept:
+            func = ref()
+            if func is not None:
+                atexit.unregister(func)
 
 
 @pytest.fixture(autouse=True)

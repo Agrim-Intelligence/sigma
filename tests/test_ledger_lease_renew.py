@@ -11,7 +11,10 @@ TTL, so a long run keeps a claim alive without writing on every call.
 """
 import importlib.util
 import json
+import os
 import pathlib
+import subprocess
+import sys
 
 import pytest
 
@@ -231,3 +234,52 @@ def test_a_renewal_that_is_not_due_does_not_read_the_ledger(tmp_path, monkeypatc
     assert reads == [], "a call inside the throttle window must cost one stat, not a ledger read"
     assert ledger.renew_lease(base, cfg, "7", now=NOW + 5 * HOUR) is not None
     assert reads, "once due, the ledger is read"
+
+
+# ------------------------------------------------------------------ #2081: the holder's own renewal, across TMPDIRs
+
+
+def test_a_holders_lease_renew_is_written_from_a_process_with_another_tmpdir(tmp_path):
+    """THE DEFECT (#2081). One container, two processes, two `TMPDIR`s (a hook and a sandboxed shell). Each
+    used to write its own container-id file, so the second process carried another host token and
+    `renew_lease` read the first process's claim as another machine's: nothing was ever renewed. Run in
+    subprocesses because `tempfile` caches its answer. The id directory is pinned to scratch in both children
+    so the developer's real /tmp is never written (on code that has no such constant, the assignment is inert
+    and each child writes under its own TMPDIR, which is the defect)."""
+    sdlc = tmp_path / ".sdlc"
+    (sdlc / "state").mkdir(parents=True)
+    pinned = tmp_path / "pinned"
+    pinned.mkdir()
+    driver = tmp_path / "driver.py"
+    driver.write_text("""
+import importlib.util, json, sys, time
+spec = importlib.util.spec_from_file_location("ledger", sys.argv[1])
+ledger = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(ledger)
+ledger.CONTAINER_ID_DIRS = (sys.argv[2],)
+sdlc, step = sys.argv[3], sys.argv[4]
+cfg = {"ledger": {"enabled": True, "actor": "dana", "lease": {"ttl_hours": 12}}}
+if step == "claim":
+    ledger.append(sdlc, cfg, "claimed", "7", now=time.time() - 7 * 3600, run_id=None)
+    print(json.dumps({"writer": ledger.my_writer(cfg)}))
+else:
+    entry = ledger.renew_lease(sdlc, cfg, "7")
+    mine = ledger.claim_belongs_to_me("dana", sys.argv[5], "dana", ledger.my_writer(cfg))
+    print(json.dumps({"kind": entry and entry["kind"], "belongs": mine}))
+""", encoding="utf-8")
+
+    def run(step, tmpdir, *extra):
+        env = dict(os.environ, CLAUDE_CODE_REMOTE="true", TMPDIR=str(tmpdir))
+        for name in ("TEMP", "TMP", "SIGMA_RUN_ID"):
+            env.pop(name, None)
+        proc = subprocess.run([sys.executable, str(driver), str(S / "ledger.py"), str(pinned), str(sdlc), step, *extra],
+                              capture_output=True, text=True, env=env, timeout=120)
+        assert proc.returncode == 0, proc.stderr
+        return json.loads(proc.stdout.strip().splitlines()[-1])
+
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    writer_a = run("claim", tmp_path / "a")["writer"]
+    seen = run("renew", tmp_path / "b", writer_a)
+    assert seen["kind"] == "lease-renew", f"the holder's renewal was not written from another TMPDIR: {seen}"
+    assert seen["belongs"] is True, "a dead-picker claim from the same container must read as mine"

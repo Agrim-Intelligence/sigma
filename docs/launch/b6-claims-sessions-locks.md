@@ -45,7 +45,7 @@ long-lived checkout on 2026-10-03, four days of use (not a clean run).
 | `claims/<goal>.claimed` | new 30-day age prune | `liveness_prune.sweep` |
 | `sessions/<pid>[-<thread>].active` | already bounded; operator lever added; #955 run block capped at 4096 credited attempts | `loop._prune_dead_session_entries` (from `start` and `next`), `liveness_prune.py sweep` |
 | `sessions/locks/<slot>.lock`, `phase-end-<stripe>.lock` | capped at 256 files each, 0 bytes | fixed hash stripes, never deleted |
-| `STATE.md.lock`, `merge-reconcile.lock`, `knowledge-sync.lock`, `feature-judge-spend.lock` | capped at one file each | kernel `flock`, never deleted |
+| `STATE.md.lock`, `merge-reconcile.lock`, `knowledge-sync.lock`, `ledger-sync.lock`, `feature-judge-spend.lock` | capped at one file each | kernel `flock`, never deleted |
 | `slack-commands.lock` | already bounded | `slack_commands_listen.acquire_single_instance` reclaim |
 
 ### The claim-lock sweep: what it deletes and what it never does
@@ -118,13 +118,19 @@ never extends the lease-TTL backstop. The registry storage functions moved to `s
 
 `sessions/locks/<slot>.lock` and `phase-end-<stripe>.lock` are fixed hash stripes: at most 256 files
 each, 0 bytes, so 256 inodes is the ceiling and creation is lazy. `STATE.md.lock`,
-`merge-reconcile.lock`, `knowledge-sync.lock` and `feature-judge-spend.lock` are one file each. All
+`merge-reconcile.lock`, `knowledge-sync.lock`, `ledger-sync.lock` (#2081: one ledger-worktree publisher at a time; its one line
+`pid=<n> verb=<v> since=<epoch>` is cleared before release; opened through `state.safe_state_open`, so a symlink at it is refused, #708) and `feature-judge-spend.lock` are one file each. All
 are kernel `flock` files that production code never deletes, on purpose: a deleted flock file
 admits a second holder on a new inode (`_merge_reconcile_lock` says so in its own docstring). They
 cannot read as held after their owner dies, because the kernel drops the lock with the process.
 `tests/test_flock_markers_release_on_kill.py` runs the real acquire function in a subprocess for
 each, asserts it reads held while the process lives and free the instant it is `SIGKILL`ed, and that a
-fresh acquire succeeds with no sweep and no human. `slack-commands.lock` is a directory with its own
+fresh acquire succeeds with no sweep and no human. Where `flock` cannot be made at all (no `fcntl`, or a filesystem
+that does not support it) `sync._ledger_lock` REFUSES by default (`LedgerLockRefused`, an `OSError`) and every locked
+verb defers with a line naming `SIGMA_LEDGER_ALLOW_UNSERIALISED=1`, the operator's opt-in to publish unserialised;
+the older locks listed here keep their own behaviour there and are not changed by #2081. The `ledger-sync` case was added for #2081. Its control, run on
+2026-10-28: delete the `fcntl.flock` call in `sync._ledger_lock` and the `ledger-sync` case's "a lock a live process holds
+must read held" assertion goes red (`1 failed, 8 deselected`); restored, the nine cases pass. `slack-commands.lock` is a directory with its own
 reclaim: `acquire_single_instance` reclaims it when the holder pid is dead, the heartbeat is stale, or
 there is no pidfile past a 5 s grace window, and never inside that window (the #2396 double-win).
 

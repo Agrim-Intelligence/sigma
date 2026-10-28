@@ -200,9 +200,10 @@ names. `/sigma-doctor` warns when `salt_host_token` is true and `discovery.githu
 which silently gives the unsalted hash.
 
 In a Claude Code cloud session (`CLAUDE_CODE_REMOTE` true or 1) every container reports one host name, so the
-token is salted with an id that is the container's own, and two containers can no longer be one writer. A
-`host_alias` is kept there with four hex digits of the container id appended. A laptop's token is unchanged. See
-[cloud sessions](cloud-sessions.md#the-team-ledger-from-a-cloud-container-2076).
+token is salted with an id that is the container's own, and two containers can no longer be one writer. The id lives
+in a fixed directory (`/tmp`, then `/var/tmp`) and does not follow `TMPDIR` on POSIX (#2081); a non-POSIX platform
+keeps its temporary directory. A `host_alias` is kept there with four hex digits of the container id appended. A
+laptop's token is unchanged. See [cloud sessions](cloud-sessions.md#the-team-ledger-from-a-cloud-container-2076).
 
 Files written by older versions are still read and attributed by the `actor` field inside each line.
 `/sigma-doctor` reads the file names in the local copy of the ledger branch (at most 500) and warns
@@ -306,10 +307,18 @@ says why. Origin is asked at most once per sweep and once per 5 minutes per chec
 ignores `lease-renew` and may still release a renewed claim: upgrade the readers first.
 
 The run's own entries reach the branch without a watcher: the claim, each renewal and the outcome are published once
-per `loop.py` call (`sync.publish_entry`), bounded by `SIGMA_LEDGER_PUBLISH_DEADLINE` (90 s). A refused or timed-out
+per `loop.py` call (`sync.publish_entry`), bounded by `SIGMA_LEDGER_PUBLISH_DEADLINE` (90 s). A Sigma process that
+records through `loop._claim`, `_record` or `_release` WITHOUT going through `loop.py main` (`work.py start`'s
+stale-resume, `/sigma-scope` assign, the liveness-prune CLI) publishes once as it exits normally (#2081); SIGKILL,
+SIGTERM (what container teardown sends), SIGHUP and `os._exit` run no exit hook, SIGINT does, and the entry then waits
+on disk for the next flush or watcher tick. Only one process publishes into a checkout's ledger worktree at a time: a lock
+file, `.sdlc/state/ledger-sync.lock`, which the loop's flush waits for (inside the same 90 s) and the watcher's
+ticks do not; where that lock cannot be made (no `fcntl`, a filesystem without `flock`) publishing refuses until
+`SIGMA_LEDGER_ALLOW_UNSERIALISED=1` is set. A refused or timed-out
 push prints `ledger: NOT published (...)` and the run continues; `ledger.publish_on_write: false` turns this off. A
 worktree the loop creates for itself this way starts no watcher; `sync.py bootstrap .sdlc` (or `/sigma-ledger`) is the
-explicit enrolment that does.
+explicit enrolment that does. What was measured, what was not, the lever for a wedged holder and the residuals are in
+[cloud sessions](cloud-sessions.md#the-team-ledger-from-a-cloud-container-2076).
 
 ### Sharing it — an ops branch that never touches your working tree
 

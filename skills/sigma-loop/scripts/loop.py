@@ -7,7 +7,7 @@ for any of the three, so a config without it behaves exactly as before. The irre
 is enforced by /sigma-loop SKILL.md prose. Claim and outcome are mirrored to the team ledger
 (ledger.py) when `ledger.enabled` is on — every such call is fail-open, so a ledger problem can never
 stop a run."""
-import os, sys, pathlib, importlib.util, time, subprocess, inspect, json, re, tempfile, hashlib, uuid
+import os, sys, pathlib, importlib.util, time, subprocess, inspect, json, re, tempfile, hashlib, uuid, atexit
 import contextlib, calendar
 import errno
 import datetime as _datetime
@@ -91,25 +91,85 @@ def _coexist_notice(sdlc_dir, surface, once=False):
 #: `main` flushes ONE publish after the verb returns. Never inside `_claim`, which runs under the
 #: per-goal claim lock, and never in the re-entrant `main` that holds the merge-reconcile lock: no lock
 #: is held across a network call, and `next-batch` pays once, not once per goal.
+#:
+#: #2081: a process that never goes through `main` (`work.py start`'s stale-resume, `/sigma-scope` assign, the
+#: liveness-prune CLI) marked entries nothing published. The FIRST mark of a loaded copy of this module now arms
+#: one `atexit` hook that flushes every key still marked, so such a process publishes once as it exits NORMALLY.
+#: "Once" is per loaded copy, normally one per command: `work._load("loop")` is uncached, so a process that loads
+#: a second copy arms a second hook with its own marks and its own deadline. A process
+#: ended by SIGKILL, SIGTERM (what container teardown sends) or SIGHUP, or by `os._exit` (the Slack listener's
+#: signal handler), never runs it; SIGINT does (KeyboardInterrupt unwinds to a normal exit), and no handler is
+#: installed for the others. The entry is then on disk and the next flush or watcher tick carries it.
+#: `main` still flushes `argv[2]` and pops it, so the hook finds nothing for that key.
 _PENDING_PUBLISH = {}
+#: the most marks kept per key (oldest dropped): a long-lived process that never flushes (the Slack listener)
+#: must not grow without bound; the flush trigger is the key's presence, the strings only build the message
+_PENDING_PUBLISH_MAX = 64
+_EXIT_FLUSH_ARMED = False
 
 
 def _mark_publish(sdlc_dir, what):
     try:
-        _PENDING_PUBLISH.setdefault(os.path.abspath(str(sdlc_dir)), []).append(what)
+        marks = _PENDING_PUBLISH.setdefault(os.path.abspath(str(sdlc_dir)), [])
+        marks.append(what)
+        del marks[:-_PENDING_PUBLISH_MAX]
+        _arm_exit_flush()
     except Exception:                # noqa: BLE001 - bookkeeping must never stop a verb
         pass
 
 
-def _flush_pending_publish(sdlc_dir):
+def _arm_exit_flush():
+    """Register the exit hook once per loaded copy of this module (normally once per command). The hook is a
+    function of THIS module copy, so `atexit` keeps the copy (and its marks) alive until exit on purpose:
+    `work.py` loads its own `loop` copy into a function local, and that copy's marks must survive it. A second
+    loaded copy arms a second hook, with its own marks and its own deadline. Registered FIRST, flagged only
+    after, so a registration that raised is retried by the next mark."""
+    global _EXIT_FLUSH_ARMED
+    if _EXIT_FLUSH_ARMED:
+        return
+    atexit.register(_flush_all_pending_at_exit)
+    _EXIT_FLUSH_ARMED = True
+
+
+def _flush_all_pending_at_exit(clock=None):
+    """The exit hook: flush every key that still has marks, through the one `_flush_pending_publish` `main`
+    uses (so the same `publish_entry` gates apply). A key whose `config.json` is gone is dropped without a
+    word. ONE deadline (`SIGMA_LEDGER_PUBLISH_DEADLINE`, default 90 s) is shared by all keys of this copy, so N
+    keys cannot hold the exit for N times as long (a second loaded copy has its own hook and its own deadline):
+    a key that gets no time keeps its marks and one stderr line says so. Never raises an `Exception`; a
+    `BaseException` (a second Ctrl-C) is NOT caught, so it still interrupts a slow publish."""
+    try:
+        now = clock or time.monotonic
+        deadline_at, skipped = None, 0
+        for key in list(_PENDING_PUBLISH):
+            if not (pathlib.Path(key) / "config.json").is_file():
+                _PENDING_PUBLISH.pop(key, None)
+                continue
+            if deadline_at is None:
+                deadline_at = now() + _load("sync").publish_deadline_seconds()
+            remaining = deadline_at - now()
+            if remaining <= 0:
+                skipped += 1
+                continue
+            _flush_pending_publish(key, deadline_seconds=remaining)
+        if skipped:
+            print(f"ledger: NOT published (the exit flush ran out of time for {skipped} directory(ies)) -- "
+                  "the entries are safely on disk", file=sys.stderr)
+    except Exception:                # noqa: BLE001 - an exit hook must never raise
+        pass
+
+
+def _flush_pending_publish(sdlc_dir, deadline_seconds=None):
     """Publish what this process marked, once, and print the one line `sync.publish_entry` returns
-    (a failure is PRINTED as not published; the run continues). NEVER raises."""
+    (a failure is PRINTED as not published; the run continues). NEVER raises. `deadline_seconds` bounds the
+    step (default: `SIGMA_LEDGER_PUBLISH_DEADLINE`); only the exit hook passes it."""
     try:
         pending = _PENDING_PUBLISH.pop(os.path.abspath(str(sdlc_dir)), None)
         if not pending:
             return None
+        bound = {} if deadline_seconds is None else {"deadline_seconds": deadline_seconds}
         said = _load("sync").publish_entry(sdlc_dir, state.load_config(sdlc_dir),
-                                           "; ".join(dict.fromkeys(pending)))
+                                           "; ".join(dict.fromkeys(pending)), **bound)
         if said:
             print(said, file=sys.stderr)
         return said

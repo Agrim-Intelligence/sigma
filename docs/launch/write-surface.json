@@ -2594,7 +2594,7 @@
     },
     {
       "path": "skills/sigma-loop/scripts/sync.py",
-      "function": "publish_receipt",
+      "function": "_push_receipt",
       "rule": "git-push",
       "count": 1,
       "gate": "ungated",
@@ -4514,15 +4514,15 @@
     },
     {
       "path": "skills/sigma-loop/scripts/ledger.py",
-      "function": "container_id",
+      "function": "_publish_container_id",
       "rule": "fs-write",
       "count": 2,
-      "gate": "CLAUDE_CODE_REMOTE true or 1 (a cloud session); writes one random id file for the container into the temporary directory, published with an exclusive hard link, an OS error falls back to a derived id",
+      "gate": "CLAUDE_CODE_REMOTE true or 1 (a cloud session); writes one random id file for the container into /tmp, or /var/tmp when that cannot be written, published with an exclusive hard link (the environment is not read; on a non-POSIX platform the platform's temporary directory), an OS error is swallowed and the next directory or a derived id is used",
       "risk": "low"
     },
     {
       "path": "skills/sigma-loop/scripts/ledger.py",
-      "function": "container_id",
+      "function": "_publish_container_id",
       "rule": "fs-remove",
       "count": 1,
       "gate": "CLAUDE_CODE_REMOTE true or 1 (a cloud session); removes only the temporary file this call created a moment before, an OS error is swallowed",
@@ -4542,14 +4542,6 @@
       "rule": "fs-write",
       "count": 2,
       "gate": "ledger.enabled and ledger.publish_on_write and a first publish that created the ledger worktree; appends one line to the repository's own info/exclude so the worktree never shows in git status, never a tracked file, best effort",
-      "risk": "low"
-    },
-    {
-      "path": "skills/sigma-loop/scripts/sync.py",
-      "function": "_mark_self_created",
-      "rule": "fs-write",
-      "count": 2,
-      "gate": "ledger.enabled and a first publish that created the ledger worktree; writes one marker file under the runtime state directory so the loop starts no watcher for a worktree it made itself, an OS error is swallowed",
       "risk": "low"
     },
     {
