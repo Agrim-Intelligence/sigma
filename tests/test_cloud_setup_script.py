@@ -130,12 +130,13 @@ REAL = ("awk", "cat", "find", "grep", "head", "install", "readlink", "rm", "sort
 PPA_KEY = re.search(r"^GIT_PPA_KEY=([0-9A-F]{40})$", TEXT, re.MULTILINE).group(1)
 
 
-def _run_offline(tmp_path, python_dirs=0, checkout=True, stubs=None, env=None):
+def _run_offline(tmp_path, python_dirs=0, checkout=True, stubs=None, env=None, template_text=None):
     """Run the whole script unprivileged and offline: every tool it calls is a failing stub, system paths
     are moved into tmp_path. With `python_dirs`, that many PATH directories each hold a `python3` that is
     this interpreter but refuses `-m pip` (nothing is installed from the network), and HOME holds a plugin
     cache with the repository's own templates, so section 4 really runs. `checkout=False` is a container
-    where no checkout was found. `stubs` replaces named stubs; `env` adds variables they read."""
+    where no checkout was found. `stubs` replaces named stubs; `env` adds variables they read;
+    `template_text` replaces the cached config template."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     for name, body in {**STUBS, **(stubs or {})}.items():
@@ -158,8 +159,10 @@ def _run_offline(tmp_path, python_dirs=0, checkout=True, stubs=None, env=None):
         path.append(str(py_dir))
     home = tmp_path / "home"
     if python_dirs:
-        shutil.copytree(TEMPLATE.parent,
-                        home / ".claude/plugins/cache/sigmaloop/sigmaloop/9.9.9/skills/sigma-init/templates")
+        cached = home / ".claude/plugins/cache/sigmaloop/sigmaloop/9.9.9/skills/sigma-init/templates"
+        shutil.copytree(TEMPLATE.parent, cached)
+        if template_text is not None:
+            (cached / "config.json.tmpl").write_text(template_text)
     repo_line = f"REPO={tmp_path / 'repo'}" if checkout else "REPO="
     text = (re.sub(r"^REPO=.*$", lambda _: repo_line, TEXT, count=1, flags=re.MULTILINE)
               .replace("/etc/apt/keyrings", str(tmp_path / "keyrings"))
@@ -230,6 +233,15 @@ def test_no_checkout_means_no_config_and_a_warning(tmp_path):
     assert not list(tmp_path.rglob("config.json"))
 
 
+@needs_bash
+@posix_only
+def test_a_config_step_that_fails_warns_and_writes_nothing(tmp_path):
+    """A template this script cannot use (an older or newer Sigma's shape) must leave no half config."""
+    lines = _run_offline(tmp_path, python_dirs=1, template_text="{}\n")
+    assert [line for line in lines if line.startswith("sigma-cloud: WARNING - could not write .sdlc/config.json")], lines
+    assert not (tmp_path / "repo" / ".sdlc" / "config.json").exists()
+
+
 def _colons(*records):
     """`gpg --with-colons` lines: a `pub`/`sub` record, then its `fpr` (field 10)."""
     return "".join(f"{kind}:-:4096:1::\nfpr:::::::::{fpr}:\n" for kind, fpr in records)
@@ -250,8 +262,9 @@ esac""",
 @posix_only
 @pytest.mark.parametrize("listing, trusted", [
     (_colons(("pub", PPA_KEY)), True),
+    (_colons(("pub", PPA_KEY), ("sub", "B" * 40)), True),        # the pinned key with a subkey of its own
     (_colons(("pub", PPA_KEY), ("pub", "A" * 40)), False),       # a second key apt would also trust
-    (_colons(("pub", "A" * 40), ("sub", PPA_KEY)), False),       # the pinned fingerprint only as a subkey
+    (_colons(("pub", "A" * 40), ("sub", PPA_KEY)), False),       # another key, the pinned one only as its subkey
     ("", False),                                                 # the fetch gave no key at all
 ])
 def test_trusts_the_ppa_only_with_the_pinned_key_alone(tmp_path, listing, trusted):
@@ -297,7 +310,7 @@ def test_never_grants_itself_the_verify_approval():
     """Only the operator sets the approval, in the environment's settings. A setup script is code the host
     runs, which the repository-sourced tripwire cannot see (docs/cloud-sessions.md), so this pins it. git
     reads the broad git-local grant with --type=bool, so the key may appear only in its one removal and its
-    one read-back, nowhere else in any spelling, not even later on the same line."""
+    one read-back, nowhere else in any literal spelling, not even later on the same line."""
     assert "SIGMA_TRUSTED_VERIFY_SHA256" not in TEXT
     code = "\n".join(line for line in TEXT.splitlines() if not line.lstrip().startswith("#"))
     allowed = ("--unset-all sigma.allowRepositoryShellCommands", "--get-all sigma.allowRepositoryShellCommands")

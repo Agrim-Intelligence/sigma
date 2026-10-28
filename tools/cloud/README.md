@@ -76,6 +76,12 @@ The choices in section 4:
      would let every command the config names run unattended.
    - `git --version` is 2.46 or newer.
    - `python3 -c 'import pytest, xdist, yaml'` exits 0.
+   - From the checkout, `python3 -c 'import json; print(json.load(open(".sdlc/config.json"))["verify"]["command"])'`
+     prints the verify command above. The script assumes that what it writes into the checkout reaches
+     the session, because sessions start from setup's saved result; another repository's environment
+     showed that for its virtualenv and `node_modules` on 2026-10-28. If the file is missing, a session
+     starts from a fresh clone instead (as "Cloud environment setup" in docs/cloud-sessions.md puts it),
+     and this design needs rethinking before any goal runs.
 
 ## Merging today
 
