@@ -82,7 +82,7 @@ def test_config_carries_the_cloud_choices_and_nothing_else(tmp_path):
     assert config["discovery"]["github"]["project"]["enabled"] is False
     assert config["ledger"]["enabled"] is False
     assert config["model_selection"] == "off"
-    # `--land` refuses `auto_merge: off`; `protected` merges because main requires the `test` check.
+    # `--land` refuses `auto_merge: off`. Here a run still ends parked: the ruleset reports every PR blocked.
     assert config["work"]["enabled"] is True
     assert config["work"]["auto_merge"] == "protected"
     assert config["work"]["require_review"] == "approval"
@@ -121,23 +121,24 @@ STUBS = {
     "apt-get": "exit 100",
     "apt-cache": "exit 100",
     "dpkg": "exit 2",
-    "timeout": 'shift; exec "$@"',
+    "timeout": '[ "$1" = -k ] && shift 2; shift; exec "$@"',
     "claude": "exit 1",
     "uv": "exit 2",
     "python3": "exit 1",
 }
 REAL = ("awk", "cat", "find", "grep", "head", "install", "readlink", "rm", "sort", "tail", "which")
+PPA_KEY = re.search(r"^GIT_PPA_KEY=([0-9A-F]{40})$", TEXT, re.MULTILINE).group(1)
 
 
-def _run_offline(tmp_path, python_dirs=0, checkout=True):
+def _run_offline(tmp_path, python_dirs=0, checkout=True, stubs=None, env=None):
     """Run the whole script unprivileged and offline: every tool it calls is a failing stub, system paths
     are moved into tmp_path. With `python_dirs`, that many PATH directories each hold a `python3` that is
     this interpreter but refuses `-m pip` (nothing is installed from the network), and HOME holds a plugin
     cache with the repository's own templates, so section 4 really runs. `checkout=False` is a container
-    where no checkout was found."""
+    where no checkout was found. `stubs` replaces named stubs; `env` adds variables they read."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    for name, body in STUBS.items():
+    for name, body in {**STUBS, **(stubs or {})}.items():
         if name == "python3" and python_dirs:
             continue
         (bin_dir / name).write_text(f"#!/bin/bash\n{body}\n")
@@ -166,7 +167,8 @@ def _run_offline(tmp_path, python_dirs=0, checkout=True):
     assert "/etc/" not in text and "/home/" not in text
     (tmp_path / "setup.sh").write_text(text)
     result = subprocess.run([shutil.which("bash"), str(tmp_path / "setup.sh")], capture_output=True, text=True,
-                            timeout=120, env={"PATH": os.pathsep.join(path + [str(bin_dir)]), "HOME": str(home)})
+                            timeout=120, env={"PATH": os.pathsep.join(path + [str(bin_dir)]), "HOME": str(home),
+                                              "LOG": str(tmp_path / "calls.log"), **(env or {})})
     assert result.returncode == 0, result.stderr
     return result.stdout.splitlines()
 
@@ -220,19 +222,89 @@ def test_finds_the_checkout_in_whichever_home_directory_holds_it(tmp_path):
 @needs_bash
 @posix_only
 def test_no_checkout_means_no_config_and_a_warning(tmp_path):
+    """Run as root with an empty REPO, a config step that still ran would write /.sdlc/config.json; here
+    it would only fail, so the test asserts the step never ran at all."""
     lines = _run_offline(tmp_path, python_dirs=1, checkout=False)
     assert [line for line in lines if "WARNING - found no checkout of this repository" in line], lines
+    assert not [line for line in lines if "config.json written from" in line or "could not write" in line], lines
     assert not list(tmp_path.rglob("config.json"))
+
+
+def _colons(*records):
+    """`gpg --with-colons` lines: a `pub`/`sub` record, then its `fpr` (field 10)."""
+    return "".join(f"{kind}:-:4096:1::\nfpr:::::::::{fpr}:\n" for kind, fpr in records)
+
+
+KEY_STUBS = {
+    "curl": "echo key",
+    "gpg": """case " $* " in
+  *" --dearmor "*) while [ $# -gt 0 ] && [ "$1" != -o ]; do shift; done; cat > "$2" ;;
+  *" --show-keys "*) printf "%s" "$SHOW_KEYS" ;;
+esac""",
+    "apt-get": 'echo "apt-get $*" >> "$LOG"',
+    "apt-cache": 'echo " 500 https://ppa.launchpadcontent.net/git-core/ppa/ubuntu noble/main amd64 Packages"',
+}
+
+
+@needs_bash
+@posix_only
+@pytest.mark.parametrize("listing, trusted", [
+    (_colons(("pub", PPA_KEY)), True),
+    (_colons(("pub", PPA_KEY), ("pub", "A" * 40)), False),       # a second key apt would also trust
+    (_colons(("pub", "A" * 40), ("sub", PPA_KEY)), False),       # the pinned fingerprint only as a subkey
+    ("", False),                                                 # the fetch gave no key at all
+])
+def test_trusts_the_ppa_only_with_the_pinned_key_alone(tmp_path, listing, trusted):
+    """The one supply-chain check in a script that runs as root: apt trusts every key in a signed-by keyring."""
+    (tmp_path / "sources").mkdir()
+    (tmp_path / "sources" / "git-core-ppa.list").write_text("left by an earlier run\n")
+    lines = _run_offline(tmp_path, stubs=KEY_STUBS, env={"SHOW_KEYS": listing})
+    keyring, source = tmp_path / "keyrings" / "git-core-ppa.gpg", tmp_path / "sources" / "git-core-ppa.list"
+    assert keyring.exists() == trusted and source.exists() == trusted, lines
+    calls = (tmp_path / "calls.log").read_text() if (tmp_path / "calls.log").exists() else ""
+    if trusted:
+        assert source.read_text() == (f"deb [signed-by={keyring}] "
+                                      "https://ppa.launchpadcontent.net/git-core/ppa/ubuntu noble main\n")
+        assert "apt-get install -y -qq git" in calls
+    else:
+        assert [line for line in lines if "could not fetch the git-core PPA key" in line], lines
+        assert calls == ""
+
+
+@needs_bash
+@posix_only
+@pytest.mark.parametrize("versions, expected", [
+    (["1.0.24", "1.0.9"], "WARNING - sigmaloop 1.0.9 is older than"),   # numeric, not string, order
+    (["1.0.24"], "sigma-cloud: sigmaloop 1.0.24 installed"),
+])
+def test_reports_the_oldest_installed_sigma(tmp_path, versions, expected):
+    plugins = json.dumps([{"id": "sigmaloop@sigmaloop", "version": v} for v in versions])
+    stubs = {"claude": 'case "$*" in *"plugin list"*) printf %s "$PLUGINS" ;; esac'}
+    lines = _run_offline(tmp_path, python_dirs=1, stubs=stubs, env={"PLUGINS": plugins})
+    assert [line for line in lines if expected in line], lines
+
+
+@needs_bash
+@posix_only
+def test_warns_when_the_git_local_grant_survives_the_unset(tmp_path):
+    stubs = {"git": 'case "$*" in *--version*) echo "git version 2.43.0" ;; *--get-all*) echo true ;; *) exit 1 ;; esac'}
+    lines = _run_offline(tmp_path, stubs=stubs)
+    assert [line for line in lines
+            if line.startswith("sigma-cloud: WARNING - could not remove the checkout's git-local shell-command grant")], lines
 
 
 def test_never_grants_itself_the_verify_approval():
     """Only the operator sets the approval, in the environment's settings. A setup script is code the host
     runs, which the repository-sourced tripwire cannot see (docs/cloud-sessions.md), so this pins it. git
-    reads the broad git-local grant with --type=bool, so every spelling of the key but its removal counts."""
+    reads the broad git-local grant with --type=bool, so the key may appear only in its one removal and its
+    one read-back, nowhere else in any spelling, not even later on the same line."""
     assert "SIGMA_TRUSTED_VERIFY_SHA256" not in TEXT
-    grant_lines = [line for line in TEXT.splitlines()
-                   if re.search(r"allowrepositoryshellcommands", line, re.IGNORECASE) and not line.lstrip().startswith("#")]
-    assert grant_lines and all("--unset-all" in line for line in grant_lines), grant_lines
+    code = "\n".join(line for line in TEXT.splitlines() if not line.lstrip().startswith("#"))
+    allowed = ("--unset-all sigma.allowRepositoryShellCommands", "--get-all sigma.allowRepositoryShellCommands")
+    for form in allowed:
+        assert code.count(form) == 1, form
+        code = code.replace(form, "")
+    assert not re.search(r"allowrepositoryshellcommands", code, re.IGNORECASE)
     assert not re.search(r"\.bashrc|\.bash_profile|\.profile|profile\.d|\.zshrc|/etc/environment|CLAUDE_ENV_FILE",
                          TEXT)
 

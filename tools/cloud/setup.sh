@@ -58,13 +58,13 @@ else
       > "$GIT_PPA_LIST"
     # Judge the PPA by its own index, not the full update's status: another source failing must
     # not cost the newer git. A PPA apt got no index from is dropped so later apt runs skip it.
-    timeout 120 apt-get update -qq || true
+    timeout -k 10 120 apt-get update -qq || true
     if apt-cache policy git 2>/dev/null | grep -q 'ppa.launchpadcontent.net/git-core/ppa'; then
       # A killed install can leave dpkg interrupted, which later apt runs refuse: finish what dpkg
       # started, then install git once more.
-      DEBIAN_FRONTEND=noninteractive timeout 120 apt-get install -y -qq git || {
-        DEBIAN_FRONTEND=noninteractive timeout 60 dpkg --configure -a
-        DEBIAN_FRONTEND=noninteractive timeout 120 apt-get install -y -qq git
+      DEBIAN_FRONTEND=noninteractive timeout -k 10 120 apt-get install -y -qq git || {
+        DEBIAN_FRONTEND=noninteractive timeout -k 10 60 dpkg --configure -a
+        DEBIAN_FRONTEND=noninteractive timeout -k 10 120 apt-get install -y -qq git
       } || true
     else
       rm -f "$GIT_PPA_LIST"
@@ -99,8 +99,8 @@ for PY in $(which -a python3 2>/dev/null); do
   case "$seen" in *"|$prefix|"*) continue ;; esac
   seen="$seen$prefix|"
   "$PY" -c 'import pytest, xdist, yaml' 2>/dev/null \
-    || timeout 300 uv pip install -q --system --break-system-packages --python "$PY" $TEST_DEPS >/dev/null 2>&1 \
-    || timeout 300 "$PY" -m pip install -q --break-system-packages $TEST_DEPS >/dev/null 2>&1
+    || timeout -k 10 300 uv pip install -q --system --break-system-packages --python "$PY" $TEST_DEPS >/dev/null 2>&1 \
+    || timeout -k 10 300 "$PY" -m pip install -q --break-system-packages $TEST_DEPS >/dev/null 2>&1
   if "$PY" -c 'import pytest, xdist, yaml' 2>/dev/null; then
     echo "sigma-cloud: $PY has pytest $("$PY" -c 'import pytest; print(pytest.__version__)')"
   else
@@ -111,12 +111,13 @@ done
 # --- 3. Sigma Loop plugin ----------------------------------------------------
 # A cloud session does not install the plugins a repository declares, so the VM gets it here.
 # `install` keeps the version already on disk (the last run's), so update it too.
-timeout 300 claude plugin marketplace add https://github.com/Agrim-Intelligence/sigma || true
-timeout 300 claude plugin install sigmaloop@sigmaloop || true
-timeout 300 claude plugin update sigmaloop@sigmaloop --scope user || true
-SIGMA_VERSION=$(timeout 60 claude plugin list --json 2>/dev/null | python3 -c '
-import json, sys
-print(min((p["version"] for p in json.load(sys.stdin) if p.get("id") == "sigmaloop@sigmaloop"), default=""))' 2>/dev/null)
+timeout -k 10 300 claude plugin marketplace add https://github.com/Agrim-Intelligence/sigma || true
+timeout -k 10 300 claude plugin install sigmaloop@sigmaloop || true
+timeout -k 10 300 claude plugin update sigmaloop@sigmaloop --scope user || true
+SIGMA_VERSION=$(timeout -k 10 60 claude plugin list --json 2>/dev/null | python3 -c '
+import json, re, sys
+versions = [p["version"] for p in json.load(sys.stdin) if p.get("id") == "sigmaloop@sigmaloop"]
+print(min(versions, key=lambda v: [int(n) for n in re.findall(r"\d+", v)], default=""))' 2>/dev/null)
 if [ -z "$SIGMA_VERSION" ]; then
   echo "sigma-cloud: WARNING - sigmaloop install did not register."
 elif [ "$(printf '%s\n' "$SIGMA_MIN" "$SIGMA_VERSION" | sort -V | head -1)" != "$SIGMA_MIN" ]; then
@@ -135,6 +136,9 @@ fi
 # A git-local sigma.allowRepositoryShellCommands left in the saved environment would let every shell
 # command the config names run unattended; the environment's approval covers VERIFY alone.
 [ -z "$REPO" ] || git -C "$REPO" config --local --unset-all sigma.allowRepositoryShellCommands 2>/dev/null || true
+if [ -n "$REPO" ] && git -C "$REPO" config --local --get-all sigma.allowRepositoryShellCommands >/dev/null 2>&1; then
+  echo "sigma-cloud: WARNING - could not remove the checkout's git-local shell-command grant; every command the config names would run unattended."
+fi
 TEMPLATE=$(find "$HOME/.claude/plugins/cache" -path '*sigma-init/templates/config.json.tmpl' 2>/dev/null | sort -V | tail -1)
 if [ -z "$REPO" ]; then
   echo "sigma-cloud: WARNING - found no checkout of this repository in a home directory; .sdlc/config.json not written."

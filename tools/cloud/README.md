@@ -6,6 +6,10 @@ Sigma never runs it. For your own repository, read it as a worked example of
 [cloud sessions](../../docs/cloud-sessions.md#cloud-environment-setup); its paths, repository and
 verify command are this repository's.
 
+**Status: UNMEASURED in a real container.** Everything below about what the script does comes from its
+code and from `tests/test_cloud_setup_script.py`, which runs it offline with stubbed tools. It has not yet
+run in a `sigma-cloud` session; the first diagnostic session records the result on #2090.
+
 A fresh clone of this repository cannot run the loop by itself: `.sdlc/config.json` is git-ignored
 (`.gitignore` ignores `.sdlc/*` and re-includes plans, research and acceptance records), and so is
 `.claude/`. The script builds the config from the installed Sigma's own template.
@@ -45,7 +49,9 @@ The choices in section 4:
    environment** and name it `sigma-cloud`.
 2. **Network access:** the default list reaches GitHub and PyPI. Add `keyserver.ubuntu.com` and
    `ppa.launchpadcontent.net` under Allowed domains for section 1. A blocked host makes its step print a
-   `WARNING` and setup still succeeds.
+   `WARNING` and setup still succeeds. Every network step is bounded: with every bound reached, setup takes
+   about 8 minutes for git, 10 for each `python3` and 16 for Sigma. The host's own limit on setup time is
+   not known.
 3. **Setup script:** use the dialog's **Choose file** and pick `tools/cloud/setup.sh` from an up-to-date
    checkout of `main`. Never paste it from a rendered view (GitHub's preview, a chat message): rendered
    markdown drops `$` signs, and the script then fails every session.
@@ -109,6 +115,7 @@ already names one needs that line set to `null` first.
 Not yet measured in the container. CI's nightly runs the same command on a 3-core macOS runner: about 60
 minutes on 2026-10-17, then stopped at its 120-minute limit at about 98% on every run since. The resource
 guard grants 3 workers on a 4-vCPU machine, so expect about 2 hours per verify, inside the 240-minute
-limit; each `sigma:block` fix-up cycle adds another verify. The first diagnostic session records the real
-figure, the granted worker count, and whether the session's `PATH` holds the same `python3` setup saw, on
-#2090.
+limit; each `sigma:block` fix-up cycle adds another verify. Whether the command passes on `main` is not
+known either: the 2026-10-28 nightly had one failing test by 57% before it was stopped at 98%. The first
+diagnostic session records the real figure, the result, the granted worker count, and whether the
+session's `PATH` holds the same `python3` setup saw, on #2090.
