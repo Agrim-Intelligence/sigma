@@ -24,6 +24,7 @@ designed shape, not drift. Push is fast-forward only with a bounded fetch-rebase
 is resolved by replaying, never by forcing. Zero deps.
 """
 import collections
+import errno
 import fnmatch
 import importlib.util
 import os
@@ -37,9 +38,9 @@ import sys
 import time
 
 try:                    # #2698: the knowledge channel's non-blocking lock is `fcntl.flock`, POSIX-only;
-    import fcntl        # without it (Windows) the lock fails OPEN, exactly as `loop._try_acquire_claim_lock`
-except ImportError:     # documents for the same mechanism
-    fcntl = None
+    import fcntl        # without it (Windows) THAT lock fails OPEN, exactly as `loop._try_acquire_claim_lock`
+except ImportError:     # documents for the same mechanism. The LEDGER lock (#2081) does the opposite: it
+    fcntl = None        # REFUSES by default without `fcntl` (see `_ledger_lock`)
 
 try:                    # portable output: force UTF-8 so the plugin's own non-ASCII (arrows, em-dashes)
     sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")   # doesn't garble to '?' or
@@ -58,6 +59,7 @@ def _load(name):
 
 
 ledger = _load("ledger")
+state = _load("state")                          # #2081/#708: `safe_state_open`, `refuse_symlinks`
 
 DEFAULT_BRANCH = "sdlc-ledger"
 DEFAULT_REMOTE = "origin"
@@ -229,6 +231,202 @@ def _knowledge_lock(sdlc_dir):
         fd.close()
         return None
     return fd
+
+
+# --------------------------------------------------------------- one ledger publisher at a time (#2081)
+#
+# Every path that rebases, resets, aborts or creates the LEDGER worktree takes this lock: `publish`, `pull`,
+# `publish_receipt`, `_reroot_guarded` and `publish_entry`. Before it, two processes of one checkout could
+# race: `publish_entry` aborts "a stale rebase" first, so a second publisher aborted the first one's LIVE
+# rebase. The lock is a kernel `flock` (released the instant its holder dies, a reboot included: no clock, no
+# sweep), on a file under the gitignored `state/` (never in the root checkout). An `flock` belongs to an OPEN
+# FILE DESCRIPTION, so a second acquire in the same process is refused: a locked verb never calls another
+# locked verb (`publish_entry` calls the unlocked `_publish_ledger` and `_reroot`).
+#
+#   * tick callers (the watcher's `sync.py publish`/`pull`, the Slack listener, `dag_lease`, `bootstrap`) take
+#     it NON-blocking and report a deferral: the next tick retries;
+#   * `publish_entry` WAITS for it, bounded by the same deadline as its git calls, then publishes.
+#
+# The file carries one line, `pid=<n> verb=<v> since=<epoch>`, written after acquiring and cleared before
+# releasing, so a waiter can name the holder and its age. That record is information, never the lock.
+#
+# WHERE THE LOCK CANNOT BE MADE (no `fcntl`, or a filesystem whose `flock` is unsupported) this lock REFUSES by
+# default (AGENTS.md SAFETY: refuse loudly rather than proceed weakly): `_ledger_lock` raises `LedgerLockRefused`,
+# every locked verb defers with a line that names the lever, and an operator who accepts the race sets
+# `SIGMA_LEDGER_ALLOW_UNSERIALISED=1` to publish unserialised. The older locks in this module and in `loop.py`
+# still fail OPEN there; this change does not touch them.
+
+LEDGER_LOCK_NAME = "ledger-sync.lock"
+LEDGER_LOCK_REL = pathlib.Path("state") / LEDGER_LOCK_NAME      # below `.sdlc`, which is what #708 walks
+#: the operator's opt-in to publishing without a lock where none can be made; `1`, `true` or `yes`, any case
+LEDGER_ALLOW_UNSERIALISED_ENV = "SIGMA_LEDGER_ALLOW_UNSERIALISED"
+#: how long a holder may take before a waiter calls it wedged (several times the 90 s publish limit and the
+#: watcher's 120 s call limit); the waiter's printed line is capped at 240 characters, so the lever itself
+#: lives in docs/cloud-sessions.md
+LEDGER_LOCK_WEDGED_AFTER = 300
+#: the notes this module says once per LOADED COPY of it on stderr, normally once per command (`loop._load("sync")`
+#: is uncached, so a process that loads a second copy says each note again); a test resets it (module state is
+#: shared by every test file that loads this module through the script cache)
+_LOCK_NOTES_SAID = set()
+
+
+def ledger_lock_path(sdlc_dir):
+    return pathlib.Path(sdlc_dir) / "state" / LEDGER_LOCK_NAME
+
+
+class LedgerLockRefused(OSError):
+    """The ledger lock cannot be made here and the operator has not opted in to publishing without it. An
+    `OSError` on purpose: `_with_ledger_lock` and `publish_entry` already turn one into a deferral."""
+
+
+def _unserialised_allowed():
+    return os.environ.get(LEDGER_ALLOW_UNSERIALISED_ENV, "").strip().lower() in ("1", "true", "yes")
+
+
+def _no_lock_mechanism(key, why):
+    """No way to take the ledger lock here (`why`). REFUSES: raises `LedgerLockRefused` and says so on stderr once
+    per loaded copy of this module (normally once per command), naming the lever. With the operator's opt-in it
+    says once that publishes are not serialised and returns `True` (the caller then runs unlocked)."""
+    if _unserialised_allowed():
+        _say_once(key + "-allowed",
+                  f"ledger publishes are not serialised here: {why}; {LEDGER_ALLOW_UNSERIALISED_ENV} is set, "
+                  "so concurrent publishers in one checkout can collide")
+        return True
+    text = (f"ledger publishes cannot be serialised here: {why}; "
+            f"set {LEDGER_ALLOW_UNSERIALISED_ENV}=1 to publish without the lock")
+    _say_once(key + "-refused", text)
+    raise LedgerLockRefused(text)
+
+
+def _say_once(key, text):
+    if key in _LOCK_NOTES_SAID:
+        return
+    _LOCK_NOTES_SAID.add(key)
+    try:
+        print(text, file=sys.stderr)
+    except Exception:                           # noqa: BLE001 - a note must never be what breaks a verb
+        pass
+
+
+def _ledger_lock(sdlc_dir, wait_until=None, verb="publish"):
+    """Take the ledger worktree lock. Returns the open file (keep it referenced; `_release_ledger_lock`
+    releases) or `None` when another process holds it.
+
+    `wait_until` is a `time.monotonic()` value: the call polls (0.05 to 0.1 s, jittered) until then; `None`
+    tries once. No `fcntl` (Windows), or a filesystem whose `flock` is unsupported (any errno other than
+    EWOULDBLOCK/EAGAIN), REFUSES: it raises `LedgerLockRefused`, an `OSError`, with one stderr line per loaded
+    copy of this module (normally once per command) that names the lever (AGENTS.md SAFETY: refuse loudly rather
+    than proceed weakly). With `SIGMA_LEDGER_ALLOW_UNSERIALISED=1` (or `true`, `yes`) it returns `True` instead,
+    `_release_ledger_lock` ignores it, and the caller runs UNSERIALISED, with one stderr line saying so. Opening the
+    file can also raise `OSError`, and a symlink at the lock file or at `state/` raises `state.UnsafeStatePath`
+    (#708, below). The cost of refusing: on such a platform every ledger publish defers until the operator opts
+    in; the older locks in this module and `loop.py` still fail open there."""
+    if fcntl is None:
+        return _no_lock_mechanism("no-fcntl", "no fcntl on this platform")
+    # #708: Sigma never writes through a symlink under .sdlc/. A repository can COMMIT one at the lock file or at
+    # `state/`, and `ledger.py`, `assign.py` and `liveness_prune.py` reach this lock without the entry guard that
+    # `loop.py` and `work.py` run. `safe_state_open` lstat-walks the path (creating `state/` itself), opens with
+    # O_NOFOLLOW and takes only a regular file; a refusal is an `OSError` that names the symlink and the lever
+    # (`git rm` it), so every locked verb defers. NOT overridable: the opt-in below is for a platform with no lock.
+    fd = state.safe_state_open(sdlc_dir, LEDGER_LOCK_REL, "a")
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError as exc:
+            if exc.errno not in (errno.EWOULDBLOCK, errno.EAGAIN):
+                fd.close()
+                return _no_lock_mechanism("flock-unsupported",
+                                          f"flock is unsupported on this filesystem ({exc.strerror or exc.errno})")
+            left = None if wait_until is None else wait_until - time.monotonic()
+            if left is None or left <= 0:
+                fd.close()
+                return None
+            time.sleep(min(left, 0.05 + 0.05 * random.random()))
+    try:
+        fd.seek(0)
+        fd.truncate()
+        fd.write("pid=%d verb=%s since=%d\n" % (os.getpid(), verb, int(time.time())))
+        fd.flush()
+    except (OSError, ValueError):               # the record is information, not the lock
+        pass
+    return fd
+
+
+def _release_ledger_lock(lock):
+    """Clear the holder record, THEN close (closing releases the lock): the next holder's record is never
+    erased by the one before it. A no-op for `True` and `None`."""
+    if lock is None or lock is True:
+        return
+    try:
+        lock.seek(0)
+        lock.truncate()
+    except (OSError, ValueError):
+        pass
+    try:
+        lock.close()
+    except OSError:
+        pass
+
+
+def _ledger_lock_holder(sdlc_dir):
+    """Who holds the lock, for a waiter's message: `pid N (verb), held Ns`, longer than
+    `LEDGER_LOCK_WEDGED_AFTER` seconds adds a pointer to the lever. `""` when the lock is free. The lock is
+    probed FIRST, on a separate open file description, so a dead holder's stale record is never reported as a
+    holder. Never raises."""
+    unknown = "a holder that has not identified itself yet"
+    try:
+        if fcntl is None:
+            return ""
+        try:
+            # #708: a probe looks at a lock file that is there. It never creates one, and never opens through a
+            # symlink (the walk for `state/`, O_NOFOLLOW for the file): a link is answered like a missing file. It
+            # also never blocks on a planted FIFO (O_NONBLOCK) and reads the record from the descriptor it locked.
+            state.refuse_symlinks(sdlc_dir, LEDGER_LOCK_REL)
+            fd = os.open(ledger_lock_path(sdlc_dir),
+                         os.O_RDWR | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
+        except OSError:
+            return ""
+        with os.fdopen(fd, "r", encoding="utf-8") as probe:
+            try:
+                fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError as exc:
+                if exc.errno not in (errno.EWOULDBLOCK, errno.EAGAIN):
+                    return ""
+            else:
+                fcntl.flock(probe, fcntl.LOCK_UN)
+                return ""
+            record = probe.read(200)
+        fields = dict(part.split("=", 1) for part in record.split() if "=" in part)
+        pid, since = int(fields["pid"]), int(fields["since"])
+        if not ledger.pid_alive(pid):
+            return unknown
+        held = max(0, int(time.time()) - since)
+        wedged = (", looks wedged (docs/cloud-sessions.md)" if held > LEDGER_LOCK_WEDGED_AFTER else "")
+        return f"pid {pid} ({fields.get('verb', '?')}), held {held}s{wedged}"
+    except Exception:                           # noqa: BLE001 - naming the holder must never raise
+        return unknown
+
+
+LOCK_RELEASED_WHILE_CHECKING = "the ledger worktree lock was released while this step checked who held it"
+
+
+def _with_ledger_lock(sdlc_dir, verb, body, busy, wait_until=None):
+    """Run `body()` holding the ledger lock. When another process holds it, the lock file cannot be opened, or
+    the lock cannot be made here (`LedgerLockRefused`) return `busy(<why>)` instead, so a tick caller defers
+    rather than waits and the string names the reason. Never nest: see above."""
+    try:
+        lock = _ledger_lock(sdlc_dir, wait_until=wait_until, verb=verb)
+    except OSError as exc:
+        return busy(f"cannot take the lock: {exc}")
+    if lock is None:
+        holder = _ledger_lock_holder(sdlc_dir)
+        return busy(f"another ledger publisher holds the worktree lock ({holder})" if holder
+                    else f"{LOCK_RELEASED_WHILE_CHECKING}; the next step retries")
+    try:
+        return body()
+    finally:
+        _release_ledger_lock(lock)
 
 
 def _channel(name, sdlc_dir, config):
@@ -634,6 +832,12 @@ def pull(sdlc_dir, config, run=None, channel=LEDGER):
     path, name, rem = worktree(sdlc_dir), branch(config), remote(config)
     if not is_worktree(sdlc_dir):
         return "not a worktree — run `sync.py init` first (nothing fetched)"
+    return _with_ledger_lock(sdlc_dir, "pull", lambda: _pull_ledger(git, path, name, rem),
+                             busy=lambda why: f"pull deferred: {why}")
+
+
+def _pull_ledger(git, path, name, rem):
+    """`pull`'s body, called with the ledger lock held."""
     _fetch(git, path, rem, name)
     stop = _diverged(git, path, rem, name, "pull", LEDGER)
     if stop is not None:
@@ -772,10 +976,19 @@ def _record_push(git, path, rem, name, before):
         pass
 
 
-def _jitter_sleep(attempt, base=0.15, cap=3.0, rng=random.random, sleep=time.sleep):
+def _jitter_sleep(attempt, base=0.15, cap=3.0, rng=None, sleep=None, deadline_at=None, clock=None):
     """Full-jitter exponential backoff (#2076): a uniform pause in [0, min(cap, base * 2**attempt)].
-    Contenders that were rejected together do not retry together. Returns the pause (for tests)."""
+    Contenders that were rejected together do not retry together. Returns the pause (for tests).
+
+    #2081: with `deadline_at` (a `time.monotonic()` value) the pause is cut to the time left, never below
+    zero (a negative value would make `time.sleep` raise inside `_push_with_retry`'s `except` block and
+    escape `publish`), so a pause can no longer carry a bounded step past its deadline. `rng`, `sleep` and
+    `clock` are looked up when the function runs, not when it is defined, so a test can patch them."""
+    rng = rng or random.random
+    sleep = sleep or time.sleep
     pause = rng() * min(cap, base * (2 ** attempt))
+    if deadline_at is not None:
+        pause = max(0.0, min(pause, deadline_at - (clock or time.monotonic)()))
     sleep(pause)
     return pause
 
@@ -999,6 +1212,13 @@ def publish_receipt(sdlc_dir, receipt_path, config=None, run=None, attempts=PUSH
     target = path / relative
     if not is_worktree(sdlc_dir) or not target.is_file() or target.is_symlink():
         return "receipt pending: receipt worktree/object unavailable"
+    return _with_ledger_lock(
+        sdlc_dir, "receipt", lambda: _push_receipt(git, path, name, rem, cfg, relative, target, attempts),
+        busy=lambda why: f"receipt pending: {why}")
+
+
+def _push_receipt(git, path, name, rem, cfg, relative, target, attempts):
+    """`publish_receipt`'s body, called with the ledger lock held."""
     try:
         local_blob = git(path, ["hash-object", str(target)])
         git(path, ["add", "--", relative])
@@ -1080,6 +1300,18 @@ def publish(sdlc_dir, config, run=None, attempts=PUSH_ATTEMPTS, channel=LEDGER, 
     git = run or _run_git
     if channel == KNOWLEDGE:
         return _publish_knowledge(sdlc_dir, config, git, attempts)
+    worktree(sdlc_dir), branch(config), remote(config)       # a REFUSED value stays loud (#710), lock or no lock
+    if not is_worktree(sdlc_dir):
+        return "not a worktree — run `sync.py init` first (nothing published)"
+    return _with_ledger_lock(
+        sdlc_dir, "publish", lambda: _publish_ledger(sdlc_dir, config, run, attempts, backoff),
+        busy=lambda why: f"publish deferred (will retry next tick): {why}")
+
+
+def _publish_ledger(sdlc_dir, config, run=None, attempts=PUSH_ATTEMPTS, backoff=None):
+    """`publish`'s ledger body, called with the ledger lock held (`publish_entry` holds it across its whole
+    step and calls this directly: a nested acquire would be refused by its own lock)."""
+    git = run or _run_git
     path, name, rem = worktree(sdlc_dir), branch(config), remote(config)
     if not is_worktree(sdlc_dir):
         return "not a worktree — run `sync.py init` first (nothing published)"
@@ -1124,7 +1356,11 @@ def publish(sdlc_dir, config, run=None, attempts=PUSH_ATTEMPTS, channel=LEDGER, 
 
     # #2076: real git (no injected runner) pauses with jitter between attempts, so clones rejected
     # together do not retry together; an injected runner (every stub-driven test) never sleeps.
-    pause = _jitter_sleep if (backoff if backoff is not None else run is None) else None
+    # #2081: a runner built by `_bounded_git` carries its deadline, and a pause never outlasts it.
+    deadline_at = getattr(git, "deadline_at", None)
+    deadline_at = deadline_at if isinstance(deadline_at, (int, float)) else None
+    pause = ((lambda attempt: _jitter_sleep(attempt, deadline_at=deadline_at))
+             if (backoff if backoff is not None else run is None) else None)
     return _push_with_retry(git, path, rem, name, attempts, rebase_args=("-X", "theirs"),
                             after_rebase=regenerate_team, retry_hint="next tick", channel=LEDGER,
                             sleep=pause)
@@ -1362,11 +1598,14 @@ def _reroot(git, sdlc_dir, ch, who=None):
 
 
 def _reroot_guarded(git, sdlc_dir, ch, who=None):
-    """`_reroot`, holding the knowledge channel's lock for it -- released before the caller's own
-    `publish`, which takes it again (an flock is per open file description, so a second acquire in
-    this process would refuse)."""
+    """`_reroot`, holding the channel's own lock for it -- the ledger worktree lock for the ledger (#2081),
+    the knowledge lock for the knowledge channel -- released before the caller's own `publish`, which takes
+    it again (an flock is per open file description, so a second acquire in this process would refuse).
+    A caller that already holds the ledger lock (`publish_entry`) calls `_reroot` instead."""
     if ch.name != KNOWLEDGE:
-        return _reroot(git, sdlc_dir, ch, who)
+        return _with_ledger_lock(
+            sdlc_dir, "reroot", lambda: _reroot(git, sdlc_dir, ch, who),
+            busy=lambda why: f"; re-root deferred: {why}")
     lock = _knowledge_lock(sdlc_dir)
     if lock is None:
         return "; re-root deferred: another knowledge sync holds the lock"
@@ -1804,11 +2043,12 @@ def publish_after_write(sdlc_dir, config, run=None, now=None, publish_fn=None):
     A single push is bounded and finishes. Enrolling someone's machine in a background job is not
     something a one-line note should be able to do.
 
-    AND WHY A LIVE WATCHER STILL WINS. Not politeness -- correctness. `watch_daemon.py` guards its own
-    publish behind a mutex specifically so two publishers never contend on the ledger worktree's
-    git index lock. A CLI publish fired behind a live watcher's back is precisely that second
-    publisher, so a FRESH heartbeat means name the tick that will carry the entry rather than race
-    it. A stale or absent one means nothing else will, and this write is on its own.
+    AND WHY A LIVE WATCHER STILL WINS. The watcher is one process, and what serialises publishers is the
+    ledger worktree lock (`state/ledger-sync.lock`, #2081): there is no mutex inside the watcher around its
+    publish (there never was one; the decision mutex in `watch_daemon.py` only picks the tick's owner). A CLI
+    publish fired behind a live watcher's back would only QUEUE behind it for no gain, or defer, so a FRESH
+    heartbeat means name the tick that will carry the entry rather than race it. A stale or absent one
+    means nothing else will, and this write is on its own.
 
     IT NEVER CHANGES WHAT THE COMMAND RETURNS. The entry is already on disk before this runs; the
     push is a courtesy on top of a write that already succeeded. So every failure is swallowed into
@@ -1879,6 +2119,7 @@ def _bounded_git(deadline_at, base=None):
         if remaining <= 0:
             raise TimeoutError("the step's wall-time limit was reached")
         return base(cwd, args) if base is not None else _run_git(cwd, args, timeout=remaining)
+    run.deadline_at = deadline_at               # #2081: `publish` caps its retry pauses at what is left
     return run
 
 
@@ -1922,20 +2163,37 @@ def publish_entry(sdlc_dir, config, what, run=None, publish_fn=None, deadline_se
             if watcher_liveness(sdlc_dir, config, now=now)[0] == "live":
                 return None
         limit = deadline_seconds if deadline_seconds else publish_deadline_seconds()
-        git = _bounded_git(time.monotonic() + limit, run)
-        pub = publish_fn or publish
-        if is_worktree(sdlc_dir) and run is None:
-            _abort_stale_rebase(sdlc_dir)
-        if not is_worktree(sdlc_dir):
-            init(sdlc_dir, config, run=git)
-            _mark_self_created(sdlc_dir)
-            _exclude_from_status(sdlc_dir, git)
-            _reroot_guarded(git, sdlc_dir, _channel(LEDGER, sdlc_dir, config), ledger.actor(config))
-        result = pub(sdlc_dir, config, run=git, attempts=PUBLISH_ENTRY_ATTEMPTS, backoff=True) \
-            if publish_fn is None else pub(sdlc_dir, config, run=git)
-        if result.startswith("publish refused") and publish_fn is None:      # a first-ever race: once
-            _reroot_guarded(git, sdlc_dir, _channel(LEDGER, sdlc_dir, config), ledger.actor(config))
-            result = pub(sdlc_dir, config, run=git, attempts=PUBLISH_ENTRY_ATTEMPTS, backoff=True)
+        deadline_at = time.monotonic() + limit
+        git = _bounded_git(deadline_at, run)
+        # #2081: ONE publisher at a time in this checkout. The wait shares the step's deadline; the stale-rebase
+        # abort, the worktree creation, the re-root and the publish all run only while the lock is held, so a
+        # live rebase of another process is never aborted. `_abort_stale_rebase` keeps its own small budgets
+        # (it ran on them before): after a long wait the step can end up to ~45 s (three 15 s budgets) plus up
+        # to 7 s of kill grace per git call that times out (about 73 s counting the three and the one running at
+        # the deadline) past its limit, worst case. Arithmetic, not a measurement: docs/cloud-sessions.md.
+        # An OSError from the acquire (no lock file, a symlink at it, or `LedgerLockRefused`) falls to the handler
+        # below: it is reported as NOT published, never raised, and no git has run.
+        lock = _ledger_lock(sdlc_dir, wait_until=deadline_at, verb="publish_entry")
+        if lock is None:
+            holder = _ledger_lock_holder(sdlc_dir)
+            return _not_published(what, "another publisher holds the ledger worktree: " + holder if holder
+                                  else LOCK_RELEASED_WHILE_CHECKING, limit)
+        try:
+            pub = publish_fn or _publish_ledger
+            if is_worktree(sdlc_dir) and run is None and _abort_stale_rebase(sdlc_dir):
+                return _not_published(what, STUCK_REBASE, limit)       # never publish from the middle of a rebase
+            if not is_worktree(sdlc_dir):
+                init(sdlc_dir, config, run=git)
+                _mark_self_created(sdlc_dir)
+                _exclude_from_status(sdlc_dir, git)
+                _reroot(git, sdlc_dir, _channel(LEDGER, sdlc_dir, config), ledger.actor(config))
+            result = pub(sdlc_dir, config, run=git, attempts=PUBLISH_ENTRY_ATTEMPTS, backoff=True) \
+                if publish_fn is None else pub(sdlc_dir, config, run=git)
+            if result.startswith("publish refused") and publish_fn is None:      # a first-ever race: once
+                _reroot(git, sdlc_dir, _channel(LEDGER, sdlc_dir, config), ledger.actor(config))
+                result = pub(sdlc_dir, config, run=git, attempts=PUBLISH_ENTRY_ATTEMPTS, backoff=True)
+        finally:
+            _release_ledger_lock(lock)
         if result in ("published", "nothing to publish"):
             return f"ledger: published ({what}) -- the team can see it now." if result == "published" else None
         return _not_published(what, result, limit)
@@ -1943,8 +2201,11 @@ def publish_entry(sdlc_dir, config, what, run=None, publish_fn=None, deadline_se
         return _not_published(what, exc, deadline_seconds or publish_deadline_seconds())
 
 
+SELF_CREATED_REL = pathlib.Path("state") / "ledger-self-created"
+
+
 def _self_created_marker(sdlc_dir):
-    return pathlib.Path(sdlc_dir) / "state" / "ledger-self-created"
+    return pathlib.Path(sdlc_dir) / SELF_CREATED_REL
 
 
 def self_created(sdlc_dir):
@@ -1955,32 +2216,51 @@ def self_created(sdlc_dir):
 
 
 def _mark_self_created(sdlc_dir):
+    """Best effort. #708: through `safe_state_open`, so a symlink planted at the marker (or at `state/`) is never
+    written through; a refusal is an `OSError` and the marker is simply not written."""
     try:
-        marker = _self_created_marker(sdlc_dir)
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text("created by the loop's own publish (#2076); `sync.py bootstrap` clears this\n",
-                          encoding="utf-8")
+        with state.safe_state_open(sdlc_dir, SELF_CREATED_REL, "w") as marker:
+            marker.write("created by the loop's own publish (#2076); `sync.py bootstrap` clears this\n")
     except OSError:
         pass
 
 
+#: `publish_entry`'s reason when `_abort_stale_rebase` could not clear a rebase; the lever is in the docs
+STUCK_REBASE = ("a rebase is still in progress in the ledger worktree and `git rebase --abort` could not clear it "
+                "(docs/cloud-sessions.md, residual (h))")
+
+
 def _abort_stale_rebase(sdlc_dir):
     """A git killed at the step's limit can leave the ledger worktree mid-rebase, which would defer every
-    later publish. Abort it first, on its own small budget, never on the exhausted one. Best effort."""
+    later publish. Abort it first, on its own small budget, never on the exhausted one. Best effort, never
+    raises. Returns True when a rebase is STILL in progress after the attempt (`git rebase --abort` can refuse,
+    for one: an untracked file it would overwrite), so the caller does not publish from the middle of it; False
+    when there was none, when it was cleared, and when this could not tell."""
     try:
         path = worktree(sdlc_dir)
         for name in ("rebase-merge", "rebase-apply"):
             marker = pathlib.Path(_run_git(path, ["rev-parse", "--git-path", name], timeout=15))
-            if (marker if marker.is_absolute() else path / marker).exists():
-                _run_git(path, ["rebase", "--abort"], timeout=15)
-                return
+            marker = marker if marker.is_absolute() else path / marker
+            if marker.exists():
+                try:
+                    _run_git(path, ["rebase", "--abort"], timeout=15)
+                except Exception:               # noqa: BLE001 - whether it worked is read off the marker below
+                    pass
+                return marker.exists()
     except Exception:                           # noqa: BLE001 - the publish that follows reports what it can
         pass
+    return False
 
 
 def _not_published(what, why, limit):
+    """The one stderr line for an entry that did not reach origin. A lock REFUSAL, an unusable lock file (a
+    symlink) and a STUCK rebase fail the same way on every later step until someone acts on the reason, which
+    already names the lever, so for those the tail says the entry will publish once that is cleared; every other
+    reason is transient and keeps the line that says the next loop step retries."""
+    waits_for_a_person = isinstance(why, (LedgerLockRefused, state.UnsafeStatePath)) or why == STUCK_REBASE
+    tail = ("will publish once that is cleared" if waits_for_a_person else "the next loop step retries it")
     return (f"ledger: NOT published ({_scrub(why)}) -- no other machine can see this {what} yet. "
-            f"The entry is safely on disk and the next loop step retries it "
+            f"The entry is safely on disk and {tail} "
             f"(this step is limited to {limit:.0f}s of wall time).")
 
 

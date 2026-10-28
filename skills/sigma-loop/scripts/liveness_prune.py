@@ -24,7 +24,7 @@ configuration root):
   be swept by the lever.
 
 Deliberately NOT touched: the 256-stripe locks (`sessions/locks`, `phase-end-*`) and the singleton
-flock files (`STATE.md.lock`, `merge-reconcile.lock`, `knowledge-sync.lock`,
+flock files (`STATE.md.lock`, `merge-reconcile.lock`, `knowledge-sync.lock`, `ledger-sync.lock`,
 `feature-judge-spend.lock`) -- deleting a flock file admits a second holder; `slack-commands.lock`
 (a directory with its own reclaim); `state/heartbeat`. Unlink only, no recursion, symlinks never followed,
 `missing_ok`; idempotent, so a crash mid-sweep leaves a subset the next run finishes. Never raises.

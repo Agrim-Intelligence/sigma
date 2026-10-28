@@ -36,6 +36,7 @@ import os
 import pathlib
 import platform
 import re
+import stat
 
 try:                    # portable output: force UTF-8 so the plugin's own non-ASCII (arrows, em-dashes)
     import sys as _sys  # doesn't garble to '?' or crash on a non-UTF-8 console (the Windows cp1252
@@ -852,55 +853,140 @@ def cloud_session(env=None):
     return value in ("true", "1")
 
 
-def _container_id_path():
-    """Where this container's id lives: the temporary directory, which is container-local in a cloud
-    session and not shared between containers. One file per OS user."""
+def _container_id_dirs_for(os_name, gettempdir):
+    """The directories a container id may live in, best first (#2081). A pure function of its arguments.
+
+    On POSIX these are FIXED machine-level directories and `gettempdir` is never called: it follows
+    `TMPDIR`, and a hook, a sandboxed shell and a normal shell of ONE container can disagree about
+    `TMPDIR`, which gave one container several ids and several host tokens. On any other platform there is
+    no `/tmp` to pin, so today's behaviour is kept on purpose (the platform's temporary directory), and `()`
+    when even that cannot be found; `container_id` then falls back to the kernel-derived id. So "the id does
+    not depend on TMPDIR" is a POSIX (cloud container) guarantee, which is where it is read: only under
+    `cloud_session()`."""
+    if os_name == "posix":
+        return ("/tmp", "/var/tmp")
+    try:
+        return (gettempdir(),)
+    except Exception:                # noqa: BLE001 - no temporary directory: fall back to the kernel id
+        return ()
+
+
+#: UNMEASURED: whether a sandboxed shell of a real container can write either POSIX directory. A process
+#: that can write neither uses `_kernel_container_id()`, which differs from the id a writable process wrote.
+CONTAINER_ID_DIRS = _container_id_dirs_for(os.name, tempfile.gettempdir)
+
+
+def _container_id_name():
     uid = os.getuid() if hasattr(os, "getuid") else 0
-    return pathlib.Path(tempfile.gettempdir()) / f"sigma-container-{uid}.id"
+    return f"sigma-container-{uid}.id"
+
+
+def _container_id_path():
+    """Where this container's id lives: the first of `CONTAINER_ID_DIRS`, or None when there is none. One
+    file per OS user. Zero-argument on purpose: four tests pin the id to one file by patching this seam."""
+    if not CONTAINER_ID_DIRS:
+        return None
+    return pathlib.Path(CONTAINER_ID_DIRS[0]) / _container_id_name()
+
+
+def _container_id_candidates():
+    """Every file the id may be in, in the order a reader consults them. A caller that pinned the seam
+    (patched `_container_id_path` to a path of its own) is read and written at exactly that path."""
+    primary = _container_id_path()
+    if primary is None:
+        return []
+    if not CONTAINER_ID_DIRS or primary != pathlib.Path(CONTAINER_ID_DIRS[0]) / _container_id_name():
+        return [primary]
+    return [primary] + [pathlib.Path(d) / primary.name for d in CONTAINER_ID_DIRS[1:]]
 
 
 _CONTAINER_ID_RE = re.compile(r"[0-9a-f]{32}")
 
 
+def _first_container_id(candidates):
+    for path in candidates:
+        found = _read_container_id(path)
+        if found:
+            return found
+    return None
+
+
+def _publish_container_id(path):
+    """Write a fresh random id to `path` with a hard link, never a bare exclusive create: a reader must not
+    see the file empty between the create and the write, or it would fall back and one container would carry
+    two tokens. The link fails if the path exists, so the first writer's id wins for everyone."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
+    fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(uuid.uuid4().hex)
+    try:
+        os.link(str(tmp), str(path))
+    except FileExistsError:
+        pass
+    finally:
+        try:
+            os.unlink(str(tmp))
+        except OSError:
+            pass
+
+
 def container_id():
     """An id that is the same for every process in this container and different between containers
-    (#2076). A random id is written once with an exclusive create, so two processes racing the first
-    call settle on one id; a file that does not read back as 32 hex digits is not trusted. When the
-    file cannot be read or created, the id is derived from what the kernel says about this boot and its
-    first process (boot id and the start time of pid 1): deterministic, so every process still agrees,
-    and different between containers that do not share a kernel start. Never raises."""
-    path = _container_id_path()
-    found = _read_container_id(path)
+    (#2076). A random id is written once, so two processes racing the first call settle on one id; a file
+    that does not read back as 32 hex digits is not trusted. When no file can be read or created, the id is
+    derived from what the kernel says about this boot and its first process (boot id and the start time of
+    pid 1): deterministic, so every process still agrees, and different between containers that do not
+    share a kernel start. Never raises.
+
+    #2081: the file lives in a fixed directory (`CONTAINER_ID_DIRS`), not in `TMPDIR`. EVERY candidate is
+    read before one is written, so a reader and a writer that disagree about which directory they can write
+    still agree on the id; after publishing, all candidates are read again in order and the first valid id
+    wins, so a writer in an earlier candidate beats this one for everybody.
+
+    The directory is world-writable, so what sits at the file's name is not trusted (`_read_container_id`): a
+    symlink, a FIFO, a file of another user or one that is not 32 hex digits of text is "no id here", never
+    read through, never waited on, and never an exception. A local user can therefore no longer choose the id
+    (a file of theirs is ignored); they can still occupy the name, and then the next candidate or the
+    kernel-derived id is used. A file of THIS user is trusted, as it was before. Nothing secret is read."""
+    candidates = _container_id_candidates()
+    found = _first_container_id(candidates)
     if found:
         return found
-    # Publish the id with a hard link, never a bare exclusive create: a reader must not see the file
-    # empty between the create and the write, or it would fall back and one container would carry two
-    # tokens. The link fails if the path exists, so the first writer's id wins for everyone.
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4().hex[:8]}.tmp")
-        fd = os.open(str(tmp), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(uuid.uuid4().hex)
+    for path in candidates:
         try:
-            os.link(str(tmp), str(path))
-        except FileExistsError:
-            pass
-        finally:
-            try:
-                os.unlink(str(tmp))
-            except OSError:
-                pass
-    except OSError:
-        return _kernel_container_id()
-    return _read_container_id(path) or _kernel_container_id()
+            _publish_container_id(path)
+        except OSError:
+            continue                 # this directory cannot be written by this process; try the next
+        found = _first_container_id(candidates)
+        if found:
+            return found
+    return _kernel_container_id()
 
 
 def _read_container_id(path):
+    """The id in `path`, or None when there is nothing there to trust. Never raises, never blocks.
+
+    The file sits in a world-writable directory, so anyone can put ANYTHING at its name: a symlink, a FIFO (a
+    plain read waits for a writer for ever), a file of another user, bytes that are not text. So it is opened
+    without following a symlink and without blocking, only a regular file owned by THIS user is read, a few dozen
+    bytes of it, decoded strictly, and it must then be 32 hex digits. Anything else is "no id here" and the caller
+    goes on to the next candidate."""
+    fd = None
     try:
-        text = path.read_text(encoding="utf-8").strip()
-    except OSError:
+        fd = os.open(str(path), os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0))
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or (hasattr(os, "getuid") and info.st_uid != os.getuid()):
+            return None
+        text = os.read(fd, 64).decode("utf-8").strip()
+    except (OSError, ValueError):               # a UnicodeDecodeError is a ValueError
         return None
+    finally:
+        if fd is not None:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
     return text if _CONTAINER_ID_RE.fullmatch(text) else None
 
 

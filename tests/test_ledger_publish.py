@@ -22,10 +22,11 @@ the machine in a recurring background job -- fetches, `gh` reads in agent_watch/
 webhook post -- every 15 minutes forever, off one typed command. A single bounded push finishes; a
 daemon does not.
 
-AND WHY IT DEFERS TO A LIVE WATCHER. Not cost -- correctness. `watch.sh` holds a mutex precisely so
-two publishers never contend on the ledger worktree's git index lock. Publishing from the CLI
-behind a live watcher's back is exactly the second publisher that mutex exists to exclude, so when
-the heartbeat is fresh the write says which tick will carry it instead of racing it.
+AND WHY IT DEFERS TO A LIVE WATCHER. The watcher is one process; what serialises publishers is the ledger
+worktree lock (`state/ledger-sync.lock`, #2081). No mutex inside the watcher ever guarded its publish (this
+text used to say one did). Publishing from the CLI behind a live watcher's back would only queue behind it,
+or defer, for no gain, so when the heartbeat is fresh the write says which tick will carry it instead of
+racing it.
 
 Every one of these behaviours is a guard whose removal must change what the operator SEES, so each
 test is named for the behaviour it scores rather than for the function it calls.
@@ -360,9 +361,9 @@ def test_a_hand_typed_write_publishes_itself_when_nothing_else_will(clone):
 
 
 def test_it_defers_to_a_live_watcher_instead_of_racing_it_for_the_index_lock(clone):
-    """watch.sh serialises its own publishes behind a mutex for exactly this reason. A CLI publish
-    fired behind a live watcher's back is the second publisher that mutex exists to exclude -- so a
-    fresh heartbeat means NAME the tick that will carry it, do not race it."""
+    """A CLI publish fired behind a live watcher's back would only queue behind it (the ledger worktree
+    lock, #2081) or defer, for no gain -- so a fresh heartbeat means NAME the tick that will carry it, do
+    not race it."""
     _repo, base = clone
     _bootstrap(base)
     _note(base)

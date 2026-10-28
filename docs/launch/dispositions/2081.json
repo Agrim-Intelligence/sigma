@@ -1,0 +1,9 @@
+[
+  {
+    "pattern": ".sdlc/state/ledger-sync.lock",
+    "issue": "#2081",
+    "decision": "capped",
+    "pruner_or_cap": "capped at one file: a kernel flock file that is never deleted (deleting it would admit a second holder); the kernel drops the lock when its owner dies, so a dead owner never reads held; the one line it holds is cleared before release",
+    "evidence": "tests/test_flock_markers_release_on_kill.py::test_lock_is_held_while_the_owner_lives_and_free_the_instant_it_is_killed[ledger-sync]; tests/test_ledger_publish_entry.py::test_a_released_lock_leaves_no_holder_record; docs/launch/b6-claims-sessions-locks.md"
+  }
+]

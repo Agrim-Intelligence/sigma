@@ -760,6 +760,32 @@ and the outcome reach the `sdlc-ledger` branch on origin without a daemon and wi
 - **When.** At the claim, at each lease renewal, and at the outcome (`done`, `parked`, `failed`, the
   awaiting-merge hold and `release`). Those verbs only mark the entry; the outermost `loop.py` call publishes ONE
   time after the verb returns, so a `next-batch` pays once and no claim or merge lock is held across the network.
+  Any other Sigma process that records through `loop._claim`, `_record` or `_release` in-process (`work.py start`'s
+  stale-resume, `/sigma-scope` assign, the liveness-prune CLI) publishes ONE time as it exits normally (#2081): the
+  first mark in a loaded copy of `loop.py` arms an `atexit` hook that flushes every directory still marked. "Once" is
+  per loaded copy, which is normally once per command: `loop._load("sync")` and `work._load("loop")` do not cache, so a
+  process that loads a second copy arms a second hook, with its own marks and its own deadline, and a second copy of
+  `sync.py` says its stderr notes again. A process ended by SIGKILL,
+  SIGTERM or SIGHUP, or by `os._exit`, runs no exit hook and publishes nothing. SIGTERM is what container teardown
+  sends, so the exit flush does NOT cover a container that is torn down; SIGINT does run it (it raises
+  `KeyboardInterrupt`, which unwinds to a normal exit). Checked with a one-file Python child on macOS, Python 3.13.4:
+  SIGINT ran the hook, SIGTERM, SIGHUP and SIGKILL did not (not checked in a container). No signal handler is added.
+  The Slack listener ends its own signal handler with `os._exit(128+signum)`, so there the hook never runs and a cap of
+  64 marks per directory only bounds the memory the marks take. In every one of these cases the entry is on disk and
+  the next flush (the next `loop.py` call in that checkout) or watcher tick carries it, or `python3 sync.py publish
+  .sdlc` does. The exit flush shares ONE deadline across every directory of one loaded copy
+  (`SIGMA_LEDGER_PUBLISH_DEADLINE`, default 90 s): a directory that gets no time keeps its marks and one stderr line
+  says so. Worst case, arithmetic from the
+  code and NOT a measurement against a hung git: once the shared deadline is spent every remaining directory is
+  skipped and every later git call of the running one fails at once, so the overshoot is ONE stale-rebase clearing,
+  not one per directory. That step keeps its own three 15 s budgets (two `rev-parse`, one `rebase --abort`), so the
+  exit holds for about 90 s + 45 s = 135 s per loaded copy at most from the budgets alone, and each timed-out git can
+  add up to 7 s
+  of kill grace (SIGTERM, a 2 s wait, SIGKILL, a 5 s wait), which is under 165 s counting the three calls and the
+  one running at the deadline. Other writers of the entries stream
+  (`blockers.py`, `cross_repo.py`, `spend_approval.py`, `feature_*`, `handoff.py`, `unit_completion.py`,
+  `verify_merge.py`, `agent_watch.py`, `comment_watch.py`, `assign.py`'s note) call `ledger.safe_append` directly and
+  do NOT arm the hook: they ride the next publish of the same actor or the watcher tick.
 - **The worktree.** When `.sdlc/ledger` is not a worktree it is created from origin through `sync.py init`
   (plumbing only), and kept out of the code checkout's `git status` through `.git/info/exclude` when the repository
   does not ignore it. The code checkout's HEAD, index and working tree are not touched.
@@ -767,7 +793,9 @@ and the outcome reach the `sdlc-ledger` branch on origin without a daemon and wi
   seconds), runs in its own process group with no credential prompt, and is ended with SIGTERM and then SIGKILL on
   overrun. A push that is refused or times out prints
   `ledger: NOT published (<why>) -- no other machine can see this <entry> yet ...` on stderr, with any URL
-  credentials removed, and the run goes on; the entry stays on disk and the next loop step retries it.
+  credentials removed, and the run goes on; the entry stays on disk and the next loop step retries it. A reason that
+  fails the same way on every later step until a person acts (a lock that cannot be made, a symlinked lock file, a
+  rebase `git rebase --abort` cannot clear) says instead that the entry will publish once the named cause is cleared.
   `ledger.publish_on_write: false` keeps the old behaviour (nothing is published by the loop).
 - **No watcher in a cloud session.** `_ensure_watcher` returns early when `CLAUDE_CODE_REMOTE` is `true` or `1`: a
   container can be gone before the next tick. On a laptop a live watcher still carries the entry and the loop does
@@ -775,12 +803,72 @@ and the outcome reach the `sdlc-ledger` branch on origin without a daemon and wi
   `ledger.enabled`), but a worktree the loop made for itself starts NO watcher (a marker,
   `.sdlc/state/ledger-self-created`, says so); running `sync.py bootstrap .sdlc` (what `/sigma-ledger` runs) is the
   explicit enrolment that clears it.
+- **One publisher at a time (#2081).** Every path that rebases, resets, aborts or creates the ledger worktree takes
+  one kernel `flock`, `.sdlc/state/ledger-sync.lock` (gitignored, never in the root checkout): `publish`, `pull`,
+  `publish_receipt`, the ledger re-root and `publish_entry`. `publish_entry` (the loop's own flush) WAITS for it, bounded
+  by the same deadline as its git calls; the watcher's `sync.py publish` and `pull`, the Slack listener, `dag_lease`
+  and `bootstrap` take it without waiting and answer `publish deferred ... another ledger publisher holds the worktree
+  lock (pid N (verb), held Ns)`; the next tick retries. A waiter that runs out of time prints
+  `ledger: NOT published (another publisher holds the ledger worktree: pid N (verb), held Ns)`. With the lock held,
+  the stale-rebase abort that `publish_entry` runs first can no longer abort another process's LIVE rebase. The
+  lock file holds one line, `pid=<n> verb=<v> since=<epoch>`, written after acquiring and cleared before releasing, so
+  `cat .sdlc/state/ledger-sync.lock` names the holder and an idle lock file is empty. **The lock file is never written
+  through a symlink (#708):** it opens through `state.safe_state_open` (an lstat walk, `O_NOFOLLOW`, a regular file
+  only), so a symlink at it, or a symlinked `state/` above it, makes every locked verb defer
+  (`cannot take the lock: REFUSED: <path> is a symlink under .sdlc/ ... Fix: git rm the committed symlink`;
+  `publish_entry` prints `NOT published`) and nothing outside `.sdlc` is created or emptied. `ledger.py`, `assign.py`
+  and `liveness_prune.py` reach this lock without the entry guard `loop.py` and `work.py` run, which is why the check
+  lives here; the holder probe never opens or creates through a symlink either, and `publish_entry`'s
+  `ledger-self-created` marker follows the same rule. `SIGMA_LEDGER_ALLOW_UNSERIALISED` does not lift it. The kernel
+  drops the lock with
+  its process (SIGKILL or a reboot: no clock, no sweep), and a waiter probes the lock before it reports a record, so a
+  dead holder's stale record is never named. **Lever for a wedged holder** (alive, held longer than 300 s, which the
+  waiter's line marks `looks wedged`): end that pid AND any `git` it started in the ledger worktree (`ps` for
+  `git -C <checkout>/.sdlc/ledger`; git runs in its own session, so ending the Python holder does not end it), then run
+  `python3 sync.py publish .sdlc`, which takes the same lock without waiting and cannot stall anyone. A rebase directory
+  a dead holder left behind is cleared first thing by the next `publish_entry` (residual (g) lists the other paths
+  that abort a rebase); when `git rebase --abort` cannot clear it, `publish_entry` prints `NOT published` and says a
+  rebase is still in progress instead of publishing from the middle of it (residual (h) has the lever). **Where the lock cannot be made** (a platform with no
+  `fcntl`, such as Windows, or a filesystem whose `flock` is unsupported: any error other than "would block") **this
+  lock REFUSES by default**, as AGENTS.md SAFETY asks: `publish`, `pull`, `publish_receipt`, the re-root and
+  `publish_entry` stop before any git runs, one stderr line per loaded copy of `sync.py` (normally one per command)
+  says why, and every deferral names the lever,
+  `SIGMA_LEDGER_ALLOW_UNSERIALISED=1` (`true` and `yes` count too, in any case; anything else does not). Set it only
+  where you accept that two publishers in one checkout can then collide, which is how publishing behaved before #2081;
+  each loaded copy of `sync.py` (normally one per command) then prints one line saying it is not serialising. The cost of refusing: on such a platform every ledger
+  publish defers until the operator opts in. The older locks (`_knowledge_lock`, `loop._try_acquire_claim_lock`,
+  `feature_sync`) still fail OPEN there; this change does not touch them. Queueing cost: a
+  waiter now queues behind tick callers that have no deadline of their own (`_ensure_ledger_delivery`, the Slack
+  listener, `dag_lease`), so a hung git in one of those holds every `publish_entry` in the checkout until its 90 s is
+  up. The ceiling is ONE ledger-worktree mutation at a time per checkout, with no FIFO order (waiters poll every 0.05
+  to 0.1 s). Arithmetic on the research dossier's one measurement (a publish with one new entry took a median 0.236 s,
+  at most 0.255 s, against a local bare origin on macOS; NOT re-measured, NOT a queue run): about 0.7 s of queue at the
+  default three concurrent goals, about 7 s at 30 and about 71 s at 300, which is barely inside the 90 s limit; a real
+  remote multiplies every term by its round trip (UNMEASURED). Polling costs about 3,000 to 6,000 `flock` calls a
+  second in total at 300 waiters (arithmetic, not measured).
 - **A writer identity per container.** Every cloud container reports one hostname, so the host token (the middle of
-  `<actor>-<host>.<pid>`) is salted with an id that is the container's own: random, written once into the temporary
-  directory (published with a hard link, so no reader sees it half written), and read back only when it is 32 hex
-  digits. If that cannot be written the token falls back to a hash of the boot id and the start time of pid 1, which
-  is weaker on a shared kernel. A laptop's token is unchanged; `ledger.host_alias` is kept but gets four hex digits of
-  the container id appended in a cloud session.
+  `<actor>-<host>.<pid>`) is salted with an id that is the container's own: random, written once into a fixed
+  directory (`/tmp`, then `/var/tmp` when `/tmp` cannot be written; the environment, `TMPDIR` included, is NOT read;
+  every candidate is read before one is written, and the first valid id wins; published with a hard link, so no reader
+  sees it half written), and read back only when it is 32 hex digits. This holds on POSIX, where cloud containers run;
+  a non-POSIX platform keeps the platform's temporary directory (its id path can still follow the temporary
+  directory), because there is no `/tmp` to pin. If neither directory can be written the token falls back to a hash of
+  the boot id and the start time of pid 1, which is weaker on a shared kernel. The directory is world-writable, so what is at the file's name is not trusted: it is opened without following a
+  symlink and without blocking, and used only when it is a regular file owned by this OS user holding 32 hex digits
+  of text. A symlink, a FIFO (a plain read would wait for a writer for ever), another user's file or bytes that are
+  not text are treated as no id there: never read through, never waited on, never an exception, and the reader goes
+  on to the next directory, then to the kernel-derived id. A local user can therefore no longer choose the id, but can
+  still occupy the name and so push this container to the next candidate; a process of the same user can still write
+  it, as before. Nothing secret is read. A laptop's token is unchanged; `ledger.host_alias` is kept but gets
+  four hex digits of the container id appended in a cloud session. **One token per container is NOT promised in every
+  layout (ticket T4):** a sandboxed shell that can write neither directory computes its first token from the
+  kernel-derived id, and an unsandboxed process then writes a random id, so one container can still carry two tokens.
+  Not measured: whether a real container's sandbox can write either directory. **On upgrade** a container whose id file
+  was in a `TMPDIR` other than `/tmp` reads its own earlier claim as another machine's, once: the claim lapses at its
+  lease TTL (default 12 hours) or an operator ends it with `python3 loop.py release <sdlc_dir> <goal>`. Where
+  `tempfile.gettempdir()` already resolved to `/tmp` (measured on a macOS machine with `TMPDIR` unset, NOT on a Linux
+  container) the path, id and token do not change. Cloud containers are short-lived and a plugin is not upgraded
+  mid-life, so the expected frequency is near zero; that is not measured.
 - **The keep-alive.** While a run holds a claim, `note`, `agent-start`, `agent-beat` and `verify` write a
   `lease-renew` entry at most once per a third of the lease TTL (4 hours of the default 12). Another machine's reader
   extends the lease only for a renewal by the holder: the same actor, the same machine and a compatible run (a run id
@@ -796,8 +884,51 @@ and the outcome reach the `sdlc-ledger` branch on origin without a daemon and wi
 MEASURED (offline, real git against a local bare origin; `tests/test_ledger_publish_entry.py`,
 `tests/test_ledger_cloud_claims.py`, `tests/test_ledger_cloud_run.py`): a fresh clone publishes its claim and leaves
 HEAD, index and status unchanged; 16 clones publishing 3 rounds at once land every entry (the old retry, five
-attempts with no pause, lost 25 to 27 of 48 in the same race); a refused push is printed and the run continues; a
+attempts with no pause, lost 25 to 27 of 48 in the same race; that smoke test lost one entry once on a heavily loaded
+machine and passed in isolation); a refused push is printed and the run continues; a
 reclaim of another machine's claim is held back when origin shows a renewal.
+
+MEASURED for #2081 (macOS, git 2.46.2, a machine under load, local bare origin; every figure is from the run that
+produced it and none is from a Linux container or a real remote). Each guard was shown failing on the four-file command
+with no flags before its fix: the publisher that found another process's live rebase aborted it (`the live holder's
+rebase was aborted`); a publisher ran git while another process held the lock; 15 of 18 processes (three rounds of six)
+printed `NOT published` for an entry that had landed (the same count in two runs; with the lock, none); a fresh process
+that called `_release`, `_record(..., "done")` or `work.py`'s stale-resume left nothing on origin and each now puts
+exactly one entry there as it exits, with no real `gh` reached; the id path took four different values for four
+`TMPDIR`s, two processes with two `TMPDIRs` carried two host tokens, and a holder's own lease renewal was not written;
+a forced 10 s retry pause carried a 2 s step 9.1 to 9.3 s past its deadline and now ends 0.01 s past it. Four-file
+command: 69 tests before, 118 after, `118 passed in 262 s` on a machine with a load average of about 13 (the researcher's
+quiet-machine baseline for the 69 was about 166 s). The memory cost of the exit hook in the test suite, on
+`tests/test_merge_reconcile.py` (59 tests, serial, `/usr/bin/time -l`): peak resident set 276 MB with no hook, 696 MB with
+the hook and without the suite's fixture, 272 MB with the fixture. Every clause of every new guard was broken on its own
+and its test seen red (the list is in the pull request).
+
+FIX ROUND 1 for #2081 (the same machine and git; the reviewer's findings, each shown failing before its fix with the
+four-file command on a copy of the tree with only the new tests in: `46 failed, 142 passed in 273 s`): a lock that
+cannot be made no longer fails open (every locked entry point ran git with no lock; now none does without
+`SIGMA_LEDGER_ALLOW_UNSERIALISED=1`); a rebase that `git rebase --abort` could not clear was published over and printed
+`published` (now `NOT published`); a non-UTF-8 file at the id path raised `UnicodeDecodeError` out of `container_id`, and
+a FIFO there hung the read until the test's 20 s timeout; a symlink at that path was followed. Two new deterministic
+probes hold the lock across every git call of `publish_entry` and of each tick verb; they pass on the code as it was
+and fail only when the lock is released early (they are the guard against that, not a measurement of anything).
+After the fixes the four-file command gives `188 passed in 200 s`, exit 0, on a machine with a load average of about 6
+(188, not 118: 71 tests were added and one test that stayed green with the fixture it named removed).
+
+ONE FINDING that changes what "safe on disk" means (git 2.46.2, MEASURED): `git rebase --abort` discards uncommitted
+changes to tracked files. So when a publisher dies mid-rebase and the next `publish_entry` clears the rebase, an entry
+appended to an entries file the dead publisher had already tracked is lost, not deferred. See residual (a).
+
+FIX ROUND 2 for #2081 (the same machine and git; the second reviewer's findings, each shown failing before its fix with
+the four-file command on a copy of the tree with only the new tests in: `23 failed, 214 passed in 150 s`): the lock
+file was truncated and written THROUGH a committed symlink (the victim was left empty and `ledger: published` was
+printed; now every locked verb defers and the victim is byte-identical, for a symlink at the file, a dangling one and a
+symlinked `state/`), `publish_entry`'s `ledger-self-created` marker had the same hole, an empty `CONTAINER_ID_DIRS` with
+a pinned id path raised `IndexError` out of `container_id`, and the NOT-published tail promised a retry that a lock
+refusal cannot get. Some new tests pass on the unfixed code ON PURPOSE: they pin behaviour the code already had and go
+red only when a clause is removed (the `rebase-apply` marker, the release of the lock and the clearing of its record on
+every way out, the validation of a refused branch or remote AHEAD of the lock, the exit flush handing its remaining time
+to `publish_entry`, the id writer never writing through a planted symlink or FIFO). After the fixes the four-file
+command gives `238 passed in 131 s`, exit 0, on a machine with a load average under 5.
 
 To check these claims on your own checkout, run
 `python3 -m pytest tests/test_ledger_lease_renew.py tests/test_ledger_cloud_claims.py tests/test_ledger_publish_entry.py tests/test_ledger_cloud_run.py`.
@@ -806,8 +937,77 @@ Each guard was also broken on its own and seen to fail that gesture (see the pul
 NOT MEASURED: no controlled run has pushed the ledger branch from a real Claude Code cloud container. An adopter's ledger
 branch holds many `sync.publish` commits authored from cloud sessions, which is evidence that pushes landed, not a
 measurement. The container-id file, the proxy's treatment of git over the remote, and the 90-second limit against a
-real remote are all untested there. Lever if a cloud run left an entry unpublished: `python3 sync.py publish .sdlc`
-in the checkout, or run `/sigma-ledger` once.
+real remote are all untested there. Also not measured for #2081: `flock` on a real container filesystem (overlay and
+network mounts included; a filesystem that silently does not exclude gives back the old behaviour); whether a real
+sandboxed shell can write `/tmp` or `/var/tmp`; the real-remote latency of a queue of publishers; Windows (no `fcntl`: the refusal and the opt-in were driven by
+patching `sync.fcntl`, not on a Windows machine); a real container's refusal of `flock`;
+the exit-time flush from a real `work.py start` (the stale-resume function was driven in a subprocess, not the whole
+verb); whether the stderr line an exit hook prints is seen on a real host (a hook-run process's stderr may go nowhere); what the next publisher does when a SIGKILLed holder's own git is still running. Lever if a cloud run left an
+entry unpublished: `python3 sync.py publish .sdlc` in the checkout, or run `/sigma-ledger` once.
+
+Residuals of the publish path (named, not closed; each is a ticket):
+
+- (a) **A second append from one process.** `ledger.files_for` matches every pid file of the actor, so one process's
+  publish stages and tracks another process's entries file. If that other process appends AGAIN while the first one's
+  rebase runs, the file is dirty, the rebase refuses and the first process prints `NOT published`. The entry is on
+  disk and the next flush carries it, EXCEPT after a publisher was killed mid-rebase: the next `publish_entry` clears
+  the rebase with `git rebase --abort`, which discards the uncommitted entry (measured, above). "Both entries reach
+  origin" is proved for the shape where each process appends ONCE before it publishes (the tests append from separate
+  processes, so their files are new and untracked); it is NOT proved for a second append. `rebase.autoStash` is
+  deliberately not set.
+- (b) `bootstrap`'s `init` and a first `publish_entry` can still race on creating the worktree (`bootstrap`'s own
+  `init` is not under the lock; it is an operator one-shot and idempotent).
+- (c) A SIGKILLed `git` leaves `.git/worktrees/ledger/index.lock` and every later publish defers until a person
+  removes it.
+- (d) `ledger.append` and the other entries-stream writers named above do not trigger a flush. Lever:
+  `python3 sync.py publish .sdlc`.
+- (e) A Slack listener or `dag_lease` publish with an unbounded runner can hold the lock for as long as its git hangs.
+- (f) **A SIGKILLed holder can leave a live ORPHAN `git`.** The bounded runner starts git in its own session, so the
+  kernel frees the lock while the rebase is still running (MEASURED: lock free, orphan alive, `rebase-merge` present);
+  the next publisher's stale-rebase abort can then meet a live git. The likely outcome is an `index.lock` deferral;
+  that outcome was reasoned, not run. Lever: end the orphan git, then `python3 sync.py publish .sdlc`.
+- (g) **Which paths abort a stale rebase, and what a watcher tick does about one.** A watcher call killed at its 120 s
+  limit on a laptop can leave a rebase behind. Four paths run `git rebase --abort` in the ledger worktree. (1)
+  `publish_entry` aborts any stale rebase FIRST (`_abort_stale_rebase`), but it returns before it when a laptop's
+  watcher is live, so it is the path a cloud run takes. (2) The watcher's `pull` aborts after ITS OWN `git rebase`
+  fails, and git refuses a rebase while one is stopped: MEASURED with git 2.46.2 (real worktree, nobody holding the
+  lock), a `pull` over a stopped rebase answered `pull deferred` and the rebase directory was gone. (3) `publish`
+  aborts only after a rejected push, when the retry's own fetch-and-rebase fails: MEASURED the same way, the rebase
+  directory was gone. (4) `publish_receipt` has the same shape as (3); read from the code, NOT run. So a stale rebase
+  is usually cleared by the next `pull` tick, as a side effect and without saying so. A `publish` whose push is
+  ACCEPTED aborts nothing: MEASURED, it pushed the detached HEAD of the stopped rebase, answered `published` and left
+  the rebase directory in place (this predates #2081). Not claimed: that a laptop's watcher always clears one within a
+  tick.
+- (h) **A stale rebase that `git rebase --abort` cannot clear.** Reproduced with real git: a dead publisher's rebase
+  stopped BEFORE the pick that tracks another process's entries file, and that process then appended again, so the
+  file reappeared UNTRACKED; `git rebase --abort` exits 128 ("untracked working tree files would be overwritten by
+  reset") and the rebase directory stays. `publish_entry` used to publish from the detached HEAD and print `published`
+  while origin lacked the earlier entry. It now prints `ledger: NOT published (a rebase is still in progress in the
+  ledger worktree and git rebase --abort could not clear it ...)` and pushes nothing, on every step until a person acts
+  (a watcher tick's own `git rebase --abort`, in `pull`, meets the same refusal). The entries are on disk. **Lever**, in the ledger worktree
+  (`<checkout>/.sdlc/ledger`): run `git rebase --abort`, which prints the untracked file it would overwrite; move that
+  file out of the worktree; run `git rebase --abort` again; append the moved file's lines to the file of the same name
+  that the abort restored (`cat <moved> >> <file>`); then run `python3 sync.py publish .sdlc`. A test runs this exact
+  sequence against real git (`test_the_documented_lever_for_a_rebase_git_cannot_abort_works`).
+- (i) **`publish_receipt` defers while another publisher holds the lock.** It takes the lock without waiting, and the
+  two callers (`work.py pr`, and the merge-time receipt in `work.py`) treat anything but `receipt published` as not
+  done: `work.py pr` returns `receipt pending for PR #N: ...` without recording the PR, and the next run retries.
+  While a loop's exit flush holds the lock (up to its 90 s) or a Slack or `dag_lease` publish with an unbounded runner
+  does (residual (e)), a receipt is therefore deferred as a matter of course, where before #2081 it only collided when
+  two publishers happened to overlap. Only a team that turned receipt sharing on is affected (it is off by default).
+  Nothing is lost. **Lever:** run the command again once the holder is gone (`cat .sdlc/state/ledger-sync.lock` names
+  it). A bounded wait, as `publish_entry` has, is a possible follow-up; it is NOT built. Not measured: how often this
+  happens on a real team.
+- (j) **A platform that refuses reads live while nothing publishes.** Where the ledger lock cannot be made (no
+  `fcntl`, or a filesystem whose `flock` is unsupported) and `SIGMA_LEDGER_ALLOW_UNSERIALISED` is not set, the
+  watcher's tick still touches its heartbeat before every call, so the heartbeat reads FRESH while its `sync.py
+  publish` and `pull` defer on every tick and nothing reaches origin. The only traces are the deferral line each verb
+  prints (`publish deferred ...: ledger publishes cannot be serialised here ...`, which the watcher appends to
+  `.sdlc/state/watch.log`) and the one stderr note per command. **Where to look:** `.sdlc/state/watch.log`, or run
+  `python3 sync.py publish .sdlc` and read its stderr. **Lever:** `SIGMA_LEDGER_ALLOW_UNSERIALISED=1` (accepting that
+  two publishers in one checkout can then collide), or move the checkout to a filesystem where `flock` works. Not
+  built: a doctor or session-start check that names this. Not measured on a real platform (the refusal was driven by
+  patching `sync.fcntl`).
 
 ## What remains (#895 slice 7)
 

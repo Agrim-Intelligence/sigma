@@ -1,6 +1,6 @@
 """#464: the kernel-lock marker families never read as held after their owner dies.
 
-The singleton and stripe locks (`STATE.md.lock`, `merge-reconcile.lock`, `knowledge-sync.lock`,
+The singleton and stripe locks (`STATE.md.lock`, `merge-reconcile.lock`, `knowledge-sync.lock`, `ledger-sync.lock`,
 `feature-judge-spend.lock`, `phase-end-<stripe>.lock`, `sessions/locks/<slot>.lock`) are `flock`
 files that Sigma never deletes (deleting one admits a second holder), so their cap is their file
 count. What must hold instead is the LIVENESS property: while a real process holds one it is held,
@@ -40,6 +40,10 @@ CASES = {
               "import sync\nf = sync._knowledge_lock(sd)\nassert f not in (None, True)\n"
               "print('held', flush=True); time.sleep(600)\n",
               "import sync\nf = sync._knowledge_lock(sd)\nsys.exit(0 if f not in (None, True) else 1)\n"),
+    "ledger-sync": ("ledger-sync.lock",
+              "import sync\nf = sync._ledger_lock(sd)\nassert f not in (None, True)\n"
+              "print('held', flush=True); time.sleep(600)\n",
+              "import sync\nf = sync._ledger_lock(sd)\nsys.exit(0 if f not in (None, True) else 1)\n"),
     "feature-judge-spend": ("feature-judge-spend.lock",
               "import feature_judge as fj\nfd = fj._acquire_spend_lock(sd, timeout_s=5)\nassert fd not in (None, -1)\n"
               "print('held', flush=True); time.sleep(600)\n",

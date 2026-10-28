@@ -149,6 +149,8 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/gh_api.py | _write_cache | fs-write | 2 | probe cache (cache_dir injected, unwired) and the read breaker / shared bounded fallback log (reads and writes, cap 200, no text/argv/body) under .sdlc/state, written only with an sdlc_dir, after state.refuse_symlinks vets the file and its .tmp (#708, #895) | low |
 | skills/sigma-loop/scripts/goal_state_prune.py | sweep | fs-remove | 4 | goal is terminal (newest action-log internal row is recorded done), nothing of it younger than 7 days, no work record, no live agent marker; regular non-symlink files directly under owned state dirs only; run_stop markers by 30-day age (#458); call-runs verify/merge receipts and verify lock of the same terminal goal, kept whole while that verify lock is held (#1650) | medium |
 | skills/sigma-loop/scripts/ledger.py | _maybe_prune_journal | fs-write | 1 | ungated | medium |
+| skills/sigma-loop/scripts/ledger.py | _publish_container_id | fs-remove | 1 | CLAUDE_CODE_REMOTE true or 1 (a cloud session); removes only the temporary file this call created a moment before, an OS error is swallowed | low |
+| skills/sigma-loop/scripts/ledger.py | _publish_container_id | fs-write | 2 | CLAUDE_CODE_REMOTE true or 1 (a cloud session); writes one random id file for the container into /tmp, or /var/tmp when that cannot be written, published with an exclusive hard link (the environment is not read; on a non-POSIX platform the platform's temporary directory), an OS error is swallowed and the next directory or a derived id is used | low |
 | skills/sigma-loop/scripts/ledger.py | append | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/ledger.py | main | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/ledger.py | prune_journal | fs-remove | 1 | ungated | high |
@@ -257,6 +259,7 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/sync.py | _knowledge_lock | fs-write | 1 | ungated | medium |
 | skills/sigma-loop/scripts/sync.py | _prune | fs-remove | 3 | ungated | high |
 | skills/sigma-loop/scripts/sync.py | _publish_knowledge | git-destructive | 1 | ungated | high |
+| skills/sigma-loop/scripts/sync.py | _push_receipt | git-push | 1 | ungated | high |
 | skills/sigma-loop/scripts/sync.py | _push_with_retry | git-push | 1 | ungated | high |
 | skills/sigma-loop/scripts/sync.py | _record_push | git-ref-write | 1 | after a push of HEAD to `<remote>/<branch>` succeeded; sets the local remote-tracking ref to exactly that commit, which a narrow-refspec push does not move (#1142) | high |
 | skills/sigma-loop/scripts/sync.py | _reroot | fs-remove | 2 | operator-run `sync.py bootstrap` only (#1142), and only after `_shares_history` proves the ops branch shares no commit with the remote's; removes only its own `.sdlc/state/orphaned/*/ledger/PENDING` markers: a superseded one, and its own once the settle step completes | high |
@@ -269,7 +272,6 @@ LANDING HELPERS (#931): `merge_pr_pinned` and `create_pr_nondraft` are in the sc
 | skills/sigma-loop/scripts/sync.py | bootstrap | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/sync.py | init | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/sync.py | init | git-destructive | 1 | ungated | high |
-| skills/sigma-loop/scripts/sync.py | publish_receipt | git-push | 1 | ungated | high |
 | skills/sigma-loop/scripts/tier_escalation.py | write_floor | fs-remove | 1 | ungated | high |
 | skills/sigma-loop/scripts/tier_escalation.py | write_floor | fs-write | 2 | ungated | medium |
 | skills/sigma-loop/scripts/timing_store.py | _sweep | fs-remove | 2 | ungated | high |
