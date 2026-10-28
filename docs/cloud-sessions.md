@@ -88,6 +88,10 @@ same reason. Neither ever prints the variable's value:
 delivers values (trimming, reaching sessions already running) was observed. Every one of those failure modes
 refuses, and the doctor shows the identity it read and the value it expects.
 
+**A worked example:** this repository's own environment, `sigma-cloud`, keeps its setup script and operator
+steps in [`tools/cloud/`](../tools/cloud/README.md) (#2090): what a fresh clone of a repository whose `.sdlc/` is
+git-ignored needs before `/sigma-goal <N> --land` can run there.
+
 ## What the proxy blocks
 
 A cloud session puts a proxy in front of `api.github.com`. `skills/sigma-loop/scripts/gh_session.py`

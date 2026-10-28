@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`tools/cloud/`: the setup script and operator steps of `sigma-cloud`, the cloud environment Sigma's own goals run in with `/sigma-goal <N> --land` (#2090).** A fresh clone of this repository has no `.sdlc/config.json` (`.sdlc/*` is git-ignored), so the script builds one from the installed Sigma's template: the GitHub backlog assigned to `@me`, board and ledger off, `auto_merge: protected`, `require_review: approval`, and a verify of the suite minus CI's six slow files on `-n auto` with a 240-minute limit. It also installs a git newer than the image's 2.43 (PPA key pinned by fingerprint), pytest, pytest-xdist and PyYAML in every `python3` on PATH, and Sigma itself. Here a run ends parked, awaiting merge: this repository's ruleset makes GitHub report every PR blocked, and Sigma never merges a blocked PR (#2092 tracks an opt-in merge through the account's bypass). Nothing in the shipped skills changes. `tests/test_cloud_setup_script.py`, now in the PR smoke set, keeps the verify string, CI's slow list and the README in step, and runs the script offline with every tool failing and again with a real config step. **Not measured:** the script has not yet run in a real container; verify's wall time there (about 2 hours expected from CI's nightly) is the first diagnostic session's to record on #2090.
+
 ## 1.0.24 — 2026-10-29 — the ledger publish path after the cloud-run release: one publisher at a time, an exit flush, a container id that ignores TMPDIR
 
 - **The ledger publish path after #2076: one publisher at a time, a flush for processes that never go through `loop.py main`, a container id that ignores `TMPDIR`, and a retry pause that obeys the deadline (#2081).**
