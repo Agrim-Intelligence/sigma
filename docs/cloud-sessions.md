@@ -39,11 +39,48 @@ by `tests/test_verify_env_trust_prose.py`), and every verify records in its evid
 
 **What it grants:** `loop.py verify` and `loop.py red` only, in a checkout whose one local `origin` URL names that
 `owner/name`, and only while every command they are about to run is the approved string.
-- A goal whose acceptance record or frontmatter adds its own `verify_command` is refused. In one private backlog
-  that was 34 of 214 acceptance records (16%, counted 2026-10-27); those goals still need the git-local grant.
+- A goal's own `verify_command` (in its acceptance record or its frontmatter) is not covered: the value is the hash
+  of exactly one command, so it can approve the repository's `verify.command` and never a second one as well. In one
+  private backlog that was 34 of 214 acceptance records (16%, counted 2026-10-27). Such a goal need not wait for the
+  git-local grant any more: it can drop its command and verify with the repository's `verify.command` alone (see
+  below).
 - Every other repository command still needs the git-local grant: pipeline checks, `review.command`, a custom
   `knowledge_graph.builder`, `autowatch.drive_cmd`, the backlog embedder, `.sdlc/risk-detect.conf`, the unit and
   upkeep rehearsal, `sigma-rebase`'s verify, and the sealed-acceptance PR gate.
+
+**A goal's own command (#2085).** `acceptance.py record` refuses a `--verify-command` (or a goal-file
+`verify_command:` line) the approval cannot cover, when the approval covers the repository's `verify.command` alone:
+before it builds, posts or writes anything, naming the reason and the fixes. The check reads the process that records,
+so a goal recorded in a shell without the variable is accepted there and refused at verify; `loop.py verify` stays the
+authority. When a record already holds a command, `loop.py verify` and `loop.py red` exit 2 with the reason
+`goal-command` and print the fix first. For a command in the acceptance record, clear it before the goal's first
+verify (`<goal>` is the goal's number or path):
+
+```
+python3 -I <installed-sigma>/skills/sigma-loop/scripts/acceptance.py set-verify-command .sdlc <goal> --clear
+```
+
+- The goal then verifies with the full repository `verify.command` only, and its own command stops running: longer,
+  not weaker, where that command only focused the repository's check. A check the repository's `verify.command`
+  does not prove is not preserved by a clear; it belongs in the operator's route below (fold it into `verify.command`
+  and re-approve that value). `--verify-command <command>` replaces the command instead and runs the same check,
+  so when the approval covers the repository's `verify.command` alone, only a command it covers (the repository's
+  own) is accepted; under any other approval the replace is accepted here and `loop.py verify` decides.
+- It rewrites only the record's one `verify_command` line, atomically, and keeps the goal worktree's copy of the
+  record identical when there is one. A differing or symlinked worktree copy is left alone and the verb prints the
+  `cp` line that replaces it, for the operator or the loop slot that owns that worktree. A rerun that changes nothing
+  checks the copy the same way and never writes it, so a copy a crash left stale is named, not hidden.
+- It refuses once `.sdlc/state/verify/<goal>.json` exists, because that evidence binds the record's exact bytes. The
+  operator's lever: remove that file, rerun the verb, then run `loop.py verify` again.
+- A local goal whose frontmatter declares the command needs that `verify_command:` line deleted first (the verb
+  refuses `--clear` while the file declares one), so for that case the file edit comes before the gesture.
+- A root record that git tracks (this repository commits `.sdlc/acceptance/`) is still rewritten, and the verb prints
+  the one command that clears the now-modified file, which would otherwise make the next `work.py start` in the root
+  checkout refuse: `git -C <root> checkout -- .sdlc/acceptance/<goal>.md`, run by the operator or the loop slot that
+  owns that checkout once the goal's PR carries the change.
+- A rewrite changes the record's sha256. The ledger `acceptance` event keeps the old one (it is not re-paired);
+  verify evidence written afterwards carries the new one.
+- Measured on fixtures only. The run in a real cloud environment is UNMEASURED.
 
 **Identity:** the identity is the `origin` URL's last two path segments, whatever the host. The same `owner/name` on
 another host, a mirror or a local path reads the same, so set the value only in an environment used for that
@@ -53,11 +90,15 @@ repository.
 the branch being verified, and the tests run as that branch wrote them, exactly as under the git-local grant.
 
 **When it refuses**, `loop.py verify` and `loop.py red` exit 2 and say why on stderr, and `/sigma-doctor` names the
-same reason. Neither ever prints the variable's value:
+same reason, except `goal-command`, which it never reports (it checks the repository's own command and knows no goal).
+Neither ever prints the variable's value:
 - `empty`, `malformed`: it must be exactly one 64-character lowercase hex value, with no spaces, no newline and
   no second value.
 - `mismatch`: the command changed, or the goal adds its own. A changed `verify.command` is a hard cutover: every
   container refuses until the operator sets the new value, and a session already running may keep the old one.
+- `goal-command`: the value approves the repository's `verify.command`, and the goal adds its own command. The text
+  leads with the goal's fix (above), then the operator's route: fold the check into `verify.command` and re-approve
+  that value, or the git-local grant after inspecting the project, never an unattended run.
 - `vetoed`: this checkout's git-local `sigma.allowRepositoryShellCommands` is `false` or not a boolean. An
   explicit "no" always wins.
 - `no-identity`: no single local `origin` URL naming `owner/name`, or not a Git worktree. A checkout owned by
