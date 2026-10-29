@@ -11,6 +11,7 @@ import pathlib
 
 import pytest
 
+import test_resource_verify_1601 as base
 from test_resource_verify_1601 import GIB, MIB, _restore_guard_modules, env  # noqa: F401  (fixtures)
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -36,6 +37,24 @@ def test_ac1_empty_state_with_room_for_two_runs_more_than_one_worker(env, tmp_pa
     assert out.hold is None and out.returncode == 0
     assert out.workers == 4
     assert out.outputs[0].split()[:3] == ["4", "4", "4"]
+
+
+def test_ac1_ac2_through_loop_verify_goal_an_empty_state_folder(tmp_path, monkeypatch):
+    """`loop.py verify` itself (verify_goal) on a `-n {workers}` command, with nothing in the state folder.
+    Roomy machine: the command sees more than one worker. No room above the reserve: exit 5 RESOURCE-HOLD."""
+    monkeypatch.delenv("SIGMA_RESOURCE_MODE", raising=False)
+    sdlc, goal = base._repo(tmp_path, {"resource": {"mode": "enforce"}},
+                            command="echo workers=$SIGMA_VERIFY_WORKERS {workers}")
+    loop = base._loop(monkeypatch, tmp_path, available=12 * GIB)
+    assert not (tmp_path / "rstate" / "observed.json").exists()
+    assert loop.verify_goal(sdlc, goal) == 0
+    ev = json.loads((pathlib.Path(sdlc) / "state" / "verify" / "0001.json").read_text())
+    assert ev["tail"] == ["workers=4 4"]
+    held = tmp_path / "held"
+    held.mkdir()
+    sdlc, goal = base._repo(held, {"resource": {"mode": "enforce"}}, command="echo {workers}")
+    loop = base._loop(monkeypatch, held, available=3 * GIB)
+    assert loop.verify_goal(sdlc, goal) == 5
 
 
 def test_the_cold_grant_reserves_what_it_admitted_and_marks_the_lease_cold(env):
