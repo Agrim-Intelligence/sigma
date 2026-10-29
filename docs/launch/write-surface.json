@@ -2890,6 +2890,14 @@
     },
     {
       "path": "skills/sigma-loop/scripts/work.py",
+      "function": "_announce_ruleset_bypass",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "opt-in work.merge_bypass set to the exact string ruleset; only after a confirmed merge that went through the account's ruleset bypass; one non-idempotent REST comment POST via gh_api.comment_pr naming the bypassed rules, no fallback, a failure is named on the merge line and never undoes the merge (#2092)",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/work.py",
       "function": "_create_exclusive",
       "rule": "fs-write",
       "count": 1,
