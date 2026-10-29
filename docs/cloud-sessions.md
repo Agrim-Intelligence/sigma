@@ -126,9 +126,12 @@ Neither ever prints the variable's value:
 
 **Never in CI:** a CI job's environment comes from the repository's own workflow files.
 
-**Status: UNMEASURED in a real cloud environment.** Neither the clone's `origin` URL shape nor how the panel
-delivers values (trimming, reaching sessions already running) was observed. Every one of those failure modes
-refuses, and the doctor shows the identity it read and the value it expects.
+**Status: measured in two cloud environments.** In another repository's environment on 2026-10-27 (#2085) and
+in `sigma-cloud` on 2026-10-29 (#2090), a value computed on a laptop was accepted in a new session. Doctor's
+trust row named the environment approval, and `loop.py verify` recorded `trust: environment`, so the clone's
+`origin` matched the identity the value was computed for. Still not observed: whether a changed value reaches a session already
+running, and how the panel treats surrounding whitespace. Each of those failure modes refuses, and the doctor
+shows the identity it read and the value it expects.
 
 **A worked example:** this repository's own environment, `sigma-cloud`, keeps its setup script and operator
 steps in [`tools/cloud/`](../tools/cloud/README.md) (#2090): what a fresh clone of a repository whose `.sdlc/` is

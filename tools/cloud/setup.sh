@@ -17,15 +17,17 @@
 # named, so a different user name on the image costs nothing; with none found, section 4 warns.
 REPO=$(for d in /home/*/sigma; do [ -e "$d/.git" ] && { echo "$d"; break; }; done)
 SIGMA_MIN=1.0.21   # the first Sigma that reads the environment's verify approval
-# The suite minus the six files CI's nightly tier skips (`SLOW` in .github/workflows/ci.yml), on the
-# worker count the resource guard grants for `-n auto`. The operator's approval value is the hash of
-# exactly this string: tests/test_cloud_setup_script.py keeps it, CI's list and tools/cloud/README.md
-# in step, and changing it means the operator sets a new value.
-VERIFY="python3 -m pytest tests/ --ignore=tests/test_readiness_drills.py --ignore=tests/test_readiness_growth_audit.py --ignore=tests/test_b6_463.py --ignore=tests/test_mutation_sample.py --ignore=tests/test_onboarding_control.py --ignore=tests/test_shared_sdlc_paths.py -rs -q -n auto -p no:cacheprovider"
-# loop.py stops a verify after 60 minutes unless told otherwise. CI's nightly runs this same command on a
-# 3-core macOS runner: about 60 minutes on 2026-10-17, and stopped at its 120-minute limit at about 98% on
-# every run since. The guard grants 3 workers on a 4-vCPU box, so expect about 2 hours per verify here
-# (not yet measured in the container), and each review fix-up cycle adds another.
+# The suite minus the six files CI's nightly tier skips (`SLOW` in .github/workflows/ci.yml), on two
+# workers. `-n auto` ran one here: this suite's conftest answers it with a quarter of available memory
+# at 2000 MB a worker. A literal is what neither that hook nor the guard's cold ring lowers, and a later
+# verify in the same container holds, briefly, unless the first one's whole peak fits the guard's room,
+# which two workers' should and three workers' may not (tools/cloud/README.md has the numbers). `-rsEf`
+# lists failing tests last, where Sigma's five-line evidence tail keeps them. The operator's approval
+# value is the hash of exactly this string: tests/test_cloud_setup_script.py keeps it, CI's list and
+# tools/cloud/README.md in step, and changing it means the operator sets a new value.
+VERIFY="python3 -m pytest tests/ --ignore=tests/test_readiness_drills.py --ignore=tests/test_readiness_growth_audit.py --ignore=tests/test_b6_463.py --ignore=tests/test_mutation_sample.py --ignore=tests/test_onboarding_control.py --ignore=tests/test_shared_sdlc_paths.py -rsEf -q -n 2 -p no:cacheprovider"
+# loop.py stops a verify after 60 minutes unless told otherwise. One worker took 2h16m here on 2026-10-29;
+# two are not measured yet, and each review fix-up cycle adds another verify.
 VERIFY_TIMEOUT_MINUTES=240
 
 # --- 1. Newer git ------------------------------------------------------------
@@ -83,7 +85,7 @@ else
 fi
 
 # --- 2. pytest in every python3 ----------------------------------------------
-# Sigma ships stdlib-only, so the suite needs a python3 with pytest, pytest-xdist (`-n auto`) and
+# Sigma ships stdlib-only, so the suite needs a python3 with pytest, pytest-xdist (`-n`) and
 # PyYAML (tests/test_skill_frontmatter_yaml.py). The verify command and Sigma's planned-test checks
 # both run the first python3 on PATH (#2079), so every interpreter on PATH gets them. Interpreters are
 # told apart by sys.prefix, not by resolving symlinks: a virtualenv's python3 resolves to its base
