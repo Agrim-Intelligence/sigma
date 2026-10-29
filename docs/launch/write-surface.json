@@ -1482,7 +1482,7 @@
     },
     {
       "path": "skills/sigma-loop/scripts/goal_python.py",
-      "function": "_resolve",
+      "function": "_resolve_inner",
       "rule": "fs-remove",
       "count": 1,
       "gate": "unlinks only the stale build marker in the git directory, under the build lock, after a cut-short build",

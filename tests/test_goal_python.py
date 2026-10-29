@@ -624,3 +624,56 @@ def test_the_docs_state_the_order_and_what_was_not_measured():
     log = (REPO / "CHANGELOG.md").read_text()
     unreleased = log.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
     assert "#2079" in unreleased and "uv" in unreleased and "interpreter" in unreleased, "CHANGELOG.md"
+
+
+# --- review findings: the probe is bounded as a group, bookkeeping errors refuse, a symlinked .venv is pinned ---
+
+def test_a_probe_whose_interpreter_leaves_a_child_holding_the_pipes_still_ends_at_the_budget(tmp_path, env):
+    """The interpreter exits at once but leaves a `sleep` holding stdout: a probe that kills only the direct
+    child waits for that sleep. Clause: the probe runs in its own session and the whole group is killed."""
+    root = project(tmp_path)
+    py, _ = venv(env, root)
+    child = tmp_path / "probe-child.pid"
+    py.write_text('#!/bin/sh\nsleep 40 &\necho $! > "%s"\nexec sleep 40\n' % child)
+    gp = load("goal_python")
+    started = time.time()
+    with pytest.raises(gp.InterpreterError) as exc:
+        gp.resolve(root, budget=1)
+    assert time.time() - started < 20, "the probe waited for its child"
+    assert "did not answer" in str(exc.value), exc.value
+    pid = int(child.read_text())
+    deadline = time.time() + 5
+    while time.time() < deadline and alive(pid):
+        time.sleep(0.05)
+    assert not alive(pid), "the probe's whole process group must be gone"
+
+
+@pytest.mark.skipif(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0), reason="needs a non-root POSIX user")
+def test_a_git_dir_that_cannot_be_written_refuses_with_the_interpreter_error_not_a_traceback(tmp_path, env):
+    """Clause: `_resolve` converts an `OSError` from the build bookkeeping into `InterpreterError`."""
+    root = project(tmp_path)
+    env.uv()
+    gitdir = root / ".git"
+    gp = load("goal_python")
+    gitdir.chmod(0o500)
+    try:
+        with pytest.raises(gp.InterpreterError) as exc:
+            gp.resolve(root)
+    finally:
+        gitdir.chmod(0o700)
+    assert "could not be prepared" in str(exc.value), exc.value
+    assert not (root / ".venv").exists()
+
+
+def test_a_symlinked_venv_is_used_as_the_venv_it_points_to(tmp_path, env):
+    """Pins today's behaviour so a change is a decision: a `.venv` symlink to a directory with a pyvenv.cfg is a venv
+    (the worktree's own `.venv` is the operator's to provide, and is run under the same gate as before)."""
+    root = project(tmp_path)
+    real = tmp_path / "elsewhere"
+    (real / "bin").mkdir(parents=True)
+    (real / "pyvenv.cfg").write_text("home = fake\n")
+    env.py(real / "bin/python")
+    (root / ".venv").symlink_to(real, target_is_directory=True)
+    gp = load("goal_python")
+    got = gp.resolve(root)
+    assert got.path == str(root / ".venv/bin/python") and "pyvenv.cfg present" in got.how

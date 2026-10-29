@@ -31,6 +31,7 @@ import importlib.util
 import os
 import pathlib
 import re
+import signal
 import shutil
 import subprocess
 import threading
@@ -90,6 +91,13 @@ def resolve(root, env=None, budget=3600):
 
 
 def _resolve(root, env, budget):
+    try:
+        return _resolve_inner(root, env, budget)
+    except OSError as exc:                   # an unwritable git dir, a lock file that cannot be opened, ...
+        raise InterpreterError("the goal worktree's interpreter could not be prepared: %s" % exc) from None
+
+
+def _resolve_inner(root, env, budget):
     venv = root / ".venv"
     gitdir = _git_dir(root)
     marker = gitdir / MARKER if gitdir else None
@@ -103,7 +111,7 @@ def _resolve(root, env, budget):
     with _locked(gitdir / LOCK, budget):
         if marker.exists():
             _remove(venv)
-            marker.unlink()
+            marker.unlink(missing_ok=True)
         elif os.path.lexists(venv):          # another process finished the build while we waited
             return _existing(root, env, budget)
         if blockers:
@@ -206,16 +214,29 @@ def _named(py):
 
 def _probe(py, how, env, budget):
     """Fail closed unless `py -c "import pytest"` exits 0."""
+    own_group = {} if os.name == "nt" else {"start_new_session": True}
     try:
-        proc = subprocess.run([py, "-c", "import pytest"], capture_output=True, text=True, env=env,
-                              timeout=budget)
-    except subprocess.TimeoutExpired:
-        raise InterpreterError("interpreter %s (%s) did not answer `import pytest` within %ss"
-                               % (_named(py), how, budget)) from None
+        proc = subprocess.Popen([py, "-c", "import pytest"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, env=env, **own_group)
     except OSError as exc:
         raise InterpreterError("interpreter %s (%s) cannot run: %s" % (_named(py), how, exc)) from None
+    try:
+        out, err = proc.communicate(timeout=budget)
+    except subprocess.TimeoutExpired:
+        # Kill the whole group: an interpreter that is a script may have started a child that keeps the pipes
+        # open, and `communicate()` would then wait for it long past the budget.
+        try:
+            os.killpg(proc.pid, signal.SIGKILL) if own_group else proc.kill()
+        except (OSError, ProcessLookupError):
+            proc.kill()
+        try:
+            proc.communicate(timeout=10)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+        raise InterpreterError("interpreter %s (%s) did not answer `import pytest` within %ss"
+                               % (_named(py), how, budget)) from None
     if proc.returncode:
-        tail = " | ".join((proc.stderr or proc.stdout or "").strip().splitlines()[-2:])
+        tail = " | ".join((err or out or "").strip().splitlines()[-2:])
         raise InterpreterError("interpreter %s (%s) cannot run pytest (`-c \"import pytest\"` exit %s%s)"
                                % (_named(py), how, proc.returncode, ": " + tail if tail else ""))
 
@@ -282,9 +303,9 @@ def _build(root, env, budget, marker):
             problem = str(exc)
     if problem is not None:
         _remove(venv)
-        marker.unlink()
+        marker.unlink(missing_ok=True)
         notes = _left_behind(root, before)
         raise InterpreterError("interpreter %s (%s) was not usable: %s; the venv it made was removed%s"
                                % (py, how, problem, "; " + "; ".join(notes) if notes else ""))
-    marker.unlink()
+    marker.unlink(missing_ok=True)
     return Resolution(py, how, _left_behind(root, before))
