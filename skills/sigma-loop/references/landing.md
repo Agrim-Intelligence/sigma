@@ -257,7 +257,7 @@ pass records the `done` later — see below.
 - `auto-merge armed …` → **`record review`**. GitHub will land it on its own re-check; an arm is a
   promise, not a merge (a later-failing check or a cancelled arm means it never lands).
 - `… auto_merge is off (…), leaving PR #N for a human` (the shipped default) and `… merging it is yours
-  to make (auto_merge: "protected")` → **`record review`**. A still-pending required check under
+  to make (auto_merge: "protected" or "always")` → **`record review`**. A still-pending required check under
   these policies OPENS with `required checks still pending …` (the failing-check wording) but ENDS
   with one of these two; trust the ending.
 
