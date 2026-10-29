@@ -172,9 +172,18 @@ def test_outlier_above_4x_median_is_excluded_and_logged(lease):
     assert any(json.loads(line)["event"] == "outlier" for line in events)
 
 
-def test_no_observations_admits_exactly_one_unit_then_holds(lease):
-    first = lease.admit("verify", 4, "r", "g1", pid=os.getpid())
+@pytest.mark.parametrize("kind", ["goal", "unknown"])
+def test_no_observations_admits_exactly_one_unit_then_holds(lease, kind):
+    """#2108: `verify` is the exception (tests/test_resource_verify_cold_2108.py); every other kind stays at one."""
+    first = lease.admit(kind, 4, "r", "g1", pid=os.getpid())
     assert first.n == 1
+    second = lease.admit(kind, 4, "r", "g2", pid=os.getpid())
+    assert isinstance(second, lease.Hold) and "observ" in second.reason
+
+
+def test_a_verify_with_no_observations_is_one_run_at_a_time_and_holds_the_second(lease):
+    first = lease.admit("verify", 4, "r", "g1", pid=os.getpid())
+    assert first.n >= 1
     second = lease.admit("verify", 4, "r", "g2", pid=os.getpid())
     assert isinstance(second, lease.Hold) and "observ" in second.reason
 

@@ -412,6 +412,13 @@ def _decide(kind, want, goal, limits, live, observed, waiting, now):
                 ("no observation of %s yet and %d units are already running (cold-start bound %d)"
                  % (kind, running, bound))
             return Hold(why, _retry())
+        if kind == "verify":
+            # #2108: one verify at a time, but as many workers as the room holds at the cold estimate (never fewer
+            # than one, never more than wanted or capped); the estimate is reserved until the run teaches the ring
+            n = max(1, min(want, int(room // max(limits.verify_cold_cost, 1))))
+            if limits.max_verify_workers:
+                n = min(n, limits.max_verify_workers)
+            return n, n * limits.verify_cold_cost
         return 1, 0
     n = min(want, int(room // max(cost, 1)))
     if kind == "verify" and limits.max_verify_workers:
@@ -461,6 +468,8 @@ def admit(kind, want, repo, goal, pid=None, ttl=None, config=None, now=None, env
                   "pid_start": process_start(pid),
                   "repo_hash": hashlib.sha256(str(repo).encode()).hexdigest()[:12], "goal": goal, "est_mem": est,
                   "workers": n, "ttl": ttl if guard._number(ttl) and ttl > 0 else DEFAULT_TTL, "peak": 0, "procs": 0}
+        if kind == "verify" and learned_cost(observed.get("verify", [])) is None:
+            record["cold"] = True   # #2108: est_mem is the cold estimate, not a measurement
         _atomic_write(os.path.join(directory, "leases", lease_id + ".json"), record)
         waiting.pop(goal, None) if kind == "verify" else None
         _atomic_write(os.path.join(directory, "waiting.json"), waiting)

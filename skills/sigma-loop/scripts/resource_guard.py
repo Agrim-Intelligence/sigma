@@ -391,11 +391,12 @@ def footprint(pid):
 PAGE_SIZE = mmap.PAGESIZE
 DEFAULTS = {"mode": None, "reserve_fraction": None, "max_share_fraction": None, "cpu_reserve_cores": None,
             "load_hold_ratio": None, "swapout_hold_mb_per_s": None, "shed": None, "shed_after": None, "max_goals": None,
-            "max_verify_workers": None, "hold_alert_minutes": None}
+            "max_verify_workers": None, "verify_cold_mb": None, "hold_alert_minutes": None}
 # Policy defaults, ratios of the machine. Uncalibrated: not measured against a real exhaustion.
 RESERVE_FRACTION = 0.20
 SHARE_FRACTION = 0.60
 SESSION_FRACTION = 1 / 32
+VERIFY_COLD_FRACTION = 1 / 8        # per verify worker on a cold ring (#2108): four sessions' worth, as a miss is caught only by the shed
 LOAD_HOLD_RATIO = 1.0
 PSI_HOLD = 10.0
 RESUME_SAMPLES = 2
@@ -468,6 +469,8 @@ def derive(sample, config=None, leases=(), observed=None):
     load_hold = (cfg["load_hold_ratio"] or LOAD_HOLD_RATIO) * sample.cpu_count
     session = (observed or {}).get("session_cost")
     session_cost = int(session) if _number(session) and session > 0 else int(sample.total * SESSION_FRACTION)
+    verify_cold_mb = cfg["verify_cold_mb"]
+    verify_cold_cost = verify_cold_mb * 1024 * 1024 if verify_cold_mb else int(sample.total * VERIFY_COLD_FRACTION)
     pressure = sample.pressure
     if isinstance(pressure, dict):
         some = pressure.get("some")
@@ -480,6 +483,7 @@ def derive(sample, config=None, leases=(), observed=None):
     limits = Limits(
         mode=cfg["mode"] or "enforce", shed=cfg["shed"] or "verify", shed_after=cfg["shed_after"] or SHED_AFTER, reserve=reserve, share_cap=share_cap,
         cpu_reserve=cpu_reserve, load_hold=load_hold, session_cost=session_cost,
+        verify_cold_cost=verify_cold_cost,
         swap_hold=cfg["swapout_hold_mb_per_s"], max_goals=cfg["max_goals"],
         max_verify_workers=cfg["max_verify_workers"], hold_alert_minutes=cfg["hold_alert_minutes"],
         unmaterialised=sum(c for c, done in leases if not done), leased=sum(c for c, _ in leases),

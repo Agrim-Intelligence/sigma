@@ -166,7 +166,14 @@ constant copied from a laptop, and nothing here ever pauses a process.
   verify process group Sigma itself started (TERM, a grace, then KILL). The result is `RESOURCE-HOLD (shed)`,
   exit 5, no evidence, the goal not failed; rerun once admission reopens. The shed run's measured footprint is learned like any other run's, so when it
   was large the rerun of the same goal is admitted with fewer workers; when it was small the count can be the same. A session is never signalled.
-- **Cold start.** Until a kind's ring holds one measured unit, a `verify` or `goal` admits one unit at a time. A
+- **Cold start.** Until a kind's ring holds one measured unit, a `goal` admits one unit at a time, and so does a `verify`
+  run, but a cold `verify` is granted several workers (#2108): the room above the reserve divided by one cold
+  per-worker estimate, at most the cpu-derived count and `resource.max_verify_workers`, never fewer than one, and a hold
+  when there is no room above the reserve. The estimate is `resource.verify_cold_mb` or, derived, one eighth of total
+  memory (uncalibrated; the real `sigma-cloud` per-worker figure is UNMEASURED). A smaller estimate admits more workers
+  and an estimate that is too low is caught only by the shed, so the default is deliberately high. The lease reserves
+  that estimate until the run has taught the ring, so the first verify of a cloud session no longer runs on one worker
+  under `-n {workers}`; a literal `-n N` is still run as written. A
   model session admits up to the room above the reserve divided by the derived session cost, never fewer than one,
   so several supervisors on one machine each get a session. A session lease is taken around each launched session
   and released when it ends; the ring then gets one observation of the session tree (the supervisor, the model
