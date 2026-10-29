@@ -564,9 +564,20 @@ Three GraphQL reads stood between a cloud session and the REST PUT above. All th
   An unknown extra key is ignored.
 - `protection()`: classic `branches/<base>/protection` UNION `rules/branches/<base>?per_page=100` (rulesets);
   the `nameWithOwner` GraphQL read is gone. Required checks are unioned by context name, reviews take the larger
-  count; each read is independent, so one failing or malformed contributes nothing (never a crash, never an
-  invented requirement). Both unreadable keeps `not protected` (parks under `auto_merge: protected`, WARNING under
-  `always`). A repo that enforces only through rulesets, such as this one (classic is a 404 here; re-read over REST on 2026-10-13: `branches/main/protection` answers 404 "Branch not protected" while `rules/branches/main` lists the pull-request and required-check rules), used to read as
+  count. Each read is independent and ends as one of three things (#984): it REQUIRES something, it ANSWERED
+  nothing (classic: HTTP 404 whose message is exactly `Branch not protected`, or a readable object that requires
+  nothing; rules: a JSON list with no counted requirement), or it is UNREADABLE (any other failure, an empty or
+  non-JSON body, a classic body that is not an object, a rules body that is not a list; an item inside a rules list
+  that is malformed still contributes nothing). A requirement from either source reports `enforces` (the other
+  source failing only undercounts). `not protected -- nothing is enforced` is reported only when BOTH sources
+  answered nothing. Otherwise `protection()` raises `ProtectionUndetermined` (`protection could not be determined
+  ...`, naming the source, its failure kind from `gh_api.classify`, and the lever; a classic 404 that is not the exact
+  `Branch not protected` answer says `read failed (not_found, HTTP 404; not the "Branch not protected" answer)`, so a
+  reworded GitHub body is diagnosable from the line) and `merge()` stops under BOTH
+  `protected` and `always` with the routed `... merging it is yours to make (auto_merge: "<policy>")` ending
+  (`record review`), before any arm or merge call. Which tokens reach that stop under `always`, and what was and
+  was not measured about them, is in "What a stopped `always` costs" below (a READ or TRIAGE token never reaches
+  `protection()`: `merge_rights` stops it first). A repo that enforces only through rulesets, such as this one (classic is a 404 here; re-read over REST on 2026-10-13: `branches/main/protection` answers 404 "Branch not protected" while `rules/branches/main` lists the pull-request and required-check rules), used to read as
   "not protected"; it now reads as enforcing.
 - `post_review`'s comment: `gh_api.comment_pr` = `POST issues/N/comments` (non-idempotent write). ONE
   `gh pr comment` fallback only on a primary rate limit while GraphQL is available, so none in a cloud session.
@@ -590,7 +601,48 @@ What a cloud session still CANNOT enforce or do after this slice (exact, none of
 What `protection()` cannot derive: bypass actors (it counts every listed rule even when this token may bypass it, so it can
 OVER-report "enforces", the same blind spot classic `enforce_admins: false` has; gate() and local verify still apply), `evaluate`-mode rulesets (documented as not listed; UNMEASURED), merge queue, required
 deployments / workflows / signatures / thread resolution, and more than 100 rules (`per_page=100`, no paging; an
-overflowing requirement is missed, which UNDERCOUNTS, the safe direction).
+overflowing requirement is missed, which UNDERCOUNTS, the safe direction). Residual, unchanged by #984: a rules list
+that was READ but not UNDERSTOOD is still an answer of nothing, not an unreadable source. A recognised rule type with
+missing or unparseable parameters contributes nothing, and so do the rule types that are never counted (merge queue,
+required signatures, workflows), so a ruleset-only base can still read `nothing is enforced` while one of those is
+set; and a rules reply of exactly 100 items may be truncated (`per_page=100`, no paging), which undercounts.
+
+What a stopped `always` costs (#984, named): `always` used to merge with a WARNING when a protection read failed; it
+now stops until the token can read both sources.
+
+WHICH TOKENS STOP. `merge()` calls `merge_rights` FIRST: a READ or TRIAGE token ends at `PR #N opened — read access on
+this repo — a maintainer merges` (`triage access` for TRIAGE) and never reaches `protection()`, so it is not affected. What does reach `protection()`
+and stops under `always` is expected to be a WRITE- or MAINTAIN-level token without admin rights, and any token on a repository whose
+plan has no rulesets, because for them the classic read is not an answer (and on such a plan the rules read is refused
+too). A base whose rulesets show a requirement still reads `enforces`.
+
+MEASURED, and no wider than this: (a) reproduced on 2026-10-28 with read-only GETs on a public sample repository, with
+a token whose permissions there were `admin: false, push: false, pull: true`: `GET branches/<b>/protection` answered
+HTTP 404 with the body `{"message":"Not Found",...}` (not `Branch not protected`), `GET
+rules/branches/<b>?per_page=100` answered `200 []`, and `GET branches/<b>` showed `"protected": false`. That shows what
+the endpoints answer to a token without admin rights; that token class is itself stopped earlier, by `merge_rights`.
+(b) Measured once and NOT reproduced, with a write-level token lacking admin rights on two private repositories on a
+plan without rulesets (names deliberately withheld): the classic read answered 404 `Not Found`, the rules read answered
+403 with the text 'Upgrade to GitHub Pro or make this repository public to enable this feature.', and `GET branches/<b>`
+showed `.protected` false. Also MEASURED 2026-10-28: the three classic 404 bodies are told apart by message only
+(`Branch not protected`, `Branch not found`, `Not Found`); `rules/branches/<b>` answers `200 []` for a public repository
+with no rulesets.
+
+UNMEASURED: maintain-level tokens; a write-level token on a plan that has rulesets (expected to read as (b), not seen);
+GitHub Enterprise Server; GitHub App and fine-grained tokens; the rules reply through a cloud session's proxy; the
+private free-plan CLASSIC 403 body (the 404 in (b) is what was seen; `strict_protection`'s docstring in
+`skills/sigma-status/scripts/merge_queue.py` records a 403 on that endpoint from an earlier observation). So how many
+installs `always` now stops on is unknown.
+
+CONSEQUENCE AND LEVER. On a repository whose plan has no rulesets, every PR under `always` now ends at the routed
+stop, and the only lever that works there is merging by hand: a plan limit cannot be fixed by token access. Elsewhere
+the stop-line levers apply: re-run `work.py merge` (a retry merges nothing until protection can be read; it does
+re-enter the gate, so a BEHIND branch can still be rebased and force-pushed, and once protection reads it merges),
+give the token read access to branch protection and rulesets (the line adds, only for a classic 404 that is not the
+answer, that a 404 `Not Found` was the classic answer for every token without admin rights measured), or merge by
+hand. This default is owner-reversible: stopping only under `protected` is a three-line change in `merge()`'s `except
+ProtectionUndetermined` block (return the stop only when the policy is `protected`, otherwise fall through with the
+guarded flag false and the exception text as the detail), after which `always` merges with the WARNING again.
 
 MEASURED locally 2026-10-11 against OWNER/NAME: `GET repos/OWNER/NAME` returns
 `permissions` admin/maintain/push/triage/pull; `rules/branches/main` returns a `pull_request` rule
@@ -746,8 +798,9 @@ session.
 OWNER SMOKE TEST for `--land` (UNMEASURED until run): with `work.enabled: true`, `work.auto_merge: always` and
 `require_review: approval`, start one cloud session on ONE small `sdlc:goal` issue and run `/sigma-goal <N> --land`.
 Expected: the pick claims it, the phases run with no pause, a PR opens, a `sigma:approve` comment is posted, the merge
-lands by REST, the issue closes, and the final message says **merged**. Record what the smoke test above records, plus
-the final message verbatim.
+lands by REST, the issue closes, and the final message says **merged**. Run it on a repository where the token can read
+branch protection and rulesets; on one where it cannot, expect a parked `could not be determined` ending instead (the
+`protection()` note above). Record what the smoke test above records, plus the final message verbatim.
 
 What is still open is in "What remains (#895 slice 7)" below.
 
