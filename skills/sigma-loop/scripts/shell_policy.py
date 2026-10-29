@@ -325,6 +325,8 @@ _CLAUSES = {
     "vetoed": "this checkout's git-local sigma.allowRepositoryShellCommands is false or not a boolean",
     "repository-sourced": "the tracked file %s names it, and a repository cannot approve its own command",
     "mismatch": "it does not approve every command about to run in %s (the command changed, or the goal adds its own)",
+    "runner-command": "it does not cover a runner command (a `tests.runners` template named by the plan's ## Tests): "
+                      "only the git-local grant above does, the approval hashes the verify command(s) alone",
     "error": "it could not be checked",
 }
 

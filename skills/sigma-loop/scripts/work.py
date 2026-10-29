@@ -246,7 +246,8 @@ ENFORCEMENT_GATES = (
     {"control": "Test-first implementation", "function": "_test_first_refusal",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled", "verify.enforce"),
      "settings": (), "mechanism": "refuses `work.py pr` (exit 4) unless the published plan's "
-                  "pytest nodes have matching whole-file assertion-red evidence preceding fresh "
+                  "pytest nodes (or runner-named bullets configured at `tests.runners`, #2084, "
+                  "which also bind the rendered command's hash) have matching whole-file assertion-red evidence preceding fresh "
                   "observed green; pytest runs with `COLUMNS=4000` (the caller's value overridden), "
                   "so a long node id does not lose its assertion reason to pytest's summary trim; "
                   "an explicit `--no-tests <reason>` bypasses only this test-first "
@@ -4200,7 +4201,8 @@ def _test_first_refusal(sdlc_dir, config, rec, goal, run, no_tests=None, remote=
                 refused = "verify did not measure this worktree's content"
             else:
                 refused = _load("red_green").refusal(sdlc_dir, goal, rec["worktree"],
-                                                      branch or main, evidence.get("test_first"))
+                                                      branch or main, evidence.get("test_first"),
+                                                      state.test_runners(config))
         except (OSError, ValueError, TypeError, AttributeError) as exc:
             refused = "planned test proof is unavailable: " + str(exc)
     if refused:

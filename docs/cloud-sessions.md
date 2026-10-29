@@ -44,6 +44,7 @@ by `tests/test_verify_env_trust_prose.py`), and every verify records in its evid
   private backlog that was 34 of 214 acceptance records (16%, counted 2026-10-27). Such a goal need not wait for the
   git-local grant any more: it can drop its command and verify with the repository's `verify.command` alone (see
   below).
+- A runner command named by a plan's `## Tests` bullet (`tests.runners`, #2084) is not covered either: `loop.py red` and `verify` refuse it under this approval and print the git-local gesture, so a cloud run with a runner bullet needs that grant or `--no-tests`.
 - Every other repository command still needs the git-local grant: pipeline checks, `review.command`, a custom
   `knowledge_graph.builder`, `autowatch.drive_cmd`, the backlog embedder, `.sdlc/risk-detect.conf`, the unit and
   upkeep rehearsal, `sigma-rebase`'s verify, and the sealed-acceptance PR gate.
