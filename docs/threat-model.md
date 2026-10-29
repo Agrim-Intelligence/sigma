@@ -40,7 +40,7 @@ and E (elevation of privilege).
 | TM-01 | T1 | Prompt injection (E) | An issue asks a phase agent to execute a command or edit labels. | none | high | #362 |
 | TM-02 | T1 | Phantom blocker write (T) | A confident `_BLOCK_RE` match writes a blocker edge to a third issue. | none | high | #362 |
 | TM-03 | T1 | Parser confusion (T) | A hostile `Feature:` marker or Slack argument changes routing. | none | med | #362 |
-| TM-04 | T2 | Repository-supplied value reaches a process or a file (E) | Any repository-supplied value that reaches a process or a file: a configured shell string or executable (`verify.command`, `review.command`, `knowledge_graph.builder`, `autowatch.drive_cmd`, `.sdlc/risk-detect.conf`), a git remote or branch that becomes an option (`work.remote`, `work.base`, `ledger.remote`, `ledger.branch`), an SMTP host or password variable (`notify.email`), and a committed symlink under `.sdlc/` that a write follows (#708). | `shell_policy.py` refuses repository-configured commands until an operator sets the Git-local opt-in at every sink above. For the verify path only (`loop.py verify` and `loop.py red`), it also accepts an operator-owned environment value bound to the repository and the exact command (#2066), refused when a tracked host environment-config file names it (Sigma cannot tell an operator's export from an agent's); a leading `-` in a git remote or branch is refused; `state.safe_state_open` refuses symlinks under `.sdlc/`; repo SMTP needs `SIGMA_ALLOW_REPO_SMTP=1` | med | #422, #707, #708, #710 |
+| TM-04 | T2 | Repository-supplied value reaches a process or a file (E) | Any repository-supplied value that reaches a process or a file: a configured shell string or executable (`verify.command`, `review.command`, `knowledge_graph.builder`, `autowatch.drive_cmd`, `.sdlc/risk-detect.conf`), a git remote or branch that becomes an option (`work.remote`, `work.base`, `ledger.remote`, `ledger.branch`), an SMTP host or password variable (`notify.email`), and a committed symlink under `.sdlc/` that a write follows (#708). | `shell_policy.py` refuses repository-configured commands until an operator sets the Git-local opt-in at every sink above. For the verify path only (`loop.py verify` and `loop.py red`), it also accepts an operator-owned environment value bound to the repository and the exact command (#2066), refused when a tracked host environment-config file names it (Sigma cannot tell an operator's export from an agent's); a leading `-` in a git remote or branch is refused; `state.safe_state_open` refuses symlinks under `.sdlc/`; repo SMTP needs `SIGMA_ALLOW_REPO_SMTP=1`. A `tests.runners` template (#2084) takes plan text, so it runs only under the git-local grant (never the environment approval), `{file}`/`{name}` are `shlex`-quoted into an allowlisted template, and the red row binds the rendered command's hash | med | #422, #707, #708, #710 |
 | TM-05 | T3 | Hook-triggered command execution (E) | A host invokes a configured hook on a prompt or tool call. | `hooks/sigma_gate.sh:20` | med | — |
 | TM-06 | T4 | Credential exposure in logs (I) | A token-shaped value reaches a command or comment diagnostic. Coverage of every `gh` comment site is unverified. | `skills/sigma-loop/scripts/scrub.py:150` | med | — |
 | TM-07 | T4 | Remote webhook egress (I) | `channel_webhook_url` names an Internet host instead of the documented local adapter. | none | high | #358 |
@@ -276,3 +276,40 @@ the goal branch's, so an entry is visible in review only where that file is comm
 that ignores `.sdlc/` reviews no entry at all. The operator-only rule is prose: nothing in code can
 tell an operator's edit of that file from an agent's. The stored hash is an unsalted sha256 of a line
 that is being committed anyway.
+
+## The ruleset bypass at `work.py merge` (#2092)
+
+`work.merge_bypass: "ruleset"` (off unless that exact string) lets an unattended run merge a pull request that GitHub
+reports BLOCKED, using the merging account's own ruleset bypass. It is the one place Sigma merges past a rule GitHub
+reports, so the list of what it trusts is short and explicit.
+
+**It trusts:**
+- the person who set it: the setting is an operator's statement that an unattended run may use this account's bypass.
+  Nothing in code can tell an operator's edit of `.sdlc/config.json` from an agent's, and `/sigma-init`, the config
+  template and `tools/cloud/setup.sh` never write it;
+- GitHub's reads: `rules/branches/<base>` lists the active rules, `rulesets/<id>` and `orgs/<org>/rulesets/<id>`
+  carry `current_user_can_bypass`, and `branches/<base>/protection` answers `Branch not protected` only when there is
+  no classic protection. An `evaluate`-mode ruleset is not listed (UNMEASURED) and so is neither read nor bypassed;
+- the review gate it is gated on: under `approval`, a `sigma:approve` comment from a trusted author, which is
+  self-authored (#1195) and, where the invocation adapter is off, can be posted by anyone who comments as a
+  collaborator. The bypass makes that weaker control stand in for a ruleset's required approving review, which is
+  why it refuses when a ruleset requires reviews and `work.require_review` is `off`.
+
+**It does not trust, and refuses:** classic branch protection (any, even one requiring nothing, or one it could not
+read); a required check without a passing run on the exact head, or any failing or pending check; a rule from a
+ruleset whose `current_user_can_bypass` is anything but `always` (`pull_requests_only` included); a merge-queue rule;
+a rules reply that is empty, not a list, malformed, or a full 100-rule page; more than 10 rulesets; a conflict, an
+unreadable PR, a stale head, a branch behind where a strict check rule needs it. Each parks and names its condition.
+
+**Residual risks, stated:**
+- The bypass is the account's, so anything that can run a goal as that account and set the key can merge past the
+  rulesets. The merge carries the vetted head sha, so a push after the checks cannot ride along (GitHub refuses a
+  moved head), but a diff that passed its own required checks and a self-approval merges unattended.
+- A rule type the rules list does not describe, or a ruleset that changes between the reads and the merge, is not
+  seen. The reads are a few seconds apart and are not atomic.
+- Whether GitHub's REST merge honours the bypass at all, for any token and for the cloud proxy's in particular, is
+  UNMEASURED (#2092 AC-5). A refused merge parks as any refused merge does.
+- Evidence is local and on the PR: the merge line, the ledger and journal `why` where those are on, and one PR
+  comment after the merge. The comment can fail without undoing the merge; the line then says so.
+
+Tests: `tests/test_work_merge_bypass.py` (fakes only).

@@ -101,10 +101,22 @@ The choices in section 4:
 
 The `basic` ruleset lets only its bypass actors push to any branch of this repository, `main` included,
 so GitHub reports every pull request as `blocked`, to everyone. Maintainers merge through their bypass.
-Sigma merges only a pull request GitHub reports as clean and never uses an account's bypass, so a cloud run
-ends **parked, awaiting merge**: the PR is open, `test` is green and the run's own `sigma:approve` is
+By default Sigma merges only a pull request GitHub reports as clean and never uses an account's bypass, so a
+cloud run ends **parked, awaiting merge**: the PR is open, `test` is green and the run's own `sigma:approve` is
 posted. A maintainer merges it, the PR's `Closes #N` closes the issue, and its `sdlc:parked` label is
-removed by hand. #2092 tracks an opt-in setting to merge through the account's bypass instead.
+removed by hand.
+
+**Opt-in: merge through the account's bypass (#2092).** Setting `work.merge_bypass` to the exact string `ruleset` in
+`.sdlc/config.json` lets `work.py merge` land that BLOCKED pull request itself, but only when four REST-read
+conditions hold: every required check passed on the exact head; every rule on `main` comes from a ruleset whose
+`current_user_can_bypass` is `always` for the token's account and no classic protection applies; the review gate
+passed; the PR is mergeable and not behind where a strict check rule needs it. Anything unreadable parks and names
+the condition. The merge line and a PR comment name the bypassed rules. It trusts the setting's owner, GitHub's
+rules reads and the self-authored `sigma:approve` (#1195), and it is **UNMEASURED** whether GitHub's REST merge
+honours a bypass for the cloud proxy's token, and until one real `--land` run in `sigma-cloud` ends merged (#2092's
+AC-5), expect it may park with a refused merge. `tools/cloud/setup.sh` never sets it and the template does not
+carry it; a person adds it, in the environment's config, deliberately. Details:
+[cloud sessions](../../docs/cloud-sessions.md#merging-through-the-accounts-ruleset-bypass-2092).
 
 ## Running a goal
 
@@ -123,7 +135,7 @@ already names one needs that line set to `null` first.
 
 - A passing verify, today. The 2026-10-29 verify failed 18 tests at `6df8c2b` in this container (see
   [How long a verify takes](#how-long-a-verify-takes)). Until they are fixed, every goal here stops at verify.
-- The merge itself, today (see [Merging today](#merging-today)).
+- The merge itself, unless `work.merge_bypass` is set and works (see [Merging today](#merging-today)).
 - A required check still pending after 450 s parks the merge (#2083). `test` took 3.2 to 5.5 minutes on
   the last twelve PRs, so a slow macOS runner queue can push it over.
 - A PR with any line comment parks: review threads are GraphQL-only.
