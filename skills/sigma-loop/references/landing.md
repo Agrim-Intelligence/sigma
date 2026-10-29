@@ -74,9 +74,9 @@ command, not to a Sigma default.** `loop.py verify` runs that command through a 
 `subprocess.run(..., cwd=root)` with no `timeout=` argument, so the call's wall time is exactly
 however long the adopting project's own proving command takes (a full test suite can legitimately
 run many minutes) — Sigma imposes no ceiling of its own here, unlike the bounded budgets
-below. If the host cuts the call short anyway, no evidence was written (`verify_goal` only
-persists it after the subprocess returns), so nothing is left ambiguous: `record done` still
-REFUSES exactly as if `verify` had never run — just re-run `loop.py verify` to completion.
+below. If the host cuts the call short, no evidence was written, so `record done` still
+REFUSES as if `verify` had never run: re-run `loop.py verify` to completion. **Exit `5` with `RESOURCE-HOLD` on stderr
+is a wait, not a failure: [verify-hold](verify-hold.md).**
 **The evidence now records WHAT it verified, not just when and by whom (#1897)** — the goal's own
 change, as a digest of every path it touches relative to its fork point — and `record done` and
 `work.py merge` both re-check it against the worktree as it stands. So the "re-run `loop.py

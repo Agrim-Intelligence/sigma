@@ -149,7 +149,7 @@ constant copied from a laptop, and nothing here ever pauses a process.
   `observe` (logs the would-be hold, admits) or `off`; `SIGMA_RESOURCE_MODE` in the environment overrides it on
   every surface, `loop.py verify` included, so `observe` there admits with no config key and `enforce` there
   holds even when the config says `observe`. A verify hold shares exit 5 with the flaky-suite `UNVERIFIED`
-  verdict; the stderr prefix tells them apart, and the final receipt records a hold as `RESOURCE-HOLD`, never as `UNVERIFIED`.
+  verdict; the stderr prefix tells them apart, and the final receipt records a hold as `RESOURCE-HOLD`, never as `UNVERIFIED`. What a run does on a verify hold (wait, verify again, never a code fix or a review cycle, park after 6 in a row) is [verify-hold](../skills/sigma-loop/references/verify-hold.md) (#2109).
 - **Verify workers.** The granted worker count reaches the proving command as a `{workers}` token (replaced by an
   integer before the shell sees it), as `SIGMA_VERIFY_WORKERS`, as `PYTEST_XDIST_AUTO_NUM_WORKERS` for
   `-n auto`, and as `VITEST_MAX_FORKS` and `VITEST_MAX_THREADS`, which vitest 3.x or later reads (exported only when the installed vitest is 3.x or later: vitest 2.x aborts on them), so a

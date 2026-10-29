@@ -74,7 +74,8 @@ python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" session-end .sdlc --
    change: where step 3 says to loop back to step 1 and take the next goal (a pre-check printed
    `PARKED <reason>` or `BLOCKED <reason>`), this run never loops back to step 1 — it ends there,
    **parked**. It never takes
-   step 7 (no refill), never calls `next-batch`, and never calls `loop.py claim`.
+   step 7 (no refill), never calls `next-batch`, and never calls `loop.py claim`. A verify that holds mid-goal
+   (exit 5, `RESOURCE-HOLD`) is a wait: [verify-hold](../../sigma-loop/references/verify-hold.md).
 4. **End the session** with the `session-end` above, on every ending.
 5. **Say which ending**, as below.
 
@@ -105,7 +106,9 @@ Keyed on the last `record` verb. Which `work.py merge` line leads to which verb 
 | `record failed "<reason>"` | **failed** — the reason is on the issue and in the final message |
 | the pick printed `loop.py: --land #<N> not taken (not started): <why>`, `BUDGET`, `HANDOFF` or a second `DEGRADED`, or refused with exit 2 | **failed (not started)** — that line is the reason. Nothing was claimed. A refusal at attach, scope or owner may have left a hold and a comment on N, which say what a person must do; a re-run after they act takes N |
 
-Not endings: `HOLD` and a first `DEGRADED` (wait, then pick again), `REPAIR:` and `RERUN:` (the bounded CI-fix cycle), and
+Not endings: `HOLD` and a first `DEGRADED` (wait, then pick again), a `loop.py verify` that exits 5 with
+`RESOURCE-HOLD` on stderr (wait, then verify again, never a code fix or a review cycle, parked after 6 holds in a row:
+[verify-hold](../../sigma-loop/references/verify-hold.md)), `REPAIR:` and `RERUN:` (the bounded CI-fix cycle), and
 a `record done` that is REFUSED — do what the refusal names; the ending is whichever `record` verb
 finally lands.
 

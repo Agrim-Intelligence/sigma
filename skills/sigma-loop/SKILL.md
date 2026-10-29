@@ -184,18 +184,17 @@ Then repeat until the helper says stop:
    **REQUIRED PATTERN** — any blocking call (`loop.py verify`, `work.py merge`, a dispatched
    review-gate subagent, or any other long-running step a phase must wait on): issue it as ONE
    foreground call, same turn, then READ THE LITERAL RESPONSE before deciding what happened —
-   never assume a timeout means "killed" or "still running", this environment does BOTH for the
-   identical test. A response naming a tracked id may still be alive: wait on/check THAT id, never
+   never assume a timeout means "killed" or "still running" (both seen). A response naming a tracked id may still be alive: wait on/check THAT id, never
    re-invoke. A plain error/exit with no id means nothing is left running: a clean re-run is
    correct. **Never** shell-background it yourself (`&`, `nohup`) and end your turn trusting a
-   notification that will not come. The two response shapes and the do/never commands, in full:
+   notification that will not come. In full:
    `references/landing.md`.
 
    With `config.verify.enforce` on, a `done` needs FRESH machine evidence first — `verify` runs the
    goal's proving command and records it; `record done` is REFUSED without a passing, this-run
    verify. **This call has no timeout of its own — size your tool-call timeout to the PROJECT's verify
    command, not to a Sigma default.** **Edit the worktree after a green verify and the next
-   `record done` is REFUSED, naming the paths that moved.**
+   `record done` is REFUSED, naming the paths that moved.** Exit 5 with `RESOURCE-HOLD` on stderr is a wait: [verify-hold](references/verify-hold.md).
 
    **Landing the work** (`config.work.enabled` on) — once verify is green, and never with a bare
    `git` command: `work.py commit .sdlc "$goal" --message "<type: what changed>"` → `work.py pr
