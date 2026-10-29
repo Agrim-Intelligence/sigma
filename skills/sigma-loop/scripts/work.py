@@ -7344,7 +7344,20 @@ def _auto_merge_allowed(rec, run):
     return out.strip().lower() == "true"
 
 
-def _delete_remote_branch(cwd, branch, run, config=None, base=None, sdlc_dir=None, goal=None):
+#: The one GitHub reply to a ref DELETE that means the branch is already gone (`merge()` usually deleted it
+#: eagerly, and `finish()` asks again). Deliberately NOT a bare 404: a token that cannot see the repository
+#: also gets `Not Found`, and that is exactly the silent failure #1682 is about.
+_REF_GONE = "Reference does not exist"
+
+
+def _remote_ref_sha(cwd, name, run):
+    """The sha the remote branch `name` points at right now (REST, one read), or raises."""
+    return str(run(cwd, ["gh", "api", f"repos/{{owner}}/{{repo}}/git/ref/heads/{name}",
+                         "--jq", ".object.sha"]) or "").strip()
+
+
+def _delete_remote_branch(cwd, branch, run, config=None, base=None, sdlc_dir=None, goal=None, expect_sha=None,
+                          outcome=None):
     """Best-effort REST delete of a goal's remote branch. Deliberately NOT `gh pr merge
     --delete-branch`: that flag tries to check out the base branch locally first, in whatever cwd
     it's given, and fails loudly the moment that base is already checked out somewhere else -- true
@@ -7354,31 +7367,52 @@ def _delete_remote_branch(cwd, branch, run, config=None, base=None, sdlc_dir=Non
     pr` subcommands generally (see `pr()`'s own docstring above). Called from two sites -- eagerly
     in `merge()` right after a direct landing, and again (redundant but harmless there; load-bearing
     for a goal that was armed and landed asynchronously instead) from `finish()` once it
-    independently confirms MERGED -- so this never raises: every caller's own success must never
-    depend on this cleanup nicety succeeding too.
+    independently confirms MERGED -- and from the leftover reconcile (`reconcile_merged_branches`),
+    so this never raises: every caller's own success must never depend on this cleanup nicety
+    succeeding too.
 
     The cleanup is deliberately narrower than the merge that precedes it: a misconfigured empty
     branch prefix must not turn a successful landing into a delete of the base/default branch. The
     optional `base` is the goal record's resolved target; callers that do not have one retain the
     configured-base and local-origin-HEAD protections. A refusal is best-effort cleanup failure,
-    not a merge failure."""
+    not a merge failure. The guards are: the configured prefix, `main`/`master`, the configured or
+    resolved base, `origin/HEAD`'s target, and never a `feature/` branch (#1682: the last was true
+    only because the prefix happened to exclude it).
+
+    `expect_sha` (#1682) is a lease: the head the caller LISTED the branch at. The ref is re-read
+    immediately before the delete and the delete is refused unless it still matches, or when it cannot
+    be read. REST has no conditional delete, so the window between that read and the DELETE is not
+    closed, only narrowed to two consecutive calls; it is not measured.
+
+    A FAILED delete is announced (#1682), like a refused one: one stderr line naming the branch and
+    the error, and a `gate` action-log entry with verdict `failed`. It stays best-effort and returns
+    False. In a cloud session the line adds that the branch needs a sweep from a host that can
+    delete, naming the branch and its head. A caller that passes `outcome` (a dict) gets `outcome["kind"]`
+    set to `refused` or `failed` on a False return: a refusal concerns this one branch, a failure is the
+    DELETE itself being rejected."""
     s = settings(config or {})
     name = str(branch or "").strip()
 
-    def refuse(rule):
-        message = f"work: refusing remote branch delete for {name!r}: {rule}"
+    def announce(verdict, message):
         print(message, file=sys.stderr)
+        if outcome is not None:
+            outcome["kind"] = verdict        # "refused" (a guard or the lease) or "failed" (the DELETE itself)
         if sdlc_dir is not None and goal is not None:
             # Lazy: actionlog loads this module for stem(), so importing it at module scope cycles.
             _load("actionlog").safe_append(sdlc_dir, goal, "gate", gate="merge",
-                                            verdict="refused", why=message)
+                                            verdict=verdict, why=message)
         return False
+
+    def refuse(rule):
+        return announce("refused", f"work: refusing remote branch delete for {name!r}: {rule}")
 
     prefix = str(s.get("branch_prefix") or "")
     if not prefix:
         return refuse("work.branch_prefix is empty")
     if not name.startswith(prefix):
         return refuse(f"branch does not start with configured prefix {prefix!r}")
+    if name.startswith("feature/"):
+        return refuse("branch is a feature/ branch; Sigma never deletes one")
     if name in {"main", "master"}:
         return refuse("branch is a protected conventional default")
     configured_base = str(s.get("base") or "").strip()
@@ -7394,11 +7428,197 @@ def _delete_remote_branch(cwd, branch, run, config=None, base=None, sdlc_dir=Non
             return refuse("branch is origin/HEAD's target")
     except Exception:                       # noqa: BLE001 - this extra comparison is advisory
         pass
+    if expect_sha:
+        try:
+            current = _remote_ref_sha(cwd, name, run)
+        except Exception as exc:            # noqa: BLE001 - an unreadable lease is no lease
+            return refuse(f"cannot confirm the branch is still at {expect_sha[:12]} ({_first_line(exc)})")
+        if current != expect_sha:
+            return refuse(f"branch moved from the listed head {expect_sha[:12]} to {current[:12] or 'nothing'}")
     try:
         run(cwd, ["gh", "api", "-X", "DELETE", f"repos/{{owner}}/{{repo}}/git/refs/heads/{name}"])
         return True
-    except Exception:                       # noqa: BLE001 - best-effort
-        return False
+    except Exception as exc:                # noqa: BLE001 - best-effort
+        if _REF_GONE in str(exc):
+            return True
+        message = f"work: remote branch delete failed for {name!r}: {_first_line(exc)}"
+        if ledger.cloud_session():
+            head = expect_sha
+            if not head:
+                try:
+                    head = _remote_ref_sha(cwd, name, run)
+                except Exception:           # noqa: BLE001 - the head is a courtesy in this message
+                    head = ""
+            message += (f" -- this cloud session cannot delete it: branch {name!r} at "
+                        f"{head or 'a head that could not be read'} needs a sweep from a host that can delete "
+                        "(`work.py branches <sdlc_dir> --sweep`)")
+        return announce("failed", message)
+
+
+#: Pull-request listing bounds for the leftover reconcile (#1682): `BRANCH_SWEEP_PAGES` pages of
+#: `BRANCH_SWEEP_PER_PAGE` of the newest closed PRs, and as many open ones. The cost of one pass is
+#: therefore at most 2 + 2 * BRANCH_SWEEP_PAGES REST reads for the PRs and the name, one more per 100 refs under the prefix, and 2 per attempted delete. The CEILING:
+#: a leftover whose merged PR is older than the newest 300 closed ones is not found (a hand sweep is then
+#: the lever). `BRANCH_SWEEP_DELETES` bounds the deletes one pass attempts.
+BRANCH_SWEEP_PER_PAGE = 100
+BRANCH_SWEEP_PAGES = 3
+BRANCH_SWEEP_DELETES = 10
+
+
+_SWEEP_NAME = re.compile(r"[A-Za-z0-9._/-]+")
+
+
+def _pr_pages(cwd, run, pr_repo, state):
+    """Up to `BRANCH_SWEEP_PAGES` pages of `pr_repo`'s `state` pull requests, newest first -> (rows, full)
+    where `full` says the last page was full, so rows may be a truncation."""
+    rows, full = [], False
+    for page in range(1, BRANCH_SWEEP_PAGES + 1):
+        got = json.loads(run(cwd, ["gh", "api", f"repos/{pr_repo}/pulls?state={state}&sort=updated"
+                                   f"&direction=desc&per_page={BRANCH_SWEEP_PER_PAGE}&page={page}"]) or "[]")
+        if not isinstance(got, list):
+            raise ValueError("a pull request listing was not a list")
+        rows.extend(r for r in got if isinstance(r, dict))
+        full = len(got) >= BRANCH_SWEEP_PER_PAGE
+        if not full:
+            break
+    return rows, full
+
+
+def merged_leftovers(sdlc_dir, config, run=None, skip=()):
+    """READ-ONLY (#1682): the goal branches still on the remote although their pull request merged.
+
+    -> `{"eligible": [{"branch","sha","pr"}], "kept": [(branch, why)], "error": ""}`. Never raises and
+    never writes. A branch is eligible only when ALL hold: it carries the configured prefix; the remote ref
+    still points at the head a merged PR of THIS repository was merged from; no open PR uses it as its head;
+    and no open PR is based on it (deleting that would close the dependent PR). When the open-PR listing may
+    be truncated nothing is eligible: an unread open PR is the case that matters. Reads: the refs under the
+    prefix (1), this repository's name (1), and the bounded PR pages of `_pr_pages`. The PRs are read from
+    `discovery.github.repo` when set (a fork flow keeps its branches in one repository and its PRs in
+    another), else from the repository `gh` resolves."""
+    run = run or _run
+    out = {"eligible": [], "kept": [], "error": ""}
+    try:
+        cwd = project_root(sdlc_dir)
+        prefix = str(settings(config or {}).get("branch_prefix") or "")
+        if not prefix:
+            out["error"] = "work.branch_prefix is empty"
+            return out
+        listing = run(cwd, ["gh", "api", f"repos/{{owner}}/{{repo}}/git/matching-refs/heads/{prefix}",
+                            "--paginate", "--jq", r'.[] | "\(.ref)\t\(.object.sha)"'])
+    except Exception as exc:                # noqa: BLE001 - a listing that failed is reported, not raised
+        out["error"] = f"could not list {prefix or 'goal'} branches on the remote: {_first_line(exc)}"
+        return out
+    refs = {}
+    for line in str(listing or "").splitlines():
+        ref, _, sha = line.partition("\t")
+        if ref.startswith("refs/heads/") and sha.strip():
+            refs[ref[len("refs/heads/"):]] = sha.strip()
+    for name in list(refs):
+        if name in set(skip):
+            del refs[name]
+    for name in list(refs):
+        digits = re.match(re.escape(prefix) + r"(\d+)(?!\d)", name)
+        if digits and (pathlib.Path(sdlc_dir) / "work" / digits.group(1)).exists():
+            # A goal that is being worked here may have re-cut this branch from a merged head: not a leftover.
+            out["kept"].append((name, "a goal worktree for it exists on this machine"))
+            del refs[name]
+    if not refs:
+        return out
+    try:
+        here = str(run(cwd, ["gh", "api", "repos/{owner}/{repo}", "--jq", ".full_name"]) or "").strip().lower()
+        if not here:
+            raise RuntimeError("the repository's own name came back empty")
+        github = (config or {}).get("discovery", {}).get("github", {}) if isinstance(config, dict) else {}
+        pr_repo = str((github or {}).get("repo") or "").strip() or "{owner}/{repo}"
+        merged_rows, _ = _pr_pages(cwd, run, pr_repo, "closed")
+        open_rows, open_full = _pr_pages(cwd, run, pr_repo, "open")
+    except Exception as exc:                # noqa: BLE001 - unreadable evidence deletes nothing
+        out["error"] = f"could not read the pull requests: {_first_line(exc)}"
+        return out
+    if open_full:
+        out["error"] = ("the open pull request list may be truncated "
+                        f"({BRANCH_SWEEP_PAGES * BRANCH_SWEEP_PER_PAGE} read), so no branch is judged merged")
+        return out
+
+    def head_of(row):
+        head = row.get("head") if isinstance(row.get("head"), dict) else {}
+        repo = head.get("repo") if isinstance(head.get("repo"), dict) else {}
+        return str(head.get("ref") or ""), str(head.get("sha") or ""), str(repo.get("full_name") or "").lower()
+
+    open_heads = {head_of(r)[0] for r in open_rows if head_of(r)[2] == here}
+    open_bases = {str((r.get("base") or {}).get("ref") or "") for r in open_rows if isinstance(r.get("base"), dict)}
+    merged_at = {}
+    for row in merged_rows:
+        ref, sha, repo = head_of(row)
+        if row.get("merged_at") and repo == here:
+            merged_at.setdefault((ref, sha), row.get("number"))
+    for name, sha in sorted(refs.items()):
+        if not _SWEEP_NAME.fullmatch(name):
+            # A remote-supplied name goes into a URL path: `#` or `%` would make the call name another ref.
+            out["kept"].append((name, "its name has characters a ref URL would read differently"))
+        elif name in open_heads:
+            out["kept"].append((name, "an open pull request uses it"))
+        elif name in open_bases:
+            out["kept"].append((name, "an open pull request is based on it"))
+        elif (name, sha) in merged_at:
+            out["eligible"].append({"branch": name, "sha": sha, "pr": merged_at[(name, sha)]})
+        else:
+            out["kept"].append((name, "no merged pull request ends at its current head"))
+    return out
+
+
+def reconcile_merged_branches(sdlc_dir, config, run=None, delete=True, skip=(), errors=None):
+    """Retry the delete of every goal branch `merged_leftovers` lists (#1682) -> lines to show.
+
+    Each delete goes through `_delete_remote_branch`, so the prefix, base, `origin/HEAD` and `feature/`
+    guards apply and the delete is lease-pinned to the listed head. At most `BRANCH_SWEEP_DELETES` are
+    attempted, and none after the first failure (a token or proxy that rejects one rejects them all): the
+    rest are listed with their heads so a host that can delete knows what to sweep. `delete=False` lists
+    only. A refusal of one branch (it moved, or a guard) is listed and does not stop the rest; only a
+    delete the remote itself rejects does. `errors`, when a list, receives every message that means the
+    pass could not do its job. Never raises."""
+    run = run or _run
+    try:
+        found = merged_leftovers(sdlc_dir, config, run=run, skip=skip)
+        if found["error"]:
+            if errors is not None:
+                errors.append(found["error"])
+            return [found["error"]]
+        cwd = project_root(sdlc_dir)
+        prefix = str(settings(config or {}).get("branch_prefix") or "")
+        lines, failed = [], False
+        attempted = 0
+        for item in found["eligible"]:
+            name, sha, pr = item["branch"], item["sha"], item["pr"]
+            label = f"{name} at {sha[:7]} (PR #{pr})"
+            if not delete:
+                lines.append(f"merged but still on the remote: {label}")
+            elif failed:
+                lines.append(f"not attempted after an earlier delete failed: {label}")
+            elif attempted >= BRANCH_SWEEP_DELETES:
+                continue
+            else:
+                attempted += 1
+                digits = re.match(re.escape(prefix) + r"(\d+)", name)
+                outcome = {}
+                if _delete_remote_branch(cwd, name, run, config=config, sdlc_dir=sdlc_dir,
+                                         goal=digits.group(1) if digits else None, expect_sha=sha,
+                                         outcome=outcome):
+                    lines.append(f"deleted merged branch {label}")
+                elif outcome.get("kind") == "refused":
+                    lines.append(f"not deleted (refused, see above): {label}")
+                else:
+                    failed = True
+                    lines.append(f"could not delete {label}")
+                    if errors is not None:
+                        errors.append(lines[-1])
+        if delete and not failed and len(found["eligible"]) > attempted:
+            lines.append(f"{len(found['eligible']) - attempted} more merged branches left for the next pass")
+        return lines
+    except Exception as exc:                # noqa: BLE001 - cleanup must never fail its caller
+        if errors is not None:
+            errors.append(f"branch reconcile could not run: {_first_line(exc)}")
+        return [f"branch reconcile could not run: {_first_line(exc)}"]
 
 
 #: The audit line left on an issue this kit closed itself, for the case its own post-merge read
@@ -8664,6 +8884,11 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
     if not force and branch and rec.get("pr") and (merged_before_cleanup or _pr_merged(sdlc_dir, rec, run)):
         remote_deleted = _delete_remote_branch(project_root(sdlc_dir), branch, run, config=config,
                                                 base=rec.get("base"), sdlc_dir=sdlc_dir, goal=goal)
+        # #1682: a goal whose own delete never succeeded (a token without `contents:write`, a rate limit)
+        # leaves its branch behind, and so did every earlier one. This goal's PR just merged, so this is
+        # the moment to look for those too. Never raises; this branch is skipped (it was just attempted).
+        swept = reconcile_merged_branches(sdlc_dir, config, run=run, skip=(branch,))
+        note += ("; " + "; ".join(swept)) if swept else ""
         try:
             run(project_root(sdlc_dir), ["git", "branch", "-D", branch])
         except Exception:                   # noqa: BLE001 - best-effort; the worktree is already gone
@@ -9235,6 +9460,7 @@ def main(argv):
     if any(arg in ("--help", "-h") for arg in argv[1:]):
         command = argv[1] if len(argv) > 1 else ""
         usage = {
+            "branches": "usage: work.py branches <sdlc_dir> [--sweep]  (goal branches whose PR merged but whose remote ref is still there; --sweep retries the delete)",
             "review-paths": "usage: work.py review-paths <sdlc_dir> <goal> --manifest <path> --format sh",
             "review-evidence": "usage: work.py review-evidence <sdlc_dir> <goal> --manifest <path> --review-result <path>",
             "run-resolved-review": "usage: work.py run-resolved-review <sdlc_dir> <goal> --manifest <path> --resolution <path> [--verdict approve|block|unblock --reason <text>]  (the verdict flags are for the inline route only)",
@@ -9261,6 +9487,19 @@ def main(argv):
         except ValueError as exc:
             print(f"work: {exc}", file=sys.stderr)
             return 2
+    if len(argv) >= 3 and argv[1] == "branches":
+        # #1682: the read-only listing of goal branches whose PR merged but whose remote ref is still there;
+        # `--sweep` retries the delete (lease-pinned, same guards). The sweep a cloud session names.
+        extra = [a for a in argv[3:] if a != "--sweep"]
+        if extra:
+            print("usage: work.py branches <sdlc_dir> [--sweep]", file=sys.stderr)
+            return 2
+        sdlc = argv[2]
+        cfg = state.load_config(sdlc)
+        errors = []
+        lines = reconcile_merged_branches(sdlc, cfg, delete="--sweep" in argv[3:], errors=errors)
+        print("\n".join(lines) if lines else "no merged goal branch is left on the remote")
+        return 1 if errors else 0
     if len(argv) >= 3 and argv[1] == "prune-review-generations":
         usage = "usage: work.py prune-review-generations <sdlc_dir> [<goal> [--done]] [--limit N]"
         rest, limit, done = list(argv[3:]), REVIEW_PRUNE_GOALS_PER_CALL, False
