@@ -395,6 +395,7 @@ _NOT_MARKERS = ("sigma-doctor", "sigma-doctor:", "sigma-init", "sigma-init:", "s
                 "sigma-sealed", "sigma-sealed-",   # new with #847: a state-record schema id and a tempdir prefix, not markers
                 "sigma-sealed-retired",   # new with #855: the tombstone's schema id, not a marker
                 "sigma-verify-approval",   # new with #2066: a hash domain prefix, never written as a marker
+                "sigma-uv-build",   # new with #2079: the names of a build marker and lock file in the git dir, not a marker
                 "sigma-container-",   # new with #2076: a temp-file prefix for the per-container id, not a marker
                 "sigma-breaker-",   # new with #853: a tempdir prefix for the breaker's empty working directory, not a marker
                 "sigma-reset-at:",   # new with #1563: a plain park-comment line, no legacy spelling

@@ -790,6 +790,9 @@ def cmd_api(state, argv, pos, flags, multi):
             sys.stderr.write("HTTP 422: Reference does not exist\n"); sys.exit(1)
         git(state, "update-ref", "-d", "refs/heads/" + branch)
         return
+    m = re.match(r"^repos/%s/git/matching-refs/heads/(.*)$" % re.escape(repo), endpoint)
+    if m and method in ("", "GET"):
+        return                                            # #1682: modelled; no ref under the prefix, so `--jq '.[] | ...'` prints nothing
     unhandled(argv, "unmodeled api endpoint")
 
 
