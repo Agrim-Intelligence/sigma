@@ -622,8 +622,11 @@ def test_the_docs_state_the_order_and_what_was_not_measured():
     cloud = (REPO / "docs/cloud-sessions.md").read_text()
     assert "#2079" in cloud and "/usr/bin/python3" in cloud and "uv run --frozen" in cloud, "cloud-sessions.md"
     log = (REPO / "CHANGELOG.md").read_text()
-    unreleased = log.split("## Unreleased", 1)[1].split("\n## ", 1)[0]
-    assert "#2079" in unreleased and "uv" in unreleased and "interpreter" in unreleased, "CHANGELOG.md"
+    # The entry sits under "## Unreleased" until its release, then under that release's heading: read both sections.
+    top = log.split("## Unreleased", 1)[1]
+    head = top.split("\n## ", 2)
+    entry = head[0] + "\n" + (head[1] if len(head) > 1 else "")
+    assert "#2079" in entry and "uv" in entry and "interpreter" in entry, "CHANGELOG.md"
 
 
 # --- review findings: the probe is bounded as a group, bookkeeping errors refuse, a symlinked .venv is pinned ---

@@ -430,6 +430,8 @@ def test_every_delete_shaped_call_site_in_the_kit_is_one_of_the_known_reviewed_o
         # an assignee delete, not a ref delete: `remove_assignees`' REST DELETE of issues/N/assignees, reached only
         # from `chain.py arm` after a person answered `take it over`; the guard cannot see the endpoint
         ("skills/sigma-loop/scripts/gh_api.py", "rest", "rest_delete"),
+        # a CCR auto-merge disarm, not a ref delete (#2083): `disarm_auto_merge_ccr` DELETEs pulls/N/ccr/auto_merge
+        ("skills/sigma-loop/scripts/gh_api.py", "disarm_auto_merge_ccr", "rest_delete"),
         ("skills/sigma-define/scripts/define.py", "_step_branch", "colon_refspec"),
         ("skills/sigma-loop/scripts/feature_rebase.py", "_pushed", "colon_refspec"),
         # read-only: a `git fetch` refspec that downloads a remote ref into a local one, deletes nothing
