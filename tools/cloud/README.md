@@ -44,14 +44,15 @@ The choices in section 4:
     available memory at 2000 MB per worker. In this container that is one worker, and the resource guard's grant
     never reaches it. On a container's first verify, a literal count is the only thing neither the conftest nor
     the guard lowers.
-  - **Two, not three.** A later verify in the same container (after any fix, or a second goal) runs only if that
-    many workers fit the room the guard leaves: the smaller of available memory minus 20% of the total, and 60%
-    of the total. That is about 9.4 GiB here. The guard divides the first verify's peak by its worker count, so
-    the room has to hold that whole peak. One worker's run peaked at 3.9 GiB. Doubling and tripling that gives
-    estimates, not bounds: about 7.8 GiB for two workers, which fits, and about 11.7 GiB for three, which does
-    not. Three is the next step once a two-worker peak is measured.
+  - **Two, not three.** A later verify in the same container (after any fix, or a second goal) is admitted at
+    that many workers only if they fit the room the guard leaves; otherwise it holds (see
+    [If a verify holds](#how-long-a-verify-takes)). The room is the smaller of available memory minus 20% of the
+    total, and 60% of the total: about 9.4 GiB here. The guard divides the first verify's peak by its worker
+    count, so the room has to hold that whole peak. One worker's run peaked at 3.9 GiB. Doubling and tripling
+    that gives estimates, not bounds: about 7.8 GiB for two workers, which fits, and about 11.7 GiB for three,
+    which does not. Three is the next step once a two-worker peak is measured.
   - **`-rsEf`** lists skipped, erroring and failing tests in pytest's summary, failures last. Sigma keeps the
-    last five lines of output as the run's evidence.
+    last five lines of output as the run's evidence, so the evidence names up to four failing tests.
 - **Model selection:** off, as on the maintainers' laptops: every phase runs on the session's model.
 - **Left at the template's values on purpose:** the budget (a laptop's 500,000-token cap is checked only
   when a goal is picked, so it never stops a `--land` run) and `work.allow_secret_content` (empty; a
@@ -152,6 +153,8 @@ likely means one of two things:
 - the guard stopped a run because memory ran low. A very fast allocation can meet the kernel's out-of-memory
   killer before that.
 
-Either way, the guard records the peak, and every later verify in that container holds. Waiting does not clear
-it. What a `--land` run does after a verify holds is not specified, so expect it to stop or park. Start the goal
-again in a new session, and post the peak on #2090 so the worker count can be revisited.
+A hold does not last. Each held attempt records `loop.py`'s own small footprint as a verify's cost, and after
+about two of them the guard drops the real measurement as an outlier and admits two workers anyway. From then on
+the shed is the only protection. That is a Sigma bug: a held literal-count verify should record nothing. What a
+`--land` run does after a verify holds is not specified; `docs/configuration.md` says to retry after the stated
+wait. Either way, post the peak on #2090 so the worker count can be revisited.
