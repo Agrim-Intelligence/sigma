@@ -1217,6 +1217,18 @@ only feeds `unit_completion` after `done`, so it decides nothing.
 Not scanned by either ratchet: `gh_api.py` fallback argv (EXEMPT; runs only after REST fails, so GraphQL fails by
 construction in a cloud session), shell scripts, `.tmpl` prose, and argv built incrementally.
 
+## A killed merge runner (#2086)
+
+A cloud worker restart can SIGKILL `work.py merge` while `gate()` polls a pending required check (a second cloud
+`--land` run saw exit 137 and `FAILED not_completed: runner pid N gone`). `gate()` only reads, so the PR stays open
+and unmerged. `loop.py wait-call ... merge` now reads the PR once over REST, bounded to 10 s, and prints the PR's state
+and the recovery (`agent-start --pid "$PPID"`, then `work.py merge`, then `record done`) instead of a bare `FAILED`;
+the steps are in [killed-merge](../skills/sigma-loop/references/killed-merge.md). Measured: a
+real `work.py merge` process SIGKILLed during pending-check polling against a fake GitHub, then the documented
+gestures landing the PR once (Sigma's own test suite). **Not measured:** a real cloud container, a real
+worker restart, a real GitHub, a kill inside the merge call itself. Not built: binding the agent marker to the session
+id rather than a pid.
+
 ## What this does NOT do
 
 - `read_issue`, `list_issues_gh`, the seven issue write helpers and the six PR read helpers (`view_pr_gh`,

@@ -126,6 +126,14 @@ the PR body `work.py pr` wrote:
 
 UNMEASURED live.
 
+### A merge runner killed mid-merge
+
+A worker restart (exit 137) during `work.py merge` leaves `wait-call ... merge` reporting `FAILED not_completed:
+runner pid N gone`. That is not an ending. With the PR open and unmerged it is safe to re-register
+(`loop.py agent-start .sdlc <N> --pid "$PPID"`) and re-run `work.py merge`; the steps, the other PR states and the
+window one read cannot close are in [killed-merge](../../sigma-loop/references/killed-merge.md).
+UNMEASURED live.
+
 ### The reviewed plan when the container is gone
 
 In a cloud session, `record done` (through `work.py finish`) leaves a durable copy of the goal's plan as a comment on
