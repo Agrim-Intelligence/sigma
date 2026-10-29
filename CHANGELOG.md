@@ -2,6 +2,8 @@
 
 All notable changes to Sigma are recorded here, newest first.
 
+## Unreleased
+
 ## 1.0.26 — 2026-10-29 — the resource guard after the cloud-run release: a held verify keeps its measurement, a cold verify gets more than one worker, Sigma's own suite honours the worker grant, and a hold mid-goal has an instruction
 
 - **A verify that holds mid-goal has an instruction: wait, verify again, never a code fix or a review cycle, park after 6 holds in a row (#2109).**
