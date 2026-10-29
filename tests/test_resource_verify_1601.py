@@ -221,6 +221,19 @@ def test_literal_n_that_a_warm_ring_cannot_fit_holds_instead_of_running_fewer(en
     assert not list((env.state / "leases").glob("*.json"))
 
 
+def test_literal_n_on_a_cold_ring_runs_that_many_workers_and_learns_a_per_worker_cost(env, tmp_path):
+    """An empty ring is admitted one unit, but a literal `-n N` still runs N: nothing measured says N do not fit. The
+    lease is amended to N, so the ring learns the peak per worker, not the whole run as one. A cloud container's ring
+    is empty at its first verify, and tools/cloud/setup.sh's literal relies on both."""
+    out = env.run("verify", "echo $SIGMA_VERIFY_WORKERS $PYTEST_XDIST_AUTO_NUM_WORKERS -n 3; sleep 1", str(tmp_path),
+                  30, "g1", config={"mode": "enforce"}, sample_gap=0.1)
+    assert out.hold is None and out.returncode == 0 and out.workers == 3
+    assert out.outputs[0].split()[:2] == ["3", "3"]
+    observed = json.loads((env.state / "observed.json").read_text())
+    run_peak = observed["verify_run"][0]       # the run's recorded peak (here this process's own footprint)
+    assert run_peak > 0 and 0 < observed["verify"][0] <= run_peak // 3
+
+
 # ------------------------------------------------------------------------------------------ process group
 @unix_only
 def test_timeout_stops_the_whole_group_including_a_sleeping_grandchild(env, tmp_path):
