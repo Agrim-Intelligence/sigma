@@ -4,6 +4,12 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **A verify held for a literal `-n N` no longer records `loop.py`'s own footprint as its cost (#2106).**
+  - **What changed.** `resource_verify.run` held a literal count that a measured cost said did not fit, then left through its `finally`, which called `lease.release`; `release` measured the lease's pid (the caller, a few MiB) into the `verify` ring and `verify_run`. After two holds that value was the ring's median, the real measurement became the outlier `learned_cost` drops, and the third attempt ran the held count. A new `resource_lease.discard(lease_id)` removes the lease under the lock without measuring it and logs a `discard` event; the literal-hold path uses it, and every path where a command ran (a normal run, a failure, a shed) still uses `release`. A hold now leaves `observed.json` byte for byte unchanged and no lease file behind; the waiting record (#1768) is kept.
+  - **Docs.** `docs/configuration.md` (the hold sentence), `docs/parallelism.md` and the write-surface inventory (`discard` is one new `fs-remove` site). No config key, no contract-vocabulary change, no version bump, no new CLI verb.
+  - **Measured:** offline, `tests/test_resource_verify_2106.py`: the issue's reproduction (six holds of `echo ran -n 2` on a faked 15.7 GiB machine with 15.2 GiB available, ring seeded with one 5632 MiB entry) was seen red before the change (the ring grew by the pytest process's footprint, the third attempt ran) and green after; each clause (release on hold, `discard` recording a peak, no unlink, no event, true for an unknown lease, discard on the ran path, dropped `note_waiting`) was broken on its own and seen red.
+  - **Not measured:** a real two-worker pytest run on a real machine (the machine is faked through the lease's sample seam); a crash between admit and discard still leaves the lease until its ttl or the stale reclaim, which records it as `reclaimed` (unchanged, out of scope).
+
 ## 1.0.25 — 2026-10-29 — runner-aware planned tests for non-pytest goals, an opt-in merge through the ruleset bypass, goals run their tests with the project's Python, failed branch deletes are announced and leftovers swept, cloud runs land with less hand-holding, and an unreadable branch-protection answer no longer reads as "not protected"
 
 - **Opt-in merge through the account's ruleset bypass: `work.merge_bypass: "ruleset"` (#2092).**
