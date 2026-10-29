@@ -1616,6 +1616,33 @@ def acceptance_module():
     return module
 
 
+def repository_verify_commands(config):
+    """The repository's own proving command as a list: `[verify.command]`, or `[]` when it declares none (#2085).
+    A malformed `verify` block raises exactly as `declared_verify_commands` always did."""
+    command = ((config or {}).get("verify") or {}).get("command") or None
+    return [command] if command else []
+
+
+def combined_verify_commands(config, goal_command):
+    """The repository command first, then the goal's own, each once and none blank: THE list builder `verify`,
+    `red`, and the record-time check (`acceptance.trust_conflict`) all use, so what record time refuses is exactly
+    what verify time would refuse (#2085)."""
+    return list(dict.fromkeys(c for c in (*repository_verify_commands(config), goal_command) if c))
+
+
+def goal_file_verify_command(goal):
+    """A local goal's frontmatter `verify_command` (the goal given as a `.md` path that exists), else None.
+    `verify_command: ''` (or `""`, or a lone quote) declares nothing: the flat parser strips only `"`, so `''`
+    would otherwise reach the shell as a command (#228)."""
+    goal_path = pathlib.Path(str(goal))
+    if goal_path.suffix != ".md" or not goal_path.exists():
+        return None
+    command = frontmatter.get(goal_path.read_text(), "verify_command")
+    if command is not None and not command.strip().strip("'\"").strip():
+        return None
+    return command
+
+
 def declared_verify_commands(goal, config, sdlc_dir=None):
     """The ordered proving commands `loop.py verify` runs, each in its own shell: goal frontmatter
     `verify_command` (local mode, goal given as a `.md` path), else config `verify.command`.
@@ -1623,24 +1650,15 @@ def declared_verify_commands(goal, config, sdlc_dir=None):
     (or local fallback) in a separate subprocess. Without a record, retain legacy precedence.
     Shared by `verify_goal`, the `record done` refusal and the merge gate so none of them can
     disagree about whether there is anything to run (#228, #312)."""
-    cmd = None
-    goal_path = pathlib.Path(str(goal))
-    if goal_path.suffix == ".md" and goal_path.exists():
-        cmd = frontmatter.get(goal_path.read_text(), "verify_command")
-        # `verify_command: ''` (or `""`, or a lone quote) declares nothing: the flat parser strips
-        # only `"`, so `''` would otherwise reach the shell as a command (#228).
-        if cmd is not None and not cmd.strip().strip("'\"").strip():
-            cmd = None
-    repo_cmd = ((config or {}).get("verify") or {}).get("command") or None
+    cmd = goal_file_verify_command(goal)
+    repo_cmd = (repository_verify_commands(config) or [None])[0]
     if sdlc_dir is not None:
         try:
             acceptance = acceptance_module().read(sdlc_dir, goal)
         except FileNotFoundError:
             acceptance = None
         if acceptance is not None:
-            goal_cmd = acceptance["verify_command"] or cmd
-            commands = list(dict.fromkeys(c for c in (repo_cmd, goal_cmd) if c))
-            return commands
+            return combined_verify_commands(config, acceptance["verify_command"] or cmd)
     return [cmd or repo_cmd] if cmd or repo_cmd else []
 
 
