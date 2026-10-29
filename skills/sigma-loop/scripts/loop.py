@@ -56,6 +56,7 @@ work = _load("work")                # per-goal worktree/branch/PR (config-gated,
 tamper_scan = _load("tamper_scan")  # #1937: diff parser; #1933 reuses changed_test_files()
 flake_check = _load("flake_check")  # #1933: 3x varied-order re-run of a goal's changed tests
 witness = _load("witness")          # #1934: red-before-green as data (+ #1935's vocabulary)
+goal_python = _load("goal_python")  # #2079: which interpreter runs a goal's planned tests (one copy: it caches)
 diff_revert = _load("diff_revert")  # #2240: mutmut-free kill control -- writes #1935's `mutation`
                                      # witness kind, which nothing else in this repo ever produces
 retention = _load("retention")      # #457: bounded prune of closed goals' action-log + witness streams
@@ -6335,7 +6336,7 @@ def _flake_verdict(sdlc_dir, goal, root, passed):
             files = sorted({n.split("::")[0] for n in nodes})
             # Exact only when every selector IS a collected id; a class, file or parametrized function widens.
             kind = "planned node ids" if set(selectors) == set(nodes) else "planned files/classes"
-            result = flake_check.check(root, files, node_ids=nodes)
+            result = flake_check.check(root, files, node_ids=nodes, python=_test_python(sdlc_dir, root))
             selectors, nodes = len(selectors), len(nodes)
         else:
             rec = work._record(sdlc_dir, goal) or {}
@@ -6345,7 +6346,7 @@ def _flake_verdict(sdlc_dir, goal, root, passed):
             files = tamper_scan.changed_test_files(diff)
             if not files:
                 return empty
-            result = flake_check.check(root, files)
+            result = flake_check.check(root, files, python=_test_python(sdlc_dir, root))
             kind, selectors, nodes = "changed files", None, None
         print("loop: flake check scope: %s -- %s node id(s) in %d file(s), %s run(s) at a time"
               % (kind, "?" if nodes is None else nodes, len(files), result.get("workers", "?")),
@@ -6357,13 +6358,28 @@ def _flake_verdict(sdlc_dir, goal, root, passed):
         return empty
 
 
+def _test_python(sdlc_dir, root):
+    """#2079: the interpreter that runs this goal's planned tests (`goal_python.resolve`: the worktree's `.venv`,
+    else a venv built once with `uv run --frozen`, else `python3`). Raises `goal_python.InterpreterError` (a
+    `ValueError`) naming the interpreter and how it was chosen; callers refuse or record no proof, they never fall
+    back to another interpreter. Only ever called after the trust gate has accepted the declared commands. The
+    budget is `verify.timeout_minutes`, the operator's own bound."""
+    try:
+        budget = _verify_timeout_seconds(state.load_config(sdlc_dir))
+    except Exception:                        # noqa: BLE001 - an unreadable config only loses the custom budget
+        budget = _verify_timeout_seconds({})
+    resolved = goal_python.resolve(root, budget=budget)
+    resolved.report(lambda line: print("loop: " + line, file=sys.stderr))
+    return resolved.path
+
+
 def _planned_scope(sdlc_dir, goal, root):
     plan = work.verification_plan(sdlc_dir, goal, root)
     if plan is None or "## Tests" not in plan.read_text().splitlines():
         return None
     proof = _load("red_green")
     selectors = proof.selectors(plan)
-    return selectors, proof.collect(root, selectors)
+    return selectors, proof.collect(root, selectors, python=_test_python(sdlc_dir, root))
 
 
 def _planned_tests(sdlc_dir, goal, root):
@@ -6398,7 +6414,7 @@ def _changed_tests(sdlc_dir, goal, root):
     diff = subprocess.run(["git", "diff", "%s...HEAD" % ref],
                            cwd=root, capture_output=True, text=True).stdout
     files = tamper_scan.changed_test_files(diff)
-    return flake_check._collect(root, files, flake_check._run) if files else []
+    return flake_check._collect(root, files, flake_check._run, python=_test_python(sdlc_dir, root)) if files else []
 
 
 def _witness_verdict(sdlc_dir, goal, root, passed, output):
@@ -6485,8 +6501,9 @@ def _diff_revert_verdict(sdlc_dir, goal, root, passed):
             files |= {p for p in others_out.splitlines() if p and tamper_scan._TEST_PATH.search(p)}
         if not files:
             return empty
-        tests = flake_check._collect(root, sorted(files), flake_check._run)
-        result = diff_revert.run(sdlc_dir, goal, root, base_ref, tests)
+        python = _test_python(sdlc_dir, root)
+        tests = flake_check._collect(root, sorted(files), flake_check._run, python=python)
+        result = diff_revert.run(sdlc_dir, goal, root, base_ref, tests, python=python)
         for node in result.get("kills", []):
             witness.record(sdlc_dir, goal, node, "mutation",
                             witness.source_hash(witness.test_source(node, root=root)),
@@ -6723,7 +6740,12 @@ def red_goal(sdlc_dir, goal):
               f"wait for it with `loop.py wait-call {sdlc_dir} {stem} verify`", file=sys.stderr)
         return 6
     rg = _load("red_green")
-    seen = rg.observe(sdlc_dir, stem, root, plan)
+    try:
+        python = _test_python(sdlc_dir, root)
+    except ValueError as exc:                # #2079: no red, no green, no fallback to another interpreter
+        print("loop.py red: " + str(exc), file=sys.stderr)
+        return 2
+    seen = rg.observe(sdlc_dir, stem, root, plan, python=python)
     if "provenance" not in seen:
         print("loop.py red: " + str(seen.get("error") or "planned tests could not be observed"),
               file=sys.stderr)
@@ -6851,6 +6873,12 @@ def _verify_goal_body(sdlc_dir, goal, guard):
         ledger.safe_append(sdlc_dir, "verify", goal, config=config, stream=ledger.EVENTS, exit=2)
         actionlog.safe_append(sdlc_dir, goal, "verify_run", exit=2)
         return 2
+    # #2079: resolved HERE, after the trust gate (a build runs repository-controlled code) and before the content
+    # fingerprint (a build can add paths); an unusable interpreter is recorded as no planned-test proof below.
+    try:
+        _python, _python_error = _test_python(sdlc_dir, root), None
+    except ValueError as exc:
+        _python, _python_error = None, str(exc)
     _wrec = work._record(sdlc_dir, goal) or {}
     _base_ref = (f"{_wrec['remote']}/{_wrec['base']}"
                  if _wrec.get("remote") and _wrec.get("base") else None)
@@ -6886,10 +6914,13 @@ def _verify_goal_body(sdlc_dir, goal, guard):
     # configured shell command only prints success. Missing scope remains advisory at verify;
     # work.pr fails closed unless the operator supplies the published exception reason.
     try:
+        if _python_error:
+            raise ValueError(_python_error)
         test_first = _load("red_green").observe(
-            sdlc_dir, goal, root, work.verification_plan(sdlc_dir, goal, root))
-    except (OSError, ValueError) as exc:
+            sdlc_dir, goal, root, work.verification_plan(sdlc_dir, goal, root), python=_python)
+    except (OSError, ValueError) as exc:     # #2079: an unusable interpreter lands here: no provenance, no green
         test_first = {"passed": False, "error": str(exc)}
+        print("loop.py verify: planned tests not observed: " + str(exc), file=sys.stderr)
     if test_first.get("provenance") and not test_first.get("passed") and proc.returncode == 0:
         proc.returncode = test_first.get("exit") or 1
         outputs.append(test_first.get("error", "planned tests failed"))

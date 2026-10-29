@@ -1009,6 +1009,12 @@ Residuals of the publish path (named, not closed; each is a ticket):
   built: a doctor or session-start check that names this. Not measured on a real platform (the refusal was driven by
   patching `sync.fcntl`).
 
+## The container's `python3` has no pytest (#2079)
+
+An adopter's first unattended `--land` run found that `/usr/bin/python3` in the container has no pytest: `loop.py red` and verify's planned-test observation shelled out to `python3 -m pytest`, and the run got through only because the orchestrating agent put the worktree's `.venv/bin` on `PATH` by hand. Sigma now picks the interpreter itself, in this order: the worktree's `.venv` (when it has a `pyvenv.cfg`), else a venv built once with `uv run --frozen --project <worktree>` for a project with `uv.lock` and `pyproject.toml` when `uv` is on `PATH`, else `python3`. The full rules, the refusal when the chosen interpreter cannot run pytest, and what is not done are in [configuration](configuration.md#which-python-runs-a-goals-planned-tests-2079).
+
+For a cloud container this means: a goal worktree is a fresh checkout and `.venv` is normally gitignored, so unless something creates `<worktree>/.venv` before `red` runs, a uv project gets it built by the first `red` or verify (that first call can take up to the `verify.timeout_minutes` budget). A project that is not a uv project, in a container with no `.venv`, gets `python3`, and if that cannot import pytest the run now stops at `loop.py red` with a line naming the interpreter, instead of failing later as a collection error. A uv build is expected to need the package index for anything not already cached; a container that blocks it would fail the build, which removes the venv it made and refuses (it does not fall back to `python3`). **Not measured:** a real uv build, a blocked index, and any real cloud container; the tests drive a fake `uv` and fake interpreters.
+
 ## What remains (#895 slice 7)
 
 Slice 7 made the `review_context.py` briefs REST-first (`gh api repos/{owner}/{repo}/pulls/N` with the diff Accept
