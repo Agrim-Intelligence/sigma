@@ -4,6 +4,11 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **A cloud run's reviewed plan survives the container (#2087).**
+  - **A durable copy of the plan.** In a cloud session (`CLAUDE_CODE_REMOTE` true or 1), when `record done` finds a GitHub-issue goal's plan untracked and absent from `<remote>/<base>`, `work.py finish` posts the plan as a comment on the goal's issue before cleanup and prints the comment's URL in the `kept` line (a repository that ignores `.sdlc/plans/` on purpose could not follow the old advice, "commit it"). **PROVISIONAL (owner to ratify):** the issue comment was chosen over a PR-body section and a ledger-branch file because it adds the fewest write surfaces (one inventory row, an existing REST writer). Secret-shaped strings are redacted, a long plan is split into at most 3 comments and a longer one is cut with a `Truncated` line, a retried `finish` reuses a copy already posted (marker with the plan's sha256, trusted commenters only), and a failed post keeps the old warning with `; durable copy FAILED: <why>`. Outside a cloud session, and for a local goal file, the output is byte-for-byte what it was.
+  - **A doctor warning.** `/sigma-doctor` prints a `[WARN]` row when git ignores `.sdlc/plans/` and cloud runs look configured: `CLAUDE_CODE_REMOTE` is true or 1 in the doctor's own environment, or `SIGMA_TRUSTED_VERIFY_SHA256` is set. A laptop's doctor cannot see a cloud environment's settings and stays silent there.
+  - **Measured / not measured:** offline against real local git and a fake issue, each clause of both guards broken on its own and seen red. No real cloud container, no real GitHub comment at the size limit.
+
 ## 1.0.24 — 2026-10-29 — the ledger publish path after the cloud-run release: one publisher at a time, an exit flush, a container id that ignores TMPDIR
 
 - **The ledger publish path after #2076: one publisher at a time, a flush for processes that never go through `loop.py main`, a container id that ignores `TMPDIR`, and a retry pause that obeys the deadline (#2081).**

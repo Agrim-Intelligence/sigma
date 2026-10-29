@@ -4212,7 +4212,85 @@ def _copy_acceptance_into_worktree(sdlc_dir, rec, goal, run):
         return False
 
 
-def _clean_landed_root_records(sdlc_dir, rec, goal, run):
+#: #2087: a cloud container is deleted with the session, so a plan that never reached the base needs a durable copy
+#: before cleanup. The home is a comment on the goal's own issue (the fewest new write surfaces: `gh_api.comment_issue`
+#: is an existing writer, REST, no ledger, no second push). GitHub caps a comment at 65 536 characters.
+PLAN_COPY_MAX_PARTS = 3
+PLAN_COPY_PART_CHARS = 60000
+_PLAN_COPY_TRUSTED = ("OWNER", "MEMBER", "COLLABORATOR")
+
+
+def _plan_copy_bodies(ref, text):
+    """The comment bodies that carry a goal's plan: a marker line (goal, sha256 of the plan bytes, part i/n), a
+    short explanation, and the plan in a fence one backtick longer than any run inside it. Secret-shaped strings are
+    redacted first (`scrub_shapes`; ordinary text is unchanged). At most PLAN_COPY_MAX_PARTS parts of
+    PLAN_COPY_PART_CHARS characters; a longer plan is cut and the last part says how much was kept."""
+    sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    posted = scrub_module.scrub_shapes(text)
+    redacted, total, rest, chunks = posted != text, len(posted), posted, []
+    while rest and len(chunks) < PLAN_COPY_MAX_PARTS:
+        cut = len(rest)
+        if cut > PLAN_COPY_PART_CHARS:
+            cut = rest.rfind("\n", PLAN_COPY_PART_CHARS // 2, PLAN_COPY_PART_CHARS) + 1 or PLAN_COPY_PART_CHARS
+        chunks.append(rest[:cut])
+        rest = rest[cut:]
+    chunks = chunks or [""]
+    fence = "`" * max(4, max((len(m) for m in re.findall(r"`+", posted)), default=0) + 1)
+    bodies = []
+    for i, chunk in enumerate(chunks, 1):
+        lines = ["<!-- sigma:plan-copy goal=%s sha256=%s part=%d/%d -->" % (ref, sha, i, len(chunks)),
+                 "**Sigma kept a copy of this goal's plan** (`.sdlc/plans/%s.md`, part %d of %d). The run was in a cloud "
+                 "container, which is deleted when the session ends, and the plan was not on the base branch." % (ref, i, len(chunks))]
+        if redacted and i == 1:
+            lines.append("Secret-shaped strings were redacted from this copy.")
+        if rest and i == len(chunks):
+            lines.append("**Truncated:** kept %d of %d characters, to stay inside GitHub's comment size limit." % (
+                total - len(rest), total))
+        lines += ["", "<details><summary>plan, sha256 %s</summary>" % sha[:12], "", fence + "markdown", chunk, fence, "", "</details>", ""]
+        bodies.append("\n".join(lines))
+    return bodies
+
+
+def _durable_plan_copy(sdlc_dir, config, goal, doc, run, root):
+    """#2087: leave the plan `doc` on the goal's issue and return `(url, "")`, or `("", "durable copy FAILED: <why>")`.
+
+    Idempotent across a retried `finish`: the issue's comments are read first and a part whose marker line is already
+    there (same goal, same plan sha256, same part) from an OWNER, MEMBER or COLLABORATOR is reused, not posted again. That
+    read costs `1 + ceil(n/100)` REST requests for an issue with n comments and is an optimisation only: when it fails
+    every part is posted (a duplicate beats a lost plan). A post is never retried here (`comment_issue` is not idempotent):
+    a failure returns, and the next `finish` finds whatever did land by its marker. Never raises."""
+    try:
+        ref = stem(goal)
+        number, repo = int(ref), _issue_repo(config)
+        bodies = _plan_copy_bodies(ref, doc.read_bytes().decode("utf-8", errors="replace"))
+        api = _pr_api_run(run, root)
+        have = {}
+        try:
+            for c in gh_api.view_issue(api, number, repo=repo, comments="all")["comments"]:
+                if isinstance(c, dict) and c.get("author_association") in _PLAN_COPY_TRUSTED:
+                    first = str(c.get("body") or "").split("\n", 1)[0]
+                    if first.startswith("<!-- sigma:plan-copy ") and c.get("html_url"):
+                        have.setdefault(first, c["html_url"])
+        except Exception:                   # noqa: BLE001 - the read is an optimisation, never a reason not to post
+            have = {}
+        urls = []
+        for body in bodies:
+            marker = body.split("\n", 1)[0]
+            if marker in have:
+                urls.append(have[marker])
+                continue
+            got = gh_api.comment_issue(api, number, body, repo=repo, sdlc_dir=sdlc_dir)
+            url = got.get("html_url") if isinstance(got, dict) else ""
+            if not (isinstance(url, str) and url):
+                return "", ("durable copy FAILED: GitHub's reply named no comment URL (the copy may have been posted: "
+                            "look at the issue)")
+            urls.append(url)
+        return urls[0], ""
+    except Exception as exc:                # noqa: BLE001 - the cleanup must go on; the old warning stays
+        return "", "durable copy FAILED: %s" % _first_line(exc)
+
+
+def _clean_landed_root_records(sdlc_dir, rec, goal, run, config=None):
     """#1474: after a CONFIRMED merge, drop root-checkout plan/research/acceptance copies that landed.
 
     A copy is unlinked (file only, never a directory) only when it is untracked AND its blob id equals
@@ -4241,7 +4319,13 @@ def _clean_landed_root_records(sdlc_dir, rec, goal, run):
             except Exception:           # noqa: BLE001 - not on the landed branch
                 landed = ""
             if not landed:
-                lines.append(f"kept {rel}: not on {remote}/{base} (commit it or it is lost)")
+                line = f"kept {rel}: not on {remote}/{base} (commit it or it is lost)"
+                # #2087: only in a cloud session, only the plan, only for a goal that has an issue to carry the copy
+                if sub == "plans" and config is not None and ledger.cloud_session() and _reads_a_declaration(config, goal):
+                    url, why = _durable_plan_copy(sdlc_dir, config, goal, doc, run, root)
+                    line = (f"kept {rel}: not on {remote}/{base}; durable copy of the plan: {url}" if url
+                            else line + "; " + why)
+                lines.append(line)
             elif run(root, ["git", "hash-object", "--", str(doc)]) != landed:
                 lines.append(f"kept {rel}: differs from the copy that landed on {remote}/{base}")
             else:
@@ -8228,7 +8312,7 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
                     print("merge receipt publication pending: %s" % exc, file=sys.stderr)
             if not _merge_delivery_complete(sdlc_dir, goal):
                 return "PARK: confirmed merge observation delivery is pending; retry finish to repair it"
-    root_report = _clean_landed_root_records(sdlc_dir, rec, goal, run) if merged_before_cleanup else []
+    root_report = _clean_landed_root_records(sdlc_dir, rec, goal, run, config) if merged_before_cleanup else []
     note = ("; " + "; ".join(root_report)) if root_report else ""
     remove_argv = ["git", "worktree", "remove", rec["worktree"]] + (["--force"] if force else [])
     try:
