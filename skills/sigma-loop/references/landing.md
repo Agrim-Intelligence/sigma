@@ -29,7 +29,7 @@ Read which one you got, every time.**
   run it, never re-run. Exit `0` finished (not passed: read the first word or `exit=`), `1` did not
   complete, `3` still running, `2` no receipt (check the PR). Unmeasured on real hosts.
   A merge `runner pid N gone`, PR open, is not a failure: `agent-start --pid "$PPID"`, re-run `work.py merge`
-  ([killed-merge](killed-merge.md)).
+  (`references/killed-merge.md`).
 - **Response is a plain error/exit naming no id at all** (e.g. "Command timed out after Ns", exit
   143)? Nothing is left running. A clean re-run is correct where the command's own documentation
   says so — as `loop.py verify` and `work.py merge`'s paragraphs below both do.
