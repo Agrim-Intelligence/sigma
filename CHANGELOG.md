@@ -2,7 +2,7 @@
 
 All notable changes to Sigma are recorded here, newest first.
 
-## Unreleased
+## 1.0.26 — 2026-10-29 — the resource guard after the cloud-run release: a held verify keeps its measurement, a cold verify gets more than one worker, Sigma's own suite honours the worker grant, and a hold mid-goal has an instruction
 
 - **A verify that holds mid-goal has an instruction: wait, verify again, never a code fix or a review cycle, park after 6 holds in a row (#2109).**
   - **What changed.** `loop.py verify` can exit 5 with `RESOURCE-HOLD` on stderr at any point in a goal, but the skills only said what to do with a hold at the pick. `skills/sigma-loop/references/verify-hold.md` (new) is the one shared instruction: tell the hold from `UNVERIFIED` by the stderr prefix, run `resource_lease.py wait --kind verify --max <retry_after, else 540>`, verify again, never edit code or call `post-review` for it, never count it against `work.max_review_cycles`, and at 6 holds in a row `record parked ... --qkind no_evidence`. `land.md` (step 3 and the Not endings list), `landing.md` and the loop's `SKILL.md` point at it; `docs/configuration.md` and `docs/parallelism.md` link it. No `loop.py` change, so a hold still returns exit 5 and an agent still has to read stderr.
