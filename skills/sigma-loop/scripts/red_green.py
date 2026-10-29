@@ -113,6 +113,12 @@ _REDIRECT = re.compile(r'[0-9&]*[<>]+&?')
 #: Words after which the next word is itself run as a command or script text.
 _WRAPPERS = frozenset(('eval', 'exec', 'command', 'builtin', 'env', 'nohup', 'time', 'xargs', 'sudo', 'nice', 'source', '.'))
 _SHELLS = frozenset(('sh', 'bash', 'zsh', 'dash', 'ksh'))
+#: A shell shipped with `-c <script>`: `-c` or any short-option cluster holding `c` (`-lc`, `-ec`).
+_SHELL_C = re.compile(r'-[A-Za-z]*c[A-Za-z]*')
+#: An interpreter's eval flag: its next word is program text. Only the common interpreters; a template author who
+#: reaches another one with a placeholder owns that (documented in docs/configuration.md).
+_INTERPRETERS = re.compile(r'(python[0-9.]*|node|nodejs|perl|ruby|php|bun|deno)')
+_EVAL_FLAG = re.compile(r'-[A-Za-z]*[cepE][A-Za-z]*|--eval|--print|--command')
 _CONTROL = frozenset((';', '&&', '||', '|', '&', '(', ')', '!'))
 
 
@@ -154,8 +160,8 @@ def render_command(template, file, name, runner='<name>'):
         raise ValueError('%s: {file} may not be empty' % key)
     if any(kind == 'ph' for kind, _ in pieces):
         literal = ''.join(text for kind, text in pieces if kind == 'lit')
-        if any(c in literal for c in ('\'', '"', '`', '$', '\\')) or '<<' in literal:
-            raise ValueError('%s: a template that uses {file}/{name} may not contain \' " ` $ \\ or <<; write the '
+        if any(c in literal for c in ('\'', '"', '`', '$', '\\', '\n', '\r')) or '<<' in literal:
+            raise ValueError('%s: a template that uses {file}/{name} may not contain \' " ` $ \\ a newline or <<; write the '
                              'placeholder bare, Sigma quotes it (put quotes, $VAR and heredocs in a script the '
                              'template calls)' % key)
         skeleton = ''.join(text if kind == 'lit' else _SENTINEL[text] for kind, text in pieces)
@@ -163,23 +169,46 @@ def render_command(template, file, name, runner='<name>'):
             tokens = shlex.split(skeleton)
         except ValueError as exc:
             raise ValueError('%s: the template does not parse: %s' % (key, exc)) from None
-        previous, command_word, at_command = None, None, True
+        previous, command_word, at_command, plain_args = None, None, True, 0
         for token in tokens:
             if any(c in token for c in _SENTINEL.values()):
                 if token not in _SENTINEL.values() and not _FLAG_EQUALS.fullmatch(token):
                     raise ValueError('%s: a placeholder must be a whole word or follow `--flag=`: %s'
                                      % (key, token.replace(_SENTINEL['file'], '{file}').replace(_SENTINEL['name'], '{name}')))
-                if (at_command or previous in _WRAPPERS or (previous == '-c' and command_word in _SHELLS)
+                shell = command_word in _SHELLS
+                if (at_command or previous in _WRAPPERS
+                        or (shell and (plain_args == 0 or (previous is not None and _SHELL_C.fullmatch(previous))))
+                        or (_INTERPRETERS.fullmatch(command_word or '') and previous is not None
+                            and _EVAL_FLAG.fullmatch(previous))
                         or (previous is not None and _REDIRECT.fullmatch(previous))):
-                    raise ValueError('%s: a placeholder may not be a command word, follow a wrapper such as eval, '
-                                     'sh -c, or be a redirection target' % key)
+                    raise ValueError('%s: a placeholder may not be a command word, follow a wrapper such as eval or '
+                                     'an eval flag (sh -lc, python -c, node -e), be the first argument of a bare '
+                                     'shell (sh {name}), or be a redirection target' % key)
             if token in _CONTROL:
-                at_command, command_word = True, None
-            else:
-                command_word = os.path.basename(token) if at_command else command_word
-                at_command = False
+                at_command, command_word, plain_args = True, None, 0
+            elif at_command:
+                command_word, at_command, plain_args = os.path.basename(token), False, 0
+            elif not token.startswith('-'):
+                plain_args += 1
             previous = token
     return ''.join(text if kind == 'lit' else shlex.quote(values[text]) for kind, text in pieces)
+
+
+def has_runner_bullets(plan):
+    """True when ``plan``'s `## Tests` holds a runner-named bullet. Total: an unreadable plan has none."""
+    try:
+        active = False
+        for line in pathlib.Path(plan).read_text().splitlines():
+            if line.strip() == '## Tests':
+                active = True
+            elif line.startswith('## '):
+                active = False
+            found = re.fullmatch(r'\s*- `([^`]+)`\s*', line) if active else None
+            if found and parse_runner(found[1]):
+                return True
+    except (OSError, ValueError, TypeError):
+        pass
+    return False
 
 
 def selectors(plan, runners=None):

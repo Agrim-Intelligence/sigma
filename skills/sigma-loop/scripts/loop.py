@@ -6340,6 +6340,11 @@ def _runner_flake(root, nodes, runners, timeout, exec_runner=None):
         if len(set(codes)) > 1:
             return {"verdict": "unverified", "runs": runs, "ms": int((time.monotonic() - began) * 1000),
                     "disagreement": "%s: exit codes %s differed across %d runs" % (node, [c for _, c in codes], FLAKE_RUNS)}
+        if any(st != "ok" for st, _ in codes):
+            # three identical failures, 127s or timeouts are not evidence of stability
+            return {"verdict": "absent", "runs": runs, "disagreement": None,
+                    "ms": int((time.monotonic() - began) * 1000),
+                    "reason": "%s: the re-runs did not end ok (%s)" % (node, ", ".join(sorted({st for st, _ in codes})))}
     return {"verdict": "verified", "runs": runs, "disagreement": None, "ms": int((time.monotonic() - began) * 1000)}
 
 
@@ -6818,11 +6823,11 @@ def red_goal(sdlc_dir, goal):
     if trust.source is None:
         print("loop.py red: " + _verify_trust_text(trust, sdlc_dir, goal), file=sys.stderr)
         return 2
+    config_error = None
     try:
         runners = state.test_runners(config)             # #2084: read ONCE; the gate, observe and the plan share it
     except ValueError as exc:
-        print("loop.py red: " + str(exc), file=sys.stderr)
-        return 2
+        runners, config_error = {}, str(exc)             # fatal only if the plan names a runner (checked below)
     try:
         plan = work.verification_plan(sdlc_dir, stem, root)
     except ValueError as exc:
@@ -6842,6 +6847,9 @@ def red_goal(sdlc_dir, goal):
               f"wait for it with `loop.py wait-call {sdlc_dir} {stem} verify`", file=sys.stderr)
         return 6
     rg = _load("red_green")
+    if config_error and rg.has_runner_bullets(plan):
+        print("loop.py red: " + config_error, file=sys.stderr)
+        return 2
     refused, granted = _runner_scope(trust, runners, plan, config)
     if refused:
         print("loop.py red: " + refused, file=sys.stderr)
@@ -6979,12 +6987,21 @@ def _verify_goal_body(sdlc_dir, goal, guard):
         actionlog.safe_append(sdlc_dir, goal, "verify_run", exit=2)
         return 2
     # #2084: a runner command runs under the git-local grant only; refused BEFORE anything runs, same writes as above.
+    # A plan-read error, or a malformed `tests.runners` that no bullet uses, keeps the old path (observe reports the
+    # former as test_first.error and verify still runs); the gate bites only when a runner is in play.
+    config_error = None
     try:
         runners = state.test_runners(config)             # read ONCE; the gate, observe, flake and witness share it
+    except ValueError as exc:
+        runners, config_error = {}, str(exc)
+    try:
         plan = work.verification_plan(sdlc_dir, goal, root)
+    except (OSError, ValueError):
+        plan = None
+    if config_error and _load("red_green").has_runner_bullets(plan):
+        refused, granted = config_error, None
+    else:
         refused, granted = _runner_scope(trust, runners, plan, config)
-    except (OSError, ValueError) as exc:
-        refused, granted = str(exc), None
     if refused:
         print("loop.py verify: " + refused, file=sys.stderr)
         ledger.safe_append(sdlc_dir, "verify", goal, config=config, stream=ledger.EVENTS, exit=2)

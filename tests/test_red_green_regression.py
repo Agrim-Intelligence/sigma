@@ -114,3 +114,30 @@ def test_runnerless_config_changes_nothing(tmp_path):
     assert proc.returncode == 0, (proc.stdout, proc.stderr)
     rows = journal(sdlc)
     assert [(r['test'], r['provenance'], r['kind']) for r in rows] == [(NODE, 'planned-pytest-v1', 'assertion')]
+
+
+def _evidence(lp, sdlc):
+    return json.loads(lp.state.evidence_path(sdlc, '84').read_text())
+
+
+def test_plan_read_error_without_runners_stays_a_test_first_error_and_verify_runs(tmp_path, monkeypatch):
+    """Before runner bullets a plan the verify path could not read (main/worktree plans differing) became
+    `test_first.error` and the proving command still ran; it must not become a trust refusal (exit 2)."""
+    root, sdlc, plan = make(tmp_path)
+    lp = mod('loop')
+
+    def differ(*args):
+        raise ValueError('main and worktree plans differ (a vs b)')
+    monkeypatch.setattr(lp.work, 'verification_plan', differ)
+    assert lp.verify_goal(sdlc, '84') == 0
+    assert 'plans differ' in _evidence(lp, sdlc)['test_first']['error']
+
+
+def test_malformed_runner_config_without_a_runner_bullet_does_not_stop_verify(tmp_path):
+    root, sdlc, plan = make(tmp_path)
+    cfg = json.loads((sdlc / 'config.json').read_text())
+    cfg['tests'] = {'runners': {'vitest': 7}}
+    (sdlc / 'config.json').write_text(json.dumps(cfg))
+    lp = mod('loop')
+    assert lp.verify_goal(sdlc, '84') == 1                 # the planned pytest test fails: it RAN, it was not refused
+    assert _evidence(lp, sdlc)['test_first']['provenance'] == 'planned-pytest-v1'

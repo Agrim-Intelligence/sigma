@@ -298,6 +298,46 @@ def test_file_with_shell_metacharacters_is_quoted(b):
     assert outcome(lambda: rg.selectors(b.plan, runners())) == ('ok', ['vitest: ui/a$(id)*.tsx > t'])
 
 
+@pytest.mark.parametrize('template', ['echo ok\n{name}', 'a\r{name}', 'echo ok\r\n{file}', 'x\n{name} y'])
+def test_newline_or_carriage_return_in_a_template_with_a_placeholder_rejected(template):
+    """A bare newline or CR starts a new command for the shell but is plain whitespace to `shlex.split`, so it
+    would hide a placeholder in command position from the token rules."""
+    refuses(outcome(lambda: mod('red_green').render_command(template, FILE, 'n', 'vitest')), 'tests.runners.vitest')
+
+
+@pytest.mark.parametrize('template', ['bash -lc {name}', 'bash -ec {name}', 'zsh -ic {file}', 'sh -c {name}'])
+def test_shell_option_cluster_holding_c_before_a_placeholder_rejected(template):
+    refuses(outcome(lambda: mod('red_green').render_command(template, FILE, 'n', 'vitest')), 'tests.runners.vitest')
+
+
+@pytest.mark.parametrize('template', ['python3 -c {name}', 'node -e {name}', 'node --eval {name}', 'node -p {name}',
+                                      'perl -E {name}', 'ruby -e {name}'])
+def test_interpreter_eval_flag_before_a_placeholder_rejected(template):
+    refuses(outcome(lambda: mod('red_green').render_command(template, FILE, 'n', 'vitest')), 'tests.runners.vitest')
+
+
+@pytest.mark.parametrize('template', ['sh {name}', 'bash -x {name}', 'sh {file}'])
+def test_placeholder_as_first_argument_of_a_bare_shell_rejected(template):
+    refuses(outcome(lambda: mod('red_green').render_command(template, FILE, 'n', 'vitest')), 'tests.runners.vitest')
+
+
+def test_script_and_module_forms_with_a_placeholder_still_accepted():
+    rg = mod('red_green')
+    for template, want in (('sh stub.sh {file} -t {name}', "sh stub.sh ui/a.test.tsx -t n"),
+                           ('python3 -m pytest {file}', 'python3 -m pytest ui/a.test.tsx'),
+                           ('node run.js {file} {name}', 'node run.js ui/a.test.tsx n')):
+        assert outcome(lambda: rg.render_command(template, FILE, 'n', 'vitest')) == ('ok', want), template
+
+
+@pytest.mark.parametrize('result', [('failed', 1, ''), ('failed', 127, ''), ('timeout', None, ''), ('error', None, '')])
+def test_flake_runner_identical_non_ok_runs_are_absent_not_verified(b, result):
+    lp = mod('loop')
+    got = outcome(lambda: lp._runner_flake(b.root, [NODE], runners(), 60, fake_exec([result])))
+    assert got[0] == 'ok' and got[1].get('verdict') == 'absent', got
+    ok = outcome(lambda: lp._runner_flake(b.root, [NODE], runners(), 60, fake_exec([('ok', 0, '')])))
+    assert ok[0] == 'ok' and ok[1].get('verdict') == 'verified', ok
+
+
 def test_runner_named_none_rejected():
     refuses(outcome(lambda: mod('state').test_runners({'tests': {'runners': {'none': 'x {file}'}}})),
             'tests.runners.none')
