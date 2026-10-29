@@ -20,10 +20,10 @@ SIGMA_MIN=1.0.21   # the first Sigma that reads the environment's verify approva
 # The suite minus the six files CI's nightly tier skips (`SLOW` in .github/workflows/ci.yml), on two
 # workers. `-n auto` ran one here: this suite's conftest answers it with a quarter of available memory
 # at 2000 MB a worker. A literal is what neither that hook nor the guard's cold ring lowers, and a later
-# verify in the same container holds unless the first one's whole peak fits the guard's room, which two
-# workers' should and three workers' may not (tools/cloud/README.md has the numbers). `-rsEf` lists
-# failing tests last, where Sigma's five-line evidence tail keeps them. The operator's approval value is
-# the hash of exactly this string: tests/test_cloud_setup_script.py keeps it, CI's list and
+# verify in the same container holds, briefly, unless the first one's whole peak fits the guard's room,
+# which two workers' should and three workers' may not (tools/cloud/README.md has the numbers). `-rsEf`
+# lists failing tests last, where Sigma's five-line evidence tail keeps them. The operator's approval
+# value is the hash of exactly this string: tests/test_cloud_setup_script.py keeps it, CI's list and
 # tools/cloud/README.md in step, and changing it means the operator sets a new value.
 VERIFY="python3 -m pytest tests/ --ignore=tests/test_readiness_drills.py --ignore=tests/test_readiness_growth_audit.py --ignore=tests/test_b6_463.py --ignore=tests/test_mutation_sample.py --ignore=tests/test_onboarding_control.py --ignore=tests/test_shared_sdlc_paths.py -rsEf -q -n 2 -p no:cacheprovider"
 # loop.py stops a verify after 60 minutes unless told otherwise. One worker took 2h16m here on 2026-10-29;
