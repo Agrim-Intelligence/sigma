@@ -3940,6 +3940,45 @@ def _watcher_build_rows(base, cfg):
         return []
 
 
+def _cloud_runs_configured(env):
+    """#2087: do cloud runs look configured for the environment THIS doctor runs in? True when `CLAUDE_CODE_REMOTE` is
+    `true` or `1` (the doctor is inside a cloud session, the signal `gh_api` and `ledger.cloud_session` read) or
+    `SIGMA_TRUSTED_VERIFY_SHA256` is set and non-empty (the operator's cloud-environment step in
+    docs/cloud-sessions.md). A laptop's doctor cannot see a cloud environment's own settings, so it says nothing there.
+    Not measured on a real cloud container."""
+    remote = str(env.get("CLAUDE_CODE_REMOTE", "")).strip().lower() in ("true", "1")
+    return remote or bool(str(env.get("SIGMA_TRUSTED_VERIFY_SHA256", "")).strip())
+
+
+def _plans_ignored_rows(base, cfg, env=None):
+    """#2087: ONE WARN row when git ignores this repository's `.sdlc/plans/` AND cloud runs look configured
+    (`_cloud_runs_configured`). Advisory (`ok` True, so the ready count is unchanged). The ignore question is git's own
+    answer for a probe path under the plans directory, so a negation (`!.sdlc/plans/`) reads as not ignored; any
+    failure of git, or a directory that is not a git checkout, gives no row. The cloud check runs first, so a laptop
+    pays no git call."""
+    try:
+        env = os.environ if env is None else env
+        if not _cloud_runs_configured(env):
+            return []
+        base = pathlib.Path(base)
+        rel = os.path.relpath(str(base / "plans" / "x.md"), str(base.parent))
+        done = subprocess.run(["git", "-C", str(base.parent), "check-ignore", "-v", "--non-matching", "--", rel],
+                              capture_output=True, text=True, timeout=10)
+        # `--non-matching` prints `::\t<path>` (all three fields empty) when git answered "not ignored".
+        if done.returncode not in (0, 1) or not done.stdout.strip() or done.stdout.startswith("::"):
+            return []
+        return [{"name": "plans directory is git-ignored and cloud runs look configured", "ok": True, "level": "WARN",
+                 "fix": ("git ignores %s/plans/, and this environment looks like a cloud run (CLAUDE_CODE_REMOTE is true "
+                         "or 1, or SIGMA_TRUSTED_VERIFY_SHA256 is set; a laptop's doctor cannot see the cloud "
+                         "environment's own settings, and this was not measured on a real container). A cloud container "
+                         "is deleted after the session, so a reviewed plan kept out of git is lost with it. For a goal "
+                         "that is a GitHub issue, `record done` posts the plan as a comment on the issue before cleanup "
+                         "and prints where; a local goal file has no issue, so its plan is lost. To keep plans in the "
+                         "repository instead, stop ignoring them (docs/cloud-sessions.md)." % base.name)}]
+    except Exception:                        # noqa: BLE001 - a detector that cannot run says nothing
+        return []
+
+
 def _stale_watch_stop_rows(base, cfg):
     """#1510: warn when a leftover state/watch.stop exists and no watcher is live (it would exit at once). Silent otherwise. Read-only."""
     try:
@@ -4146,6 +4185,7 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     out.extend(_origin_mismatch_rows(base, disc, run))      # #1314
     out.extend(_watcher_build_rows(base, cfg))                # #1315
     out.extend(_stale_watch_stop_rows(base, cfg))             # #1510
+    out.extend(_plans_ignored_rows(base, cfg))                # #2087
     _progress("unit branch readiness")
     out.extend(_upkeep_rows(base, cfg, run, which, injected, cheap_only))
     _progress("resolvers")
