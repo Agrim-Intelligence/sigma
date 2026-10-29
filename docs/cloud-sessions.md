@@ -1236,6 +1236,10 @@ only feeds `unit_completion` after `done`, so it decides nothing.
 Not scanned by either ratchet: `gh_api.py` fallback argv (EXEMPT; runs only after REST fails, so GraphQL fails by
 construction in a cloud session), shell scripts, `.tmpl` prose, and argv built incrementally.
 
+## A merged goal branch the cloud session cannot delete (#1682)
+
+The GitHub proxy of a cloud session rejects branch deletion, so a cloud `--land` run cannot delete its own `sdlc/<goal>` branch after the merge. `work.py` used to return false there without a word; since #1682 a failed delete prints `work: remote branch delete failed for 'sdlc/<goal>': <the error>` and, when `CLAUDE_CODE_REMOTE` is true or 1, adds that the branch **needs a sweep from a host that can delete**, naming the branch and its head (the head it listed, else one REST read of the ref). `record done` still says `deleted local branch ... (remote delete unconfirmed)`. The lever is a person's, from a laptop or any host whose token can delete: `python3 skills/sigma-loop/scripts/work.py branches .sdlc` lists the merged branches still on the remote, and `... branches .sdlc --sweep` deletes them, each pinned to the listed head. A later `work.py finish` on such a host does the same for up to 10 branches. Inside the container the reconcile stops after the first rejected delete, so a run is not slowed by ten more. The reads are REST only. The merged head is not recorded anywhere for a later sweep: the sweep finds the branch from the pull request and the ref, which needs no record (recording it on the ledger branch is a PROVISIONAL idea left on the issue for the owner). **Not measured:** a real cloud container and proxy; the rejection is taken from a report on the issue, and the tests use a stand-in `gh` that fails the delete.
+
 ## A killed merge runner (#2086)
 
 A cloud worker restart can SIGKILL `work.py merge` while `gate()` polls a pending required check (a second cloud
