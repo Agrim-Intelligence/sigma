@@ -108,9 +108,9 @@ def _selected(node, scope):
     return any(node == s or node.startswith(s + '::') or node.startswith(s + '[') for s in scope)
 
 
-def collect(root, scope, run=None):
+def collect(root, scope, run=None, python='python3'):
     run = run or _run
-    proc = run(root, ['python3', '-m', 'pytest', '--collect-only', '-q', '--color=no',
+    proc = run(root, [python, '-m', 'pytest', '--collect-only', '-q', '--color=no',
                       '--rootdir=' + str(root), *scope])
     nodes = [line.strip() for line in proc.stdout.splitlines() if '::' in line]
     if proc.returncode or not nodes or any(not _selected(n, scope) for n in nodes):
@@ -168,7 +168,7 @@ def _split_traceback_assertions(output, failed):
     return assertions
 
 
-def observe(sdlc_dir, goal, root, plan, run=None):
+def observe(sdlc_dir, goal, root, plan, run=None, python='python3'):
     """Return green proof or an explicit absence; write only attributed, stable assertion reds."""
     run = run or _run
     try:
@@ -176,12 +176,12 @@ def observe(sdlc_dir, goal, root, plan, run=None):
         scope = selectors(plan)
         # Snapshot before collection too: imports may edit tests or the plan.
         before_files = _hashes(root, scope)
-        nodes = collect(root, scope, run)
+        nodes = collect(root, scope, run, python)
         hashes = _hashes(root, nodes)
         if before_files != _hashes(root, scope) or plan_hash != digest(plan):
             raise ValueError('test or plan changed during collection')
         started = time.time()
-        proc = run(root, ['python3', '-m', 'pytest', '-q', '-rA', '--tb=short', '--color=no',
+        proc = run(root, [python, '-m', 'pytest', '-q', '-rA', '--tb=short', '--color=no',
                           '--rootdir=' + str(root), *nodes])
         completed = time.time()
         if hashes != _hashes(root, nodes) or plan_hash != digest(plan):

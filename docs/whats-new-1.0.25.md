@@ -4,11 +4,9 @@ This page lists every change in this release. The same entry is in the `1.0.25` 
 [CHANGELOG](../CHANGELOG.md). Start with [Upgrading from 1.0.24](#upgrading-from-1024) if you only want to know what
 changes for you.
 
-Most of this release is about `/sigma-goal <N> --land` in a Claude Code cloud container: what happens when its merge
+Four changes apply everywhere: a goal's planned tests now run with the project's own Python, a failed delete of a merged goal branch is announced and leftovers are swept, a branch-protection read that fails no longer reads as "not protected", and a goal's own `verify_command` no longer silently voids the one-time verify approval. The rest of this release is about `/sigma-goal <N> --land` in a Claude Code cloud container: what happens when its merge
 runner is killed, how long it waits for a slow base CI, what it leaves behind when the container goes, and a setup
-script for the environment. Two changes apply everywhere: a branch-protection read that fails no longer reads as "not
-protected", and a goal's own `verify_command` no longer silently voids the one-time verify approval.
-
+script for the environment. 
 ## Upgrading from 1.0.24
 
 1. **Restart sessions, and stop a running watcher** so it picks up the new code: `touch .sdlc/state/watch.stop`, then
@@ -20,8 +18,18 @@ protected", and a goal's own `verify_command` no longer silently voids the one-t
 3. **If you use `SIGMA_TRUSTED_VERIFY_SHA256`** and a goal records its own `verify_command`, `acceptance.py record` now
    refuses a command the approval cannot cover, before it writes anything, and names the fix.
    `acceptance.py set-verify-command` clears or replaces the command while no verify evidence exists.
-4. **Cloud runs:** the pending-check wait is the new `work.merge_pending_wait_s` (default 450 s, range 45 to 7200 s).
-5. Nothing else changes by default, and your `.sdlc/config.json` is never rewritten by an update.
+4. **Planned tests use the project's Python (#2079).** `loop.py red`, verify's planned-test proof, the flake pass and the
+   kill control use the goal worktree's `.venv` if it has a `pyvenv.cfg`, else build one once with `uv run --frozen`
+   for a uv project (under the exact conditions in `docs/configuration.md`), else `python3` as before. A `.venv` whose
+   interpreter is missing or cannot import pytest now **refuses** (`loop.py red` exits 2, verify records no green)
+   instead of falling back to `python3`. The environment approval does not cover the uv build's project metadata or
+   fetched packages.
+5. **Failed branch deletes (#1682).** A failed remote delete of a goal branch now prints a line and writes a `gate`
+   entry. `work.py finish` also retries the delete of other merged `sdlc/*` leftovers, pinned to the merged head, and
+   `work.py branches <dir> [--sweep]` lists or sweeps them. In a cloud session, where the proxy rejects deletion, the
+   line names the branch and head for a sweep from a host that can delete.
+6. **Cloud runs:** the pending-check wait is the new `work.merge_pending_wait_s` (default 450 s, range 45 to 7200 s).
+7. Nothing else changes by default, and your `.sdlc/config.json` is never rewritten by an update.
 
 ## Cloud `--land`
 
@@ -40,6 +48,13 @@ protected", and a goal's own `verify_command` no longer silently voids the one-t
   run in.
 
 ## Everywhere
+
+- **The project's Python for planned tests (#2079).** See item 4 above. Not measured: a real `uv` build, a real cloud
+  container, two processes racing on one worktree, Windows (uv builds are refused there).
+- **Failed goal-branch deletes are announced, leftovers are swept (#1682).** See item 5 above. Each sweep delete is
+  pinned to the head it listed and skips any branch whose goal has a worktree on this machine. Not measured: a real
+  GitHub, a token without `contents:write`, a secondary rate limit, a real cloud proxy. Sweeping branches Sigma did
+  not cut is not built.
 
 - **An unreadable protection answer is not "not protected" (#984).** `protection()` now separates a requirement, an
   answer of nothing and an unreadable source. Only two answers of nothing report "nothing is enforced".

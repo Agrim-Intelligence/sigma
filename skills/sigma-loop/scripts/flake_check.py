@@ -138,15 +138,15 @@ def _run(cwd, argv, live=None):
             live.discard(p)
 
 
-def _has_xdist(root):
+def _has_xdist(root, python="python3"):
     """Whether the run interpreter imports xdist; an unrunnable probe counts as absent."""
     try:
-        return not subprocess.run(["python3", "-c", "import xdist"], cwd=root, capture_output=True).returncode
+        return not subprocess.run([python, "-c", "import xdist"], cwd=root, capture_output=True).returncode
     except OSError:
         return False
 
 
-def _collect(root, test_files, run):
+def _collect(root, test_files, run, python="python3"):
     """Node ids for `test_files`, rebuilt against the paths WE asked for.
 
     WHY NOT USE pytest's PRINTED IDS DIRECTLY. `--collect-only -q` prints each id relative to
@@ -162,7 +162,7 @@ def _collect(root, test_files, run):
     from the repo root, while pytest's own printed form does not."""
     ids = []
     for path in test_files:
-        _code, out = run(root, ["python3", "-m", "pytest", "--collect-only", "-q", path])
+        _code, out = run(root, [python, "-m", "pytest", "--collect-only", "-q", path])
         for line in (out or "").splitlines():
             line = line.strip()
             if "::" in line:
@@ -190,7 +190,8 @@ def _judge(results):
     return ("unverified", "runs disagreed on: " + (", ".join(disagreed) or "pass/fail status"))
 
 
-def check(root, test_files, runs=DEFAULT_RUNS, run=None, seed=None, node_ids=None, workers=None, xdist=None):
+def check(root, test_files, runs=DEFAULT_RUNS, run=None, seed=None, node_ids=None, workers=None, xdist=None,
+          python="python3"):
     """Run `test_files` `runs` times with varied order and a fresh basetemp; judge agreement.
 
     -> {"verdict": "verified"|"unverified"|"absent", "runs", "disagreement": str|None, "ms", "workers"}
@@ -223,13 +224,13 @@ def check(root, test_files, runs=DEFAULT_RUNS, run=None, seed=None, node_ids=Non
               % (len(test_files), MAX_SCOPED_FILES), file=sys.stderr)
         return dict(absent, reason="scope bound: %d changed test files > %d"
                                      % (len(test_files), MAX_SCOPED_FILES))
-    ids = list(node_ids) if node_ids is not None else _collect(root, test_files, run)
+    ids = list(node_ids) if node_ids is not None else _collect(root, test_files, run, python)
     if not ids:
         return dict(absent, ms=int((time.perf_counter() - started) * 1000))
 
     w = min(_workers(runs), runs if workers is None else max(1, int(workers)))   # explicit only LOWERS it
     # `-p xdist` first: -n needs it registered (addopts -p no:xdist, autoload off); -p no:X: --ff/-n 2 exit 4.
-    xdist = (probe and _has_xdist(root)) if xdist is None else xdist   # once; a fake `run` never probes
+    xdist = (probe and _has_xdist(root, python)) if xdist is None else xdist   # once; a fake `run` never probes
     # Orders are drawn HERE before any submit: Random isn't thread-safe, a seed must fix them at any width.
     rng = random.Random(seed)
     argvs = []
@@ -240,7 +241,7 @@ def check(root, test_files, runs=DEFAULT_RUNS, run=None, seed=None, node_ids=Non
         # assumption pass every time. pytest creates the directory lazily, only when a test actually
         # requests a tmp fixture, so an unused one costs nothing.
         base = tempfile.mkdtemp(prefix="sigma-flake-%d-" % i)
-        argvs.append(["python3", "-m", "pytest", "-q", "-o", "cache_dir=" + base + ".cache",
+        argvs.append([python, "-m", "pytest", "-q", "-o", "cache_dir=" + base + ".cache",
                       *(["-p", "xdist", "-n", "0"] if xdist else []), "--basetemp=" + base, *order])
     ex = concurrent.futures.ThreadPoolExecutor(max_workers=w)   # no `with`: its exit waits for all runs
     try:

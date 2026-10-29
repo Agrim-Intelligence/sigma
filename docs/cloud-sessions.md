@@ -1129,6 +1129,12 @@ Residuals of the publish path (named, not closed; each is a ticket):
   built: a doctor or session-start check that names this. Not measured on a real platform (the refusal was driven by
   patching `sync.fcntl`).
 
+## The container's `python3` has no pytest (#2079)
+
+An adopter's first unattended `--land` run found that `/usr/bin/python3` in the container has no pytest: `loop.py red` and verify's planned-test observation shelled out to `python3 -m pytest`, and the run got through only because the orchestrating agent put the worktree's `.venv/bin` on `PATH` by hand. Sigma now picks the interpreter itself, in this order: the worktree's `.venv` (when it has a `pyvenv.cfg`), else a venv built once with `uv run --frozen --project <worktree>` for a project with `uv.lock` and `pyproject.toml` when `uv` is on `PATH`, else `python3`. The full rules, the refusal when the chosen interpreter cannot run pytest, and what is not done are in [configuration](configuration.md#which-python-runs-a-goals-planned-tests-2079).
+
+For a cloud container this means: a goal worktree is a fresh checkout and `.venv` is normally gitignored, so unless something creates `<worktree>/.venv` before `red` runs, a uv project gets it built by the first `red` or verify (that first call can take up to the `verify.timeout_minutes` budget). A project that is not a uv project, in a container with no `.venv`, gets `python3`, and if that cannot import pytest the run now stops at `loop.py red` with a line naming the interpreter, instead of failing later as a collection error. A uv build is expected to need the package index for anything not already cached; a container that blocks it would fail the build, which removes the venv it made and refuses (it does not fall back to `python3`). **Not measured:** a real uv build, a blocked index, and any real cloud container; the tests drive a fake `uv` and fake interpreters.
+
 ## The reviewed plan when the container is gone (#2087)
 
 A cloud container is deleted after the session. A repository may ignore `.sdlc/plans/` on purpose, and then the plan
@@ -1235,6 +1241,10 @@ only feeds `unit_completion` after `done`, so it decides nothing.
 
 Not scanned by either ratchet: `gh_api.py` fallback argv (EXEMPT; runs only after REST fails, so GraphQL fails by
 construction in a cloud session), shell scripts, `.tmpl` prose, and argv built incrementally.
+
+## A merged goal branch the cloud session cannot delete (#1682)
+
+The GitHub proxy of a cloud session rejects branch deletion, so a cloud `--land` run cannot delete its own `sdlc/<goal>` branch after the merge. `work.py` used to return false there without a word; since #1682 a failed delete prints `work: remote branch delete failed for 'sdlc/<goal>': <the error>` and, when `CLAUDE_CODE_REMOTE` is true or 1, adds that the branch **needs a sweep from a host that can delete**, naming the branch and its head (the head it listed, else one REST read of the ref). `record done` still says `deleted local branch ... (remote delete unconfirmed)`. The lever is a person's, from a laptop or any host whose token can delete: `python3 skills/sigma-loop/scripts/work.py branches .sdlc` lists the merged branches still on the remote, and `... branches .sdlc --sweep` deletes them, each pinned to the listed head. A later `work.py finish` on such a host does the same for up to 10 branches. Inside the container the reconcile stops after the first rejected delete, so a run is not slowed by ten more. The reads are REST only. The merged head is not recorded anywhere for a later sweep: the sweep finds the branch from the pull request and the ref, which needs no record (recording it on the ledger branch is a PROVISIONAL idea left on the issue for the owner). **Not measured:** a real cloud container and proxy; the rejection is taken from a report on the issue, and the tests use a stand-in `gh` that fails the delete.
 
 ## A killed merge runner (#2086)
 

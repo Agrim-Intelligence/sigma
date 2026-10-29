@@ -486,7 +486,7 @@ def test_has_xdist_probes_the_run_interpreter_and_a_fake_run_never_probes(monkey
 def test_a_real_repo_with_cache_addopts_is_still_measured(tmp_path, monkeypatch):
     """REAL processes: `addopts = --ff` needs the cache plugin registered, or every run exits 4."""
     fc, probes = _fc(), []
-    monkeypatch.setattr(fc, "_has_xdist", lambda root: probes.append(root) or False)
+    monkeypatch.setattr(fc, "_has_xdist", lambda root, python="python3": probes.append(root) or False)
     (tmp_path / "pytest.ini").write_text("[pytest]\naddopts = --ff\n")
     (tmp_path / "test_ok.py").write_text("def test_ok():\n    assert True\n")
     r = fc.check(str(tmp_path), ["test_ok.py"], workers=1)
