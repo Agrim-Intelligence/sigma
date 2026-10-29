@@ -1449,6 +1449,46 @@
       "risk": "low"
     },
     {
+      "path": "skills/sigma-loop/scripts/goal_python.py",
+      "function": "_build",
+      "rule": "fs-remove",
+      "count": 2,
+      "gate": "unlinks only the build marker in the worktree's git directory, which this same call wrote just before running uv",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/goal_python.py",
+      "function": "_build",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "writes only the build marker (the builder's pid) in the worktree's git directory, outside the working tree; a killed build leaves it so the next run cleans up",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/goal_python.py",
+      "function": "_remove",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "only for a `.venv` that was a symlink or file at the path of a venv THIS build created (nothing was at the path when it started, or a build marker proves a cut-short build of ours)",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/goal_python.py",
+      "function": "_remove",
+      "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "removes only the worktree's `.venv` after a failed, timed-out or cut-short uv build of ours; never reached when a `.venv` existed without a build marker",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/goal_python.py",
+      "function": "_resolve_inner",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "unlinks only the stale build marker in the git directory, under the build lock, after a cut-short build",
+      "risk": "high"
+    },
+    {
       "path": "skills/sigma-loop/scripts/goal_state_prune.py",
       "function": "sweep",
       "rule": "fs-remove",
@@ -2847,6 +2887,14 @@
       "count": 1,
       "gate": "work.enabled; base branch cannot close the issue",
       "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/work.py",
+      "function": "_announce_ruleset_bypass",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "opt-in work.merge_bypass set to the exact string ruleset; only after a confirmed merge that went through the account's ruleset bypass; one non-idempotent REST comment POST via gh_api.comment_pr naming the bypassed rules, no fallback, a failure is named on the merge line and never undoes the merge (#2092)",
+      "risk": "medium"
     },
     {
       "path": "skills/sigma-loop/scripts/work.py",

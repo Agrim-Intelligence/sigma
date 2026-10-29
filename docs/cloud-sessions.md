@@ -861,7 +861,8 @@ does not require, or whose CCR arm could not be confirmed, and any PR line comme
 merge is not finished by any machine once the container is gone: GitHub closes the issue on merge only when the PR body
 says `Closes #N`. Details: `skills/sigma-goal/references/land.md`. Tested with fakes (`tests/test_goal_land.py`: the
 landing gestures from PR open to `record done` with every GraphQL-shaped call refused); UNMEASURED in a real cloud
-session.
+session. A repository whose ruleset reports every PR BLOCKED can opt in to merging through the
+account's bypass: [Merging through the account's ruleset bypass](#merging-through-the-accounts-ruleset-bypass-2092).
 
 OWNER SMOKE TEST for `--land` (UNMEASURED until run): with `work.enabled: true`, `work.auto_merge: always` and
 `require_review: approval`, start one cloud session on ONE small `sdlc:goal` issue and run `/sigma-goal <N> --land`.
@@ -1130,6 +1131,12 @@ Residuals of the publish path (named, not closed; each is a ticket):
   built: a doctor or session-start check that names this. Not measured on a real platform (the refusal was driven by
   patching `sync.fcntl`).
 
+## The container's `python3` has no pytest (#2079)
+
+An adopter's first unattended `--land` run found that `/usr/bin/python3` in the container has no pytest: `loop.py red` and verify's planned-test observation shelled out to `python3 -m pytest`, and the run got through only because the orchestrating agent put the worktree's `.venv/bin` on `PATH` by hand. Sigma now picks the interpreter itself, in this order: the worktree's `.venv` (when it has a `pyvenv.cfg`), else a venv built once with `uv run --frozen --project <worktree>` for a project with `uv.lock` and `pyproject.toml` when `uv` is on `PATH`, else `python3`. The full rules, the refusal when the chosen interpreter cannot run pytest, and what is not done are in [configuration](configuration.md#which-python-runs-a-goals-planned-tests-2079).
+
+For a cloud container this means: a goal worktree is a fresh checkout and `.venv` is normally gitignored, so unless something creates `<worktree>/.venv` before `red` runs, a uv project gets it built by the first `red` or verify (that first call can take up to the `verify.timeout_minutes` budget). A project that is not a uv project, in a container with no `.venv`, gets `python3`, and if that cannot import pytest the run now stops at `loop.py red` with a line naming the interpreter, instead of failing later as a collection error. A uv build is expected to need the package index for anything not already cached; a container that blocks it would fail the build, which removes the venv it made and refuses (it does not fall back to `python3`). **Not measured:** a real uv build, a blocked index, and any real cloud container; the tests drive a fake `uv` and fake interpreters.
+
 ## The reviewed plan when the container is gone (#2087)
 
 A cloud container is deleted after the session. A repository may ignore `.sdlc/plans/` on purpose, and then the plan
@@ -1188,6 +1195,60 @@ marker, reply URL, redaction, fence width, part cap; for the doctor, the cloud c
 signal, the value test and the wiring), and the doctor row also checked through its documented gesture
 (`python3 skills/sigma-doctor/scripts/doctor.py check .sdlc`). **Not measured:** a real Claude Code cloud container, a
 real GitHub comment at the 65 536-character edge, a locked or permission-limited issue.
+
+## Merging through the account's ruleset bypass (#2092)
+
+A repository whose ruleset applies "Restrict updates" to every branch reports every pull request into it as
+`mergeable_state: blocked` / `mergeStateStatus: BLOCKED`, to everyone, with every check green (measured on this
+repository's own `basic` ruleset, 2026-10-29, while setting up `sigma-cloud`, #2090). `gate()` merges only a clean
+pull request and never overrides protection, so a `--land` run there ends parked, awaiting merge. The opt-in
+setting `work.merge_bypass` changes that for one shape only.
+
+```json
+"work": { "enabled": true, "auto_merge": "protected", "require_review": "approval", "merge_bypass": "ruleset" }
+```
+
+Only the exact string `"ruleset"` turns it on; absent, `"off"`, another case, a trailing space or a non-string all
+leave today's park untouched, byte for byte. With it on, `work.py merge` reads each of the following over REST (no
+GraphQL, so it works in a cloud session) and merges the BLOCKED pull request only when all four hold; a read that
+fails, or a reply it does not understand, parks and names the condition (`condition N (...) not met: ...`):
+
+1. **Required checks passed on the exact head.** Every context a rule of the base requires has a run on the head
+   `gate()` read, and no check at all in that rollup is pending or failing.
+2. **Only bypassable rules.** `GET rules/branches/<base>` is a readable list, non-empty (a block no ruleset explains
+   is not Sigma's to bypass), shorter than one 100-rule page (a full page may be truncated), without a merge-queue
+   rule; every rule names the repository or organisation ruleset it came from; classic branch protection answers
+   exactly `Branch not protected` (any classic protection, even one that requires nothing, or an unreadable answer,
+   parks); and every distinct ruleset (at most 10) reads with `current_user_can_bypass` equal to `always`
+   (`pull_requests_only`, `never`, a missing field or any other value parks).
+3. **The review gate passed**, as today (under `approval`, a trusted `sigma:approve` on the final head), re-asserted
+   inside the bypass check. And where a ruleset requires approving reviews, `work.require_review` must not be `off`:
+   with it off no review of any kind would have stood in for the bypassed one.
+4. **Mergeable, and not behind where it matters.** `mergeable` is `MERGEABLE`; when a required-checks rule is strict,
+   or does not say it is not, `compare/<base>...<head>` must read `behind_by: 0`.
+
+It then merges with `PUT pulls/N/merge` carrying the vetted head sha, exactly as a clean merge does, and says so: the
+merge line names the bypassed rules (`... through the account's ruleset bypass (work.merge_bypass: ruleset; rules
+bypassed: `basic` (id 1): update, pull_request, required_status_checks)`), the ledger and journal `why` carry them,
+and one PR comment lists them (posted after the merge; if it fails the merge stands and the line says the comment
+failed). A merge GitHub refuses parks as any refused merge does, with a clause saying a bypass was attempted.
+
+What it never does: bypass classic branch protection, a required check that is failing, pending or has no run on
+the head, or a ruleset the account cannot always bypass; bypass a stale head, a conflict or a BEHIND branch (those
+keep their own verdicts); arm auto-merge or wait on a pending check (that path is #2083's and unchanged). It adds no
+action-log gate name: the existing `gate=merge` row reads `warn` and carries the withheld verdict.
+
+Cost: with the setting on, one BLOCKED pull request costs 2 REST reads (rules, classic protection), one per
+distinct ruleset (at most 10) and one compare when a rule is strict. Nothing is read when the setting is off or the
+pull request is not BLOCKED, so the cost is flat for everyone else.
+
+**What it trusts** (full list in the [threat model](threat-model.md#the-ruleset-bypass-at-workpy-merge-2092)): that
+the person who set it wants this account's bypass used by an unattended run; that GitHub's `current_user_can_bypass`
+and rules reads describe the repository's current rules; that `sigma:approve` is a real review (#1195: it is
+self-authored). **UNMEASURED:** whether GitHub's REST `PUT pulls/N/merge` honours a ruleset bypass for the cloud
+proxy's token, or for any token. #2092's AC-5, one real `--land` run in `sigma-cloud` ending merged with the setting
+on, is still open. Every test drives a fake GitHub (`tests/test_work_merge_bypass.py`) and proves Sigma's reads, its
+decisions and its argv, not GitHub's behaviour. If the REST merge is refused, the run parks as it did before.
 
 ## What remains (#895 slice 7)
 

@@ -132,7 +132,7 @@ ENFORCEMENT_GATES = (
      "readme": "Clean-AND-safe auto-merge (opt-in)"},
     {"control": "Merge only when GitHub reports clean AND safe", "function": "gate",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled", "work.auto_merge"),
-     "settings": (),
+     "settings": ("work.merge_bypass",),
      "mechanism": "parks unless GitHub reports the pushed head `mergeable` with "
                   "`mergeStateStatus CLEAN` (REST first, one GraphQL fallback; an unknown state "
                   "never reads as CLEAN; a still-pending required check is armed when GraphQL is "
@@ -145,7 +145,12 @@ ENFORCEMENT_GATES = (
                   "the merge still parks on any PR "
                   "line comment, and under `require_review: approval` (GraphQL-only reads); "
                   "`merge_rights` needs the token to receive `permissions` (UNMEASURED), see "
-                  "cloud-sessions.md)",
+                  "cloud-sessions.md; only with `work.merge_bypass` set to the exact string `ruleset`, a "
+                  "BLOCKED PR with nothing failing or pending may instead merge through the account's "
+                  "ruleset bypass, and only when its four REST-read conditions hold, see cloud-sessions.md; "
+                  "classic protection, a required check that did not pass and a ruleset the account cannot "
+                  "always bypass are never bypassed, and whether GitHub's REST merge honours a bypass is "
+                  "UNMEASURED)",
      "condition": "the clean-and-safe verdict and the post-PR review gate are computed and "
                   "reported even with `work.auto_merge: \"off\"` -- both run before `merge()` "
                   "returns on off -- only the merge itself is skipped",
@@ -471,6 +476,9 @@ PENDING_INTERVAL = 45       # seconds between re-reads -- flat, not exponential:
 # -- `--auto` re-checks atomically, and unboundedly, at GitHub's OWN merge time, which is exactly
 # the case it exists for. Not arming here is what made #144/PR #252 unrecoverable.
 PENDING_PREFIX = "required checks still pending"
+#: #2092: gate()'s "not a check problem at all" verdict (BLOCKED with nothing failing and nothing pending) says this,
+#: named once so `_withheld_only` below can never drift from the message it recognises.
+_WITHHELD = "GitHub is withholding the merge"
 
 # #2083: how long ONE `work.py merge` waits on a pending check is `work.merge_pending_wait_s` (seconds).
 # Absent or invalid -> the constants' product above, read at CALL time (450 s); a real finite number is
@@ -4732,8 +4740,8 @@ def gate(sdlc_dir, config, goal, run=None, sleep=time.sleep):
               return False, (f"{PENDING_PREFIX} after {waited}s "
                              f"(mergeStateStatus={status}) — pending: {', '.join(pending)}"), data
           # Not a check problem at all (a required review, say). Unchanged.
-          return False, (f"not safe to merge (mergeStateStatus={status}) — GitHub is withholding the "
-                         "merge, usually a required review or branch rule: satisfy it on the PR, then "
+          return False, (f"not safe to merge (mergeStateStatus={status}) — {_WITHHELD}, usually a "
+                         "required review or branch rule: satisfy it on the PR, then "
                          f"re-run `work.py merge {sdlc_dir} {goal}`"), data
       return True, "clean and safe", data
 
@@ -5015,6 +5023,177 @@ def protection_requirements(sdlc_dir, config, goal, run=None):
     if c_state == "none":
         return False, f"`{base}` is not protected — nothing is enforced on merge", frozenset()
     return False, f"`{base}` is protected but requires no checks or reviews", frozenset()
+
+
+#: #2092: the ONE value of `work.merge_bypass` that turns the ruleset bypass on. Anything else, a bool, a different
+#: case or a stray space included, is off.
+MERGE_BYPASS_RULESET = "ruleset"
+#: #2092 ceilings: distinct rulesets one bypass check will read (each is one REST read), and the page size of the rules
+#: read (a reply of exactly this many rules may be truncated, so it fails closed).
+_BYPASS_RULESET_CAP = 10
+_RULES_PAGE = 100
+_BYPASS_LABELS = {1: "every required check passed on the exact head, nothing pending",
+                  2: "every rule comes from a ruleset this account can always bypass, no classic protection",
+                  3: "the review gate passed", 4: "mergeable, and not behind where a strict check rule needs it"}
+_ORG_NAME = re.compile(r"[A-Za-z0-9_.-]+")
+
+
+def merge_bypass_enabled(config):
+    """True only when `work.merge_bypass` is the exact string `"ruleset"` (#2092). Absent, `"off"`, another case, a
+    bool, a list or a malformed `work` block all read False: the default changes nothing for anyone who did not set it."""
+    wk = config.get("work") if isinstance(config, dict) else None
+    value = wk.get("merge_bypass") if isinstance(wk, dict) else None
+    return isinstance(value, str) and value == MERGE_BYPASS_RULESET
+
+
+def _withheld_only(verdict, data):
+    """True when gate()'s non-ok verdict is the BLOCKED-with-nothing-failing-and-nothing-pending one: the only shape
+    the ruleset bypass may take over. A failing check, a pending one, a conflict, BEHIND and a stale head all have
+    other verdicts and keep their existing handling."""
+    return (isinstance(data, dict) and data.get("mergeStateStatus") == "BLOCKED"
+            and verdict.startswith("not safe to merge (mergeStateStatus=BLOCKED)") and _WITHHELD in verdict)
+
+
+def _bypass_clean(text, limit=80):
+    """A ruleset name comes from GitHub and lands in a PR comment: keep letters, digits and a few separators, so it
+    can carry no markup, backtick or line break (a leading `sigma:` line is a review directive)."""
+    return re.sub(r"[^\w .:/@+()-]", "", str(text)).strip()[:limit] or "unnamed"
+
+
+def _bypass_fail(number, why):
+    return False, f"condition {number} ({_BYPASS_LABELS[number]}) not met: {why}"
+
+
+def _ruleset_bypass(rec, data, head, review_ok, review_mode, run):
+    """-> (True, "<bypassed rules>") or (False, "condition N (...) not met: <why>") (#2092).
+
+    May `merge()` land this BLOCKED pull request through the merging account's ruleset bypass? Four conditions, all
+    read over REST (no GraphQL), cheapest first, and ANYTHING it cannot read or does not understand fails closed:
+      1. every required check of the base (the rules read's `required_status_checks`) has a rollup entry for the exact
+         vetted head that passed, and no check at all is pending or failing;
+      2. `rules/branches/<base>` is a readable list below one full page, non-empty (a block no ruleset explains is
+         not ours to bypass), with no merge queue, every rule carrying an integer `ruleset_id` from a repository or
+         organisation ruleset, classic branch protection answers exactly `Branch not protected`, and every distinct
+         ruleset (at most `_BYPASS_RULESET_CAP`) reads with `current_user_can_bypass == "always"`;
+      3. the review gate passed (re-asserted here, not trusted from the caller), and when a ruleset requires approving
+         reviews `work.require_review` is not off: with it off no review of any kind would have stood in for them;
+      4. `mergeable` is MERGEABLE, and when a required-checks rule is strict, or does not say it is not, the head
+         contains the base (`compare/<base>...<head>` reads `behind_by` 0).
+    The caller (`merge()`) has already run gate(), whose BLOCKED verdict with no failing or pending check is the only
+    way here. COST: 2 + (distinct rulesets, at most 10) + 1 REST reads per BLOCKED PR, only with the setting on.
+    NOT derivable: a rule type the rules list does not name (it lists active rules only), a bypass GitHub would refuse
+    at merge time, whether a REST merge honours a bypass for a cloud token (UNMEASURED, AC-5 of #2092)."""
+    if not review_ok:
+        return _bypass_fail(3, "the review gate did not pass")
+    if not isinstance(data, dict) or data.get("mergeable") != "MERGEABLE":
+        return _bypass_fail(4, f"GitHub does not report the PR mergeable ({(data or {}).get('mergeable')!r})")
+    if not isinstance(head, str) or not head.strip():
+        return _bypass_fail(1, "there is no vetted head to check")
+    rollup = data.get("statusCheckRollup")
+    if not isinstance(rollup, list):
+        return _bypass_fail(1, "the check rollup for the head is absent")
+    entries = [c for c in rollup if isinstance(c, dict)]
+    if len(entries) != len(rollup):
+        return _bypass_fail(1, "the check rollup has an entry that is not an object")
+    named = [(c.get("name") or c.get("context") or "(unnamed)", _check_verdict(c)) for c in entries]
+    not_ok = [f"{n} ({v})" for n, v in named if v != "ok"]
+    if not_ok:
+        return _bypass_fail(1, "not passed: " + ", ".join(not_ok))
+
+    api = _pr_api_run(run, rec["worktree"])
+    base = rec["base"]
+    try:
+        text = api(["api", f"repos/{{owner}}/{{repo}}/rules/branches/{urllib.parse.quote(base, safe='')}"
+                           f"?per_page={_RULES_PAGE}"])
+        required, reviews = _ruleset_requirements(text)
+        rules = json.loads(text)
+    except ValueError as exc:
+        return _bypass_fail(2, f"the rules that apply to `{base}` were unreadable ({exc})")
+    except Exception as exc:                # noqa: BLE001 - an unreadable read parks, never raises
+        return _bypass_fail(2, f"the rules that apply to `{base}` were unreadable {_failed_read(*gh_api.classify(exc))}")
+    if not rules:
+        return _bypass_fail(2, f"no ruleset applies to `{base}`, so nothing explains the block that a bypass could answer")
+    if len(rules) >= _RULES_PAGE:
+        return _bypass_fail(2, f"the rules read returned a full page ({_RULES_PAGE}) and may be truncated")
+    sources, strict = {}, False
+    for rule in rules:
+        if not isinstance(rule, dict) or not isinstance(rule.get("type"), str):
+            return _bypass_fail(2, "a rule entry is not an object with a type")
+        if rule["type"] == "merge_queue":
+            return _bypass_fail(2, "a merge queue rule applies and a direct merge does not pass through it")
+        rid, stype = rule.get("ruleset_id"), rule.get("ruleset_source_type")
+        if not isinstance(rid, int) or isinstance(rid, bool) or rid < 1:
+            return _bypass_fail(2, f"a `{_bypass_clean(rule['type'])}` rule names no ruleset it came from")
+        if stype not in ("Repository", "Organization"):
+            return _bypass_fail(2, f"a rule's ruleset source type is not recognised ({_bypass_clean(stype)})")
+        sname = rule.get("ruleset_source")
+        if stype == "Organization" and not (isinstance(sname, str) and _ORG_NAME.fullmatch(sname)):
+            return _bypass_fail(2, "an organisation ruleset's source is not a plain organisation name")
+        sources.setdefault((stype, sname if stype == "Organization" else "", rid), []).append(rule["type"])
+        params = rule.get("parameters")
+        if rule["type"] == "required_status_checks" and not (
+                isinstance(params, dict) and params.get("strict_required_status_checks_policy") is False):
+            strict = True
+    # condition 3's second clause: a ruleset requires reviews and no review gate is on to stand in for them
+    if reviews and review_mode == REVIEW_OFF:
+        return _bypass_fail(3, f"a ruleset requires {reviews} approving review(s) and `work.require_review` is off, "
+                               "so no review would stand in for them")
+
+    state, why = _read_classic(api, base)[2:]
+    if state != "none":
+        return _bypass_fail(2, "classic branch protection applies to " + f"`{base}`" if state == "object"
+                            else f"classic branch protection could not be read ({why})")
+    if len(sources) > _BYPASS_RULESET_CAP:
+        return _bypass_fail(2, f"{len(sources)} rulesets apply and at most {_BYPASS_RULESET_CAP} are read")
+    bypassed = []
+    for (stype, org, rid), kinds in sources.items():
+        path = (f"repos/{{owner}}/{{repo}}/rulesets/{rid}" if stype == "Repository" else f"orgs/{org}/rulesets/{rid}")
+        try:
+            body = json.loads(api(["api", path]) or "null")
+        except Exception as exc:            # noqa: BLE001 - an unreadable ruleset parks, never raises
+            return _bypass_fail(2, f"ruleset {rid} could not be read "
+                                   f"{_failed_read(*gh_api.classify(exc)) if not isinstance(exc, ValueError) else '(not JSON)'}")
+        if not isinstance(body, dict):
+            return _bypass_fail(2, f"ruleset {rid} was not an object")
+        name = _bypass_clean(body["name"]) if isinstance(body.get("name"), str) else f"id {rid}"
+        can = body.get("current_user_can_bypass")
+        if can != "always":
+            return _bypass_fail(2, f"this account cannot always bypass ruleset `{name}` "
+                                   f"(current_user_can_bypass: {_bypass_clean(can)})")
+        bypassed.append(f"`{name}` (id {rid}): " + ", ".join(dict.fromkeys(_bypass_clean(k) for k in kinds)))
+
+    for context in sorted(required):        # condition 1, the base's own required set against the head's rollup
+        if context not in {n for n, _ in named}:        # every entry in `named` passed: `not_ok` above stopped the rest
+            return _bypass_fail(1, f"required check `{_bypass_clean(context)}` has no run on the head")
+    if strict:                              # condition 4's second clause
+        try:
+            cmp_ = json.loads(api(["api", f"repos/{{owner}}/{{repo}}/compare/{urllib.parse.quote(base, safe='/')}"
+                                          f"...{head.strip()}"]) or "null")
+        except Exception as exc:            # noqa: BLE001 - an unreadable compare parks
+            return _bypass_fail(4, "a strict required-checks rule applies and the branch comparison could not be read")
+        behind = cmp_.get("behind_by") if isinstance(cmp_, dict) else None
+        if not isinstance(behind, int) or isinstance(behind, bool) or behind < 0:
+            return _bypass_fail(4, "a strict required-checks rule applies and the comparison named no behind_by")
+        if behind:
+            return _bypass_fail(4, f"a strict required-checks rule applies and the branch is behind `{base}` by "
+                                   f"{behind} commit(s)")
+    return True, "; ".join(bypassed)
+
+
+def _announce_ruleset_bypass(api, rec, sdlc_dir, method, head, rules):
+    """The PR comment that names the bypassed rules (#2092). After the merge, never before: it must not claim a bypass
+    that did not merge. Fail-soft: -> "" or a clause naming the failure, because a landed merge is never undone by
+    a comment that did not post."""
+    body = (f"Sigma merged this pull request ({method}, head `{head[:12]}`) through the merging account's ruleset "
+            f"bypass (`work.merge_bypass: \"ruleset\"`).\n\nRules bypassed: {rules}.\n\nChecked before the merge: every "
+            "required check passed on this head; every rule applying to the base comes from a ruleset this account "
+            "can always bypass and no classic branch protection applies; the review gate passed; the branch is "
+            "mergeable.")
+    try:
+        gh_api.comment_pr(api, int(rec["pr"]), body, sdlc_dir=sdlc_dir)
+    except Exception as exc:                # noqa: BLE001 - named, never raised
+        return f" — PR comment failed ({_first_line(exc)}); the bypass is recorded in the merge evidence only"
+    return ""
 
 
 #: #232: the merge-reconcile pass's per-pass REST bound and per-record re-check interval. A pass reads
@@ -8212,7 +8391,9 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # NOT instrumented here — it is a git-mechanics failure, not a verdict from gate() itself.
     # `warn` (not `pass`/`block`) is the honest third verdict for "proceeded, but flagging a caveat"
     # — gate() itself still said not-ok, merge() chose to proceed anyway.
-    gate_verdict = "pass" if ok else ("warn" if pending_arm else "block")
+    # #2092: opt-in, and only for the BLOCKED-with-nothing-failing-or-pending shape. Everything else keeps its handling.
+    bypass_candidate = merge_bypass_enabled(config) and _withheld_only(verdict, final_data)
+    gate_verdict = "pass" if ok else ("warn" if (pending_arm or bypass_candidate) else "block")
     ledger.safe_append(sdlc_dir, "gate", goal, config=config, stream=ledger.EVENTS,
                        gate="merge", verdict=gate_verdict, why=None if ok else verdict)
     ci = normalise_ci_rollup(final_data)
@@ -8225,7 +8406,7 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
                            checks=ci["checks"])
     actionlog.safe_append(sdlc_dir, goal, "gate", gate="merge", verdict=gate_verdict,
                           why=None if ok else verdict)
-    if not ok and not pending_arm:
+    if not ok and not pending_arm and not bypass_candidate:
         # An answered red check is the one landing refusal that has a bounded self-healing path.
         # Every other gate verdict remains the existing PARK contract.  `ci_repair()` consumes the
         # exact response gate just read, so it cannot silently repair a different head/check.
@@ -8281,6 +8462,16 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # `sdlc/<n>` -> `feature/<unit>` merge inside one repo, which cannot land half of a cross-repo
     # pair, and wiring the check to it deadlocks every tier-1 unit symmetrically. Its consumer is
     # #1478. Nothing about `merge()` changed for #1474, and that absence is pinned by a test.
+    # #2092: after the review gate (condition 3 is known) and BEFORE the protection stops below, so a bypass that
+    # does not apply parks naming its failed condition instead of reading as "yours to make". Classic protection, a
+    # missing required check and a ruleset the account cannot always bypass never get past `_ruleset_bypass`.
+    bypass_rules = ""
+    if bypass_candidate:
+        bypass_ok, bypass_text = _ruleset_bypass(rec, final_data, (ci["head_sha"] or "").strip(), rok,
+                                                 effective_mode, run)
+        if not bypass_ok:
+            return f'PARK: {verdict} — work.merge_bypass "ruleset" did not apply: {bypass_text}'
+        bypass_rules = bypass_text
     try:
         guarded, detail, required_checks = protection_requirements(sdlc_dir, config, goal, run=run)
     except ProtectionUndetermined as exc:
@@ -8306,6 +8497,8 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     if ratchet:
         return "PARK: " + ratchet
     gate_detail = detail if guarded else f"WARNING: {detail}; local verify was the only gate"
+    if bypass_rules:                        # #2092: said on the merge line only now, when nothing above can stop this merge
+        gate_detail += f" — through the account's ruleset bypass (work.merge_bypass: ruleset; rules bypassed: {bypass_rules})"
 
     # #1212: arm ONLY when there is a real reason a direct merge would be refused right now (a
     # required check that hasn't answered) AND the repo's own setting actually permits arming.
@@ -8396,7 +8589,9 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
         # caller's decision table has no branch for "nothing on stdout". A named line always gives
         # the caller something to act on.
         if not getattr(exc, "outcome_unknown", True):
-            return (f"PARK: direct merge of PR #{rec['pr']} was refused ({exc}); fix the cause on the PR, "
+            attempted = (" (a ruleset bypass was attempted; whether GitHub's REST merge honours one is UNMEASURED)"
+                         if bypass_rules else "")
+            return (f"PARK: direct merge of PR #{rec['pr']} was refused ({exc}){attempted}; fix the cause on the PR, "
                     f"then re-run `work.py merge {sdlc_dir} {goal}`")
         # The merge MAY have landed (5xx, timeout, malformed 2xx): never re-PUT, never `gh pr merge`
         # or GraphQL -- READ, up to RECONCILE_ATTEMPTS times while the answer is still open/unknown.
@@ -8430,6 +8625,10 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # is the only other one). Fail-open: a ledger problem must never turn a successful merge into a
     # reported failure.
     merged_why = f"PR #{rec['pr']} merged ({method})"
+    bypass_comment = ""
+    if bypass_rules:                        # #2092: the evidence and the comment both name the bypassed rules
+        merged_why += f" through the account's ruleset bypass (rules bypassed: {bypass_rules})"
+        bypass_comment = _announce_ruleset_bypass(api, rec, sdlc_dir, method, vetted_head, bypass_rules)
     _record_confirmed_merge(sdlc_dir, config, goal, rec, run, merged_why)
     if _receipt_sharing_enabled(config):
         try:
@@ -8440,7 +8639,7 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     _upkeep_merge_trigger(sdlc_dir, config)         # #1225: LAST effect; own guard, never alters the line below
     # The clause goes at the END, after `gate_detail`: SKILL.md's decision table routes on the
     # `PR #N merged (<method>) — …` opening, which stays exactly as it was.
-    return f"PR #{rec['pr']} merged ({method}) — {gate_detail}{closed}{reconciled}"
+    return f"PR #{rec['pr']} merged ({method}) — {gate_detail}{closed}{reconciled}{bypass_comment}"
 
 
 def _invocation_refusal(sdlc_dir, goal, pr, head_sha, brief_sha256, evidence):

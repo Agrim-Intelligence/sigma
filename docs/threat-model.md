@@ -276,3 +276,40 @@ the goal branch's, so an entry is visible in review only where that file is comm
 that ignores `.sdlc/` reviews no entry at all. The operator-only rule is prose: nothing in code can
 tell an operator's edit of that file from an agent's. The stored hash is an unsalted sha256 of a line
 that is being committed anyway.
+
+## The ruleset bypass at `work.py merge` (#2092)
+
+`work.merge_bypass: "ruleset"` (off unless that exact string) lets an unattended run merge a pull request that GitHub
+reports BLOCKED, using the merging account's own ruleset bypass. It is the one place Sigma merges past a rule GitHub
+reports, so the list of what it trusts is short and explicit.
+
+**It trusts:**
+- the person who set it: the setting is an operator's statement that an unattended run may use this account's bypass.
+  Nothing in code can tell an operator's edit of `.sdlc/config.json` from an agent's, and `/sigma-init`, the config
+  template and `tools/cloud/setup.sh` never write it;
+- GitHub's reads: `rules/branches/<base>` lists the active rules, `rulesets/<id>` and `orgs/<org>/rulesets/<id>`
+  carry `current_user_can_bypass`, and `branches/<base>/protection` answers `Branch not protected` only when there is
+  no classic protection. An `evaluate`-mode ruleset is not listed (UNMEASURED) and so is neither read nor bypassed;
+- the review gate it is gated on: under `approval`, a `sigma:approve` comment from a trusted author, which is
+  self-authored (#1195) and, where the invocation adapter is off, can be posted by anyone who comments as a
+  collaborator. The bypass makes that weaker control stand in for a ruleset's required approving review, which is
+  why it refuses when a ruleset requires reviews and `work.require_review` is `off`.
+
+**It does not trust, and refuses:** classic branch protection (any, even one requiring nothing, or one it could not
+read); a required check without a passing run on the exact head, or any failing or pending check; a rule from a
+ruleset whose `current_user_can_bypass` is anything but `always` (`pull_requests_only` included); a merge-queue rule;
+a rules reply that is empty, not a list, malformed, or a full 100-rule page; more than 10 rulesets; a conflict, an
+unreadable PR, a stale head, a branch behind where a strict check rule needs it. Each parks and names its condition.
+
+**Residual risks, stated:**
+- The bypass is the account's, so anything that can run a goal as that account and set the key can merge past the
+  rulesets. The merge carries the vetted head sha, so a push after the checks cannot ride along (GitHub refuses a
+  moved head), but a diff that passed its own required checks and a self-approval merges unattended.
+- A rule type the rules list does not describe, or a ruleset that changes between the reads and the merge, is not
+  seen. The reads are a few seconds apart and are not atomic.
+- Whether GitHub's REST merge honours the bypass at all, for any token and for the cloud proxy's in particular, is
+  UNMEASURED (#2092 AC-5). A refused merge parks as any refused merge does.
+- Evidence is local and on the PR: the merge line, the ledger and journal `why` where those are on, and one PR
+  comment after the merge. The comment can fail without undoing the merge; the line then says so.
+
+Tests: `tests/test_work_merge_bypass.py` (fakes only).

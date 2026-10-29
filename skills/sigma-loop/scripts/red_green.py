@@ -269,13 +269,13 @@ def _selected(node, scope):
     return any(node == s or node.startswith(s + '::') or node.startswith(s + '[') for s in scope)
 
 
-def collect(root, scope, run=None):
+def collect(root, scope, run=None, python='python3'):
     run = run or _run
     runner_nodes = [s for s in scope if parse_runner(s)]            # #2084: a runner node is its own id
     scope = [s for s in scope if not parse_runner(s)]
     if not scope:
         return sorted(set(runner_nodes))
-    proc = run(root, ['python3', '-m', 'pytest', '--collect-only', '-q', '--color=no',
+    proc = run(root, [python, '-m', 'pytest', '--collect-only', '-q', '--color=no',
                       '--rootdir=' + str(root), *scope])
     nodes = [line.strip() for line in proc.stdout.splitlines() if '::' in line]
     if proc.returncode or not nodes or any(not _selected(n, scope) for n in nodes):
@@ -394,7 +394,7 @@ def _run_runners(root, nodes, runners, timeout, exec_runner):
     return results
 
 
-def observe(sdlc_dir, goal, root, plan, run=None, runners=None, timeout=None, exec_runner=None):
+def observe(sdlc_dir, goal, root, plan, run=None, runners=None, timeout=None, exec_runner=None, python='python3'):
     """Return green proof or an explicit absence; write only attributed, stable assertion reds.
 
     #2084: `runners` ({name: {command, red_pattern}}) lets the plan name runner bullets. Pytest nodes run exactly as
@@ -407,14 +407,14 @@ def observe(sdlc_dir, goal, root, plan, run=None, runners=None, timeout=None, ex
         scope = selectors(plan, runners)
         # Snapshot before collection too: imports may edit tests or the plan.
         before_files = _hashes(root, scope)
-        nodes = collect(root, scope, run)
+        nodes = collect(root, scope, run, python)
         hashes = _hashes(root, nodes)
         if before_files != _hashes(root, scope) or plan_hash != digest(plan):
             raise ValueError('test or plan changed during collection')
         runner_nodes = [n for n in nodes if parse_runner(n)]
         pytest_nodes = [n for n in nodes if n not in runner_nodes]
         started = time.time()
-        proc = run(root, ['python3', '-m', 'pytest', '-q', '-rA', '--tb=short', '--color=no',
+        proc = run(root, [python, '-m', 'pytest', '-q', '-rA', '--tb=short', '--color=no',
                           '--rootdir=' + str(root), *pytest_nodes]) if pytest_nodes else None
         ran = _run_runners(root, runner_nodes, runners, timeout, exec_runner) if runner_nodes else {}
         completed = time.time()
