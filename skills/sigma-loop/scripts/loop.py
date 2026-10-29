@@ -370,6 +370,14 @@ ENFORCEMENT_GATES = (
                   "the environment variable, then the config key, then `enforce`); "
                   "mode `off` is byte-identical to before; `observe` only logs the would-be hold; "
                   "an unreadable platform clamps to one goal with a notice"},
+    {"control": "Runner commands need the git-local grant", "function": "_runner_trust_refusal",
+     "kind": "python-gate", "hosts": "all", "enabled_by": (), "settings": ("tests.runners",),
+     "mechanism": "refuses `loop.py red` and `loop.py verify` (exit 2, before anything runs) when the plan's "
+                  "`## Tests` names a runner command and the verify trust is the environment approval, "
+                  "naming the git-local gesture; a runner map is handed to the run only under the git-local grant",
+     "condition": "acts only when the plan has a runner bullet, so a pytest-only goal is unchanged; the "
+                  "environment approval hashes the verify command(s) alone and can never cover a runner, "
+                  "so a cloud run with a runner bullet needs the git-local grant or `--no-tests`"},
 )
 ENFORCEMENT_EXEMPT = ()
 
@@ -6305,7 +6313,37 @@ _evidence_path = state.evidence_path       # both live in state.py so work.py ca
 _done_refusal = state.done_refusal         # evidence without loop.py and work.py importing each other
 
 
-def _flake_verdict(sdlc_dir, goal, root, passed):
+FLAKE_RUNS = 3          # #2084: the runner branch re-runs each runner bullet this many times, like flake_check
+
+
+def _runner_flake(root, nodes, runners, timeout, exec_runner=None):
+    """#2084: run each runner node FLAKE_RUNS times, sequentially, under ONE shared deadline, through the same
+    `exec_runner` seam `observe` uses. -> flake_check's verdict shape; all exits equal is `verified`, any
+    disagreement `unverified`, a spent deadline `absent`. Advisory like the pytest flake check. Cost is
+    FLAKE_RUNS extra runs per bullet (the plan caps bullets at 25)."""
+    proof = _load("red_green")
+    run = exec_runner or proof._exec_runner
+    began = time.monotonic()
+    deadline, runs = began + timeout, []
+    for node in nodes:
+        command = proof.runner_command(node, runners)[0]
+        codes = []
+        for _ in range(FLAKE_RUNS):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return {"verdict": "absent", "runs": runs, "disagreement": None,
+                        "ms": int((time.monotonic() - began) * 1000),
+                        "reason": "the verify timeout was spent before every runner re-run finished"}
+            status, code, _output = run(command, root, remaining)
+            codes.append((status, code))
+        runs.append({"node": node, "exits": [c for _, c in codes]})
+        if len(set(codes)) > 1:
+            return {"verdict": "unverified", "runs": runs, "ms": int((time.monotonic() - began) * 1000),
+                    "disagreement": "%s: exit codes %s differed across %d runs" % (node, [c for _, c in codes], FLAKE_RUNS)}
+    return {"verdict": "verified", "runs": runs, "disagreement": None, "ms": int((time.monotonic() - began) * 1000)}
+
+
+def _flake_verdict(sdlc_dir, goal, root, passed, runners=None):
     """#1933: re-run this goal's CHANGED tests 3x with varied order and a fresh temp dir.
 
     -> `flake_check.check`'s dict, + `scope` once a check ran (#1571). Never raises, never gates verify_goal.
@@ -6329,14 +6367,29 @@ def _flake_verdict(sdlc_dir, goal, root, passed):
     if not passed:
         return empty
     try:
-        scope = _planned_scope(sdlc_dir, goal, root)
+        scope = _planned_scope(sdlc_dir, goal, root, runners)
         if scope is not None:
             selectors, nodes = scope
+            runner_nodes = [n for n in nodes if _load("red_green").parse_runner(n)]
+            nodes = [n for n in nodes if n not in runner_nodes]
+            ran = (_runner_flake(root, runner_nodes, runners, _verify_timeout_seconds(state.load_config(sdlc_dir)))
+                   if runner_nodes else None)
             files = sorted({n.split("::")[0] for n in nodes})
             # Exact only when every selector IS a collected id; a class, file or parametrized function widens.
-            kind = "planned node ids" if set(selectors) == set(nodes) else "planned files/classes"
-            result = flake_check.check(root, files, node_ids=nodes)
-            selectors, nodes = len(selectors), len(nodes)
+            kind = "planned node ids" if set(selectors) == set(nodes) | set(runner_nodes) else "planned files/classes"
+            result = flake_check.check(root, files, node_ids=nodes) if nodes else None
+            if ran is not None:
+                print("loop: flake check scope: %d runner node id(s), %d run(s) each" % (len(runner_nodes), FLAKE_RUNS),
+                      file=sys.stderr)
+                if result is None:
+                    return dict(ran, scope={"kind": "runner node ids", "selectors": len(selectors),
+                                            "nodes": len(runner_nodes), "files": 0})
+                worst = {ran["verdict"], result.get("verdict")}
+                result = dict(result, verdict="unverified" if "unverified" in worst else
+                              ("absent" if "absent" in worst else "verified"),
+                              disagreement=result.get("disagreement") or ran.get("disagreement"),
+                              runner_runs=ran["runs"])
+            selectors, nodes = len(selectors), len(nodes) + len(runner_nodes)
         else:
             rec = work._record(sdlc_dir, goal) or {}
             base = rec.get("base") or "HEAD"
@@ -6357,22 +6410,22 @@ def _flake_verdict(sdlc_dir, goal, root, passed):
         return empty
 
 
-def _planned_scope(sdlc_dir, goal, root):
+def _planned_scope(sdlc_dir, goal, root, runners=None):
     plan = work.verification_plan(sdlc_dir, goal, root)
     if plan is None or "## Tests" not in plan.read_text().splitlines():
         return None
     proof = _load("red_green")
-    selectors = proof.selectors(plan)
+    selectors = proof.selectors(plan, runners)
     return selectors, proof.collect(root, selectors)
 
 
-def _planned_tests(sdlc_dir, goal, root):
+def _planned_tests(sdlc_dir, goal, root, runners=None):
     """One strict planned scope for observation, flake and witness; absent legacy plans use diff."""
-    scope = _planned_scope(sdlc_dir, goal, root)
+    scope = _planned_scope(sdlc_dir, goal, root, runners)
     return None if scope is None else scope[1]
 
 
-def _changed_tests(sdlc_dir, goal, root):
+def _changed_tests(sdlc_dir, goal, root, runners=None):
     """The goal's changed test FILES -> node ids, via #1937's parser and #1933's collector.
 
     One resolution shared by the flake check (#1933) and the witness record (#1934), so the two can
@@ -6389,7 +6442,7 @@ def _changed_tests(sdlc_dir, goal, root):
     every file changed by whatever landed on the real base since -- the live incident that
     mis-attributed another goal's own test file into this goal's witness scope, writing 574 wrong
     records on #1810."""
-    planned = _planned_tests(sdlc_dir, goal, root)
+    planned = _planned_tests(sdlc_dir, goal, root, runners)
     if planned is not None:
         return planned
     rec = work._record(sdlc_dir, goal) or {}
@@ -6401,7 +6454,7 @@ def _changed_tests(sdlc_dir, goal, root):
     return flake_check._collect(root, files, flake_check._run) if files else []
 
 
-def _witness_verdict(sdlc_dir, goal, root, passed, output):
+def _witness_verdict(sdlc_dir, goal, root, passed, output, runners=None):
     """#1934: on RED, record what was seen to fail and HOW. On GREEN, judge what that earned.
 
     -> the dict `witness.verdict` returns. Never raises, never gates verify_goal.
@@ -6414,7 +6467,7 @@ def _witness_verdict(sdlc_dir, goal, root, passed, output):
     THE HASH IS TAKEN AT RED, and compared at green. That pairing is what makes "the test that
     passed is the test that failed" checkable rather than asserted."""
     try:
-        tests = _changed_tests(sdlc_dir, goal, root)
+        tests = _changed_tests(sdlc_dir, goal, root, runners)
         if not passed:
             failed = flake_check._failed_ids(output)
             # NEVER `failed or tests` (#2235). When `_failed_ids` finds no `FAILED <nodeid>` line
@@ -6603,6 +6656,27 @@ def _verify_trust_text(trust, sdlc_dir, goal):
     return shell_policy.verify_refusal_message(trust, remedy)
 
 
+def _runner_trust_refusal(trust, runner_cmds):
+    """#2084: the refusal text when a plan's runner commands are not covered by ``trust``, else None. No runner
+    command -> None (the existing decision stands, so a pytest-only goal behaves exactly as before). Only the
+    git-local grant covers a runner command: the environment approval hashes the verify command(s) alone."""
+    if not runner_cmds or trust.source == "git-local":
+        return None
+    return shell_policy.verify_refusal_message(shell_policy.Decision(None, "runner-command", None))
+
+
+def _runner_scope(trust, runners, plan, config):
+    """-> (refusal text or None, the `runners` map to hand `observe`). Trust is a capability, not a courtesy: the map
+    is handed on ONLY under the git-local grant, so even with the refusal call removed a runner bullet reaches
+    `observe` as an unknown runner and nothing runs. Listing the commands executes nothing; an unreadable plan or an
+    unknown runner lists none, and `observe` then reports it through its own error path."""
+    try:
+        commands = state.runner_commands(plan, config, runners) if plan is not None else []
+    except (OSError, ValueError):
+        commands = []
+    return _runner_trust_refusal(trust, commands), (runners if trust.source == "git-local" else None)
+
+
 #: #1650: a verify's running receipt deadline is `started_at + VERIFY_RECEIPT_SECONDS + grace`. A CHOSEN bound
 #: (about 4.6x the longest verify seen, 52 min), not a measured one; verify itself gains no timeout here.
 VERIFY_RECEIPT_SECONDS = 14400
@@ -6738,11 +6812,16 @@ def red_goal(sdlc_dir, goal):
         commands = state.declared_verify_commands(goal, config, sdlc_dir)
         repository_commands = state.repository_verify_commands(config)
     except Exception:                        # noqa: BLE001 - the environment approval then reads it as an error
-        commands, repository_commands = None, ()
+        config, commands, repository_commands = {}, None, ()
     trust = shell_policy.verify_decision(root, commands, roots=(pathlib.Path(sdlc_dir).resolve().parent,),
                                          repository_commands=repository_commands)
     if trust.source is None:
         print("loop.py red: " + _verify_trust_text(trust, sdlc_dir, goal), file=sys.stderr)
+        return 2
+    try:
+        runners = state.test_runners(config)             # #2084: read ONCE; the gate, observe and the plan share it
+    except ValueError as exc:
+        print("loop.py red: " + str(exc), file=sys.stderr)
         return 2
     try:
         plan = work.verification_plan(sdlc_dir, stem, root)
@@ -6763,14 +6842,18 @@ def red_goal(sdlc_dir, goal):
               f"wait for it with `loop.py wait-call {sdlc_dir} {stem} verify`", file=sys.stderr)
         return 6
     rg = _load("red_green")
-    seen = rg.observe(sdlc_dir, stem, root, plan)
+    refused, granted = _runner_scope(trust, runners, plan, config)
+    if refused:
+        print("loop.py red: " + refused, file=sys.stderr)
+        return 2
+    seen = rg.observe(sdlc_dir, stem, root, plan, runners=granted, timeout=_verify_timeout_seconds(config))
     if "provenance" not in seen:
         print("loop.py red: " + str(seen.get("error") or "planned tests could not be observed"),
               file=sys.stderr)
         return 2
     nodes = list(seen.get("nodes") or {})
     done = {r.get("test") for r in witness.witnesses(sdlc_dir, stem)
-            if r.get("kind") == "assertion" and r.get("provenance") == rg.PROVENANCE
+            if (r.get("provenance"), r.get("kind")) in rg.RED_PAIRS
             and r.get("observed_at") == seen.get("completed_at")}
     recorded = [n for n in nodes if n in done]
     if seen.get("passed"):
@@ -6787,8 +6870,11 @@ def red_goal(sdlc_dir, goal):
               + ", ".join(recorded) + "\n  not recorded: "
               + ", ".join(n for n in nodes if n not in done), file=sys.stderr)
         return 1
+    weak = [n for n in recorded if (seen.get("runners") or {}).get(n, {}).get("red") == "exit"]
     print(f"loop.py red: recorded assertion red for {len(recorded)} planned test(s); make them pass, "
-          f"then run `loop.py verify {sdlc_dir} {stem}` (red must be on the final test bytes)")
+          f"then run `loop.py verify {sdlc_dir} {stem}` (red must be on the final test bytes)"
+          + (f"\n  weaker proof: {len(weak)} runner red(s) rest on a nonzero exit alone (no red_pattern is set)"
+             if weak else ""))
     return 0
 
 
@@ -6892,6 +6978,18 @@ def _verify_goal_body(sdlc_dir, goal, guard):
         ledger.safe_append(sdlc_dir, "verify", goal, config=config, stream=ledger.EVENTS, exit=2)
         actionlog.safe_append(sdlc_dir, goal, "verify_run", exit=2)
         return 2
+    # #2084: a runner command runs under the git-local grant only; refused BEFORE anything runs, same writes as above.
+    try:
+        runners = state.test_runners(config)             # read ONCE; the gate, observe, flake and witness share it
+        plan = work.verification_plan(sdlc_dir, goal, root)
+        refused, granted = _runner_scope(trust, runners, plan, config)
+    except (OSError, ValueError) as exc:
+        refused, granted = str(exc), None
+    if refused:
+        print("loop.py verify: " + refused, file=sys.stderr)
+        ledger.safe_append(sdlc_dir, "verify", goal, config=config, stream=ledger.EVENTS, exit=2)
+        actionlog.safe_append(sdlc_dir, goal, "verify_run", exit=2)
+        return 2
     _wrec = work._record(sdlc_dir, goal) or {}
     _base_ref = (f"{_wrec['remote']}/{_wrec['base']}"
                  if _wrec.get("remote") and _wrec.get("base") else None)
@@ -6928,7 +7026,8 @@ def _verify_goal_body(sdlc_dir, goal, guard):
     # work.pr fails closed unless the operator supplies the published exception reason.
     try:
         test_first = _load("red_green").observe(
-            sdlc_dir, goal, root, work.verification_plan(sdlc_dir, goal, root))
+            sdlc_dir, goal, root, work.verification_plan(sdlc_dir, goal, root), runners=granted,
+            timeout=_verify_timeout_seconds(config))
     except (OSError, ValueError) as exc:
         test_first = {"passed": False, "error": str(exc)}
     if test_first.get("provenance") and not test_first.get("passed") and proc.returncode == 0:
@@ -6974,7 +7073,7 @@ def _verify_goal_body(sdlc_dir, goal, guard):
     # computed signal that could disagree with it.
     # #1933: a green suite is not yet a TRUSTWORTHY one. Computed before the evidence write so the
     # verdict is part of the same atomic record, never a second file a reader could miss.
-    flake = _flake_verdict(sdlc_dir, goal, root, proc.returncode == 0)
+    flake = _flake_verdict(sdlc_dir, goal, root, proc.returncode == 0, granted)
     # #2240: the mutmut-free kill control. Runs BEFORE `_witness_verdict` below, deliberately --
     # a real kill here is recorded as a STRONG `mutation` witness, and ordering it first means
     # `witness.verdict` (called inside `_witness_verdict`) already sees that witness on disk in
@@ -6983,7 +7082,7 @@ def _verify_goal_body(sdlc_dir, goal, guard):
     # #1934: red-before-green as data. Written on the RED path because that is the only moment the
     # failure kind and the at-red content hash exist; judged on the green one.
     seen_red = _witness_verdict(sdlc_dir, goal, root, proc.returncode == 0,
-                                 (proc.stdout or "") + (proc.stderr or ""))
+                                 (proc.stdout or "") + (proc.stderr or ""), granted)
     # #1897: WHAT this run verified, so `state.done_refusal` can refuse a tree that has been edited
     # since. Computed HERE -- after the proving command AND after the flake/witness passes above,
     # both of which re-run tests and can touch the tree -- so the recorded content is the content

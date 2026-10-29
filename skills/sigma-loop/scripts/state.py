@@ -1623,6 +1623,54 @@ def repository_verify_commands(config):
     return [command] if command else []
 
 
+_RUNNER_NAME = re.compile(r"[a-z][a-z0-9_-]*")
+
+
+def test_runners(config):
+    """#2084: the validated `tests.runners` map, `{name: {"command": str, "red_pattern": str or None}}` (JSON-safe: the
+    pattern is compile-checked here but stays a string). Absent block -> {}. A value is a command template string or
+    `{"command": ..., "red_pattern": ...}`. Raises ValueError naming `tests.runners.<name>[.red_pattern]` for a bad
+    name (`none` is reserved: it is the plan's docs-only `none: <reason>` line), a non-string/object value, an empty
+    command, or an invalid pattern. The template's placeholder rules are judged by `red_green.render_command`."""
+    block = ((config or {}).get("tests") or {}).get("runners") or {}
+    if not isinstance(block, dict):
+        raise ValueError("tests.runners must be an object of runner name to command")
+    result = {}
+    for name, spec in block.items():
+        key = "tests.runners.%s" % name
+        if not isinstance(name, str) or not _RUNNER_NAME.fullmatch(name) or name == "none":
+            raise ValueError("%s: a runner name is [a-z][a-z0-9_-]* and not 'none'" % key)
+        command, pattern = (spec, None) if isinstance(spec, str) else (
+            (spec.get("command"), spec.get("red_pattern")) if isinstance(spec, dict) else (None, None))
+        if not isinstance(command, str) or not command.strip():
+            raise ValueError("%s must be a command string or an object with a nonempty \"command\"" % key)
+        if pattern is not None:
+            try:
+                if not isinstance(pattern, str) or not pattern:
+                    raise re.error("not a nonempty string")
+                re.compile(pattern)
+            except re.error as exc:
+                raise ValueError("%s.red_pattern is not a valid regular expression: %s" % (key, exc)) from None
+        result[name] = {"command": command, "red_pattern": pattern}
+    return result
+
+
+def runner_commands(plan, config, runners=None):
+    """#2084: the rendered runner command strings `plan`'s `## Tests` would run (empty for none). Executes nothing;
+    the trust gate and the flake step use this one list. `runners` is the map the caller already loaded (so the
+    config is read once); omitted, it is read here. Raises ValueError like `red_green.selectors`."""
+    spec = importlib.util.spec_from_file_location("red_green", _HERE / "red_green.py")
+    proof = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(proof)
+    runners = test_runners(config) if runners is None else runners
+    commands = []
+    for node in proof.selectors(plan, runners):
+        found = proof.parse_runner(node)
+        if found:
+            commands.append(proof.render_command(runners[found.runner]["command"], found.file, found.name, found.runner))
+    return commands
+
+
 def combined_verify_commands(config, goal_command):
     """The repository command first, then the goal's own, each once and none blank: THE list builder `verify`,
     `red`, and the record-time check (`acceptance.trust_conflict`) all use, so what record time refuses is exactly
