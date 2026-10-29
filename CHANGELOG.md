@@ -4,6 +4,12 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **A merge runner killed mid-merge no longer reads as a bare `FAILED`: `wait-call` reports the PR's state and the recovery (#2086).**
+  - **What changed.** When `loop.py wait-call <dir> <goal> merge` finds the runner's pid gone, it reads the goal's PR once (REST, no GraphQL, cut off after 10 s) and adds one line under `FAILED`. An open, unmerged PR whose runner is provably gone gets the two gestures: `loop.py agent-start <dir> <goal> --pid "$PPID"`, then `work.py merge <dir> <goal>`, and "do not record the goal failed". A merged PR points at `record done`; a closed or unreadable one names itself and gives no re-run advice; a receipt that ended for another reason (a deadline, a malformed receipt, a runner that raised) names the PR but gives none either, because the runner may be alive. The exit code (1) and the receipt are unchanged.
+  - **Docs.** `landing.md` gains "A merge runner killed mid-merge"; `land.md` and `docs/cloud-sessions.md` point at it.
+  - **Not built:** binding the agent marker to the session id instead of a pid (the issue's third proposal, a design change; PROVISIONAL, owner to ratify).
+  - **Measured:** offline. A real `work.py merge` process is SIGKILLed while it polls a pending required check against a fake GitHub behind a real `gh` executable on PATH; the documented gestures then land the PR with one merge PUT and one issue close; each clause of the new guard was broken on its own and seen red. **Not measured:** a real Claude Code cloud container, a real worker restart, a real GitHub, a kill that falls inside the merge call itself (the line names that window; the read cannot close it).
+
 ## 1.0.24 — 2026-10-29 — the ledger publish path after the cloud-run release: one publisher at a time, an exit flush, a container id that ignores TMPDIR
 
 - **The ledger publish path after #2076: one publisher at a time, a flush for processes that never go through `loop.py main`, a container id that ignores `TMPDIR`, and a retry pause that obeys the deadline (#2081).**

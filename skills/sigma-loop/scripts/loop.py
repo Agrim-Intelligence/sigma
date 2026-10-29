@@ -7,7 +7,7 @@ for any of the three, so a config without it behaves exactly as before. The irre
 is enforced by /sigma-loop SKILL.md prose. Claim and outcome are mirrored to the team ledger
 (ledger.py) when `ledger.enabled` is on — every such call is fail-open, so a ledger problem can never
 stop a run."""
-import os, sys, pathlib, importlib.util, time, subprocess, inspect, json, re, tempfile, hashlib, uuid, atexit
+import os, sys, pathlib, importlib.util, time, subprocess, inspect, json, re, tempfile, hashlib, uuid, atexit, signal, shlex
 import contextlib, calendar
 import errno
 import datetime as _datetime
@@ -7832,6 +7832,66 @@ def _lane_tier(sdlc_dir, goal, lane, current):
 _RECORD_STATUSES = ("done", "review", "parked", "failed")     # `record`'s usage line, #1245
 
 
+_PR_READ_SECONDS = 10       # #2086: the ONE PR read `wait-call` makes after a dead merge runner is cut off here
+
+
+def _bounded_pr_state(sdlc_dir, rec):
+    """`work.pr_landing_state` (ONE REST read of the PR; never GraphQL) cut off after `_PR_READ_SECONDS`, so a
+    stalled `gh` cannot hang the very call that exists to report a stall. A cut-off, like any unreadable
+    answer, is `(unknown, why)`. Where there is no SIGALRM (Windows) or this is not the main thread, the read
+    runs unbounded, as every other `pr_landing_state` caller does."""
+    def expired(signum, frame):
+        raise TimeoutError("the PR read took longer than %ds" % _PR_READ_SECONDS)
+    try:
+        previous = signal.signal(signal.SIGALRM, expired)
+    except (AttributeError, ValueError):
+        return work.pr_landing_state(sdlc_dir, rec)
+    signal.setitimer(signal.ITIMER_REAL, _PR_READ_SECONDS)
+    try:
+        return work.pr_landing_state(sdlc_dir, rec)
+    except TimeoutError as exc:
+        return work.UNKNOWN, str(exc)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def _merge_pr_line(sdlc_dir, goal, got):
+    """#2086: `(line, recoverable)`, the one stdout line `wait-call` adds under `FAILED` for a merge that did
+    not complete (None when the work record names no PR), and whether it names the recovery gestures.
+    A cloud worker restart SIGKILLs the merge runner while `gate()` polls a pending required check; `gate()` only
+    READS GitHub there, so the PR is still open and a re-run is safe. A bare `FAILED` read as the goal's ending,
+    and the dead runner's agent marker would let the claim be reclaimed. So when the work record names a PR it is
+    read ONCE and its state is said, with the next gestures only for an open PR whose runner is provably gone
+    (`run_receipt.classify`'s `runner pid N gone`; a deadline or a malformed receipt may still be a live runner,
+    and a second concurrent merge is not advice). One read cannot close the window where the kill fell inside the
+    merge call itself, so the open line names it."""
+    rec = work._record(sdlc_dir, goal)
+    if not rec or not rec.get("pr"):
+        return None, False
+    pr = rec["pr"]
+    state, why = _bounded_pr_state(sdlc_dir, rec)
+    sd = shlex.quote(str(pathlib.Path(sdlc_dir).resolve()))
+    loop_py, work_py = (shlex.quote(str(_HERE / name)) for name in ("loop.py", "work.py"))
+    detail = str(got.get("detail") or "")
+    where = "(killed-merge.md)"
+    if state == work.MERGED:
+        return (f"PR #{pr} is already merged: run `python3 {loop_py} record {sd} {goal} done`; do not run the "
+                f"merge again {where}"), False
+    if state == work.CLOSED_PR:
+        return f"PR #{pr} was closed without merging; do not run the merge again, read why and decide by hand {where}", False
+    if state != work.OPEN_PR:
+        return f"could not read PR #{pr} ({why}); read it by hand before acting, do not re-run blindly {where}", False
+    if re.fullmatch(r"runner pid \d+ gone", detail):
+        return (f"PR #{pr} is open and unmerged at this read; the merge runner (pid {got.get('pid')}) is gone. "
+                f"Recover with `python3 {loop_py} agent-start {sd} {goal} --pid \"$PPID\"` ($PPID is this "
+                f"session's own long-lived process), then `python3 {work_py} merge {sd} {goal}`. Do not record "
+                f"the goal failed. If the kill fell inside the merge call itself, read the PR again before "
+                f"re-running {where}"), True
+    return (f"PR #{pr} is open and unmerged at this read, but the runner is not known to be dead ({detail}); "
+            f"check whether it is still running before starting another merge {where}"), False
+
+
 _WAIT_CALL_USAGE = "usage: loop.py wait-call <dir> <goal> verify|merge [--max-seconds N] [--run-id ID]"
 
 
@@ -7893,10 +7953,17 @@ def _wait_call(argv):
             print("loop.py wait-call: the verify did not complete; it is safe to re-run `loop.py verify` "
                   "(a refusal, exit 6, means one is still holding the lock: wait instead)", file=sys.stderr)
         else:
-            print("loop.py wait-call: the merge did not complete. Do not re-run blindly: landing.md "
-                  "separates a cut during the gate polling (re-run `work.py merge` is safe) from a cut "
-                  "during the merge call itself (`loop.py record <dir> <goal> review` first, then re-run)",
-                  file=sys.stderr)
+            pr_line, recoverable = _merge_pr_line(sdlc_dir, goal, got)
+            if pr_line:
+                print(pr_line)
+            if recoverable:
+                print("loop.py wait-call: the merge did not complete and the PR is open: the recovery on the "
+                      "line above applies (references/killed-merge.md)", file=sys.stderr)
+            else:
+                print("loop.py wait-call: the merge did not complete. Do not re-run blindly: landing.md "
+                      "separates a cut during the gate polling (re-run `work.py merge` is safe) from a cut "
+                      "during the merge call itself (`loop.py record <dir> <goal> review` first, then re-run)",
+                      file=sys.stderr)
         return 1
     now = time.time()
     print("RUNNING pid=%s run_id=%s elapsed=%ds deadline_in=%ds"
