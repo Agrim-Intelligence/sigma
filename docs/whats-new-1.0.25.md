@@ -47,6 +47,18 @@ script for the environment.
 - **`tools/cloud/` (#2090).** The setup script and operator steps for `sigma-cloud`, the environment Sigma's own goals
   run in.
 
+## Cloud `--land` on a repository whose ruleset blocks every PR
+
+- **Opt-in merge through the account's ruleset bypass (#2092).** New setting `work.merge_bypass: "ruleset"`, default
+  off: any other value, case or spacing leaves today's park unchanged. With it on, `work.py merge` may merge a PR that
+  GitHub reports `BLOCKED` when four conditions hold, each read over REST: every required check passed on the exact
+  head; every rule on the base comes from a ruleset the merging account can always bypass, with no classic protection;
+  the review gate passed; and the branch has no conflict and is not behind. Anything it cannot read parks and names the
+  failed condition. It never bypasses classic branch protection, a failing or missing check, a ruleset the account
+  cannot always bypass, or a merge queue, and it records the bypass in the merge evidence and a PR comment. Nothing
+  sets the key for you. **Not measured:** whether GitHub's REST merge honours a ruleset bypass for any token, the cloud
+  proxy's included; the real `sigma-cloud` run that would show it (the issue's AC-5) is still open.
+
 ## Everywhere
 
 - **The project's Python for planned tests (#2079).** See item 4 above. Not measured: a real `uv` build, a real cloud
