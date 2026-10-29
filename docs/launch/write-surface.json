@@ -2972,8 +2972,8 @@
       "path": "skills/sigma-loop/scripts/work.py",
       "function": "merge",
       "rule": "gh-api-write",
-      "count": 1,
-      "gate": "work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR; the direct merge is the REST PUT pulls/N/merge with the vetted head sha via gh_api.merge_pr_gh (non-idempotent; an unknown outcome is READ, never re-merged), counted since #895 slice 4b-2",
+      "count": 3,
+      "gate": "work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR; the direct merge is the REST PUT pulls/N/merge with the vetted head sha via gh_api.merge_pr_gh (non-idempotent; an unknown outcome is READ, never re-merged), counted since #895 slice 4b-2; plus (#2083) the cloud CCR arm gh_api.arm_auto_merge_ccr (PUT pulls/N/ccr/auto_merge) and its one disarm site gh_api.disarm_auto_merge_ccr (DELETE): GraphQL unavailable; every pending check named and required by the base; mergeStateStatus BLOCKED; allow_auto_merge; reported armed only when a REST read-back of the PR shows auto_merge with this method on the vetted head, else DELETE and park; UNCONFIRMED live",
       "risk": "high"
     },
     {

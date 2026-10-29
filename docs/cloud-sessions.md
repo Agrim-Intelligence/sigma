@@ -571,15 +571,32 @@ with `merged: true`. Every failure carries an outcome flag, decided by the `WRIT
   read shows MERGED, and `record done` stays refused until then). Re-running `work.py merge` is not the lever: how it reads an already-merged
   PR was not changed or measured here and it may park a PR that did land. The sha guard only proves no different head can land.
 
-No GraphQL, pending required check: `--auto` is GraphQL and REST has no auto-merge, so when
-`graphql_available()` is false (`SIGMA_GH_GRAPHQL=off` or `CLAUDE_CODE_REMOTE`; env/override only, no probe) a
-required check still pending after gate()'s own bounded REST wait (`PENDING_ATTEMPTS` x `PENDING_INTERVAL` =
-450s) is not armed, `allow_auto_merge` is not read, and no merge is sent: `PARK: required checks still pending
-after 450s and auto-merge cannot be armed without GraphQL; re-run work.py merge once they finish`. Checks that
-turn green inside gate()'s wait reach the REST merge with the vetted sha. No extra wait is added, so the
-documented 22.5-minute worst case (quality ratchet off; docs/quality-delta.md) does not move. Liveness cost: an UNSTABLE PR whose pending checks are NOT
-required (GitHub would merge it) also parks in a no-GraphQL session. With GraphQL available the arm path is
-byte-identical to before.
+No GraphQL, pending check (#2083): `--auto` is GraphQL and REST has no auto-merge, so when
+`graphql_available()` is false (`SIGMA_GH_GRAPHQL=off` or `CLAUDE_CODE_REMOTE`; env/override only, no probe)
+gate() first spends its configured REST wait (`work.merge_pending_wait_s`, default 450 s = `PENDING_ATTEMPTS` x
+`PENDING_INTERVAL`, 45..7200 s). Checks that turn green inside it reach the REST merge with the vetted sha. A
+check still pending after it is armed through the cloud proxy's CCR route, `PUT
+repos/{owner}/{repo}/pulls/N/ccr/auto_merge` (`merge_method`, `sha`), only when every pending check is named and
+required by the base (classic protection UNION rulesets), GitHub reports `mergeStateStatus` BLOCKED, and the repo
+allows auto-merge. The route is UNCONFIRMED: no real cloud container has armed through it; its payload mirrors
+REST `PUT pulls/N/merge` and the only source for it is the proxy's own 403 text quoted on #2083. So the PUT reply
+is never trusted: Sigma prints `auto-merge armed on PR #N via the cloud REST route …` only after a REST read of
+`pulls/N` shows `auto_merge` set, with this merge method, on the vetted head. A first read without it is re-read
+once, 5 s later (how often an arm shows up late is UNMEASURED, and it could make this path park on most runs).
+Anything else sends `DELETE …/ccr/auto_merge` (best effort; it also removes an auto-merge a human armed) and parks
+`PARK: auto-merge arm on PR #N could not be confirmed (…)`. A PUT that is definitely refused parks `PARK: could
+not arm auto-merge on PR #N via the cloud REST route (…)` with no read-back; one with an unknown outcome (5xx,
+timeout) goes to the read-back. Residuals: a bypass-capable token may still see BLOCKED, and whether GitHub's
+auto-merge honours that token's bypass is UNMEASURED; the head-pin residual: even if the proxy honours `sha`, a
+later push by a write-access user keeps a GitHub auto-merge armed, as `--match-head-commit` does on the GraphQL
+path. A pending set that does not qualify is not armed, `allow_auto_merge` is read only once every other clause
+holds, and no merge is sent: `PARK: required checks still pending after <N>s and auto-merge cannot be armed
+without GraphQL (<reason>); re-run work.py merge to wait again (…); if the re-run returns this line too, record
+parked`. The BLOCKED clause applies to the cloud path only (#2083 reads AC-2 that way, pending the owner's
+confirmation): with GraphQL available `--auto` is still armed for a NON-required pending set, which GitHub lands
+at once, before CI answers, and that arm path is byte-identical to before. No extra wait is added beyond the
+configured one, so the worst case is about 4 x that wait (22.5 minutes at the default, quality ratchet off;
+docs/quality-delta.md).
 
 Since slice 4b-2 the permission and protection reads that used to stop a cloud merge before this PUT are REST too
 (next section); what a cloud session still cannot do is stated there. Under `SIGMA_GH_GRAPHQL=off` the
@@ -643,7 +660,8 @@ What a cloud session still CANNOT enforce or do after this slice (exact, none of
 - `reviewDecision` is unreadable, so in a cloud session `require_review: approval` is met only by a trusted
   `sigma:approve` comment (#1398) and parks without one; `changes` mode works from the REST `pulls/N/reviews` list
   and the `sigma:` comments (now postable).
-- The `--auto` arm is unavailable: a required check still pending after the 450s wait parks.
+- The `--auto` arm is unavailable; a pending check that every clause above qualifies is armed through the
+  UNCONFIRMED CCR route instead, and any other still-pending check parks after `work.merge_pending_wait_s` (450 s default).
 - Deferred and still GraphQL: `verify_merge.py` (`merge_design` and `close_design` moved in 4b-3, below).
 
 What `protection()` cannot derive: bypass actors (it counts every listed rule even when this token may bypass it, so it can
@@ -813,7 +831,7 @@ Grant breadth (decision): `Bash(gh api *)` allows any REST write and `gh api gra
 prose needs (issue and PR reads, the triage label POST). Revisit with a per-endpoint allowlist if the owner wants one.
 
 OFF (GraphQL): the Projects board is SKIPPED with one stderr notice per process (slice 5); `--auto` is not armed,
-so a pending required check is waited for (450 s) and then parks; `reviewDecision` is unreadable, so
+so a pending check is waited for (`work.merge_pending_wait_s`, 450 s default) and then armed through the UNCONFIRMED CCR route only when the base requires every pending check, else parks; `reviewDecision` is unreadable, so
 `require_review: approval` is met only by a trusted `sigma:approve` comment (the post-PR review posts one),
 `changes` works; a PR with line comments needs a human (any comment refuses the
 merge); thread resolution is unreadable; draft readiness and merge-queue landing are unavailable.
@@ -837,7 +855,8 @@ one cloud session per issue. It takes ONE named issue through the loop's own pic
 with no gate pauses, then the landing path above, and ends in exactly one of merged, parked or failed. It needs
 `work.enabled: true` and `work.auto_merge` of `protected` or `always` (refused up front otherwise). Under
 `require_review: approval` the post-PR review's own `sigma:approve` comment satisfies the gate here. What parks in the
-cloud and not on a laptop: a required check still pending after 450 s, and any PR line comment. A PR left awaiting
+cloud and not on a laptop: a check still pending after `work.merge_pending_wait_s` (450 s default) that the base
+does not require, or whose CCR arm could not be confirmed, and any PR line comment. A PR left awaiting
 merge is not finished by any machine once the container is gone: GitHub closes the issue on merge only when the PR body
 says `Closes #N`. Details: `skills/sigma-goal/references/land.md`. Tested with fakes (`tests/test_goal_land.py`: the
 landing gestures from PR open to `record done` with every GraphQL-shaped call refused); UNMEASURED in a real cloud
@@ -1178,7 +1197,7 @@ reviewer running outside one needs `GH_REPO`). NOT run in a real Claude Code clo
 stays UNMEASURED.
 
 Real cloud limits left in the merge path (from the code, not measured):
-- A pending required check parks: `--auto` is GraphQL, so with no GraphQL the merge parks after `gate()`'s own bounded REST wait.
+- A pending check after `gate()`'s configured REST wait is armed only through the UNCONFIRMED CCR route, and only when the base requires every pending check; otherwise the merge parks.
 - Any PR line comment parks (thread resolution is GraphQL; without it only an empty `pulls/N/comments?per_page=1` list proves none).
 - `require_review: approval` needs a trusted `sigma:approve` comment (`reviewDecision` is GraphQL-only; #1398).
 - `merge_rights` is REST but needs the token to receive `permissions` on `GET repos/{owner}/{repo}`: UNMEASURED; if absent it fails closed to `record review`.

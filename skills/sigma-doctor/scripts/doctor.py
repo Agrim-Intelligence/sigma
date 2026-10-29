@@ -6438,6 +6438,28 @@ def _automerge_state(wk):
     }.get(chosen, "off (a clean, safe PR is left for a human)")
 
 
+#: #2083: work.py's PENDING_ATTEMPTS x PENDING_INTERVAL, PENDING_INTERVAL and MERGE_PENDING_WAIT_MAX, duplicated
+#: rather than imported (doctor stays standalone). `test_ac3_doctor_mirror_matches_work_reader` loads both files by
+#: path and fails if this mirror drifts from `work.merge_pending_wait_seconds`.
+_MERGE_PENDING_DEFAULT, _MERGE_PENDING_INTERVAL, _MERGE_PENDING_MAX = 450, 45, 7200
+
+
+def _merge_pending_wait_state(wk):
+    """Mirrors work.merge_pending_wait_seconds() without importing it: the seconds one `work.py merge` waits on a
+    pending check, and where that number came from."""
+    if wk.get("enabled") is not True:
+        return "off (per-goal worktrees are off)"
+    if "merge_pending_wait_s" not in wk:
+        return "%d s (default)" % _MERGE_PENDING_DEFAULT
+    value = wk["merge_pending_wait_s"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+        return "%d s (invalid value ignored)" % _MERGE_PENDING_DEFAULT
+    if value < _MERGE_PENDING_INTERVAL or value > _MERGE_PENDING_MAX:
+        clamped = _MERGE_PENDING_INTERVAL if value < _MERGE_PENDING_INTERVAL else _MERGE_PENDING_MAX
+        return "%d s (clamped from %g)" % (clamped, value)
+    return "%g s (work.merge_pending_wait_s)" % value
+
+
 #: #144: `feature_rebase.BLOCKED_SUFFIX`, duplicated rather than imported (skills do not import each
 #: other's Python, north-star architecture rule 3). `test_doctor_blocked_suffix_matches_feature_rebase`
 #: reads the real constant from its file path and fails if this literal drifts from it.
@@ -7139,6 +7161,9 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
         ("auto-merge a clean AND safe PR",
          _automerge_state(wk),
          'config: "work": {"auto_merge": "protected"}  (off | protected | always)'),
+        ("merge pending-check wait",
+         _merge_pending_wait_state(wk),
+         'config: "work": {"merge_pending_wait_s": 1800}  (45..7200 s)'),
         ("feature-branch rebase upkeep (#144 refuses a replay that would delete content)",
          _rebase_upkeep_state(base, wk),
          'config: "work": {"rebase_upkeep": "off"} to stop it; a BLOCKED unit clears on the next '

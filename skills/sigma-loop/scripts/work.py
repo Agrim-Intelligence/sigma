@@ -47,6 +47,7 @@ import importlib.util
 import hashlib
 import io
 import json
+import math
 import os
 import pathlib
 import posixpath
@@ -135,10 +136,13 @@ ENFORCEMENT_GATES = (
      "mechanism": "parks unless GitHub reports the pushed head `mergeable` with "
                   "`mergeStateStatus CLEAN` (REST first, one GraphQL fallback; an unknown state "
                   "never reads as CLEAN; a still-pending required check is armed when GraphQL is "
-                  "available; without GraphQL it is not armed and the merge parks after gate()'s own "
-                  "bounded REST wait; the merge itself is a REST PUT carrying the vetted head sha, an "
+                  "available; without GraphQL, after gate()'s REST wait (`work.merge_pending_wait_s`, "
+                  "default 450 s), it is armed through the cloud CCR route (UNCONFIRMED live) only when "
+                  "every pending check is required by the base and GitHub reports BLOCKED, and only once "
+                  "a REST read of the PR confirms the arm (else a DELETE and a park); any other pending "
+                  "set parks; the merge itself is a REST PUT carrying the vetted head sha, an "
                   "unknown outcome is reconciled by a REST read and never retried; in a cloud session "
-                  "the merge still parks on a pending required check (no `--auto` arm), on any PR "
+                  "the merge still parks on any PR "
                   "line comment, and under `require_review: approval` (GraphQL-only reads); "
                   "`merge_rights` needs the token to receive `permissions` (UNMEASURED), see "
                   "cloud-sessions.md)",
@@ -432,6 +436,7 @@ ENFORCEMENT_EXEMPT = (
     ("sibling_gate", "unwired: a pure, queryable check that its own docstring says nothing calls"),
     ("_sibling_gate", "body of `sibling_gate`, same"),
     ("_diff_without_pr_refusal", "the no-PR branch of `done_refusal`, which carries the gate row"),
+    ("_cloud_arm_refusal", "the no-GraphQL arm predicate inside `merge()`; the `gate` row states it (#2083)"),
 )
 UNKNOWN_ATTEMPTS = 4        # GitHub computes mergeability lazily — the first read is usually UNKNOWN
 UNKNOWN_BACKOFF = 3         # seconds before the first retry, doubled each time
@@ -452,6 +457,8 @@ _CHECK_PENDING = ("PENDING", "QUEUED", "IN_PROGRESS", "EXPECTED", "REQUESTED", "
 # while the answer is still open/unknown -- GitHub can lag after a 5xx. Bounded: 3 reads, 10s of pauses.
 RECONCILE_ATTEMPTS = 3
 RECONCILE_PAUSE = 5
+# #2083: these two give the DEFAULT wait (450 s); `work.merge_pending_wait_s` sets it per repo (see
+# merge_pending_wait_seconds below). The interval stays flat whatever the configured wait.
 PENDING_ATTEMPTS = 10       # re-reads after the first, before giving up
 PENDING_INTERVAL = 45       # seconds between re-reads -- flat, not exponential: a doubling
                             # backoff overshoots CI's duration and then waits far past it
@@ -463,6 +470,43 @@ PENDING_INTERVAL = 45       # seconds between re-reads -- flat, not exponential:
 # -- `--auto` re-checks atomically, and unboundedly, at GitHub's OWN merge time, which is exactly
 # the case it exists for. Not arming here is what made #144/PR #252 unrecoverable.
 PENDING_PREFIX = "required checks still pending"
+
+# #2083: how long ONE `work.py merge` waits on a pending check is `work.merge_pending_wait_s` (seconds).
+# Absent or invalid -> the constants' product above, read at CALL time (450 s); a real finite number is
+# raised to one PENDING_INTERVAL and capped here. 7200 is a judgement (a 30-min CI x 4 margin), not a
+# measurement. At the cap one call re-reads the PR 161 times (two REST reads each, ~161 reads/h per goal),
+# so about 30 goals waiting at once on one token reach ~100% of a 5000/h primary REST limit (DERIVED).
+MERGE_PENDING_WAIT_MAX = 7200
+# AC-4: the not-armable PARK line ends with this, and landing.md's bullet repeats it VERBATIM
+# (tests/test_work_merge_pending_wait.py reads this constant, never a copy). The trailing clause bounds the
+# gesture at two calls; that bound is PROSE-ONLY and lives in the orchestrator's memory of one turn.
+_PENDING_PARK_INSTRUCTION = ("re-run work.py merge to wait again (work.merge_pending_wait_s sets how long one "
+                             "call waits); if the re-run returns this line too, record parked")
+
+
+def merge_pending_wait_seconds(config):
+    """-> (seconds, source) for `work.merge_pending_wait_s`; source is default | config | clamped | invalid.
+    A bool, a non-number, NaN/inf and anything <= 0 is invalid (the default is used). doctor.py mirrors
+    this without importing it; tests/test_work_merge_pending_wait.py fails if the two drift."""
+    default = PENDING_ATTEMPTS * PENDING_INTERVAL
+    wk = config.get("work") if isinstance(config, dict) else None
+    if not isinstance(wk, dict) or "merge_pending_wait_s" not in wk:
+        return default, "default"
+    value = wk["merge_pending_wait_s"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+        return default, "invalid"
+    if value < PENDING_INTERVAL:
+        return PENDING_INTERVAL, "clamped"
+    if value > MERGE_PENDING_WAIT_MAX:
+        return MERGE_PENDING_WAIT_MAX, "clamped"
+    return value, "config"
+
+
+def pending_wait(config):
+    """-> (rounds, interval): gate()'s pending re-reads for this config. The interval stays the flat
+    PENDING_INTERVAL; rounds round UP, so the real wait is `rounds * interval` (>= the configured seconds)."""
+    seconds, _ = merge_pending_wait_seconds(config)
+    return math.ceil(seconds / PENDING_INTERVAL), PENDING_INTERVAL
 
 # #406: a BEHIND PR needs a rebase, but the rebase FORCE-PUSHES a new head whose CI has not attached
 # yet. For a few seconds GitHub reports that head as mergeable=UNKNOWN, or mergeStateStatus non-CLEAN
@@ -4614,7 +4658,8 @@ def gate(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # Outer loop: while required checks have not ANSWERED, re-read the PR. Re-reading (not
     # re-judging cached data) is the point -- the whole question is whether GitHub's answer has
     # changed. The stale-head check below therefore re-runs on every round too.
-    for pending_round in range(PENDING_ATTEMPTS + 1):
+    rounds, interval = pending_wait(config)          # #2083: work.merge_pending_wait_s, default 450 s
+    for pending_round in range(rounds + 1):
       for attempt in range(UNKNOWN_ATTEMPTS):
           try:
               data = gh_api.view_pr_gh(api, rec["pr"], ["mergeable", "mergeStateStatus", "headRefOid"],
@@ -4671,17 +4716,17 @@ def gate(sdlc_dir, config, goal, run=None, sleep=time.sleep):
           rollup = data.get("statusCheckRollup") or []
           named = [(c.get("name") or c.get("context"), _check_verdict(c)) for c in rollup]
           failing = [n for n, v in named if v == "failing" and n]
-          pending = [n for n, v in named if v == "pending" and n]
+          pending, _ = _pending_check_names(data)
           if failing:
               # Answered, and the answer was no. Park at once -- never spend the pending budget on
               # a verdict we already have.
               return False, (f"not safe to merge (mergeStateStatus={status}) — "
                              f"failing: {', '.join(failing)}"), data
           if pending:
-              if pending_round < PENDING_ATTEMPTS:
-                  sleep(PENDING_INTERVAL)
+              if pending_round < rounds:
+                  sleep(interval)
                   continue                       # re-read: the checks have not answered yet
-              waited = PENDING_ATTEMPTS * PENDING_INTERVAL
+              waited = rounds * interval
               return False, (f"{PENDING_PREFIX} after {waited}s "
                              f"(mergeStateStatus={status}) — pending: {', '.join(pending)}"), data
           # Not a check problem at all (a required review, say). Unchanged.
@@ -4689,6 +4734,22 @@ def gate(sdlc_dir, config, goal, run=None, sleep=time.sleep):
                          "merge, usually a required review or branch rule: satisfy it on the PR, then "
                          f"re-run `work.py merge {sdlc_dir} {goal}`"), data
       return True, "clean and safe", data
+
+
+def _pending_check_names(data):
+    """-> (names, unnamed_pending): the NAMED pending entries of `data`'s rollup, in rollup order (exactly the
+    list gate() reports), and how many pending entries have no name/context. Shared by gate() and merge()'s
+    cloud arm (#2083 R1) so the two can never disagree about what is pending."""
+    names, unnamed = [], 0
+    for check in data.get("statusCheckRollup") or []:
+        if _check_verdict(check) != "pending":
+            continue
+        name = check.get("name") or check.get("context")
+        if name:
+            names.append(name)
+        else:
+            unnamed += 1
+    return names, unnamed
 
 
 def _read_rollup(api, pr, head, sdlc_dir, sleep):
@@ -4866,7 +4927,16 @@ def _read_rules(api, base):
 
 
 def protection(sdlc_dir, config, goal, run=None):
-    """(enforces_something, detail) -- does branch protection actually REQUIRE anything on the base?
+    """(enforces_something, detail): `protection_requirements` without the required-check set. Same reads,
+    same raise (ProtectionUndetermined); kept for its callers' two-value contract."""
+    guarded, detail, _ = protection_requirements(sdlc_dir, config, goal, run=run)
+    return guarded, detail
+
+
+def protection_requirements(sdlc_dir, config, goal, run=None):
+    """(enforces_something, detail, required_checks) -- does branch protection actually REQUIRE anything on the
+    base? `required_checks` is the frozenset of required check context names (classic UNION rulesets), which
+    merge()'s cloud arm (#2083) uses to arm only a pending set the base itself requires.
 
     The distinction the first version of this file got wrong: it asked whether a check had RUN, but
     a repo can run CI on every PR while requiring nothing, and then `mergeStateStatus: CLEAN` means
@@ -4926,7 +4996,7 @@ def protection(sdlc_dir, config, goal, run=None):
     bits = ([f"{len(checks)} required check{'' if len(checks) == 1 else 's'}"] if checks else []) + \
            ([f"{reviews} required review{'' if reviews == 1 else 's'}"] if reviews else [])
     if bits:
-        return True, f"`{base}` enforces " + " + ".join(bits)
+        return True, f"`{base}` enforces " + " + ".join(bits), frozenset(checks)
     if c_state == "unreadable" or not r_ok:
         said = ("classic branch protection: "
                 + ("none configured" if c_state == "none" else "configured, requires nothing" if c_state == "object"
@@ -4941,8 +5011,8 @@ def protection(sdlc_dir, config, goal, run=None):
             "(a retry merges nothing until protection can be read), give the token read access to branch "
             f"protection and rulesets{seen}, or merge the PR by hand")
     if c_state == "none":
-        return False, f"`{base}` is not protected — nothing is enforced on merge"
-    return False, f"`{base}` is protected but requires no checks or reviews"
+        return False, f"`{base}` is not protected — nothing is enforced on merge", frozenset()
+    return False, f"`{base}` is protected but requires no checks or reviews", frozenset()
 
 
 #: #232: the merge-reconcile pass's per-pass REST bound and per-record re-check interval. A pass reads
@@ -6038,8 +6108,8 @@ def _reconcile_behind(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     arming still requires gate()'s own ok=True (which still enforces the STALE-HEAD guard), so this
     can poll THROUGH a settling head but never ARM an unverified one.
 
-    Worst-case wall time is bounded but not small: gate() itself can spend ~7.5min (PENDING_ATTEMPTS x
-    PENDING_INTERVAL) once a check attaches, so a pathological fast-moving `main` can make one call
+    Worst-case wall time is bounded but not small: gate() itself can spend `work.merge_pending_wait_s`
+    (~7.5min by default, PENDING_ATTEMPTS x PENDING_INTERVAL; #2083) once a check attaches, so a pathological fast-moving `main` can make one call
     take BEHIND_REBASES x that before it arms or parks. Finite, and that sequence is exactly the
     unwinnable case that ends in a PARK -- accepted, noted here rather than left silent."""
     run = run or _run
@@ -7134,9 +7204,9 @@ def _sibling_gate(sdlc_dir, config, goal, run, sleep):
         branches[repo] = branch
 
     mode = review_mode(config)
-    # The SAME budget `gate()` spends on our own PR, reused rather than given a second set of
-    # constants: the thing being waited on is the same thing (a CI run), so a second number here
-    # would only be a second opinion about how long CI takes.
+    # The DEFAULT budget gate() spends on our own PR, reused rather than given a second set of
+    # constants: the thing being waited on is the same thing (a CI run). It does not follow
+    # `work.merge_pending_wait_s` (#2083 D-3): this waits on a DIFFERENT repo's CI.
     for pending_round in range(PENDING_ATTEMPTS + 1):
         waiting = []
         for repo in siblings:
@@ -7192,6 +7262,65 @@ def unit_sibling_guard(sdlc_dir, config, unit, here, landed=None):
     except Exception as exc:                # noqa: BLE001 - "never raises" has to be total
         return False, ("cross-repo unit check could not run (%s) -- refusing rather than reporting a pair that "
                        "nothing measured" % type(exc).__name__)
+
+
+def _cloud_arm_refusal(final_data, required, base):
+    """-> (pending_names, reason): reason is None when merge()'s cloud arm (#2083 D-4) may arm, else the FIRST
+    clause that failed, as the not-armable PARK prints it. All of these, ANDed, none standing in for another,
+    cheapest first and with no I/O: a non-empty named pending set; no pending entry without a name (RF-3: it
+    could be a non-required check `ci_required: true` waits on); every pending name in `required` (classic
+    UNION rulesets, from protection_requirements); and GitHub's own `mergeStateStatus == BLOCKED` (B1:
+    UNSTABLE means only non-required checks are pending, so GitHub would merge now; this guards protection()
+    OVER-reporting through bypass actors or evaluate-mode rulesets). BLOCKED never replaces the subset clause:
+    it alone can mean a required review. RESIDUAL (UNMEASURED): a bypass-capable token may still see BLOCKED,
+    and whether GitHub's auto-merge honours that token's bypass is unknown."""
+    names, unnamed = _pending_check_names(final_data or {})
+    if not names:
+        return names, "no named check is pending"
+    if unnamed:
+        return names, "a pending check has no name"
+    outside = [n for n in names if n not in required]
+    if outside:
+        return names, f"not required by `{base}`: {', '.join(outside)}"
+    status = (final_data or {}).get("mergeStateStatus")
+    if status != "BLOCKED":
+        return names, f"GitHub reports mergeStateStatus={status}, not BLOCKED: it does not hold the merge on them"
+    return names, None
+
+
+def _ccr_readback(api, rec, method, vetted_head, sleep, sdlc_dir):
+    """-> (outcome, why) after a CCR auto-merge PUT (#2083 D-5): MERGED | CLOSED_PR | "armed" | "unconfirmed".
+    The PUT's reply is never trusted; this REST read of the PR is the only proof of an arm. Order: a raising or
+    malformed read -> unconfirmed `read-back unreadable`; MERGED (on REST `state` is derived from `merged_at`,
+    so the `mergedAt` belt is redundant there, kept for a fallback shape, not proven); CLOSED; no `auto_merge`
+    dict; another head than the vetted one; another merge method (case-insensitive); else armed. R4/W4: a first
+    read showing no `auto_merge` yet is re-read ONCE, RECONCILE_PAUSE later, and that second read is classified
+    in full. How often an arm shows up late is UNMEASURED; it could make the cloud arm park on most runs."""
+    for attempt in range(2):
+        if attempt:
+            sleep(RECONCILE_PAUSE)
+        try:
+            pr = gh_api.view_pr_gh(api, rec["pr"], ["state", "mergedAt", "headRefOid", "autoMergeRequest"],
+                                   sdlc_dir=sdlc_dir)
+            if pr.get("state") == "MERGED" or pr.get("mergedAt"):
+                return MERGED, ""
+            if pr.get("state") == "CLOSED":
+                return CLOSED_PR, ""
+            auto = pr.get("autoMergeRequest")
+            if not isinstance(auto, dict):
+                if attempt == 0:
+                    continue
+                return "unconfirmed", "no auto-merge on the PR after the PUT"
+            head = (pr.get("headRefOid") or "").strip()
+            if head != vetted_head:
+                return "unconfirmed", f"armed on {head[:7] or 'no head'}, not the vetted {vetted_head[:7]}"
+            got = str(auto.get("merge_method") or auto.get("mergeMethod") or "")
+            if got.lower() != method.lower():
+                return "unconfirmed", f"armed with {got or 'no method'}, not {method}"
+            return "armed", ""
+        except Exception as exc:            # noqa: BLE001 - an unreadable proof is no proof
+            return "unconfirmed", f"read-back unreadable: {_first_line(exc)}"
+    return "unconfirmed", "no auto-merge on the PR after the PUT"     # unreachable: the loop returns
 
 
 def _auto_merge_allowed(rec, run):
@@ -7485,14 +7614,18 @@ def _emit_monitor_touch(sdlc_dir, config, goal, diff, actionlog):
 MERGE_RECEIPT_SLACK = 600
 
 
-def merge_budget_seconds():
+def merge_budget_seconds(config=None):
     """The merge receipt's deadline, DERIVED at call time from `gate()`/`merge()`'s retry constants (never the
-    documented figure, which drifts): one gate worst case = its UNKNOWN backoff waits + PENDING_ATTEMPTS flat
+    documented figure, which drifts): one gate worst case = its UNKNOWN backoff waits + its flat pending
     re-reads; a merge gates once plus once per BEHIND rebase, each rebase also polling with exponential
     backoff; then the RECONCILE reads and a fixed slack. Capped at the shared MAX_RUN_SECONDS. DERIVED from the
-    constants, not a measurement of any real merge."""
-    one_gate = (sum(UNKNOWN_BACKOFF * 2 ** i for i in range(UNKNOWN_ATTEMPTS - 1))
-                + PENDING_ATTEMPTS * PENDING_INTERVAL)
+    constants, not a measurement of any real merge. `config=None` keeps the constants-only formula; with a
+    config (#2083) the pending re-reads follow `work.merge_pending_wait_s` (at the 7200 s cap: about
+    4 x 7215 + 615 s, ~8.2 h). The cloud arm's one RECONCILE_PAUSE before its second PR read-back needs no
+    term of its own: it and the direct merge's reconcile reads cannot both run in one call, and the
+    RECONCILE_ATTEMPTS x RECONCILE_PAUSE term already counted is larger than that one pause."""
+    rounds, interval = (PENDING_ATTEMPTS, PENDING_INTERVAL) if config is None else pending_wait(config)
+    one_gate = sum(UNKNOWN_BACKOFF * 2 ** i for i in range(UNKNOWN_ATTEMPTS - 1)) + rounds * interval
     behind_poll = sum(min(BEHIND_BACKOFF * 2 ** i, BEHIND_BACKOFF_MAX) for i in range(BEHIND_ATTEMPTS))
     total = (one_gate * (BEHIND_REBASES + 1) + BEHIND_REBASES * behind_poll
              + RECONCILE_ATTEMPTS * RECONCILE_PAUSE + MERGE_RECEIPT_SLACK)
@@ -7515,7 +7648,7 @@ def merge_with_receipt(sdlc_dir, config, goal, **kw):
     run_id = uuid.uuid4().hex
     try:
         _rr.write(path, outcome="running", pid=os.getpid(), started_at=int(time.time()),
-                  timeout_seconds=merge_budget_seconds(), run_id=run_id, run=state.run_identity(),
+                  timeout_seconds=merge_budget_seconds(config), run_id=run_id, run=state.run_identity(),
                   kind="merge", goal=str(goal))
     except OSError as exc:
         print(f"work.py merge: could not write the running receipt ({exc}); `wait-call` will not see "
@@ -7787,9 +7920,11 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     (5xx, timeout, a reply without `merged: true`) is never re-sent: up to RECONCILE_ATTEMPTS REST reads
     (RECONCILE_PAUSE apart) decide -- MERGED lands normally (`(outcome reconciled: ...)` appended), CLOSED
     parks, still OPEN/UNKNOWN returns `merge outcome unknown for PR #N (...)`, which the caller records
-    as `review` (NOT a park: the merge-reconcile pass sweeps awaiting_merge goals). Without GraphQL a
-    still-pending required check is not armed: it parks after gate()'s own bounded wait (no extra wait,
-    so the documented 22.5-minute worst case is unchanged)."""
+    as `review` (NOT a park: the merge-reconcile pass sweeps awaiting_merge goals). #2083: without GraphQL a
+    check still pending after gate()'s configured wait (`work.merge_pending_wait_s`) is armed through the
+    cloud CCR route only when `_cloud_arm_refusal` passes and the repo allows auto-merge, and reported armed
+    only when `_ccr_readback` confirms it; otherwise it parks with `_PENDING_PARK_INSTRUCTION` (no extra
+    wait, so the worst case stays about 4 x the configured wait: 22.5 minutes at the default)."""
     run = run or _run
     # Loaded lazily (see start()'s own comment on why: actionlog.py loads work.py for stem(), so an
     # eager module-level `_load("actionlog")` here would cycle) — once per call, reused below for
@@ -7840,8 +7975,8 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
         if kind == "park":
             return f"PARK: {payload}"
         ok, verdict, final_data = payload
-    # #254: a required check that has not ANSWERED yet, after gate()'s own ~7.5-minute patience
-    # budget (#464), is not a reason to leave a mergeable, review-clean PR unarmed — that is EXACTLY
+    # #254: a required check that has not ANSWERED yet, after gate()'s own patience budget (#464;
+    # `work.merge_pending_wait_s`, ~7.5 minutes by default, #2083), is not a reason to leave a mergeable, review-clean PR unarmed — that is EXACTLY
     # the case `--auto` exists for: GitHub re-checks atomically, and unboundedly, at its OWN merge
     # time, rather than record-time racing a CI run gate()'s fixed budget might lose. gate() already
     # tells this apart from a genuinely FAILING check (#464, PENDING_PREFIX); this is `merge()`
@@ -7925,7 +8060,7 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # pair, and wiring the check to it deadlocks every tier-1 unit symmetrically. Its consumer is
     # #1478. Nothing about `merge()` changed for #1474, and that absence is pinned by a test.
     try:
-        guarded, detail = protection(sdlc_dir, config, goal, run=run)
+        guarded, detail, required_checks = protection_requirements(sdlc_dir, config, goal, run=run)
     except ProtectionUndetermined as exc:
         # #984: could not tell whether the base enforces anything -> stop under BOTH policies, before any
         # arm or merge below. `always` is opt-in to merge where NOTHING is enforced, not where nobody could
@@ -7953,13 +8088,58 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # #1212: arm ONLY when there is a real reason a direct merge would be refused right now (a
     # required check that hasn't answered) AND the repo's own setting actually permits arming.
     # Every other path below prefers landing it directly, immediately, over waiting on an async arm.
-    # #895 slice 4b-1: `--auto` is GraphQL and REST has no auto-merge. Without GraphQL (env/override
-    # only, no probe) the arm cannot happen; gate() has ALREADY spent its bounded REST wait and the
-    # check is still pending, so park -- no extra wait (the worst case is unchanged) and no merge
-    # around a pending required check. Checks that settled inside gate() never reach here.
+    # #895 slice 4b-1: `--auto` is GraphQL and REST has no auto-merge. #2083: without GraphQL (env/override
+    # only, no probe) gate() has ALREADY spent its configured REST wait and the check is still pending. The
+    # arm then goes through the cloud proxy's CCR REST route (UNCONFIRMED live), and only when
+    # `_cloud_arm_refusal` finds every pending check required by the base and GitHub itself BLOCKED, and the
+    # repo allows auto-merge -- cheapest clause first (D-8), so a set that does not qualify never reads
+    # `allow_auto_merge`. Otherwise it parks with the reason and the one instruction landing.md repeats; no
+    # extra wait, and never a merge around a pending check. Checks that settled inside gate() never reach here.
     if pending_arm and not gh_api.graphql_available()["available"]:
-        return (f"PARK: {PENDING_PREFIX} after {PENDING_ATTEMPTS * PENDING_INTERVAL}s and auto-merge cannot "
-                "be armed without GraphQL; re-run work.py merge once they finish")
+        pending_names, not_armable = _cloud_arm_refusal(final_data, required_checks, rec["base"])
+        if not_armable is None and not _auto_merge_allowed(rec, run):
+            not_armable = "the repository does not allow auto-merge"
+        if not_armable is not None:
+            rounds, interval = pending_wait(config)
+            return (f"PARK: {PENDING_PREFIX} after {rounds * interval}s and auto-merge cannot be armed without "
+                    f"GraphQL ({not_armable}); {_PENDING_PARK_INSTRUCTION}")
+        api = _pr_api_run(run, rec["worktree"])     # W3: gh's stderr as `.hint`, so a refusal reads definite
+        put_unknown = ""
+        try:
+            gh_api.arm_auto_merge_ccr(api, rec["pr"], method, vetted_head)
+        except Exception as exc:            # noqa: BLE001 - a refused arm is a park, never a crash
+            if not getattr(exc, "outcome_unknown", True):
+                return f"PARK: could not arm auto-merge on PR #{rec['pr']} via the cloud REST route ({exc})"
+            # It MAY have armed (5xx, timeout): never re-sent, the read-back below decides, so an arm that
+            # took effect is confirmed, reported merged, or disarmed -- never left live under a parked goal.
+            put_unknown = f"PUT outcome unknown ({_first_line(exc)}); "
+        outcome, why = _ccr_readback(api, rec, method, vetted_head, sleep, sdlc_dir)
+        names = ", ".join(pending_names)
+        if outcome == MERGED:
+            # B2: GitHub landed it at once. Deliberately NOT `PR #N merged (`: the merge-reconcile pass owns the
+            # close, so the WARNING reaches the recorded outcome (landing.md routes this to `record review`).
+            return (f"PR #{rec['pr']} merged when auto-merge was armed, before the pending checks ({names}) "
+                    f"answered — WARNING: GitHub did not hold it on them; {gate_detail}")
+        if outcome == CLOSED_PR:
+            return (f"PARK: PR #{rec['pr']} was closed while auto-merge was being armed (not merged); reopen it "
+                    "or merge it by hand")
+        if outcome != "armed":
+            # The ONE disarm call site (W1: keeps the write-surface count stable). Best effort; a failure is
+            # named, and landing.md tells the human to check whether the PR already merged (W2).
+            try:
+                gh_api.disarm_auto_merge_ccr(api, rec["pr"])
+                disarmed = "sent"
+            except Exception as exc:        # noqa: BLE001 - named in the park, never a crash
+                disarmed = f"failed: {_first_line(exc)}"
+            return (f"PARK: auto-merge arm on PR #{rec['pr']} could not be confirmed ({put_unknown}{why}); "
+                    f"disarm {disarmed} — a disarm also removes an auto-merge a human armed on this PR; check "
+                    "the PR's auto-merge by hand")
+        armed_why = (f"auto-merge ({method}) armed on PR #{rec['pr']} via the cloud REST route while required "
+                     "checks were still pending")
+        ledger.safe_append(sdlc_dir, "merge-armed", goal, config=config, pr=rec["pr"], why=armed_why)
+        actionlog.safe_append(sdlc_dir, goal, "merge_armed", pr=rec["pr"])
+        return (f"auto-merge armed on PR #{rec['pr']} via the cloud REST route — required checks still pending "
+                f"({names}), trusting GitHub's own re-check at merge time — {gate_detail}")
     if pending_arm and _auto_merge_allowed(rec, run):
         try:
             run(rec["worktree"], ["gh", "pr", "merge", rec["pr"], "--auto", f"--{method}",
