@@ -7,6 +7,7 @@ approved makes every goal refuse at verify. These checks catch both before the o
 file. `bash -n` never parses a quoted heredoc's body, so the Python the script runs is compiled and
 run on its own here.
 """
+import importlib.util
 import json
 import os
 import pathlib
@@ -60,8 +61,22 @@ def test_verify_skips_exactly_the_files_ci_nightly_skips():
     assert re.findall(r"--ignore=(\S+)", VERIFY) == re.findall(r"--ignore=(\S+)", slow)
     assert len(re.findall(r"--ignore=", VERIFY)) == 6
     assert VERIFY.startswith("python3 -m pytest tests/ ")
-    # `-n auto` takes the worker count the resource guard grants (PYTEST_XDIST_AUTO_NUM_WORKERS).
-    assert " -n auto " in f"{VERIFY} "
+
+
+def test_verify_asks_for_two_workers_and_names_failures():
+    """`-n auto` ran one worker for 2h16m in the first diagnostic verify: this suite's conftest answers it
+    with a quarter of available memory at 2000 MB a worker. A literal `-n N` is what neither that hook nor
+    the guard's cold ring lowers, so the count is spelled the way the guard itself reads it; two, because a
+    re-verify in the same container holds unless the first run's whole peak fits the guard's room. pytest's `-r`
+    replaces its default `fE` and prints in the letters' order; Sigma keeps the last five lines as evidence,
+    so failures come last."""
+    spec = importlib.util.spec_from_file_location(
+        "cloud_setup_resource_verify", ROOT / "skills" / "sigma-loop" / "scripts" / "resource_verify.py")
+    guard = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(guard)
+    assert guard.literal_workers(VERIFY) == 2
+    assert not re.search(r"(?<!\S)(-n|--numprocesses)[ =]?auto\b", VERIFY)
+    assert re.findall(r"(?<!\S)-r(\S+)", VERIFY) == ["sEf"]
 
 
 def test_readme_quotes_the_verify_command_verbatim():

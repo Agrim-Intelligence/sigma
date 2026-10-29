@@ -6,9 +6,11 @@ Sigma never runs it. For your own repository, read it as a worked example of
 [cloud sessions](../../docs/cloud-sessions.md#cloud-environment-setup); its paths, repository and
 verify command are this repository's.
 
-**Status: UNMEASURED in a real container.** Everything below about what the script does comes from its
-code and from `tests/test_cloud_setup_script.py`, which runs it offline with stubbed tools. It has not yet
-run in a `sigma-cloud` session; the first diagnostic session records the result on #2090.
+**Status: measured once in a real container (2026-10-29); no goal has run here yet.** A diagnostic session
+found setup's work in the session: the config below, the environment's verify approval, `python3` with pytest,
+xdist and PyYAML, and git 2.56. Its one verify failed 18 tests (see
+[How long a verify takes](#how-long-a-verify-takes)). Everything else this page says the script does comes from
+its code and from `tests/test_cloud_setup_script.py`, which runs it offline with stubbed tools.
 
 A fresh clone of this repository cannot run the loop by itself: `.sdlc/config.json` is git-ignored
 (`.gitignore` ignores `.sdlc/*` and re-includes plans, research and acceptance records), and so is
@@ -32,12 +34,25 @@ The choices in section 4:
   this repository a run still stops before the merge; see [Merging today](#merging-today).
 - **Verify:** `verify.enforce: true`, `verify.timeout_minutes: 240`, and this command:
 
-  `python3 -m pytest tests/ --ignore=tests/test_readiness_drills.py --ignore=tests/test_readiness_growth_audit.py --ignore=tests/test_b6_463.py --ignore=tests/test_mutation_sample.py --ignore=tests/test_onboarding_control.py --ignore=tests/test_shared_sdlc_paths.py -rs -q -n auto -p no:cacheprovider`
+  `python3 -m pytest tests/ --ignore=tests/test_readiness_drills.py --ignore=tests/test_readiness_growth_audit.py --ignore=tests/test_b6_463.py --ignore=tests/test_mutation_sample.py --ignore=tests/test_onboarding_control.py --ignore=tests/test_shared_sdlc_paths.py -rsEf -q -n 2 -p no:cacheprovider`
 
-  That is the suite minus the six files CI's nightly tier skips (`SLOW` in `.github/workflows/ci.yml`),
-  on the worker count the resource guard grants. A goal's own planned tests still run in full, but no
-  per-goal verify runs those six files: CI's weekly full tier is their only regular check.
-  `tests/test_cloud_setup_script.py` fails when CI's list and this one differ.
+  That is the suite minus the six files CI's nightly tier skips (`SLOW` in `.github/workflows/ci.yml`), on two
+  workers. A goal's own planned tests still run in full, but no per-goal verify runs those six files: CI's weekly
+  full tier is their only regular check. `tests/test_cloud_setup_script.py` fails when CI's list and this one
+  differ.
+  - **`-n 2`, not `-n auto`.** This suite's `tests/conftest.py` answers `-n auto` itself, with a quarter of
+    available memory at 2000 MB per worker. In this container that is one worker, and the resource guard's grant
+    never reaches it. On a container's first verify, a literal count is the only thing neither the conftest nor
+    the guard lowers.
+  - **Two, not three.** A later verify in the same container (after any fix, or a second goal) is admitted at
+    that many workers only if they fit the room the guard leaves; otherwise it holds (see
+    [If a verify holds](#how-long-a-verify-takes)). The room is the smaller of available memory minus 20% of the
+    total, and 60% of the total: about 9.4 GiB here. The guard divides the first verify's peak by its worker
+    count, so the room has to hold that whole peak. One worker's run peaked at 3.9 GiB. Doubling and tripling
+    that gives estimates, not bounds: about 7.8 GiB for two workers, which fits, and about 11.7 GiB for three,
+    which does not. Three is the next step once a two-worker peak is measured.
+  - **`-rsEf`** lists skipped, erroring and failing tests in pytest's summary, failures last. Sigma keeps the
+    last five lines of output as the run's evidence, so the evidence names up to four failing tests.
 - **Model selection:** off, as on the maintainers' laptops: every phase runs on the session's model.
 - **Left at the template's values on purpose:** the budget (a laptop's 500,000-token cap is checked only
   when a goal is picked, so it never stops a `--land` run) and `work.allow_secret_content` (empty; a
@@ -77,11 +92,10 @@ The choices in section 4:
    - `git --version` is 2.46 or newer.
    - `python3 -c 'import pytest, xdist, yaml'` exits 0.
    - From the checkout, `python3 -c 'import json; print(json.load(open(".sdlc/config.json"))["verify"]["command"])'`
-     prints the verify command above. The script assumes that what it writes into the checkout reaches
-     the session, because sessions start from setup's saved result; another repository's environment
-     showed that for its virtualenv and `node_modules` on 2026-10-28. If the file is missing, a session
-     starts from a fresh clone instead (as "Cloud environment setup" in docs/cloud-sessions.md puts it),
-     and this design needs rethinking before any goal runs.
+     prints the verify command above. What setup writes into the checkout reaches the session, because
+     sessions start from setup's saved result: the first diagnostic session confirmed this on 2026-10-29. If
+     the file is ever missing, the session started from a fresh clone instead, and no goal should run until
+     that is understood.
 
 ## Merging today
 
@@ -119,6 +133,8 @@ already names one needs that line set to `null` first.
 
 ## What a run still needs a person for
 
+- A passing verify, today. The 2026-10-29 verify failed 18 tests at `6df8c2b` in this container (see
+  [How long a verify takes](#how-long-a-verify-takes)). Until they are fixed, every goal here stops at verify.
 - The merge itself, unless `work.merge_bypass` is set and works (see [Merging today](#merging-today)).
 - A required check still pending after 450 s parks the merge (#2083). `test` took 3.2 to 5.5 minutes on
   the last twelve PRs, so a slow macOS runner queue can push it over.
@@ -130,10 +146,27 @@ already names one needs that line set to `null` first.
 
 ## How long a verify takes
 
-Not yet measured in the container. CI's nightly runs the same command on a 3-core macOS runner: about 60
-minutes on 2026-10-17, then stopped at its 120-minute limit at about 98% on every run since. The resource
-guard grants 3 workers on a 4-vCPU machine, so expect about 2 hours per verify, inside the 240-minute
-limit; each `sigma:block` fix-up cycle adds another verify. Whether the command passes on `main` is not
-known either: the 2026-10-28 nightly had one failing test by 57% before it was stopped at 98%. The first
-diagnostic session records the real figure, the result, the granted worker count, and whether the
-session's `PATH` holds the same `python3` setup saw, on #2090.
+Measured once, on 2026-10-29 (Sigma 1.0.24, `main` at `6df8c2b`; 4 vCPUs, 15.7 GiB total, 15.2 GiB available).
+The earlier command (`-n auto`, `-rs`) ran on one worker for 2h16m25s, and its run peaked at 3.9 GiB. Two
+workers are not measured yet: at best about 70 minutes (half of 2h16m, assuming perfect scaling). Each
+`sigma:block` fix-up cycle adds another verify.
+
+That verify failed 18 tests. By name they fall into three groups:
+- tests that expect a file to be unreadable (the session runs as root, which can read any file);
+- `flock` tests;
+- tests that kill a timed-out process group.
+
+None is confirmed yet. CI's nightly runs the same suite on a 3-core macOS runner, but it has been stopped at its
+120-minute limit every day since 2026-10-19 (#2099), so it gives no baseline.
+
+**If a verify holds.** When the guard holds a verify, `loop.py verify` exits 5 with no evidence. Here that most
+likely means one of two things:
+- the first two-worker run peaked above about 9.4 GiB;
+- the guard stopped a run because memory ran low. A very fast allocation can meet the kernel's out-of-memory
+  killer before that.
+
+A hold does not last. Each held attempt records `loop.py`'s own small footprint as a verify's cost, and after
+about two of them the guard drops the real measurement as an outlier and admits two workers anyway. From then on
+the shed is the only protection. That is a Sigma bug: a held literal-count verify should record nothing. What a
+`--land` run does after a verify holds is not specified; `docs/configuration.md` says to retry after the stated
+wait. Either way, post the peak on #2090 so the worker count can be revisited.
