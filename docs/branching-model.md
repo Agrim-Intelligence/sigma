@@ -1488,8 +1488,15 @@ unless an operator passes `--yes-enable-merge-queue`. It knows nothing about uni
 
 The model's own check asks a narrower question than people expect: *does protection actually
 REQUIRE anything on this goal's base?* A repo can run CI on every PR while requiring nothing, and
-then a green mergeability status means only that GitHub was never asked to object. A 404 from the
-protection API is reported honestly as **"not protected — nothing is enforced on merge"**.
+then a green mergeability status means only that GitHub was never asked to object. "Not protected —
+nothing is enforced on merge" is reported only when the classic protection API (a 404 `Branch not protected`) and
+the base's rulesets both ANSWERED nothing; a source that could not be read is reported as **"protection could not
+be determined"**, and the merge stops under `protected` and `always` alike. `merge()` asks `merge_rights` first,
+so a READ or TRIAGE token is stopped there and never reaches this check. What does reach it and stops under
+`always` is expected to be a WRITE- or MAINTAIN-level token without admin rights, and any token on a repository whose plan has no
+rulesets, because for them the classic read is not an answer (and on such a plan the rules read is refused too);
+the only lever on such a repository is merging by hand, since a plan limit cannot be fixed by token access. What
+was measured, how narrowly, and what was not, is in `docs/cloud-sessions.md` ("What a stopped `always` costs").
 
 Two consequences worth knowing:
 
@@ -1515,7 +1522,9 @@ Two consequences worth knowing:
   never does — by the point above, on purpose. `merge()` correctly declines to arm ("… merging it is
   yours to make"), and `record done` refuses too — since #232 it refuses on every unmerged PR, so
   the goal is recorded `review` and its issue stays open until the PR is observed merged. A repo running goals inside units needs
-  `auto_merge: "always"` for those goals to merge autonomously; `"protected"` still gates a goal
+  `auto_merge: "always"` for those goals to merge autonomously, and `always` merges there only where protection
+  could be read or nothing is enforced: a base whose protection cannot be read ends at `protection could not be
+  determined` instead (the protection paragraph above says which tokens); `"protected"` still gates a goal
   based directly on the integration branch exactly as before.
 
 ### 13b. Sigma never deletes a `feature/<name>` branch — a hard invariant, not an absence

@@ -491,6 +491,10 @@ def _runner(handlers):
             return HEAD_SHA
         if "remote get-url" in line:
             return REMOTE_URL
+        if re.search(r"/branches/[^ ]+/protection$", line):
+            raise RuntimeError("HTTP 404: Branch not protected")   # #984: both protection reads ANSWER nothing by default
+        if "/rules/branches/" in line:
+            return "[]"
         return ""
 
     run.calls = calls
