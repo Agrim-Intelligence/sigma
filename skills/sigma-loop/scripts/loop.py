@@ -7838,22 +7838,28 @@ _PR_READ_SECONDS = 10       # #2086: the ONE PR read `wait-call` makes after a d
 def _bounded_pr_state(sdlc_dir, rec):
     """`work.pr_landing_state` (ONE REST read of the PR; never GraphQL) cut off after `_PR_READ_SECONDS`, so a
     stalled `gh` cannot hang the very call that exists to report a stall. A cut-off, like any unreadable
-    answer, is `(unknown, why)`. Where there is no SIGALRM (Windows) or this is not the main thread, the read
-    runs unbounded, as every other `pr_landing_state` caller does."""
+    answer, is `(unknown, why)`. The caller's own SIGALRM handler and any timer it had armed are put back
+    (less the time spent). Where there is no SIGALRM (Windows) or this is not the main thread, the read runs
+    unbounded, as every other `pr_landing_state` caller does."""
     def expired(signum, frame):
         raise TimeoutError("the PR read took longer than %ds" % _PR_READ_SECONDS)
     try:
         previous = signal.signal(signal.SIGALRM, expired)
     except (AttributeError, ValueError):
         return work.pr_landing_state(sdlc_dir, rec)
-    signal.setitimer(signal.ITIMER_REAL, _PR_READ_SECONDS)
+    began = time.monotonic()
+    old_delay = signal.setitimer(signal.ITIMER_REAL, _PR_READ_SECONDS)[0]
     try:
-        return work.pr_landing_state(sdlc_dir, rec)
+        try:
+            return work.pr_landing_state(sdlc_dir, rec)
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)          # disarm before anything else can be interrupted
     except TimeoutError as exc:
         return work.UNKNOWN, str(exc)
     finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
-        signal.signal(signal.SIGALRM, previous)
+        signal.signal(signal.SIGALRM, previous if previous is not None else signal.SIG_DFL)
+        if old_delay > 0:
+            signal.setitimer(signal.ITIMER_REAL, max(0.001, old_delay - (time.monotonic() - began)))
 
 
 def _merge_pr_line(sdlc_dir, goal, got):
@@ -7953,7 +7959,10 @@ def _wait_call(argv):
             print("loop.py wait-call: the verify did not complete; it is safe to re-run `loop.py verify` "
                   "(a refusal, exit 6, means one is still holding the lock: wait instead)", file=sys.stderr)
         else:
-            pr_line, recoverable = _merge_pr_line(sdlc_dir, goal, got)
+            try:
+                pr_line, recoverable = _merge_pr_line(sdlc_dir, goal, got)
+            except Exception as exc:           # noqa: BLE001 - the state line is an aid; it never replaces FAILED
+                pr_line, recoverable = f"could not read the PR ({type(exc).__name__}); read it by hand", False
             if pr_line:
                 print(pr_line)
             if recoverable:

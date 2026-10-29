@@ -160,6 +160,32 @@ def test_a_read_that_hangs_is_bounded_and_reads_unknown(tmp_path, monkeypatch, c
     assert code == 1 and "could not read" in out and "agent-start" not in out, (code, out)
 
 
+def test_the_read_restores_the_callers_alarm_handler_and_timer(tmp_path, monkeypatch, capsys):
+    import signal
+    lp, sd, _ = _world(tmp_path, monkeypatch, _open)
+    _gone(sd)
+    mine = lambda signum, frame: None                           # noqa: E731
+    previous = signal.signal(signal.SIGALRM, mine)
+    signal.setitimer(signal.ITIMER_REAL, 600)
+    try:
+        _wc(lp, sd, "merge", "--max-seconds", "1", capsys=capsys)
+        assert signal.getsignal(signal.SIGALRM) is mine, "the caller's handler was not restored"
+        left = signal.getitimer(signal.ITIMER_REAL)[0]
+        assert 500 < left <= 600, "the caller's timer was not re-armed (%r)" % (left,)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def test_a_failure_building_the_line_never_replaces_failed(tmp_path, monkeypatch, capsys):
+    lp, sd, _ = _world(tmp_path, monkeypatch, _open)
+    _gone(sd)
+    monkeypatch.setattr(lp, "_merge_pr_line", lambda *a: (_ for _ in ()).throw(KeyError("x")))
+    code, out, err = _wc(lp, sd, "merge", "--max-seconds", "1", capsys=capsys)
+    assert code == 1 and out.startswith("FAILED not_completed") and "could not read the PR" in out, (code, out)
+    assert "agent-start" not in out
+
+
 def test_the_gestures_use_the_resolved_sdlc_dir_and_absolute_scripts(tmp_path, monkeypatch, capsys):
     lp, sd, _ = _world(tmp_path, monkeypatch, _open)
     _gone(sd)
@@ -234,6 +260,18 @@ def test_a_killed_merge_runner_is_recovered_by_the_documented_gestures(tmp_path)
     (tmp_path / "home").mkdir()
     work_py = ROOT / "skills" / "sigma-loop" / "scripts" / "work.py"
 
+    # the old session registered itself as the agent for this goal; its pid is the runner's, dead after the kill
+    config = tw.state.load_config(sd)
+    marker_path = None
+
+    def register(pid):
+        nonlocal marker_path
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("loop_for_marker", ROOT / "skills" / "sigma-loop" / "scripts" / "loop.py")
+        lp = importlib.util.module_from_spec(spec); spec.loader.exec_module(lp)
+        assert lp.agent_start(sd, goal, pid, config) is True
+        marker_path = lp._agent_marker_path(sd, goal, "main")
+
     # 1. a real merge runner, required check still pending
     out_f, err_f = tmp_path / "merge.out", tmp_path / "merge.err"
     with open(out_f, "w") as so, open(err_f, "w") as se:
@@ -252,6 +290,8 @@ def test_a_killed_merge_runner_is_recovered_by_the_documented_gestures(tmp_path)
                 os.kill(runner.pid, signal.SIGKILL)
             runner.wait()
     assert runner.returncode == -signal.SIGKILL
+    register(runner.pid)                                              # the old session's marker, now naming a dead pid
+    assert marker_path.read_text().split()[0] == str(runner.pid)
     assert not _has(world, "/merge --method PUT"), "the kill must land before any merge"
     receipt = json.loads(_rpath(sd, "merge", goal).read_text())
     assert receipt["outcome"] == "running" and receipt["pid"] == runner.pid, receipt
@@ -275,7 +315,8 @@ def test_a_killed_merge_runner_is_recovered_by_the_documented_gestures(tmp_path)
     assert waited.returncode == 1 and "open and unmerged" in waited.stdout, (waited.stdout, waited.stderr)
     registered = _sh(reg_g, env, tmp_path)
     assert registered.returncode == 0, registered.stderr
-    assert list(pathlib.Path(sd, "state").rglob("*agent*")), "agent-start wrote no marker"
+    assert marker_path.read_text().split()[0].isdigit()
+    assert marker_path.read_text().split()[0] != str(runner.pid), "the dead runner's pid is still the marker"
 
     mw.flag(world, "green")                                            # the pending check has finished
     merged = _sh(merge_g, env, tmp_path)
@@ -288,4 +329,4 @@ def test_a_killed_merge_runner_is_recovered_by_the_documented_gestures(tmp_path)
     final = _sh(wait_g, env, tmp_path)
     assert final.returncode == 0 and "PR #7 merged" in final.stdout, (final.stdout, final.stderr)
     assert len(_has(world, "/merge --method PUT")) == 1
-    assert reads, "the first wait-call read the PR"
+    assert len(reads) >= 1
