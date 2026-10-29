@@ -61,6 +61,15 @@ script for the environment.
 
 ## Everywhere
 
+- **Planned tests for a non-pytest goal (#2084).** A `## Tests` bullet can name a configured runner
+  (`vitest: path > suite > test`), so a UI goal gets red/green proof instead of shipping under `--no-tests`. Configure
+  `tests.runners.<name>` in `.sdlc/config.json` as a command template with `{file}` and `{name}` (or a command plus a
+  `red_pattern`). Green is exit 0. A red is a nonzero exit, confirmed by `red_pattern` when you set one, and otherwise
+  recorded as the weaker `planned-runner-exit-v1`. A runner command runs only under the git-local grant: the
+  environment approval refuses it and names the gesture. It runs in its own process group under the verify timeout,
+  and editing the template voids the recorded red. **Not measured against a real vitest** (a shell stub only), and a
+  `-t` filter that matches nothing can read as green.
+
 - **The project's Python for planned tests (#2079).** See item 4 above. Not measured: a real `uv` build, a real cloud
   container, two processes racing on one worktree, Windows (uv builds are refused there).
 - **Failed goal-branch deletes are announced, leftovers are swept (#1682).** See item 5 above. Each sweep delete is
