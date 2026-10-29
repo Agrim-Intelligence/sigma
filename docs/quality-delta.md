@@ -158,8 +158,8 @@ metrics (PRD-0008 R-02). Host-agnostic: plain Python inside `merge()`, no hook.
 
 **Where it runs.** After verify, the phase record, `gate()` and its BEHIND rebase and the review gate, and only
 when a direct merge or an arm will really happen, so outside `gate()`'s REST wait and on the head the merge
-carries. `auto_merge: off` and an unguarded `protected` merge nothing; there the line says `quality ratchet not
-run (no merge here)` and nothing is measured. Not in `reconcile-merges`, `merge_design` or `record done`.
+carries. `auto_merge: off`, an unguarded `protected` and a base whose protection could not be determined (either policy)
+merge nothing; there the line says `quality ratchet not run (no merge here)` and nothing is measured. Not in `reconcile-merges`, `merge_design` or `record done`.
 
 **Committed mode.** The gate measures with the dirty-worktree rule off: only the committed, pushed head merges,
 and the scratch worktrees are built from committed HEAD anyway, so files a verify run left behind do not make it

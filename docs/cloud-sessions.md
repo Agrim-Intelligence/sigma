@@ -39,11 +39,48 @@ by `tests/test_verify_env_trust_prose.py`), and every verify records in its evid
 
 **What it grants:** `loop.py verify` and `loop.py red` only, in a checkout whose one local `origin` URL names that
 `owner/name`, and only while every command they are about to run is the approved string.
-- A goal whose acceptance record or frontmatter adds its own `verify_command` is refused. In one private backlog
-  that was 34 of 214 acceptance records (16%, counted 2026-10-27); those goals still need the git-local grant.
+- A goal's own `verify_command` (in its acceptance record or its frontmatter) is not covered: the value is the hash
+  of exactly one command, so it can approve the repository's `verify.command` and never a second one as well. In one
+  private backlog that was 34 of 214 acceptance records (16%, counted 2026-10-27). Such a goal need not wait for the
+  git-local grant any more: it can drop its command and verify with the repository's `verify.command` alone (see
+  below).
 - Every other repository command still needs the git-local grant: pipeline checks, `review.command`, a custom
   `knowledge_graph.builder`, `autowatch.drive_cmd`, the backlog embedder, `.sdlc/risk-detect.conf`, the unit and
   upkeep rehearsal, `sigma-rebase`'s verify, and the sealed-acceptance PR gate.
+
+**A goal's own command (#2085).** `acceptance.py record` refuses a `--verify-command` (or a goal-file
+`verify_command:` line) the approval cannot cover, when the approval covers the repository's `verify.command` alone:
+before it builds, posts or writes anything, naming the reason and the fixes. The check reads the process that records,
+so a goal recorded in a shell without the variable is accepted there and refused at verify; `loop.py verify` stays the
+authority. When a record already holds a command, `loop.py verify` and `loop.py red` exit 2 with the reason
+`goal-command` and print the fix first. For a command in the acceptance record, clear it before the goal's first
+verify (`<goal>` is the goal's number or path):
+
+```
+python3 -I <installed-sigma>/skills/sigma-loop/scripts/acceptance.py set-verify-command .sdlc <goal> --clear
+```
+
+- The goal then verifies with the full repository `verify.command` only, and its own command stops running: longer,
+  not weaker, where that command only focused the repository's check. A check the repository's `verify.command`
+  does not prove is not preserved by a clear; it belongs in the operator's route below (fold it into `verify.command`
+  and re-approve that value). `--verify-command <command>` replaces the command instead and runs the same check,
+  so when the approval covers the repository's `verify.command` alone, only a command it covers (the repository's
+  own) is accepted; under any other approval the replace is accepted here and `loop.py verify` decides.
+- It rewrites only the record's one `verify_command` line, atomically, and keeps the goal worktree's copy of the
+  record identical when there is one. A differing or symlinked worktree copy is left alone and the verb prints the
+  `cp` line that replaces it, for the operator or the loop slot that owns that worktree. A rerun that changes nothing
+  checks the copy the same way and never writes it, so a copy a crash left stale is named, not hidden.
+- It refuses once `.sdlc/state/verify/<goal>.json` exists, because that evidence binds the record's exact bytes. The
+  operator's lever: remove that file, rerun the verb, then run `loop.py verify` again.
+- A local goal whose frontmatter declares the command needs that `verify_command:` line deleted first (the verb
+  refuses `--clear` while the file declares one), so for that case the file edit comes before the gesture.
+- A root record that git tracks (this repository commits `.sdlc/acceptance/`) is still rewritten, and the verb prints
+  the one command that clears the now-modified file, which would otherwise make the next `work.py start` in the root
+  checkout refuse: `git -C <root> checkout -- .sdlc/acceptance/<goal>.md`, run by the operator or the loop slot that
+  owns that checkout once the goal's PR carries the change.
+- A rewrite changes the record's sha256. The ledger `acceptance` event keeps the old one (it is not re-paired);
+  verify evidence written afterwards carries the new one.
+- Measured on fixtures only. The run in a real cloud environment is UNMEASURED.
 
 **Identity:** the identity is the `origin` URL's last two path segments, whatever the host. The same `owner/name` on
 another host, a mirror or a local path reads the same, so set the value only in an environment used for that
@@ -53,11 +90,15 @@ repository.
 the branch being verified, and the tests run as that branch wrote them, exactly as under the git-local grant.
 
 **When it refuses**, `loop.py verify` and `loop.py red` exit 2 and say why on stderr, and `/sigma-doctor` names the
-same reason. Neither ever prints the variable's value:
+same reason, except `goal-command`, which it never reports (it checks the repository's own command and knows no goal).
+Neither ever prints the variable's value:
 - `empty`, `malformed`: it must be exactly one 64-character lowercase hex value, with no spaces, no newline and
   no second value.
 - `mismatch`: the command changed, or the goal adds its own. A changed `verify.command` is a hard cutover: every
   container refuses until the operator sets the new value, and a session already running may keep the old one.
+- `goal-command`: the value approves the repository's `verify.command`, and the goal adds its own command. The text
+  leads with the goal's fix (above), then the operator's route: fold the check into `verify.command` and re-approve
+  that value, or the git-local grant after inspecting the project, never an unattended run.
 - `vetoed`: this checkout's git-local `sigma.allowRepositoryShellCommands` is `false` or not a boolean. An
   explicit "no" always wins.
 - `no-identity`: no single local `origin` URL naming `owner/name`, or not a Git worktree. A checkout owned by
@@ -87,6 +128,10 @@ same reason. Neither ever prints the variable's value:
 **Status: UNMEASURED in a real cloud environment.** Neither the clone's `origin` URL shape nor how the panel
 delivers values (trimming, reaching sessions already running) was observed. Every one of those failure modes
 refuses, and the doctor shows the identity it read and the value it expects.
+
+**A worked example:** this repository's own environment, `sigma-cloud`, keeps its setup script and operator
+steps in [`tools/cloud/`](../tools/cloud/README.md) (#2090): what a fresh clone of a repository whose `.sdlc/` is
+git-ignored needs before `/sigma-goal <N> --land` can run there.
 
 ## What the proxy blocks
 
@@ -564,9 +609,20 @@ Three GraphQL reads stood between a cloud session and the REST PUT above. All th
   An unknown extra key is ignored.
 - `protection()`: classic `branches/<base>/protection` UNION `rules/branches/<base>?per_page=100` (rulesets);
   the `nameWithOwner` GraphQL read is gone. Required checks are unioned by context name, reviews take the larger
-  count; each read is independent, so one failing or malformed contributes nothing (never a crash, never an
-  invented requirement). Both unreadable keeps `not protected` (parks under `auto_merge: protected`, WARNING under
-  `always`). A repo that enforces only through rulesets, such as this one (classic is a 404 here; re-read over REST on 2026-10-13: `branches/main/protection` answers 404 "Branch not protected" while `rules/branches/main` lists the pull-request and required-check rules), used to read as
+  count. Each read is independent and ends as one of three things (#984): it REQUIRES something, it ANSWERED
+  nothing (classic: HTTP 404 whose message is exactly `Branch not protected`, or a readable object that requires
+  nothing; rules: a JSON list with no counted requirement), or it is UNREADABLE (any other failure, an empty or
+  non-JSON body, a classic body that is not an object, a rules body that is not a list; an item inside a rules list
+  that is malformed still contributes nothing). A requirement from either source reports `enforces` (the other
+  source failing only undercounts). `not protected -- nothing is enforced` is reported only when BOTH sources
+  answered nothing. Otherwise `protection()` raises `ProtectionUndetermined` (`protection could not be determined
+  ...`, naming the source, its failure kind from `gh_api.classify`, and the lever; a classic 404 that is not the exact
+  `Branch not protected` answer says `read failed (not_found, HTTP 404; not the "Branch not protected" answer)`, so a
+  reworded GitHub body is diagnosable from the line) and `merge()` stops under BOTH
+  `protected` and `always` with the routed `... merging it is yours to make (auto_merge: "<policy>")` ending
+  (`record review`), before any arm or merge call. Which tokens reach that stop under `always`, and what was and
+  was not measured about them, is in "What a stopped `always` costs" below (a READ or TRIAGE token never reaches
+  `protection()`: `merge_rights` stops it first). A repo that enforces only through rulesets, such as this one (classic is a 404 here; re-read over REST on 2026-10-13: `branches/main/protection` answers 404 "Branch not protected" while `rules/branches/main` lists the pull-request and required-check rules), used to read as
   "not protected"; it now reads as enforcing.
 - `post_review`'s comment: `gh_api.comment_pr` = `POST issues/N/comments` (non-idempotent write). ONE
   `gh pr comment` fallback only on a primary rate limit while GraphQL is available, so none in a cloud session.
@@ -590,7 +646,48 @@ What a cloud session still CANNOT enforce or do after this slice (exact, none of
 What `protection()` cannot derive: bypass actors (it counts every listed rule even when this token may bypass it, so it can
 OVER-report "enforces", the same blind spot classic `enforce_admins: false` has; gate() and local verify still apply), `evaluate`-mode rulesets (documented as not listed; UNMEASURED), merge queue, required
 deployments / workflows / signatures / thread resolution, and more than 100 rules (`per_page=100`, no paging; an
-overflowing requirement is missed, which UNDERCOUNTS, the safe direction).
+overflowing requirement is missed, which UNDERCOUNTS, the safe direction). Residual, unchanged by #984: a rules list
+that was READ but not UNDERSTOOD is still an answer of nothing, not an unreadable source. A recognised rule type with
+missing or unparseable parameters contributes nothing, and so do the rule types that are never counted (merge queue,
+required signatures, workflows), so a ruleset-only base can still read `nothing is enforced` while one of those is
+set; and a rules reply of exactly 100 items may be truncated (`per_page=100`, no paging), which undercounts.
+
+What a stopped `always` costs (#984, named): `always` used to merge with a WARNING when a protection read failed; it
+now stops until the token can read both sources.
+
+WHICH TOKENS STOP. `merge()` calls `merge_rights` FIRST: a READ or TRIAGE token ends at `PR #N opened — read access on
+this repo — a maintainer merges` (`triage access` for TRIAGE) and never reaches `protection()`, so it is not affected. What does reach `protection()`
+and stops under `always` is expected to be a WRITE- or MAINTAIN-level token without admin rights, and any token on a repository whose
+plan has no rulesets, because for them the classic read is not an answer (and on such a plan the rules read is refused
+too). A base whose rulesets show a requirement still reads `enforces`.
+
+MEASURED, and no wider than this: (a) reproduced on 2026-10-28 with read-only GETs on a public sample repository, with
+a token whose permissions there were `admin: false, push: false, pull: true`: `GET branches/<b>/protection` answered
+HTTP 404 with the body `{"message":"Not Found",...}` (not `Branch not protected`), `GET
+rules/branches/<b>?per_page=100` answered `200 []`, and `GET branches/<b>` showed `"protected": false`. That shows what
+the endpoints answer to a token without admin rights; that token class is itself stopped earlier, by `merge_rights`.
+(b) Measured once and NOT reproduced, with a write-level token lacking admin rights on two private repositories on a
+plan without rulesets (names deliberately withheld): the classic read answered 404 `Not Found`, the rules read answered
+403 with the text 'Upgrade to GitHub Pro or make this repository public to enable this feature.', and `GET branches/<b>`
+showed `.protected` false. Also MEASURED 2026-10-28: the three classic 404 bodies are told apart by message only
+(`Branch not protected`, `Branch not found`, `Not Found`); `rules/branches/<b>` answers `200 []` for a public repository
+with no rulesets.
+
+UNMEASURED: maintain-level tokens; a write-level token on a plan that has rulesets (expected to read as (b), not seen);
+GitHub Enterprise Server; GitHub App and fine-grained tokens; the rules reply through a cloud session's proxy; the
+private free-plan CLASSIC 403 body (the 404 in (b) is what was seen; `strict_protection`'s docstring in
+`skills/sigma-status/scripts/merge_queue.py` records a 403 on that endpoint from an earlier observation). So how many
+installs `always` now stops on is unknown.
+
+CONSEQUENCE AND LEVER. On a repository whose plan has no rulesets, every PR under `always` now ends at the routed
+stop, and the only lever that works there is merging by hand: a plan limit cannot be fixed by token access. Elsewhere
+the stop-line levers apply: re-run `work.py merge` (a retry merges nothing until protection can be read; it does
+re-enter the gate, so a BEHIND branch can still be rebased and force-pushed, and once protection reads it merges),
+give the token read access to branch protection and rulesets (the line adds, only for a classic 404 that is not the
+answer, that a 404 `Not Found` was the classic answer for every token without admin rights measured), or merge by
+hand. This default is owner-reversible: stopping only under `protected` is a three-line change in `merge()`'s `except
+ProtectionUndetermined` block (return the stop only when the policy is `protected`, otherwise fall through with the
+guarded flag false and the exception text as the detail), after which `always` merges with the WARNING again.
 
 MEASURED locally 2026-10-11 against OWNER/NAME: `GET repos/OWNER/NAME` returns
 `permissions` admin/maintain/push/triage/pull; `rules/branches/main` returns a `pull_request` rule
@@ -746,8 +843,9 @@ session.
 OWNER SMOKE TEST for `--land` (UNMEASURED until run): with `work.enabled: true`, `work.auto_merge: always` and
 `require_review: approval`, start one cloud session on ONE small `sdlc:goal` issue and run `/sigma-goal <N> --land`.
 Expected: the pick claims it, the phases run with no pause, a PR opens, a `sigma:approve` comment is posted, the merge
-lands by REST, the issue closes, and the final message says **merged**. Record what the smoke test above records, plus
-the final message verbatim.
+lands by REST, the issue closes, and the final message says **merged**. Run it on a repository where the token can read
+branch protection and rulesets; on one where it cannot, expect a parked `could not be determined` ending instead (the
+`protection()` note above). Record what the smoke test above records, plus the final message verbatim.
 
 What is still open is in "What remains (#895 slice 7)" below.
 

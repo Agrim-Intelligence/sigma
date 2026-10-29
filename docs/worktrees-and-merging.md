@@ -75,15 +75,17 @@ human-intervention path.
 |---|---|
 | `"off"` | **Default.** Never merges; always leaves the PR. |
 | `"protected"` | Merges only where the base branch genuinely **requires** checks or reviews — delegating the gate to GitHub. On an unprotected branch it opens the PR and says why it stopped. |
-| `"always"` | Merges whenever clean+safe, protected or not, and says plainly that local verify was the only gate. |
+| `"always"` | Merges whenever clean+safe, protected or not, and says plainly that local verify was the only gate. It still stops, like `"protected"`, when protection **could not be determined** (a source could not be read), because "nothing is enforced" is only claimed when both the classic API and the rulesets answered nothing. A READ or TRIAGE token is stopped earlier, by the merge-rights check, and never reaches this one. What stops here is a WRITE- or MAINTAIN-level token without admin rights, and any token on a repository whose plan has no rulesets, because for them the classic read is not an answer; on a repository with no rulesets the only lever is merging by hand. What was measured, and how narrowly, is in [cloud-sessions](cloud-sessions.md) ("What a stopped `always` costs"). |
 
 Legacy booleans still parse (`false`→off, `true`→always).
 
 The point is autonomy proportional to the guardrails that exist — because **`CLEAN` is only worth what
 your branch protection is worth.** A repo can run CI on every PR and *require* none of it, in which
 case GitHub reports `CLEAN` simply because it was never asked to object. So the question asked is
-`repos/{owner}/{repo}/branches/{base}/protection` — a 404 means nothing is enforced — and **not**
-whether a check happened to run.
+`repos/{owner}/{repo}/branches/{base}/protection`, together with the base's rulesets
+(`rules/branches/{base}`), and **not** whether a check happened to run. "Nothing is enforced" is reported only
+when both answered nothing (a classic 404 `Branch not protected` and a rules list with no requirement); if either
+could not be read and the other shows no requirement, the line says `protection could not be determined` and names the lever (a retry of `work.py merge` merges nothing until protection can be read).
 
 Then it lands the PR directly over REST (`PUT pulls/N/merge`, carrying the vetted head sha; `gh pr merge` is only a fallback on a primary rate limit). GitHub's own `--auto` is armed only when a required
 check has not answered yet (and the repository allows auto-merge); anything else parks with the reason.

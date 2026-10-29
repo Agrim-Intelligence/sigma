@@ -5,6 +5,8 @@
 - The operator gesture in docs/cloud-sessions.md, run exactly as written from a repository root that plants
   `json.py` and `hashlib.py`, prints the approval value and imports nothing from that repository.
 - Only the verify path asks the new decision: a fourth caller would widen what the environment value grants.
+  #2085 adds the one record-time caller, `acceptance.py`, through `goal_command_conflict`, which can only REFUSE:
+  the regex below names it, and `acceptance.py` never calls the deciding functions itself.
 
 DOCUMENTED INVOCATION: python -m pytest tests/test_verify_env_trust_prose.py
 """
@@ -21,7 +23,10 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 NAME = "SIGMA_TRUSTED_VERIFY_SHA256"
 SECTION = "## Cloud environment setup"
 CALLERS = {"skills/sigma-loop/scripts/loop.py", "skills/sigma-doctor/scripts/doctor.py",
-           "skills/sigma-init/scripts/init_flow.py"}
+           "skills/sigma-init/scripts/init_flow.py", "skills/sigma-loop/scripts/acceptance.py"}
+#: Without `goal_command_conflict` here the scan is BLIND to the record-time caller, so a fifth one would pass.
+ASKS = re.compile(r"\b(verify_decision|environment_approval|goal_command_conflict)\(")
+DECIDES = re.compile(r"\b(verify_decision|environment_approval)\(")
 
 
 def _agent_prose():
@@ -88,8 +93,19 @@ def test_the_cloud_setup_section_says_operator_only_and_unmeasured():
     assert "never an agent" in body and "UNMEASURED" in body and "repository-sourced" in body
 
 
+def _callers(root):
+    return {str(p.relative_to(root)) for p in (root / "skills").rglob("*.py")
+            if p.name != "shell_policy.py" and ASKS.search(p.read_text(encoding="utf-8"))}
+
+
 def test_only_the_verify_path_asks_the_environment_approval():
-    pattern = re.compile(r"\b(verify_decision|environment_approval)\(")
-    callers = {str(p.relative_to(ROOT)) for p in (ROOT / "skills").rglob("*.py")
-               if p.name != "shell_policy.py" and pattern.search(p.read_text(encoding="utf-8"))}
-    assert callers == CALLERS
+    assert _callers(ROOT) == CALLERS
+    # the record-time caller only refuses: it never reaches the deciding functions, so it can grant nothing
+    assert not DECIDES.search((ROOT / "skills/sigma-loop/scripts/acceptance.py").read_text(encoding="utf-8"))
+
+
+def test_control_the_ratchet_sees_the_record_time_helper(tmp_path):
+    planted = tmp_path / "skills" / "x" / "scripts" / "planted.py"
+    planted.parent.mkdir(parents=True)
+    planted.write_text("import shell_policy\nshell_policy.goal_command_conflict(1, 2, 3)\n")
+    assert _callers(tmp_path) == {"skills/x/scripts/planted.py"}

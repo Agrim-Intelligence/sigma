@@ -18,6 +18,12 @@ environment value; `repository_shell_commands_allowed` never reads the environme
 so no other repository command is ever granted by it.  Sigma cannot tell whether a
 person or an agent exported the value: it belongs in the environment's own settings
 (docs/cloud-sessions.md), and every doubt below is a refusal.
+
+#2085 adds one more reason, `goal-command`, to `verify_decision`: the approval covers the repository's own
+`verify.command` and the goal adds a command of its own, which one approval value can never cover. It only changes
+which refusal is named. `goal_command_conflict` is the same question asked once at RECORD time
+(`acceptance.py record`); it can only REFUSE, never grant, and fails open on every doubt, because verify time
+stays the authority.
 """
 
 import collections
@@ -87,10 +93,12 @@ def repository_shell_commands_allowed(path):
     return result.returncode == 0 and result.stdout.strip().lower() == "true"
 
 
+_HEAD = "REFUSED: repository-configured shell command requires explicit operator trust"
+
+
 def refusal_message():
     """One public recovery gesture, kept out of repository-controlled data."""
-    return ("REFUSED: repository-configured shell command requires explicit operator trust; "
-            "run `git -C <trusted-project> config --local "
+    return (_HEAD + "; run `git -C <trusted-project> config --local "
             "sigma.allowRepositoryShellCommands true` after inspecting the project")
 
 
@@ -278,12 +286,33 @@ def environment_approval(path, commands, environ=None, roots=()):
         return "error", None
 
 
-def verify_decision(path, commands, environ=None, roots=()):
+def _covers_repository_alone(identity, repository_commands, environ):
+    """Whether the environment value approves every one of ``repository_commands`` in ``identity`` (and there is
+    at least one). Pure hashing, no git call. Any doubt is False, which leaves the reason `mismatch`."""
+    try:
+        env = os.environ if environ is None else environ
+        value = env.get(TRUSTED_VERIFY_ENV)
+        repository_commands = list(repository_commands or ())
+        return bool(repository_commands) and all(
+            approval_value(identity, c) == value for c in repository_commands)
+    except Exception:                        # noqa: BLE001 - any doubt keeps the generic reason
+        return False
+
+
+def verify_decision(path, commands, environ=None, roots=(), *, repository_commands=()):
     """Who grants the verify path to run ``commands`` in ``path``: Decision(source, reason, detail), source
-    "git-local", "environment" or None (refused). Evaluated once; the refusal is built from the same Decision."""
+    "git-local", "environment" or None (refused). Evaluated once; the refusal is built from the same Decision.
+
+    ``repository_commands`` (#2085) are the commands the repository itself declares. They change only the NAME of a
+    refusal: a `mismatch` where the value approves every one of them becomes `goal-command`, because then the
+    command that voids the approval is the goal's own. Whenever that reason comes back, some command in
+    ``commands`` is outside ``repository_commands`` (a mismatch means one command hashes to something else, and
+    every repository command hashes to the value), so no separate "the goal added a command" test is needed here."""
     if repository_shell_commands_allowed(path):
         return Decision("git-local", "git-local", None)
     reason, detail = environment_approval(path, commands, environ, roots)
+    if reason == "mismatch" and _covers_repository_alone(detail, repository_commands, environ):
+        reason = "goal-command"
     return Decision("environment" if reason == "match" else None, reason, detail)
 
 
@@ -300,9 +329,32 @@ _CLAUSES = {
 }
 
 
-def verify_refusal_message(decision):
+DEFAULT_GOAL_REMEDY = "remove the goal's own verify_command"
+
+
+def goal_command_text(identity, remedy):
+    """THE text of the `goal-command` refusal, built once for both askers: `verify_refusal_message` (verify and
+    red) and `goal_command_conflict` (record time). The goal's own fix comes first, ahead of the git-local route,
+    because the operator route is not for an unattended run and the goal's fix is. Never the variable's value."""
+    return ("%s is not used: it approves only this repository's verify.command, and this goal adds its own "
+            "command, so it does not approve every command about to run in %s (one approval value can never "
+            "cover two commands). 1. %s (the goal's own command then stops running, and the goal is verified by the "
+            "repository's verify.command alone: longer, not weaker, where the goal's command only focused it; a check "
+            "the repository's verify.command does not prove belongs in option 2, folded into verify.command). "
+            "2. The operator folds the check into "
+            "verify.command and re-approves that value, or runs `git -C <trusted-project> config --local %s true` "
+            "after inspecting the project (never an unattended run); only the operator sets %s, in the "
+            "environment's own settings" % (
+                TRUSTED_VERIFY_ENV, json.dumps(str(identity)), remedy or DEFAULT_GOAL_REMEDY, _KEY,
+                TRUSTED_VERIFY_ENV))
+
+
+def verify_refusal_message(decision, goal_remedy=None):
     """refusal_message(), plus one clause naming why the environment value did not grant; unchanged when it is
-    unset. Never the variable's value, and never the value to set."""
+    unset. Never the variable's value, and never the value to set. For `goal-command` the text leads with
+    ``goal_remedy`` (the caller knows where the goal's command lives) rather than with the git-local route."""
+    if decision.reason == "goal-command":
+        return "%s; %s" % (_HEAD, goal_command_text(decision.detail, goal_remedy))
     clause = _CLAUSES.get(decision.reason)
     if clause is None:
         return refusal_message()
@@ -310,3 +362,27 @@ def verify_refusal_message(decision):
         clause %= (json.dumps(str(decision.detail)),)
     return "%s; %s is not used: %s; only the operator sets it, in the environment's own settings" % (
         refusal_message(), TRUSTED_VERIFY_ENV, clause)
+
+
+def goal_command_conflict(path, commands, repository_commands, environ=None, remedy=None):
+    """Record time (#2085): the `goal-command` refusal text if recording ``commands`` would make verify refuse for
+    that reason, else None. REFUSAL-ONLY and total: a granted decision, any other reason and every exception
+    return None, so it can never grant a command and never wedge `record` (verify stays the authority).
+
+    Cheap before it is exact: nothing spawns unless the variable is a well-formed value AND the repository declares
+    a command AND the goal adds one outside it, so an environment without the approval pays no git call."""
+    try:
+        env = os.environ if environ is None else environ
+        value = env.get(TRUSTED_VERIFY_ENV)
+        if not isinstance(value, str) or not _VALUE.fullmatch(value):
+            return None
+        if not repository_commands:
+            return None
+        if all(c in repository_commands for c in commands):
+            return None
+        decision = verify_decision(path, commands, env, repository_commands=repository_commands)
+        if decision.reason != "goal-command":
+            return None
+        return "verify_command not recorded: " + goal_command_text(decision.detail, remedy)
+    except Exception:                        # noqa: BLE001 - fail open: verify time decides
+        return None

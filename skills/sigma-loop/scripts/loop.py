@@ -6566,6 +6566,43 @@ _VERIFY_SET_HINT = state.verify_set_hint()
 _declared_verify_command = state.declared_verify_command
 
 
+def _goal_command_remedy(sdlc_dir, goal):
+    """#2085, AC-3: the first fix the verify/red trust refusal names when the goal's OWN `verify_command` is what the
+    environment approval does not cover, or None when neither the acceptance record nor the goal file holds one (the
+    generic remedy then stands). Where the command lives decides the fix:
+      * the record holds it: the clear gesture, exactly as it must be typed (this interpreter, `-I`, the sibling
+        script), valid only until the goal's first verify (a verify writes evidence, and the evidence binds the
+        record's bytes);
+      * a local goal's frontmatter declares it: the file edit comes first, because a record clear alone would not
+        clear it (the verb refuses that), then the gesture if the record also holds one. So AC-3's "the clear
+        command is the first remedy" holds for the record-held case, and the file edit leads for a command the
+        goal file declares."""
+    import shlex
+    try:
+        recorded = state.acceptance_module().read(sdlc_dir, goal)["verify_command"]
+    except (OSError, ValueError):
+        recorded = None
+    declared = state.goal_file_verify_command(goal)
+    edit = f"edit the goal file {goal}: delete its `verify_command:` line"
+    clear = "run `" + shlex.join([sys.executable or "python3", "-I", str(_HERE / "acceptance.py"),
+                                  "set-verify-command", str(sdlc_dir), str(goal), "--clear"]) + \
+            "` before the goal's first verify"
+    if recorded and declared:
+        return f"{edit}, then {clear}"
+    if recorded:
+        return clear
+    if declared:
+        return edit
+    return None
+
+
+def _verify_trust_text(trust, sdlc_dir, goal):
+    """The refusal text `verify` and `red` print for a trust Decision: the shared message, led by the goal's own
+    remedy only for the `goal-command` reason (no work is done for any other)."""
+    remedy = _goal_command_remedy(sdlc_dir, goal) if trust.reason == "goal-command" else None
+    return shell_policy.verify_refusal_message(trust, remedy)
+
+
 #: #1650: a verify's running receipt deadline is `started_at + VERIFY_RECEIPT_SECONDS + grace`. A CHOSEN bound
 #: (about 4.6x the longest verify seen, 52 min), not a measured one; verify itself gains no timeout here.
 VERIFY_RECEIPT_SECONDS = 14400
@@ -6697,12 +6734,15 @@ def red_goal(sdlc_dir, goal):
     root, _, _ = _verified_tree(sdlc_dir, stem)
     # #2066: the same decision `verify` asks, with the same declared commands; an unreadable declaration grants nothing.
     try:
-        commands = state.declared_verify_commands(goal, state.load_config(sdlc_dir), sdlc_dir)
+        config = state.load_config(sdlc_dir)
+        commands = state.declared_verify_commands(goal, config, sdlc_dir)
+        repository_commands = state.repository_verify_commands(config)
     except Exception:                        # noqa: BLE001 - the environment approval then reads it as an error
-        commands = None
-    trust = shell_policy.verify_decision(root, commands, roots=(pathlib.Path(sdlc_dir).resolve().parent,))
+        commands, repository_commands = None, ()
+    trust = shell_policy.verify_decision(root, commands, roots=(pathlib.Path(sdlc_dir).resolve().parent,),
+                                         repository_commands=repository_commands)
     if trust.source is None:
-        print("loop.py red: " + shell_policy.verify_refusal_message(trust), file=sys.stderr)
+        print("loop.py red: " + _verify_trust_text(trust, sdlc_dir, goal), file=sys.stderr)
         return 2
     try:
         plan = work.verification_plan(sdlc_dir, stem, root)
@@ -6845,9 +6885,10 @@ def _verify_goal_body(sdlc_dir, goal, guard):
               f"({root}) at {head or 'unknown HEAD'}, NOT a goal worktree. If that checkout is "
               f"stale, this result is about the wrong code.", file=sys.stderr)
     # #2066: the git-local grant, or an operator's environment approval of exactly these commands in this repository.
-    trust = shell_policy.verify_decision(root, commands, roots=(pathlib.Path(sdlc_dir).resolve().parent,))
+    trust = shell_policy.verify_decision(root, commands, roots=(pathlib.Path(sdlc_dir).resolve().parent,),
+                                         repository_commands=state.repository_verify_commands(config))
     if trust.source is None:
-        print("loop.py verify: " + shell_policy.verify_refusal_message(trust), file=sys.stderr)
+        print("loop.py verify: " + _verify_trust_text(trust, sdlc_dir, goal), file=sys.stderr)
         ledger.safe_append(sdlc_dir, "verify", goal, config=config, stream=ledger.EVENTS, exit=2)
         actionlog.safe_append(sdlc_dir, goal, "verify_run", exit=2)
         return 2

@@ -715,7 +715,11 @@ def test_verify_refuses_an_acceptance_record_that_adds_its_own_command(tmp_path,
     monkeypatch.setenv(ENV, policy.approval_value(IDENTITY, command))
     assert _mod("loop").verify_goal(sdlc, "0001") == 2
     assert not ran.exists() and not extra.exists()
-    assert "does not approve every command" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "does not approve every command" in err
+    # #2085: the goal's own command caused it, so the clear gesture is the FIRST remedy, ahead of the git-local route
+    assert "set-verify-command" in err and "--clear" in err
+    assert 0 <= err.find("set-verify-command") < err.find("git -C"), err
 
 
 def test_verify_refuses_a_local_goal_whose_frontmatter_replaces_the_command(tmp_path, monkeypatch, capsys):
@@ -728,7 +732,11 @@ def test_verify_refuses_a_local_goal_whose_frontmatter_replaces_the_command(tmp_
     monkeypatch.setenv(ENV, policy.approval_value(IDENTITY, command))
     assert _mod("loop").verify_goal(sdlc, goal) == 2
     assert not ran.exists() and not other.exists()
-    assert "does not approve every command" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "does not approve every command" in err
+    # #2085: no acceptance record exists, so the verb has nothing to clear; the file edit is the remedy, first
+    assert "set-verify-command" not in err
+    assert 0 <= err.find("`verify_command:`") < err.find("git -C"), err
 
 
 def test_verify_refusal_with_the_variable_unset_is_the_shared_text(tmp_path, capsys):

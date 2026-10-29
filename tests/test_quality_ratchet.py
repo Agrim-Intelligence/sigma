@@ -371,6 +371,10 @@ def _runner(handlers):
             return prfake.rest_merged()
         if "remote get-url" in line:
             return "https://github.com/acme/app.git"
+        if "/branches/" in line and line.endswith("/protection"):
+            raise RuntimeError("HTTP 404: Branch not protected")   # #984: both protection reads ANSWER nothing by default
+        if "/rules/branches/" in line:
+            return "[]"
         return ""
     run.calls = calls
     return run
@@ -416,6 +420,21 @@ def test_merge_ratchet_off_or_skipped_loads_nothing_and_says_so(tmp_path, monkey
     assert out.endswith('merging it is yours to make (auto_merge: "protected")')
     out, run, loads = _merge(tmp_path / "plain-off", monkeypatch, off, FakeQD())
     assert "quality ratchet" not in out, "with the gate off the line is exactly as before"
+
+
+def test_an_undetermined_base_stops_before_the_ratchet_under_both_policies(tmp_path, monkeypatch):
+    """#984: `protection could not be determined` is a no-merge outcome under `always` too, so the ratchet (which
+    measures only before a merge or arm that will really happen) is not loaded and the line says so."""
+    for name, config in (("always", dict(ALWAYS, **GATE_ON)), ("protected", dict(GUARDED, **GATE_ON))):
+        d = _sdlc(tmp_path / name, config)
+        goal = _started(d)
+        loads = []
+        monkeypatch.setattr(work, "_quality_delta", lambda: loads.append(1) or FakeQD())
+        run = _runner(_merge_handlers()[:-1] + [("branches/main/protection", RuntimeError("HTTP 403"))])
+        out = work.merge(d, config, goal, run=run, sleep=NOSLEEP)
+        assert loads == [] and not prfake.merge_calls(run.calls), (name, out)
+        assert "protection could not be determined" in out and "quality ratchet not run (no merge here)" in out, out
+        assert out.endswith(f'merging it is yours to make (auto_merge: "{name}")'), out
 
 
 def _calls_of(tree, name):

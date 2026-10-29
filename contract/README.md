@@ -98,7 +98,11 @@ Run `python3 skills/sigma-loop/scripts/acceptance.py record .sdlc <goal>` before
 a draft file with that section and adds `--draft <file>`; for a GitHub goal the capture posts
 the draft back as a comment before publishing the local record. `--verify-command` optionally
 records a project-trusted proving command; local frontmatter is inherited when omitted.
-Never put credentials in a command or criterion. Existing records are returned unchanged.
+Never put credentials in a command or criterion. `record` never rewrites an existing record; it returns it
+unchanged. The one exception is `acceptance.py set-verify-command .sdlc <goal> (--verify-command CMD | --clear)`
+(#2085): it rewrites the single `verify_command` line, atomically, only while no verify evidence exists for the
+goal, the record format and version unchanged. It changes the record's sha256, which the ledger `acceptance`
+event does not follow.
 
 Each statement is at most 1024 characters and the whole UTF-8 file at most 32 KiB, including
 frontmatter. `kind` is `"acceptance"`, `goal` is the filename stem, and `verify_command` is null
@@ -107,7 +111,8 @@ criteria (no `## Done when` in the source) and `false` when they were copied fro
 records written before 1.4.0 have no `drafted` line, stay valid, and read as unknown.
 Values in the flat frontmatter are JSON literals. See
 `golden/acceptance/42.md`; validate with `python3 contract/validate.py contract/golden/acceptance/42.md`.
-The writer uses atomic create-only hard links; a filesystem without that support refuses.
+`record` uses atomic create-only hard links; a filesystem without that support refuses. `set-verify-command`
+uses an atomic same-directory replace.
 Retry the same capture after an outage or crash. Draft-comment retries first check the complete
 comment for an identical marker and body; concurrent captures or an ambiguous acknowledgement
 inside the source's bounded retry can still produce duplicate comments. The record remains unique.

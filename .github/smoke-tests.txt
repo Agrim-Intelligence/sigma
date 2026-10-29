@@ -18,3 +18,4 @@ tests/test_skill_frontmatter_yaml.py
 tests/test_ci_matrix.py
 tests/test_regression_ci.py
 tests/test_launch_ci_cells.py
+tests/test_cloud_setup_script.py

@@ -4675,14 +4675,21 @@ def merge_rights(sdlc_dir, config, goal, run=None):
 def _ruleset_requirements(text):
     """(contexts, reviews) a `GET rules/branches/<base>` reply REQUIRES: `required_status_checks` rules'
     non-empty-string `context`s and the largest `pull_request` `required_approving_review_count` (int >= 0,
-    never a bool). Anything else -- non-JSON, a non-list, non-dict items, missing keys, bad types --
-    contributes nothing: it never raises and never invents a requirement."""
-    contexts, reviews = set(), 0
+    never a bool). A reply that is not a JSON LIST (empty, `null`, an object, a number, text) is not an
+    answer and RAISES ValueError (#984: `protection()` reports it as unreadable, never as "no rules").
+    Inside a list, anything malformed -- non-dict items, missing keys, bad types -- contributes nothing:
+    it never raises and never invents a requirement."""
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("the reply was empty")
     try:
-        rules = json.loads(text or "null")
+        rules = json.loads(text)
     except ValueError:
-        return contexts, reviews
-    for rule in rules if isinstance(rules, list) else ():
+        raise ValueError("the reply was not JSON") from None
+    if not isinstance(rules, list):
+        raise ValueError("the reply was not a JSON list")
+    contexts, reviews = set(), 0
+    for rule in rules:
         params = rule.get("parameters") if isinstance(rule, dict) else None
         if not isinstance(params, dict):
             continue
@@ -4696,59 +4703,162 @@ def _ruleset_requirements(text):
     return contexts, reviews
 
 
-def protection(sdlc_dir, config, goal, run=None):
-    """(enforces_something, detail) — does branch protection actually REQUIRE anything on the base?
+class ProtectionUndetermined(Exception):
+    """`protection()` could not tell whether the base enforces anything (#984): a source it needs could not
+    be read and the other found no requirement. `str(exc)` is the stop line's detail and begins
+    `protection could not be determined`. A RAISE and not a falsy return, on purpose: `merge()` is the one
+    caller, and a `(False, ...)` first element is what the `always` policy merges on with a WARNING, so a
+    tri-state value would let a future `if not guarded` fail OPEN; an exception cannot be forgotten (the
+    shape `_viewer_permission` -> `merge_rights` already has)."""
 
-    The distinction the first version of this file got wrong: it asked whether a check had RUN, but
-    a repo can run CI on every PR while requiring nothing, and then `mergeStateStatus: CLEAN` means
-    only that GitHub was never asked to object. A 404 from the protection API is the honest signal
-    that nothing but this loop's own verify stands between the branch and the base.
 
-    #895 4b-2: all REST, no `nameWithOwner` GraphQL read. UNION of classic protection (`branches/<b>/protection`)
-    and rulesets (`rules/branches/<b>`): checks by context name, reviews = the larger count. Each read is
-    independent -- one failing or malformed contributes nothing, never a crash or an invented requirement.
-    NOT derivable: bypass actors (every listed rule is counted even if this token may bypass it, so this can
-    OVER-report "enforces"; gate() and local verify still apply),
-    `evaluate`-mode rulesets (UNMEASURED; the endpoint is documented to list active rules only), merge queue,
-    required deployments / workflows / signatures / thread resolution (never counted). CEILING: `per_page=100`, no paging --
-    past 100 rules an overflowing requirement is missed, which UNDERCOUNTS (the safe direction: the caller
-    then parks or warns, it never merges on a requirement it could not see)."""
-    run = run or _run
-    rec = _record(sdlc_dir, goal)
-    base = rec["base"]
-    classic_ok, checks, reviews = False, set(), 0
+#: The one classic 404 body that is an ANSWER -- "the branch exists and has no classic protection" -- as
+#: `_pr_api_run` leaves it in `.hint`: `gh: Branch not protected (HTTP 404) -- fix: ...`, or the
+#: `HTTP 404: Branch not protected` a test runner raises. The same status carries two other bodies that are
+#: NOT answers: `Branch not found` (the branch is absent on the remote) and `Not Found` (the repository is
+#: absent or invisible to this token). Matched on the whole message so the appended fix text cannot decide.
+_CLASSIC_UNPROTECTED = re.compile(r"(?:gh: |HTTP \d{3}: )?Branch not protected(?: \(HTTP \d{3}\))?(?: -- .*)?", re.S)
+#: What the stop line says for a classic 404 that is NOT that answer. A FIXED phrase (never the failure text):
+#: if GitHub ever rewords the `Branch not protected` body, the operator reads why a base that used to read "not
+#: protected" now reads "could not be determined", instead of a bare `read failed (not_found, HTTP 404)`.
+_CLASSIC_404_NOT_THE_ANSWER = 'read failed (not_found, HTTP 404; not the "Branch not protected" answer)'
+
+
+def _failed_read(status, kind):
+    """`read failed (kind[, HTTP n])` from `gh_api.classify` -- never the exception text, so a token or a URL
+    in a failure message cannot reach the stop line."""
+    return f"read failed ({kind}{f', HTTP {status}' if status else ''})"
+
+
+def _read_classic(api, base):
+    """(checks, reviews, state, why) for `GET branches/<base>/protection`. `state` is "object" (a readable
+    protection object, whatever it requires), "none" (HTTP 404 whose message is exactly `Branch not
+    protected`: GitHub ANSWERED that there is none) or "unreadable" (`why` says how). Every other failure --
+    another 404, 403, 5xx, a transport error -- and an empty, non-JSON or non-object body is unreadable: the
+    caller must not read an unanswered question as "nothing is enforced". A 404 that is not the exact answer
+    says so in `why` (`_CLASSIC_404_NOT_THE_ANSWER`), so a reworded GitHub body is diagnosable from the stop line."""
     try:
-        data = json.loads(run(rec["worktree"], ["gh", "api",
-                                                f"repos/{{owner}}/{{repo}}/branches/{base}/protection"]) or "{}")
-        # Code-review audit (#254 finding 1): `data` is only guaranteed a dict on the happy path --
-        # valid-but-non-object JSON (`null`, `[]`, `42`) would otherwise make `.get()` raise
-        # AttributeError OUTSIDE this try/except, the same shape done_refusal() had to guard
-        # against. Folded inside the try here instead (merge_rights()'s own existing precedent for
-        # its `pr_data.get(...)`), so any such reply collapses into the same except below as every
-        # other unreadable-response case.
+        text = api(["api", f"repos/{{owner}}/{{repo}}/branches/{base}/protection"])
+    except Exception as exc:                # noqa: BLE001 - classified (and reported) below, never swallowed
+        status, kind = gh_api.classify(exc)
+        if status == 404 and _CLASSIC_UNPROTECTED.fullmatch(str(getattr(exc, "hint", None) or exc).strip()):
+            return set(), 0, "none", ""
+        if status == 404:
+            return set(), 0, "unreadable", _CLASSIC_404_NOT_THE_ANSWER
+        return set(), 0, "unreadable", _failed_read(status, kind)
+    text = (text or "").strip()
+    if not text:
+        return set(), 0, "unreadable", "the reply was empty"
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return set(), 0, "unreadable", "the reply was not JSON"
+    if not isinstance(data, dict):
+        return set(), 0, "unreadable", "the reply was not a JSON object"
+    try:
         required = data.get("required_status_checks") or {}
         listed = required.get("contexts") or required.get("checks") or []
         checks = {c if isinstance(c, str) else c.get("context") for c in listed
                   if isinstance(c, str) or isinstance(c, dict)}
         checks -= {None, ""}
         n = (data.get("required_pull_request_reviews") or {}).get("required_approving_review_count")
-        reviews = n if isinstance(n, int) and not isinstance(n, bool) and n > 0 else 0
-        classic_ok = True
-    except Exception:                       # noqa: BLE001 - 404 "Branch not protected" is the common case
-        pass
+    except (AttributeError, TypeError):
+        return set(), 0, "unreadable", "the reply was not a protection object"
+    return checks, (n if isinstance(n, int) and not isinstance(n, bool) and n > 0 else 0), "object", ""
+
+
+def _read_rules(api, base):
+    """(checks, reviews, ok, why) for `GET rules/branches/<base>?per_page=100`. `ok` is True only for a JSON
+    LIST (an empty one is the answer "no rulesets apply"); a failed read or any other body is not ok."""
     try:
-        rule_checks, rule_reviews = _ruleset_requirements(run(rec["worktree"], [
-            "gh", "api", f"repos/{{owner}}/{{repo}}/rules/branches/{urllib.parse.quote(base, safe='')}?per_page=100"]))
-        checks, reviews = checks | rule_checks, max(reviews, rule_reviews)
-    except Exception:                       # noqa: BLE001 - an unreadable rules list contributes nothing
-        pass
+        text = api(["api", f"repos/{{owner}}/{{repo}}/rules/branches/{urllib.parse.quote(base, safe='')}?per_page=100"])
+    except Exception as exc:                # noqa: BLE001 - reported by the caller, never swallowed
+        return set(), 0, False, _failed_read(*gh_api.classify(exc))
+    try:
+        checks, reviews = _ruleset_requirements(text)
+    except ValueError as exc:
+        return set(), 0, False, str(exc)
+    return checks, reviews, True, ""
+
+
+def protection(sdlc_dir, config, goal, run=None):
+    """(enforces_something, detail) -- does branch protection actually REQUIRE anything on the base?
+
+    The distinction the first version of this file got wrong: it asked whether a check had RUN, but
+    a repo can run CI on every PR while requiring nothing, and then `mergeStateStatus: CLEAN` means
+    only that GitHub was never asked to object. #984: "nothing is enforced" is a claim about what two
+    sources ANSWERED, never about a question that went unanswered.
+
+    #895 4b-2: all REST, no `nameWithOwner` GraphQL read. UNION of classic protection (`branches/<b>/protection`)
+    and rulesets (`rules/branches/<b>`): checks by context name, reviews = the larger count. Each source is
+    read independently and ends as one of three things: it REQUIRES something, it ANSWERED nothing (classic:
+    HTTP 404 `Branch not protected` or a readable object with no requirement; rules: a JSON list with no
+    counted requirement), or it is UNREADABLE (any other failure, an empty or non-JSON body, a classic body
+    that is not an object, a rules body that is not a list). Decision, in order:
+      * any requirement from either source -> `(True, "<base> enforces ...")`; the other source failing only
+        UNDERCOUNTS, the safe direction (the caller then parks or warns, it never merges on a requirement it
+        could not see);
+      * else both sources answered -> `(False, ...)`: "not protected -- nothing is enforced on merge" (classic
+        404) or "protected but requires no checks or reviews" (a readable empty classic object);
+      * else RAISES ProtectionUndetermined (`protection could not be determined ...`): a ruleset or a classic
+        rule may exist that this token could not see. Never `(False, "not protected")` for that.
+    The 404 variants are told apart by message text only (`_CLASSIC_UNPROTECTED`): an unrecognised 404 text
+    fails CLOSED. An empty classic body is unreadable on purpose: `gh api` exits non-zero on an HTTP error,
+    so an empty 2xx body means something between us and GitHub went wrong (none has been observed; a cloud
+    session's proxy is UNMEASURED).
+    WHICH TOKENS REACH THE STOP, AND WHAT IS MEASURED. `merge()` calls `merge_rights` FIRST: a READ or TRIAGE
+    token is stopped there (`... a maintainer merges`) and never reaches this function. What does reach it and
+    stops under `always` (ProtectionUndetermined) is expected to be a WRITE- or MAINTAIN-level token without admin rights, and
+    any token on a repository whose plan has no rulesets, because for them the classic read is not an answer
+    (and on such a plan the rules read is refused too). MEASURED, no wider than this: (a) reproduced 2026-10-28
+    with read-only GETs on a public sample repository, token with `admin: false, push: false, pull: true`:
+    `branches/<b>/protection` answered HTTP 404 `{"message":"Not Found",...}` (not `Branch not protected`),
+    `rules/branches/<b>?per_page=100` answered `200 []`, `branches/<b>` showed `"protected": false` (what the
+    endpoints answer to a token without admin rights; that token class is itself stopped earlier, by
+    `merge_rights`); (b) measured once, NOT reproduced, with a write-level token lacking admin rights on two
+    private repositories on a plan without rulesets: classic read 404 `Not Found`, rules read 403 `Upgrade to
+    GitHub Pro or make this repository public to enable this feature.`, `branches/<b>` `.protected` false.
+    UNMEASURED: maintain-level tokens, GitHub Enterprise Server, GitHub App and fine-grained tokens, a cloud
+    session's proxy, the private free-plan CLASSIC 403 body. On a repository whose plan has no rulesets every PR
+    under `always` ends at this stop and the only lever is merging by hand (a plan limit cannot be fixed by
+    token access).
+    RESIDUAL, behaviour unchanged (#984): a rules list that was READ but not UNDERSTOOD is still an answer of
+    "nothing", not an unreadable source. A recognised rule type with missing or unparseable parameters
+    contributes nothing, and so do the rule types that are never counted (merge queue, required signatures,
+    workflows, ...), so a ruleset-only base can still read `nothing is enforced` while one of those is set.
+    A rules reply of exactly 100 items may also be truncated (`per_page=100`, no paging) and undercounts.
+    NOT derivable: bypass actors (every listed rule is counted even if this token may bypass it, so this can
+    OVER-report "enforces"; gate() and local verify still apply),
+    `evaluate`-mode rulesets (UNMEASURED; the endpoint is documented to list active rules only), merge queue,
+    required deployments / workflows / signatures / thread resolution (never counted). CEILING: `per_page=100`, no paging --
+    past 100 rules an overflowing requirement is missed, which UNDERCOUNTS (the safe direction)."""
+    run = run or _run
+    rec = _record(sdlc_dir, goal)
+    base = rec["base"]
+    api = _pr_api_run(run, rec["worktree"])
+    c_checks, c_reviews, c_state, c_why = _read_classic(api, base)
+    r_checks, r_reviews, r_ok, r_why = _read_rules(api, base)
+    checks, reviews = c_checks | r_checks, max(c_reviews, r_reviews)
     bits = ([f"{len(checks)} required check{'' if len(checks) == 1 else 's'}"] if checks else []) + \
            ([f"{reviews} required review{'' if reviews == 1 else 's'}"] if reviews else [])
-    if not bits:
-        if not classic_ok:
-            return False, f"`{base}` is not protected — nothing is enforced on merge"
-        return False, f"`{base}` is protected but requires no checks or reviews"
-    return True, f"`{base}` enforces " + " + ".join(bits)
+    if bits:
+        return True, f"`{base}` enforces " + " + ".join(bits)
+    if c_state == "unreadable" or not r_ok:
+        said = ("classic branch protection: "
+                + ("none configured" if c_state == "none" else "configured, requires nothing" if c_state == "object"
+                   else c_why)
+                + "; rulesets: " + ("listed, nothing counted" if r_ok else r_why))
+        # Printed ONLY for the classic 404 that is not the answer, and hedged to what was seen (see the docstring):
+        # a 5xx, a rate limit or a transport failure says nothing about admin rights, so there it would be noise.
+        seen = (" (a 404 `Not Found` was the classic answer for every token without admin rights measured)"
+                if c_why == _CLASSIC_404_NOT_THE_ANSWER else "")
+        raise ProtectionUndetermined(
+            f"protection could not be determined for `{base}` ({said}); re-run `work.py merge {sdlc_dir} {goal}` "
+            "(a retry merges nothing until protection can be read), give the token read access to branch "
+            f"protection and rulesets{seen}, or merge the PR by hand")
+    if c_state == "none":
+        return False, f"`{base}` is not protected — nothing is enforced on merge"
+    return False, f"`{base}` is protected but requires no checks or reviews"
 
 
 #: #232: the merge-reconcile pass's per-pass REST bound and per-record re-check interval. A pass reads
@@ -7570,7 +7680,13 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     Every other non-PARK line (`PR #N opened`, `auto-merge armed`, `... leaving PR #N for a human`,
     `... merging it is yours to make`) means the loop did everything it could and the PR awaits a
     merge it does not perform now: the caller records `review`, and the merge-reconcile pass records
-    `done` once the PR is observed merged.
+    `done` once the PR is observed merged. #984: that last ending is printed by `protected` on a base
+    where nothing is enforced AND by `protected` and `always` alike when `protection()` raised
+    `ProtectionUndetermined` (a source could not be read), as `(auto_merge: "<policy>")`. That `always` stop is
+    an owner-reversible default: to stop only under `protected`, the `except ProtectionUndetermined` block
+    returns the stop only when `chosen == PROTECTED` and otherwise falls through with `guarded, detail =
+    False, str(exc)` (a WRITE- or MAINTAIN-level token without admin rights stops under `always` by this
+    default; a READ or TRIAGE token is stopped earlier, by `merge_rights`; see `protection()`).
 
     #1212: THE LANDING ITSELF prefers a direct merge over arming `--auto`, reserving the
     arm for the one case it exists for — a required check that has not answered yet, where GitHub
@@ -7724,7 +7840,14 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # `sdlc/<n>` -> `feature/<unit>` merge inside one repo, which cannot land half of a cross-repo
     # pair, and wiring the check to it deadlocks every tier-1 unit symmetrically. Its consumer is
     # #1478. Nothing about `merge()` changed for #1474, and that absence is pinned by a test.
-    guarded, detail = protection(sdlc_dir, config, goal, run=run)
+    try:
+        guarded, detail = protection(sdlc_dir, config, goal, run=run)
+    except ProtectionUndetermined as exc:
+        # #984: could not tell whether the base enforces anything -> stop under BOTH policies, before any
+        # arm or merge below. `always` is opt-in to merge where NOTHING is enforced, not where nobody could
+        # tell; the ending is the routed one (`record review`), the detail names the source and the lever.
+        return (f"PR #{rec['pr']} {verdict}, but {exc}{ratchet_skipped} — merging it is yours to make "
+                f'(auto_merge: "{chosen}")')
     if chosen == PROTECTED and not guarded:
         return (f"PR #{rec['pr']} {verdict}, but {detail}{ratchet_skipped} — merging it is yours to make "
                 f'(auto_merge: "protected")')
