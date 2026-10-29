@@ -125,9 +125,19 @@ def _ram_mb():
 def pytest_xdist_auto_num_workers(config):
     """`-n auto` = as many workers as fit in a quarter of this machine's RAM at SIGMA_TEST_WORKER_MB each
     (default 2000, the measured test-time peak of a worker before the script cache), capped by CPUs. A
-    constant `-n 4` copied from a laptop OOM-killed a 24 GB Mac."""
+    constant `-n 4` copied from a laptop OOM-killed a 24 GB Mac.
+
+    `PYTEST_XDIST_AUTO_NUM_WORKERS` (what the resource guard's `loop.py verify` exports) is a CEILING on that
+    answer: xdist's own reader of it is `trylast` and this hook answers first, so without reading it here the
+    grant never reaches this suite (#2107). A positive integer lowers the count; unset, empty, zero, negative or
+    non-numeric changes nothing; it never raises it."""
     per = int(os.environ.get("SIGMA_TEST_WORKER_MB", "2000"))
-    return max(1, min(os.cpu_count() or 1, _ram_mb() // 4 // per))
+    n = max(1, min(os.cpu_count() or 1, _ram_mb() // 4 // per))
+    try:
+        cap = int(os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS", ""))
+    except ValueError:
+        return n
+    return min(n, cap) if cap >= 1 else n
 
 
 def pytest_runtest_teardown(item, nextitem):
