@@ -287,6 +287,7 @@ def run(kind, commands, root, timeout, goal, *, config=None, repo=None, env=None
     if isinstance(admitted, lease.Hold):
         return Outcome(hold=admitted)
     n = admitted.n
+    ran = False                                                  # #2106: a lease whose command never ran is discarded
     try:
         record = lease._read_json(os.path.join(lease.state_dir(), "leases", admitted.id + ".json"), {})
         if literal and n < literal:
@@ -296,6 +297,7 @@ def run(kind, commands, root, timeout, goal, *, config=None, repo=None, env=None
                                                lease._retry()))
             n = literal                                          # cold ring: nothing to compare, learn from this run
             _amend(lease, admitted.id, workers=n)
+        ran = True
         child_env = bounded.unattended_env(env)
         child_env[ENV_WORKERS] = str(n)
         child_env[ENV_XDIST] = str(n)
@@ -353,4 +355,4 @@ def run(kind, commands, root, timeout, goal, *, config=None, repo=None, env=None
             return Outcome(lease.Hold(reason, lease._retry()), last, outputs, code, n, meter.peak, shed=True)
         return Outcome(None, last, outputs, code, n, meter.peak)
     finally:
-        lease.release(admitted.id)
+        (lease.release if ran else lease.discard)(admitted.id)
