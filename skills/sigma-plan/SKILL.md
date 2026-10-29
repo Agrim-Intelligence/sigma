@@ -49,7 +49,7 @@ extend it by sprout or wrap at one seam, sending dropped improvements to retro's
 ## 4. Definition of done
 State each task's proof: command, expected output, and the goal's `done_when`.
 
-Write `## Tests`: 1–25 backticked pytest selectors, one per bullet, or the line `none: <reason>` (docs-only).
+Write `## Tests`: 1–25 backticked pytest selectors (or `runner: path > suite > test`), one per bullet, or the line `none: <reason>` (docs-only).
 
 A file selector covers every collected test. Else `work.py pr --no-tests <reason>`.
 

@@ -57,6 +57,10 @@ KINDS = ("assertion", "mutation", "collection-error", "other")
 #: #1933's vocabulary, reused verbatim. A fourth string here is the divergence both issues warn about.
 VERIFIED, UNVERIFIED, ABSENT = "verified", "unverified", "absent"
 
+#: #2084: the id of a runner-named `## Tests` bullet (`vitest: path > suite > test`). Defined ONCE, here, and loaded by
+#: red_green, so a test name containing `::` is never misread as a pytest id: it is checked BEFORE the `::` split.
+RUNNER_ID = re.compile(r"([a-z][a-z0-9_-]*): (\S[^\n]*)\Z")
+
 _ASSERTION = re.compile(r"\bAssertionError\b|^E\s+assert\b", re.M)
 _COLLECTION = re.compile(r"\b(ImportError|ModuleNotFoundError|NameError|CollectError)\b"
                           r"|errors? during collection", re.M)
@@ -77,6 +81,12 @@ def test_source(node_id, root="."):
     Returns None rather than raising on a missing file, a syntax error, or an id naming something
     that is not there. A hash we cannot compute must degrade to "no witness", never to a crash in
     the verify path."""
+    runner = RUNNER_ID.match(str(node_id))
+    if runner:                      # #2084: a runner node hashes its whole file (no AST knowledge of the runner)
+        try:
+            return (pathlib.Path(root) / runner[2].partition(" > ")[0]).read_text(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            return None
     parts = str(node_id).split("::")
     if len(parts) < 2:
         return None
