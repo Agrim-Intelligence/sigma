@@ -286,7 +286,7 @@ def _reclaim_stale(root, scratch, pid_alive, git_cmd=None):
 
 
 def run(sdlc_dir, goal, root, base_ref, tests, timeout=DEFAULT_TIMEOUT,
-        git_cmd=None, run_cmd=None, pid_alive=None):
+        git_cmd=None, run_cmd=None, pid_alive=None, python="python3"):
     """-> {"verdict", "kills": [...ids], "survivors": [...ids], "uncollected": [...ids], "reason", "ms"}.
 
     THREE STATES, SAME VOCABULARY AS #1933/#1934/#1935, AND `absent` IS NOT A PASS:
@@ -354,7 +354,7 @@ def run(sdlc_dir, goal, root, base_ref, tests, timeout=DEFAULT_TIMEOUT,
             # the escape-prefixed line no longer matched either prefix check. A tool whose kill/miss
             # verdict depends on the OPERATOR's personal shell colour settings is not a defect this
             # kit accepts; forcing it off here makes the output format the same on every machine.
-            code, out = runner(scratch, ["python3", "-m", "pytest", "-q", "--color=no", *tests],
+            code, out = runner(scratch, [python, "-m", "pytest", "-q", "--color=no", *tests],
                                 timeout)
         except subprocess.TimeoutExpired:
             return done(ABSENT, "pytest timed out after %ss against the reverted tree" % timeout)
