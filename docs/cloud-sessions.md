@@ -39,11 +39,48 @@ by `tests/test_verify_env_trust_prose.py`), and every verify records in its evid
 
 **What it grants:** `loop.py verify` and `loop.py red` only, in a checkout whose one local `origin` URL names that
 `owner/name`, and only while every command they are about to run is the approved string.
-- A goal whose acceptance record or frontmatter adds its own `verify_command` is refused. In one private backlog
-  that was 34 of 214 acceptance records (16%, counted 2026-10-27); those goals still need the git-local grant.
+- A goal's own `verify_command` (in its acceptance record or its frontmatter) is not covered: the value is the hash
+  of exactly one command, so it can approve the repository's `verify.command` and never a second one as well. In one
+  private backlog that was 34 of 214 acceptance records (16%, counted 2026-10-27). Such a goal need not wait for the
+  git-local grant any more: it can drop its command and verify with the repository's `verify.command` alone (see
+  below).
 - Every other repository command still needs the git-local grant: pipeline checks, `review.command`, a custom
   `knowledge_graph.builder`, `autowatch.drive_cmd`, the backlog embedder, `.sdlc/risk-detect.conf`, the unit and
   upkeep rehearsal, `sigma-rebase`'s verify, and the sealed-acceptance PR gate.
+
+**A goal's own command (#2085).** `acceptance.py record` refuses a `--verify-command` (or a goal-file
+`verify_command:` line) the approval cannot cover, when the approval covers the repository's `verify.command` alone:
+before it builds, posts or writes anything, naming the reason and the fixes. The check reads the process that records,
+so a goal recorded in a shell without the variable is accepted there and refused at verify; `loop.py verify` stays the
+authority. When a record already holds a command, `loop.py verify` and `loop.py red` exit 2 with the reason
+`goal-command` and print the fix first. For a command in the acceptance record, clear it before the goal's first
+verify (`<goal>` is the goal's number or path):
+
+```
+python3 -I <installed-sigma>/skills/sigma-loop/scripts/acceptance.py set-verify-command .sdlc <goal> --clear
+```
+
+- The goal then verifies with the full repository `verify.command` only, and its own command stops running: longer,
+  not weaker, where that command only focused the repository's check. A check the repository's `verify.command`
+  does not prove is not preserved by a clear; it belongs in the operator's route below (fold it into `verify.command`
+  and re-approve that value). `--verify-command <command>` replaces the command instead and runs the same check,
+  so when the approval covers the repository's `verify.command` alone, only a command it covers (the repository's
+  own) is accepted; under any other approval the replace is accepted here and `loop.py verify` decides.
+- It rewrites only the record's one `verify_command` line, atomically, and keeps the goal worktree's copy of the
+  record identical when there is one. A differing or symlinked worktree copy is left alone and the verb prints the
+  `cp` line that replaces it, for the operator or the loop slot that owns that worktree. A rerun that changes nothing
+  checks the copy the same way and never writes it, so a copy a crash left stale is named, not hidden.
+- It refuses once `.sdlc/state/verify/<goal>.json` exists, because that evidence binds the record's exact bytes. The
+  operator's lever: remove that file, rerun the verb, then run `loop.py verify` again.
+- A local goal whose frontmatter declares the command needs that `verify_command:` line deleted first (the verb
+  refuses `--clear` while the file declares one), so for that case the file edit comes before the gesture.
+- A root record that git tracks (this repository commits `.sdlc/acceptance/`) is still rewritten, and the verb prints
+  the one command that clears the now-modified file, which would otherwise make the next `work.py start` in the root
+  checkout refuse: `git -C <root> checkout -- .sdlc/acceptance/<goal>.md`, run by the operator or the loop slot that
+  owns that checkout once the goal's PR carries the change.
+- A rewrite changes the record's sha256. The ledger `acceptance` event keeps the old one (it is not re-paired);
+  verify evidence written afterwards carries the new one.
+- Measured on fixtures only. The run in a real cloud environment is UNMEASURED.
 
 **Identity:** the identity is the `origin` URL's last two path segments, whatever the host. The same `owner/name` on
 another host, a mirror or a local path reads the same, so set the value only in an environment used for that
@@ -53,11 +90,15 @@ repository.
 the branch being verified, and the tests run as that branch wrote them, exactly as under the git-local grant.
 
 **When it refuses**, `loop.py verify` and `loop.py red` exit 2 and say why on stderr, and `/sigma-doctor` names the
-same reason. Neither ever prints the variable's value:
+same reason, except `goal-command`, which it never reports (it checks the repository's own command and knows no goal).
+Neither ever prints the variable's value:
 - `empty`, `malformed`: it must be exactly one 64-character lowercase hex value, with no spaces, no newline and
   no second value.
 - `mismatch`: the command changed, or the goal adds its own. A changed `verify.command` is a hard cutover: every
   container refuses until the operator sets the new value, and a session already running may keep the old one.
+- `goal-command`: the value approves the repository's `verify.command`, and the goal adds its own command. The text
+  leads with the goal's fix (above), then the operator's route: fold the check into `verify.command` and re-approve
+  that value, or the git-local grant after inspecting the project, never an unattended run.
 - `vetoed`: this checkout's git-local `sigma.allowRepositoryShellCommands` is `false` or not a boolean. An
   explicit "no" always wins.
 - `no-identity`: no single local `origin` URL naming `owner/name`, or not a Git worktree. A checkout owned by
@@ -88,6 +129,10 @@ same reason. Neither ever prints the variable's value:
 delivers values (trimming, reaching sessions already running) was observed. Every one of those failure modes
 refuses, and the doctor shows the identity it read and the value it expects.
 
+**A worked example:** this repository's own environment, `sigma-cloud`, keeps its setup script and operator
+steps in [`tools/cloud/`](../tools/cloud/README.md) (#2090): what a fresh clone of a repository whose `.sdlc/` is
+git-ignored needs before `/sigma-goal <N> --land` can run there.
+
 ## What the proxy blocks
 
 A cloud session puts a proxy in front of `api.github.com`. `skills/sigma-loop/scripts/gh_session.py`
@@ -110,6 +155,9 @@ When the check says unavailable, `/sigma-doctor` prints one advisory row,
 `GitHub GraphQL unavailable (cloud proxy)`, marked OK (a permanent condition the user cannot fix, not a
 MISSING gap). It names the features turned off or degraded: board/Projects mirroring (SKIPPED, not failed), `gh pr merge --auto`,
 `timelineItems` (blocker/dependency edges), and `gh issue|pr` via GraphQL until migrated (slices 3-4).
+
+A second advisory row, `plans directory is git-ignored and cloud runs look configured` (a `[WARN]`, #2087), is described under
+[the reviewed plan when the container is gone](#the-reviewed-plan-when-the-container-is-gone-2087).
 
 ## REST-first issue reads (#895 slice 2a)
 
@@ -523,15 +571,32 @@ with `merged: true`. Every failure carries an outcome flag, decided by the `WRIT
   read shows MERGED, and `record done` stays refused until then). Re-running `work.py merge` is not the lever: how it reads an already-merged
   PR was not changed or measured here and it may park a PR that did land. The sha guard only proves no different head can land.
 
-No GraphQL, pending required check: `--auto` is GraphQL and REST has no auto-merge, so when
-`graphql_available()` is false (`SIGMA_GH_GRAPHQL=off` or `CLAUDE_CODE_REMOTE`; env/override only, no probe) a
-required check still pending after gate()'s own bounded REST wait (`PENDING_ATTEMPTS` x `PENDING_INTERVAL` =
-450s) is not armed, `allow_auto_merge` is not read, and no merge is sent: `PARK: required checks still pending
-after 450s and auto-merge cannot be armed without GraphQL; re-run work.py merge once they finish`. Checks that
-turn green inside gate()'s wait reach the REST merge with the vetted sha. No extra wait is added, so the
-documented 22.5-minute worst case (quality ratchet off; docs/quality-delta.md) does not move. Liveness cost: an UNSTABLE PR whose pending checks are NOT
-required (GitHub would merge it) also parks in a no-GraphQL session. With GraphQL available the arm path is
-byte-identical to before.
+No GraphQL, pending check (#2083): `--auto` is GraphQL and REST has no auto-merge, so when
+`graphql_available()` is false (`SIGMA_GH_GRAPHQL=off` or `CLAUDE_CODE_REMOTE`; env/override only, no probe)
+gate() first spends its configured REST wait (`work.merge_pending_wait_s`, default 450 s = `PENDING_ATTEMPTS` x
+`PENDING_INTERVAL`, 45..7200 s). Checks that turn green inside it reach the REST merge with the vetted sha. A
+check still pending after it is armed through the cloud proxy's CCR route, `PUT
+repos/{owner}/{repo}/pulls/N/ccr/auto_merge` (`merge_method`, `sha`), only when every pending check is named and
+required by the base (classic protection UNION rulesets), GitHub reports `mergeStateStatus` BLOCKED, and the repo
+allows auto-merge. The route is UNCONFIRMED: no real cloud container has armed through it; its payload mirrors
+REST `PUT pulls/N/merge` and the only source for it is the proxy's own 403 text quoted on #2083. So the PUT reply
+is never trusted: Sigma prints `auto-merge armed on PR #N via the cloud REST route …` only after a REST read of
+`pulls/N` shows `auto_merge` set, with this merge method, on the vetted head. A first read without it is re-read
+once, 5 s later (how often an arm shows up late is UNMEASURED, and it could make this path park on most runs).
+Anything else sends `DELETE …/ccr/auto_merge` (best effort; it also removes an auto-merge a human armed) and parks
+`PARK: auto-merge arm on PR #N could not be confirmed (…)`. A PUT that is definitely refused parks `PARK: could
+not arm auto-merge on PR #N via the cloud REST route (…)` with no read-back; one with an unknown outcome (5xx,
+timeout) goes to the read-back. Residuals: a bypass-capable token may still see BLOCKED, and whether GitHub's
+auto-merge honours that token's bypass is UNMEASURED; the head-pin residual: even if the proxy honours `sha`, a
+later push by a write-access user keeps a GitHub auto-merge armed, as `--match-head-commit` does on the GraphQL
+path. A pending set that does not qualify is not armed, `allow_auto_merge` is read only once every other clause
+holds, and no merge is sent: `PARK: required checks still pending after <N>s and auto-merge cannot be armed
+without GraphQL (<reason>); re-run work.py merge to wait again (…); if the re-run returns this line too, record
+parked`. The BLOCKED clause applies to the cloud path only (#2083 reads AC-2 that way, pending the owner's
+confirmation): with GraphQL available `--auto` is still armed for a NON-required pending set, which GitHub lands
+at once, before CI answers, and that arm path is byte-identical to before. No extra wait is added beyond the
+configured one, so the worst case is about 4 x that wait (22.5 minutes at the default, quality ratchet off;
+docs/quality-delta.md).
 
 Since slice 4b-2 the permission and protection reads that used to stop a cloud merge before this PUT are REST too
 (next section); what a cloud session still cannot do is stated there. Under `SIGMA_GH_GRAPHQL=off` the
@@ -564,9 +629,20 @@ Three GraphQL reads stood between a cloud session and the REST PUT above. All th
   An unknown extra key is ignored.
 - `protection()`: classic `branches/<base>/protection` UNION `rules/branches/<base>?per_page=100` (rulesets);
   the `nameWithOwner` GraphQL read is gone. Required checks are unioned by context name, reviews take the larger
-  count; each read is independent, so one failing or malformed contributes nothing (never a crash, never an
-  invented requirement). Both unreadable keeps `not protected` (parks under `auto_merge: protected`, WARNING under
-  `always`). A repo that enforces only through rulesets, such as this one (classic is a 404 here; re-read over REST on 2026-10-13: `branches/main/protection` answers 404 "Branch not protected" while `rules/branches/main` lists the pull-request and required-check rules), used to read as
+  count. Each read is independent and ends as one of three things (#984): it REQUIRES something, it ANSWERED
+  nothing (classic: HTTP 404 whose message is exactly `Branch not protected`, or a readable object that requires
+  nothing; rules: a JSON list with no counted requirement), or it is UNREADABLE (any other failure, an empty or
+  non-JSON body, a classic body that is not an object, a rules body that is not a list; an item inside a rules list
+  that is malformed still contributes nothing). A requirement from either source reports `enforces` (the other
+  source failing only undercounts). `not protected -- nothing is enforced` is reported only when BOTH sources
+  answered nothing. Otherwise `protection()` raises `ProtectionUndetermined` (`protection could not be determined
+  ...`, naming the source, its failure kind from `gh_api.classify`, and the lever; a classic 404 that is not the exact
+  `Branch not protected` answer says `read failed (not_found, HTTP 404; not the "Branch not protected" answer)`, so a
+  reworded GitHub body is diagnosable from the line) and `merge()` stops under BOTH
+  `protected` and `always` with the routed `... merging it is yours to make (auto_merge: "<policy>")` ending
+  (`record review`), before any arm or merge call. Which tokens reach that stop under `always`, and what was and
+  was not measured about them, is in "What a stopped `always` costs" below (a READ or TRIAGE token never reaches
+  `protection()`: `merge_rights` stops it first). A repo that enforces only through rulesets, such as this one (classic is a 404 here; re-read over REST on 2026-10-13: `branches/main/protection` answers 404 "Branch not protected" while `rules/branches/main` lists the pull-request and required-check rules), used to read as
   "not protected"; it now reads as enforcing.
 - `post_review`'s comment: `gh_api.comment_pr` = `POST issues/N/comments` (non-idempotent write). ONE
   `gh pr comment` fallback only on a primary rate limit while GraphQL is available, so none in a cloud session.
@@ -584,13 +660,55 @@ What a cloud session still CANNOT enforce or do after this slice (exact, none of
 - `reviewDecision` is unreadable, so in a cloud session `require_review: approval` is met only by a trusted
   `sigma:approve` comment (#1398) and parks without one; `changes` mode works from the REST `pulls/N/reviews` list
   and the `sigma:` comments (now postable).
-- The `--auto` arm is unavailable: a required check still pending after the 450s wait parks.
+- The `--auto` arm is unavailable; a pending check that every clause above qualifies is armed through the
+  UNCONFIRMED CCR route instead, and any other still-pending check parks after `work.merge_pending_wait_s` (450 s default).
 - Deferred and still GraphQL: `verify_merge.py` (`merge_design` and `close_design` moved in 4b-3, below).
 
 What `protection()` cannot derive: bypass actors (it counts every listed rule even when this token may bypass it, so it can
 OVER-report "enforces", the same blind spot classic `enforce_admins: false` has; gate() and local verify still apply), `evaluate`-mode rulesets (documented as not listed; UNMEASURED), merge queue, required
 deployments / workflows / signatures / thread resolution, and more than 100 rules (`per_page=100`, no paging; an
-overflowing requirement is missed, which UNDERCOUNTS, the safe direction).
+overflowing requirement is missed, which UNDERCOUNTS, the safe direction). Residual, unchanged by #984: a rules list
+that was READ but not UNDERSTOOD is still an answer of nothing, not an unreadable source. A recognised rule type with
+missing or unparseable parameters contributes nothing, and so do the rule types that are never counted (merge queue,
+required signatures, workflows), so a ruleset-only base can still read `nothing is enforced` while one of those is
+set; and a rules reply of exactly 100 items may be truncated (`per_page=100`, no paging), which undercounts.
+
+What a stopped `always` costs (#984, named): `always` used to merge with a WARNING when a protection read failed; it
+now stops until the token can read both sources.
+
+WHICH TOKENS STOP. `merge()` calls `merge_rights` FIRST: a READ or TRIAGE token ends at `PR #N opened — read access on
+this repo — a maintainer merges` (`triage access` for TRIAGE) and never reaches `protection()`, so it is not affected. What does reach `protection()`
+and stops under `always` is expected to be a WRITE- or MAINTAIN-level token without admin rights, and any token on a repository whose
+plan has no rulesets, because for them the classic read is not an answer (and on such a plan the rules read is refused
+too). A base whose rulesets show a requirement still reads `enforces`.
+
+MEASURED, and no wider than this: (a) reproduced on 2026-10-28 with read-only GETs on a public sample repository, with
+a token whose permissions there were `admin: false, push: false, pull: true`: `GET branches/<b>/protection` answered
+HTTP 404 with the body `{"message":"Not Found",...}` (not `Branch not protected`), `GET
+rules/branches/<b>?per_page=100` answered `200 []`, and `GET branches/<b>` showed `"protected": false`. That shows what
+the endpoints answer to a token without admin rights; that token class is itself stopped earlier, by `merge_rights`.
+(b) Measured once and NOT reproduced, with a write-level token lacking admin rights on two private repositories on a
+plan without rulesets (names deliberately withheld): the classic read answered 404 `Not Found`, the rules read answered
+403 with the text 'Upgrade to GitHub Pro or make this repository public to enable this feature.', and `GET branches/<b>`
+showed `.protected` false. Also MEASURED 2026-10-28: the three classic 404 bodies are told apart by message only
+(`Branch not protected`, `Branch not found`, `Not Found`); `rules/branches/<b>` answers `200 []` for a public repository
+with no rulesets.
+
+UNMEASURED: maintain-level tokens; a write-level token on a plan that has rulesets (expected to read as (b), not seen);
+GitHub Enterprise Server; GitHub App and fine-grained tokens; the rules reply through a cloud session's proxy; the
+private free-plan CLASSIC 403 body (the 404 in (b) is what was seen; `strict_protection`'s docstring in
+`skills/sigma-status/scripts/merge_queue.py` records a 403 on that endpoint from an earlier observation). So how many
+installs `always` now stops on is unknown.
+
+CONSEQUENCE AND LEVER. On a repository whose plan has no rulesets, every PR under `always` now ends at the routed
+stop, and the only lever that works there is merging by hand: a plan limit cannot be fixed by token access. Elsewhere
+the stop-line levers apply: re-run `work.py merge` (a retry merges nothing until protection can be read; it does
+re-enter the gate, so a BEHIND branch can still be rebased and force-pushed, and once protection reads it merges),
+give the token read access to branch protection and rulesets (the line adds, only for a classic 404 that is not the
+answer, that a 404 `Not Found` was the classic answer for every token without admin rights measured), or merge by
+hand. This default is owner-reversible: stopping only under `protected` is a three-line change in `merge()`'s `except
+ProtectionUndetermined` block (return the stop only when the policy is `protected`, otherwise fall through with the
+guarded flag false and the exception text as the detail), after which `always` merges with the WARNING again.
 
 MEASURED locally 2026-10-11 against OWNER/NAME: `GET repos/OWNER/NAME` returns
 `permissions` admin/maintain/push/triage/pull; `rules/branches/main` returns a `pull_request` rule
@@ -713,7 +831,7 @@ Grant breadth (decision): `Bash(gh api *)` allows any REST write and `gh api gra
 prose needs (issue and PR reads, the triage label POST). Revisit with a per-endpoint allowlist if the owner wants one.
 
 OFF (GraphQL): the Projects board is SKIPPED with one stderr notice per process (slice 5); `--auto` is not armed,
-so a pending required check is waited for (450 s) and then parks; `reviewDecision` is unreadable, so
+so a pending check is waited for (`work.merge_pending_wait_s`, 450 s default) and then armed through the UNCONFIRMED CCR route only when the base requires every pending check, else parks; `reviewDecision` is unreadable, so
 `require_review: approval` is met only by a trusted `sigma:approve` comment (the post-PR review posts one),
 `changes` works; a PR with line comments needs a human (any comment refuses the
 merge); thread resolution is unreadable; draft readiness and merge-queue landing are unavailable.
@@ -737,7 +855,8 @@ one cloud session per issue. It takes ONE named issue through the loop's own pic
 with no gate pauses, then the landing path above, and ends in exactly one of merged, parked or failed. It needs
 `work.enabled: true` and `work.auto_merge` of `protected` or `always` (refused up front otherwise). Under
 `require_review: approval` the post-PR review's own `sigma:approve` comment satisfies the gate here. What parks in the
-cloud and not on a laptop: a required check still pending after 450 s, and any PR line comment. A PR left awaiting
+cloud and not on a laptop: a check still pending after `work.merge_pending_wait_s` (450 s default) that the base
+does not require, or whose CCR arm could not be confirmed, and any PR line comment. A PR left awaiting
 merge is not finished by any machine once the container is gone: GitHub closes the issue on merge only when the PR body
 says `Closes #N`. Details: `skills/sigma-goal/references/land.md`. Tested with fakes (`tests/test_goal_land.py`: the
 landing gestures from PR open to `record done` with every GraphQL-shaped call refused); UNMEASURED in a real cloud
@@ -746,8 +865,9 @@ session.
 OWNER SMOKE TEST for `--land` (UNMEASURED until run): with `work.enabled: true`, `work.auto_merge: always` and
 `require_review: approval`, start one cloud session on ONE small `sdlc:goal` issue and run `/sigma-goal <N> --land`.
 Expected: the pick claims it, the phases run with no pause, a PR opens, a `sigma:approve` comment is posted, the merge
-lands by REST, the issue closes, and the final message says **merged**. Record what the smoke test above records, plus
-the final message verbatim.
+lands by REST, the issue closes, and the final message says **merged**. Run it on a repository where the token can read
+branch protection and rulesets; on one where it cannot, expect a parked `could not be determined` ending instead (the
+`protection()` note above). Record what the smoke test above records, plus the final message verbatim.
 
 What is still open is in "What remains (#895 slice 7)" below.
 
@@ -1015,6 +1135,65 @@ An adopter's first unattended `--land` run found that `/usr/bin/python3` in the 
 
 For a cloud container this means: a goal worktree is a fresh checkout and `.venv` is normally gitignored, so unless something creates `<worktree>/.venv` before `red` runs, a uv project gets it built by the first `red` or verify (that first call can take up to the `verify.timeout_minutes` budget). A project that is not a uv project, in a container with no `.venv`, gets `python3`, and if that cannot import pytest the run now stops at `loop.py red` with a line naming the interpreter, instead of failing later as a collection error. A uv build is expected to need the package index for anything not already cached; a container that blocks it would fail the build, which removes the venv it made and refuses (it does not fall back to `python3`). **Not measured:** a real uv build, a blocked index, and any real cloud container; the tests drive a fake `uv` and fake interpreters.
 
+## The reviewed plan when the container is gone (#2087)
+
+A cloud container is deleted after the session. A repository may ignore `.sdlc/plans/` on purpose, and then the plan
+that plan-review approved and the pull request was built against exists only in the container's root checkout. Until
+#2087 `record done` only warned (`kept .sdlc/plans/<N>.md: not on origin/<base> (commit it or it is lost)`), which
+nobody in an unattended run can act on.
+
+**What happens now.** `work.py finish` (which `record done` runs after a confirmed merge) leaves a durable copy of the
+plan and prints where it went, when ALL of these hold; it is the existing root-record cleanup, one more branch of it:
+
+- the run is a cloud session: `CLAUDE_CODE_REMOTE` is `true` or `1` (`ledger.cloud_session()`, the signal this page's
+  capability check already reads). `SIGMA_GH_GRAPHQL=off` alone is not a cloud session;
+- the file is the goal's own plan, untracked in the root checkout and absent from `<remote>/<base>` (a copy that
+  landed is removed as before; a copy that landed but differs keeps its `differs` line; research dossiers and
+  acceptance records keep today's warning, the acceptance criteria already being on the issue);
+- the goal is a GitHub issue (`discovery.source: github` and an issue-number goal). A local goal file has no issue to
+  carry the copy and keeps today's warning.
+
+**Where it goes (PROVISIONAL, owner to ratify): a comment on the goal's own issue.** The alternatives were a section in
+the PR body (the PR is already merged and sealed by then) and a file beside the outcome on the ledger branch (a new
+writer, a new push, a new lease, and it needs the ledger on). The comment goes through `gh_api.comment_issue`, a writer
+that already exists, over REST, so it adds one inventory row (`work.py` `_durable_plan_copy` in
+`docs/launch/write-surface.json`) and no new kind of writer.
+
+**What is posted.** The plan inside a `<details>` block, in a fence longer than any backtick run in the plan, under a
+marker line `<!-- sigma:plan-copy goal=<N> sha256=<plan sha256> part=<i>/<n> -->`. Secret-shaped strings are redacted
+first (`scrub.scrub_shapes`; ordinary text is byte-identical) and the comment says so. GitHub caps a comment at 65 536
+characters: the plan is split into at most 3 parts of at most 60 000 characters, and a longer plan is cut with a
+`Truncated: kept K of T characters` line. The line `record done` prints becomes
+`kept .sdlc/plans/<N>.md: not on origin/<base>; durable copy of the plan: <comment url>`. The local file is still
+kept: the copy adds, it moves nothing.
+
+**Failure and retry.** A post that fails (no permission, a locked issue, a reply with no URL) keeps today's warning and
+appends `; durable copy FAILED: <why>`; the merge, the record and the cleanup go on. A comment is never retried inside
+one call (it is not idempotent), but a later `finish` reads the issue's comments first (`1 + ceil(n/100)` REST requests
+for n comments) and reuses any part whose marker line is already there from an OWNER, MEMBER or COLLABORATOR, so a
+reply lost after the comment landed does not become a second copy. If that read fails the copy is posted anyway: a
+duplicate beats a lost plan.
+
+**Outside a cloud session nothing changes**: no extra request, and the same kept line byte for byte
+(a test pins it for an unset variable, `CLAUDE_CODE_REMOTE=false`, an empty value and `SIGMA_GH_GRAPHQL=off` alone).
+
+**What the doctor says (#2087).** `/sigma-doctor` prints one `[WARN]` row, `plans directory is git-ignored and cloud
+runs look configured` (advisory: the ready count does not change), when git ignores the plans path AND cloud runs look
+configured. The ignore question is git's own answer for a probe path under `.sdlc/plans/`, so a negation
+(`!.sdlc/plans/`) reads as not ignored. **How "configured" is decided:** the doctor can only read the environment it runs
+in, so it is configured when `CLAUDE_CODE_REMOTE` is `true` or `1` (the doctor is inside a cloud session) or
+`SIGMA_TRUSTED_VERIFY_SHA256` is set and non-empty (the operator's step under "Cloud environment setup"). A doctor run on a
+laptop cannot see a cloud environment's own settings, so it stays silent there even for a repository that is run in
+the cloud; run it in a cloud session, or read `.gitignore`. **Not measured on a real container:** neither signal has been
+observed in one, and the exit codes of `git check-ignore` there are assumed to be the ones local git gives.
+
+**Measured:** offline only, against real local git and a stateful fake issue, with each clause of the guard broken on
+its own and its test seen red (cloud signal, plan-only, config present, issue goal, trusted commenter, idempotence
+marker, reply URL, redaction, fence width, part cap; for the doctor, the cloud clause, the ignore clause, the hash
+signal, the value test and the wiring), and the doctor row also checked through its documented gesture
+(`python3 skills/sigma-doctor/scripts/doctor.py check .sdlc`). **Not measured:** a real Claude Code cloud container, a
+real GitHub comment at the 65 536-character edge, a locked or permission-limited issue.
+
 ## What remains (#895 slice 7)
 
 Slice 7 made the `review_context.py` briefs REST-first (`gh api repos/{owner}/{repo}/pulls/N` with the diff Accept
@@ -1024,7 +1203,7 @@ reviewer running outside one needs `GH_REPO`). NOT run in a real Claude Code clo
 stays UNMEASURED.
 
 Real cloud limits left in the merge path (from the code, not measured):
-- A pending required check parks: `--auto` is GraphQL, so with no GraphQL the merge parks after `gate()`'s own bounded REST wait.
+- A pending check after `gate()`'s configured REST wait is armed only through the UNCONFIRMED CCR route, and only when the base requires every pending check; otherwise the merge parks.
 - Any PR line comment parks (thread resolution is GraphQL; without it only an empty `pulls/N/comments?per_page=1` list proves none).
 - `require_review: approval` needs a trusted `sigma:approve` comment (`reviewDecision` is GraphQL-only; #1398).
 - `merge_rights` is REST but needs the token to receive `permissions` on `GET repos/{owner}/{repo}`: UNMEASURED; if absent it fails closed to `record review`.
@@ -1062,6 +1241,22 @@ only feeds `unit_completion` after `done`, so it decides nothing.
 
 Not scanned by either ratchet: `gh_api.py` fallback argv (EXEMPT; runs only after REST fails, so GraphQL fails by
 construction in a cloud session), shell scripts, `.tmpl` prose, and argv built incrementally.
+
+## A merged goal branch the cloud session cannot delete (#1682)
+
+The GitHub proxy of a cloud session rejects branch deletion, so a cloud `--land` run cannot delete its own `sdlc/<goal>` branch after the merge. `work.py` used to return false there without a word; since #1682 a failed delete prints `work: remote branch delete failed for 'sdlc/<goal>': <the error>` and, when `CLAUDE_CODE_REMOTE` is true or 1, adds that the branch **needs a sweep from a host that can delete**, naming the branch and its head (the head it listed, else one REST read of the ref). `record done` still says `deleted local branch ... (remote delete unconfirmed)`. The lever is a person's, from a laptop or any host whose token can delete: `python3 skills/sigma-loop/scripts/work.py branches .sdlc` lists the merged branches still on the remote, and `... branches .sdlc --sweep` deletes them, each pinned to the listed head. A later `work.py finish` on such a host does the same for up to 10 branches. Inside the container the reconcile stops after the first rejected delete, so a run is not slowed by ten more. The reads are REST only. The merged head is not recorded anywhere for a later sweep: the sweep finds the branch from the pull request and the ref, which needs no record (recording it on the ledger branch is a PROVISIONAL idea left on the issue for the owner). **Not measured:** a real cloud container and proxy; the rejection is taken from a report on the issue, and the tests use a stand-in `gh` that fails the delete.
+
+## A killed merge runner (#2086)
+
+A cloud worker restart can SIGKILL `work.py merge` while `gate()` polls a pending required check (a second cloud
+`--land` run saw exit 137 and `FAILED not_completed: runner pid N gone`). `gate()` only reads, so the PR stays open
+and unmerged. `loop.py wait-call ... merge` now reads the PR once over REST, bounded to 10 s, and prints the PR's state
+and the recovery (`agent-start --pid "$PPID"`, then `work.py merge`, then `record done`) instead of a bare `FAILED`;
+the steps are in [killed-merge](../skills/sigma-loop/references/killed-merge.md). Measured: a
+real `work.py merge` process SIGKILLed during pending-check polling against a fake GitHub, then the documented
+gestures landing the PR once (Sigma's own test suite). **Not measured:** a real cloud container, a real
+worker restart, a real GitHub, a kill inside the merge call itself. Not built: binding the agent marker to the session
+id rather than a pid.
 
 ## What this does NOT do
 

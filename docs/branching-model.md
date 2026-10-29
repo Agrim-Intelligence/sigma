@@ -65,6 +65,10 @@ minting a new top-level name, for the same reason.
 
 **A merged goal branch is deleted on the remote.** After `work.py merge` lands a goal (and again when `work.py finish` confirms an asynchronous landing), the `sdlc/<goal-id>` branch is removed on the remote through a REST call; the pull request and its commits stay on the host. There is no setting that turns this off: the only configurable part is `work.branch_prefix`, and the delete refuses any branch outside that prefix, a protected default, or the base. To keep a goal branch for audit, copy it to a ref of your own (a tag or a differently named branch) before the merge.
 
+**A delete that fails is announced, and leftovers are found again (#1682).** The delete stays best-effort and never fails the landing, but a failed one is no longer silent: `work.py` prints one stderr line naming the branch and the error, and writes a `gate` entry (verdict `failed`) to the goal's action log, as a refused one always did. `work.py finish`, after a goal's PR is confirmed merged, then looks for other `sdlc/*` branches that are still on the remote although a pull request merged from them, and retries the delete of up to 10 of them. A branch is retried only when every clause holds: the remote ref still points at the head a merged PR of this repository was merged from (a branch with later commits is kept), no open PR uses it as its head, and no open PR is based on it. The retry goes through the same guards as the first delete (the configured prefix, the base, `origin/HEAD`, and never a `feature/` branch) and is pinned to the head it listed: the ref is read again just before the delete and the delete is refused if it moved. REST has no conditional delete, so the gap between that read and the delete is two consecutive calls, not zero; it is not measured. After the first failed delete a pass attempts no more (a token or proxy that rejects one rejects all) and lists the rest with their heads.
+
+The same listing is `python3 skills/sigma-loop/scripts/work.py branches .sdlc` (read-only), and `... branches .sdlc --sweep` retries the deletes. It reads the refs under the prefix, the repository's name and at most 3 pages of 100 closed and 3 of 100 open pull requests (8 reads at most for the pull requests and the name, one more per 100 refs under the prefix, and 2 per attempted delete, at most 10 deletes; the pass runs on every `finish`, so a repository whose only leftovers are older than the newest 300 closed PRs pays the 8 reads each time and never clears them, which is the ceiling below). **A refusal does not stop the sweep, a failed delete does:** a branch that moved after it was listed, or that a guard refuses, is listed as not deleted and the next one is tried; the first delete the remote itself rejects ends the pass. A branch whose goal has a worktree on this machine is skipped, since a goal being worked may have re-cut it from a merged head (a goal restarted on another machine is not seen). **Ceilings:** a leftover whose merged PR is older than the newest 300 closed PRs is not found (delete it by hand); if the open list fills its 300 nothing is judged merged. Pull requests are read from `discovery.github.repo` when set, else from the repository `gh` resolves. **Not built:** sweeping branches Sigma did not cut (`fix/`, `docs/`, landing pointers), and recording a cloud run's merged head for a later sweep. **Not measured:** a real GitHub, a real token without `contents:write`, a secondary rate limit, a real cloud proxy; every check ran against local bare repositories with a stand-in `gh`.
+
 **Depth 3 is the model's rule, and nothing enforces it.** Stated plainly because it is the kind of
 thing a reader assumes is checked: no code counts branch segments. What *is* enforced is one segment
 narrower — a declared unit name may not contain `/` at all (§5), so `feature/<name>/<sub>` can never
@@ -1488,8 +1492,15 @@ unless an operator passes `--yes-enable-merge-queue`. It knows nothing about uni
 
 The model's own check asks a narrower question than people expect: *does protection actually
 REQUIRE anything on this goal's base?* A repo can run CI on every PR while requiring nothing, and
-then a green mergeability status means only that GitHub was never asked to object. A 404 from the
-protection API is reported honestly as **"not protected — nothing is enforced on merge"**.
+then a green mergeability status means only that GitHub was never asked to object. "Not protected —
+nothing is enforced on merge" is reported only when the classic protection API (a 404 `Branch not protected`) and
+the base's rulesets both ANSWERED nothing; a source that could not be read is reported as **"protection could not
+be determined"**, and the merge stops under `protected` and `always` alike. `merge()` asks `merge_rights` first,
+so a READ or TRIAGE token is stopped there and never reaches this check. What does reach it and stops under
+`always` is expected to be a WRITE- or MAINTAIN-level token without admin rights, and any token on a repository whose plan has no
+rulesets, because for them the classic read is not an answer (and on such a plan the rules read is refused too);
+the only lever on such a repository is merging by hand, since a plan limit cannot be fixed by token access. What
+was measured, how narrowly, and what was not, is in `docs/cloud-sessions.md` ("What a stopped `always` costs").
 
 Two consequences worth knowing:
 
@@ -1515,7 +1526,9 @@ Two consequences worth knowing:
   never does — by the point above, on purpose. `merge()` correctly declines to arm ("… merging it is
   yours to make"), and `record done` refuses too — since #232 it refuses on every unmerged PR, so
   the goal is recorded `review` and its issue stays open until the PR is observed merged. A repo running goals inside units needs
-  `auto_merge: "always"` for those goals to merge autonomously; `"protected"` still gates a goal
+  `auto_merge: "always"` for those goals to merge autonomously, and `always` merges there only where protection
+  could be read or nothing is enforced: a base whose protection cannot be read ends at `protection could not be
+  determined` instead (the protection paragraph above says which tokens); `"protected"` still gates a goal
   based directly on the integration branch exactly as before.
 
 ### 13b. Sigma never deletes a `feature/<name>` branch — a hard invariant, not an absence

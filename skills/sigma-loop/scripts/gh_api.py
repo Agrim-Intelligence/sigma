@@ -1231,7 +1231,8 @@ def conditional_get(endpoint, etag=None, fields=None, run=None):
 
 
 def merge_pr(run, number, merge_method="squash", sha=None, repo=None):
-    """PUT /pulls/{n}/merge. No auto-merge exists in REST; not emulated. `sha` guards against races."""
+    """PUT /pulls/{n}/merge. No auto-merge exists in REST; not emulated (the cloud proxy's CCR route is not
+    GitHub REST; see arm_auto_merge_ccr). `sha` guards against races."""
     args = ["api", _endpoint(repo, "pulls/%d/merge" % number), "--method", "PUT",
             "-f", "merge_method=%s" % merge_method]
     if sha:
@@ -1520,6 +1521,57 @@ def merge_pr_gh(run, number, method, sha, repo=None, *, fallback_run=None, env=N
             exc = wrapped
         exc.outcome_unknown = _merge_outcome_unknown(exc)
         raise exc
+
+
+# ---------------------------------------------------------------- cloud CCR auto-merge (#2083)
+# UNCONFIRMED live: no real cloud container has armed through this route. The only source for its shape is the
+# cloud proxy's own 403 text quoted on #2083, so the payload below MIRRORS REST `PUT pulls/N/merge` (the route
+# lives under the REST path tree) and is a guess. The reply body is never parsed for success: `work.merge`
+# reports an arm only after a REST read of the PR shows `auto_merge` set, with its method, on the vetted head.
+# Head-pin residual (RF-9): even if the proxy honours `sha`, a later push by a write-access user keeps a GitHub
+# auto-merge armed -- the same residual `--match-head-commit` has on the GraphQL path.
+_CCR_AUTO_MERGE = "pulls/%d/ccr/auto_merge"
+
+
+def _ccr_number(number, method=None, sha=None, check_arm=False):
+    try:
+        n = int(str(number))
+    except ValueError:
+        n = None
+    if n is None or (check_arm and (method not in MERGE_METHODS or not isinstance(sha, str)
+                                    or not _HEAD_SHA_RE.match(sha))):
+        err = GhApiError("gh_api: refusing the CCR auto-merge call for PR %r with method %r and head %r "
+                         "(need a number, one of %s, a 40/64 lower-case hex sha)"
+                         % (number, method, sha, "/".join(MERGE_METHODS)), kind="invalid")
+        err.outcome_unknown = False
+        raise err
+    return n
+
+
+def arm_auto_merge_ccr(run, number, method, sha, repo=None):
+    """Arm GitHub auto-merge on PR `number` through the cloud proxy's CCR route: `PUT pulls/N/ccr/auto_merge`
+    with `merge_method` and `sha` (UNCONFIRMED payload; see the block comment above). Refuses a bad number, a
+    method outside MERGE_METHODS or a sha that is not 40/64 lower-case hex before any call. Sent with `_call`,
+    not `_json`: any 2xx counts as SENT and its body is ignored, so a non-JSON reply cannot raise. What it
+    raises carries `.outcome_unknown = _merge_outcome_unknown(exc)`: False = definitely refused, nothing armed;
+    True = it may have armed, so the caller must READ the PR, never assume either way. Returns None."""
+    n = _ccr_number(number, method, sha, check_arm=True)
+    try:
+        _call(run, ["api", _endpoint(repo, _CCR_AUTO_MERGE % n), "--method", "PUT",
+                    "-f", "merge_method=%s" % method, "-f", "sha=%s" % sha])
+    except GhApiError as exc:
+        exc.outcome_unknown = _merge_outcome_unknown(exc)
+        raise
+    return None
+
+
+def disarm_auto_merge_ccr(run, number, repo=None):
+    """`DELETE pulls/N/ccr/auto_merge` (UNCONFIRMED, like arm_auto_merge_ccr): best effort, called only when an
+    arm could not be confirmed. It also removes an auto-merge a human armed on the PR. Returns None; raises
+    GhApiError on failure (the caller names it)."""
+    n = _ccr_number(number)
+    _call(run, ["api", _endpoint(repo, _CCR_AUTO_MERGE % n), "--method", "DELETE"])
+    return None
 
 
 # ---------------------------------------------------------------- design-PR close (#895 slice 4b-3)

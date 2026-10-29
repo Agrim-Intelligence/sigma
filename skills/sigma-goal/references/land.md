@@ -30,7 +30,9 @@ Each is refused by the picker before any query (exit 2, one stderr line), which 
 - `work.enabled: true` — without it no pull request is opened.
 - `work.auto_merge` set to `protected` or `always`. Under `off` the loop leaves every PR for a person,
   so the run could never end merged. `protected` against a base with no required checks or reviews
-  always ends **parked, awaiting merge**; use `always` there.
+  always ends **parked, awaiting merge**; use `always` there. `always` merges only where protection could be read
+  or nothing is enforced: where it cannot be read it ends parked too (the `protection()` note in
+  `docs/cloud-sessions.md`).
 - `--land` on its own: never beside `--feature` or `--label`, and never on `next-batch`.
 
 `work.require_review` is unchanged: whatever the project sets binds this run exactly as it binds
@@ -124,6 +126,22 @@ the PR body `work.py pr` wrote:
 
 UNMEASURED live.
 
+### A merge runner killed mid-merge
+
+A worker restart (exit 137) during `work.py merge` leaves `wait-call ... merge` reporting `FAILED not_completed:
+runner pid N gone`. That is not an ending. With the PR open and unmerged it is safe to re-register
+(`loop.py agent-start .sdlc <N> --pid "$PPID"`) and re-run `work.py merge`; the steps, the other PR states and the
+window one read cannot close are in [killed-merge](../../sigma-loop/references/killed-merge.md).
+UNMEASURED live.
+
+### The reviewed plan when the container is gone
+
+In a cloud session, `record done` (through `work.py finish`) leaves a durable copy of the goal's plan as a comment on
+the goal's issue when the plan is not on the base branch, and prints `durable copy of the plan: <url>` in the `kept`
+line; outside a cloud session, and for a local goal file, nothing changes. A failed post keeps the old warning with
+`; durable copy FAILED: <why>`. UNMEASURED live. Detail, retry and the doctor's matching row:
+[cloud sessions](../../../docs/cloud-sessions.md#the-reviewed-plan-when-the-container-is-gone-2087).
+
 ### A run that died before its ending
 
 A crashed or killed run leaves N carrying `sdlc:in-progress`, perhaps with a pushed branch or an open
@@ -150,9 +168,9 @@ pushed the ledger branch under this; see [cloud sessions](../../../docs/cloud-se
 
 GitHub GraphQL is unavailable there (`CLAUDE_CODE_REMOTE=true`, or `SIGMA_GH_GRAPHQL=off`). The pick,
 the claim and the landing path all go over REST — see
-[cloud sessions](../../../docs/cloud-sessions.md). What still parks there and nowhere else: a required
-check still pending after the merge gate's 450 s wait (no `--auto` without GraphQL), and any PR line
-comment. `require_review: approval` is satisfied by the trusted `sigma:approve` comment the post-PR
+[cloud sessions](../../../docs/cloud-sessions.md). What still parks there and nowhere else: a check
+still pending after the gate's wait (`work.merge_pending_wait_s`) that the base does not
+require, or whose unconfirmed cloud CCR arm no REST read confirmed, and any PR line comment. `require_review: approval` is satisfied by the trusted `sigma:approve` comment the post-PR
 review posts.
 
 ## What is measured

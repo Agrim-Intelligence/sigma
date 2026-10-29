@@ -7,7 +7,7 @@ for any of the three, so a config without it behaves exactly as before. The irre
 is enforced by /sigma-loop SKILL.md prose. Claim and outcome are mirrored to the team ledger
 (ledger.py) when `ledger.enabled` is on — every such call is fail-open, so a ledger problem can never
 stop a run."""
-import os, sys, pathlib, importlib.util, time, subprocess, inspect, json, re, tempfile, hashlib, uuid, atexit
+import os, sys, pathlib, importlib.util, time, subprocess, inspect, json, re, tempfile, hashlib, uuid, atexit, signal, shlex
 import contextlib, calendar
 import errno
 import datetime as _datetime
@@ -6583,6 +6583,43 @@ _VERIFY_SET_HINT = state.verify_set_hint()
 _declared_verify_command = state.declared_verify_command
 
 
+def _goal_command_remedy(sdlc_dir, goal):
+    """#2085, AC-3: the first fix the verify/red trust refusal names when the goal's OWN `verify_command` is what the
+    environment approval does not cover, or None when neither the acceptance record nor the goal file holds one (the
+    generic remedy then stands). Where the command lives decides the fix:
+      * the record holds it: the clear gesture, exactly as it must be typed (this interpreter, `-I`, the sibling
+        script), valid only until the goal's first verify (a verify writes evidence, and the evidence binds the
+        record's bytes);
+      * a local goal's frontmatter declares it: the file edit comes first, because a record clear alone would not
+        clear it (the verb refuses that), then the gesture if the record also holds one. So AC-3's "the clear
+        command is the first remedy" holds for the record-held case, and the file edit leads for a command the
+        goal file declares."""
+    import shlex
+    try:
+        recorded = state.acceptance_module().read(sdlc_dir, goal)["verify_command"]
+    except (OSError, ValueError):
+        recorded = None
+    declared = state.goal_file_verify_command(goal)
+    edit = f"edit the goal file {goal}: delete its `verify_command:` line"
+    clear = "run `" + shlex.join([sys.executable or "python3", "-I", str(_HERE / "acceptance.py"),
+                                  "set-verify-command", str(sdlc_dir), str(goal), "--clear"]) + \
+            "` before the goal's first verify"
+    if recorded and declared:
+        return f"{edit}, then {clear}"
+    if recorded:
+        return clear
+    if declared:
+        return edit
+    return None
+
+
+def _verify_trust_text(trust, sdlc_dir, goal):
+    """The refusal text `verify` and `red` print for a trust Decision: the shared message, led by the goal's own
+    remedy only for the `goal-command` reason (no work is done for any other)."""
+    remedy = _goal_command_remedy(sdlc_dir, goal) if trust.reason == "goal-command" else None
+    return shell_policy.verify_refusal_message(trust, remedy)
+
+
 #: #1650: a verify's running receipt deadline is `started_at + VERIFY_RECEIPT_SECONDS + grace`. A CHOSEN bound
 #: (about 4.6x the longest verify seen, 52 min), not a measured one; verify itself gains no timeout here.
 VERIFY_RECEIPT_SECONDS = 14400
@@ -6714,12 +6751,15 @@ def red_goal(sdlc_dir, goal):
     root, _, _ = _verified_tree(sdlc_dir, stem)
     # #2066: the same decision `verify` asks, with the same declared commands; an unreadable declaration grants nothing.
     try:
-        commands = state.declared_verify_commands(goal, state.load_config(sdlc_dir), sdlc_dir)
+        config = state.load_config(sdlc_dir)
+        commands = state.declared_verify_commands(goal, config, sdlc_dir)
+        repository_commands = state.repository_verify_commands(config)
     except Exception:                        # noqa: BLE001 - the environment approval then reads it as an error
-        commands = None
-    trust = shell_policy.verify_decision(root, commands, roots=(pathlib.Path(sdlc_dir).resolve().parent,))
+        commands, repository_commands = None, ()
+    trust = shell_policy.verify_decision(root, commands, roots=(pathlib.Path(sdlc_dir).resolve().parent,),
+                                         repository_commands=repository_commands)
     if trust.source is None:
-        print("loop.py red: " + shell_policy.verify_refusal_message(trust), file=sys.stderr)
+        print("loop.py red: " + _verify_trust_text(trust, sdlc_dir, goal), file=sys.stderr)
         return 2
     try:
         plan = work.verification_plan(sdlc_dir, stem, root)
@@ -6867,9 +6907,10 @@ def _verify_goal_body(sdlc_dir, goal, guard):
               f"({root}) at {head or 'unknown HEAD'}, NOT a goal worktree. If that checkout is "
               f"stale, this result is about the wrong code.", file=sys.stderr)
     # #2066: the git-local grant, or an operator's environment approval of exactly these commands in this repository.
-    trust = shell_policy.verify_decision(root, commands, roots=(pathlib.Path(sdlc_dir).resolve().parent,))
+    trust = shell_policy.verify_decision(root, commands, roots=(pathlib.Path(sdlc_dir).resolve().parent,),
+                                         repository_commands=state.repository_verify_commands(config))
     if trust.source is None:
-        print("loop.py verify: " + shell_policy.verify_refusal_message(trust), file=sys.stderr)
+        print("loop.py verify: " + _verify_trust_text(trust, sdlc_dir, goal), file=sys.stderr)
         ledger.safe_append(sdlc_dir, "verify", goal, config=config, stream=ledger.EVENTS, exit=2)
         actionlog.safe_append(sdlc_dir, goal, "verify_run", exit=2)
         return 2
@@ -7863,6 +7904,72 @@ def _lane_tier(sdlc_dir, goal, lane, current):
 _RECORD_STATUSES = ("done", "review", "parked", "failed")     # `record`'s usage line, #1245
 
 
+_PR_READ_SECONDS = 10       # #2086: the ONE PR read `wait-call` makes after a dead merge runner is cut off here
+
+
+def _bounded_pr_state(sdlc_dir, rec):
+    """`work.pr_landing_state` (ONE REST read of the PR; never GraphQL) cut off after `_PR_READ_SECONDS`, so a
+    stalled `gh` cannot hang the very call that exists to report a stall. A cut-off, like any unreadable
+    answer, is `(unknown, why)`. The caller's own SIGALRM handler and any timer it had armed are put back
+    (less the time spent). Where there is no SIGALRM (Windows) or this is not the main thread, the read runs
+    unbounded, as every other `pr_landing_state` caller does."""
+    def expired(signum, frame):
+        raise TimeoutError("the PR read took longer than %ds" % _PR_READ_SECONDS)
+    try:
+        previous = signal.signal(signal.SIGALRM, expired)
+    except (AttributeError, ValueError):
+        return work.pr_landing_state(sdlc_dir, rec)
+    began = time.monotonic()
+    old_delay = signal.setitimer(signal.ITIMER_REAL, _PR_READ_SECONDS)[0]
+    try:
+        try:
+            return work.pr_landing_state(sdlc_dir, rec)
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)          # disarm before anything else can be interrupted
+    except TimeoutError as exc:
+        return work.UNKNOWN, str(exc)
+    finally:
+        signal.signal(signal.SIGALRM, previous if previous is not None else signal.SIG_DFL)
+        if old_delay > 0:
+            signal.setitimer(signal.ITIMER_REAL, max(0.001, old_delay - (time.monotonic() - began)))
+
+
+def _merge_pr_line(sdlc_dir, goal, got):
+    """#2086: `(line, recoverable)`, the one stdout line `wait-call` adds under `FAILED` for a merge that did
+    not complete (None when the work record names no PR), and whether it names the recovery gestures.
+    A cloud worker restart SIGKILLs the merge runner while `gate()` polls a pending required check; `gate()` only
+    READS GitHub there, so the PR is still open and a re-run is safe. A bare `FAILED` read as the goal's ending,
+    and the dead runner's agent marker would let the claim be reclaimed. So when the work record names a PR it is
+    read ONCE and its state is said, with the next gestures only for an open PR whose runner is provably gone
+    (`run_receipt.classify`'s `runner pid N gone`; a deadline or a malformed receipt may still be a live runner,
+    and a second concurrent merge is not advice). One read cannot close the window where the kill fell inside the
+    merge call itself, so the open line names it."""
+    rec = work._record(sdlc_dir, goal)
+    if not rec or not rec.get("pr"):
+        return None, False
+    pr = rec["pr"]
+    state, why = _bounded_pr_state(sdlc_dir, rec)
+    sd = shlex.quote(str(pathlib.Path(sdlc_dir).resolve()))
+    loop_py, work_py = (shlex.quote(str(_HERE / name)) for name in ("loop.py", "work.py"))
+    detail = str(got.get("detail") or "")
+    where = "(killed-merge.md)"
+    if state == work.MERGED:
+        return (f"PR #{pr} is already merged: run `python3 {loop_py} record {sd} {goal} done`; do not run the "
+                f"merge again {where}"), False
+    if state == work.CLOSED_PR:
+        return f"PR #{pr} was closed without merging; do not run the merge again, read why and decide by hand {where}", False
+    if state != work.OPEN_PR:
+        return f"could not read PR #{pr} ({why}); read it by hand before acting, do not re-run blindly {where}", False
+    if re.fullmatch(r"runner pid \d+ gone", detail):
+        return (f"PR #{pr} is open and unmerged at this read; the merge runner (pid {got.get('pid')}) is gone. "
+                f"Recover with `python3 {loop_py} agent-start {sd} {goal} --pid \"$PPID\"` ($PPID is this "
+                f"session's own long-lived process), then `python3 {work_py} merge {sd} {goal}`. Do not record "
+                f"the goal failed. If the kill fell inside the merge call itself, read the PR again before "
+                f"re-running {where}"), True
+    return (f"PR #{pr} is open and unmerged at this read, but the runner is not known to be dead ({detail}); "
+            f"check whether it is still running before starting another merge {where}"), False
+
+
 _WAIT_CALL_USAGE = "usage: loop.py wait-call <dir> <goal> verify|merge [--max-seconds N] [--run-id ID]"
 
 
@@ -7924,10 +8031,20 @@ def _wait_call(argv):
             print("loop.py wait-call: the verify did not complete; it is safe to re-run `loop.py verify` "
                   "(a refusal, exit 6, means one is still holding the lock: wait instead)", file=sys.stderr)
         else:
-            print("loop.py wait-call: the merge did not complete. Do not re-run blindly: landing.md "
-                  "separates a cut during the gate polling (re-run `work.py merge` is safe) from a cut "
-                  "during the merge call itself (`loop.py record <dir> <goal> review` first, then re-run)",
-                  file=sys.stderr)
+            try:
+                pr_line, recoverable = _merge_pr_line(sdlc_dir, goal, got)
+            except Exception as exc:           # noqa: BLE001 - the state line is an aid; it never replaces FAILED
+                pr_line, recoverable = f"could not read the PR ({type(exc).__name__}); read it by hand", False
+            if pr_line:
+                print(pr_line)
+            if recoverable:
+                print("loop.py wait-call: the merge did not complete and the PR is open: the recovery on the "
+                      "line above applies (references/killed-merge.md)", file=sys.stderr)
+            else:
+                print("loop.py wait-call: the merge did not complete. Do not re-run blindly: landing.md "
+                      "separates a cut during the gate polling (re-run `work.py merge` is safe) from a cut "
+                      "during the merge call itself (`loop.py record <dir> <goal> review` first, then re-run)",
+                      file=sys.stderr)
         return 1
     now = time.time()
     print("RUNNING pid=%s run_id=%s elapsed=%ds deadline_in=%ds"

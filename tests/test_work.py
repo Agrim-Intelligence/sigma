@@ -59,6 +59,10 @@ def _runner(handlers):
             return json.dumps({"state": "closed"})    # #895 4b-3: the REST design-PR close lands
         if "remote get-url" in line:
             return REMOTE_URL        # what feature_sync.repo_slug falls back to (#1577)
+        if re.search(r"/branches/[^ ]+/protection$", line):
+            raise RuntimeError("HTTP 404: Branch not protected")   # #984: the default world ANSWERS "nothing is enforced"
+        if "/rules/branches/" in line:
+            return "[]"              # ... on both reads; an UNANSWERED protection read now means "could not be determined"
         return ""
 
     run.calls = calls
@@ -443,6 +447,11 @@ def _protected(checks=("ci",), reviews=0):
 
 
 UNPROTECTED = [("branches/main/protection", RuntimeError("HTTP 404: Branch not protected"))]
+RULES_READ = "rules/branches/main"
+#: #984: GitHub ANSWERED both questions and both answers are "nothing" -- the only world that reports
+#: "nothing is enforced". `UNPROTECTED` stays classic-404-only: first substring match wins, so a rules `[]`
+#: inside it would shadow every `UNPROTECTED + _ruleset(...)` test.
+NOTHING_ENFORCED = UNPROTECTED + [(RULES_READ, "[]")]
 
 
 def _auto_merge_allowed(allowed=True):
@@ -3718,40 +3727,14 @@ def test_merge_parks_when_pending_checks_and_the_repo_disallows_auto_merge(tmp_p
     assert "slow" in out
 
 
-# --- #895 slice 4b-1 D3: no GraphQL -> a still-pending required check is never armed, and no extra wait ---
+# --- #895 slice 4b-1 D3, superseded by #2083: no GraphQL -> a still-pending check is armed through the cloud
+# CCR route only when the base requires every pending check; otherwise the merge parks after the configured wait.
+# The two D3 pins whose `_pending_forever` fixture IS #2083's AC-1 shape were deleted; their replacements are the
+# AC-1 pair in tests/test_work_merge_pending_wait.py, which names them in its docstrings.
 
-D3_PARK = (f"PARK: required checks still pending after {work.PENDING_ATTEMPTS * work.PENDING_INTERVAL}s and "
-           "auto-merge cannot be armed without GraphQL; re-run work.py merge once they finish")
-
-
-def _pending_forever():
-    return _mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True)
-
-
-def test_no_graphql_pending_checks_park_without_arming_or_merging(tmp_path, monkeypatch):
-    """`SIGMA_GH_GRAPHQL=off`: gate() has already spent its bounded REST wait and the check is STILL
-    pending. `--auto` is GraphQL, so it is not attempted, `allow_auto_merge` is not even read, and no
-    merge of any kind (CLI or REST PUT) is sent -- PARK, naming the re-run."""
-    monkeypatch.setenv("SIGMA_GH_GRAPHQL", "off")
-    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
-    run = _runner(_pending_forever())
-    out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
-    assert out == D3_PARK, out
-    assert prfake.merge_calls(run.calls) == []
-    assert not any("allow_auto_merge" in c for c in run.calls)
-    assert not any("--auto" in c.split() for c in run.calls)
-    assert D3_PARK.startswith("PARK: required checks still pending after 450s")
-
-
-def test_no_graphql_branch_under_claude_code_remote_is_structural_only(tmp_path, monkeypatch):
-    """A STRUCTURAL check of the `graphql_available()` branch, NOT a cloud check: `_perm()` fakes the
-    permission read (REST since 4b-2; see the cloud-merge tests for the real cloud outcome). With CLAUDE_CODE_REMOTE set the same no-arm PARK is taken."""
-    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
-    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
-    run = _runner(_pending_forever())
-    out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
-    assert out == D3_PARK, out
-    assert prfake.merge_calls(run.calls) == [] and not any("allow_auto_merge" in c for c in run.calls)
+def _no_graphql_park(reason):
+    return (f"PARK: required checks still pending after {work.PENDING_ATTEMPTS * work.PENDING_INTERVAL}s and "
+            f"auto-merge cannot be armed without GraphQL ({reason}); {work._PENDING_PARK_INSTRUCTION}")
 
 
 def test_a_real_cloud_session_with_no_permissions_in_the_reply_still_does_not_merge(tmp_path, monkeypatch):
@@ -3858,14 +3841,15 @@ def test_no_graphql_checks_that_settle_inside_gate_merge_by_rest_with_the_sha(tm
 
 def test_no_graphql_twin_of_the_disallowed_auto_merge_park(tmp_path, monkeypatch):
     """Twin of `test_merge_parks_when_pending_checks_and_the_repo_disallows_auto_merge` with GraphQL
-    unavailable: the D3 PARK, and the PUT GitHub would refuse is never sent."""
+    unavailable: the not-armable PARK naming the repo setting (#2083), and the PUT GitHub would refuse is never
+    sent -- neither the merge PUT nor the CCR arm."""
     monkeypatch.setenv("SIGMA_GH_GRAPHQL", "off")
     d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
     run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(False)
                   + [(prfake.merge_put(7), RuntimeError('HTTP 405: Required status check "slow" is expected'))])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
-    assert out == D3_PARK, out
-    assert prfake.merge_calls(run.calls) == []
+    assert out == _no_graphql_park("the repository does not allow auto-merge"), out
+    assert prfake.merge_calls(run.calls) == [] and not any("ccr/auto_merge" in c for c in run.calls)
 
 
 def test_merge_parks_when_arming_itself_is_refused_despite_allow_auto_merge(tmp_path):
@@ -4629,7 +4613,7 @@ def test_protected_policy_will_not_merge_an_unprotected_branch(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_view() + _perm() + UNPROTECTED)
+    run = _runner(_view() + _perm() + NOTHING_ENFORCED)
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PR #7 clean and safe, but") and "is not protected" in out
     assert not prfake.merge_calls(run.calls)
@@ -4641,7 +4625,7 @@ def test_merge_protected_policy_leaves_an_unprotected_branch_alone_even_with_pen
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + UNPROTECTED)
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + NOTHING_ENFORCED)
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert not prfake.merge_calls(run.calls)
     assert "is not protected" in out and "pending" in out.lower()
@@ -4651,7 +4635,7 @@ def test_always_merges_unprotected_but_says_nothing_gated_it(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_view() + _perm() + UNPROTECTED)
+    run = _runner(_view() + _perm() + NOTHING_ENFORCED)
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert "WARNING" in out and "local verify was the only gate" in out
     assert MERGE_PUT in run.calls
@@ -4664,7 +4648,7 @@ def test_checks_that_run_without_being_required_do_not_count_as_protection(tmp_p
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_view(checks=(("ci", "SUCCESS"),)) + _perm() + UNPROTECTED)
+    run = _runner(_view(checks=(("ci", "SUCCESS"),)) + _perm() + NOTHING_ENFORCED)
     assert "is not protected" in work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
 
 
@@ -4672,30 +4656,27 @@ def test_protection_with_no_requirements_is_not_protection(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_view() + _perm() + _protected(checks=(), reviews=0))
+    run = _runner(_view() + _perm() + _protected(checks=(), reviews=0) + [(RULES_READ, "[]")])
     out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
     assert "requires no checks or reviews" in out
     assert not prfake.merge_calls(run.calls)
 
 
-def test_protection_fails_open_when_the_api_returns_non_object_json(tmp_path):
-    """Same code-review finding as done_refusal's non-object-JSON guard, found by auditing every
-    other `gh` read reachable from it: `data.get(...)` here ran OUTSIDE protection()'s try/except, so
-    a valid-but-non-object reply from `gh api .../protection` (`null`, `[]`, `42` -- a bug or a future
-    schema change) raised AttributeError instead of collapsing to the same answer the ordinary 404
-    ("not protected") case already gets. Both mean the same thing here: nothing readable is enforcing
-    anything on this base, so both must produce the identical fail-open answer, never a crash."""
+@pytest.mark.parametrize("shape", ["null", "[]", "42", "", "not json"])
+@pytest.mark.parametrize("policy", [GUARDED, ALWAYS], ids=["protected", "always"])
+def test_protection_non_object_classic_reply_is_unreadable_not_unprotected(tmp_path, shape, policy):
+    """#254's audit made a valid-but-non-object classic reply (`null`, `[]`, `42`) collapse to "not protected" and
+    called it fail-open on purpose. #984 reverses that: it is a reply that is not a protection object, so the
+    question went UNANSWERED, and an unanswered question is never "nothing is enforced". Under BOTH policies the
+    merge stops with the routed ending and no merge call (`always` used to merge here with a WARNING)."""
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    for shape in ("null", "[]", "42"):
-        run = _runner(_view() + _perm() + [("branches/main/protection", shape)])
-        out = work.merge(d, GUARDED, goal, run=run, sleep=NOSLEEP)
-        assert out.startswith("PR #7 clean and safe, but") and "is not protected" in out, shape
-        assert not prfake.merge_calls(run.calls)
-
-
-RULES_READ = "rules/branches/main"
+    run = _runner(_view() + _perm() + [("branches/main/protection", shape)] + [(RULES_READ, "[]")])
+    out = work.merge(d, policy, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PR #7 clean and safe, but protection could not be determined"), out
+    assert "is not protected" not in out and "nothing is enforced" not in out and "WARNING" not in out, out
+    assert not prfake.merge_calls(run.calls) and not any("--auto" in c.split() for c in run.calls)
 
 
 def _ruleset(checks=(), reviews=None, extra=()):
@@ -4728,7 +4709,8 @@ def test_protection_reads_a_repo_that_enforces_only_through_rulesets(tmp_path):
 def test_protection_encodes_a_slashed_base_in_the_rules_path(tmp_path):
     d = _sdlc(tmp_path); goal = _started(d)
     rec = work._record(d, goal); rec["base"] = "sdlc/895"; work._save(d, goal, rec)
-    run = _runner([("branches/sdlc/895/protection", RuntimeError("HTTP 404")), ("rules/branches/sdlc%2F895", "[]")])
+    run = _runner([("branches/sdlc/895/protection", RuntimeError("HTTP 404: Branch not protected")),
+                   ("rules/branches/sdlc%2F895", "[]")])
     work.protection(d, ON, goal, run=run)
     assert any("rules/branches/sdlc%2F895" in c for c in run.calls)
 
@@ -4739,8 +4721,9 @@ def test_protection_unions_classic_and_ruleset_checks_by_name_and_takes_the_max_
     assert got == (True, "`main` enforces 3 required checks + 2 required reviews"), got
 
 
-@pytest.mark.parametrize("reply", [
-    "", "null", "{}", "42", '"x"', "not json", "[]", "[null, 3, \"x\", []]",
+NOT_A_LIST = ["", "null", "{}", "42", '"x"', "not json"]
+LISTS_WITH_NOTHING_COUNTED = [
+    "[]", "[null, 3, \"x\", []]",
     json.dumps([{"type": "required_status_checks"}]),
     json.dumps([{"type": "required_status_checks", "parameters": None}]),
     json.dumps([{"type": "required_status_checks", "parameters": {"required_status_checks": "ci"}}]),
@@ -4750,10 +4733,25 @@ def test_protection_unions_classic_and_ruleset_checks_by_name_and_takes_the_max_
     json.dumps([{"type": "pull_request", "parameters": {"required_approving_review_count": "2"}}]),
     json.dumps([{"type": "pull_request", "parameters": {"required_approving_review_count": -1}}]),
     json.dumps([{"type": "pull_request"}]),
-], ids=lambda r: r[:30])
-def test_protection_malformed_rules_never_raise_and_never_invent_a_requirement(tmp_path, reply):
+]
+
+
+@pytest.mark.parametrize("reply", LISTS_WITH_NOTHING_COUNTED, ids=lambda r: r[:30])
+def test_protection_a_rules_list_that_counts_nothing_is_an_answer_nothing_is_enforced(tmp_path, reply):
+    """Classic ANSWERED 404 + a rules reply that is a JSON LIST with no counted requirement (`[]` is the
+    genuine empty answer; the other nine are lists whose items are malformed and contribute nothing, never
+    raise and never invent a requirement)."""
     got, _ = _protection(tmp_path, UNPROTECTED + [(RULES_READ, reply)])
     assert got == (False, "`main` is not protected — nothing is enforced on merge"), got
+
+
+@pytest.mark.parametrize("reply", NOT_A_LIST, ids=lambda r: r[:30] or "empty")
+def test_protection_a_rules_reply_that_is_not_a_list_is_unreadable(tmp_path, reply):
+    """Classic ANSWERED "none" but the rules reply is not a JSON list -> the rulesets question went
+    unanswered -> `could not be determined`, never "nothing is enforced"."""
+    with pytest.raises(work.ProtectionUndetermined) as e:
+        _protection(tmp_path, UNPROTECTED + [(RULES_READ, reply)])
+    assert str(e.value).startswith("protection could not be determined for `main` (classic branch protection: none configured; rulesets: the reply was "), str(e.value)
 
 
 def test_protection_a_failing_rules_read_leaves_the_classic_result(tmp_path):
@@ -4766,14 +4764,98 @@ def test_protection_a_failing_classic_read_leaves_the_ruleset_result(tmp_path):
     assert got == (True, "`main` enforces 1 required review"), got
 
 
-def test_protection_both_unreadable_is_unchanged_not_protected(tmp_path):
-    got, _ = _protection(tmp_path, UNPROTECTED + [(RULES_READ, RuntimeError("HTTP 403"))])
-    assert got == (False, "`main` is not protected — nothing is enforced on merge")
+def test_protection_classic_answered_none_but_rules_403_is_undetermined_not_unprotected(tmp_path):
+    """Was `..._both_unreadable_is_unchanged_not_protected` (pinned the opposite of this). The classic 404 is an
+    ANSWER; the rules read is not, and a ruleset may exist that this token cannot see."""
+    with pytest.raises(work.ProtectionUndetermined) as e:
+        _protection(tmp_path, UNPROTECTED + [(RULES_READ, RuntimeError("HTTP 403"))])
+    assert "rulesets: read failed (permission, HTTP 403)" in str(e.value), str(e.value)
 
 
 def test_protection_classic_present_but_empty_still_says_requires_no_checks(tmp_path):
     got, _ = _protection(tmp_path, _protected(checks=(), reviews=0) + _ruleset(extra=[{"type": "deletion"}]))
     assert got == (False, "`main` is protected but requires no checks or reviews")
+
+
+@pytest.mark.parametrize("policy", [GUARDED, ALWAYS], ids=["protected", "always"])
+@pytest.mark.parametrize("handlers", [
+    [("branches/main/protection", RuntimeError("HTTP 403")), (RULES_READ, "[]")],
+    UNPROTECTED + [(RULES_READ, RuntimeError("HTTP 500"))],
+], ids=["classic-403-rules-empty", "classic-answered-none-rules-500"])
+def test_merge_does_not_arm_auto_merge_when_protection_is_undetermined_and_a_check_is_pending(
+        tmp_path, policy, handlers):
+    """#984: THE PROOF OF THE ARM PATH. The sibling `test_merge_stops_when_protection_is_undetermined` in
+    tests/test_protection_undetermined.py uses `_view()`, a CLEAN PR with no pending check, and `merge()` never
+    arms `--auto` for a clean PR whatever `protection()` returns, so its `--auto` assertion is VACUOUS: it cannot
+    fail. This test is the one that can. The PR has a required check still PENDING (`pending_arm` true) and the
+    repository permits auto-merge, so without the stop `merge()` would arm `--auto` here -- under `always` with a
+    WARNING, under `protected` as the one request the policy never meant (it is opt-in to merge where protection
+    is READABLE). An undetermined base must stop before the arm, under both policies: no `--auto` call, no merge
+    PUT, the routed `... merging it is yours to make (auto_merge: "<policy>")` ending, no `auto-merge armed`."""
+    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
+    run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + handlers + _auto_merge_allowed(True))
+    out = work.merge(d, policy, goal, run=run, sleep=NOSLEEP)
+    assert not any("--auto" in c.split() for c in run.calls), run.calls
+    assert prfake.merge_calls(run.calls) == [] and MERGE_PUT not in run.calls, out
+    assert out.startswith("PR #7 "), out
+    assert "protection could not be determined for `main` (" in out, out
+    assert out.endswith(f'merging it is yours to make (auto_merge: "{work.policy(policy)}")'), out
+    assert "WARNING" not in out and "auto-merge armed" not in out, out
+
+
+def test_the_undetermined_stop_line_names_the_lever_and_what_a_retry_does(tmp_path):
+    """#984. A re-run of `work.py merge` is NOT read-only: it re-enters gate() (which can rebase and
+    force-push a BEHIND branch, run ci_repair and append ledger records) and, once protection can be read, it
+    merges the PR -- so the line must not promise `a retry only reads`. And a classic 404 `Not Found` can be a
+    token without admin rights (it was the classic answer for every such token MEASURED; protection()'s docstring
+    says what was measured and how narrowly), so for that source the lever carries the hedged clause: the phrase
+    `not the "Branch not protected" answer` alone reads as if GitHub had reworded its body. The pinned fragments
+    the sibling file asserts stay in the line."""
+    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
+    run = _runner(_view() + _perm() + [("branches/main/protection", RuntimeError("HTTP 404: Not Found")),
+                                       (RULES_READ, "[]")])
+    out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
+    assert out.startswith("PR #7 clean and safe, but protection could not be determined for `main` (classic branch "
+                          "protection: read failed (not_found, HTTP 404; not the \"Branch not protected\" answer);"), out
+    assert "a retry merges nothing until protection can be read" in out, out
+    assert "a retry only reads" not in out and "only reads" not in out, out
+    assert ("(a 404 `Not Found` was the classic answer for every token without admin rights measured), "
+            "or merge the PR by hand") in out, out
+    assert "readable only with admin rights" not in out, out
+    assert "re-run `work.py merge " in out and "read access to branch protection and rulesets" in out, out
+    assert "merge the PR by hand" in out, out
+
+
+#: The hedged clause on the lever. It states what was SEEN (a 404 `Not Found` for every token without admin
+#: rights measured), not a rule about GitHub, and it belongs only to the classic 404-not-the-answer reason.
+NO_ADMIN_CLAUSE = "a 404 `Not Found` was the classic answer for every token without admin rights measured"
+
+
+@pytest.mark.parametrize("handlers,printed", [
+    ([("branches/main/protection", RuntimeError("HTTP 404: Not Found")), (RULES_READ, "[]")], True),
+    ([("branches/main/protection", RuntimeError("HTTP 404: Branch not found")), (RULES_READ, "[]")], True),
+    ([("branches/main/protection", RuntimeError("HTTP 500: Server Error")), (RULES_READ, "[]")], False),
+    ([("branches/main/protection", RuntimeError("HTTP 403: Resource not accessible by integration")),
+      (RULES_READ, "[]")], False),
+    ([("branches/main/protection", RuntimeError("HTTP 429: API rate limit exceeded")), (RULES_READ, "[]")], False),
+    ([("branches/main/protection", RuntimeError("dial tcp: lookup api.github.com: no such host")),
+      (RULES_READ, "[]")], False),
+    ([("branches/main/protection", ""), (RULES_READ, "[]")], False),
+    (UNPROTECTED + [(RULES_READ, RuntimeError("HTTP 404: Not Found"))], False),
+], ids=["classic-404-not-found", "classic-404-branch-not-found", "classic-500", "classic-403", "classic-429",
+        "classic-transport", "classic-empty", "classic-answered-rules-404"])
+def test_the_no_admin_clause_is_printed_only_for_the_classic_404_that_is_not_the_answer(tmp_path, handlers, printed):
+    """A 5xx, a rate limit, a transport failure or an empty body says nothing about admin rights, so the clause is
+    noise there (and a universal rule that was never measured); it belongs only to the classic 404 that is not
+    the `Branch not protected` answer. A rules-side 404 does not carry it either: the clause is about the
+    CLASSIC source."""
+    with pytest.raises(work.ProtectionUndetermined) as e:
+        _protection(tmp_path, handlers)
+    got = str(e.value)
+    assert (NO_ADMIN_CLAUSE in got) is printed, got
+    assert "readable only with admin rights" not in got, got
+    assert "re-run `work.py merge " in got and "read access to branch protection and rulesets" in got, got
+    assert got.endswith("or merge the PR by hand"), got
 
 
 # --- the policy knob itself ----------------------------------------------------------------------

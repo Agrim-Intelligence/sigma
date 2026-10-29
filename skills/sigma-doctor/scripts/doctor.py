@@ -3940,6 +3940,45 @@ def _watcher_build_rows(base, cfg):
         return []
 
 
+def _cloud_runs_configured(env):
+    """#2087: do cloud runs look configured for the environment THIS doctor runs in? True when `CLAUDE_CODE_REMOTE` is
+    `true` or `1` (the doctor is inside a cloud session, the signal `gh_api` and `ledger.cloud_session` read) or
+    `SIGMA_TRUSTED_VERIFY_SHA256` is set and non-empty (the operator's cloud-environment step in
+    docs/cloud-sessions.md). A laptop's doctor cannot see a cloud environment's own settings, so it says nothing there.
+    Not measured on a real cloud container."""
+    remote = str(env.get("CLAUDE_CODE_REMOTE", "")).strip().lower() in ("true", "1")
+    return remote or bool(str(env.get("SIGMA_TRUSTED_VERIFY_SHA256", "")).strip())
+
+
+def _plans_ignored_rows(base, cfg, env=None):
+    """#2087: ONE WARN row when git ignores this repository's `.sdlc/plans/` AND cloud runs look configured
+    (`_cloud_runs_configured`). Advisory (`ok` True, so the ready count is unchanged). The ignore question is git's own
+    answer for a probe path under the plans directory, so a negation (`!.sdlc/plans/`) reads as not ignored; any
+    failure of git, or a directory that is not a git checkout, gives no row. The cloud check runs first, so a laptop
+    pays no git call."""
+    try:
+        env = os.environ if env is None else env
+        if not _cloud_runs_configured(env):
+            return []
+        base = pathlib.Path(base)
+        rel = os.path.relpath(str(base / "plans" / "x.md"), str(base.parent))
+        done = subprocess.run(["git", "-C", str(base.parent), "check-ignore", "-v", "--non-matching", "--", rel],
+                              capture_output=True, text=True, timeout=10)
+        # `--non-matching` prints `::\t<path>` (all three fields empty) when git answered "not ignored".
+        if done.returncode not in (0, 1) or not done.stdout.strip() or done.stdout.startswith("::"):
+            return []
+        return [{"name": "plans directory is git-ignored and cloud runs look configured", "ok": True, "level": "WARN",
+                 "fix": ("git ignores %s/plans/, and this environment looks like a cloud run (CLAUDE_CODE_REMOTE is true "
+                         "or 1, or SIGMA_TRUSTED_VERIFY_SHA256 is set; a laptop's doctor cannot see the cloud "
+                         "environment's own settings, and this was not measured on a real container). A cloud container "
+                         "is deleted after the session, so a reviewed plan kept out of git is lost with it. For a goal "
+                         "that is a GitHub issue, `record done` posts the plan as a comment on the issue before cleanup "
+                         "and prints where; a local goal file has no issue, so its plan is lost. To keep plans in the "
+                         "repository instead, stop ignoring them (docs/cloud-sessions.md)." % base.name)}]
+    except Exception:                        # noqa: BLE001 - a detector that cannot run says nothing
+        return []
+
+
 def _stale_watch_stop_rows(base, cfg):
     """#1510: warn when a leftover state/watch.stop exists and no watcher is live (it would exit at once). Silent otherwise. Read-only."""
     try:
@@ -4146,6 +4185,7 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     out.extend(_origin_mismatch_rows(base, disc, run))      # #1314
     out.extend(_watcher_build_rows(base, cfg))                # #1315
     out.extend(_stale_watch_stop_rows(base, cfg))             # #1510
+    out.extend(_plans_ignored_rows(base, cfg))                # #2087
     _progress("unit branch readiness")
     out.extend(_upkeep_rows(base, cfg, run, which, injected, cheap_only))
     _progress("resolvers")
@@ -6398,6 +6438,28 @@ def _automerge_state(wk):
     }.get(chosen, "off (a clean, safe PR is left for a human)")
 
 
+#: #2083: work.py's PENDING_ATTEMPTS x PENDING_INTERVAL, PENDING_INTERVAL and MERGE_PENDING_WAIT_MAX, duplicated
+#: rather than imported (doctor stays standalone). `test_ac3_doctor_mirror_matches_work_reader` loads both files by
+#: path and fails if this mirror drifts from `work.merge_pending_wait_seconds`.
+_MERGE_PENDING_DEFAULT, _MERGE_PENDING_INTERVAL, _MERGE_PENDING_MAX = 450, 45, 7200
+
+
+def _merge_pending_wait_state(wk):
+    """Mirrors work.merge_pending_wait_seconds() without importing it: the seconds one `work.py merge` waits on a
+    pending check, and where that number came from."""
+    if wk.get("enabled") is not True:
+        return "off (per-goal worktrees are off)"
+    if "merge_pending_wait_s" not in wk:
+        return "%d s (default)" % _MERGE_PENDING_DEFAULT
+    value = wk["merge_pending_wait_s"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+        return "%d s (invalid value ignored)" % _MERGE_PENDING_DEFAULT
+    if value < _MERGE_PENDING_INTERVAL or value > _MERGE_PENDING_MAX:
+        clamped = _MERGE_PENDING_INTERVAL if value < _MERGE_PENDING_INTERVAL else _MERGE_PENDING_MAX
+        return "%d s (clamped from %g)" % (clamped, value)
+    return "%g s (work.merge_pending_wait_s)" % value
+
+
 #: #144: `feature_rebase.BLOCKED_SUFFIX`, duplicated rather than imported (skills do not import each
 #: other's Python, north-star architecture rule 3). `test_doctor_blocked_suffix_matches_feature_rebase`
 #: reads the real constant from its file path and fails if this literal drifts from it.
@@ -7099,6 +7161,9 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
         ("auto-merge a clean AND safe PR",
          _automerge_state(wk),
          'config: "work": {"auto_merge": "protected"}  (off | protected | always)'),
+        ("merge pending-check wait",
+         _merge_pending_wait_state(wk),
+         'config: "work": {"merge_pending_wait_s": 1800}  (45..7200 s)'),
         ("feature-branch rebase upkeep (#144 refuses a replay that would delete content)",
          _rebase_upkeep_state(base, wk),
          'config: "work": {"rebase_upkeep": "off"} to stop it; a BLOCKED unit clears on the next '

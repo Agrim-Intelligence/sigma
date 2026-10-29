@@ -47,6 +47,7 @@ import importlib.util
 import hashlib
 import io
 import json
+import math
 import os
 import pathlib
 import posixpath
@@ -135,10 +136,13 @@ ENFORCEMENT_GATES = (
      "mechanism": "parks unless GitHub reports the pushed head `mergeable` with "
                   "`mergeStateStatus CLEAN` (REST first, one GraphQL fallback; an unknown state "
                   "never reads as CLEAN; a still-pending required check is armed when GraphQL is "
-                  "available; without GraphQL it is not armed and the merge parks after gate()'s own "
-                  "bounded REST wait; the merge itself is a REST PUT carrying the vetted head sha, an "
+                  "available; without GraphQL, after gate()'s REST wait (`work.merge_pending_wait_s`, "
+                  "default 450 s), it is armed through the cloud CCR route (UNCONFIRMED live) only when "
+                  "every pending check is required by the base and GitHub reports BLOCKED, and only once "
+                  "a REST read of the PR confirms the arm (else a DELETE and a park); any other pending "
+                  "set parks; the merge itself is a REST PUT carrying the vetted head sha, an "
                   "unknown outcome is reconciled by a REST read and never retried; in a cloud session "
-                  "the merge still parks on a pending required check (no `--auto` arm), on any PR "
+                  "the merge still parks on any PR "
                   "line comment, and under `require_review: approval` (GraphQL-only reads); "
                   "`merge_rights` needs the token to receive `permissions` (UNMEASURED), see "
                   "cloud-sessions.md)",
@@ -432,6 +436,7 @@ ENFORCEMENT_EXEMPT = (
     ("sibling_gate", "unwired: a pure, queryable check that its own docstring says nothing calls"),
     ("_sibling_gate", "body of `sibling_gate`, same"),
     ("_diff_without_pr_refusal", "the no-PR branch of `done_refusal`, which carries the gate row"),
+    ("_cloud_arm_refusal", "the no-GraphQL arm predicate inside `merge()`; the `gate` row states it (#2083)"),
 )
 UNKNOWN_ATTEMPTS = 4        # GitHub computes mergeability lazily — the first read is usually UNKNOWN
 UNKNOWN_BACKOFF = 3         # seconds before the first retry, doubled each time
@@ -452,6 +457,8 @@ _CHECK_PENDING = ("PENDING", "QUEUED", "IN_PROGRESS", "EXPECTED", "REQUESTED", "
 # while the answer is still open/unknown -- GitHub can lag after a 5xx. Bounded: 3 reads, 10s of pauses.
 RECONCILE_ATTEMPTS = 3
 RECONCILE_PAUSE = 5
+# #2083: these two give the DEFAULT wait (450 s); `work.merge_pending_wait_s` sets it per repo (see
+# merge_pending_wait_seconds below). The interval stays flat whatever the configured wait.
 PENDING_ATTEMPTS = 10       # re-reads after the first, before giving up
 PENDING_INTERVAL = 45       # seconds between re-reads -- flat, not exponential: a doubling
                             # backoff overshoots CI's duration and then waits far past it
@@ -463,6 +470,43 @@ PENDING_INTERVAL = 45       # seconds between re-reads -- flat, not exponential:
 # -- `--auto` re-checks atomically, and unboundedly, at GitHub's OWN merge time, which is exactly
 # the case it exists for. Not arming here is what made #144/PR #252 unrecoverable.
 PENDING_PREFIX = "required checks still pending"
+
+# #2083: how long ONE `work.py merge` waits on a pending check is `work.merge_pending_wait_s` (seconds).
+# Absent or invalid -> the constants' product above, read at CALL time (450 s); a real finite number is
+# raised to one PENDING_INTERVAL and capped here. 7200 is a judgement (a 30-min CI x 4 margin), not a
+# measurement. At the cap one call re-reads the PR 161 times (two REST reads each, ~161 reads/h per goal),
+# so about 30 goals waiting at once on one token reach ~100% of a 5000/h primary REST limit (DERIVED).
+MERGE_PENDING_WAIT_MAX = 7200
+# AC-4: the not-armable PARK line ends with this, and landing.md's bullet repeats it VERBATIM
+# (tests/test_work_merge_pending_wait.py reads this constant, never a copy). The trailing clause bounds the
+# gesture at two calls; that bound is PROSE-ONLY and lives in the orchestrator's memory of one turn.
+_PENDING_PARK_INSTRUCTION = ("re-run work.py merge to wait again (work.merge_pending_wait_s sets how long one "
+                             "call waits); if the re-run returns this line too, record parked")
+
+
+def merge_pending_wait_seconds(config):
+    """-> (seconds, source) for `work.merge_pending_wait_s`; source is default | config | clamped | invalid.
+    A bool, a non-number, NaN/inf and anything <= 0 is invalid (the default is used). doctor.py mirrors
+    this without importing it; tests/test_work_merge_pending_wait.py fails if the two drift."""
+    default = PENDING_ATTEMPTS * PENDING_INTERVAL
+    wk = config.get("work") if isinstance(config, dict) else None
+    if not isinstance(wk, dict) or "merge_pending_wait_s" not in wk:
+        return default, "default"
+    value = wk["merge_pending_wait_s"]
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+        return default, "invalid"
+    if value < PENDING_INTERVAL:
+        return PENDING_INTERVAL, "clamped"
+    if value > MERGE_PENDING_WAIT_MAX:
+        return MERGE_PENDING_WAIT_MAX, "clamped"
+    return value, "config"
+
+
+def pending_wait(config):
+    """-> (rounds, interval): gate()'s pending re-reads for this config. The interval stays the flat
+    PENDING_INTERVAL; rounds round UP, so the real wait is `rounds * interval` (>= the configured seconds)."""
+    seconds, _ = merge_pending_wait_seconds(config)
+    return math.ceil(seconds / PENDING_INTERVAL), PENDING_INTERVAL
 
 # #406: a BEHIND PR needs a rebase, but the rebase FORCE-PUSHES a new head whose CI has not attached
 # yet. For a few seconds GitHub reports that head as mergeable=UNKNOWN, or mergeStateStatus non-CLEAN
@@ -4212,7 +4256,85 @@ def _copy_acceptance_into_worktree(sdlc_dir, rec, goal, run):
         return False
 
 
-def _clean_landed_root_records(sdlc_dir, rec, goal, run):
+#: #2087: a cloud container is deleted with the session, so a plan that never reached the base needs a durable copy
+#: before cleanup. The home is a comment on the goal's own issue (the fewest new write surfaces: `gh_api.comment_issue`
+#: is an existing writer, REST, no ledger, no second push). GitHub caps a comment at 65 536 characters.
+PLAN_COPY_MAX_PARTS = 3
+PLAN_COPY_PART_CHARS = 60000
+_PLAN_COPY_TRUSTED = ("OWNER", "MEMBER", "COLLABORATOR")
+
+
+def _plan_copy_bodies(ref, text):
+    """The comment bodies that carry a goal's plan: a marker line (goal, sha256 of the plan bytes, part i/n), a
+    short explanation, and the plan in a fence one backtick longer than any run inside it. Secret-shaped strings are
+    redacted first (`scrub_shapes`; ordinary text is unchanged). At most PLAN_COPY_MAX_PARTS parts of
+    PLAN_COPY_PART_CHARS characters; a longer plan is cut and the last part says how much was kept."""
+    sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    posted = scrub_module.scrub_shapes(text)
+    redacted, total, rest, chunks = posted != text, len(posted), posted, []
+    while rest and len(chunks) < PLAN_COPY_MAX_PARTS:
+        cut = len(rest)
+        if cut > PLAN_COPY_PART_CHARS:
+            cut = rest.rfind("\n", PLAN_COPY_PART_CHARS // 2, PLAN_COPY_PART_CHARS) + 1 or PLAN_COPY_PART_CHARS
+        chunks.append(rest[:cut])
+        rest = rest[cut:]
+    chunks = chunks or [""]
+    fence = "`" * max(4, max((len(m) for m in re.findall(r"`+", posted)), default=0) + 1)
+    bodies = []
+    for i, chunk in enumerate(chunks, 1):
+        lines = ["<!-- sigma:plan-copy goal=%s sha256=%s part=%d/%d -->" % (ref, sha, i, len(chunks)),
+                 "**Sigma kept a copy of this goal's plan** (`.sdlc/plans/%s.md`, part %d of %d). The run was in a cloud "
+                 "container, which is deleted when the session ends, and the plan was not on the base branch." % (ref, i, len(chunks))]
+        if redacted and i == 1:
+            lines.append("Secret-shaped strings were redacted from this copy.")
+        if rest and i == len(chunks):
+            lines.append("**Truncated:** kept %d of %d characters, to stay inside GitHub's comment size limit." % (
+                total - len(rest), total))
+        lines += ["", "<details><summary>plan, sha256 %s</summary>" % sha[:12], "", fence + "markdown", chunk, fence, "", "</details>", ""]
+        bodies.append("\n".join(lines))
+    return bodies
+
+
+def _durable_plan_copy(sdlc_dir, config, goal, doc, run, root):
+    """#2087: leave the plan `doc` on the goal's issue and return `(url, "")`, or `("", "durable copy FAILED: <why>")`.
+
+    Idempotent across a retried `finish`: the issue's comments are read first and a part whose marker line is already
+    there (same goal, same plan sha256, same part) from an OWNER, MEMBER or COLLABORATOR is reused, not posted again. That
+    read costs `1 + ceil(n/100)` REST requests for an issue with n comments and is an optimisation only: when it fails
+    every part is posted (a duplicate beats a lost plan). A post is never retried here (`comment_issue` is not idempotent):
+    a failure returns, and the next `finish` finds whatever did land by its marker. Never raises."""
+    try:
+        ref = stem(goal)
+        number, repo = int(ref), _issue_repo(config)
+        bodies = _plan_copy_bodies(ref, doc.read_bytes().decode("utf-8", errors="replace"))
+        api = _pr_api_run(run, root)
+        have = {}
+        try:
+            for c in gh_api.view_issue(api, number, repo=repo, comments="all")["comments"]:
+                if isinstance(c, dict) and c.get("author_association") in _PLAN_COPY_TRUSTED:
+                    first = str(c.get("body") or "").split("\n", 1)[0]
+                    if first.startswith("<!-- sigma:plan-copy ") and c.get("html_url"):
+                        have.setdefault(first, c["html_url"])
+        except Exception:                   # noqa: BLE001 - the read is an optimisation, never a reason not to post
+            have = {}
+        urls = []
+        for body in bodies:
+            marker = body.split("\n", 1)[0]
+            if marker in have:
+                urls.append(have[marker])
+                continue
+            got = gh_api.comment_issue(api, number, body, repo=repo, sdlc_dir=sdlc_dir)
+            url = got.get("html_url") if isinstance(got, dict) else ""
+            if not (isinstance(url, str) and url):
+                return "", ("durable copy FAILED: GitHub's reply named no comment URL (the copy may have been posted: "
+                            "look at the issue)")
+            urls.append(url)
+        return urls[0], ""
+    except Exception as exc:                # noqa: BLE001 - the cleanup must go on; the old warning stays
+        return "", "durable copy FAILED: %s" % _first_line(exc)
+
+
+def _clean_landed_root_records(sdlc_dir, rec, goal, run, config=None):
     """#1474: after a CONFIRMED merge, drop root-checkout plan/research/acceptance copies that landed.
 
     A copy is unlinked (file only, never a directory) only when it is untracked AND its blob id equals
@@ -4241,7 +4363,13 @@ def _clean_landed_root_records(sdlc_dir, rec, goal, run):
             except Exception:           # noqa: BLE001 - not on the landed branch
                 landed = ""
             if not landed:
-                lines.append(f"kept {rel}: not on {remote}/{base} (commit it or it is lost)")
+                line = f"kept {rel}: not on {remote}/{base} (commit it or it is lost)"
+                # #2087: only in a cloud session, only the plan, only for a goal that has an issue to carry the copy
+                if sub == "plans" and config is not None and ledger.cloud_session() and _reads_a_declaration(config, goal):
+                    url, why = _durable_plan_copy(sdlc_dir, config, goal, doc, run, root)
+                    line = (f"kept {rel}: not on {remote}/{base}; durable copy of the plan: {url}" if url
+                            else line + "; " + why)
+                lines.append(line)
             elif run(root, ["git", "hash-object", "--", str(doc)]) != landed:
                 lines.append(f"kept {rel}: differs from the copy that landed on {remote}/{base}")
             else:
@@ -4530,7 +4658,8 @@ def gate(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # Outer loop: while required checks have not ANSWERED, re-read the PR. Re-reading (not
     # re-judging cached data) is the point -- the whole question is whether GitHub's answer has
     # changed. The stale-head check below therefore re-runs on every round too.
-    for pending_round in range(PENDING_ATTEMPTS + 1):
+    rounds, interval = pending_wait(config)          # #2083: work.merge_pending_wait_s, default 450 s
+    for pending_round in range(rounds + 1):
       for attempt in range(UNKNOWN_ATTEMPTS):
           try:
               data = gh_api.view_pr_gh(api, rec["pr"], ["mergeable", "mergeStateStatus", "headRefOid"],
@@ -4587,17 +4716,17 @@ def gate(sdlc_dir, config, goal, run=None, sleep=time.sleep):
           rollup = data.get("statusCheckRollup") or []
           named = [(c.get("name") or c.get("context"), _check_verdict(c)) for c in rollup]
           failing = [n for n, v in named if v == "failing" and n]
-          pending = [n for n, v in named if v == "pending" and n]
+          pending, _ = _pending_check_names(data)
           if failing:
               # Answered, and the answer was no. Park at once -- never spend the pending budget on
               # a verdict we already have.
               return False, (f"not safe to merge (mergeStateStatus={status}) — "
                              f"failing: {', '.join(failing)}"), data
           if pending:
-              if pending_round < PENDING_ATTEMPTS:
-                  sleep(PENDING_INTERVAL)
+              if pending_round < rounds:
+                  sleep(interval)
                   continue                       # re-read: the checks have not answered yet
-              waited = PENDING_ATTEMPTS * PENDING_INTERVAL
+              waited = rounds * interval
               return False, (f"{PENDING_PREFIX} after {waited}s "
                              f"(mergeStateStatus={status}) — pending: {', '.join(pending)}"), data
           # Not a check problem at all (a required review, say). Unchanged.
@@ -4605,6 +4734,22 @@ def gate(sdlc_dir, config, goal, run=None, sleep=time.sleep):
                          "merge, usually a required review or branch rule: satisfy it on the PR, then "
                          f"re-run `work.py merge {sdlc_dir} {goal}`"), data
       return True, "clean and safe", data
+
+
+def _pending_check_names(data):
+    """-> (names, unnamed_pending): the NAMED pending entries of `data`'s rollup, in rollup order (exactly the
+    list gate() reports), and how many pending entries have no name/context. Shared by gate() and merge()'s
+    cloud arm (#2083 R1) so the two can never disagree about what is pending."""
+    names, unnamed = [], 0
+    for check in data.get("statusCheckRollup") or []:
+        if _check_verdict(check) != "pending":
+            continue
+        name = check.get("name") or check.get("context")
+        if name:
+            names.append(name)
+        else:
+            unnamed += 1
+    return names, unnamed
 
 
 def _read_rollup(api, pr, head, sdlc_dir, sleep):
@@ -4675,14 +4820,21 @@ def merge_rights(sdlc_dir, config, goal, run=None):
 def _ruleset_requirements(text):
     """(contexts, reviews) a `GET rules/branches/<base>` reply REQUIRES: `required_status_checks` rules'
     non-empty-string `context`s and the largest `pull_request` `required_approving_review_count` (int >= 0,
-    never a bool). Anything else -- non-JSON, a non-list, non-dict items, missing keys, bad types --
-    contributes nothing: it never raises and never invents a requirement."""
-    contexts, reviews = set(), 0
+    never a bool). A reply that is not a JSON LIST (empty, `null`, an object, a number, text) is not an
+    answer and RAISES ValueError (#984: `protection()` reports it as unreadable, never as "no rules").
+    Inside a list, anything malformed -- non-dict items, missing keys, bad types -- contributes nothing:
+    it never raises and never invents a requirement."""
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("the reply was empty")
     try:
-        rules = json.loads(text or "null")
+        rules = json.loads(text)
     except ValueError:
-        return contexts, reviews
-    for rule in rules if isinstance(rules, list) else ():
+        raise ValueError("the reply was not JSON") from None
+    if not isinstance(rules, list):
+        raise ValueError("the reply was not a JSON list")
+    contexts, reviews = set(), 0
+    for rule in rules:
         params = rule.get("parameters") if isinstance(rule, dict) else None
         if not isinstance(params, dict):
             continue
@@ -4696,59 +4848,171 @@ def _ruleset_requirements(text):
     return contexts, reviews
 
 
-def protection(sdlc_dir, config, goal, run=None):
-    """(enforces_something, detail) — does branch protection actually REQUIRE anything on the base?
+class ProtectionUndetermined(Exception):
+    """`protection()` could not tell whether the base enforces anything (#984): a source it needs could not
+    be read and the other found no requirement. `str(exc)` is the stop line's detail and begins
+    `protection could not be determined`. A RAISE and not a falsy return, on purpose: `merge()` is the one
+    caller, and a `(False, ...)` first element is what the `always` policy merges on with a WARNING, so a
+    tri-state value would let a future `if not guarded` fail OPEN; an exception cannot be forgotten (the
+    shape `_viewer_permission` -> `merge_rights` already has)."""
 
-    The distinction the first version of this file got wrong: it asked whether a check had RUN, but
-    a repo can run CI on every PR while requiring nothing, and then `mergeStateStatus: CLEAN` means
-    only that GitHub was never asked to object. A 404 from the protection API is the honest signal
-    that nothing but this loop's own verify stands between the branch and the base.
 
-    #895 4b-2: all REST, no `nameWithOwner` GraphQL read. UNION of classic protection (`branches/<b>/protection`)
-    and rulesets (`rules/branches/<b>`): checks by context name, reviews = the larger count. Each read is
-    independent -- one failing or malformed contributes nothing, never a crash or an invented requirement.
-    NOT derivable: bypass actors (every listed rule is counted even if this token may bypass it, so this can
-    OVER-report "enforces"; gate() and local verify still apply),
-    `evaluate`-mode rulesets (UNMEASURED; the endpoint is documented to list active rules only), merge queue,
-    required deployments / workflows / signatures / thread resolution (never counted). CEILING: `per_page=100`, no paging --
-    past 100 rules an overflowing requirement is missed, which UNDERCOUNTS (the safe direction: the caller
-    then parks or warns, it never merges on a requirement it could not see)."""
-    run = run or _run
-    rec = _record(sdlc_dir, goal)
-    base = rec["base"]
-    classic_ok, checks, reviews = False, set(), 0
+#: The one classic 404 body that is an ANSWER -- "the branch exists and has no classic protection" -- as
+#: `_pr_api_run` leaves it in `.hint`: `gh: Branch not protected (HTTP 404) -- fix: ...`, or the
+#: `HTTP 404: Branch not protected` a test runner raises. The same status carries two other bodies that are
+#: NOT answers: `Branch not found` (the branch is absent on the remote) and `Not Found` (the repository is
+#: absent or invisible to this token). Matched on the whole message so the appended fix text cannot decide.
+_CLASSIC_UNPROTECTED = re.compile(r"(?:gh: |HTTP \d{3}: )?Branch not protected(?: \(HTTP \d{3}\))?(?: -- .*)?", re.S)
+#: What the stop line says for a classic 404 that is NOT that answer. A FIXED phrase (never the failure text):
+#: if GitHub ever rewords the `Branch not protected` body, the operator reads why a base that used to read "not
+#: protected" now reads "could not be determined", instead of a bare `read failed (not_found, HTTP 404)`.
+_CLASSIC_404_NOT_THE_ANSWER = 'read failed (not_found, HTTP 404; not the "Branch not protected" answer)'
+
+
+def _failed_read(status, kind):
+    """`read failed (kind[, HTTP n])` from `gh_api.classify` -- never the exception text, so a token or a URL
+    in a failure message cannot reach the stop line."""
+    return f"read failed ({kind}{f', HTTP {status}' if status else ''})"
+
+
+def _read_classic(api, base):
+    """(checks, reviews, state, why) for `GET branches/<base>/protection`. `state` is "object" (a readable
+    protection object, whatever it requires), "none" (HTTP 404 whose message is exactly `Branch not
+    protected`: GitHub ANSWERED that there is none) or "unreadable" (`why` says how). Every other failure --
+    another 404, 403, 5xx, a transport error -- and an empty, non-JSON or non-object body is unreadable: the
+    caller must not read an unanswered question as "nothing is enforced". A 404 that is not the exact answer
+    says so in `why` (`_CLASSIC_404_NOT_THE_ANSWER`), so a reworded GitHub body is diagnosable from the stop line."""
     try:
-        data = json.loads(run(rec["worktree"], ["gh", "api",
-                                                f"repos/{{owner}}/{{repo}}/branches/{base}/protection"]) or "{}")
-        # Code-review audit (#254 finding 1): `data` is only guaranteed a dict on the happy path --
-        # valid-but-non-object JSON (`null`, `[]`, `42`) would otherwise make `.get()` raise
-        # AttributeError OUTSIDE this try/except, the same shape done_refusal() had to guard
-        # against. Folded inside the try here instead (merge_rights()'s own existing precedent for
-        # its `pr_data.get(...)`), so any such reply collapses into the same except below as every
-        # other unreadable-response case.
+        text = api(["api", f"repos/{{owner}}/{{repo}}/branches/{base}/protection"])
+    except Exception as exc:                # noqa: BLE001 - classified (and reported) below, never swallowed
+        status, kind = gh_api.classify(exc)
+        if status == 404 and _CLASSIC_UNPROTECTED.fullmatch(str(getattr(exc, "hint", None) or exc).strip()):
+            return set(), 0, "none", ""
+        if status == 404:
+            return set(), 0, "unreadable", _CLASSIC_404_NOT_THE_ANSWER
+        return set(), 0, "unreadable", _failed_read(status, kind)
+    text = (text or "").strip()
+    if not text:
+        return set(), 0, "unreadable", "the reply was empty"
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return set(), 0, "unreadable", "the reply was not JSON"
+    if not isinstance(data, dict):
+        return set(), 0, "unreadable", "the reply was not a JSON object"
+    try:
         required = data.get("required_status_checks") or {}
         listed = required.get("contexts") or required.get("checks") or []
         checks = {c if isinstance(c, str) else c.get("context") for c in listed
                   if isinstance(c, str) or isinstance(c, dict)}
         checks -= {None, ""}
         n = (data.get("required_pull_request_reviews") or {}).get("required_approving_review_count")
-        reviews = n if isinstance(n, int) and not isinstance(n, bool) and n > 0 else 0
-        classic_ok = True
-    except Exception:                       # noqa: BLE001 - 404 "Branch not protected" is the common case
-        pass
+    except (AttributeError, TypeError):
+        return set(), 0, "unreadable", "the reply was not a protection object"
+    return checks, (n if isinstance(n, int) and not isinstance(n, bool) and n > 0 else 0), "object", ""
+
+
+def _read_rules(api, base):
+    """(checks, reviews, ok, why) for `GET rules/branches/<base>?per_page=100`. `ok` is True only for a JSON
+    LIST (an empty one is the answer "no rulesets apply"); a failed read or any other body is not ok."""
     try:
-        rule_checks, rule_reviews = _ruleset_requirements(run(rec["worktree"], [
-            "gh", "api", f"repos/{{owner}}/{{repo}}/rules/branches/{urllib.parse.quote(base, safe='')}?per_page=100"]))
-        checks, reviews = checks | rule_checks, max(reviews, rule_reviews)
-    except Exception:                       # noqa: BLE001 - an unreadable rules list contributes nothing
-        pass
+        text = api(["api", f"repos/{{owner}}/{{repo}}/rules/branches/{urllib.parse.quote(base, safe='')}?per_page=100"])
+    except Exception as exc:                # noqa: BLE001 - reported by the caller, never swallowed
+        return set(), 0, False, _failed_read(*gh_api.classify(exc))
+    try:
+        checks, reviews = _ruleset_requirements(text)
+    except ValueError as exc:
+        return set(), 0, False, str(exc)
+    return checks, reviews, True, ""
+
+
+def protection(sdlc_dir, config, goal, run=None):
+    """(enforces_something, detail): `protection_requirements` without the required-check set. Same reads,
+    same raise (ProtectionUndetermined); kept for its callers' two-value contract."""
+    guarded, detail, _ = protection_requirements(sdlc_dir, config, goal, run=run)
+    return guarded, detail
+
+
+def protection_requirements(sdlc_dir, config, goal, run=None):
+    """(enforces_something, detail, required_checks) -- does branch protection actually REQUIRE anything on the
+    base? `required_checks` is the frozenset of required check context names (classic UNION rulesets), which
+    merge()'s cloud arm (#2083) uses to arm only a pending set the base itself requires.
+
+    The distinction the first version of this file got wrong: it asked whether a check had RUN, but
+    a repo can run CI on every PR while requiring nothing, and then `mergeStateStatus: CLEAN` means
+    only that GitHub was never asked to object. #984: "nothing is enforced" is a claim about what two
+    sources ANSWERED, never about a question that went unanswered.
+
+    #895 4b-2: all REST, no `nameWithOwner` GraphQL read. UNION of classic protection (`branches/<b>/protection`)
+    and rulesets (`rules/branches/<b>`): checks by context name, reviews = the larger count. Each source is
+    read independently and ends as one of three things: it REQUIRES something, it ANSWERED nothing (classic:
+    HTTP 404 `Branch not protected` or a readable object with no requirement; rules: a JSON list with no
+    counted requirement), or it is UNREADABLE (any other failure, an empty or non-JSON body, a classic body
+    that is not an object, a rules body that is not a list). Decision, in order:
+      * any requirement from either source -> `(True, "<base> enforces ...")`; the other source failing only
+        UNDERCOUNTS, the safe direction (the caller then parks or warns, it never merges on a requirement it
+        could not see);
+      * else both sources answered -> `(False, ...)`: "not protected -- nothing is enforced on merge" (classic
+        404) or "protected but requires no checks or reviews" (a readable empty classic object);
+      * else RAISES ProtectionUndetermined (`protection could not be determined ...`): a ruleset or a classic
+        rule may exist that this token could not see. Never `(False, "not protected")` for that.
+    The 404 variants are told apart by message text only (`_CLASSIC_UNPROTECTED`): an unrecognised 404 text
+    fails CLOSED. An empty classic body is unreadable on purpose: `gh api` exits non-zero on an HTTP error,
+    so an empty 2xx body means something between us and GitHub went wrong (none has been observed; a cloud
+    session's proxy is UNMEASURED).
+    WHICH TOKENS REACH THE STOP, AND WHAT IS MEASURED. `merge()` calls `merge_rights` FIRST: a READ or TRIAGE
+    token is stopped there (`... a maintainer merges`) and never reaches this function. What does reach it and
+    stops under `always` (ProtectionUndetermined) is expected to be a WRITE- or MAINTAIN-level token without admin rights, and
+    any token on a repository whose plan has no rulesets, because for them the classic read is not an answer
+    (and on such a plan the rules read is refused too). MEASURED, no wider than this: (a) reproduced 2026-10-28
+    with read-only GETs on a public sample repository, token with `admin: false, push: false, pull: true`:
+    `branches/<b>/protection` answered HTTP 404 `{"message":"Not Found",...}` (not `Branch not protected`),
+    `rules/branches/<b>?per_page=100` answered `200 []`, `branches/<b>` showed `"protected": false` (what the
+    endpoints answer to a token without admin rights; that token class is itself stopped earlier, by
+    `merge_rights`); (b) measured once, NOT reproduced, with a write-level token lacking admin rights on two
+    private repositories on a plan without rulesets: classic read 404 `Not Found`, rules read 403 `Upgrade to
+    GitHub Pro or make this repository public to enable this feature.`, `branches/<b>` `.protected` false.
+    UNMEASURED: maintain-level tokens, GitHub Enterprise Server, GitHub App and fine-grained tokens, a cloud
+    session's proxy, the private free-plan CLASSIC 403 body. On a repository whose plan has no rulesets every PR
+    under `always` ends at this stop and the only lever is merging by hand (a plan limit cannot be fixed by
+    token access).
+    RESIDUAL, behaviour unchanged (#984): a rules list that was READ but not UNDERSTOOD is still an answer of
+    "nothing", not an unreadable source. A recognised rule type with missing or unparseable parameters
+    contributes nothing, and so do the rule types that are never counted (merge queue, required signatures,
+    workflows, ...), so a ruleset-only base can still read `nothing is enforced` while one of those is set.
+    A rules reply of exactly 100 items may also be truncated (`per_page=100`, no paging) and undercounts.
+    NOT derivable: bypass actors (every listed rule is counted even if this token may bypass it, so this can
+    OVER-report "enforces"; gate() and local verify still apply),
+    `evaluate`-mode rulesets (UNMEASURED; the endpoint is documented to list active rules only), merge queue,
+    required deployments / workflows / signatures / thread resolution (never counted). CEILING: `per_page=100`, no paging --
+    past 100 rules an overflowing requirement is missed, which UNDERCOUNTS (the safe direction)."""
+    run = run or _run
+    rec = _record(sdlc_dir, goal)
+    base = rec["base"]
+    api = _pr_api_run(run, rec["worktree"])
+    c_checks, c_reviews, c_state, c_why = _read_classic(api, base)
+    r_checks, r_reviews, r_ok, r_why = _read_rules(api, base)
+    checks, reviews = c_checks | r_checks, max(c_reviews, r_reviews)
     bits = ([f"{len(checks)} required check{'' if len(checks) == 1 else 's'}"] if checks else []) + \
            ([f"{reviews} required review{'' if reviews == 1 else 's'}"] if reviews else [])
-    if not bits:
-        if not classic_ok:
-            return False, f"`{base}` is not protected — nothing is enforced on merge"
-        return False, f"`{base}` is protected but requires no checks or reviews"
-    return True, f"`{base}` enforces " + " + ".join(bits)
+    if bits:
+        return True, f"`{base}` enforces " + " + ".join(bits), frozenset(checks)
+    if c_state == "unreadable" or not r_ok:
+        said = ("classic branch protection: "
+                + ("none configured" if c_state == "none" else "configured, requires nothing" if c_state == "object"
+                   else c_why)
+                + "; rulesets: " + ("listed, nothing counted" if r_ok else r_why))
+        # Printed ONLY for the classic 404 that is not the answer, and hedged to what was seen (see the docstring):
+        # a 5xx, a rate limit or a transport failure says nothing about admin rights, so there it would be noise.
+        seen = (" (a 404 `Not Found` was the classic answer for every token without admin rights measured)"
+                if c_why == _CLASSIC_404_NOT_THE_ANSWER else "")
+        raise ProtectionUndetermined(
+            f"protection could not be determined for `{base}` ({said}); re-run `work.py merge {sdlc_dir} {goal}` "
+            "(a retry merges nothing until protection can be read), give the token read access to branch "
+            f"protection and rulesets{seen}, or merge the PR by hand")
+    if c_state == "none":
+        return False, f"`{base}` is not protected — nothing is enforced on merge", frozenset()
+    return False, f"`{base}` is protected but requires no checks or reviews", frozenset()
 
 
 #: #232: the merge-reconcile pass's per-pass REST bound and per-record re-check interval. A pass reads
@@ -5844,8 +6108,8 @@ def _reconcile_behind(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     arming still requires gate()'s own ok=True (which still enforces the STALE-HEAD guard), so this
     can poll THROUGH a settling head but never ARM an unverified one.
 
-    Worst-case wall time is bounded but not small: gate() itself can spend ~7.5min (PENDING_ATTEMPTS x
-    PENDING_INTERVAL) once a check attaches, so a pathological fast-moving `main` can make one call
+    Worst-case wall time is bounded but not small: gate() itself can spend `work.merge_pending_wait_s`
+    (~7.5min by default, PENDING_ATTEMPTS x PENDING_INTERVAL; #2083) once a check attaches, so a pathological fast-moving `main` can make one call
     take BEHIND_REBASES x that before it arms or parks. Finite, and that sequence is exactly the
     unwinnable case that ends in a PARK -- accepted, noted here rather than left silent."""
     run = run or _run
@@ -6940,9 +7204,9 @@ def _sibling_gate(sdlc_dir, config, goal, run, sleep):
         branches[repo] = branch
 
     mode = review_mode(config)
-    # The SAME budget `gate()` spends on our own PR, reused rather than given a second set of
-    # constants: the thing being waited on is the same thing (a CI run), so a second number here
-    # would only be a second opinion about how long CI takes.
+    # The DEFAULT budget gate() spends on our own PR, reused rather than given a second set of
+    # constants: the thing being waited on is the same thing (a CI run). It does not follow
+    # `work.merge_pending_wait_s` (#2083 D-3): this waits on a DIFFERENT repo's CI.
     for pending_round in range(PENDING_ATTEMPTS + 1):
         waiting = []
         for repo in siblings:
@@ -7000,6 +7264,65 @@ def unit_sibling_guard(sdlc_dir, config, unit, here, landed=None):
                        "nothing measured" % type(exc).__name__)
 
 
+def _cloud_arm_refusal(final_data, required, base):
+    """-> (pending_names, reason): reason is None when merge()'s cloud arm (#2083 D-4) may arm, else the FIRST
+    clause that failed, as the not-armable PARK prints it. All of these, ANDed, none standing in for another,
+    cheapest first and with no I/O: a non-empty named pending set; no pending entry without a name (RF-3: it
+    could be a non-required check `ci_required: true` waits on); every pending name in `required` (classic
+    UNION rulesets, from protection_requirements); and GitHub's own `mergeStateStatus == BLOCKED` (B1:
+    UNSTABLE means only non-required checks are pending, so GitHub would merge now; this guards protection()
+    OVER-reporting through bypass actors or evaluate-mode rulesets). BLOCKED never replaces the subset clause:
+    it alone can mean a required review. RESIDUAL (UNMEASURED): a bypass-capable token may still see BLOCKED,
+    and whether GitHub's auto-merge honours that token's bypass is unknown."""
+    names, unnamed = _pending_check_names(final_data or {})
+    if not names:
+        return names, "no named check is pending"
+    if unnamed:
+        return names, "a pending check has no name"
+    outside = [n for n in names if n not in required]
+    if outside:
+        return names, f"not required by `{base}`: {', '.join(outside)}"
+    status = (final_data or {}).get("mergeStateStatus")
+    if status != "BLOCKED":
+        return names, f"GitHub reports mergeStateStatus={status}, not BLOCKED: it does not hold the merge on them"
+    return names, None
+
+
+def _ccr_readback(api, rec, method, vetted_head, sleep, sdlc_dir):
+    """-> (outcome, why) after a CCR auto-merge PUT (#2083 D-5): MERGED | CLOSED_PR | "armed" | "unconfirmed".
+    The PUT's reply is never trusted; this REST read of the PR is the only proof of an arm. Order: a raising or
+    malformed read -> unconfirmed `read-back unreadable`; MERGED (on REST `state` is derived from `merged_at`,
+    so the `mergedAt` belt is redundant there, kept for a fallback shape, not proven); CLOSED; no `auto_merge`
+    dict; another head than the vetted one; another merge method (case-insensitive); else armed. R4/W4: a first
+    read showing no `auto_merge` yet is re-read ONCE, RECONCILE_PAUSE later, and that second read is classified
+    in full. How often an arm shows up late is UNMEASURED; it could make the cloud arm park on most runs."""
+    for attempt in range(2):
+        if attempt:
+            sleep(RECONCILE_PAUSE)
+        try:
+            pr = gh_api.view_pr_gh(api, rec["pr"], ["state", "mergedAt", "headRefOid", "autoMergeRequest"],
+                                   sdlc_dir=sdlc_dir)
+            if pr.get("state") == "MERGED" or pr.get("mergedAt"):
+                return MERGED, ""
+            if pr.get("state") == "CLOSED":
+                return CLOSED_PR, ""
+            auto = pr.get("autoMergeRequest")
+            if not isinstance(auto, dict):
+                if attempt == 0:
+                    continue
+                return "unconfirmed", "no auto-merge on the PR after the PUT"
+            head = (pr.get("headRefOid") or "").strip()
+            if head != vetted_head:
+                return "unconfirmed", f"armed on {head[:7] or 'no head'}, not the vetted {vetted_head[:7]}"
+            got = str(auto.get("merge_method") or auto.get("mergeMethod") or "")
+            if got.lower() != method.lower():
+                return "unconfirmed", f"armed with {got or 'no method'}, not {method}"
+            return "armed", ""
+        except Exception as exc:            # noqa: BLE001 - an unreadable proof is no proof
+            return "unconfirmed", f"read-back unreadable: {_first_line(exc)}"
+    return "unconfirmed", "no auto-merge on the PR after the PUT"     # unreachable: the loop returns
+
+
 def _auto_merge_allowed(rec, run):
     """Whether this repo's `allow_auto_merge` setting lets `--auto` be armed at all (#1212).
 
@@ -7021,7 +7344,20 @@ def _auto_merge_allowed(rec, run):
     return out.strip().lower() == "true"
 
 
-def _delete_remote_branch(cwd, branch, run, config=None, base=None, sdlc_dir=None, goal=None):
+#: The one GitHub reply to a ref DELETE that means the branch is already gone (`merge()` usually deleted it
+#: eagerly, and `finish()` asks again). Deliberately NOT a bare 404: a token that cannot see the repository
+#: also gets `Not Found`, and that is exactly the silent failure #1682 is about.
+_REF_GONE = "Reference does not exist"
+
+
+def _remote_ref_sha(cwd, name, run):
+    """The sha the remote branch `name` points at right now (REST, one read), or raises."""
+    return str(run(cwd, ["gh", "api", f"repos/{{owner}}/{{repo}}/git/ref/heads/{name}",
+                         "--jq", ".object.sha"]) or "").strip()
+
+
+def _delete_remote_branch(cwd, branch, run, config=None, base=None, sdlc_dir=None, goal=None, expect_sha=None,
+                          outcome=None):
     """Best-effort REST delete of a goal's remote branch. Deliberately NOT `gh pr merge
     --delete-branch`: that flag tries to check out the base branch locally first, in whatever cwd
     it's given, and fails loudly the moment that base is already checked out somewhere else -- true
@@ -7031,31 +7367,52 @@ def _delete_remote_branch(cwd, branch, run, config=None, base=None, sdlc_dir=Non
     pr` subcommands generally (see `pr()`'s own docstring above). Called from two sites -- eagerly
     in `merge()` right after a direct landing, and again (redundant but harmless there; load-bearing
     for a goal that was armed and landed asynchronously instead) from `finish()` once it
-    independently confirms MERGED -- so this never raises: every caller's own success must never
-    depend on this cleanup nicety succeeding too.
+    independently confirms MERGED -- and from the leftover reconcile (`reconcile_merged_branches`),
+    so this never raises: every caller's own success must never depend on this cleanup nicety
+    succeeding too.
 
     The cleanup is deliberately narrower than the merge that precedes it: a misconfigured empty
     branch prefix must not turn a successful landing into a delete of the base/default branch. The
     optional `base` is the goal record's resolved target; callers that do not have one retain the
     configured-base and local-origin-HEAD protections. A refusal is best-effort cleanup failure,
-    not a merge failure."""
+    not a merge failure. The guards are: the configured prefix, `main`/`master`, the configured or
+    resolved base, `origin/HEAD`'s target, and never a `feature/` branch (#1682: the last was true
+    only because the prefix happened to exclude it).
+
+    `expect_sha` (#1682) is a lease: the head the caller LISTED the branch at. The ref is re-read
+    immediately before the delete and the delete is refused unless it still matches, or when it cannot
+    be read. REST has no conditional delete, so the window between that read and the DELETE is not
+    closed, only narrowed to two consecutive calls; it is not measured.
+
+    A FAILED delete is announced (#1682), like a refused one: one stderr line naming the branch and
+    the error, and a `gate` action-log entry with verdict `failed`. It stays best-effort and returns
+    False. In a cloud session the line adds that the branch needs a sweep from a host that can
+    delete, naming the branch and its head. A caller that passes `outcome` (a dict) gets `outcome["kind"]`
+    set to `refused` or `failed` on a False return: a refusal concerns this one branch, a failure is the
+    DELETE itself being rejected."""
     s = settings(config or {})
     name = str(branch or "").strip()
 
-    def refuse(rule):
-        message = f"work: refusing remote branch delete for {name!r}: {rule}"
+    def announce(verdict, message):
         print(message, file=sys.stderr)
+        if outcome is not None:
+            outcome["kind"] = verdict        # "refused" (a guard or the lease) or "failed" (the DELETE itself)
         if sdlc_dir is not None and goal is not None:
             # Lazy: actionlog loads this module for stem(), so importing it at module scope cycles.
             _load("actionlog").safe_append(sdlc_dir, goal, "gate", gate="merge",
-                                            verdict="refused", why=message)
+                                            verdict=verdict, why=message)
         return False
+
+    def refuse(rule):
+        return announce("refused", f"work: refusing remote branch delete for {name!r}: {rule}")
 
     prefix = str(s.get("branch_prefix") or "")
     if not prefix:
         return refuse("work.branch_prefix is empty")
     if not name.startswith(prefix):
         return refuse(f"branch does not start with configured prefix {prefix!r}")
+    if name.startswith("feature/"):
+        return refuse("branch is a feature/ branch; Sigma never deletes one")
     if name in {"main", "master"}:
         return refuse("branch is a protected conventional default")
     configured_base = str(s.get("base") or "").strip()
@@ -7071,11 +7428,197 @@ def _delete_remote_branch(cwd, branch, run, config=None, base=None, sdlc_dir=Non
             return refuse("branch is origin/HEAD's target")
     except Exception:                       # noqa: BLE001 - this extra comparison is advisory
         pass
+    if expect_sha:
+        try:
+            current = _remote_ref_sha(cwd, name, run)
+        except Exception as exc:            # noqa: BLE001 - an unreadable lease is no lease
+            return refuse(f"cannot confirm the branch is still at {expect_sha[:12]} ({_first_line(exc)})")
+        if current != expect_sha:
+            return refuse(f"branch moved from the listed head {expect_sha[:12]} to {current[:12] or 'nothing'}")
     try:
         run(cwd, ["gh", "api", "-X", "DELETE", f"repos/{{owner}}/{{repo}}/git/refs/heads/{name}"])
         return True
-    except Exception:                       # noqa: BLE001 - best-effort
-        return False
+    except Exception as exc:                # noqa: BLE001 - best-effort
+        if _REF_GONE in str(exc):
+            return True
+        message = f"work: remote branch delete failed for {name!r}: {_first_line(exc)}"
+        if ledger.cloud_session():
+            head = expect_sha
+            if not head:
+                try:
+                    head = _remote_ref_sha(cwd, name, run)
+                except Exception:           # noqa: BLE001 - the head is a courtesy in this message
+                    head = ""
+            message += (f" -- this cloud session cannot delete it: branch {name!r} at "
+                        f"{head or 'a head that could not be read'} needs a sweep from a host that can delete "
+                        "(`work.py branches <sdlc_dir> --sweep`)")
+        return announce("failed", message)
+
+
+#: Pull-request listing bounds for the leftover reconcile (#1682): `BRANCH_SWEEP_PAGES` pages of
+#: `BRANCH_SWEEP_PER_PAGE` of the newest closed PRs, and as many open ones. The cost of one pass is
+#: therefore at most 2 + 2 * BRANCH_SWEEP_PAGES REST reads for the PRs and the name, one more per 100 refs under the prefix, and 2 per attempted delete. The CEILING:
+#: a leftover whose merged PR is older than the newest 300 closed ones is not found (a hand sweep is then
+#: the lever). `BRANCH_SWEEP_DELETES` bounds the deletes one pass attempts.
+BRANCH_SWEEP_PER_PAGE = 100
+BRANCH_SWEEP_PAGES = 3
+BRANCH_SWEEP_DELETES = 10
+
+
+_SWEEP_NAME = re.compile(r"[A-Za-z0-9._/-]+")
+
+
+def _pr_pages(cwd, run, pr_repo, state):
+    """Up to `BRANCH_SWEEP_PAGES` pages of `pr_repo`'s `state` pull requests, newest first -> (rows, full)
+    where `full` says the last page was full, so rows may be a truncation."""
+    rows, full = [], False
+    for page in range(1, BRANCH_SWEEP_PAGES + 1):
+        got = json.loads(run(cwd, ["gh", "api", f"repos/{pr_repo}/pulls?state={state}&sort=updated"
+                                   f"&direction=desc&per_page={BRANCH_SWEEP_PER_PAGE}&page={page}"]) or "[]")
+        if not isinstance(got, list):
+            raise ValueError("a pull request listing was not a list")
+        rows.extend(r for r in got if isinstance(r, dict))
+        full = len(got) >= BRANCH_SWEEP_PER_PAGE
+        if not full:
+            break
+    return rows, full
+
+
+def merged_leftovers(sdlc_dir, config, run=None, skip=()):
+    """READ-ONLY (#1682): the goal branches still on the remote although their pull request merged.
+
+    -> `{"eligible": [{"branch","sha","pr"}], "kept": [(branch, why)], "error": ""}`. Never raises and
+    never writes. A branch is eligible only when ALL hold: it carries the configured prefix; the remote ref
+    still points at the head a merged PR of THIS repository was merged from; no open PR uses it as its head;
+    and no open PR is based on it (deleting that would close the dependent PR). When the open-PR listing may
+    be truncated nothing is eligible: an unread open PR is the case that matters. Reads: the refs under the
+    prefix (1), this repository's name (1), and the bounded PR pages of `_pr_pages`. The PRs are read from
+    `discovery.github.repo` when set (a fork flow keeps its branches in one repository and its PRs in
+    another), else from the repository `gh` resolves."""
+    run = run or _run
+    out = {"eligible": [], "kept": [], "error": ""}
+    try:
+        cwd = project_root(sdlc_dir)
+        prefix = str(settings(config or {}).get("branch_prefix") or "")
+        if not prefix:
+            out["error"] = "work.branch_prefix is empty"
+            return out
+        listing = run(cwd, ["gh", "api", f"repos/{{owner}}/{{repo}}/git/matching-refs/heads/{prefix}",
+                            "--paginate", "--jq", r'.[] | "\(.ref)\t\(.object.sha)"'])
+    except Exception as exc:                # noqa: BLE001 - a listing that failed is reported, not raised
+        out["error"] = f"could not list {prefix or 'goal'} branches on the remote: {_first_line(exc)}"
+        return out
+    refs = {}
+    for line in str(listing or "").splitlines():
+        ref, _, sha = line.partition("\t")
+        if ref.startswith("refs/heads/") and sha.strip():
+            refs[ref[len("refs/heads/"):]] = sha.strip()
+    for name in list(refs):
+        if name in set(skip):
+            del refs[name]
+    for name in list(refs):
+        digits = re.match(re.escape(prefix) + r"(\d+)(?!\d)", name)
+        if digits and (pathlib.Path(sdlc_dir) / "work" / digits.group(1)).exists():
+            # A goal that is being worked here may have re-cut this branch from a merged head: not a leftover.
+            out["kept"].append((name, "a goal worktree for it exists on this machine"))
+            del refs[name]
+    if not refs:
+        return out
+    try:
+        here = str(run(cwd, ["gh", "api", "repos/{owner}/{repo}", "--jq", ".full_name"]) or "").strip().lower()
+        if not here:
+            raise RuntimeError("the repository's own name came back empty")
+        github = (config or {}).get("discovery", {}).get("github", {}) if isinstance(config, dict) else {}
+        pr_repo = str((github or {}).get("repo") or "").strip() or "{owner}/{repo}"
+        merged_rows, _ = _pr_pages(cwd, run, pr_repo, "closed")
+        open_rows, open_full = _pr_pages(cwd, run, pr_repo, "open")
+    except Exception as exc:                # noqa: BLE001 - unreadable evidence deletes nothing
+        out["error"] = f"could not read the pull requests: {_first_line(exc)}"
+        return out
+    if open_full:
+        out["error"] = ("the open pull request list may be truncated "
+                        f"({BRANCH_SWEEP_PAGES * BRANCH_SWEEP_PER_PAGE} read), so no branch is judged merged")
+        return out
+
+    def head_of(row):
+        head = row.get("head") if isinstance(row.get("head"), dict) else {}
+        repo = head.get("repo") if isinstance(head.get("repo"), dict) else {}
+        return str(head.get("ref") or ""), str(head.get("sha") or ""), str(repo.get("full_name") or "").lower()
+
+    open_heads = {head_of(r)[0] for r in open_rows if head_of(r)[2] == here}
+    open_bases = {str((r.get("base") or {}).get("ref") or "") for r in open_rows if isinstance(r.get("base"), dict)}
+    merged_at = {}
+    for row in merged_rows:
+        ref, sha, repo = head_of(row)
+        if row.get("merged_at") and repo == here:
+            merged_at.setdefault((ref, sha), row.get("number"))
+    for name, sha in sorted(refs.items()):
+        if not _SWEEP_NAME.fullmatch(name):
+            # A remote-supplied name goes into a URL path: `#` or `%` would make the call name another ref.
+            out["kept"].append((name, "its name has characters a ref URL would read differently"))
+        elif name in open_heads:
+            out["kept"].append((name, "an open pull request uses it"))
+        elif name in open_bases:
+            out["kept"].append((name, "an open pull request is based on it"))
+        elif (name, sha) in merged_at:
+            out["eligible"].append({"branch": name, "sha": sha, "pr": merged_at[(name, sha)]})
+        else:
+            out["kept"].append((name, "no merged pull request ends at its current head"))
+    return out
+
+
+def reconcile_merged_branches(sdlc_dir, config, run=None, delete=True, skip=(), errors=None):
+    """Retry the delete of every goal branch `merged_leftovers` lists (#1682) -> lines to show.
+
+    Each delete goes through `_delete_remote_branch`, so the prefix, base, `origin/HEAD` and `feature/`
+    guards apply and the delete is lease-pinned to the listed head. At most `BRANCH_SWEEP_DELETES` are
+    attempted, and none after the first failure (a token or proxy that rejects one rejects them all): the
+    rest are listed with their heads so a host that can delete knows what to sweep. `delete=False` lists
+    only. A refusal of one branch (it moved, or a guard) is listed and does not stop the rest; only a
+    delete the remote itself rejects does. `errors`, when a list, receives every message that means the
+    pass could not do its job. Never raises."""
+    run = run or _run
+    try:
+        found = merged_leftovers(sdlc_dir, config, run=run, skip=skip)
+        if found["error"]:
+            if errors is not None:
+                errors.append(found["error"])
+            return [found["error"]]
+        cwd = project_root(sdlc_dir)
+        prefix = str(settings(config or {}).get("branch_prefix") or "")
+        lines, failed = [], False
+        attempted = 0
+        for item in found["eligible"]:
+            name, sha, pr = item["branch"], item["sha"], item["pr"]
+            label = f"{name} at {sha[:7]} (PR #{pr})"
+            if not delete:
+                lines.append(f"merged but still on the remote: {label}")
+            elif failed:
+                lines.append(f"not attempted after an earlier delete failed: {label}")
+            elif attempted >= BRANCH_SWEEP_DELETES:
+                continue
+            else:
+                attempted += 1
+                digits = re.match(re.escape(prefix) + r"(\d+)", name)
+                outcome = {}
+                if _delete_remote_branch(cwd, name, run, config=config, sdlc_dir=sdlc_dir,
+                                         goal=digits.group(1) if digits else None, expect_sha=sha,
+                                         outcome=outcome):
+                    lines.append(f"deleted merged branch {label}")
+                elif outcome.get("kind") == "refused":
+                    lines.append(f"not deleted (refused, see above): {label}")
+                else:
+                    failed = True
+                    lines.append(f"could not delete {label}")
+                    if errors is not None:
+                        errors.append(lines[-1])
+        if delete and not failed and len(found["eligible"]) > attempted:
+            lines.append(f"{len(found['eligible']) - attempted} more merged branches left for the next pass")
+        return lines
+    except Exception as exc:                # noqa: BLE001 - cleanup must never fail its caller
+        if errors is not None:
+            errors.append(f"branch reconcile could not run: {_first_line(exc)}")
+        return [f"branch reconcile could not run: {_first_line(exc)}"]
 
 
 #: The audit line left on an issue this kit closed itself, for the case its own post-merge read
@@ -7291,14 +7834,18 @@ def _emit_monitor_touch(sdlc_dir, config, goal, diff, actionlog):
 MERGE_RECEIPT_SLACK = 600
 
 
-def merge_budget_seconds():
+def merge_budget_seconds(config=None):
     """The merge receipt's deadline, DERIVED at call time from `gate()`/`merge()`'s retry constants (never the
-    documented figure, which drifts): one gate worst case = its UNKNOWN backoff waits + PENDING_ATTEMPTS flat
+    documented figure, which drifts): one gate worst case = its UNKNOWN backoff waits + its flat pending
     re-reads; a merge gates once plus once per BEHIND rebase, each rebase also polling with exponential
     backoff; then the RECONCILE reads and a fixed slack. Capped at the shared MAX_RUN_SECONDS. DERIVED from the
-    constants, not a measurement of any real merge."""
-    one_gate = (sum(UNKNOWN_BACKOFF * 2 ** i for i in range(UNKNOWN_ATTEMPTS - 1))
-                + PENDING_ATTEMPTS * PENDING_INTERVAL)
+    constants, not a measurement of any real merge. `config=None` keeps the constants-only formula; with a
+    config (#2083) the pending re-reads follow `work.merge_pending_wait_s` (at the 7200 s cap: about
+    4 x 7215 + 615 s, ~8.2 h). The cloud arm's one RECONCILE_PAUSE before its second PR read-back needs no
+    term of its own: it and the direct merge's reconcile reads cannot both run in one call, and the
+    RECONCILE_ATTEMPTS x RECONCILE_PAUSE term already counted is larger than that one pause."""
+    rounds, interval = (PENDING_ATTEMPTS, PENDING_INTERVAL) if config is None else pending_wait(config)
+    one_gate = sum(UNKNOWN_BACKOFF * 2 ** i for i in range(UNKNOWN_ATTEMPTS - 1)) + rounds * interval
     behind_poll = sum(min(BEHIND_BACKOFF * 2 ** i, BEHIND_BACKOFF_MAX) for i in range(BEHIND_ATTEMPTS))
     total = (one_gate * (BEHIND_REBASES + 1) + BEHIND_REBASES * behind_poll
              + RECONCILE_ATTEMPTS * RECONCILE_PAUSE + MERGE_RECEIPT_SLACK)
@@ -7321,7 +7868,7 @@ def merge_with_receipt(sdlc_dir, config, goal, **kw):
     run_id = uuid.uuid4().hex
     try:
         _rr.write(path, outcome="running", pid=os.getpid(), started_at=int(time.time()),
-                  timeout_seconds=merge_budget_seconds(), run_id=run_id, run=state.run_identity(),
+                  timeout_seconds=merge_budget_seconds(config), run_id=run_id, run=state.run_identity(),
                   kind="merge", goal=str(goal))
     except OSError as exc:
         print(f"work.py merge: could not write the running receipt ({exc}); `wait-call` will not see "
@@ -7570,7 +8117,13 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     Every other non-PARK line (`PR #N opened`, `auto-merge armed`, `... leaving PR #N for a human`,
     `... merging it is yours to make`) means the loop did everything it could and the PR awaits a
     merge it does not perform now: the caller records `review`, and the merge-reconcile pass records
-    `done` once the PR is observed merged.
+    `done` once the PR is observed merged. #984: that last ending is printed by `protected` on a base
+    where nothing is enforced AND by `protected` and `always` alike when `protection()` raised
+    `ProtectionUndetermined` (a source could not be read), as `(auto_merge: "<policy>")`. That `always` stop is
+    an owner-reversible default: to stop only under `protected`, the `except ProtectionUndetermined` block
+    returns the stop only when `chosen == PROTECTED` and otherwise falls through with `guarded, detail =
+    False, str(exc)` (a WRITE- or MAINTAIN-level token without admin rights stops under `always` by this
+    default; a READ or TRIAGE token is stopped earlier, by `merge_rights`; see `protection()`).
 
     #1212: THE LANDING ITSELF prefers a direct merge over arming `--auto`, reserving the
     arm for the one case it exists for — a required check that has not answered yet, where GitHub
@@ -7587,9 +8140,11 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     (5xx, timeout, a reply without `merged: true`) is never re-sent: up to RECONCILE_ATTEMPTS REST reads
     (RECONCILE_PAUSE apart) decide -- MERGED lands normally (`(outcome reconciled: ...)` appended), CLOSED
     parks, still OPEN/UNKNOWN returns `merge outcome unknown for PR #N (...)`, which the caller records
-    as `review` (NOT a park: the merge-reconcile pass sweeps awaiting_merge goals). Without GraphQL a
-    still-pending required check is not armed: it parks after gate()'s own bounded wait (no extra wait,
-    so the documented 22.5-minute worst case is unchanged)."""
+    as `review` (NOT a park: the merge-reconcile pass sweeps awaiting_merge goals). #2083: without GraphQL a
+    check still pending after gate()'s configured wait (`work.merge_pending_wait_s`) is armed through the
+    cloud CCR route only when `_cloud_arm_refusal` passes and the repo allows auto-merge, and reported armed
+    only when `_ccr_readback` confirms it; otherwise it parks with `_PENDING_PARK_INSTRUCTION` (no extra
+    wait, so the worst case stays about 4 x the configured wait: 22.5 minutes at the default)."""
     run = run or _run
     # Loaded lazily (see start()'s own comment on why: actionlog.py loads work.py for stem(), so an
     # eager module-level `_load("actionlog")` here would cycle) — once per call, reused below for
@@ -7640,8 +8195,8 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
         if kind == "park":
             return f"PARK: {payload}"
         ok, verdict, final_data = payload
-    # #254: a required check that has not ANSWERED yet, after gate()'s own ~7.5-minute patience
-    # budget (#464), is not a reason to leave a mergeable, review-clean PR unarmed — that is EXACTLY
+    # #254: a required check that has not ANSWERED yet, after gate()'s own patience budget (#464;
+    # `work.merge_pending_wait_s`, ~7.5 minutes by default, #2083), is not a reason to leave a mergeable, review-clean PR unarmed — that is EXACTLY
     # the case `--auto` exists for: GitHub re-checks atomically, and unboundedly, at its OWN merge
     # time, rather than record-time racing a CI run gate()'s fixed budget might lose. gate() already
     # tells this apart from a genuinely FAILING check (#464, PENDING_PREFIX); this is `merge()`
@@ -7724,7 +8279,14 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # `sdlc/<n>` -> `feature/<unit>` merge inside one repo, which cannot land half of a cross-repo
     # pair, and wiring the check to it deadlocks every tier-1 unit symmetrically. Its consumer is
     # #1478. Nothing about `merge()` changed for #1474, and that absence is pinned by a test.
-    guarded, detail = protection(sdlc_dir, config, goal, run=run)
+    try:
+        guarded, detail, required_checks = protection_requirements(sdlc_dir, config, goal, run=run)
+    except ProtectionUndetermined as exc:
+        # #984: could not tell whether the base enforces anything -> stop under BOTH policies, before any
+        # arm or merge below. `always` is opt-in to merge where NOTHING is enforced, not where nobody could
+        # tell; the ending is the routed one (`record review`), the detail names the source and the lever.
+        return (f"PR #{rec['pr']} {verdict}, but {exc}{ratchet_skipped} — merging it is yours to make "
+                f'(auto_merge: "{chosen}")')
     if chosen == PROTECTED and not guarded:
         return (f"PR #{rec['pr']} {verdict}, but {detail}{ratchet_skipped} — merging it is yours to make "
                 f'(auto_merge: "protected")')
@@ -7746,13 +8308,58 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     # #1212: arm ONLY when there is a real reason a direct merge would be refused right now (a
     # required check that hasn't answered) AND the repo's own setting actually permits arming.
     # Every other path below prefers landing it directly, immediately, over waiting on an async arm.
-    # #895 slice 4b-1: `--auto` is GraphQL and REST has no auto-merge. Without GraphQL (env/override
-    # only, no probe) the arm cannot happen; gate() has ALREADY spent its bounded REST wait and the
-    # check is still pending, so park -- no extra wait (the worst case is unchanged) and no merge
-    # around a pending required check. Checks that settled inside gate() never reach here.
+    # #895 slice 4b-1: `--auto` is GraphQL and REST has no auto-merge. #2083: without GraphQL (env/override
+    # only, no probe) gate() has ALREADY spent its configured REST wait and the check is still pending. The
+    # arm then goes through the cloud proxy's CCR REST route (UNCONFIRMED live), and only when
+    # `_cloud_arm_refusal` finds every pending check required by the base and GitHub itself BLOCKED, and the
+    # repo allows auto-merge -- cheapest clause first (D-8), so a set that does not qualify never reads
+    # `allow_auto_merge`. Otherwise it parks with the reason and the one instruction landing.md repeats; no
+    # extra wait, and never a merge around a pending check. Checks that settled inside gate() never reach here.
     if pending_arm and not gh_api.graphql_available()["available"]:
-        return (f"PARK: {PENDING_PREFIX} after {PENDING_ATTEMPTS * PENDING_INTERVAL}s and auto-merge cannot "
-                "be armed without GraphQL; re-run work.py merge once they finish")
+        pending_names, not_armable = _cloud_arm_refusal(final_data, required_checks, rec["base"])
+        if not_armable is None and not _auto_merge_allowed(rec, run):
+            not_armable = "the repository does not allow auto-merge"
+        if not_armable is not None:
+            rounds, interval = pending_wait(config)
+            return (f"PARK: {PENDING_PREFIX} after {rounds * interval}s and auto-merge cannot be armed without "
+                    f"GraphQL ({not_armable}); {_PENDING_PARK_INSTRUCTION}")
+        api = _pr_api_run(run, rec["worktree"])     # W3: gh's stderr as `.hint`, so a refusal reads definite
+        put_unknown = ""
+        try:
+            gh_api.arm_auto_merge_ccr(api, rec["pr"], method, vetted_head)
+        except Exception as exc:            # noqa: BLE001 - a refused arm is a park, never a crash
+            if not getattr(exc, "outcome_unknown", True):
+                return f"PARK: could not arm auto-merge on PR #{rec['pr']} via the cloud REST route ({exc})"
+            # It MAY have armed (5xx, timeout): never re-sent, the read-back below decides, so an arm that
+            # took effect is confirmed, reported merged, or disarmed -- never left live under a parked goal.
+            put_unknown = f"PUT outcome unknown ({_first_line(exc)}); "
+        outcome, why = _ccr_readback(api, rec, method, vetted_head, sleep, sdlc_dir)
+        names = ", ".join(pending_names)
+        if outcome == MERGED:
+            # B2: GitHub landed it at once. Deliberately NOT `PR #N merged (`: the merge-reconcile pass owns the
+            # close, so the WARNING reaches the recorded outcome (landing.md routes this to `record review`).
+            return (f"PR #{rec['pr']} merged when auto-merge was armed, before the pending checks ({names}) "
+                    f"answered — WARNING: GitHub did not hold it on them; {gate_detail}")
+        if outcome == CLOSED_PR:
+            return (f"PARK: PR #{rec['pr']} was closed while auto-merge was being armed (not merged); reopen it "
+                    "or merge it by hand")
+        if outcome != "armed":
+            # The ONE disarm call site (W1: keeps the write-surface count stable). Best effort; a failure is
+            # named, and landing.md tells the human to check whether the PR already merged (W2).
+            try:
+                gh_api.disarm_auto_merge_ccr(api, rec["pr"])
+                disarmed = "sent"
+            except Exception as exc:        # noqa: BLE001 - named in the park, never a crash
+                disarmed = f"failed: {_first_line(exc)}"
+            return (f"PARK: auto-merge arm on PR #{rec['pr']} could not be confirmed ({put_unknown}{why}); "
+                    f"disarm {disarmed} — a disarm also removes an auto-merge a human armed on this PR; check "
+                    "the PR's auto-merge by hand")
+        armed_why = (f"auto-merge ({method}) armed on PR #{rec['pr']} via the cloud REST route while required "
+                     "checks were still pending")
+        ledger.safe_append(sdlc_dir, "merge-armed", goal, config=config, pr=rec["pr"], why=armed_why)
+        actionlog.safe_append(sdlc_dir, goal, "merge_armed", pr=rec["pr"])
+        return (f"auto-merge armed on PR #{rec['pr']} via the cloud REST route — required checks still pending "
+                f"({names}), trusting GitHub's own re-check at merge time — {gate_detail}")
     if pending_arm and _auto_merge_allowed(rec, run):
         try:
             run(rec["worktree"], ["gh", "pr", "merge", rec["pr"], "--auto", f"--{method}",
@@ -8228,7 +8835,7 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
                     print("merge receipt publication pending: %s" % exc, file=sys.stderr)
             if not _merge_delivery_complete(sdlc_dir, goal):
                 return "PARK: confirmed merge observation delivery is pending; retry finish to repair it"
-    root_report = _clean_landed_root_records(sdlc_dir, rec, goal, run) if merged_before_cleanup else []
+    root_report = _clean_landed_root_records(sdlc_dir, rec, goal, run, config) if merged_before_cleanup else []
     note = ("; " + "; ".join(root_report)) if root_report else ""
     remove_argv = ["git", "worktree", "remove", rec["worktree"]] + (["--force"] if force else [])
     try:
@@ -8277,6 +8884,11 @@ def finish(sdlc_dir, config, goal, run=None, force=False, merged=False):
     if not force and branch and rec.get("pr") and (merged_before_cleanup or _pr_merged(sdlc_dir, rec, run)):
         remote_deleted = _delete_remote_branch(project_root(sdlc_dir), branch, run, config=config,
                                                 base=rec.get("base"), sdlc_dir=sdlc_dir, goal=goal)
+        # #1682: a goal whose own delete never succeeded (a token without `contents:write`, a rate limit)
+        # leaves its branch behind, and so did every earlier one. This goal's PR just merged, so this is
+        # the moment to look for those too. Never raises; this branch is skipped (it was just attempted).
+        swept = reconcile_merged_branches(sdlc_dir, config, run=run, skip=(branch,))
+        note += ("; " + "; ".join(swept)) if swept else ""
         try:
             run(project_root(sdlc_dir), ["git", "branch", "-D", branch])
         except Exception:                   # noqa: BLE001 - best-effort; the worktree is already gone
@@ -8848,6 +9460,7 @@ def main(argv):
     if any(arg in ("--help", "-h") for arg in argv[1:]):
         command = argv[1] if len(argv) > 1 else ""
         usage = {
+            "branches": "usage: work.py branches <sdlc_dir> [--sweep]  (goal branches whose PR merged but whose remote ref is still there; --sweep retries the delete)",
             "review-paths": "usage: work.py review-paths <sdlc_dir> <goal> --manifest <path> --format sh",
             "review-evidence": "usage: work.py review-evidence <sdlc_dir> <goal> --manifest <path> --review-result <path>",
             "run-resolved-review": "usage: work.py run-resolved-review <sdlc_dir> <goal> --manifest <path> --resolution <path> [--verdict approve|block|unblock --reason <text>]  (the verdict flags are for the inline route only)",
@@ -8874,6 +9487,19 @@ def main(argv):
         except ValueError as exc:
             print(f"work: {exc}", file=sys.stderr)
             return 2
+    if len(argv) >= 3 and argv[1] == "branches":
+        # #1682: the read-only listing of goal branches whose PR merged but whose remote ref is still there;
+        # `--sweep` retries the delete (lease-pinned, same guards). The sweep a cloud session names.
+        extra = [a for a in argv[3:] if a != "--sweep"]
+        if extra:
+            print("usage: work.py branches <sdlc_dir> [--sweep]", file=sys.stderr)
+            return 2
+        sdlc = argv[2]
+        cfg = state.load_config(sdlc)
+        errors = []
+        lines = reconcile_merged_branches(sdlc, cfg, delete="--sweep" in argv[3:], errors=errors)
+        print("\n".join(lines) if lines else "no merged goal branch is left on the remote")
+        return 1 if errors else 0
     if len(argv) >= 3 and argv[1] == "prune-review-generations":
         usage = "usage: work.py prune-review-generations <sdlc_dir> [<goal> [--done]] [--limit N]"
         rest, limit, done = list(argv[3:]), REVIEW_PRUNE_GOALS_PER_CALL, False

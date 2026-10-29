@@ -28,6 +28,8 @@ Read which one you got, every time.**
 - **Cut off or yielded, state unknown?** `verify` and `merge` print a `wait-call` line on stderr:
   run it, never re-run. Exit `0` finished (not passed: read the first word or `exit=`), `1` did not
   complete, `3` still running, `2` no receipt (check the PR). Unmeasured on real hosts.
+  `runner pid N gone`, PR open: not a failure; `agent-start --pid "$PPID"`, re-run `work.py merge`
+  (`references/killed-merge.md`).
 - **Response is a plain error/exit naming no id at all** (e.g. "Command timed out after Ns", exit
   143)? Nothing is left running. A clean re-run is correct where the command's own documentation
   says so — as `loop.py verify` and `work.py merge`'s paragraphs below both do.
@@ -191,14 +193,10 @@ by hand: if the evidence marker is there, `reconcile-review-post`; if not, delet
 Then `work.py merge .sdlc "$goal"`. **This call can block for minutes — raise your tool-call
 timeout before running it, not after it times out** (the REQUIRED PATTERN above `loop.py verify`
 applies here unchanged: read the literal response, never shell-background this and wait on
-nothing; if yielded, run its `wait-call ... merge` line). Its internal gate (`gate()`) carries a
-deliberate patience budget: `PENDING_ATTEMPTS` (10) re-reads at `PENDING_INTERVAL` (45s) apart —
-450s, roughly **7.5 minutes** — spent re-polling a required check that has attached but not yet
-answered, before gate() gives up and reports it still pending. On the BEHIND-rebase path (`main`
-moving under the PR mid-merge) that same ~7.5min budget can be spent again each time a rebase
-attaches a fresh head, up to `BEHIND_REBASES` (3) times before the race arms or parks — roughly
-**22.5 minutes** worst case, plus the smaller BEHIND poll per rebased head. The
-safe minimum is **~1,350,000ms (22.5 minutes)**, plus the quality-ratchet budget and git reads when that
+nothing; if yielded, run its `wait-call ... merge` line). Its `gate()` re-polls, 45s apart, a check
+that attached but has not answered for `work.merge_pending_wait_s` (450s default, **7.5 minutes**).
+Each BEHIND rebase can spend that again, (3x): about 4x the wait.
+The safe minimum at the default is **~1,350,000ms (22.5 minutes)**, plus the quality-ratchet budget and git reads when that
 gate is on (docs/quality-delta.md) — `gate()` only READS GitHub's state while it polls; it mutates nothing.
 So if the host cuts the call short while it polls, nothing was recorded as merged or armed — re-run
 `work.py merge .sdlc "$goal"` (idempotent). A cut DURING the merge call itself may have landed: run `loop.py record .sdlc "$goal" review`, never re-run merge. Or
@@ -211,7 +209,7 @@ unresolved thread). **The review gate runs on every `auto_merge` policy, `off` i
 under the shipped `off` + `require_review: "changes"` defaults a `sigma:block` parks the merge
 instead of being invisible, and a clean PR's line says `review gate passed (require_review: …)`
 before it is left for a human. It rebases once if the PR is `BEHIND`. It then **lands the PR
-directly** over REST (`PUT pulls/N/merge` with the vetted `sha`; one `gh pr merge` fallback on a primary rate limit only) — `--auto` only for a pending required check, and only with GraphQL.
+directly** over REST (`PUT pulls/N/merge` with the vetted `sha`; one `gh pr merge` fallback on a primary rate limit only) — `--auto` only for a pending required check.
 
 **Done means merged.** A goal is `done` only once its PR has merged; until then it is `review`
 (awaiting merge): the issue stays **open**, keeps `sdlc:goal` and the claim's `sdlc:in-progress`, and
@@ -250,14 +248,18 @@ pass records the `done` later — see below.
   close #N (…)`, the merge still LANDED and `record done` remains right: `source.complete()` retries
   the close, and parks the goal instead of silently losing the record if that retry fails too.
 - `merge outcome unknown for PR #N (…)` → **`record review`**.
-- `PARK: required checks still pending after 450s and auto-merge cannot be armed without GraphQL …` → `record parked`.
+- `PARK: required checks still pending after <N>s and auto-merge cannot be armed without GraphQL (…); …` →
+  re-run work.py merge to wait again (work.merge_pending_wait_s sets how long one call waits); if the re-run
+  returns this line too, record parked.
+- `PARK: auto-merge arm on PR #N could not be confirmed …` → `record parked`; on `disarm failed` check the PR (already merged: `record done`).
+- `PR #N merged when auto-merge was armed … WARNING …` → **`record review`** — never `record done`.
 - `PR #N opened — …` → **`record review`**. The open-source path: a fork PR, or a repo you only have
   read access to, can never be merged by you. The loop has done everything it can; the goal is not
   done until the upstream merge lands.
 - `auto-merge armed …` → **`record review`**. GitHub will land it on its own re-check; an arm is a
   promise, not a merge (a later-failing check or a cancelled arm means it never lands).
 - `… auto_merge is off (…), leaving PR #N for a human` (the shipped default) and `… merging it is yours
-  to make (auto_merge: "protected")` → **`record review`**. A still-pending required check under
+  to make (auto_merge: "protected" or "always")` → **`record review`**. A still-pending required check under
   these policies OPENS with `required checks still pending …` (the failing-check wording) but ENDS
   with one of these two; trust the ending.
 

@@ -553,20 +553,28 @@ def test_red_refuses_a_mismatched_or_widened_environment_approval(case, monkeypa
     lp = _approved_red_env(case, monkeypatch, command='make test')
     no_pytest(lp, monkeypatch)
     assert lp.red_goal(case[1], '42') == 2
-    assert 'does not approve every command' in out(capsys)
+    text = out(capsys)
+    assert 'does not approve every command' in text
+    assert 'set-verify-command' not in text           # #2085: no goal command caused it, so no goal remedy is named
     monkeypatch.setenv(_APPROVAL_ENV, lp.shell_policy.approval_value('owner/repo', 'true'))
     (case[1] / 'acceptance').mkdir()
     (case[1] / 'acceptance' / '42.md').write_text(
         '---\nkind: "acceptance"\ngoal: "42"\nverify_command: "echo widened"\n---\n'
         '## Done when\n- [ ] it works\n- [ ] it is tested\n- [ ] it is documented\n')
     assert lp.red_goal(case[1], '42') == 2
-    assert 'does not approve every command' in out(capsys)
+    text = out(capsys)
+    assert 'does not approve every command' in text
+    # #2085: `red` shares the builder `verify` uses, so the clear gesture leads here too
+    assert 0 <= text.find('set-verify-command') < text.find('git -C'), text
     (case[1] / 'acceptance' / '42.md').unlink()
     goal = case[1] / 'goals' / '42.md'
     goal.parent.mkdir(exist_ok=True)
     goal.write_text('---\nid: 42\nstatus: pending\nverify_command: echo replaced\n---\n')
     assert lp.red_goal(case[1], str(goal)) == 2
-    assert 'does not approve every command' in out(capsys)
+    text = out(capsys)
+    assert 'does not approve every command' in text
+    assert 'set-verify-command' not in text           # no record exists: the file edit is the remedy
+    assert 0 <= text.find('`verify_command:`') < text.find('git -C'), text
 
 
 def test_red_reports_error_for_an_invalid_acceptance_record(case, monkeypatch, capsys):

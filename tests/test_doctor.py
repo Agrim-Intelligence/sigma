@@ -8281,3 +8281,39 @@ def test_double_priority_row_names_the_repair_and_is_warn_only():
     i = src.index('"no open issue carries two priority labels"')
     row = src[i:i + 1100]
     assert "best rank" in row and "remove" in row
+
+
+# --------------------------------------------------------------------- merge pending-check wait (#2083) ----------
+
+_WAIT_ROW = "merge pending-check wait"
+
+
+def _wait_row(tmp_path, wk):
+    d = _doc()
+    base = _sdlc(tmp_path, {"work": wk})
+    rows = {name: (state, hint) for name, state, hint in d.features(base)}
+    return rows[_WAIT_ROW]
+
+
+def test_features_merge_pending_wait_row_default(tmp_path):
+    state, hint = _wait_row(tmp_path, {"enabled": True})
+    assert state == "450 s (default)", state
+    assert '"merge_pending_wait_s": 1800' in hint and "45..7200 s" in hint, hint
+
+
+def test_features_merge_pending_wait_row_configured(tmp_path):
+    assert _wait_row(tmp_path, {"enabled": True, "merge_pending_wait_s": 1800})[0] == \
+        "1800 s (work.merge_pending_wait_s)"
+
+
+def test_features_merge_pending_wait_row_clamped(tmp_path):
+    assert _wait_row(tmp_path, {"enabled": True, "merge_pending_wait_s": 99999})[0] == "7200 s (clamped from 99999)"
+
+
+def test_features_merge_pending_wait_row_invalid(tmp_path):
+    assert _wait_row(tmp_path, {"enabled": True, "merge_pending_wait_s": "1800"})[0] == "450 s (invalid value ignored)"
+
+
+def test_features_merge_pending_wait_row_work_off(tmp_path):
+    assert _wait_row(tmp_path, {"enabled": False, "merge_pending_wait_s": 1800})[0] == \
+        "off (per-goal worktrees are off)"

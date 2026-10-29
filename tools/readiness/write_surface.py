@@ -57,7 +57,7 @@ def _rest_verb(token):                # `-X DELETE`, `--method=DELETE`, `-XDELET
 
 _GH_API_WRITES = {"comment_issue", "add_labels", "remove_label", "create_issue", "close_issue", "edit_issue", "add_assignees",
                   "remove_assignees", "create_pr", "merge_pr", "merge_pr_pinned", "create_pr_nondraft", "comment_pr", "merge_pr_gh", "close_pr_gh",
-                  "create_label"}
+                  "create_label", "arm_auto_merge_ccr", "disarm_auto_merge_ccr"}
 
 
 def _is_gh_api_write_call(func):
@@ -82,6 +82,8 @@ def _metadata(path, function, rule):
             ("exact --yes-enable-merge-queue admin consent", "high"),
         ("skills/sigma-loop/scripts/work.py", "merge_design", "gh-api-write"):
             ("work.enabled; work.auto_merge != off; one non-idempotent REST PUT pulls/N/merge pinned to the vetted head sha via gh_api.merge_pr_gh (ONE `gh pr merge` fallback only on a primary rate limit while GraphQL is available); no retry; an ambiguous outcome is reconciled by a REST read of the PR, never counted as merged without a positive MERGED (#895 slice 4b-3)", "high"),
+        ("skills/sigma-loop/scripts/work.py", "_durable_plan_copy", "gh-api-write"):
+            ("work.enabled; only after a confirmed merge; only in a Claude Code cloud session (CLAUDE_CODE_REMOTE true or 1); only the goal's own plan, only when it is untracked and absent from <remote>/<base>; only a github-mode goal with an issue number; at most 3 REST comment POSTs of the plan (secret-shaped strings redacted) via gh_api.comment_issue on that goal's own issue, skipped when an OWNER, MEMBER or COLLABORATOR comment with the same goal, plan sha256 and part marker already exists; no retry; a failure keeps the old warning and says so (#2087)", "medium"),
         ("skills/sigma-loop/scripts/work.py", "close_design", "gh-api-write"):
             ("ungated (risk-reducing direction); a REST comment POST then PATCH state=closed via gh_api.close_pr_gh (ONE `gh pr close` fallback per the write policy); no retry; an ambiguous outcome is reconciled by a REST read, never counted as closed without a positive CLOSED (#895 slice 4b-3)", "high"),
         ("skills/sigma-loop/scripts/work.py", "merge", "gh-pr"):

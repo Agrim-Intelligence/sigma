@@ -450,6 +450,14 @@
     },
     {
       "path": "skills/sigma-loop/scripts/acceptance.py",
+      "function": "_sync_worktree_copy",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "only when .sdlc/state/work/<goal>.json names a worktree whose copy of the acceptance record is not a symlink and is byte-identical to the record just replaced; the copy is replaced atomically, a differing copy is left alone and named (#2085)",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/acceptance.py",
       "function": "record",
       "rule": "fs-remove",
       "count": 1,
@@ -462,6 +470,14 @@
       "rule": "fs-write",
       "count": 2,
       "gate": "ungated",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/acceptance.py",
+      "function": "set_verify_command",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "refuses once .sdlc/state/verify/<goal>.json exists; rewrites one metadata line of an existing .sdlc/acceptance/<goal>.md atomically, refuses a symlinked record, never creates a record (#2085)",
       "risk": "medium"
     },
     {
@@ -2946,6 +2962,14 @@
     },
     {
       "path": "skills/sigma-loop/scripts/work.py",
+      "function": "_durable_plan_copy",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "work.enabled; only after a confirmed merge; only in a Claude Code cloud session (CLAUDE_CODE_REMOTE true or 1); only the goal's own plan, only when it is untracked and absent from <remote>/<base>; only a github-mode goal with an issue number; at most 3 REST comment POSTs of the plan (secret-shaped strings redacted) via gh_api.comment_issue on that goal's own issue, skipped when an OWNER, MEMBER or COLLABORATOR comment with the same goal, plan sha256 and part marker already exists; no retry; a failure keeps the old warning and says so (#2087)",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/work.py",
       "function": "close_design",
       "rule": "gh-api-write",
       "count": 1,
@@ -2988,8 +3012,8 @@
       "path": "skills/sigma-loop/scripts/work.py",
       "function": "merge",
       "rule": "gh-api-write",
-      "count": 1,
-      "gate": "work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR; the direct merge is the REST PUT pulls/N/merge with the vetted head sha via gh_api.merge_pr_gh (non-idempotent; an unknown outcome is READ, never re-merged), counted since #895 slice 4b-2",
+      "count": 3,
+      "gate": "work.enabled; work.auto_merge != off; merge rights; fresh verify evidence and CLEAN PR; the direct merge is the REST PUT pulls/N/merge with the vetted head sha via gh_api.merge_pr_gh (non-idempotent; an unknown outcome is READ, never re-merged), counted since #895 slice 4b-2; plus (#2083) the cloud CCR arm gh_api.arm_auto_merge_ccr (PUT pulls/N/ccr/auto_merge) and its one disarm site gh_api.disarm_auto_merge_ccr (DELETE): GraphQL unavailable; every pending check named and required by the base; mergeStateStatus BLOCKED; allow_auto_merge; reported armed only when a REST read-back of the PR shows auto_merge with this method on the vetted head, else DELETE and park; UNCONFIRMED live",
       "risk": "high"
     },
     {
