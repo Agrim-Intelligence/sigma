@@ -1994,6 +1994,14 @@
     },
     {
       "path": "skills/sigma-loop/scripts/resource_lease.py",
+      "function": "discard",
+      "rule": "fs-remove",
+      "count": 1,
+      "gate": "operator-run lease table, or the verify gate when resource mode is on; unlinks one lease file of a unit whose command never ran (a literal-count verify hold) under the resource state folder (SIGMA_RESOURCE_DIR, else the XDG state home) outside every repository, serialised by admit.lock (flock); records nothing in any ring; removes only its own file, never a directory",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/resource_lease.py",
       "function": "log_event",
       "rule": "fs-remove",
       "count": 1,

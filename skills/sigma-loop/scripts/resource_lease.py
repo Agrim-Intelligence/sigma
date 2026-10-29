@@ -511,6 +511,24 @@ def release(lease_id, env=None):
         return True
 
 
+def discard(lease_id, env=None):
+    """Remove a lease whose command never ran (#2106): nothing is measured and no ring changes. Logs a `discard`
+    event. False when the lease is unknown or the lock stayed busy (the lease then ends by its ttl)."""
+    directory = state_dir(env)
+    path = os.path.join(directory, "leases", os.path.basename(str(lease_id)) + ".json")
+    with _locked(directory) as got:
+        if not got or not os.path.exists(path):
+            return False
+        record = _load_one(path)
+        log_event(directory, {"event": "discard", "id": os.path.basename(path)[:-len(".json")],
+                              "kind": (record or {}).get("kind", "unknown")})
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+        return True
+
+
 def note_peak(lease_id, env=None):
     """Raise a live lease's recorded peak to what it measures now (#1816): a session's tree is gone by release, so the
     peak has to be taken while it runs. False when the lease is unknown, dead or the lock is busy."""
