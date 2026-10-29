@@ -290,12 +290,12 @@ def run(kind, commands, root, timeout, goal, *, config=None, repo=None, env=None
     try:
         record = lease._read_json(os.path.join(lease.state_dir(), "leases", admitted.id + ".json"), {})
         if literal and n < literal:
-            if record.get("est_mem", 0) > 0:                     # a measured cost says N workers do not fit
+            if record.get("est_mem", 0) > 0 and not record.get("cold"):   # a measured cost says N workers do not fit
                 lease.note_waiting(goal, kind)                   # #1768: a held verify blocks new goal starts
                 return Outcome(hold=lease.Hold("memory: literal -n %d needs %d workers, %d fit" % (literal, literal, n),
                                                lease._retry()))
-            n = literal                                          # cold ring: nothing to compare, learn from this run
-            _amend(lease, admitted.id, workers=n)
+            n = literal                                          # cold ring (#2108: its est_mem is an estimate): learn from this run
+            _amend(lease, admitted.id, workers=n, est_mem=record.get("est_mem", 0) // max(1, admitted.n) * n)
         child_env = bounded.unattended_env(env)
         child_env[ENV_WORKERS] = str(n)
         child_env[ENV_XDIST] = str(n)

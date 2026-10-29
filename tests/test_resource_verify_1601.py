@@ -109,7 +109,7 @@ def test_workers_value_must_be_a_positive_int(env, bad):
 def test_injection_text_in_the_command_adds_nothing_the_author_did_not_write(env, tmp_path):
     marker = tmp_path / "x.txt"
     out = env.run("verify", "echo {workers}", str(tmp_path), 30, "g1")
-    assert out.returncode == 0 and out.outputs[0].strip() == "1"   # cold ring: one worker, an integer only
+    assert out.returncode == 0 and out.outputs[0].strip().isdigit()   # an integer only (#2108: a cold ring may grant several)
     assert not marker.exists()
 
 
@@ -333,15 +333,15 @@ lease = verify._sibling("resource_lease")
 G = 1024 ** 3
 lease.take_sample = lambda: lease.guard.Sample(total=16 * G, available=12 * G, swap_used=0, swap_total=0, swapouts=0,
                                                 swapouts_at=0.0, pressure=1, cpu_count=8, load1=0.0)
-out = verify.run("verify", sys.argv[2], sys.argv[3], 60, "g1", sample_gap=0.2)
+out = verify.run("verify", sys.argv[2], sys.argv[3], 60, "g1", sample_gap=0.2, config={"max_verify_workers": 1})
 print(json.dumps({"workers": out.workers}))
 """
 
 
 @unix_only
 def test_learned_cost_is_peak_tree_footprint_over_workers_within_20_percent(tmp_path):
-    """The child tree allocates and touches 300 MiB; observed.json gets about 300 MiB per worker (one worker on a
-    cold ring). The run happens in a fresh interpreter so the meter's tree holds only this test's child (inside a
+    """The child tree allocates and touches 300 MiB; observed.json gets about 300 MiB per worker (one worker: the
+    cap pins it, as a cold ring grants several since #2108). The run happens in a fresh interpreter so the meter's tree holds only this test's child (inside a
     long-lived test worker other tests' leftovers were counted: a 2 GiB reading, seen in a full run).
     Control: a meter that sums nothing records the lease-holder's own tiny footprint, far outside 20%."""
     alloc = 300 * MIB

@@ -1414,9 +1414,11 @@ def _resource_rows(cfg, sdlc_dir, now=None, sampler=None, env=None):
             rows.append(_chk("resource verify workers: %s against %d derived" % (
                 "no -n pin" if pin is None else "-n %s" % pin, workers), not over,
                 "verify.command pins -n %s but this machine derives %d workers: write `-n {workers}` so "
-                "Sigma substitutes the granted count. Note: the PYTEST_XDIST_AUTO_NUM_WORKERS lever "
+                "Sigma substitutes the granted count (on a cold ring, such as a cloud session's first verify, that is the "
+                "room above the reserve divided by one cold per-worker estimate, never above this %d; "
+                "`resource.verify_cold_mb` sets the estimate). Note: the PYTEST_XDIST_AUTO_NUM_WORKERS lever "
                 "lowers only `-n auto`, never a literal count, and only where the installed xdist reads it."
-                % (pin, workers)))
+                % (pin, workers, workers)))
         return rows
     except Exception:                            # noqa: BLE001 - a diagnostic never raises
         return []
