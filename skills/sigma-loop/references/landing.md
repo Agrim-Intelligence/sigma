@@ -194,8 +194,8 @@ Then `work.py merge .sdlc "$goal"`. **This call can block for minutes — raise 
 timeout before running it, not after it times out** (the REQUIRED PATTERN above `loop.py verify`
 applies here unchanged: read the literal response, never shell-background this and wait on
 nothing; if yielded, run its `wait-call ... merge` line). Its `gate()` re-polls, 45s apart, a check
-that attached but has not answered for `work.merge_pending_wait_s` (default 450s, **7.5 minutes**).
-Each BEHIND rebase can spend that again, up to 3 times: about 4x the wait.
+that attached but has not answered for `work.merge_pending_wait_s` (450s default, **7.5 minutes**).
+Each BEHIND rebase can spend that again, (3x): about 4x the wait.
 The safe minimum at the default is **~1,350,000ms (22.5 minutes)**, plus the quality-ratchet budget and git reads when that
 gate is on (docs/quality-delta.md) — `gate()` only READS GitHub's state while it polls; it mutates nothing.
 So if the host cuts the call short while it polls, nothing was recorded as merged or armed — re-run
@@ -209,7 +209,7 @@ unresolved thread). **The review gate runs on every `auto_merge` policy, `off` i
 under the shipped `off` + `require_review: "changes"` defaults a `sigma:block` parks the merge
 instead of being invisible, and a clean PR's line says `review gate passed (require_review: …)`
 before it is left for a human. It rebases once if the PR is `BEHIND`. It then **lands the PR
-directly** over REST (`PUT pulls/N/merge` with the vetted `sha`; one `gh pr merge` fallback on a primary rate limit only) — `--auto` only for a pending required check (no GraphQL: the cloud CCR route).
+directly** over REST (`PUT pulls/N/merge` with the vetted `sha`; one `gh pr merge` fallback on a primary rate limit only) — `--auto` only for a pending required check.
 
 **Done means merged.** A goal is `done` only once its PR has merged; until then it is `review`
 (awaiting merge): the issue stays **open**, keeps `sdlc:goal` and the claim's `sdlc:in-progress`, and
@@ -250,11 +250,9 @@ pass records the `done` later — see below.
 - `merge outcome unknown for PR #N (…)` → **`record review`**.
 - `PARK: required checks still pending after <N>s and auto-merge cannot be armed without GraphQL (…); …` →
   re-run work.py merge to wait again (work.merge_pending_wait_s sets how long one call waits); if the re-run
-  returns this line too, record parked. (A resume forgets the first call.)
-- `PARK: auto-merge arm on PR #N could not be confirmed …` → `record parked "<reason>"`; on `disarm failed` a
-  human checks the PR (already merged: `record done`).
-- `PR #N merged when auto-merge was armed … WARNING …` → **`record review`** (it does not begin `PR #N merged (`,
-  so never `record done`).
+  returns this line too, record parked.
+- `PARK: auto-merge arm on PR #N could not be confirmed …` → `record parked`; on `disarm failed` check the PR (already merged: `record done`).
+- `PR #N merged when auto-merge was armed … WARNING …` → **`record review`** — never `record done`.
 - `PR #N opened — …` → **`record review`**. The open-source path: a fork PR, or a repo you only have
   read access to, can never be merged by you. The loop has done everything it can; the goal is not
   done until the upstream merge lands.

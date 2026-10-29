@@ -513,7 +513,7 @@ def test_ac4_park_line_ends_with_the_instruction(tmp_path, monkeypatch):
 
 def test_landing_md_routes_the_merged_when_armed_line_to_record_review():
     bullet = _bullet("PR #N merged when auto-merge was armed")
-    assert "**`record review`**" in bullet and "record done" in bullet and "does not begin" in bullet, bullet
+    assert "**`record review`**" in bullet and "never `record done`" in bullet, bullet
 
 
 def test_landing_md_routes_the_unconfirmed_arm_park_to_a_human_check():
