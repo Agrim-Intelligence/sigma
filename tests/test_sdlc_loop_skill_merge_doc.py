@@ -133,9 +133,13 @@ def test_documents_the_unknown_merge_outcome_line_and_routes_it_to_review():
 
 
 def test_documents_the_no_graphql_pending_check_park():
+    """#2083 (BR-18): the not-armable PARK carries the configured wait, a reason, and ONE instruction that the
+    skill repeats instead of a bare `record parked`."""
     flat = _flat(SKILL)
-    assert ("PARK: required checks still pending after 450s and auto-merge cannot be armed without GraphQL"
-            in flat), "the skill omits merge()'s no-GraphQL pending-check PARK (#895 4b-1)"
+    assert ("PARK: required checks still pending after <N>s and auto-merge cannot be armed without GraphQL"
+            in flat), "the skill omits merge()'s no-GraphQL pending-check PARK (#895 4b-1, #2083)"
+    assert ("re-run work.py merge to wait again (work.merge_pending_wait_s sets how long one call waits); if the "
+            "re-run returns this line too, record parked") in flat
 
 
 def test_documents_the_lever_for_a_host_cut_mid_merge():

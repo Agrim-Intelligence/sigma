@@ -187,12 +187,12 @@ first checkout cannot starve it. Command timeouts are clipped to the time left; 
 clipped to the deadline; most of them land inside the budget, and only the work after the final deadline adds on
 top of it (below).
 
-**Worst case, in numbers.** With the gate off, `work.py merge` stays at 22.5 minutes. On, it adds at most B (1800 s
+**Worst case, in numbers.** With the gate off, `work.py merge` stays at 22.5 minutes (at the default `work.merge_pending_wait_s`). On, it adds at most B (1800 s
 by default, 3600 s at the maximum) plus the unclipped work that can still run after the final deadline: the first
 run's scratch cleanup (up to 120 s), the second run's git reads (up to 220 s), its stale-scratch reclaim (up to 60 s)
 and one memory probe (10 s), about 410 s in all. A run is about 26 git calls, most of them inside B (counted by an
 instrumented run with stale scratch left over). So the bound is under B + 480 s: about 60.5 minutes by default and
-90.5 minutes at the maximum, an upper bound, unmeasured on a real project. Set `quality.gate_timeout_seconds` so that 22.5 min + the budget + 8 min fits the host's call-length
+90.5 minutes at the maximum, an upper bound, unmeasured on a real project. Set `quality.gate_timeout_seconds` so that 22.5 min (at the default `work.merge_pending_wait_s`) + the budget + 8 min fits the host's call-length
 limit. A host that cuts the call mid-measurement records nothing; the next run reclaims the scratch and measures
 from zero.
 

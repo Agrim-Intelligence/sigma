@@ -341,3 +341,20 @@ def test_1842_dropping_the_chain_answer_entry_makes_the_ratchet_report_it():
         inv.write_text(json.dumps(data))
         out = _module().ratchet(ROOT, inv)
     assert any("new write site skills/sigma-loop/scripts/chain.py:answer fs-write" in x for x in out)
+
+
+def test_2083_ccr_arm_and_disarm_helpers_are_seen_and_the_merge_row_counts_them(tmp_path):
+    """W1: the scanner sees a gh_api write only at its CALLER, by helper name, so the cloud CCR arm and disarm
+    must be in `_GH_API_WRITES` or both new GitHub writes would be invisible while the ratchet stayed green."""
+    mod = _module()
+    for name in ("arm_auto_merge_ccr", "disarm_auto_merge_ccr"):
+        assert name in mod._GH_API_WRITES
+    source = tmp_path / "caller.py"
+    source.write_text('import gh_api\n\ndef land():\n    gh_api.arm_auto_merge_ccr(run, 7, "squash", "x")\n'
+                      '    gh_api.disarm_auto_merge_ccr(run, 7)\n')
+    assert [(r["function"], r["rule"], r["count"]) for r in mod.scan_paths(tmp_path, [source])] == \
+        [("land", "gh-api-write", 2)]
+    inv = json.loads((ROOT / "docs" / "launch" / "write-surface.json").read_text())["entries"]
+    row = next(e for e in inv if e["path"] == "skills/sigma-loop/scripts/work.py" and e["function"] == "merge"
+               and e["rule"] == "gh-api-write")
+    assert row["count"] == 3 and "arm_auto_merge_ccr" in row["gate"] and "UNCONFIRMED" in row["gate"], row

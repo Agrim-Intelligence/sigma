@@ -3727,40 +3727,14 @@ def test_merge_parks_when_pending_checks_and_the_repo_disallows_auto_merge(tmp_p
     assert "slow" in out
 
 
-# --- #895 slice 4b-1 D3: no GraphQL -> a still-pending required check is never armed, and no extra wait ---
+# --- #895 slice 4b-1 D3, superseded by #2083: no GraphQL -> a still-pending check is armed through the cloud
+# CCR route only when the base requires every pending check; otherwise the merge parks after the configured wait.
+# The two D3 pins whose `_pending_forever` fixture IS #2083's AC-1 shape were deleted; their replacements are the
+# AC-1 pair in tests/test_work_merge_pending_wait.py, which names them in its docstrings.
 
-D3_PARK = (f"PARK: required checks still pending after {work.PENDING_ATTEMPTS * work.PENDING_INTERVAL}s and "
-           "auto-merge cannot be armed without GraphQL; re-run work.py merge once they finish")
-
-
-def _pending_forever():
-    return _mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(True)
-
-
-def test_no_graphql_pending_checks_park_without_arming_or_merging(tmp_path, monkeypatch):
-    """`SIGMA_GH_GRAPHQL=off`: gate() has already spent its bounded REST wait and the check is STILL
-    pending. `--auto` is GraphQL, so it is not attempted, `allow_auto_merge` is not even read, and no
-    merge of any kind (CLI or REST PUT) is sent -- PARK, naming the re-run."""
-    monkeypatch.setenv("SIGMA_GH_GRAPHQL", "off")
-    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
-    run = _runner(_pending_forever())
-    out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
-    assert out == D3_PARK, out
-    assert prfake.merge_calls(run.calls) == []
-    assert not any("allow_auto_merge" in c for c in run.calls)
-    assert not any("--auto" in c.split() for c in run.calls)
-    assert D3_PARK.startswith("PARK: required checks still pending after 450s")
-
-
-def test_no_graphql_branch_under_claude_code_remote_is_structural_only(tmp_path, monkeypatch):
-    """A STRUCTURAL check of the `graphql_available()` branch, NOT a cloud check: `_perm()` fakes the
-    permission read (REST since 4b-2; see the cloud-merge tests for the real cloud outcome). With CLAUDE_CODE_REMOTE set the same no-arm PARK is taken."""
-    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
-    d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
-    run = _runner(_pending_forever())
-    out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
-    assert out == D3_PARK, out
-    assert prfake.merge_calls(run.calls) == [] and not any("allow_auto_merge" in c for c in run.calls)
+def _no_graphql_park(reason):
+    return (f"PARK: required checks still pending after {work.PENDING_ATTEMPTS * work.PENDING_INTERVAL}s and "
+            f"auto-merge cannot be armed without GraphQL ({reason}); {work._PENDING_PARK_INSTRUCTION}")
 
 
 def test_a_real_cloud_session_with_no_permissions_in_the_reply_still_does_not_merge(tmp_path, monkeypatch):
@@ -3867,14 +3841,15 @@ def test_no_graphql_checks_that_settle_inside_gate_merge_by_rest_with_the_sha(tm
 
 def test_no_graphql_twin_of_the_disallowed_auto_merge_park(tmp_path, monkeypatch):
     """Twin of `test_merge_parks_when_pending_checks_and_the_repo_disallows_auto_merge` with GraphQL
-    unavailable: the D3 PARK, and the PUT GitHub would refuse is never sent."""
+    unavailable: the not-armable PARK naming the repo setting (#2083), and the PUT GitHub would refuse is never
+    sent -- neither the merge PUT nor the CCR arm."""
     monkeypatch.setenv("SIGMA_GH_GRAPHQL", "off")
     d = _sdlc(tmp_path); goal = _started(d); _evidence(d, goal)
     run = _runner(_mixed(("ci", "SUCCESS"), ("slow", "")) + _perm() + _protected(checks=("ci", "slow")) + _auto_merge_allowed(False)
                   + [(prfake.merge_put(7), RuntimeError('HTTP 405: Required status check "slow" is expected'))])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
-    assert out == D3_PARK, out
-    assert prfake.merge_calls(run.calls) == []
+    assert out == _no_graphql_park("the repository does not allow auto-merge"), out
+    assert prfake.merge_calls(run.calls) == [] and not any("ccr/auto_merge" in c for c in run.calls)
 
 
 def test_merge_parks_when_arming_itself_is_refused_despite_allow_auto_merge(tmp_path):

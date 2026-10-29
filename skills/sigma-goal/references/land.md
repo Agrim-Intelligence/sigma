@@ -168,9 +168,9 @@ pushed the ledger branch under this; see [cloud sessions](../../../docs/cloud-se
 
 GitHub GraphQL is unavailable there (`CLAUDE_CODE_REMOTE=true`, or `SIGMA_GH_GRAPHQL=off`). The pick,
 the claim and the landing path all go over REST — see
-[cloud sessions](../../../docs/cloud-sessions.md). What still parks there and nowhere else: a required
-check still pending after the merge gate's 450 s wait (no `--auto` without GraphQL), and any PR line
-comment. `require_review: approval` is satisfied by the trusted `sigma:approve` comment the post-PR
+[cloud sessions](../../../docs/cloud-sessions.md). What still parks there and nowhere else: a check
+still pending after the merge gate's wait (`work.merge_pending_wait_s`, 450 s default) that the base does not
+require, or whose cloud CCR arm (UNCONFIRMED live) no REST read could confirm, and any PR line comment. `require_review: approval` is satisfied by the trusted `sigma:approve` comment the post-PR
 review posts.
 
 ## What is measured

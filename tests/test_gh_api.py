@@ -3545,3 +3545,75 @@ def test_close_pr_gh_405_and_422_never_fall_back(hint):
     run = CFake(patch_exc=RuntimeError(hint))
     out = _close(run)
     assert isinstance(out, Exception) and run.fb() == []
+
+
+# ---------------------------------------------------------------- cloud CCR auto-merge arm (#2083)
+# The CCR route's payload and reply are UNCONFIRMED live: these pin OUR argv and OUR handling of fake
+# replies, never the proxy. W3: each failing reply carries a gh-stderr `.hint` (`_mhe`), the shape
+# `work._pr_api_run` produces, so the classification under test is the one merge() really sees.
+
+CCR_SHA = "c" * 40
+
+
+def test_arm_auto_merge_ccr_argv():
+    g = _mod("gh_api")
+    run = Fake("")
+    g.arm_auto_merge_ccr(run, "7", "squash", CCR_SHA)
+    assert run.calls == [["api", "repos/{owner}/{repo}/pulls/7/ccr/auto_merge", "--method", "PUT",
+                          "-f", "merge_method=squash", "-f", "sha=%s" % CCR_SHA]]
+
+
+def test_arm_auto_merge_ccr_accepts_a_64_hex_sha():
+    """RF-5: a SHA-256 repository's head is 64 hex; the 40-hex `_SHA_RE` would stop it ever arming."""
+    g = _mod("gh_api")
+    run = Fake("")
+    g.arm_auto_merge_ccr(run, 7, "squash", "d" * 64)
+    assert run.calls[0][-1] == "sha=%s" % ("d" * 64)
+
+
+@pytest.mark.parametrize("sha", ["c" * 39, "c" * 41, "C" * 40, "g" * 40, "", None])
+def test_arm_auto_merge_ccr_refuses_bad_sha_before_any_call(sha):
+    g = _mod("gh_api")
+    run = Fake("")
+    with pytest.raises(g.GhApiError) as got:
+        g.arm_auto_merge_ccr(run, 7, "squash", sha)
+    assert got.value.kind == "invalid" and got.value.outcome_unknown is False and run.calls == []
+
+
+@pytest.mark.parametrize("bad", [dict(method="fast-forward"), dict(method="--squash"), dict(number="7a")])
+def test_arm_auto_merge_ccr_refuses_bad_method_before_any_call(bad):
+    g = _mod("gh_api")
+    run = Fake("")
+    with pytest.raises(g.GhApiError) as got:
+        g.arm_auto_merge_ccr(run, bad.get("number", 7), bad.get("method", "squash"), CCR_SHA)
+    assert got.value.kind == "invalid" and run.calls == []
+
+
+def test_disarm_auto_merge_ccr_argv():
+    g = _mod("gh_api")
+    run = Fake("")
+    g.disarm_auto_merge_ccr(run, "7")
+    assert run.calls == [["api", "repos/{owner}/{repo}/pulls/7/ccr/auto_merge", "--method", "DELETE"]]
+    with pytest.raises(g.GhApiError):
+        g.disarm_auto_merge_ccr(Fake(""), "7a")
+
+
+def test_arm_auto_merge_ccr_ignores_a_non_json_2xx_body():
+    """N1: the reply body is the unconfirmed half and is never parsed, so a non-JSON 2xx cannot raise."""
+    g = _mod("gh_api")
+    assert g.arm_auto_merge_ccr(Fake("<html>ok</html>"), 7, "squash", CCR_SHA) is None
+
+
+def test_arm_auto_merge_ccr_marks_a_502_outcome_unknown():
+    g = _mod("gh_api")
+    with pytest.raises(g.GhApiError) as got:
+        g.arm_auto_merge_ccr(Fake(_mhe("gh: Server Error (HTTP 502)")), 7, "squash", CCR_SHA)
+    assert got.value.outcome_unknown is True
+
+
+def test_arm_auto_merge_ccr_marks_a_403_definite():
+    g = _mod("gh_api")
+    for hint in ("gh: Resource not accessible by integration (HTTP 403)", PROXY, "gh: Not Found (HTTP 404)"):
+        with pytest.raises(g.GhApiError) as got:
+            g.arm_auto_merge_ccr(Fake(_mhe(hint)), 7, "squash", CCR_SHA)
+        assert got.value.outcome_unknown is False, hint
