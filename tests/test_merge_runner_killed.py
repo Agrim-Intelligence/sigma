@@ -198,7 +198,7 @@ def test_the_gestures_use_the_resolved_sdlc_dir_and_absolute_scripts(tmp_path, m
 # ---- the docs name the recovery ----------------------------------------------------------------------------
 
 def test_landing_names_the_recovery_for_a_killed_merge_runner():
-    bullet = LANDING[LANDING.index("A merge `runner pid N gone`"):].split("\n\n")[0]
+    bullet = LANDING[LANDING.index("`runner pid N gone`, PR open"):].split("\n\n")[0]
     for needle in ("runner pid N gone", "PR open", "not a failure", "agent-start", '--pid "$PPID"', "work.py merge",
                    "killed-merge.md"):
         assert needle in bullet, needle
