@@ -134,6 +134,14 @@ runner pid N gone`. That is not an ending. With the PR open and unmerged it is s
 window one read cannot close are in [killed-merge](../../sigma-loop/references/killed-merge.md).
 UNMEASURED live.
 
+### The reviewed plan when the container is gone
+
+In a cloud session, `record done` (through `work.py finish`) leaves a durable copy of the goal's plan as a comment on
+the goal's issue when the plan is not on the base branch, and prints `durable copy of the plan: <url>` in the `kept`
+line; outside a cloud session, and for a local goal file, nothing changes. A failed post keeps the old warning with
+`; durable copy FAILED: <why>`. UNMEASURED live. Detail, retry and the doctor's matching row:
+[cloud sessions](../../../docs/cloud-sessions.md#the-reviewed-plan-when-the-container-is-gone-2087).
+
 ### A run that died before its ending
 
 A crashed or killed run leaves N carrying `sdlc:in-progress`, perhaps with a pushed branch or an open

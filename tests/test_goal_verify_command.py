@@ -669,9 +669,9 @@ def _log_rows(sdlc, stem="42"):
 
 def test_set_verify_command_logs_hashes_never_the_command(tmp_path):
     project = tmp_path / "project"
-    token = "DISTINCTIVE-TOKEN-4f2a9c"
+    marker = "DISTINCTIVE-MARKER-4f2a9c"
     sdlc = _project(project, extra={"action_log": {"enabled": True}})
-    command = "echo %s" % token
+    command = "echo %s" % marker
     record = _record(sdlc, "42", command)
     old = hashlib.sha256(command.encode()).hexdigest()[:12]
     done = _cli(project, "set-verify-command", ".sdlc", "42", "--clear")
@@ -684,7 +684,7 @@ def test_set_verify_command_logs_hashes_never_the_command(tmp_path):
     assert _cli(project, "set-verify-command", ".sdlc", "42", "--verify-command", REPO).returncode == 0
     assert _log_rows(sdlc)[-1]["text"] == "verify_command replaced old=none new=%s" % new
     log_text = (sdlc / "state" / "log" / "42.jsonl").read_text()
-    assert token not in log_text and token not in done.stdout + done.stderr and token not in record.read_text()
+    assert marker not in log_text and marker not in done.stdout + done.stderr and marker not in record.read_text()
 
 
 def test_a_refusal_or_a_no_op_writes_no_row_and_a_change_writes_exactly_one(tmp_path):

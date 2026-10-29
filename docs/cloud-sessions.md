@@ -156,6 +156,9 @@ When the check says unavailable, `/sigma-doctor` prints one advisory row,
 MISSING gap). It names the features turned off or degraded: board/Projects mirroring (SKIPPED, not failed), `gh pr merge --auto`,
 `timelineItems` (blocker/dependency edges), and `gh issue|pr` via GraphQL until migrated (slices 3-4).
 
+A second advisory row, `plans directory is git-ignored and cloud runs look configured` (a `[WARN]`, #2087), is described under
+[the reviewed plan when the container is gone](#the-reviewed-plan-when-the-container-is-gone-2087).
+
 ## REST-first issue reads (#895 slice 2a)
 
 `gh_api.read_issue(run, number, fields, ...)` returns one issue in `gh issue view --json <fields>` shape.
@@ -1106,6 +1109,65 @@ Residuals of the publish path (named, not closed; each is a ticket):
   two publishers in one checkout can then collide), or move the checkout to a filesystem where `flock` works. Not
   built: a doctor or session-start check that names this. Not measured on a real platform (the refusal was driven by
   patching `sync.fcntl`).
+
+## The reviewed plan when the container is gone (#2087)
+
+A cloud container is deleted after the session. A repository may ignore `.sdlc/plans/` on purpose, and then the plan
+that plan-review approved and the pull request was built against exists only in the container's root checkout. Until
+#2087 `record done` only warned (`kept .sdlc/plans/<N>.md: not on origin/<base> (commit it or it is lost)`), which
+nobody in an unattended run can act on.
+
+**What happens now.** `work.py finish` (which `record done` runs after a confirmed merge) leaves a durable copy of the
+plan and prints where it went, when ALL of these hold; it is the existing root-record cleanup, one more branch of it:
+
+- the run is a cloud session: `CLAUDE_CODE_REMOTE` is `true` or `1` (`ledger.cloud_session()`, the signal this page's
+  capability check already reads). `SIGMA_GH_GRAPHQL=off` alone is not a cloud session;
+- the file is the goal's own plan, untracked in the root checkout and absent from `<remote>/<base>` (a copy that
+  landed is removed as before; a copy that landed but differs keeps its `differs` line; research dossiers and
+  acceptance records keep today's warning, the acceptance criteria already being on the issue);
+- the goal is a GitHub issue (`discovery.source: github` and an issue-number goal). A local goal file has no issue to
+  carry the copy and keeps today's warning.
+
+**Where it goes (PROVISIONAL, owner to ratify): a comment on the goal's own issue.** The alternatives were a section in
+the PR body (the PR is already merged and sealed by then) and a file beside the outcome on the ledger branch (a new
+writer, a new push, a new lease, and it needs the ledger on). The comment goes through `gh_api.comment_issue`, a writer
+that already exists, over REST, so it adds one inventory row (`work.py` `_durable_plan_copy` in
+`docs/launch/write-surface.json`) and no new kind of writer.
+
+**What is posted.** The plan inside a `<details>` block, in a fence longer than any backtick run in the plan, under a
+marker line `<!-- sigma:plan-copy goal=<N> sha256=<plan sha256> part=<i>/<n> -->`. Secret-shaped strings are redacted
+first (`scrub.scrub_shapes`; ordinary text is byte-identical) and the comment says so. GitHub caps a comment at 65 536
+characters: the plan is split into at most 3 parts of at most 60 000 characters, and a longer plan is cut with a
+`Truncated: kept K of T characters` line. The line `record done` prints becomes
+`kept .sdlc/plans/<N>.md: not on origin/<base>; durable copy of the plan: <comment url>`. The local file is still
+kept: the copy adds, it moves nothing.
+
+**Failure and retry.** A post that fails (no permission, a locked issue, a reply with no URL) keeps today's warning and
+appends `; durable copy FAILED: <why>`; the merge, the record and the cleanup go on. A comment is never retried inside
+one call (it is not idempotent), but a later `finish` reads the issue's comments first (`1 + ceil(n/100)` REST requests
+for n comments) and reuses any part whose marker line is already there from an OWNER, MEMBER or COLLABORATOR, so a
+reply lost after the comment landed does not become a second copy. If that read fails the copy is posted anyway: a
+duplicate beats a lost plan.
+
+**Outside a cloud session nothing changes**: no extra request, and the same kept line byte for byte
+(a test pins it for an unset variable, `CLAUDE_CODE_REMOTE=false`, an empty value and `SIGMA_GH_GRAPHQL=off` alone).
+
+**What the doctor says (#2087).** `/sigma-doctor` prints one `[WARN]` row, `plans directory is git-ignored and cloud
+runs look configured` (advisory: the ready count does not change), when git ignores the plans path AND cloud runs look
+configured. The ignore question is git's own answer for a probe path under `.sdlc/plans/`, so a negation
+(`!.sdlc/plans/`) reads as not ignored. **How "configured" is decided:** the doctor can only read the environment it runs
+in, so it is configured when `CLAUDE_CODE_REMOTE` is `true` or `1` (the doctor is inside a cloud session) or
+`SIGMA_TRUSTED_VERIFY_SHA256` is set and non-empty (the operator's step under "Cloud environment setup"). A doctor run on a
+laptop cannot see a cloud environment's own settings, so it stays silent there even for a repository that is run in
+the cloud; run it in a cloud session, or read `.gitignore`. **Not measured on a real container:** neither signal has been
+observed in one, and the exit codes of `git check-ignore` there are assumed to be the ones local git gives.
+
+**Measured:** offline only, against real local git and a stateful fake issue, with each clause of the guard broken on
+its own and its test seen red (cloud signal, plan-only, config present, issue goal, trusted commenter, idempotence
+marker, reply URL, redaction, fence width, part cap; for the doctor, the cloud clause, the ignore clause, the hash
+signal, the value test and the wiring), and the doctor row also checked through its documented gesture
+(`python3 skills/sigma-doctor/scripts/doctor.py check .sdlc`). **Not measured:** a real Claude Code cloud container, a
+real GitHub comment at the 65 536-character edge, a locked or permission-limited issue.
 
 ## What remains (#895 slice 7)
 

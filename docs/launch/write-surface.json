@@ -2922,6 +2922,14 @@
     },
     {
       "path": "skills/sigma-loop/scripts/work.py",
+      "function": "_durable_plan_copy",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "work.enabled; only after a confirmed merge; only in a Claude Code cloud session (CLAUDE_CODE_REMOTE true or 1); only the goal's own plan, only when it is untracked and absent from <remote>/<base>; only a github-mode goal with an issue number; at most 3 REST comment POSTs of the plan (secret-shaped strings redacted) via gh_api.comment_issue on that goal's own issue, skipped when an OWNER, MEMBER or COLLABORATOR comment with the same goal, plan sha256 and part marker already exists; no retry; a failure keeps the old warning and says so (#2087)",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/work.py",
       "function": "close_design",
       "rule": "gh-api-write",
       "count": 1,
