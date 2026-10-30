@@ -83,7 +83,7 @@ LIBRARY_ONLY = {
     "feature_upkeep_prove",
     "conflict_proof",
     "unattended_git",
-    "merge_queue", "tier_escalation", "board_spec", "red_green", "shell_policy", "logroll",
+    "merge_queue", "tier_escalation", "board_spec", "shell_policy", "logroll",
     "codex_runtime", "claim_refs",
     "feature_upkeep_drift",
     "feature_upkeep_state",

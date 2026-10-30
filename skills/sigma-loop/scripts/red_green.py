@@ -687,6 +687,9 @@ def _sibling(name):
 def main(argv):
     """`red_green.py check-tests <sdlc_dir> <goal>` (#2116): the end-of-Plan check. Exit 0 and one line when the
     goal's plan `## Tests` parses; exit 2 and the parser's message on stderr when it does not or there is no plan."""
+    if argv in (['-h'], ['--help']):
+        print('usage: red_green.py check-tests <sdlc_dir> <goal>')
+        return 0
     if len(argv) != 3 or argv[0] != 'check-tests':
         print('usage: red_green.py check-tests <sdlc_dir> <goal>', file=sys.stderr)
         return 2

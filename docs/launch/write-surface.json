@@ -1180,7 +1180,7 @@
       "path": "skills/sigma-loop/scripts/feature_rebase.py",
       "function": "push_refused",
       "rule": "fs-remove",
-      "count": 1,
+      "count": 2,
       "gate": "work.rebase_upkeep",
       "risk": "high"
     },
@@ -3084,6 +3084,14 @@
       "path": "skills/sigma-loop/scripts/work.py",
       "function": "prune_terminal_review_generations",
       "rule": "fs-rmtree",
+      "count": 1,
+      "gate": "ungated",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/work.py",
+      "function": "put_back",
+      "rule": "git-destructive",
       "count": 1,
       "gate": "ungated",
       "risk": "high"
