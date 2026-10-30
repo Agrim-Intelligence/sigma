@@ -12003,3 +12003,32 @@ def test_gate_with_ci_not_required_still_parks_when_the_host_blocks_on_a_check(t
     run = _runner(_mixed(("ci", "FAILURE"), status="BLOCKED"))
     ok, verdict, _ = work.gate(d, NO_CI, goal, run=run, sleep=NOSLEEP)
     assert not ok and "ci" in verdict
+
+
+# #2116 AC-3: Plan-Review fails a plan whose `## Tests` the PR-step parser rejects, with the parser's message.
+ENFORCING = {"work": {"enabled": True}, "verify": {"enforce": True}}
+BAD_TESTS = b"# plan\n\n## Tests\n- tests/test_x.py without backticks\n"
+
+
+def test_record_plan_review_refuses_a_tests_section_the_pr_parser_rejects(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDECODE", "1")
+    d = _sdlc(tmp_path); goal = _started(d); sha = _plan_bytes(d, BAD_TESTS)
+    for word in ("SOUND", "SOUND-WITH-REFINEMENTS"):
+        with pytest.raises(ValueError) as caught:
+            work.record_plan_review(d, ENFORCING, goal, word, sha, run=_runner([]))
+        assert "## Tests requires one backticked pytest selector per bullet" in str(caught.value)
+    assert not _gate_record(d).exists()
+
+
+@pytest.mark.parametrize("tests", [b"- `tests/test_x.py::test_a`\n", b"none: wording only\n"])
+def test_record_plan_review_passes_a_tests_section_the_pr_parser_accepts(tmp_path, monkeypatch, tests):
+    monkeypatch.setenv("CLAUDECODE", "1")
+    d = _sdlc(tmp_path); goal = _started(d); sha = _plan_bytes(d, b"# plan\n\n## Tests\n" + tests)
+    assert work.record_plan_review(d, ENFORCING, goal, "SOUND", sha, run=_runner([]))["verdict"] == "pass"
+
+
+def test_record_plan_review_checks_tests_only_for_an_approval_and_only_with_enforce_on(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDECODE", "1")
+    d = _sdlc(tmp_path); goal = _started(d); sha = _plan_bytes(d, BAD_TESTS)
+    assert work.record_plan_review(d, ENFORCING, goal, "FIX-FIRST", sha, run=_runner([]))["verdict"] == "block"
+    assert work.record_plan_review(d, ON, goal, "SOUND", sha, run=_runner([]))["verdict"] == "pass"

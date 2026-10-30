@@ -307,6 +307,16 @@ ENFORCEMENT_GATES = (
                   "and does not refuse; test existence is an AST lookup for pytest ids and a file on a test "
                   "path otherwise, and an inherited method reads missing; the catch rate and false-block rate "
                   "are UNMEASURED: no goal has run with the key on"},
+    {"control": "Test-first exception judged by the post-PR review",
+     "function": "_exception_review_refusal", "kind": "python-gate", "hosts": "all",
+     "enabled_by": ("work.enabled",), "settings": (),
+     "mechanism": "when `work.py pr` recorded a `--no-tests` exception (the flag, or `--land` taking it because no runner "
+                  "here can record red), the pr-review brief carries the reason and asks for one `TEST-FIRST-EXCEPTION: "
+                  "accept` or `reject` line; a PR review's `approve` or `unblock` that rejects it, or says neither, "
+                  "is written as `block` with the finding",
+     "condition": "the line, like the verdict, is relayed by the orchestrator on the subagent route and written by the "
+                  "maker on the inline route; it proves the question was answered, not answered well; only the review "
+                  "route is gated, `work.py merge` does not re-read it; no real review has run under it"},
     {"control": "Sealed acceptance tests authored by an author-blind breaker (opt-in)",
      "function": "_seal_tests_refusal", "kind": "python-gate", "hosts": "all",
      "enabled_by": ("work.enabled", "gates.sealed_acceptance.enabled"), "settings": ("review.timeout_seconds",),
@@ -1040,6 +1050,28 @@ def _test_review_refusal(sdlc_dir, goal, review_text):
     return _load("review_tests").judge(sdlc_dir, goal, review_text)
 
 
+_EXCEPTION_LINE = re.compile(r"(?im)^[ \t>*_`+-]*TEST-FIRST-EXCEPTION[ \t*_`]*:[ \t*_`]*(accept|reject)(?:ed)?\b[ \t*_`:.-]*(.*?)[ \t*_`]*$")
+
+
+def _exception_review_refusal(sdlc_dir, goal, review_text):
+    """#2116: None, or why an approving PR review may not stand: the PR carries a `## Test-first exception`
+    (`pr()` recorded it) and the review did not accept it with `TEST-FIRST-EXCEPTION: accept - <why>`, or rejected it,
+    or said both. A rejection is an ordinary block (`_write_review_result` writes `block`). Like the verdict word, the
+    line is the reviewer's text relayed by the orchestrator: it proves the question was answered, not that it was
+    answered well. Nothing recorded -> None, so a goal without an exception is untouched. The registered seam
+    `ENFORCEMENT_GATES` names."""
+    reason = (_record(sdlc_dir, goal) or {}).get("test_first_exception")
+    if not reason:
+        return None
+    said = {m.group(1).lower(): m.group(2) for m in _EXCEPTION_LINE.finditer(review_text or "")}
+    if "reject" in said:
+        return "the reviewer rejected the PR's test-first exception: " + (said["reject"] or "(no reason given)")
+    if "accept" in said:
+        return None
+    return ("the PR carries a test-first exception (" + str(reason).strip() + ") and the review did not judge it: end "
+            "the review with `TEST-FIRST-EXCEPTION: accept - <why>` or `TEST-FIRST-EXCEPTION: reject - <why>`")
+
+
 #: Under GitHub's 65,536-character comment limit with room for post_review's own header and marker.
 _MAX_POSTED_REASON = 60000
 
@@ -1054,6 +1086,9 @@ def _write_review_result(sdlc_dir, manifest, resolution_path, verdict, reason, w
     generation cycle is the recovery. Only that downgrade direction exists."""
     if verdict in ("approve", "unblock"):
         refusal, partial = _test_review_refusal(sdlc_dir, manifest.get("goal"), reason)
+        excepted = _exception_review_refusal(sdlc_dir, manifest.get("goal"), reason)     # #2116
+        if excepted:
+            refusal = excepted + ("\n" + refusal if refusal else "")
         if refusal:
             print(f"work: the test review turned this `{verdict}` into a block:\n{refusal}\nIf the reviewer's "
                   "output was summarised, record its full text instead (`--reason \"$(cat <file>)\"`): the "
@@ -1582,6 +1617,15 @@ def _relative_posix(path, base):
         return pathlib.Path(path).as_posix()
 
 
+def _runners_or_none(config):
+    """#2116: `tests.runners` as `red_green.selectors` takes it; a malformed block reads as none configured, which
+    the parser then reports only if the plan names a runner."""
+    try:
+        return state.test_runners(config)
+    except ValueError:
+        return {}
+
+
 def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", run=None, agent_id=""):
     """Record a plan-review verdict against the exact plan bytes the reviewer was briefed on (#258).
 
@@ -1636,6 +1680,11 @@ def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", 
                          f"copy {main.as_posix()}: copy the reviewed plan over {branch.as_posix()} and "
                          "leave it uncommitted (step 6 commits it), or copy the branch's version back to "
                          f"{main.as_posix()} and review that; then record")
+    if mapped in _PLAN_REVIEW_APPROVING and state.enforce_enabled(config.get("verify")):
+        problem = _load("red_green").tests_section_error(reviewed, _runners_or_none(config))    # #2116
+        if problem:
+            raise ValueError(f"the plan's ## Tests is one `work.py pr` would reject, so Plan-Review cannot pass it: "
+                             f"{problem} (fix ## Tests in {reviewed.as_posix()}, then run a fresh plan-review)")
     if mapped in _PLAN_REVIEW_APPROVING:     # F02: also with the action log off, where record_verdict is skipped
         refusal = _load("reviewer").independent_run_refusal(sdlc_dir, goal, "plan_review", sha)
         if refusal:
@@ -4218,6 +4267,28 @@ def _no_tests_body(body, reason):
     return body if section in body else body + section
 
 
+def _land_no_tests_reason(sdlc_dir, config, rec, goal, run):
+    """#2116: the `--no-tests` reason `--land` supplies for itself, or None. Only when no runner in this container can
+    record red for the planned tests (`red_green.unrecordable_case`: no selectors, an unconfigured runner, a runner
+    the active trust does not cover). A pytest plan that simply never went red is not that case and stays refused.
+    The git-local grant is the only trust that runs a runner command (`loop._runner_trust_refusal`). Never raises."""
+    try:
+        main, branch = plan_copies(sdlc_dir, goal, rec, run)
+        try:
+            runners = state.test_runners(config)
+        except ValueError:
+            runners = {}                    # a malformed block grants nothing; a runner bullet then reads unconfigured
+        found = _load("red_green").unrecordable_case(
+            branch or main, runners, shell_policy.repository_shell_commands_allowed(rec["worktree"]))
+    except Exception:                       # noqa: BLE001 - not knowing the case leaves the refusal standing
+        return None
+    if not found:
+        return None
+    case, detail = found
+    return (f"--land took this exception itself because no runner in this container can record red [{case}]: {detail}. "
+            "The post-PR review must accept or reject it.")
+
+
 def _plan_missing_from_branch(sdlc_dir, rec, goal, run):
     """The refusal line when this goal's plan is on disk but not on its branch — "" otherwise.
     #1548. See `_phase_doc_missing_from_branch` for the shared reasoning; this is the `plans`/`plan`
@@ -4494,7 +4565,7 @@ def _pr_title(path, run, remote, base, goal):
     return title
 
 
-def pr(sdlc_dir, config, goal, run=None, no_tests=None):
+def pr(sdlc_dir, config, goal, run=None, no_tests=None, land=False):
     """Push the branch and open (or re-find) its PR. Refuses on an unclean or empty branch — or one
     missing the plan or research dossier it is meant to be read against (#1548, #1801) — rather than
     opening a PR that says nothing, or one a reviewer cannot check.
@@ -4582,8 +4653,18 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None):
         return missing_acceptance
 
     test_first_refusal = _test_first_refusal(sdlc_dir, config, rec, goal, run, no_tests, remote, base)
+    if test_first_refusal and land and no_tests is None:
+        # #2116: under `--land` nobody can answer the refusal, and a runner that cannot record red here would park
+        # the goal for a gap no human fix closes. Take the exception, name the case, and let the post-PR review judge it.
+        no_tests = _land_no_tests_reason(sdlc_dir, config, rec, goal, run)
+        if no_tests:
+            test_first_refusal = _test_first_refusal(sdlc_dir, config, rec, goal, run, no_tests, remote, base)
     if test_first_refusal:
         return test_first_refusal
+    if no_tests:                                          # #2116: the review reads this; a `none:` plan is not an exception
+        rec["test_first_exception"] = no_tests
+    else:
+        rec.pop("test_first_exception", None)
     if no_tests is None:                                  # #1942: the plan's own `none:` is published like the flag
         no_tests = _declared_no_tests(sdlc_dir, rec, goal, run, remote, base)[0]
 
@@ -9887,7 +9968,7 @@ def main(argv):
     if len(argv) >= 4 and argv[1] in _COMMANDS:
         if argv[1] == "pr" and "--no-tests" in argv and (
                 not _flag(argv, "--no-tests").strip() or _flag(argv, "--no-tests").startswith("--")):
-            print("usage: work.py pr <sdlc_dir> <goal> [--no-tests <reason>]", file=sys.stderr)
+            print("usage: work.py pr <sdlc_dir> <goal> [--no-tests <reason>] [--land]", file=sys.stderr)
             return 2
         sdlc_dir, goal = argv[2], argv[3]
         try:
@@ -9967,6 +10048,8 @@ def main(argv):
             kwargs["force"] = True
         if argv[1] == "pr" and "--no-tests" in argv:
             kwargs["no_tests"] = _flag(argv, "--no-tests")
+        if argv[1] == "pr" and "--land" in argv:
+            kwargs["land"] = True               # #2116: a `/sigma-goal <N> --land` run, see skills/sigma-goal/references/land.md
         if argv[1] == "commit":
             kwargs["message"] = _flag(argv, "--message")
         if argv[1] == "post-review":

@@ -18,6 +18,7 @@ import pathlib
 import re
 import shlex
 import subprocess
+import sys
 import time
 
 
@@ -52,6 +53,15 @@ def _bounded():
 
 
 Runner = collections.namedtuple('Runner', 'runner file name')
+
+
+def _rejected(message, kind=None):
+    """#2116: a plain ValueError (callers and tests print its type) carrying `kind` for the two cases `--land` can take an
+    exception for: 'no-selectors' (nothing planned) and 'unconfigured-runner' (a runner bullet whose runner has no
+    config). Any other rejection has no kind: a malformed section is a plan defect, not a missing runner."""
+    error = ValueError(message)
+    error.kind = kind
+    return error
 
 
 def parse_runner(node):
@@ -235,8 +245,8 @@ def selectors(plan, runners=None):
         if runner:
             spec = (runners or {}).get(runner.runner)
             if spec is None:
-                raise ValueError("unknown test runner '%s': configure tests.runners.%s in .sdlc/config.json"
-                                 % (runner.runner, runner.runner))
+                raise _rejected("unknown test runner '%s': configure tests.runners.%s in .sdlc/config.json"
+                                % (runner.runner, runner.runner), 'unconfigured-runner')
             if _unsafe_runner_file(runner.file):
                 raise ValueError('unsafe runner file: ' + runner.file)
             if '\x00' in runner.name or '`' in runner.name:
@@ -254,8 +264,59 @@ def selectors(plan, runners=None):
         if selector not in result:
             result.append(selector)
     if not result or len(result) > MAX_SELECTORS:
-        raise ValueError('## Tests requires 1–25 pytest selectors; use --no-tests, or the line `none: <reason>` for a docs-only change')
+        message = '## Tests requires 1–25 pytest selectors; use --no-tests, or the line `none: <reason>` for a docs-only change'
+        raise _rejected(message, 'no-selectors' if not result else None)
     return result
+
+
+def tests_section_error(plan, runners=None):
+    """#2116: '' when `plan`'s `## Tests` is one `work.py pr` can use (selectors, runner bullets, or the docs-only
+    `none: <reason>` line), else the parser's own message. This is the parser `pr()` and `loop.py red` run, not a
+    copy of it, so Plan and Plan-Review can never accept what the PR step rejects."""
+    try:
+        if none_reason(plan):
+            return ''
+        selectors(plan, runners)
+        return ''
+    except (OSError, ValueError) as exc:
+        return str(exc)
+
+
+def unrecordable_case(plan, runners, runner_trusted):
+    """#2116: `(case, detail)` when no runner in this container can record red for `plan`, else None. Cases:
+    'no-selectors' (nothing is planned), 'unconfigured-runner' (a runner bullet with no `tests.runners` entry) and
+    'runner-untrusted' (runner bullets, but only the git-local grant runs a runner command and `runner_trusted` is
+    False). A malformed section (a `none:` line is one: it is not a bullet) and a plain pytest plan are never a case:
+    their red is recordable or their defect is the plan's."""
+    try:
+        if plan is None:
+            return None
+        selectors(plan, runners)
+    except ValueError as exc:
+        kind = getattr(exc, 'kind', None)
+        return (kind, str(exc)) if kind else None
+    except OSError:
+        return None
+    if has_runner_bullets(plan) and not runner_trusted:
+        return ('runner-untrusted', 'the plan names a test runner and the active trust (the environment approval) does '
+                'not cover runner commands; only the git-local grant does')
+    return None
+
+
+def planned_without_red(sdlc_dir, goal, plan):
+    """#2116: the planned pytest selectors that have no red row in the goal's witness journal -- the gap Review may
+    not start with. [] when every one has a row, and when nothing applies: no plan, or a section `selectors(plan)` (no
+    runners granted) rejects -- `none:`, a runner bullet (its red depends on the trust, which `unrecordable_case`
+    judges) or a malformed one (Plan-Review's). A selector is satisfied by any red row for a node it selects, so a file selector needs one node."""
+    try:
+        if plan is None:
+            return []
+        scope = selectors(plan)
+    except (OSError, ValueError):
+        return []
+    reds = [row.get('test') for row in _witness().witnesses(sdlc_dir, goal)
+            if (row.get('provenance'), row.get('kind')) in RED_PAIRS]
+    return [s for s in scope if not any(isinstance(t, str) and _selected(t, [s]) for t in reds)]
 
 
 def _run(root, argv):
@@ -614,3 +675,39 @@ def classify_sealed(collect_rc, collect_out, run_rc, run_out, nodes):
     if run_rc == 0 and out['red']:
         out.update(red={}, error='pytest exited 0 but the summary lists FAILED nodes')
     return out
+
+
+def _sibling(name):
+    spec = importlib.util.spec_from_file_location(name, pathlib.Path(__file__).with_name(name + '.py'))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def main(argv):
+    """`red_green.py check-tests <sdlc_dir> <goal>` (#2116): the end-of-Plan check. Exit 0 and one line when the
+    goal's plan `## Tests` parses; exit 2 and the parser's message on stderr when it does not or there is no plan."""
+    if len(argv) != 3 or argv[0] != 'check-tests':
+        print('usage: red_green.py check-tests <sdlc_dir> <goal>', file=sys.stderr)
+        return 2
+    sdlc_dir, goal = argv[1], argv[2]
+    plan = _sibling('review_context').phase_doc_file(sdlc_dir, goal, 'plans')
+    if plan is None:
+        print('red_green.py: no plan for goal %s under %s/plans' % (goal, sdlc_dir), file=sys.stderr)
+        return 2
+    try:
+        state = _sibling('state')
+        runners = state.test_runners(state.load_config(sdlc_dir))
+    except Exception as exc:                        # noqa: BLE001 - an unreadable config is stated, never a pass
+        print('red_green.py: cannot read tests.runners (%s: %s)' % (type(exc).__name__, exc), file=sys.stderr)
+        return 2
+    message = tests_section_error(plan, runners)
+    if message:
+        print('red_green.py: ' + message, file=sys.stderr)
+        return 2
+    print('red_green.py: ## Tests in %s is usable by `work.py pr`' % plan)
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

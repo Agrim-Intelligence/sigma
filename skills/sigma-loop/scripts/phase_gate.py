@@ -223,7 +223,12 @@ def start_refusal(sdlc_dir, goal, phase):
     """Refusal text when `phase_report.py start implement` runs before an approving plan-review verdict is
     on the record (the product claim: plan before code), else None. Only with the gate on and the action log
     on; any other phase starts freely. Refusing HERE, not only at `done`, lets the maker fix it before any
-    code is written; a live run recorded the verdict seconds after starting implement."""
+    code is written; a live run recorded the verdict seconds after starting implement.
+
+    #2116: `phase_report.py start review` is refused, with `verify.enforce` on, while a planned pytest selector has
+    no red row -- the red record exists before Review, not rebuilt by hand at `work.py pr`."""
+    if phase == "review":
+        return _red_before_review(sdlc_dir, goal)
     if phase != "implement":
         return None
     config = _load("state").load_config(sdlc_dir)
@@ -236,6 +241,28 @@ def start_refusal(sdlc_dir, goal, phase):
             "before code): run the plan-review, record its verdict with `work.py record-plan-review "
             "<sdlc> <goal> --verdict SOUND|SOUND-WITH-REFINEMENTS --plan-sha256 <brief sha> --agent-id "
             "<reviewer agentId>`, then start implement (plan-review cannot be waived)")
+
+
+def _red_before_review(sdlc_dir, goal):
+    """#2116: the refusal text when `verify.enforce` is on and a planned pytest selector has no red row, else None.
+    Only goals whose plan holds pytest selectors are asked: a `none:` plan, a runner plan (its red depends on the
+    trust, and `--land` may take the exception) and a plan with no parseable `## Tests` (Plan-Review's) are not.
+    The plan is the main checkout's copy; no plan on disk reads as nothing to check. A witness journal that cannot be
+    read counts as no red -- the lever is `loop.py red`, which writes it."""
+    state, rg = _load("state"), _load("red_green")
+    try:
+        enforced = state.enforce_enabled(state.load_config(sdlc_dir).get("verify"))
+    except Exception:                         # noqa: BLE001 - no readable config, no gate to enforce
+        return None
+    if not enforced:
+        return None
+    plan = _load("review_context").phase_doc_file(sdlc_dir, goal, "plans")
+    missing = rg.planned_without_red(sdlc_dir, goal, plan)
+    if not missing:
+        return None
+    return ("review may not start: the planned tests have no recorded red (no assertion failure was seen before the "
+            "change): " + ", ".join(missing) + ". Implement records it right after writing the failing tests: run "
+            f"`loop.py red {sdlc_dir} {goal}` while they fail, then make them pass and run `loop.py verify`")
 
 
 def refusal(sdlc_dir, config, goal):

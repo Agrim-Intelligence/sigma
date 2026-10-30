@@ -699,6 +699,14 @@ def _artifact_pointer(phase, artifact, artifact_text=None):
     }[phase]
 
 
+def _test_first_exception(sdlc_dir, goal):
+    """#2116: the `--no-tests` reason `work.py pr` recorded for this goal's PR, else "". Fail-open: the brief is."""
+    try:
+        return str((_load("work")._record(sdlc_dir, goal) or {}).get("test_first_exception") or "")
+    except Exception:                                 # noqa: BLE001 - an unreadable record adds nothing to the brief
+        return ""
+
+
 def brief(sdlc_dir, goal, phase, artifact="", repo_root=".", source=None):
     """The independent reviewer's context pack: who they are, what the project is for, what to review,
     and the one rule that separates a real review from a rubber-stamp. Returns a string ready to hand a
@@ -785,6 +793,17 @@ def brief(sdlc_dir, goal, phase, artifact="", repo_root=".", source=None):
             parts.append(_load("review_tests").facts(sdlc_dir, goal))
         except Exception as exc:                      # noqa: BLE001 - the brief is fail-open
             parts.append("## Test-trust facts\n- unreachable (%s)" % type(exc).__name__)
+
+    if phase == "pr-review":
+        exception = _test_first_exception(sdlc_dir, goal)
+        if exception:
+            parts.append(
+                "## Test-first exception (you must judge it)\nThis PR was opened WITHOUT the red-before-green proof, "
+                "with this reason in its body:\n\n> %s\n\nSay whether the exception is warranted: could a test that "
+                "fails before the change and passes after it have covered this change in this repository? End your "
+                "findings with exactly one line, `TEST-FIRST-EXCEPTION: accept - <why>` or `TEST-FIRST-EXCEPTION: "
+                "reject - <why>`. A reject is a blocking finding: your verdict is then `VERDICT: block`. A review "
+                "with neither line is written as a block." % exception.strip().replace("\n", "\n> "))
 
     parent = _parent(sdlc_dir, goal_body, source)
     if parent:
