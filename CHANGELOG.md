@@ -4,6 +4,11 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **A goal that resumes on a moved base replays only its own commits, merges before it parks, and never force-pushes a pushed branch (#2118).**
+  - **What changed.** `work.py`'s `--onto <base> <cut tip>` replay now uses an upstream that also excludes what the new base reaches, so a commit that came from the base is not replayed onto a base that already has it. A replay that still conflicts is aborted and the base is merged instead; only a conflicting merge parks, naming the files. `ensure_fresh` (the resume and verify gate) pushes plain: a pushed branch keeps the replayed tree as a merge commit over what was pushed, so the push is a fast-forward. The merge-BEHIND path keeps its lease push.
+  - **Measured:** `tests/test_resume_replay_2118.py`, real git against a local bare remote, each clause broken once and seen red.
+  - **UNMEASURED:** no cloud run; how the base commit reached the goal branch in the field case is still unverified (the fix does not depend on it).
+
 ## 1.0.26 — 2026-10-29 — the resource guard after the cloud-run release: a held verify keeps its measurement, a cold verify gets more than one worker, Sigma's own suite honours the worker grant, and a hold mid-goal has an instruction
 
 - **A verify that holds mid-goal has an instruction: wait, verify again, never a code fix or a review cycle, park after 6 holds in a row (#2109).**
