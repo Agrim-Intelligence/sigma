@@ -622,10 +622,10 @@ def test_the_docs_state_the_order_and_what_was_not_measured():
     cloud = (REPO / "docs/cloud-sessions.md").read_text()
     assert "#2079" in cloud and "/usr/bin/python3" in cloud and "uv run --frozen" in cloud, "cloud-sessions.md"
     log = (REPO / "CHANGELOG.md").read_text()
-    # The entry sits under "## Unreleased" until its release, then under that release's heading (and under later ones as releases pile up): read the first three sections.
+    # The entry sits under "## Unreleased" until its release, then under that release's heading (and under later ones as releases pile up): read the first four sections.
     top = log.split("## Unreleased", 1)[1]
-    head = top.split("\n## ", 3)
-    entry = "\n".join(head[:3])
+    head = top.split("\n## ", 4)
+    entry = "\n".join(head[:4])
     assert "#2079" in entry and "uv" in entry and "interpreter" in entry, "CHANGELOG.md"
 
 
