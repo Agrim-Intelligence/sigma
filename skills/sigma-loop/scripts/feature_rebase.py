@@ -2012,7 +2012,7 @@ def _replay_goals(sdlc_dir, config, goal, unit, branch, goals, run, report, cwd,
             # `sdlc/*` branch has a single writer by construction, and changing that push would
             # change the reactive BEHIND path every goal in the repo already depends on. Named here
             # so the difference is a decision on the record rather than an omission.
-            outcome = work.rebase(sdlc_dir, config, name, run=run)
+            outcome = work.rebase(sdlc_dir, config, name, run=run, merge_fallback=False)   # #2118: a conflict is reported here, not merged away
         except Exception as exc:          # noqa: BLE001 - `rebase` is total, but a load is not
             outcome = "rebase deferred: %s" % _flat(exc)
         if str(outcome).startswith("rebased"):

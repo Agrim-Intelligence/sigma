@@ -5911,7 +5911,7 @@ def _stash_pop_registry_rescue(path, run, unmerged, resync):
         return False
 
 
-def rebase(sdlc_dir, config, goal, run=None, no_force=False):
+def rebase(sdlc_dir, config, goal, run=None, no_force=False, merge_fallback=True):
     """Replay the branch on the current base -- called reactively when GitHub reports a PR BEHIND
     (`_reconcile_behind`), proactively before `loop.py verify` runs anything expensive against a
     worktree that has drifted (`ensure_fresh`, #1890), and opportunistically by feature-branch
@@ -5941,7 +5941,9 @@ def rebase(sdlc_dir, config, goal, run=None, no_force=False):
     the conflicting files. `no_force=True` (the resume and verify gate, `ensure_fresh`) never force-pushes: a branch
     already on the remote keeps the replayed tree (rescues included) but lands it as a merge commit over what was pushed
     (`_fold_onto_pushed`), so every push is a plain fast-forward. Left False, the callers that act on an open PR keep the
-    lease push they always had."""
+    lease push they always had. `merge_fallback=False` keeps the abort-and-report outcome for the one caller whose job is to
+    REPORT a conflicting replay (feature upkeep files it, and its target branch was itself rewritten, so merging it into
+    the goal would carry the old history along)."""
     run = run or _run
     rec = _record(sdlc_dir, goal)
     if not rec:
@@ -5985,6 +5987,9 @@ def rebase(sdlc_dir, config, goal, run=None, no_force=False):
             run(path, ["git", "rebase", "--abort"])
         except Exception:                   # noqa: BLE001 - nothing to abort is a fine outcome
             pass
+        if not merge_fallback:
+            return (f"rebase deferred: {exc} — resolve it by hand in {path} (`git rebase {remote}/{base}`), "
+                    f"then re-run `work.py merge {sdlc_dir} {goal}`")
         return _merge_from_base(sdlc_dir, config, goal, rec, run, path, push_argv, pre_rebase_head,
                                 f"the replay conflicted ({exc})")
     # The rebase command itself did not raise, but its own final autostash-pop step can still have
