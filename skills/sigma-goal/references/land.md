@@ -180,6 +180,11 @@ expired (a failed read releases nothing). Lever for a run that left an entry unp
 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/sync.py" publish .sdlc`. UNMEASURED live: no real container has
 pushed the ledger branch under this; see [cloud sessions](../../../docs/cloud-sessions.md#the-team-ledger-from-a-cloud-container-2076).
 
+## Before a burst
+
+The launch prompt (only `/sigma-goal <N> --land` plus facts) and the four per-repository readiness checks are in
+[cloud burst](cloud-burst.md).
+
 ## In a Claude Code cloud session
 
 GitHub GraphQL is unavailable there (`CLAUDE_CODE_REMOTE=true`, or `SIGMA_GH_GRAPHQL=off`). The pick,

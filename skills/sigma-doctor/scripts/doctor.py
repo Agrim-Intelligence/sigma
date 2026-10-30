@@ -4004,6 +4004,100 @@ def _plans_ignored_rows(base, cfg, env=None):
         return []
 
 
+_BOT_RECENT_SECONDS = 14 * 86400
+_DEPENDABOT_FILES = (".github/dependabot.yml", ".github/dependabot.yaml")
+_RENOVATE_FILES = ("renovate.json", ".github/renovate.json", ".renovaterc", ".renovaterc.json")
+
+
+def _verify_evidence(base):
+    """#2119: [(at, exit, goal)] from the readable `.sdlc/state/verify/*.json` records, newest first. Local reads only."""
+    found = []
+    for f in sorted((pathlib.Path(base) / "state" / "verify").glob("*.json")):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            found.append((float(data["at"]), data.get("exit"), f.stem))
+        except Exception:                    # noqa: BLE001 - an unreadable record proves nothing either way
+            continue
+    return sorted(found, reverse=True)
+
+
+def _dependabot_updates_on(text):
+    """True when the file has at least one `updates:` entry that does not set `open-pull-requests-limit: 0`.
+    Line-based (the doctor carries no YAML parser); an entry is a `- ` item at the first item's indent."""
+    lines = text.splitlines()
+    try:
+        start = next(i for i, l in enumerate(lines) if re.match(r"^updates\s*:", l)) + 1
+    except StopIteration:
+        return False
+    items, indent = [], None
+    for l in lines[start:]:
+        m = re.match(r"^(\s*)-\s", l)
+        if m and (indent is None or len(m.group(1)) <= indent):
+            indent = len(m.group(1)) if indent is None else indent
+            items.append([])
+        if items:
+            items[-1].append(l)
+    return any(not re.search(r"^\s*(?:-\s+)?open-pull-requests-limit\s*:\s*0\s*(?:#.*)?$", "\n".join(i), re.M)
+               for i in items)
+
+
+def _renovate_on(text):
+    data = json.loads(text)
+    return isinstance(data, dict) and data.get("enabled") is not False and ":disableRenovate" not in (data.get("extends") or [])
+
+
+def _dependency_bot_rows(base, cfg, now=None):
+    """#2119: ONE informational row when a dependency-update bot has version updates enabled, `work.ci_required` is not
+    `false` and no verify result was recorded in the last 14 days. CI runs are not read (that would be a network call),
+    so "no recent run" is the local proxy of no recent verify record; the row says so. Never a failure (`ok` True). A
+    paused config (every dependabot entry at `open-pull-requests-limit: 0`; renovate `enabled: false` or
+    `:disableRenovate`), an unreadable one, or no config gives no row."""
+    try:
+        if _block(cfg, "work").get("ci_required") is False:
+            return []
+        root, bots = pathlib.Path(base).parent, []
+        for rel in _DEPENDABOT_FILES:
+            if (root / rel).is_file() and _dependabot_updates_on((root / rel).read_text(encoding="utf-8")):
+                bots.append(rel)
+        for rel in _RENOVATE_FILES:
+            if (root / rel).is_file() and _renovate_on((root / rel).read_text(encoding="utf-8")):
+                bots.append(rel)
+        now = time.time() if now is None else now
+        recent = [e for e in _verify_evidence(base) if now - e[0] <= _BOT_RECENT_SECONDS]
+        if not bots or recent:
+            return []
+        return [{"name": "dependency-update bot has version updates on, CI is required and no recent verify is recorded",
+                 "ok": True, "level": "INFO",
+                 "fix": ("%s has version updates enabled, work.ci_required is true, and no verify result was recorded here "
+                         "in the last 14 days. CI runs themselves are not read (no network call), so this is a proxy. "
+                         "Before a cloud burst: if the repository's CI is paused, pause the bot too, or its PRs merge "
+                         "unverified and every goal parks on a red base (skills/sigma-goal/references/cloud-burst.md)."
+                         % ", ".join(bots))}]
+    except Exception:                        # noqa: BLE001 - a detector that cannot run says nothing
+        return []
+
+
+def _last_verify_rows(base, cfg, now=None):
+    """#2119: ONE informational row giving the newest recorded verify result on this checkout, when `verify.command` is
+    set. It is the newest goal verify here, not a run of the base branch itself, and says so. Local reads only."""
+    try:
+        if not str(_block(cfg, "verify").get("command") or "").strip():
+            return []
+        found = _verify_evidence(base)
+        if not found:
+            return [{"name": "last recorded verify: no verify result recorded on this checkout yet", "ok": True,
+                     "level": "INFO", "fix": ("a cloud burst starts from the base branch, so run `verify.command` on it "
+                                              "first (skills/sigma-goal/references/cloud-burst.md)")}]
+        at, code, goal = found[0]
+        now = time.time() if now is None else now
+        return [{"name": "last recorded verify: exit %s, %s ago (goal %s)" % (code, _age_words(now - at), goal),
+                 "ok": True, "level": "INFO",
+                 "fix": ("this is the newest goal verify recorded here, not a run of the base branch itself; check the "
+                         "base passes `verify.command` before a cloud burst (skills/sigma-goal/references/cloud-burst.md)")}]
+    except Exception:                        # noqa: BLE001 - a detector that cannot run says nothing
+        return []
+
+
 def _stale_watch_stop_rows(base, cfg):
     """#1510: warn when a leftover state/watch.stop exists and no watcher is live (it would exit at once). Silent otherwise. Read-only."""
     try:
@@ -4211,6 +4305,8 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     out.extend(_watcher_build_rows(base, cfg))                # #1315
     out.extend(_stale_watch_stop_rows(base, cfg))             # #1510
     out.extend(_plans_ignored_rows(base, cfg))                # #2087
+    out.extend(_dependency_bot_rows(base, cfg))               # #2119: informational, local files only
+    out.extend(_last_verify_rows(base, cfg))                  # #2119
     _progress("unit branch readiness")
     out.extend(_upkeep_rows(base, cfg, run, which, injected, cheap_only))
     _progress("resolvers")

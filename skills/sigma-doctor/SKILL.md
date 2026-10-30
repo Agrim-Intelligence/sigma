@@ -41,6 +41,8 @@ this full run does.
 
 `host config` rows are a read-only report (never blocks); relay them as printed.
 
+Two `[INFO]` rows (a dependency-update bot with version updates on while CI is required and no recent verify is recorded; the last recorded verify result) come from local files only and are never failures. They back the readiness check in `skills/sigma-goal/references/cloud-burst.md`: relay them as printed.
+
 Present the checklist plainly. Offer a safe fix, but **never run an
 interactive login (`gh auth …`) or a package install on their behalf** — hand them the command.
 
