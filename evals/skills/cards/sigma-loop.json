@@ -579,7 +579,7 @@
     },
     {
       "path": "skills/sigma-loop/scripts/red_green.py",
-      "role": "library"
+      "role": "gesture"
     },
     {
       "path": "skills/sigma-loop/scripts/release_manifest.py",
