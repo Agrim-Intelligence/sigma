@@ -1437,6 +1437,7 @@ _NO_UNIT_NAME = {
     ("feature_owner", "_load"),
     ("feature_propagate", "_load"),
     ("feature_rebase", "_load"),
+    ("feature_rebase", "_rebase_in_progress"),   # #2117: joins `git rev-parse --git-path rebase-merge|rebase-apply` onto the cwd; no unit name
     ("feature_rebase", "_describe_stop"),     # #946: joins the throwaway worktree path and a conflicted file; no unit name
     ("feature_rebase", "read_text"),          # #946: the nested reader inside it
     ("feature_park", "_load"),                # #946: the sibling importer

@@ -2227,6 +2227,65 @@ def pid_alive(pid):
         return True
 
 
+#: Where the process table is read from. A module constant so a test can point it at a built tree.
+PROC_ROOT = "/proc"
+
+
+def _read_proc(*parts):
+    """The text of `PROC_ROOT/<parts>`, or None when it cannot be read (not Linux, /proc hidden)."""
+    try:
+        with open(os.path.join(PROC_ROOT, *[str(p) for p in parts]), "r", encoding="utf-8") as handle:
+            return handle.read()
+    except (OSError, ValueError):
+        return None
+
+
+def process_identity(pid):
+    """{"start": int|None, "boot": str|None} for `pid` (#2117): the process start time, as the raw
+    clock-tick count in field 22 of `/proc/<pid>/stat`, and this machine's boot id
+    (`/proc/sys/kernel/random/boot_id`). Each is None when it cannot be read. Only ever compared
+    with the value recorded at registration, so the unit does not matter.
+
+    A bare pid is reused after a container restart or a reboot, so a marker that names pid 103 can
+    be read as alive because some unrelated process now holds 103 (#2117). The start time tells two
+    processes at one pid apart within a boot; the boot id tells them apart across boots, where tick
+    counts can coincide. The stat line is split after its LAST `)`: the command name sits in
+    parentheses and may itself hold spaces and parentheses."""
+    start = None
+    text = _read_proc(pid, "stat")
+    if text:
+        try:
+            start = int(text[text.rindex(")") + 2:].split()[19])
+        except (ValueError, IndexError):
+            start = None
+    boot = (_read_proc("sys", "kernel", "random", "boot_id") or "").strip() or None
+    return {"start": start, "boot": boot}
+
+
+def identity_readable():
+    """True when this machine can give the identity `process_identity` records: the doctor's
+    statement of whether a marker is judged by identity or by the bare pid probe alone."""
+    got = process_identity(os.getpid())
+    return got["start"] is not None and got["boot"] is not None
+
+
+def identity_alive(pid, recorded):
+    """Is the process that registered `recorded` still `pid`? Alive only when every clause holds:
+    the pid answers `pid_alive`, AND its start time AND the boot id equal the recorded ones. A
+    clause with nothing recorded (a bare-pid marker, or a platform that could not read it then) or
+    nothing readable now is not compared: it fails toward alive, exactly as `pid_alive` does, and
+    the lease TTL stays the backstop. Never raises."""
+    if not pid_alive(pid):
+        return False
+    recorded = recorded or {}
+    now = process_identity(pid)
+    for clause in ("start", "boot"):
+        then, current = recorded.get(clause), now.get(clause)
+        if then is not None and current is not None and then != current:
+            return False
+    return True
+
+
 def _writer(entry):
     """The claim's writer identity: `who:pid` for a post-#337 3-part `id`, or bare `actor` for a
     legacy 2-part id (no pid to distinguish — there was only ever one writer file per actor then).

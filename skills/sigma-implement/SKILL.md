@@ -52,7 +52,8 @@ it tests the right thing. Wrote code before the test? Delete it and re-derive fr
    prints the file as a legacy row without `intent: yes`: there change only what the goal needs.
    With no such row, or if it could not run, this rule holds.
 
-After writing the plan's `## Tests`, record both through Sigma (companion TDD skills never replace this):
+**Right after writing the failing tests** record red, and verify when green (companion TDD skills never replace this).
+With `verify.enforce`, `phase_report.py start review` is refused without red for a planned pytest selector:
 
 ```sh
 loop="${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py"

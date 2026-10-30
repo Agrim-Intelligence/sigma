@@ -50,7 +50,7 @@ GATED_CALLERS = (
     "skills/sigma-loop/scripts/feature_upkeep_prove.py:235",
     "skills/sigma-loop/scripts/feature_upkeep_prove.py:242",
     "skills/sigma-loop/scripts/goal_python.py:273",
-    "skills/sigma-loop/scripts/red_green.py:48",
+    "skills/sigma-loop/scripts/red_green.py:49",
     "skills/sigma-loop/scripts/resource_verify.py:282",
 )
 ALLOWED_LOADS = {"shell_policy", "bounded_run"}

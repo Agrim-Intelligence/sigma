@@ -68,7 +68,7 @@ reviewer must see the diff, its artifact. A non-zero `check` blocks dispatch on 
 ## 1. Forensic verification
 Every claim in the plan is a hypothesis. For each file path, function, line, or behavior the plan
 asserts — open the real code and confirm it. Classify each: Correct / Partially correct / Incorrect,
-each backed by a `file:line`. "The plan says X" is not evidence; the file showing X is.
+each backed by a `file:line`.
 
 ## 2. Adversarial robustness (assume it ships and a bug surfaces in two weeks)
 - **Caller sites (trace the blast radius across the WHOLE repo):** for every function/contract the plan changes, grep *all* callers — not just the files the plan names. You have full repo access; a plan that lists three files it touches has a blast radius of every site that calls them. Are they all handled, or is this a one-site patch with broken siblings?
@@ -81,6 +81,7 @@ Does each step serve the goal? What's over-built (YAGNI)? An interface, factory,
 `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/zones.py" check --goal "<goal>" --plan <plan>`: FIX-FIRST on
 `verdict: over`, quoting it. Each legacy row without `intent: yes` must be a seam edit (sprout or
 wrap), else FIX-FIRST. A bare `verdict: unknown` never rejects.
+Run `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/red_green.py" check-tests .sdlc "<goal>"`; exit 2 is FIX-FIRST.
 
 ## 4. Strategic & architectural alignment (vision-first projects)
 **Never test for the file yourself.** `.sdlc/` is gitignored, so inside a goal worktree — where the
@@ -108,10 +109,10 @@ One line, first token the verdict. Branch on it — the three are **not** interc
 
 
 ## Verdict
-Open with **how this review was run** — `Reviewed by: dispatched subagent | fresh process (<host>) |
+Open with **how it was run** — `Reviewed by: dispatched subagent | fresh process (<host>) |
 operator command | inline, author self-review`. Then one of: **SOUND** (implement as-is) /
 **SOUND-WITH-REFINEMENTS** (list them) / **FIX-FIRST**
-(blocking; Implement waits for a fresh approving verdict). Don't pad with praise. If you didn't try to break
+(blocking; Implement waits for a fresh approving verdict). If you didn't try to break
 it, you didn't review it.
 
 **Record it** — the site that dispatched this review does, never the dispatched reviewer; from the

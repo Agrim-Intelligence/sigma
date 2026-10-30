@@ -172,10 +172,14 @@ def test_rebase_deferred_keeps_its_prefix_and_names_the_manual_rebase(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_view(status="BEHIND") + _perm() + [("rebase --autostash", RuntimeError("CONFLICT in a.py"))])
+    # #2118: a conflicting replay falls back to a merge from the base; only when that conflicts too does it defer, and the
+    # manual step it names is then the merge, not the rebase.
+    run = _runner(_view(status="BEHIND") + _perm() + [("rebase --autostash", RuntimeError("CONFLICT in a.py")),
+                                                      ("merge --autostash", RuntimeError("CONFLICT in a.py")),
+                                                      ("diff --name-only --diff-filter=U", "a.py")])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
     assert out.startswith("PARK: rebase deferred: ")          # loop.py's merge_conflict needle reads this
-    assert "git rebase origin/main" in out and f"`work.py merge {d} {goal}`" in out
+    assert "git merge origin/main" in out and f"`work.py merge {d} {goal}`" in out
 
 
 # --- opt-in auto_merge parks and the plan-sync refusal --------------------------------------------

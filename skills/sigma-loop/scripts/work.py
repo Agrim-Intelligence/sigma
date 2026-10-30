@@ -307,6 +307,16 @@ ENFORCEMENT_GATES = (
                   "and does not refuse; test existence is an AST lookup for pytest ids and a file on a test "
                   "path otherwise, and an inherited method reads missing; the catch rate and false-block rate "
                   "are UNMEASURED: no goal has run with the key on"},
+    {"control": "Test-first exception judged by the post-PR review",
+     "function": "_exception_review_refusal", "kind": "python-gate", "hosts": "all",
+     "enabled_by": ("work.enabled",), "settings": (),
+     "mechanism": "when `work.py pr` recorded a `--no-tests` exception (the flag, or `--land` taking it because no runner "
+                  "here can record red), the pr-review brief carries the reason and asks for one `TEST-FIRST-EXCEPTION: "
+                  "accept` or `reject` line; a PR review's `approve` or `unblock` that rejects it, or says neither, "
+                  "is written as `block` with the finding",
+     "condition": "the line, like the verdict, is relayed by the orchestrator on the subagent route and written by the "
+                  "maker on the inline route; it proves the question was answered, not answered well; only the review "
+                  "route is gated, `work.py merge` does not re-read it; no real review has run under it"},
     {"control": "Sealed acceptance tests authored by an author-blind breaker (opt-in)",
      "function": "_seal_tests_refusal", "kind": "python-gate", "hosts": "all",
      "enabled_by": ("work.enabled", "gates.sealed_acceptance.enabled"), "settings": ("review.timeout_seconds",),
@@ -1040,6 +1050,28 @@ def _test_review_refusal(sdlc_dir, goal, review_text):
     return _load("review_tests").judge(sdlc_dir, goal, review_text)
 
 
+_EXCEPTION_LINE = re.compile(r"(?im)^[ \t>*_`+-]*TEST-FIRST-EXCEPTION[ \t*_`]*:[ \t*_`]*(accept|reject)(?:ed)?\b[ \t*_`:.-]*(.*?)[ \t*_`]*$")
+
+
+def _exception_review_refusal(sdlc_dir, goal, review_text):
+    """#2116: None, or why an approving PR review may not stand: the PR carries a `## Test-first exception`
+    (`pr()` recorded it) and the review did not accept it with `TEST-FIRST-EXCEPTION: accept - <why>`, or rejected it,
+    or said both. A rejection is an ordinary block (`_write_review_result` writes `block`). Like the verdict word, the
+    line is the reviewer's text relayed by the orchestrator: it proves the question was answered, not that it was
+    answered well. Nothing recorded -> None, so a goal without an exception is untouched. The registered seam
+    `ENFORCEMENT_GATES` names."""
+    reason = (_record(sdlc_dir, goal) or {}).get("test_first_exception")
+    if not reason:
+        return None
+    said = {m.group(1).lower(): m.group(2) for m in _EXCEPTION_LINE.finditer(review_text or "")}
+    if "reject" in said:
+        return "the reviewer rejected the PR's test-first exception: " + (said["reject"] or "(no reason given)")
+    if "accept" in said:
+        return None
+    return ("the PR carries a test-first exception (" + str(reason).strip() + ") and the review did not judge it: end "
+            "the review with `TEST-FIRST-EXCEPTION: accept - <why>` or `TEST-FIRST-EXCEPTION: reject - <why>`")
+
+
 #: Under GitHub's 65,536-character comment limit with room for post_review's own header and marker.
 _MAX_POSTED_REASON = 60000
 
@@ -1054,6 +1086,9 @@ def _write_review_result(sdlc_dir, manifest, resolution_path, verdict, reason, w
     generation cycle is the recovery. Only that downgrade direction exists."""
     if verdict in ("approve", "unblock"):
         refusal, partial = _test_review_refusal(sdlc_dir, manifest.get("goal"), reason)
+        excepted = _exception_review_refusal(sdlc_dir, manifest.get("goal"), reason)     # #2116
+        if excepted:
+            refusal = excepted + ("\n" + refusal if refusal else "")
         if refusal:
             print(f"work: the test review turned this `{verdict}` into a block:\n{refusal}\nIf the reviewer's "
                   "output was summarised, record its full text instead (`--reason \"$(cat <file>)\"`): the "
@@ -1582,6 +1617,15 @@ def _relative_posix(path, base):
         return pathlib.Path(path).as_posix()
 
 
+def _runners_or_none(config):
+    """#2116: `tests.runners` as `red_green.selectors` takes it; a malformed block reads as none configured, which
+    the parser then reports only if the plan names a runner."""
+    try:
+        return state.test_runners(config)
+    except ValueError:
+        return {}
+
+
 def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", run=None, agent_id=""):
     """Record a plan-review verdict against the exact plan bytes the reviewer was briefed on (#258).
 
@@ -1636,6 +1680,11 @@ def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", 
                          f"copy {main.as_posix()}: copy the reviewed plan over {branch.as_posix()} and "
                          "leave it uncommitted (step 6 commits it), or copy the branch's version back to "
                          f"{main.as_posix()} and review that; then record")
+    if mapped in _PLAN_REVIEW_APPROVING and state.enforce_enabled(config.get("verify")):
+        problem = _load("red_green").tests_section_error(reviewed, _runners_or_none(config))    # #2116
+        if problem:
+            raise ValueError(f"the plan's ## Tests is one `work.py pr` would reject, so Plan-Review cannot pass it: "
+                             f"{problem} (fix ## Tests in {reviewed.as_posix()}, then run a fresh plan-review)")
     if mapped in _PLAN_REVIEW_APPROVING:     # F02: also with the action log off, where record_verdict is skipped
         refusal = _load("reviewer").independent_run_refusal(sdlc_dir, goal, "plan_review", sha)
         if refusal:
@@ -2429,7 +2478,28 @@ def _rebase_argv(config, run, path, remote, base, rec):
         run(path, ["git", "merge-base", "--is-ancestor", cut, "HEAD"])
     except Exception:                       # noqa: BLE001 - a stale or foreign tip: the legacy path
         return plain
-    return ["git", "rebase", "--autostash", "--onto", f"{remote}/{base}", cut]
+    return ["git", "rebase", "--autostash", "--onto", f"{remote}/{base}", _replay_upstream(run, path, remote, base, cut)]
+
+
+def _replay_upstream(run, path, remote, base, cut):
+    """The `<upstream>` of the `--onto` replay: `cut` itself, unless `cut..HEAD` holds a commit the new base already has (#2118).
+
+    `--onto B cut` replays every commit in `cut..HEAD`, and a commit that reached the goal from the base (a merge from the
+    base, a re-cut) is in that range, so it is replayed onto a base that already holds it and conflicts with whatever the
+    base did to those lines since. The commits to replay are `HEAD` minus what `cut` reaches minus what the base reaches;
+    a throwaway commit with exactly those two parents (never referenced, so never pushed) names that set as an upstream.
+    Where nothing in `cut..HEAD` is on the base the answer is `cut` and the argv is the one this always was. Fails to `cut`."""
+    base_ref = f"{remote}/{base}"
+    try:
+        in_range = str(run(path, ["git", "rev-list", "--no-merges", f"{cut}..HEAD"]) or "").split()
+        own = str(run(path, ["git", "rev-list", "--no-merges", f"{cut}..HEAD", f"^{base_ref}"]) or "").split()
+        if len(own) == len(in_range):
+            return cut                      # nothing in the range is on the base: every commit is the goal's own
+        tip = str(run(path, ["git", "commit-tree", "-p", cut, "-p", base_ref, "-m", "sigma replay upstream",
+                             f"{base_ref}^{{tree}}"]) or "").strip()
+        return tip if _SHA_RE.match(tip) else cut
+    except Exception:                       # noqa: BLE001 - the legacy replay is the fallback, never a failed resume
+        return cut
 
 
 def _rerecord_cut_tip(sdlc_dir, config, goal, rec, run, path, remote, base):
@@ -4218,6 +4288,28 @@ def _no_tests_body(body, reason):
     return body if section in body else body + section
 
 
+def _land_no_tests_reason(sdlc_dir, config, rec, goal, run):
+    """#2116: the `--no-tests` reason `--land` supplies for itself, or None. Only when no runner in this container can
+    record red for the planned tests (`red_green.unrecordable_case`: no selectors, an unconfigured runner, a runner
+    the active trust does not cover). A pytest plan that simply never went red is not that case and stays refused.
+    The git-local grant is the only trust that runs a runner command (`loop._runner_trust_refusal`). Never raises."""
+    try:
+        main, branch = plan_copies(sdlc_dir, goal, rec, run)
+        try:
+            runners = state.test_runners(config)
+        except ValueError:
+            runners = {}                    # a malformed block grants nothing; a runner bullet then reads unconfigured
+        found = _load("red_green").unrecordable_case(
+            branch or main, runners, shell_policy.repository_shell_commands_allowed(rec["worktree"]))
+    except Exception:                       # noqa: BLE001 - not knowing the case leaves the refusal standing
+        return None
+    if not found:
+        return None
+    case, detail = found
+    return (f"--land took this exception itself because no runner in this container can record red [{case}]: {detail}. "
+            "The post-PR review must accept or reject it.")
+
+
 def _plan_missing_from_branch(sdlc_dir, rec, goal, run):
     """The refusal line when this goal's plan is on disk but not on its branch — "" otherwise.
     #1548. See `_phase_doc_missing_from_branch` for the shared reasoning; this is the `plans`/`plan`
@@ -4494,7 +4586,7 @@ def _pr_title(path, run, remote, base, goal):
     return title
 
 
-def pr(sdlc_dir, config, goal, run=None, no_tests=None):
+def pr(sdlc_dir, config, goal, run=None, no_tests=None, land=False):
     """Push the branch and open (or re-find) its PR. Refuses on an unclean or empty branch — or one
     missing the plan or research dossier it is meant to be read against (#1548, #1801) — rather than
     opening a PR that says nothing, or one a reviewer cannot check.
@@ -4582,8 +4674,18 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None):
         return missing_acceptance
 
     test_first_refusal = _test_first_refusal(sdlc_dir, config, rec, goal, run, no_tests, remote, base)
+    if test_first_refusal and land and no_tests is None:
+        # #2116: under `--land` nobody can answer the refusal, and a runner that cannot record red here would park
+        # the goal for a gap no human fix closes. Take the exception, name the case, and let the post-PR review judge it.
+        no_tests = _land_no_tests_reason(sdlc_dir, config, rec, goal, run)
+        if no_tests:
+            test_first_refusal = _test_first_refusal(sdlc_dir, config, rec, goal, run, no_tests, remote, base)
     if test_first_refusal:
         return test_first_refusal
+    if no_tests:                                          # #2116: the review reads this; a `none:` plan is not an exception
+        rec["test_first_exception"] = no_tests
+    else:
+        rec.pop("test_first_exception", None)
     if no_tests is None:                                  # #1942: the plan's own `none:` is published like the flag
         no_tests = _declared_no_tests(sdlc_dir, rec, goal, run, remote, base)[0]
 
@@ -5809,7 +5911,7 @@ def _stash_pop_registry_rescue(path, run, unmerged, resync):
         return False
 
 
-def rebase(sdlc_dir, config, goal, run=None):
+def rebase(sdlc_dir, config, goal, run=None, no_force=False, merge_fallback=True):
     """Replay the branch on the current base -- called reactively when GitHub reports a PR BEHIND
     (`_reconcile_behind`), proactively before `loop.py verify` runs anything expensive against a
     worktree that has drifted (`ensure_fresh`, #1890), and opportunistically by feature-branch
@@ -5832,7 +5934,16 @@ def rebase(sdlc_dir, config, goal, run=None):
     verify-time WIP to autostash; `feature_rebase.py`'s upkeep skips any dirty branch before ever
     calling this) -- `ensure_fresh` is the first caller for which an uncommitted diff at rebase
     time is the NORMAL case (`work.py commit` never runs until after verify passes), so it is the
-    first to hit this routinely rather than by rare accident."""
+    first to hit this routinely rather than by rare accident.
+
+    #2118: a replay that still conflicts is aborted and then MERGED instead (`_merge_from_base`): a merge commit on top
+    of the branch is a fast-forward push, and only when that conflicts too does this return `rebase deferred`, naming
+    the conflicting files. `no_force=True` (the resume and verify gate, `ensure_fresh`) never force-pushes: a branch
+    already on the remote keeps the replayed tree (rescues included) but lands it as a merge commit over what was pushed
+    (`_fold_onto_pushed`), so every push is a plain fast-forward. Left False, the callers that act on an open PR keep the
+    lease push they always had. `merge_fallback=False` keeps the abort-and-report outcome for the one caller whose job is to
+    REPORT a conflicting replay (feature upkeep files it, and its target branch was itself rewritten, so merging it into
+    the goal would carry the old history along)."""
     run = run or _run
     rec = _record(sdlc_dir, goal)
     if not rec:
@@ -5840,6 +5951,8 @@ def rebase(sdlc_dir, config, goal, run=None):
     path, remote, base = rec["worktree"], rec["remote"], rec["base"]
     run(path, ["git", "fetch", remote, base])
     pre_rebase_head = run(path, ["git", "rev-parse", "HEAD"])
+    push_argv = ["git", "push"] + ([] if no_force else ["--force-with-lease"]) + [remote, f"HEAD:{rec['branch']}"]
+    fold = no_force and _branch_is_pushed(run, path, remote, rec["branch"])
     try:
         run(path, _rebase_argv(config, run, path, remote, base, rec))
     except Exception as exc:                # noqa: BLE001 - conflict is an outcome to report, not a crash
@@ -5860,11 +5973,13 @@ def rebase(sdlc_dir, config, goal, run=None):
                        or _push_refused(path, rec["branch"]))
             if refused:
                 return refused
-            gated = _hs_push_stop(sdlc_dir, config, rec,
-                                     f"git push --force-with-lease {remote} HEAD:{rec['branch']}")
+            folded = _fold_onto_pushed(run, path, f"{remote}/{base}", pre_rebase_head) if fold else None
+            if folded:
+                return folded
+            gated = _hs_push_stop(sdlc_dir, config, rec, " ".join(push_argv))
             if gated:
                 return gated
-            run(path, ["git", "push", "--force-with-lease", remote, f"HEAD:{rec['branch']}"])
+            run(path, push_argv)
             _rerecord_cut_tip(sdlc_dir, config, goal, rec, run, path, remote, base)
             _reanchor_after_rebase(sdlc_dir, config, goal)
             return f"rebased ({rescued})"
@@ -5872,8 +5987,11 @@ def rebase(sdlc_dir, config, goal, run=None):
             run(path, ["git", "rebase", "--abort"])
         except Exception:                   # noqa: BLE001 - nothing to abort is a fine outcome
             pass
-        return (f"rebase deferred: {exc} — resolve it by hand in {path} (`git rebase {remote}/{base}`), "
-                f"then re-run `work.py merge {sdlc_dir} {goal}`")
+        if not merge_fallback:
+            return (f"rebase deferred: {exc} — resolve it by hand in {path} (`git rebase {remote}/{base}`), "
+                    f"then re-run `work.py merge {sdlc_dir} {goal}`")
+        return _merge_from_base(sdlc_dir, config, goal, rec, run, path, push_argv, pre_rebase_head,
+                                f"the replay conflicted ({exc})")
     # The rebase command itself did not raise, but its own final autostash-pop step can still have
     # conflicted silently (see docstring) -- no rebase is "in progress" at this point (git already
     # printed "Successfully rebased"), so neither `rebase --abort` above nor `_union_rescue`'s own
@@ -5923,13 +6041,112 @@ def rebase(sdlc_dir, config, goal, run=None):
                or _push_refused(path, rec["branch"]))
     if refused:
         return refused
-    gated = _hs_push_stop(sdlc_dir, config, rec, f"git push --force-with-lease {remote} HEAD:{rec['branch']}")
+    folded = _fold_onto_pushed(run, path, f"{remote}/{base}", pre_rebase_head) if fold else None
+    if folded:
+        return folded
+    gated = _hs_push_stop(sdlc_dir, config, rec, " ".join(push_argv))
     if gated:
         return gated
-    run(path, ["git", "push", "--force-with-lease", remote, f"HEAD:{rec['branch']}"])
+    run(path, push_argv)
     _rerecord_cut_tip(sdlc_dir, config, goal, rec, run, path, remote, base)
     _reanchor_after_rebase(sdlc_dir, config, goal)
     return "rebased"
+
+
+def _branch_is_pushed(run, path, remote, branch):
+    """Is `branch` on `remote` already? Unreadable counts as pushed: the safe answer for a caller that must not force-push."""
+    try:
+        return bool(str(run(path, ["git", "ls-remote", "--heads", remote, f"refs/heads/{branch}"]) or "").strip())
+    except Exception:                       # noqa: BLE001
+        return True
+
+
+def _fold_onto_pushed(run, path, base_ref, pre):
+    """#2118: turn the replayed HEAD into a merge commit of `pre` (what is on the remote) and `base_ref`, same tree.
+
+    A replay rewrites the goal's commits, which can only reach a remote that already has them by force. The tree it produced
+    is what matters, and `pre` + the base as parents makes the same tree a descendant of what was pushed, so the push is a
+    fast-forward. `reset --soft` moves HEAD only: index and worktree (uncommitted work included) are untouched.
+    -> None, or a `rebase deferred` string after putting the branch back at `pre`."""
+    try:
+        tip = str(run(path, ["git", "commit-tree", "-p", pre, "-p", base_ref, "-m",
+                             f"Merge {base_ref} into the goal branch", "HEAD^{tree}"]) or "").strip()
+        if not _SHA_RE.match(tip):
+            raise ValueError(f"commit-tree returned {tip!r}")
+        run(path, ["git", "reset", "--soft", tip])
+        return None
+    except Exception as exc:                # noqa: BLE001 - nothing was pushed; put the branch back and say so
+        try:
+            run(path, ["git", "reset", "--keep", pre])
+        except Exception:                   # noqa: BLE001
+            pass
+        return f"rebase deferred: could not record the replay as a merge over the pushed branch ({exc})"
+
+
+def _merge_from_base(sdlc_dir, config, goal, rec, run, path, push_argv, pre, why):
+    """#2118: bring `<remote>/<base>` into the goal branch with a merge commit and push it (a fast-forward, never a force).
+
+    The fallback when a replay cannot apply, and the only move for a branch that is already pushed. -> `rebased (...)` when
+    the merge was clean and pushed; `rebase deferred: ...` naming the conflicting files when it was not, with the worktree
+    put back at `pre` and nothing pushed. `--autostash` keeps uncommitted work, and the tree is inspected afterwards because
+    a stash pop that conflicts leaves markers behind a zero exit, as `rebase()`'s own docstring records."""
+    remote, base = rec["remote"], rec["base"]
+    ref = f"{remote}/{base}"
+    stranded = ""
+    stashes = run(path, ["git", "stash", "list"])
+
+    def put_back():
+        try:
+            run(path, ["git", "merge", "--abort"])
+            if (str(run(path, ["git", "rev-parse", "HEAD"]) or "").strip() == str(pre).strip()
+                    and not str(run(path, ["git", "diff", "--name-only", "--diff-filter=U"]) or "").strip()):
+                if run(path, ["git", "stash", "list"]) != stashes:
+                    run(path, ["git", "stash", "pop"])          # an older git leaves the autostash behind on abort
+                return ""                   # the tree is back: a reset would delete staged work
+        except Exception:                   # noqa: BLE001 - nothing to abort (e.g. the merge never started) is fine
+            pass
+        try:
+            run(path, ["git", "reset", "--hard", pre])
+            if run(path, ["git", "stash", "list"]):
+                run(path, ["git", "stash", "pop"])
+            return ""
+        except Exception as exc:            # noqa: BLE001
+            return f"; restoring the worktree to {pre[:12]} failed ({exc}), inspect it by hand"
+
+    def conflicting():
+        try:
+            names = [n.strip() for n in str(run(path, ["git", "diff", "--name-only", "--diff-filter=U"]) or "").split("\n")]
+        except Exception:                   # noqa: BLE001
+            names = []
+        names = [n for n in names if n]
+        return ", ".join(names[:5]) + (f" and {len(names) - 5} more" if len(names) > 5 else "") if names else "files it could not list"
+
+    try:
+        run(path, ["git", "merge", "--autostash", "--no-edit", ref])
+    except Exception as exc:                # noqa: BLE001 - a conflict is an outcome to report, not a crash
+        files = conflicting()
+        stranded = put_back()
+        return (f"rebase deferred: {why}; merging {ref} into it conflicts in {files} ({' '.join(str(exc).split())[:120]}) "
+                f"— resolve it by hand in {path} (`git merge {ref}`), then re-run `work.py merge {sdlc_dir} {goal}`{stranded}")
+    try:
+        left = str(run(path, ["git", "diff", "--name-only", "--diff-filter=U"]) or "").strip()
+    except Exception as exc:                # noqa: BLE001 - cannot tell whether the autostash popped cleanly
+        return f"rebase deferred: could not confirm whether the autostash popped cleanly after merging {ref} ({exc})"
+    if left:
+        files = conflicting()
+        stranded = put_back()
+        return (f"rebase deferred: {why}; the worktree's own uncommitted changes conflict with {ref} in {files} "
+                f"(autostash pop conflict){stranded}")
+    refused = _push_refused(path, rec["branch"])
+    if refused:
+        return refused
+    gated = _hs_push_stop(sdlc_dir, config, rec, " ".join(push_argv))
+    if gated:
+        return gated
+    run(path, push_argv)
+    _rerecord_cut_tip(sdlc_dir, config, goal, rec, run, path, remote, base)
+    _reanchor_after_rebase(sdlc_dir, config, goal)
+    return f"rebased (merged {ref}: {why})"
 
 
 def _reanchor_after_rebase(sdlc_dir, config, goal):
@@ -6079,7 +6296,7 @@ def ensure_fresh(sdlc_dir, config, goal, run=None):
     # by two OTHER callers, `_reconcile_behind` and `feature_rebase.py`'s upkeep) to save one cheap
     # call for this one.
     try:
-        result = rebase(sdlc_dir, config, goal, run=run)
+        result = rebase(sdlc_dir, config, goal, run=run, no_force=True)
     except Exception as exc:                    # noqa: BLE001 - staleness is CONFIRMED here -- must not proceed silently
         # #2009: the wording is INTERPOLATED from `_STALE_RESUME_TRANSIENT`, not typed inline, so
         # the resume-path classifier that routes this to a release (rather than a park) reads the
@@ -9887,7 +10104,7 @@ def main(argv):
     if len(argv) >= 4 and argv[1] in _COMMANDS:
         if argv[1] == "pr" and "--no-tests" in argv and (
                 not _flag(argv, "--no-tests").strip() or _flag(argv, "--no-tests").startswith("--")):
-            print("usage: work.py pr <sdlc_dir> <goal> [--no-tests <reason>]", file=sys.stderr)
+            print("usage: work.py pr <sdlc_dir> <goal> [--no-tests <reason>] [--land]", file=sys.stderr)
             return 2
         sdlc_dir, goal = argv[2], argv[3]
         try:
@@ -9967,6 +10184,8 @@ def main(argv):
             kwargs["force"] = True
         if argv[1] == "pr" and "--no-tests" in argv:
             kwargs["no_tests"] = _flag(argv, "--no-tests")
+        if argv[1] == "pr" and "--land" in argv:
+            kwargs["land"] = True               # #2116: a `/sigma-goal <N> --land` run, see skills/sigma-goal/references/land.md
         if argv[1] == "commit":
             kwargs["message"] = _flag(argv, "--message")
         if argv[1] == "post-review":

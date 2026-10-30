@@ -4100,9 +4100,11 @@ def test_a_conflicting_rebase_aborts_and_parks(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_view(status="BEHIND") + _perm() + [("rebase --autostash", RuntimeError("CONFLICT in a.py"))])
+    run = _runner(_view(status="BEHIND") + _perm() + [("rebase --autostash", RuntimeError("CONFLICT in a.py")),
+                                                      ("merge --autostash", RuntimeError("CONFLICT in a.py")),   # #2118: the merge fallback conflicts too
+                                                      ("diff --name-only --diff-filter=U", "a.py")])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PARK: rebase deferred") and "CONFLICT" in out
+    assert out.startswith("PARK: rebase deferred") and "CONFLICT" in out and "a.py" in out
     assert "git rebase --abort" in run.calls
     assert not prfake.merge_calls(run.calls)
 
@@ -4218,7 +4220,8 @@ def test_ensure_fresh_auto_rebases_when_behind_and_says_why(tmp_path, capsys):
                    ("diff --name-only --diff-filter=U", "")])
     assert work.ensure_fresh(d, ON, goal, run=run) is None
     assert any("rebase --autostash" in c for c in run.calls)
-    assert any("push --force-with-lease" in c for c in run.calls)
+    assert any(c.startswith("git push origin HEAD:") for c in run.calls)       # #2118: the resume gate pushes plain
+    assert not any("push --force" in c for c in run.calls)
     err = capsys.readouterr().err
     assert "3 commit(s) behind" in err and "auto-rebased" in err
 
@@ -4228,10 +4231,13 @@ def test_ensure_fresh_refuses_on_a_committed_commit_conflict(tmp_path):
     goal = _started(d)
     run = _runner([("rev-parse HEAD", "deadbee0" * 5),
                    ("rev-list --count", "3"),
-                   ("rebase --autostash", RuntimeError("CONFLICT in a.py"))])
+                   ("rebase --autostash", RuntimeError("CONFLICT in a.py")),
+                   ("merge --autostash", RuntimeError("CONFLICT in a.py")),     # #2118: the merge fallback conflicts too
+                   ("diff --name-only --diff-filter=U", "a.py")])
     out = work.ensure_fresh(d, ON, goal, run=run)
-    assert out is not None and "0001-x" in out and "could not apply cleanly" in out
+    assert out is not None and "0001-x" in out and "could not apply cleanly" in out and "a.py" in out
     assert "git rebase --abort" in run.calls
+    assert not any(c.startswith("git push") for c in run.calls)
 
 
 def test_ensure_fresh_refuses_on_an_autostash_pop_conflict_and_never_pushes(tmp_path):
@@ -12003,3 +12009,32 @@ def test_gate_with_ci_not_required_still_parks_when_the_host_blocks_on_a_check(t
     run = _runner(_mixed(("ci", "FAILURE"), status="BLOCKED"))
     ok, verdict, _ = work.gate(d, NO_CI, goal, run=run, sleep=NOSLEEP)
     assert not ok and "ci" in verdict
+
+
+# #2116 AC-3: Plan-Review fails a plan whose `## Tests` the PR-step parser rejects, with the parser's message.
+ENFORCING = {"work": {"enabled": True}, "verify": {"enforce": True}}
+BAD_TESTS = b"# plan\n\n## Tests\n- tests/test_x.py without backticks\n"
+
+
+def test_record_plan_review_refuses_a_tests_section_the_pr_parser_rejects(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDECODE", "1")
+    d = _sdlc(tmp_path); goal = _started(d); sha = _plan_bytes(d, BAD_TESTS)
+    for word in ("SOUND", "SOUND-WITH-REFINEMENTS"):
+        with pytest.raises(ValueError) as caught:
+            work.record_plan_review(d, ENFORCING, goal, word, sha, run=_runner([]))
+        assert "## Tests requires one backticked pytest selector per bullet" in str(caught.value)
+    assert not _gate_record(d).exists()
+
+
+@pytest.mark.parametrize("tests", [b"- `tests/test_x.py::test_a`\n", b"none: wording only\n"])
+def test_record_plan_review_passes_a_tests_section_the_pr_parser_accepts(tmp_path, monkeypatch, tests):
+    monkeypatch.setenv("CLAUDECODE", "1")
+    d = _sdlc(tmp_path); goal = _started(d); sha = _plan_bytes(d, b"# plan\n\n## Tests\n" + tests)
+    assert work.record_plan_review(d, ENFORCING, goal, "SOUND", sha, run=_runner([]))["verdict"] == "pass"
+
+
+def test_record_plan_review_checks_tests_only_for_an_approval_and_only_with_enforce_on(tmp_path, monkeypatch):
+    monkeypatch.setenv("CLAUDECODE", "1")
+    d = _sdlc(tmp_path); goal = _started(d); sha = _plan_bytes(d, BAD_TESTS)
+    assert work.record_plan_review(d, ENFORCING, goal, "FIX-FIRST", sha, run=_runner([]))["verdict"] == "block"
+    assert work.record_plan_review(d, ON, goal, "SOUND", sha, run=_runner([]))["verdict"] == "pass"
