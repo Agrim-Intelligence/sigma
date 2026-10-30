@@ -1010,7 +1010,7 @@ def _scripted_phases(run, loop, repo, env, goal, pid, part):
         (repo / ".sdlc" / "research" / f"{stem}.md").write_text("# Research\nscripted\n", encoding="utf-8")
         phase("research", "onb-research")
         plan = repo / ".sdlc" / "plans" / f"{stem}.md"
-        plan.write_text("# Plan\nscripted\n", encoding="utf-8")
+        plan.write_text("# Plan\nscripted\n\n## Tests\nnone: scripted control, no test-first tests\n", encoding="utf-8")   # #2116: Plan-Review parses it
         phase("plan", "onb-plan")
         phase("plan_review", "onb-plan-reviewer")
         sha = hashlib.sha256(plan.read_bytes()).hexdigest()
