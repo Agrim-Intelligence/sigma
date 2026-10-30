@@ -42,7 +42,7 @@ Answer all four. A "no" is fixed first; starting the burst anyway parks every go
 Two informational rows, never failures, read from local files only (no network call beyond what the doctor already
 makes):
 
-- **Check 1, partly:** a dependency-bot config (`.github/dependabot.yml`, `renovate.json` and its usual variants) with
+- **Check 1, partly:** a dependency-bot config (`dependabot.yml` under the consumer's `.github`, `renovate.json` and its usual variants) with
   version updates enabled, while `work.ci_required` is true and no verify result was recorded here in the last 14 days.
   The doctor cannot read CI runs without the network, so the recorded-verify age is a proxy and the row says so. A bot
   paused as in check 1 gives no row.

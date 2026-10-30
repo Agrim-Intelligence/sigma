@@ -20,7 +20,8 @@ counterpart to the autonomous `/sigma-loop`).
 1. Identify the goal: a path under `.sdlc/goals/` (preferred — so it's tracked) or inline text the
    user gives. If inline, offer to save it as the next `.sdlc/goals/NNNN-*.md`. **If the invocation
    carried `--feature <unit>`, selection is confined to that unit** — see *`--feature`* below, and
-   apply it before anything else in this step. `--land`: follow [land](references/land.md) instead.
+   apply it before anything else in this step. `--land`: follow [land](references/land.md) instead. Before a cloud
+   burst: [cloud burst](references/cloud-burst.md).
 
    Then **claim it** — `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" claim .sdlc
    "<goal>"` — so the goal carries a real `claimed` lifecycle event and its autonomy span is

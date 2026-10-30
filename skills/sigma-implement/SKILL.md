@@ -37,9 +37,12 @@ it tests the right thing. Wrote code before the test? Delete it and re-derive fr
 1. **RED** — write the smallest test for the next behavior. Run it. **Watch it fail for the right
    reason** (it asserts the behavior — not a typo or an import error). Then name the production
    change that would flip it to green — if the fixture already satisfies the assertion without one,
-   the fixture is broken, not the implementation. Real incident (#1829, PR #1838): a test's fixture
-   drifted to exactly the 200-item fetch cap, so its widening-query assertion held without the
-   widening query ever running; an independent review caught it.
+   the fixture is broken, not the implementation. Real incident: `tests/test_feature_scope.py`'s
+   `test_a_member_beyond_the_window_is_still_reachable_by_its_label` drifted, during #1829's own
+   implementation (PR #1838), to a fixture totaling exactly the 200-item `_BACKLOG_FETCH_CAP` —
+   true but vacuous, its widening-query assertion holding without the widening query ever running.
+   The test's docstring records an independent review catching
+   it; the fix added a standing assertion.
 2. **GREEN** — write the *minimal* code to pass. Run it. All green.
 3. **REFACTOR** — clean up while staying green. "Clean up" is not a feeling; it is this list, the
    one `sigma-review` axis 6 judges by. Long Method, Large Class, Long Parameter List,
