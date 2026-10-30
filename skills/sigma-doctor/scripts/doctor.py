@@ -1544,6 +1544,29 @@ def _loop_session_model_row(sdlc_dir):
         return None
 
 
+def _agent_marker_identity_row(proc_root=None):
+    """#2117: say how an agent marker is judged alive on this machine. Where /proc is readable a marker
+    is alive only when its pid, process start time and boot id all match; where it is not (not Linux, or
+    /proc hidden) the marker falls back to the bare pid probe, which a reused pid after a restart can fool
+    until the lease TTL, and this row says so rather than leaving the weaker guarantee silent. Never raises."""
+    try:
+        ledger = _load_loop_script("ledger")
+        kept = ledger.PROC_ROOT
+        try:
+            ledger.PROC_ROOT = kept if proc_root is None else proc_root
+            readable = ledger.identity_readable()
+        finally:
+            ledger.PROC_ROOT = kept
+        if readable:
+            return _chk("agent marker identity: pid + start time + boot id", True, "")
+        return _chk("agent marker identity: unreadable here, pid probe only", True,
+                    "this platform does not expose /proc/<pid>/stat and the boot id, so an agent marker whose pid a "
+                    "restart handed to another process reads alive until the lease runs out; once you know that "
+                    "agent is gone, delete its .sdlc/state/agents/<goal>/<thread>.active")
+    except Exception:                        # noqa: BLE001 - a diagnostic never raises
+        return None
+
+
 #: Hard cap on sealed goals one doctor run re-hashes; the rest are summarised as `N more` (a named ceiling).
 _SEALED_ROW_CAP = 200
 
@@ -4787,6 +4810,10 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     _lsr = _loop_session_model_row(sdlc_dir)  # #1951
     if _lsr is not None:
         out.append(_lsr)
+
+    _amr = _agent_marker_identity_row()  # #2117
+    if _amr is not None:
+        out.append(_amr)
 
     _sdr = _sealed_drift_row(cfg, sdlc_dir)  # #850: absent when no live goal is sealed
     if _sdr is not None:

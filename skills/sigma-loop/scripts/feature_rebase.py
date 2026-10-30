@@ -1373,16 +1373,53 @@ def mark_push_refused(cwd, branch, pre_head, why):
     try:
         marker = _refused_marker(cwd, branch)
         marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text(json.dumps({"branch": branch, "pre_head": pre_head, "why": why,
-                                      "at": int(time.time())}), encoding="utf-8")
+        record = {"branch": branch, "pre_head": pre_head, "why": why, "at": int(time.time())}
+        try:                              # #2117: the lossy head this marker describes
+            record["rebased_head"] = _git_read(cwd, ["rev-parse", "HEAD"]).strip()
+        except Exception:                 # noqa: BLE001 - without it the marker never self-clears
+            pass
+        marker.write_text(json.dumps(record), encoding="utf-8")
         return str(marker)
     except Exception:                     # noqa: BLE001 - the refusal text carries the recovery
         return ""
 
 
+def _rebase_in_progress(cwd):
+    """True when a rebase is running in this worktree, or when that cannot be told (fail closed)."""
+    try:
+        for name in ("rebase-merge", "rebase-apply"):
+            where = pathlib.Path(_git_read(cwd, ["rev-parse", "--git-path", name]).strip())
+            if (where if where.is_absolute() else pathlib.Path(cwd) / where).exists():
+                return True
+        return False
+    except Exception:                     # noqa: BLE001 - unreadable is never "no rebase"
+        return True
+
+
+def _refusal_outlived(cwd, data):
+    """#2117: True when the rebase a marker describes no longer exists -- no rebase is running in this
+    worktree AND the lossy head the refused replay left (`rebased_head`) is no longer in HEAD's history,
+    so the branch no longer holds the loss the marker guards. A marker with no `rebased_head` (written
+    before #2117) or any read that fails answers False: nothing says the loss is gone, so the push stays
+    refused. A lossy head git no longer has at all is gone."""
+    lossy = str(data.get("rebased_head") or "")
+    if not lossy or _rebase_in_progress(cwd):
+        return False
+    try:
+        # Prints the lossy head only when HEAD cannot reach it.
+        return bool(_git_read(cwd, ["rev-list", "--max-count=1", lossy, "--not", "HEAD"]).strip())
+    except Exception:                     # noqa: BLE001
+        try:
+            _git_read(cwd, ["cat-file", "-e", "%s^{commit}" % lossy])
+        except Exception:                 # noqa: BLE001 - git has no such commit: the loss is gone
+            return True
+        return False
+
+
 def push_refused(cwd, branch):
     """None when nothing stands against pushing `branch` from `cwd`, else the refusal text. A marker
-    whose pre-rebase head IS the current HEAD has been recovered from and is removed. Not a git
+    whose pre-rebase head IS the current HEAD has been recovered from and is removed, and so is one
+    whose rebase is gone (no rebase running, its lossy head no longer in HEAD's history: #2117). Not a git
     repository (nothing could have been marked there) reads as None; a marker that exists but cannot
     be read, or a HEAD that cannot be read, refuses."""
     try:
@@ -1400,6 +1437,12 @@ def push_refused(cwd, branch):
                 "could not be checked (%s); inspect the branch, then delete that file"
                 % (branch, marker, _flat(exc)))
     if pre and head == pre and data.get("branch") == branch:
+        try:
+            marker.unlink()
+        except OSError:
+            pass
+        return None
+    if data.get("branch") == branch and _refusal_outlived(cwd, data):
         try:
             marker.unlink()
         except OSError:

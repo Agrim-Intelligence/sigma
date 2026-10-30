@@ -4,6 +4,11 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **An agent marker and a push-refusal marker no longer outlive what they describe, issue #2117.**
+  - **What changed.** `agent-start` now records the process start time (`/proc/<pid>/stat` field 22) and the boot id beside the pid, and `loop.agent_alive` (so `agent-reclaim`, the worker check, the pruners and `agent_watch`) reads a marker as alive only while all three match; a pid a container restart handed to another process reads dead at once instead of holding the goal until the 12h lease. Where `/proc` is unreadable (not Linux) the marker stays a bare pid judged by the pid probe, and `/sigma-doctor` prints `agent marker identity: unreadable here, pid probe only`. A clause with nothing recorded or nothing readable now fails toward alive. A push-refusal marker now records the lossy head the refused replay left (`rebased_head`) and is cleared by the next `push_refused` check when no rebase is running in the worktree and that head is no longer in HEAD's history; markers written before this change have no `rebased_head` and keep refusing until HEAD is back at `pre_head` or the file is deleted.
+  - **Measured:** offline, `tests/test_agent_marker_identity.py` (a built `/proc` tree and the real reader) and `tests/test_push_refused_marker_clears.py` (real git); every clause (pid, start time, boot id, the field-22 split, rebase-merge, rebase-apply, the lossy-head ancestry, the legacy marker, the branch match, a vanished commit) was broken on its own and seen red.
+  - **Not measured:** a real container restart, a real Linux `/proc` (the development machine is macOS, so the reader ran against a built tree), a real in-progress `git rebase` (a `rebase-merge`/`rebase-apply` directory stands in).
+
 ## 1.0.26 — 2026-10-29 — the resource guard after the cloud-run release: a held verify keeps its measurement, a cold verify gets more than one worker, Sigma's own suite honours the worker grant, and a hold mid-goal has an instruction
 
 - **A verify that holds mid-goal has an instruction: wait, verify again, never a code fix or a review cycle, park after 6 holds in a row (#2109).**
