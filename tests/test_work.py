@@ -4100,9 +4100,11 @@ def test_a_conflicting_rebase_aborts_and_parks(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d)
     _evidence(d, goal)
-    run = _runner(_view(status="BEHIND") + _perm() + [("rebase --autostash", RuntimeError("CONFLICT in a.py"))])
+    run = _runner(_view(status="BEHIND") + _perm() + [("rebase --autostash", RuntimeError("CONFLICT in a.py")),
+                                                      ("merge --autostash", RuntimeError("CONFLICT in a.py")),   # #2118: the merge fallback conflicts too
+                                                      ("diff --name-only --diff-filter=U", "a.py")])
     out = work.merge(d, ALWAYS, goal, run=run, sleep=NOSLEEP)
-    assert out.startswith("PARK: rebase deferred") and "CONFLICT" in out
+    assert out.startswith("PARK: rebase deferred") and "CONFLICT" in out and "a.py" in out
     assert "git rebase --abort" in run.calls
     assert not prfake.merge_calls(run.calls)
 
@@ -4218,7 +4220,8 @@ def test_ensure_fresh_auto_rebases_when_behind_and_says_why(tmp_path, capsys):
                    ("diff --name-only --diff-filter=U", "")])
     assert work.ensure_fresh(d, ON, goal, run=run) is None
     assert any("rebase --autostash" in c for c in run.calls)
-    assert any("push --force-with-lease" in c for c in run.calls)
+    assert any(c.startswith("git push origin HEAD:") for c in run.calls)       # #2118: the resume gate pushes plain
+    assert not any("push --force" in c for c in run.calls)
     err = capsys.readouterr().err
     assert "3 commit(s) behind" in err and "auto-rebased" in err
 
@@ -4228,10 +4231,13 @@ def test_ensure_fresh_refuses_on_a_committed_commit_conflict(tmp_path):
     goal = _started(d)
     run = _runner([("rev-parse HEAD", "deadbee0" * 5),
                    ("rev-list --count", "3"),
-                   ("rebase --autostash", RuntimeError("CONFLICT in a.py"))])
+                   ("rebase --autostash", RuntimeError("CONFLICT in a.py")),
+                   ("merge --autostash", RuntimeError("CONFLICT in a.py")),     # #2118: the merge fallback conflicts too
+                   ("diff --name-only --diff-filter=U", "a.py")])
     out = work.ensure_fresh(d, ON, goal, run=run)
-    assert out is not None and "0001-x" in out and "could not apply cleanly" in out
+    assert out is not None and "0001-x" in out and "could not apply cleanly" in out and "a.py" in out
     assert "git rebase --abort" in run.calls
+    assert not any(c.startswith("git push") for c in run.calls)
 
 
 def test_ensure_fresh_refuses_on_an_autostash_pop_conflict_and_never_pushes(tmp_path):
