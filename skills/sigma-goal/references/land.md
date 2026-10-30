@@ -87,6 +87,19 @@ only a person can make, or an irreversible or expensive action (`gates.irreversi
 hard stops) that `loop.py spend-approval` has not approved; record a failure you cannot resolve as
 failed.
 
+### A goal whose tests no runner here can record red for (#2116)
+
+Open the PR with `work.py pr .sdlc "$goal" --land` (the flag is `--land`'s only effect there). When the test-first gate would
+refuse and the planned tests have no runner that can record red in this container, `pr` takes `--no-tests` itself instead of
+parking. The cases, named in the reason and in the PR body's `## Test-first exception`: `no-selectors` (nothing planned),
+`unconfigured-runner` (a runner bullet with no `tests.runners` entry), `runner-untrusted` (a runner bullet, but only the
+git-local grant runs a runner command, and an environment approval is not that). A pytest plan that never went red, or a
+`none:` plan that touches code, is **not** a case and is refused as before. Without `--land`, nothing changes.
+
+The post-PR review brief then carries the reason and the reviewer must end with `TEST-FIRST-EXCEPTION: accept - <why>` or
+`TEST-FIRST-EXCEPTION: reject - <why>`. A reject, or neither line, is written as `block` (an ordinary review cycle: fix, then re-review).
+UNMEASURED live: no real container has taken this path.
+
 The post-PR reviewer gives its verdict only through the landing path's post-review gesture, which
 posts an issue comment. It never leaves a PR line comment: without GraphQL, thread resolution is
 unreadable, so any line comment refuses the merge.
