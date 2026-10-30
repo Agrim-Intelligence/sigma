@@ -8006,7 +8006,9 @@ def test_codex_agent_marker_keeps_thread_identity_and_foreign_heartbeat_cannot_r
         monkeypatch.setenv("CODEX_SESSION_ID", thread_a)
         assert lp.agent_start(base, "42", os.getpid(), {}) is True
         path = lp._agent_marker_path(base, "42")
-        assert json.loads(path.read_text()) == {"pid": os.getpid(), "codex_thread_id": thread_a}
+        marker = json.loads(path.read_text())    # #2117: plus start/boot where /proc is readable
+        assert {k: marker[k] for k in ("pid", "codex_thread_id")} == {"pid": os.getpid(), "codex_thread_id": thread_a}
+        assert set(marker) <= {"pid", "codex_thread_id", "start", "boot"}
         assert lp.agent_alive(base, "42", {}) == ("alive", os.getpid())
         old = time.time() - 100
         os.utime(path, (old, old))

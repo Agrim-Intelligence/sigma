@@ -4322,18 +4322,34 @@ def _agent_marker_path(sdlc_dir, goal, thread="main"):
     return pathlib.Path(sdlc_dir) / "state" / "agents" / stem / f"{thread}.active"
 
 
-def _agent_marker_identity(sdlc_dir, goal, thread="main"):
-    """(pid, Codex thread ID or None) from a marker; accept legacy and Claude bare PIDs."""
+def _agent_marker_record(sdlc_dir, goal, thread="main"):
+    """{"pid", "owner", "start", "boot"} from a marker (#2117). `owner` is the Codex thread ID or
+    None; `start` and `boot` are the process identity recorded at `agent-start`, None for a legacy
+    bare-pid marker or when the platform could not read them then. Accepts the legacy and Claude
+    bare PID."""
     path = _agent_marker_path(sdlc_dir, goal, thread)
     raw = path.read_text().strip()
     if raw.startswith("{"):
         data = json.loads(raw)
         pid = int(data["pid"])
-        owner = data["codex_thread_id"]
-        if not isinstance(owner, str) or not _CODEX_THREAD_ID.fullmatch(owner):
-            raise ValueError("invalid Codex agent marker identity")
-        return pid, owner.lower()
-    return int(raw), None
+        owner = data.get("codex_thread_id")
+        if owner is not None:
+            if not isinstance(owner, str) or not _CODEX_THREAD_ID.fullmatch(owner):
+                raise ValueError("invalid Codex agent marker identity")
+            owner = owner.lower()
+        start, boot = data.get("start"), data.get("boot")
+        if start is not None and (isinstance(start, bool) or not isinstance(start, int)):
+            raise ValueError("invalid agent marker start time")
+        if boot is not None and not isinstance(boot, str):
+            raise ValueError("invalid agent marker boot id")
+        return {"pid": pid, "owner": owner, "start": start, "boot": boot}
+    return {"pid": int(raw), "owner": None, "start": None, "boot": None}
+
+
+def _agent_marker_identity(sdlc_dir, goal, thread="main"):
+    """(pid, Codex thread ID or None) from a marker; accept legacy and Claude bare PIDs."""
+    rec = _agent_marker_record(sdlc_dir, goal, thread)
+    return rec["pid"], rec["owner"]
 
 
 def _agent_marker_expired(path, config):
@@ -4415,12 +4431,20 @@ def agent_start(sdlc_dir, goal, agent_pid, config, thread="main"):
                 # process tree). Both the PID and the owner must now match to proceed.
                 if marker_pid != pid_int or owner != codex_thread:
                     return False
-            if not codex_thread:
+            # #2117: the process start time and boot id ride in the marker, so a pid reused after
+            # a container restart no longer reads as the agent that registered it. Whatever this
+            # platform cannot read is left out; a marker with nothing to add stays a bare pid.
+            ident = {k: v for k, v in ledger.process_identity(pid_int).items() if v is not None}
+            if not codex_thread and not ident:
                 path.write_text(f"{pid_int}\n")
                 return True
 
             # Readers do not take this lock, so publish the new JSON in one replace operation.
-            payload = json.dumps({"pid": pid_int, "codex_thread_id": codex_thread}) + "\n"
+            record = {"pid": pid_int}
+            if codex_thread:
+                record["codex_thread_id"] = codex_thread
+            record.update(ident)
+            payload = json.dumps(record) + "\n"
             temp_path = None
             try:
                 with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
@@ -4502,13 +4526,24 @@ def agent_alive(sdlc_dir, goal, config, thread="main"):
     resolvable pid (reuse risk, same reasoning session_active already applies), is "dead" — the
     same fail-toward-inaction bias pid_alive()'s own docstring argues for. An unsafe `thread`
     (see `_agent_marker_path`) degrades to "unknown" too, via the same except clause — that is
-    the correct answer either way: nobody validly registered a marker for it."""
+    the correct answer either way: nobody validly registered a marker for it.
+
+    #2117: a marker records the pid, the process start time and the boot id, and is "alive" only
+    while all three match (`ledger.identity_alive`), so a pid a restart handed to an unrelated
+    process reads "dead" at once, without waiting out the lease. Every liveness read goes through
+    this function (`agent_reclaim`, `_goal_has_registered_worker`, the pruners, `agent_watch`), so
+    they share the one verdict. A marker without identity, or a platform that cannot read it, is
+    judged by the pid probe alone, as before; `/sigma-doctor` says which applies."""
     try:
         path = _agent_marker_path(sdlc_dir, goal, thread)
-        pid, _owner = _agent_marker_identity(sdlc_dir, goal, thread)
+        rec = _agent_marker_record(sdlc_dir, goal, thread)
     except (OSError, ValueError, TypeError, KeyError):
         return "unknown", None
-    if not ledger.pid_alive(pid):
+    pid = rec["pid"]
+    # #2117: alive only when the pid, its start time and the boot id all still match what the
+    # marker recorded. A marker with no identity (legacy, or an unreadable platform) is judged by
+    # the pid probe alone, as before.
+    if not ledger.identity_alive(pid, rec):
         return "dead", pid
     ttl = ledger.lease_ttl_seconds(config)
     if ttl is not None:
