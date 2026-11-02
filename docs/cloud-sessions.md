@@ -1334,8 +1334,8 @@ RESILIENCY: a failed commit never loops inside a call. The ledger watch tick tri
 interval (`SIGMA_WATCH_INTERVAL`), unchanged and bounded, and fails the same way until the signer is back. A
 failed scaffold commit in `sync.py init` leaves its files staged; the next `init` reports an existing worktree
 and does not retry, and the next publish commits them. When the loop's own first publish is what creates the ledger worktree, a down signer at that scaffold commit still leaves the worktree marked as the loop's own (so the watcher is not started for it) and out of the code checkout's `git status`; only the commit and the re-root are skipped. A receipt that could not be signed is unstaged again so
-a later receipt is not refused as "unrelated staged files". A signing failure during the post-push rebase replay
-is classified too (the replay re-signs the local commit, and git reports the same line from `git rebase`).
+a later receipt is not refused as "unrelated staged files". A signing failure during the main publish path's post-push rebase replay
+is classified too (the receipt path's replay is not, and still reads "receipt pending"; the replay re-signs the local commit, and git reports the same line from `git rebase`).
 
 **Measured:** offline, real git 2.49 with a `gpg.ssh.program` helper that prints a line and exits 1 (and a
 counting variant that signs the first commit or two and then fails), against a real bare origin; the
