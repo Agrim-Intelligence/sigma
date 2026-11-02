@@ -60,6 +60,7 @@ def _load(name):
 
 ledger = _load("ledger")
 state = _load("state")                          # #2081/#708: `safe_state_open`, `refuse_symlinks`
+commit_signing = _load("commit_signing")        # #2135: the ONE classifier + wording for a down commit signer
 
 DEFAULT_BRANCH = "sdlc-ledger"
 DEFAULT_REMOTE = "origin"
@@ -480,6 +481,35 @@ def _run_git_bounded(cwd, args, timeout):
     return out.strip()
 
 
+def _commit(git, path, args):
+    """The ONLY place this module runs `git commit` (#2135; a structural test pins that).
+
+    A failed commit is classified on the failure path only: when it is the host's signer being down it
+    raises `SigningUnavailable` carrying the one plain message, and every caller turns that into its
+    status string instead of wrapping it as a transient "deferred, will retry" (the next attempt would
+    fail the same way). Any other failure is re-raised untouched. Never retried, never unsigned: this
+    path carries no signing override of any kind (`tests/test_commit_signing.py` pins that). `-S` in
+    `args` is what makes the receipt commit's signing known without a config read
+    (`commit_signing.classify`)."""
+    argv = ["commit", *args]
+    try:
+        return git(path, argv)
+    except Exception as exc:                    # noqa: BLE001 - re-raised unless it is the signer being down
+        signing = _signing_failure(git, path, argv, exc)
+        if signing is None:
+            raise
+        raise signing from exc
+
+
+def _signing_failure(git, path, argv, exc):
+    """`SigningUnavailable` when `exc` (raised by `git <argv>` in `path`) is the host's signer being
+    down, else None. The signing setting is read here, on the failure path only."""
+    plain = commit_signing.classify(
+        str(exc), argv, lambda: git(path, ["config", "--type=bool", "commit.gpgsign"]),
+        prefix="git " + " ".join(argv))
+    return None if plain is None else commit_signing.SigningUnavailable(plain)
+
+
 def _end_group(proc):
     """SIGTERM the child's process group, wait two seconds, then SIGKILL it. Only a group Sigma started."""
     try:
@@ -791,7 +821,11 @@ def init(sdlc_dir, config, run=None, channel=LEDGER):
         (path / ledger.ENTRIES).mkdir(exist_ok=True)
         git(path, ["add", "-A"])
     try:
-        git(path, ["commit", "-m", f"{channel}: scaffold the ops branch"])
+        _commit(git, path, ["-m", f"{channel}: scaffold the ops branch"])
+    except commit_signing.SigningUnavailable:
+        raise                                   # #2135: a down signer is NOT "nothing to commit". The files
+                                                  # stay staged, so the next publish commits them; a re-run
+                                                  # of `init` says "already a worktree" and does not retry.
     except Exception:
         pass                                    # nothing to commit is a fine outcome -- and with
                                                   # hooks now disabled for this call too (#2449), a
@@ -1020,7 +1054,12 @@ def _push_with_retry(git, path, rem, name, attempts, rebase_args=(), after_rebas
                     return stop
                 try:
                     git(path, ["rebase", *rebase_args, f"{rem}/{name}"])
-                except Exception:
+                except Exception as rebase_exc:
+                    # #2135 (BR-7): the replay re-signs the local commit, so a down signer fails the
+                    # REBASE itself; reported as the signer, not as the push rejection that led here.
+                    signing = _signing_failure(git, path, ["rebase", *rebase_args, f"{rem}/{name}"], rebase_exc)
+                    if signing is not None:
+                        raise signing from rebase_exc
                     if on_conflict is None:
                         raise
                     stuck = on_conflict(git, path)  # knowledge: keep the edit on modify/delete
@@ -1031,6 +1070,12 @@ def _push_with_retry(git, path, rem, name, attempts, rebase_args=(), after_rebas
                         return _CONFLICT_DEFERRAL.format(verb="publish", file=stuck)
                 if after_rebase is not None:
                     after_rebase()
+            except commit_signing.SigningUnavailable as signing:
+                try:                            # #2135: the amend after a rebase could not be signed; stop
+                    git(path, ["rebase", "--abort"])    # now, retrying would fail the same way
+                except Exception:
+                    pass
+                return str(signing)
             except Exception:
                 try:
                     git(path, ["rebase", "--abort"])
@@ -1139,9 +1184,11 @@ def _publish_knowledge(sdlc_dir, config, git, attempts):
                 return ("publish deferred: an embedded repository under analysis/ is still staged "
                         f"after unstaging ({', '.join(gitlinks)}) — move it out of the corpus")
             if git(path, ["diff", "--cached", "--name-only"]):
-                git(path, ["commit", "-m", f"knowledge: {knowledge_actor(config)}"])
+                _commit(git, path, ["-m", f"knowledge: {knowledge_actor(config)}"])
             if _ahead(git, path, rem, name) == 0:
                 return "nothing to publish"
+        except commit_signing.SigningUnavailable as exc:
+            return str(exc)                     # #2135: the plain message, not "publish deferred: ..."
         except Exception as exc:                # noqa: BLE001 - publish() "always returns a status
             return f"publish deferred: {exc}"   # string, never raises" (#2449), on this channel too
         out = _push_with_retry(git, path, rem, name, attempts, on_conflict=_resolve_modify_delete,
@@ -1227,9 +1274,15 @@ def _push_receipt(git, path, name, rem, cfg, relative, target, attempts):
             return "receipt pending: unrelated staged files"
         if staged:
             key = _RECEIPT_PATH.fullmatch(relative).group(1)
-            git(path, ["commit", "-S", "-m", f"ledger: publish receipt {key}", "--", relative])
+            _commit(git, path, ["-S", "-m", f"ledger: publish receipt {key}", "--", relative])
         local_commit = git(path, ["rev-parse", "HEAD"])
         verify_receipt_commit(path, relative, cfg, git)
+    except commit_signing.SigningUnavailable as exc:
+        try:                                    # the failed commit left the receipt staged, and the next
+            git(path, ["reset", "-q", "--", relative])    # receipt would then refuse as "unrelated staged files"
+        except Exception:                       # noqa: BLE001 - best effort; the message below is what matters
+            pass
+        return str(exc)                         # #2135: the plain message, not "receipt pending: ..."
     except Exception as exc:
         return f"receipt pending: {exc}"
     for _attempt in range(attempts):
@@ -1341,9 +1394,11 @@ def _publish_ledger(sdlc_dir, config, run=None, attempts=PUSH_ATTEMPTS, backoff=
             to_stage.append("DAG.md")
         git(path, ["add", *to_stage])
         if git(path, ["diff", "--cached", "--name-only"]):
-            git(path, ["commit", "-m", f"ledger: {who}"])      # a new commit: pushed, as always
+            _commit(git, path, ["-m", f"ledger: {who}"])      # a new commit: pushed, as always
         elif not _stranded(git, path, rem, name):
             return "nothing to publish"
+    except commit_signing.SigningUnavailable as exc:
+        return str(exc)                         # #2135: the plain message, not "publish deferred: ..."
     except Exception as exc:                     # noqa: BLE001 - honour the "always returns a status
         return f"publish deferred: {exc}"        # string, never raises" contract every other branch keeps
 
@@ -1352,7 +1407,7 @@ def _publish_ledger(sdlc_dir, config, run=None, attempts=PUSH_ATTEMPTS, backoff=
         regen = ["TEAM.md"] + (["DAG.md"] if _write_dag(path, config) else [])
         if git(path, ["diff", "--name-only"]):
             git(path, ["add", *regen])
-            git(path, ["commit", "--amend", "--no-edit"])
+            _commit(git, path, ["--amend", "--no-edit"])
 
     # #2076: real git (no injected runner) pauses with jitter between attempts, so clones rejected
     # together do not retry together; an injected runner (every stub-driven test) never sleeps.
@@ -2183,9 +2238,21 @@ def publish_entry(sdlc_dir, config, what, run=None, publish_fn=None, deadline_se
             if is_worktree(sdlc_dir) and run is None and _abort_stale_rebase(sdlc_dir):
                 return _not_published(what, STUCK_REBASE, limit)       # never publish from the middle of a rebase
             if not is_worktree(sdlc_dir):
-                init(sdlc_dir, config, run=git)
+                signing_down = None
+                try:
+                    init(sdlc_dir, config, run=git)
+                except commit_signing.SigningUnavailable as exc:
+                    signing_down = exc          # #2135: the worktree EXISTS now (only its scaffold commit failed)
+                # The bookkeeping below is owed to the worktree, not to the commit: without the marker the next
+                # trigger's `_ensure_watcher` would start the background watcher nobody opted into (#2076), and
+                # without the exclusion `.sdlc/ledger` shows in the code checkout's `git status`.
                 _mark_self_created(sdlc_dir)
                 _exclude_from_status(sdlc_dir, git)
+                if signing_down is not None:
+                    # No `_reroot` here: it can commit (its settle step), which a down signer refuses. Nothing
+                    # is lost by skipping it: the scaffold stays staged, the next publish commits it, and a
+                    # branch with unrelated history comes back `publish refused` and is re-rooted then (below).
+                    return _not_published(what, signing_down, limit)
                 _reroot(git, sdlc_dir, _channel(LEDGER, sdlc_dir, config), ledger.actor(config))
             result = pub(sdlc_dir, config, run=git, attempts=PUBLISH_ENTRY_ATTEMPTS, backoff=True) \
                 if publish_fn is None else pub(sdlc_dir, config, run=git)
@@ -2252,14 +2319,21 @@ def _abort_stale_rebase(sdlc_dir):
     return False
 
 
+SIGNING_TEXT_CAP = len(commit_signing.MESSAGE) + commit_signing.DETAIL_CAP + 64     # whole text, never clipped
+
+
 def _not_published(what, why, limit):
     """The one stderr line for an entry that did not reach origin. A lock REFUSAL, an unusable lock file (a
     symlink) and a STUCK rebase fail the same way on every later step until someone acts on the reason, which
     already names the lever, so for those the tail says the entry will publish once that is cleared; every other
     reason is transient and keeps the line that says the next loop step retries."""
-    waits_for_a_person = isinstance(why, (LedgerLockRefused, state.UnsafeStatePath)) or why == STUCK_REBASE
+    signing_down = commit_signing.NEEDLE in str(why)       # #2135: the plain signer text, no retry helps
+    waits_for_a_person = (isinstance(why, (LedgerLockRefused, state.UnsafeStatePath)) or why == STUCK_REBASE
+                          or signing_down)
     tail = ("will publish once that is cleared" if waits_for_a_person else "the next loop step retries it")
-    return (f"ledger: NOT published ({_scrub(why)}) -- no other machine can see this {what} yet. "
+    # The signing text is longer than the 240-character cap and the operator must read all of it.
+    shown = _scrub(why, cap=SIGNING_TEXT_CAP) if signing_down else _scrub(why)
+    return (f"ledger: NOT published ({shown}) -- no other machine can see this {what} yet. "
             f"The entry is safely on disk and {tail} "
             f"(this step is limited to {limit:.0f}s of wall time).")
 
