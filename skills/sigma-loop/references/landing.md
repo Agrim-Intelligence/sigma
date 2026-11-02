@@ -89,8 +89,7 @@ file the goal itself touched, which is a genuine "the suite never ran on this" a
 re-verify. Sigma's own `.sdlc/` directory is excluded, so the plan you copy onto the branch
 two paragraphs below never counts as a change.
 **Landing the work** (`config.work.enabled` on) — once verify is green, and never with a bare
-`git` command (the loop has no general git tool on purpose, and no dispatched phase subagent gets
-one either — see the no-phase-commits rule, step 3):
+`git` command (the loop has no general git tool on purpose, nor does any phase subagent — see step 3):
 `work.py commit .sdlc "$goal" --message "<type: what changed>"` → `work.py pr .sdlc "$goal"`.
 With `verify.enforce`, `work.py pr` exits **4** without planned-node assertion-red then fresh-green
 proof. Run `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" verify .sdlc "$goal"` at both stages.
@@ -98,6 +97,7 @@ Only `--no-tests <reason>` bypasses that proof; its verbatim PR-body reason neve
 verification, acceptance, or plan review.
 Exit **4** `SEALED REFUSED:` normally means restore from the commit the refusal names, else park; do NOT `record`, never edit sealed tests. Exception: text naming
 the shell-policy opt-in; its lever is the operator's opt-in, not parking.
+`PARK: Commit signing` (exit 4): `record parked` with its text.
 
 **Put the plan on the branch before that first `commit`** — copy `.sdlc/plans/<goal-stem>.md` from
 the main checkout to the SAME relative path inside the worktree (`commit`'s `git add -A` runs in

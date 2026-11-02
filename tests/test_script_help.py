@@ -97,6 +97,7 @@ LIBRARY_ONLY = {
     "hard_stop",
     "ledger_pointer", "rulebook",
     "feature_provenance",
+    "commit_signing",
 }
 
 

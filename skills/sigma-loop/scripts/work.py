@@ -100,6 +100,8 @@ tamper_scan = _load("tamper_scan")   # #1937: diff-only test-tamper scan; import
 features = _load("features")         # #1467: the ONE parser for "what unit does this issue declare?",
                                       # so base resolution, the registry and stamping can never drift
                                       # apart on the answer — see that module's own docstring
+commit_signing = _load("commit_signing")     # #2135: the ONE classifier + wording for "the commit signer is
+                                              # down" (work.py commit and sync.py's publish commits share it)
 managed_settings = _load("managed_settings")  # #2571: the file-based reader for org policy
                                              # (replaced the subprocess-based org-policy reader).
                                              # stdlib-only and imports nothing from this module, so
@@ -446,6 +448,31 @@ ENFORCEMENT_GATES = (
                   "waiver binds to the measured head, so any new commit voids it; adds up to the gate budget "
                   "(1800 s by default, 3600 s at most) plus git reads to `merge()`, unmeasured on a real "
                   "project; not org-lockable"},
+    {"control": "Commit signing outage stops the commit verbs with one plain message", "function": "commit",
+     "kind": "python-gate", "hosts": "all", "enabled_by": (), "settings": (),
+     "mechanism": "classifies a failed `git commit` through `commit_signing.py` `classify`, shared with "
+                  "`sync.py` `_commit` (the scaffold, knowledge, receipt and ledger commits, the "
+                  "post-rebase amend and the rebase replay): when git prints its `failed to write commit "
+                  "object` line while signing is in effect (`commit.gpgsign` true, or `-S` in the argv) "
+                  "and no line names an object-store write failure, `work.py commit` returns `PARK: "
+                  "Commit signing is unavailable on this machine ...` (exit 4, no commit, no risk gate, "
+                  "the signer called once) and the `sync.py` publishes return the same text unwrapped, "
+                  "push nothing and call the signer once; no path retries the commit or turns signing "
+                  "off, and a structural test pins that",
+     "condition": "on -- always; nothing to configure. Limits: the classifier needs signing in effect and "
+                  "git's fatal line, so an object-store failure worded outside the four listed markers "
+                  "(`No space left`, `unable to create temporary file`, `insufficient permission`, a "
+                  "`Permission denied` line naming the object store) with signing on would print the "
+                  "signing message (accepted, bounded by the list); the park is recorded by the agent, "
+                  "not by code (the printed text tells it to); a receipt that cannot be signed parks "
+                  "only at `work.py pr` (the merge-time receipt site prints the text to stderr and "
+                  "cannot park, the merge having already happened) and receipt sharing is itself off by "
+                  "default; a commit refused by `sync.py` init's scaffold leaves its files staged and "
+                  "the next `init` reports an existing worktree, so the next publish commits them; the "
+                  "real cloud signer, Windows git and a real ssh or gpg agent were not run (a fake "
+                  "`gpg.ssh.program` that exits 1 was); the unattended rebase engine (deliberately "
+                  "unsigned), `work.py`'s own signing `git merge` and `git rebase`, and other commit "
+                  "sites outside `work.py` and `sync.py` are not covered; no pre-flight probe"},
 )
 ENFORCEMENT_EXEMPT = (
     ("effective_hard_plan_gate", "resolver for the gate's value; `_hard_plan_gate_refusal` refuses"),
@@ -600,6 +627,7 @@ MECHANICAL_PARK_PREFIXES = (
     _PARK_BEHIND_RACE_EXHAUSTED,
     _PARK_STALE_RESUME_CONFLICT,
     _STALE_RESUME_TRANSIENT,
+    commit_signing.NEEDLE,      # #2135: a down commit signer is a machine fault, never a decision
 )
 
 #: The verify-path remediation clauses, named so the RESUME path can drop them. "Re-run `loop.py
@@ -1500,8 +1528,12 @@ def _observe_confirmed_merge(sdlc_dir, config, goal, rec, run):
                                            "github_merged_at": raw["merged_at"]})
     relative = "receipts/v1/%s/merges/%s.json" % (key, raw["merge_commit_sha"])
     receipt.write_immutable(pathlib.Path(sdlc_dir) / "ledger" / relative, child)
-    if sync.publish_receipt(sdlc_dir, relative, config=config) != "receipt published":
-        raise ValueError("merge receipt publication was not acknowledged")
+    status = sync.publish_receipt(sdlc_dir, relative, config=config)
+    if status != "receipt published":
+        # #2135: the merge already happened server-side and every caller only prints this to stderr
+        # (`merge ... pending`), so there is no park here; the plain text just has to be what is printed.
+        raise ValueError(status if commit_signing.NEEDLE in str(status)
+                         else "merge receipt publication was not acknowledged")
     return True
 _CAN_MERGE = ("ADMIN", "MAINTAIN", "WRITE")
 
@@ -3989,7 +4021,20 @@ def commit(sdlc_dir, config, goal, run=None, message=""):
     # tree + index and both are empty a line later. After, because a `git commit` that raises must
     # not leave a gate record for a change that never reached the branch.
     categories = _risk_categories(path)
-    run(path, ["git", "commit", "-m", message or f"sdlc: {stem(goal)}"])
+    commit_argv = ["git", "commit", "-m", message or f"sdlc: {stem(goal)}"]
+    try:
+        run(path, commit_argv)
+    except Exception as exc:                    # noqa: BLE001 - re-raised unless it is the signer being down
+        # #2135: ONLY the failure path reads the signing setting, so the happy path stays the same three
+        # git calls. A down signer is a PARK (exit 4 in `main`), never a retry and never unsigned; no
+        # risk gate is emitted for a commit that did not land. Any other failure is raised untouched.
+        plain = commit_signing.classify(
+            str(exc), commit_argv,
+            lambda: run(path, ["git", "config", "--type=bool", "commit.gpgsign"]),
+            prefix=" ".join(commit_argv))
+        if plain is None:
+            raise
+        return f"PARK: {plain} {commit_signing.PARK_TAIL}"
     _emit_risk_gates(sdlc_dir, config, goal, categories)
     return f"committed on {rec['branch']}"
 
@@ -4719,12 +4764,23 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None, land=False):
             facts = _receipt_parent_facts(raw, goal, "goal", goal, "work.pr")
             status = _publish_parent_receipt(sdlc_dir, config, facts)
         except Exception as exc:
-            return f"receipt pending for PR #{number}: {exc}"
+            return _receipt_pending(number, exc)
         if status != "receipt published":
-            return f"receipt pending for PR #{number}: {status}"
+            return _receipt_pending(number, status)
     rec["pr"] = number
     _save(sdlc_dir, goal, rec)
     return f"PR #{number}"
+
+
+def _receipt_pending(number, why):
+    """`pr`'s stop when the parent receipt did not publish. A down commit signer (#2135) is a PARK that
+    keeps the plain message unwrapped (exit 4 in `main`, the PR stays open); any other reason keeps its
+    `receipt pending for PR #N:` wording byte for byte."""
+    text = str(why)
+    if commit_signing.NEEDLE in text:
+        return (f"PARK: {text[text.index(commit_signing.NEEDLE):]} "
+                f"(PR #{number} is open; its receipt is not published) {commit_signing.PARK_TAIL}")
+    return f"receipt pending for PR #{number}: {text}"
 
 
 def gate(sdlc_dir, config, goal, run=None, sleep=time.sleep):
@@ -10223,7 +10279,11 @@ def main(argv):
         # specifically, NEVER on the bare `REFUSED — ` that three other refusals in this file use:
         # those change no state, so they correctly stay exit 0, and no test would have caught the
         # difference (they all assert the string, never the code).
-        if str(result).startswith((_STALE_RESUME_REFUSAL_PREFIX, "TEST-FIRST REFUSED:", "SEALED REFUSED:")):
+        # #2135: `PARK: Commit signing is unavailable ...` (from `commit`, or `pr` when its receipt
+        # commit could not be signed) is a stop too: exit 4 so a chained `commit` then `pr` cannot
+        # carry on against a signer that will fail again. The agent records the park itself.
+        if str(result).startswith((_STALE_RESUME_REFUSAL_PREFIX, "TEST-FIRST REFUSED:", "SEALED REFUSED:",
+                                   commit_signing.PARK_PREFIX)):
             return 4
         return 0
     print("usage: work.py start|commit|pr|rebase|post-review|merge|finish <sdlc_dir> <goal>\n"

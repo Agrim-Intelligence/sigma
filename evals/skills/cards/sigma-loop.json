@@ -154,6 +154,10 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/commit_signing.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/compact_window.py",
       "role": "library"
     },

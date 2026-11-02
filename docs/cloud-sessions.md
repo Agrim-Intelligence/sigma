@@ -1317,6 +1317,32 @@ gestures landing the PR once (Sigma's own test suite). **Not measured:** a real 
 worker restart, a real GitHub, a kill inside the merge call itself. Not built: binding the agent marker to the session
 id rather than a pid.
 
+## A commit signer that is down (#2135)
+
+When the host's commit-signing helper stops answering, every `git commit` fails with git's
+`failed to write commit object` line and nothing can be committed or pushed. `work.py commit`, and every commit
+`sync.py` makes to publish the ledger or the knowledge branch, now recognise that cause (signing in effect, that
+line present, and no line naming a full disk or an unwritable object store) and stop with one plain message,
+`Commit signing is unavailable on this machine ...`, instead of a raw git error or a "will retry" line. `commit`
+returns it as a `PARK:` line and exits 4; `pr` does the same when its receipt commit cannot be signed. In a
+Claude Code cloud container the signer comes back when the container restarts, so the lever is a fresh session.
+There is no unsigned fallback: nothing in these paths retries the commit, adds a config override or passes
+`--no-gpg-sign` (a structural test pins that), and the message says only that Sigma's commit and publish steps
+will not turn signing off; the unattended rebase engine has its own deliberate, pinned unsigned path.
+
+RESILIENCY: a failed commit never loops inside a call. The ledger watch tick tries again at its own existing
+interval (`SIGMA_WATCH_INTERVAL`), unchanged and bounded, and fails the same way until the signer is back. A
+failed scaffold commit in `sync.py init` leaves its files staged; the next `init` reports an existing worktree
+and does not retry, and the next publish commits them. When the loop's own first publish is what creates the ledger worktree, a down signer at that scaffold commit still leaves the worktree marked as the loop's own (so the watcher is not started for it) and out of the code checkout's `git status`; only the commit and the re-root are skipped. A receipt that could not be signed is unstaged again so
+a later receipt is not refused as "unrelated staged files". A signing failure during the main publish path's post-push rebase replay
+is classified too (the receipt path's replay is not, and still reads "receipt pending"; the replay re-signs the local commit, and git reports the same line from `git rebase`).
+
+**Measured:** offline, real git 2.49 with a `gpg.ssh.program` helper that prints a line and exits 1 (and a
+counting variant that signs the first commit or two and then fails), against a real bare origin; the
+documented `work.py commit` and `sync.py publish` gestures were run as processes. **Not measured:** the real
+cloud signer, Windows git, a real ssh or gpg agent. **Not covered:** a pre-flight probe, `work.py`'s own signing
+`git merge` and `git rebase`, and the commit sites in `release_manifest.py`, `decision_store.py` and `sigma-define`.
+
 ## What this does NOT do
 
 - `read_issue`, `list_issues_gh`, the seven issue write helpers and the six PR read helpers (`view_pr_gh`,
