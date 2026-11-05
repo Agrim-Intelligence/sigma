@@ -834,7 +834,13 @@ boards were separated by **1.1 hours at minimum**, while a single operation take
 The `sdlc:blocked` and `sdlc:blocking` overlays are derived state, and so is the stored dependency map ([dag.md](dag.md)): the map reads text and labels and is never a label writer.
 Wherever this page says "Blocked by #N", the same holds for every explicit dependency form: `depends on|upon #N`,
 `blocked on|until #N` and the tight follow-up forms (`follow-up to #N` and its variants). Weak words such as
-`needs` or `after` never derive `sdlc:blocked` or `sdlc:blocking`. The forms, where each reader looks, and how
+`needs`, `after`, `requires` or `waiting on` never derive `sdlc:blocked`, and once a goal names an explicit
+blocker they do not hold it either: the auto-unpark sweep does not hold a goal that names an explicit blocker on a
+weak mention in its title, body or comments, so it is lifted once every explicit blocker it names has closed (the
+`sdlc:blocked` path; a parked goal is read as before). A goal that names only weak references is held while one
+of them is open. The `sdlc:blocking` sync still counts a
+weak reference to an open issue (not changed yet), so a weakly named issue can carry `sdlc:blocking` and sort
+ahead of its peers. The forms, where each reader looks, and how
 to turn a dependency stated in prose into a marker (`deps.py report` and `deps.py mark`) are in
 [the dependency map and Sigma Chain](dependency-map-and-chain.md#how-a-dependency-is-read).
 
@@ -885,10 +891,17 @@ It tells you the issue number and the one thing that would unstick it.
 ### The one thing the machine will never do
 
 ```
-   sdlc:blocked      →  resumed automatically when the blockers close      ✓
-   sdlc:needs-label  →  resumed automatically once the label exists        ✓
-   sdlc:parked       →  NEVER resumed automatically                        ✗
+   sdlc:blocked      →  resumed automatically when its recorded blockers close      ✓
+   sdlc:needs-label  →  resumed automatically once the label exists                 ✓
+   sdlc:parked       →  NEVER resumed automatically                                 ✗
 ```
+
+The sweep goes by what the goal's text names, not by who put the label on. A blocked (not parked) goal that names
+any explicit blocker form (a `follow-up to #N` in its body, whose origin issue has closed, counts) is lifted once
+every explicit blocker it names has closed, even when the label was put on by hand for a dependency stated only
+weakly; one that names only weak references is lifted once none of them is open. A blocked label with no recorded
+blocker at all (no reference in any form) is not resumed by the sweep: nothing it could watch close is recorded.
+Release it with `/sigma-unpark`; a chain sheet asks about such a member up front.
 
 A park is a person's decision, so only a person reverses it (`/sigma-unpark`). That is precisely what
 lets the automatic sweep be on by default without ever overriding somebody — it can only undo the
