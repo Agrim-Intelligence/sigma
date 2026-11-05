@@ -82,11 +82,15 @@ except one that has none (the cap, a spend question, a follow-up waiting for its
 `approved` only when no blocking question is open and the plan is complete. `--partial` is refused for now.
 
 ASKED UP FRONT (`chain_asks`). The sheet asks every question the run needs, deep members as well as near ones, so
-the run discovers none: `park:<n>` (release a parked member into the chain, or keep it parked), `wait:<a>-<b>` (confirm
-or dismiss a prose wait whose blocker is open), `elsewhere:<n>` (wait for the member somebody else holds, or take it
-over), the spend question for a declared paid line or a `chain.paid_labels` label, the cap, a unit boundary. Each
+the run discovers none: `park:<n>` (release a parked member into the chain, or keep it parked), `blocked:<n>` (#2139:
+release a member that carries the blocked label and that the auto-unpark sweep would not lift, or keep it blocked),
+`wait:<a>-<b>` (confirm or dismiss a prose wait whose blocker is open), `elsewhere:<n>` (wait for the member somebody
+else holds, or take it over), the spend question for a declared paid line or a `chain.paid_labels` label, the cap, a unit boundary. Each
 answer is enacted, none is "recorded here only"; the forecast, `arm` and `run` read the record as the answers leave it
-(`chain_asks.view`), so the forecast equals the run.
+(`chain_asks.view`), so the forecast equals the run. Whether the sweep would lift a blocked member is answered at
+`plan`, read-only, by the sweep's own function (`_sweep_answers`: GETs only, no state file, at most MAX_SWEEP_CHECKS
+members, the rest listed on the sheet) for each member that carries the label with no wait the chain explains: yes,
+and the forecast reads it as workable and nothing is asked; no (or a read that failed), and the sheet asks.
 
 APPROVE (#1587). A local state change only: sets the record's state to `approved` when no blocking question
 is open and the plan is complete, and refuses (naming the open ids) otherwise. No `gh` call.
@@ -118,8 +122,14 @@ nothing outside the label is ever claimed and the claim stays lease based. The p
 only the record knows (#1906, #1908, #1902): members kept waiting on a closed prerequisite, paid steps answered
 anything but "go ahead", and members whose recorded blocker is not confirmed closed. A non-empty pick is recorded
 (numbers only) with a heartbeat, exit 0. An empty pick is `done` only when every member is confirmed closed;
-otherwise it is STUCK, exit 3, with ONE reason: decision, held-gate, claimed, external, checkpoint (#1904: the
-only thing left is a checkpoint, named with its unit), rate-limit, degraded-read. `stop` and `resume [--cap N]` change only the record's `run` block (local, no `gh` call); a
+it is `running`, exit 0, when this cycle's sweep freed a member (#2139: it lifted the member's blocked label, so the
+#1129 cooldown kept it out of this pick; the detail names it and the next cycle can claim it; never after a failed
+read or pick); otherwise it is STUCK, exit 3, with ONE reason: decision, held-gate, claimed, external, checkpoint (#1904: the
+only thing left is a checkpoint, named with its unit), rate-limit, degraded-read. #2139: a sweep the interval
+skipped is forced once per member per run for a blocked member with no open wait; a member the person answered
+`keep it blocked` about joins the pick's skip; before stopping on a root held by the blocked label alone the run
+re-reads it once past the cycle's read cache (the pick's own sweep may have lifted it: freed, once per member per
+run, the heartbeat unmoved), and otherwise stops `decision` naming `/sigma-unpark #N`. `stop` and `resume [--cap N]` change only the record's `run` block (local, no `gh` call); a
 stop does not release goals already claimed. The record is a local file with no lock: run one driver per
 chain. Not measured: a run against a live repository, and the cost of one cycle's reads beyond the fake's
 call counts.
@@ -142,7 +152,9 @@ filter for `--as <login>` (default: who planned) and plays the run cycle by cycl
 the rules `run` uses, not a copy: `chain_forecast.ready_members` (the width plan) and `chain_forecast.stuck_reason`
 (the stuck line) are called by both, and the assignee clause is `label_drain.assignee_gate`, also called by the
 judge. The record therefore keeps each member's assignee logins, `base_verdict` (the verdict before the assignee
-clause, when that clause decided it), `in_progress` and `blocked`, and the planner's `runner` and `assignee_filter`.
+clause, when that clause decided it), `in_progress`, `blocked` and (#2139, for a checked blocked member) `sweep_lifts`,
+and the planner's `runner` and `assignee_filter`. A root held by the blocked label alone stops on `decision`, in the
+forecast as in the run, naming `/sigma-unpark #N`.
 A plan read from the map takes each member's assignees from the map's nodes (#1993); a member whose node has none is read as not the runner's and counted in a note, and a map with no assignees at all says so. Not modelled: the cap,
 and a goal that fails or is parked by its own session (every claimed goal is assumed to merge). A cycle with goals
 in flight and only members nobody may claim unblocked now waits (width past 1) instead of asking the pick for one.
@@ -740,6 +752,109 @@ def _resolve(sdlc_dir, goal, config, run, now, as_login=None, disk=None):
     return out, ro
 
 
+#: #2139: at most this many blocked members are checked against the auto-unpark sweep per plan, the parked brief's
+#: bound (`label_drain.MAX_PARKED_BRIEFS`, also 20). Past it a member's `sweep_*` fields stay absent (asked nothing,
+#: as before; the run's stop names it with `/sigma-unpark`) and its number is listed in `sweep_not_checked`.
+MAX_SWEEP_CHECKS = 20
+
+
+class _Watch:
+    """A `gh` runner that remembers every call that raised (and raises it again): a read the sweep's helpers fail
+    open on (a blocker that cannot be read reads as open) is seen here, so the check answers `unread`."""
+
+    def __init__(self, run):
+        self.run, self.failed = run, []
+
+    def __call__(self, args):
+        try:
+            return self.run(args)
+        except Exception as exc:        # noqa: BLE001 - recorded, then raised as before
+            self.failed.append(exc)
+            raise
+
+
+class _StrictComments:
+    """The sweep's comment read for the plan's check, without its fail-open. `sources.fetch_comments` reads ANY failure
+    as "no comments", including a page `gh_api` itself refuses as malformed (raised inside `gh_api`, never through a
+    runner, so `_Watch` cannot see it), and a body that names a closed blocker would then read as "lifts". So the same
+    `gh_api.read_issue` call `fetch_comments` makes is made first, raising on any failure; the sweep's own read (and
+    its trust filter and scrub, `auto_unpark._CommentReads`) then repeats it through the check's read memo, so it
+    costs no second GET."""
+
+    def __init__(self, inner, gh_api, repo, limit):
+        self.inner, self.gh_api, self.repo, self.limit = inner, gh_api, repo, limit
+
+    def get(self, config, it, goal_doc, run=None):
+        self.gh_api.read_issue(run, int(str(goal_doc["ref"]).lstrip("#")), ["comments"], self.repo, gql_run=run,
+                               comment_limit=self.limit)
+        return self.inner.get(config, it, goal_doc, run=run)
+
+
+def _sweep_candidates(out):
+    """-> the members the plan's check reads (D-3 of #2139), in the record's order: they carry the blocked label, and
+    nothing the chain explains holds them: no wait on an open member (`waits_on`), no prerequisite outside the chain
+    (`externals[].needed_by`), not in progress (somebody is working on it: the stop is `claimed` whatever the sweep
+    would do), and a verdict a run could claim but for the label (`armed`, or `assigned-elsewhere`, which the sheet
+    asks about too)."""
+    outside = {n for e in out.get("externals") or [] for n in e.get("needed_by") or []}
+    return [r for r in out.get("members") or []
+            if r.get("blocked") and not r.get("waits_on") and r["number"] not in outside and not r.get("in_progress")
+            and r.get("verdict") in ("armed", "assigned-elsewhere")]
+
+
+def _sweep_answers(sdlc_dir, config, ro, out):
+    """#2139: whether the auto-unpark sweep would lift each blocked member the chain cannot explain, answered
+    read-only by the sweep's own function (`auto_unpark.compute_unpark_actions`, which returns actions and writes
+    nothing; its comment reads are not persisted, so no state file is written) over `ro`, the plan's GET-only runner,
+    so every added call is a counted GET. Sets on each checked row `sweep_lifts` (True or False), and when False
+    `sweep_why` (a closed word: `no-ref`, `open`, `exempt`, `gate`, `map`, `parked` from the sweep, `sweep-off` when
+    the sweep is switched off, `unread` when any read of the check failed) and, for `open`, `sweep_open` (the numbers
+    still open). Never a false yes: any failure is `unread` (one that is not a failed `gh` call, a defect say, also
+    writes one stderr line naming the exception type). Nothing selected, or the sweep off: zero calls. At most
+    MAX_SWEEP_CHECKS members are read; the rest are listed in `out["sweep_not_checked"]` (written only when
+    non-empty). Cost per checked member: one issue GET, the comment pages of the newest
+    `sources.DEFAULT_COMMENT_LIMIT` comments (none when it has none, at most 2), one GET per distinct blocker it names
+    not already read by this check (one memo across members)."""
+    picked = _sweep_candidates(out)
+    if not picked:
+        return
+    sources = _load("sources")
+    if sources._auto_unpark(config) == "off":       # the sweep never runs, so it lifts nothing
+        for r in picked:
+            r.update(sweep_lifts=False, sweep_why="sweep-off")
+        return
+    auto_unpark, gh_api = _load("auto_unpark"), _load("gh_api")
+    memo = chain_reads.CycleReads(ro)               # a repeat GET of one issue or one comment page costs no call
+    repo = sources.GitHubSource(config, run=ro).repo or None
+    open_cache = {}                                 # a blocker's state, read once for every member that names it
+    for r in picked[:MAX_SWEEP_CHECKS]:
+        n, why, watch = r["number"], {}, _Watch(memo)
+        try:
+            issue = gh_api.view_issue(watch, n, repo, comments="none")
+            reads = _StrictComments(auto_unpark._CommentReads(sdlc_dir), gh_api, repo, sources.DEFAULT_COMMENT_LIMIT)
+            _acts, resolved = auto_unpark.compute_unpark_actions(
+                sdlc_dir, config, sources.GitHubSource(config, run=watch), [issue], run=watch,
+                open_cache=open_cache, reads=reads, why_out=why)
+            lifts = str(n) in resolved and not watch.failed
+        except Exception as exc:        # noqa: BLE001 - a check that could not finish is never a yes
+            lifts, why = False, {str(n): {"why": "unread"}}
+            if not watch.failed:        # not a failed `gh` call (a defect, a page `gh_api` refused): say which
+                print("chain.py: the sweep check of #%d stopped on %s; asked as unread" % (n, type(exc).__name__),
+                      file=sys.stderr)
+        for k in ("sweep_why", "sweep_open"):
+            r.pop(k, None)
+        r["sweep_lifts"] = lifts
+        if lifts:
+            continue
+        got = why.get(str(n)) or {}
+        r["sweep_why"] = "unread" if watch.failed else (got.get("why") or "other")
+        if r["sweep_why"] == "open":
+            r["sweep_open"] = sorted(int(x) for x in got.get("open") or () if str(x).isdigit())
+    rest = [r["number"] for r in picked[MAX_SWEEP_CHECKS:]]
+    if rest:
+        out["sweep_not_checked"] = rest
+
+
 def plan(sdlc_dir, goal, config=None, run=None, now=None, as_login=None):
     """The plan dict for `goal`, and the local record written. Raises `ChainRefused`."""
     state = _load("state")
@@ -749,6 +864,7 @@ def plan(sdlc_dir, goal, config=None, run=None, now=None, as_login=None):
     disk = (rc, rc.load(sdlc_dir, now), now)
     out, ro = _resolve(sdlc_dir, goal, config, run, now, as_login, disk)
     rc.save(sdlc_dir, disk[1])               # never raises
+    _sweep_answers(sdlc_dir, config, ro, out)       # #2139: here, not in `_resolve`, which every run cycle calls
     out.update(schema=SCHEMA, goal=goal, calls=ro.summary(), planned_at=int(now), state="planned")
     path = _record_path(sdlc_dir, goal)
     try:
@@ -846,8 +962,8 @@ def questions_of(rec, config=None, legacy_parked=False):
     have = {q["id"] for q in qs}
     by = {r["number"]: r for r in rows}
     deps = ld._dependents(qrows, [])
-    if not legacy_parked:
-        qs = chain_asks.park_questions(rec) + chain_asks.elsewhere_questions(rec) + qs
+    if not legacy_parked:       # #2139: a blocked member the sweep would not lift is asked right after the parked ones
+        qs = chain_asks.park_questions(rec) + chain_asks.blocked_questions(rec) + chain_asks.elsewhere_questions(rec) + qs
     for r in sorted(rows, key=lambda x: x["number"]):                # a spend question, as the drain asks it
         qid = "irreversible:%d" % r["number"]
         if r.get("spend") and r["verdict"] not in ("upper-tier", "closed") and qid not in have:
@@ -1124,6 +1240,10 @@ def render_sheet(rec, now, config=None, runner=None):
     L += chain_forecast.answer_lines(fc)                                                    # #1908: first
     L += _unblock_blocks(vrec, members, fc)
     L.append("Done prerequisites: %s" % _ids(rec.get("done") or []))
+    unchecked = [int(n) for n in rec.get("sweep_not_checked") or () if str(n).isdigit()]
+    if unchecked:                                                   # #2139: past MAX_SWEEP_CHECKS
+        L.append("Blocked members not checked against the sweep (more than %d): %s; a run stops before each one that "
+                 "still carries the label" % (MAX_SWEEP_CHECKS, _ids(unchecked)))
     for r in members:
         if r.get("stale_label"):                                    # #1945
             L.append("Stale in-progress label: #%d (no live claim recorded); release it with python3 loop.py "
@@ -1490,15 +1610,98 @@ def _default_pick(sdlc_dir, label, session_pid, skip, max_concurrent=None):
             if (m := re.match(r"\d+", line.strip())) and line.strip() not in _NO_PICK]
 
 
-def _default_sweep(sdlc_dir, config, run):
-    """The loop's own fail-open auto-unpark sweep, by its existing entry. -> the goal refs it lifted."""
+class _Swept(frozenset):
+    """#2139: the goal refs a sweep lifted, plus `skipped`: None, or the sweep's own word for why it did not run
+    (`"interval"`: the #2021 interval gate). A frozenset, so every caller that only iterates it is unchanged; an
+    interval-skipped sweep lifted nothing, so it is EMPTY and falsy: read `skipped` from the result itself, never
+    from `result or ()`."""
+    skipped = None
+
+
+def _default_sweep(sdlc_dir, config, run, force=False):
+    """The loop's own fail-open auto-unpark sweep, by its existing entry. -> `_Swept`, the goal refs it lifted and
+    whether the interval skipped it. `force` (#2139) passes the sweep's own `force` (never interval-gated; it stamps
+    the interval file as any applying sweep does). Switched off, or a sweep that raised: empty, `skipped` None."""
     try:
         if _load("sources")._auto_unpark(config) == "off":
-            return frozenset()
-        return frozenset(((_load("auto_unpark").sweep_unpark(sdlc_dir, config, apply=True, run=run)) or {})
-                         .get("unparked") or ())
+            return _Swept()
+        got = (_load("auto_unpark").sweep_unpark(sdlc_dir, config, apply=True, run=run, force=force)) or {}
+        out = _Swept(got.get("unparked") or ())
+        out.skipped = got.get("skipped")
+        return out
     except Exception:           # noqa: BLE001 - a background sweep never stops a run
-        return frozenset()
+        return _Swept()
+
+
+def _force_sweep(sdlc_dir, config, run, sweeper, p, others, blk):
+    """#2139 (D-7): the ONE forced sweep of a cycle whose own sweep the interval skipped. Only for a TRIGGER: an open
+    member of this cycle's read that carries the blocked label, is not in progress, has no open wait (the label drain's
+    live `waiting_on`; a wait only the record holds puts the member in `others`), is not in the pick's skip for any
+    other reason (`others`: kept blocked by the answer, held back, declined, a hidden wait not confirmed closed), and
+    was not forced before in this run (`forced` in the run block). The triggers are added to `forced` BEFORE the call,
+    so each member gets one forced sweep per run whatever it does; a later lift is the ordinary interval sweep's.
+    -> the refs it lifted (strings). Fails open: a sweep that raises lifted nothing."""
+    forced = _numbers(blk.get("forced"))
+    triggers = sorted(r["number"] for r in p["members"]
+                      if r.get("blocked") and not r.get("in_progress") and not r.get("waiting_on")
+                      and str(r["number"]) not in others and r["number"] not in forced)
+    if not triggers:
+        return set()
+    blk["forced"] = sorted(forced | set(triggers))
+    try:
+        return {str(x) for x in (sweeper(sdlc_dir, config, run, force=True) or ())}
+    except Exception:           # noqa: BLE001 - fail open, like the cycle's own sweep
+        return set()
+
+
+def _label_gone(run, config, numbers):
+    """#2139 (D-4): -> the members of `numbers` whose own issue, read now through `run` (the BASE runner, past the
+    cycle's read cache, whose copy predates the pick), no longer carries the blocked label. GETs only, one per
+    member. A failed read is still labelled: never a false "freed"."""
+    sources, gh_api = _load("sources"), _load("gh_api")
+    ro = _GetOnly(run)
+    src = sources.GitHubSource(config, run=ro)
+    repo, label = src.repo or None, src.goal_blocked_label
+    gone = set()
+    for n in numbers:
+        try:
+            issue = gh_api.view_issue(ro, n, repo, comments="none")
+        except Exception:       # noqa: BLE001 - unread is still labelled
+            continue
+        if label not in {(x.get("name") if isinstance(x, dict) else str(x)) for x in issue.get("labels") or ()}:
+            gone.add(n)
+    return gone
+
+
+def _confirm_freed(run, config, p, vrec, others, blk):
+    """#2139 (D-4): before an empty pick stops on a root held by the blocked label alone, re-read those roots once:
+    the pick's own sweep (a separate process) may have lifted the label after this cycle read it. -> the roots whose
+    label is gone (freed). Candidates: the roots the stop would name as label-held (`chain_forecast`'s own rule, R1's
+    exclusions included), not in the pick's skip (`others`: kept blocked, kept waiting and declined members among
+    them, the answers `_held_by_label` also leaves to their own stop), not freed this way before in this run (`freed_seen` in
+    the run block: a label listing that lags the issue read frees a member once, never a `running` cycle forever), at
+    most 1 + `chain_forecast.MAX_OTHER_ROOTS` (7) reads, through `run.base`."""
+    seen = _numbers(blk.get("freed_seen"))
+    waits = {r["number"]: r.get("waits_on") or [] for r in vrec["members"]}
+    rows = [dict(r, waits_on=waits.get(r["number"], r.get("waits_on") or [])) for r in p["members"]]
+    outside = p.get("outside") or []
+    open_numbers = {r["number"] for r in rows + outside}
+    roots = sorted(r["number"] for r in chain_forecast.roots_of(rows, outside)
+                   if str(r["number"]) not in others and r["number"] not in seen
+                   and chain_forecast._held_by_label(r, open_numbers, ()))
+    gone = sorted(_label_gone(run.base, config, roots[:1 + chain_forecast.MAX_OTHER_ROOTS]))
+    if gone:
+        blk["freed_seen"] = sorted(seen | set(gone))
+    return gone
+
+
+def _freed_text(numbers):
+    """The detail of a freed cycle (#2139): numbers only, each named (the detail of the cycle's result; `chain.py status` shows plain `running`)."""
+    if len(numbers) == 1:
+        return ("#%d was freed this cycle (the sweep lifted its blocked label); the next cycle can claim it"
+                % numbers[0])
+    return ("%s were freed this cycle (the sweep lifted their blocked labels); the next cycle can claim them"
+            % _ids(numbers))
 
 
 def _numbers(items):
@@ -1717,7 +1920,16 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
     "added", "closed", "cycle"}. Raises `ChainRefused`, with nothing written and nothing started, unless the
     record is approved, armed and not stopped. `pick(label, skip)` -> goal numbers and `sweep(sdlc_dir,
     config, run)` -> refs are injectable; the defaults are the loop's own. `closure`, `pull` and `filed` (see
-    GROWTH in the module docstring) are injectable too; `no_grow` makes every addition ask."""
+    GROWTH in the module docstring) are injectable too; `no_grow` makes every addition ask.
+
+    #2139: the pick's skip is the refs this cycle's sweep lifted (the #1129 cooldown) plus what only the record knows
+    (`others`, which includes the members answered `keep it blocked`). A sweep result whose `skipped` is
+    `"interval"` (`_Swept`; an injected plain set never has it) earns one `sweep(..., force=True)` call for a blocked
+    member with no open wait, once per member per run (`run.forced`). An empty pick after a sweep freed an open
+    member that is not otherwise skipped is `running`, exit 0, naming it (a failed read or pick never is); before an
+    empty pick stops on a root held by the blocked label alone, those roots are re-read once past the read cache
+    (`_confirm_freed`), and one whose label is gone counts as freed, once per member per run (`run.freed_seen`), without
+    moving the heartbeat."""
     state, sources = _load("state"), _load("sources")
     now = time.time() if now is None else now
     config = config if config is not None else state.load_config(sdlc_dir)
@@ -1746,10 +1958,13 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
             raise ChainRefused(str(exc))
         width = chain_parallel.width(config)
     run = chain_reads.CycleReads(run or sources._run_gh)    # one cycle's repeated reads of an issue cost one call
+    sweeper = sweep or _default_sweep
     try:
-        skip = frozenset(str(x) for x in ((sweep or _default_sweep)(sdlc_dir, config, run) or ()))
+        swept = sweeper(sdlc_dir, config, run)      # #2139: the raw result; an interval-skipped `_Swept` is empty
     except Exception:           # noqa: BLE001 - fail open, like the loop's own sweep
-        skip = frozenset()
+        swept = None
+    lifted = {str(x) for x in (swept or ())}        # the #1129 cooldown: what this cycle's sweep lifted
+    interval_skipped = getattr(swept, "skipped", None) == "interval"
     cfg = json.loads(json.dumps(config))
     cap = blk.get("cap") or chain_asks.effective_cap(rec, config)    # `resume --cap` overrides the answer and the config
     if cap:
@@ -1779,7 +1994,9 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
         if locked:              # #1866: stuck is not running; the pool is free for another chain
             chain_parallel.release(sdlc_dir, goal)
         return res
-    skip = skip | frozenset(str(d) for d in held_back) | frozenset(str(n) for n in _held(rec) | _declined(rec))
+    # what the pick skips besides the cooldown: held-back growth, #1906/#1908's record-only holds, and (#2139, D-9)
+    # the members the person answered `keep it blocked` about, so a later sweep lift never claims one against it
+    others = {str(d) for d in held_back} | {str(n) for n in _held(rec) | _declined(rec) | chain_asks.kept_blocked(rec)}
     known = set(recorded) | set(blk.get("seen") or ()) | set(blk.get("joined") or ())
     already = set(blk.get("closed") or ())
     failure, p, open_now, confirmed = None, None, set(), set()
@@ -1801,13 +2018,16 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
         # uses, so hold back every member whose such blocker is not confirmed closed
         done = set(blk["closed"])
         hidden = _hidden_waits(vrec)
-        skip = skip | frozenset(str(n) for n in open_now if any(b not in done for b in hidden.get(n, ())))
+        others |= {str(n) for n in open_now if any(b not in done for b in hidden.get(n, ()))}
         gone = _blockers_of(vrec, never) - done
         have = {r["number"] for r in p.get("outside") or []}
         by = {r["number"]: r for r in rec["members"]}
         p["outside"] = list(p.get("outside") or []) + [
             {"number": n, "verdict": "outside", "own_verdict": by[n]["verdict"], "checkpoint": by[n].get("checkpoint")}
             for n in sorted(gone) if n not in have and n not in open_now]
+        if interval_skipped:        # #2139 (D-7): one forced sweep, only for a blocked member with no open wait
+            lifted |= _force_sweep(sdlc_dir, config, run, sweeper, p, others, blk)
+    skip = frozenset(lifted | others)
     pick_kw, waiting, note = {}, None, ""
     if width > 1 and p is not None and failure is None:
         pick_kw, waiting, note = _width_plan(sdlc_dir, vrec, cfg, p, open_now, recorded, width)
@@ -1829,7 +2049,19 @@ def run(sdlc_dir, goal, session_pid=None, pick=None, now=None, config=None, run=
         res.update(state="running", picked=sorted(got), detail=note)
     else:
         unconfirmed = known - open_now - set(blk["closed"])
-        if failure is None and not open_now and not unconfirmed and not blk.get("paused"):
+        freed, lift = [], False
+        if failure is None and p is not None:       # R3: a failed read or pick is never `running`
+            # #2139: a member this cycle's sweep lifted is held out of this pick by the cooldown, not stuck
+            freed = sorted(n for n in open_now if str(n) in lifted and str(n) not in others)
+            lift = bool(freed)
+            if not freed:       # D-4: the pick's own sweep may have lifted a label-held root after this cycle read it
+                freed = _confirm_freed(run, config, p, vrec, others, blk)
+        if freed:
+            blk.update(state="running", reason=None, stuck=None, holding=None)
+            if lift:            # R4: only a real sweep lift is progress; a confirm-read free does not move the heartbeat
+                blk["heartbeat"] = _iso(now)
+            res.update(state="running", detail=_freed_text(freed))
+        elif failure is None and not open_now and not unconfirmed and not blk.get("paused"):
             blk.update(state="done", reason=None, stuck=None, holding=None)
             res.update(state="done", detail="all %d members closed in %d cycle(s); %d claimed by this run"
                        % (len(known), blk["cycle"], len(blk.get("picked") or ())))

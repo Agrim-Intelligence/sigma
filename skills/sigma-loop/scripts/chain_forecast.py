@@ -11,7 +11,8 @@ THE TABLE. `VERDICTS` maps a member's verdict to its marker, whether a run may c
 table does not know is NOT workable: the forecast never promises work it cannot name.
 
 FORECAST. From the plan record alone (no `gh` call), as the person's answers leave it (`chain_asks.view`: a released
-member is armed, a kept-parked one stops the run, a taken-over one is the runner's, a dismissed wait is no edge). The assignee filter is re-applied for the runner asked
+member is armed, a kept-parked or kept-blocked one stops the run, a taken-over one is the runner's, a dismissed wait is
+no edge; #2139: a blocked member the plan's check says the sweep lifts is workable). The assignee filter is re-applied for the runner asked
 about (`login`, default the one who planned), through `label_drain.assignee_gate`, the clause `_Judge.verdict`
 uses. It then plays the run: each cycle claims what `ready_members` offers at the configured width, every
 claimed goal is assumed to merge, until nothing is offered. What is left is the stop: its reason is
@@ -58,12 +59,15 @@ VERDICTS = {
     "kept-waiting": ("needs decision", False, "kept waiting on a closed prerequisite's open follow-up or question"),
     "declined": ("not workable", False, "a paid step you answered not to run"),
     chain_asks.KEPT_PARKED: ("needs decision", False, "parked; you answered to keep it parked"),
+    chain_asks.KEPT_BLOCKED: ("needs decision", False, "blocked; you answered to keep it blocked"),     # #2139
     "unknown": ("not workable", False, "could not be read"),
 }
 #: flag on a row -> (marker, why). Checked after the verdict, in this order, as `label_drain._reason` does. The
 #: `blocked` flag is an overlay only while NOTHING in the chain explains it: a row that waits on members of the chain
 #: carries the label because of those waits (the blocker sweep adds it and clears it when they close), so it is
-#: classified by its waits, and a run that closes them frees it.
+#: classified by its waits, and a run that closes them frees it. #2139: nor is it one for a row the plan's read-only
+#: check says the sweep lifts now (`sweep_lifts` True): the run's own sweep lifts it before the pick. Only True
+#: counts; a row without the field (an old record) keeps the overlay.
 OVERLAYS = (
     ("in_progress", "someone else's", "already in progress"),
     ("blocked", "not workable", "carries the blocked label"),
@@ -82,7 +86,7 @@ def classify(row, open_now):
     if workable:
         for key, o_marker, o_why in OVERLAYS:
             if row.get(key):
-                if key == "blocked" and row.get("waits_on"):
+                if key == "blocked" and (row.get("waits_on") or row.get("sweep_lifts") is True):
                     continue    # Sigma's own sweep sets it for a wait on an open goal and clears it when that closes
                 marker, workable, why = o_marker, False, o_why
                 break
@@ -136,19 +140,66 @@ def roots_of(rows, outside=()):
     return free or rows
 
 
+#: #2139: the three stops of a root held by the blocked label alone (numbers only; each starts with the member, so
+#: `chain_status` names it and prints `/sigma-unpark #N`).
+KEPT_BLOCKED_STOP = ("#%d is blocked and you answered to keep it blocked; release it (answer `release it` and run "
+                     "`arm` again, or /sigma-unpark #%d) to include it")
+BLOCKED_ASK_STOP = "#%d carries the blocked label and needs an answer"
+LABEL_HELD_STOP = "#%d carries the blocked label and nothing in this chain lifts it: release it with /sigma-unpark #%d"
+
+
+def _held_by_label(r, open_numbers, kept_blocked, held=(), declined=()):
+    """#2139: True when root `r` is held by the blocked label alone, or by the person's `keep it blocked`: nobody
+    works on it (not in progress), and no wait explains it, neither a prerequisite outside the chain (`unresolved`),
+    nor a wait the run's live read sees (`waiting_on`: the label drain's open blockers), nor a recorded wait on a
+    member still open (`waits_on`, a cycle). A kept member counts whatever its verdict (the answer holds it); else
+    only an `armed` one: a member somebody else holds is `claimed`, one a gate holds is `held-gate`. Nor one another
+    answer holds (`declined`: a paid step answered not to run, `held-gate`; `held`: kept waiting, `decision` in its
+    own words): the run's rows carry the live verdict `armed` and get those answers here, the forecast's rows carry
+    `declined` / `kept-waiting`, and both must keep that answer's stop."""
+    n = r["number"]
+    if r.get("in_progress") or r.get("unresolved") or r.get("waiting_on"):
+        return False
+    if [w for w in r.get("waits_on") or [] if w in open_numbers and w != n]:
+        return False
+    if n in kept_blocked or r["verdict"] == chain_asks.KEPT_BLOCKED:
+        return True
+    if n in declined or n in held:
+        return False
+    return bool(r.get("blocked")) and r["verdict"] == "armed"
+
+
+def _label_held_stop(r, kept_blocked):
+    n = r["number"]
+    if n in kept_blocked or r["verdict"] == chain_asks.KEPT_BLOCKED:
+        return "decision", KEPT_BLOCKED_STOP % (n, n)
+    if r.get("sweep_lifts") is False:       # the sheet asks about it (`blocked:N`); only a forecast sees it unanswered
+        return "decision", BLOCKED_ASK_STOP % n
+    return "decision", LABEL_HELD_STOP % (n, n)
+
+
 def _stop_of_first_root(p, unconfirmed=(), held=(), declined=(), ctx=None):
     """-> (reason, detail), ONE reason from `chain.STUCK_REASONS` for an empty pick with members still open,
     given plan rows `p["members"]` (each may carry `waits_on`: the members it waits on) and `p["outside"]`. Only
     the ROOTS are named (`roots_of`). Numbers only in the detail. The order is the order a person would act in:
     what needs a person, then what only waits. A failed read is the caller's, ahead of
-    this. `ctx` (`chain_asks.stop_context`) only changes the words, never the reason: the parked members the person
-    answered to keep parked, whose a member held elsewhere is (the person chose to wait for them), and the unit
-    boundaries the person answered `stop here` about."""
+    this. `ctx` (`chain_asks.stop_context`) is what the rows cannot say: the parked members the person answered to keep
+    parked, the blocked members they answered to keep blocked (#2139: the run's rows carry the live verdict, so this
+    is how its stop names the answer, as the forecast's KEPT_BLOCKED rows do), whose a member held elsewhere is (the
+    person chose to wait for them), and the unit boundaries the person answered `stop here` about. Both callers pass
+    the same context, so the forecast's and the run's stops stay equal.
+
+    A root held by the blocked label alone (`_held_by_label`, #2139) is named when no parked root is, ahead of every
+    other stop, and stops on `decision`: kept blocked by the answer, asked and not yet answered (a forecast only),
+    or held by a label nothing in this chain lifts (named with `/sigma-unpark #N`), never the `claimed` fallback. A
+    root another answer holds (`declined`, `held`) is not one: it keeps that answer's stop below."""
     ctx = ctx or {}
     kept, waiting, stopped = ctx.get("kept") or (), ctx.get("waiting") or {}, ctx.get("stopped") or {}
+    kept_blocked = ctx.get("kept_blocked") or ()
     rows, outside = p["members"], p.get("outside") or []
     if any(r.get("kind") in ("not-read", "unreadable") for r in rows + outside):
         return "degraded-read", "a parked member could not be read"
+    open_numbers = {r["number"] for r in rows + outside}
     rows = roots_of(rows, outside)              # name what holds the chain, not what waits behind it
     parked = sorted(r["number"] for r in rows if r["verdict"] in ("parked", chain_asks.KEPT_PARKED))
     if parked:
@@ -156,6 +207,10 @@ def _stop_of_first_root(p, unconfirmed=(), held=(), declined=(), ctx=None):
             return "decision", ("#%d is parked and you answered to keep it parked; release it (answer `release it`) "
                                 "to include it" % parked[0])
         return "decision", "#%d is parked and needs an answer" % parked[0]
+    by_label = sorted((r for r in rows if _held_by_label(r, open_numbers, kept_blocked, held, declined)),
+                      key=lambda r: r["number"])
+    if by_label:
+        return _label_held_stop(by_label[0], kept_blocked)
     gated = sorted(r["number"] for r in rows if r["verdict"] == "held-by-gate")
     if gated:
         return "held-gate", "#%d is held by a gate" % gated[0]
@@ -257,6 +312,7 @@ def _normalise(rec, login, filtered, held=(), declined=()):
     return [{"number": r["number"], "verdict": _answered(r, login, filtered, held, declined), "kind": r.get("kind"),
              "waits_on": list(r.get("waits_on") or []), "unresolved": needed.get(r["number"], []),
              "in_progress": bool(r.get("in_progress")), "blocked": bool(r.get("blocked")),
+             "sweep_lifts": r.get("sweep_lifts"),          # #2139: True, False, or None (unchecked or an old record)
              "checkpoint": r.get("checkpoint")}
             for r in rec.get("members") or []]
 

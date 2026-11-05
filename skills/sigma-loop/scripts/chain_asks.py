@@ -12,7 +12,16 @@ is now ONE question on the first sheet, and each answer is enacted (below), neve
                   existing atomic unpark gesture (`unpark.resolve`, decision `unpark`), declaring the kind with the
                   recommended guess when none is declared. It replaces the old per-kind question (and its 13-option
                   "which kind is this?"): the kind is only needed to release, and then it is declared, not asked.
-  wait:A-B        #A waits on #B, read from prose (`chain_waits`), and #B is open and the wait changes the order of
+  blocked:N       #N carries the blocked label, nothing the chain explains holds it (no wait, no outside
+                  prerequisite, not in progress), and the auto-unpark sweep would NOT lift it: the plan checked,
+                  read-only, with the sweep's own function (`sweep_lifts` False; `sweep_why` says why: no blocker
+                  recorded, a blocker it names still open, the sweep off, a read that failed, ...). `keep it
+                  blocked` (recommended): the chain stops before it and the members that wait on it, named, and the
+                  run never claims it. `release it`: `arm` releases it through the same unpark gesture as a parked
+                  member. A member the sweep would lift is not asked (the forecast reads it as workable), and a
+                  record without the field (planned before #2139, or past the check's bound) asks nothing: the run's
+                  stop names such a member and `/sigma-unpark`.
+  wait:A-B       #A waits on #B, read from prose (`chain_waits`), and #B is open and the wait changes the order of
                   the chain (an edge the explicit edges already imply is not asked). `confirm it` (recommended):
                   `arm` writes the marker every reader trusts, the same safe write `deps.py mark` does. `dismiss
                   it`: `arm` posts the dismissal marker (`backlog_check.dismiss_comment`, posted as `loop.py note`
@@ -25,22 +34,24 @@ is now ONE question on the first sheet, and each answer is enacted (below), neve
   irreversible:N  the existing spend question, now also asked for a member that carries a label listed in
                   `chain.paid_labels` (default none), not only for one whose body declares a paid line.
 
-`view(rec)` is the record as the answers leave it: a released member is armed, a kept-parked one keeps a verdict of
-its own, a taken-over one is no longer someone else's, a dismissed wait is no edge. The sheet's forecast, `arm` and
+`view(rec)` is the record as the answers leave it: a released member is armed, a kept-parked or kept-blocked one keeps
+a verdict of its own, a taken-over one is no longer someone else's, a dismissed wait is no edge. The sheet's forecast, `arm` and
 `run` read the view, so the forecast is computed from the answers and equals the run. The record itself is never
 rewritten (an answer can be changed). Every function here is pure: it reads the record, never GitHub.
 """
-PARK, WAIT, ELSEWHERE = "park", "wait", "elsewhere"
+PARK, WAIT, ELSEWHERE, BLOCKED = "park", "wait", "elsewhere", "blocked"
 KEEP_PARKED, RELEASE = "keep it parked", "release it"
+KEEP_BLOCKED = "keep it blocked"
 CONFIRM, DISMISS = "confirm it", "dismiss it"
 WAIT_FOR_THEM, TAKE_OVER = "wait for them", "take it over"
 PARK_OPTIONS = [KEEP_PARKED, RELEASE]                  # the first of each is the recommended answer: nothing starts unasked
+BLOCKED_OPTIONS = [KEEP_BLOCKED, RELEASE]
 WAIT_OPTIONS = [CONFIRM, DISMISS]
 ELSEWHERE_OPTIONS = [WAIT_FOR_THEM, TAKE_OVER]
 ELSEWHERE_WAIT_ONLY = [WAIT_FOR_THEM]
 #: the kinds that are one decision each about named members, whose text is what the person decides on (a group
 #: question prints only "N questions share these options" and would hide it): the sheet never folds them into a group
-UNGROUPED = (PARK, WAIT, ELSEWHERE, "irreversible", "closed_gate", "cross_unit")
+UNGROUPED = (PARK, BLOCKED, WAIT, ELSEWHERE, "irreversible", "closed_gate", "cross_unit")
 WHY_CHARS = 140
 NAMES_SHOWN = 8
 KEYS_ONLY_WHY = "(wording withheld: this repository's decision records are keys-only)"
@@ -66,6 +77,19 @@ def carries_paid_label(names, config):
 
 
 KEPT_PARKED = "kept-parked"            # the verdict `view` gives a parked member the person answered to keep parked
+KEPT_BLOCKED = "kept-blocked"          # the verdict `view` gives a blocked member the person answered to keep blocked
+#: #2139: why the sweep would not lift a blocked member, by the token the plan's check recorded (`sweep_why`). Words
+#: only, numbers only: the open refs of `open` are filled in from `sweep_open`.
+BLOCKED_WHY = {
+    "no-ref": "no blocker is recorded on it",
+    "open": "%s, which it names, still read open",
+    "exempt": "it carries the keep-parked marker",
+    "gate": "it declares a gate a registry edit releases",
+    "map": "the dependency map shows an open blocker",
+    "sweep-off": "the auto-unpark sweep is off in this repository",
+    "unread": "its comments or a blocker it names could not be read",
+}
+BLOCKED_WHY_OTHER = "the sweep would not lift it"
 
 
 def _ids(nums):
@@ -145,6 +169,35 @@ def park_questions(rec):
                     "ask": "#%d is parked: %s Release it into this chain, or %s?" % (
                         n, why if why[-1:] in ".?!…)" else why + ".", stop),
                     "options": list(PARK_OPTIONS), "unblocks": sorted([n] + behind)})
+    return out
+
+
+# --- blocked (#2139) -----------------------------------------------------------------------------------------
+
+def _blocked_why(r):
+    why = r.get("sweep_why")
+    if why == "open":
+        refs = [int(x) for x in r.get("sweep_open") or () if str(x).isdigit()]
+        return BLOCKED_WHY["open"] % _named(refs) if refs else BLOCKED_WHY_OTHER
+    return BLOCKED_WHY.get(why, BLOCKED_WHY_OTHER)
+
+
+def blocked_questions(rec):
+    """-> one question per member the plan's read-only check says the sweep would NOT lift (`sweep_lifts` is
+    False), in number order. A row without the field (a record written before #2139, or a member past the check's
+    bound) is not asked: the run's stop names it instead."""
+    out = []
+    for r in sorted(rec["members"], key=lambda x: x["number"]):
+        if r.get("sweep_lifts") is not False:
+            continue
+        n = r["number"]
+        behind = dependents_of(rec, n)
+        stop = "keep it blocked and the chain stops before it%s" % (
+            " and before %s, which wait%s on it" % (_named(behind), "s" if len(behind) == 1 else "") if behind else "")
+        out.append({"id": "%s:%d" % (BLOCKED, n), "kind": BLOCKED, "area": None,
+                    "ask": "#%d carries the blocked label and the sweep would not lift it: %s. Release it into this "
+                           "chain, or %s?" % (n, _blocked_why(r), stop),
+                    "options": list(BLOCKED_OPTIONS), "unblocks": sorted([n] + behind)})
     return out
 
 
@@ -284,10 +337,21 @@ def waiting_for(rec):
 
 # --- parked answers --------------------------------------------------------------------------------------------
 
+def _blocked_answer(rec, r):
+    """-> the answer to a member's `blocked:N` question, or None. Only a row the plan's check answered `False` was
+    asked (`blocked_questions`), so a row without the field (an old record) has none, whatever the record holds."""
+    if r.get("sweep_lifts") is not False:
+        return None
+    return (rec.get("answers") or {}).get("%s:%d" % (BLOCKED, r["number"]))
+
+
 def released(rec):
+    """-> the members `arm` releases through the unpark gesture: a parked one, or (#2139) a blocked one, the person
+    answered `release it` about."""
     ans = rec.get("answers") or {}
     return {r["number"] for r in rec["members"]
-            if r["verdict"] == "parked" and ans.get("%s:%d" % (PARK, r["number"])) == RELEASE}
+            if (r["verdict"] == "parked" and ans.get("%s:%d" % (PARK, r["number"])) == RELEASE)
+            or _blocked_answer(rec, r) == RELEASE}
 
 
 def kept_parked(rec):
@@ -296,6 +360,13 @@ def kept_parked(rec):
     return {r["number"] for r in rec["members"]
             if r["verdict"] == KEPT_PARKED
             or (r["verdict"] == "parked" and ans.get("%s:%d" % (PARK, r["number"])) == KEEP_PARKED)}
+
+
+def kept_blocked(rec):
+    """-> the blocked members the person answered `keep it blocked` about (#2139; also in a `view`, where they carry
+    KEPT_BLOCKED). The run never claims one, and its stop says the answer holds it."""
+    return {r["number"] for r in rec["members"]
+            if r["verdict"] == KEPT_BLOCKED or _blocked_answer(rec, r) == KEEP_BLOCKED}
 
 
 # --- a unit boundary the person answered "stop here" about --------------------------------------------------------------
@@ -312,10 +383,13 @@ def stopped_here(rec):
 
 
 def stop_context(rec):
-    """-> what the words of a stop need beyond the members: {"kept": parked members kept parked, "waiting": {member:
-    whose} for those held elsewhere that the person waits for, "stopped": {dependent: blocker} at a unit boundary}.
-    Words only: the reason of a stop never depends on it, so the forecast's and the run's stop lines stay equal."""
-    return {"kept": kept_parked(rec), "waiting": waiting_for(view(rec)), "stopped": stopped_here(rec)}
+    """-> what the words of a stop need beyond the members: {"kept": parked members kept parked, "kept_blocked":
+    blocked members kept blocked (#2139), "waiting": {member: whose} for those held elsewhere that the person waits
+    for, "stopped": {dependent: blocker} at a unit boundary}. The run's rows carry the live verdict, not the answer, so
+    `kept_blocked` is how its stop knows a member is held by the answer; the forecast's rows carry the KEPT_BLOCKED
+    verdict and give the same stop."""
+    return {"kept": kept_parked(rec), "kept_blocked": kept_blocked(rec), "waiting": waiting_for(view(rec)),
+            "stopped": stopped_here(rec)}
 
 
 # --- the record as the answers leave it ----------------------------------------------------------------------------
@@ -360,10 +434,13 @@ def _inert(rec, row):
 
 def view(rec):
     """-> a copy of `rec` with the person's answers applied: a released member is armed (`arm` releases it before
-    the run reads it), a kept-parked member has the verdict KEPT_PARKED, a taken-over member is no longer someone
-    else's (it is assigned to the runner), a dismissed wait is no edge. Everything else is shared with `rec`."""
+    the run reads it; a released blocked member no longer carries the blocked label either), a kept-parked member has
+    the verdict KEPT_PARKED, a kept-blocked one KEPT_BLOCKED (its `base_verdict` dropped, so the assignee clause
+    cannot turn it back into somebody else's), a taken-over member is no longer someone else's (it is assigned to the
+    runner), a dismissed wait is no edge. Everything else is shared with `rec`."""
     out = dict(rec)
     rel, kept, took = released(rec), kept_parked(rec), taken_over(rec)
+    kept_b = kept_blocked(rec)
     promo = promoted(rec)
     gone = dismissed_waits(rec)
     rows = []
@@ -380,11 +457,16 @@ def view(rec):
             r["verdict"] = "armed"
             r.pop("base_verdict", None)
             r["released"] = True
+            r["blocked"] = False                # #2139: the unpark gesture removes the blocked label at `arm`, whether
+                                                # the release answered `blocked:N` or a parked member also carried it
             gate = _gate(rec.get("runner"), r.get("assignees")) if rec.get("assignee_filter") else None
             if gate:                            # released, but somebody else's: the run stops there, as `_Judge` would say
                 r["verdict"], r["base_verdict"] = gate, "armed"
         elif n in kept:
             r["verdict"] = KEPT_PARKED
+        elif n in kept_b:
+            r["verdict"] = KEPT_BLOCKED
+            r.pop("base_verdict", None)
         if n in took:
             if r["verdict"] == "assigned-elsewhere":
                 r["verdict"] = r.get("base_verdict") or "armed"

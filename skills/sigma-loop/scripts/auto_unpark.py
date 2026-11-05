@@ -25,6 +25,13 @@ park, e.g. a deliberate sequencing checkpoint) -- this sweep only ever reverses 
 it can prove is stale, never guesses at any other. A parked issue referencing MULTIPLE blockers is
 swept only once every one of them has closed.
 
+#2139: what holds a goal that carries only `sdlc:blocked`. Once its text names at least one blocker in an
+explicit form (`blocked by`, `depends on`, ...; in any state), only its explicit blockers hold it: a weak word
+(`needs`, `after`, `requires`, `waiting on`) beside some other open issue no longer keeps it blocked after the
+blockers it declared have closed, and the audit comment names only the refs that closed. A goal naming only weak
+references is still held while any of them is open, and a parked goal still waits on every reference it names
+(see `_holding_findings`). `compute_blocking_actions` is unchanged: it still counts weak references.
+
 #1186 FIX: the safety claim above used to be defeated by this module's OWN park comment. Every park
 Sigma ever posts (`sources.park`/`fail`, via `_offboard`) opens with a fixed prefix --
 `sources.PARK_COMMENT_PREFIX` ("Parked by Sigma — needs human review: "), and the sibling
@@ -456,7 +463,36 @@ def _map_still_waiting(sdlc_dir, config, number, cache):
         return False
 
 
-def compute_unpark_actions(sdlc_dir, config, source, issues, run=None, open_cache=None, reads=None):
+def _holding_findings(goal_doc, refs, extra_text, source, open_cache, blocked_only):
+    """#2139: the findings that still hold a goal, from `refs` (every ref its text names, any state).
+
+    `found` is `backlog_check._explicit_blockers` over each ref's live state (`_ref_is_open`, memoised in
+    `open_cache`): every OPEN ref the text names, each marked `confident` when any of its matches is an explicit form
+    (`blocked by`, `depends on`, ...) and advisory when only a weak word (`needs`, `after`, `requires`, `waiting on`)
+    names it. For a parked goal (`blocked_only` False) every finding holds, exactly as before: a park is a person's.
+
+    A goal that carries only `sdlc:blocked` and NAMES an explicit blocker (in any state, so the same scan is run once
+    more with every ref marked open: pure regex, no `gh` call) is held by its explicit blockers alone, so prose such as
+    "this needs #N eventually" beside an unrelated open issue no longer keeps it blocked once the blockers it declared
+    have closed. A goal that names only weak refs is still held by any of them that is open: with nothing explicit to
+    go on, the sweep keeps its old rule rather than guess which mention mattered."""
+    found = backlog_check._explicit_blockers(
+        goal_doc, [{"ref": r, "open": _ref_is_open(source, r, open_cache)} for r in refs], extra_text)
+    if not blocked_only:
+        return found
+    named = backlog_check._explicit_blockers(goal_doc, [{"ref": r, "open": True} for r in refs], extra_text)
+    if not any(f["confident"] for f in named):
+        return found
+    return [f for f in found if f["confident"]]
+
+
+def _note_why(why_out, n, why, refs=None):
+    """#2139 (`why_out`): record, numbers only, why goal `n` was not lifted; a no-op when the caller passed none."""
+    if why_out is not None:
+        why_out[n] = {"why": why} if refs is None else {"why": why, "open": list(refs)}
+
+
+def compute_unpark_actions(sdlc_dir, config, source, issues, run=None, open_cache=None, reads=None, why_out=None):
     """(actions, resolved) over every issue in `issues` (already known to carry `parked_label` OR
     `goal_blocked_label` -- see `_fetch_parked_issues`, #1358). `actions` is the enact-shaped,
     action list -- ONE `swap-label` per eligible issue (#1392), plus a card move where a board
@@ -484,15 +520,25 @@ def compute_unpark_actions(sdlc_dir, config, source, issues, run=None, open_cach
     - Empty refs -> not this sweep's concern: parked for a different reason (or a marker that has
       since been edited away), left untouched.
     - Non-empty -> re-run `_explicit_blockers` itself, UNCHANGED, over a minimal, freshly-fetched-
-      this-pass corpus of just those refs' live open/closed state (`_ref_is_open`). Still finding
-      anything means at least one referenced blocker is still open -- leave parked. Finding nothing
-      means every one of them has closed -- eligible.
+      this-pass corpus of just those refs' live open/closed state (`_ref_is_open`), through
+      `_holding_findings` (#2139). Still finding a holding blocker open -- leave it. Finding none --
+      eligible. What holds: for a parked goal, any open ref; for a goal carrying only
+      `goal_blocked_label` that names an explicit blocker (any state), only its open EXPLICIT
+      blockers, so a weak word beside an unrelated open issue does not hold it; for one naming only
+      weak refs, any open one. `resolved[n]` names only the refs that closed.
 
     `open_cache`: optional, shared `_ref_is_open` memo dict (#1351 review finding, notable-severity
     efficiency gap) -- `sweep_unpark` builds ONE cache and passes the SAME dict into both this call
     and `compute_blocking_actions`'s, since a ref's open/closed state within one sweep pass is
     identical to either caller; a fresh `{}` (the default when omitted, e.g. every direct-call test
-    in this module) is exactly the prior, unshared behaviour."""
+    in this module) is exactly the prior, unshared behaviour.
+
+    `why_out` (#2139): optional dict; for each issue NOT lifted, `why_out[n]` is `{"why": token}`, the
+    token one of `map` (the stored map shows an open blocker), `exempt` (the keep-parked marker), `gate`
+    (a declared scope/owner gate), `no-ref` (no blocker is recorded on it), `open` (with `"open":
+    [refs]`, the holding refs still open, numbers only) or `parked` (a park the sweep never resumes
+    here). A lifted issue gets no entry. `None` (every existing caller) changes nothing; the actions
+    and `resolved` are the same either way. The chain's read-only plan check reads it for its question."""
     actions, resolved = [], {}
     open_cache = open_cache if open_cache is not None else {}
     reads = reads if reads is not None else _CommentReads(sdlc_dir)
@@ -500,24 +546,29 @@ def compute_unpark_actions(sdlc_dir, config, source, issues, run=None, open_cach
     for it in issues:
         n = str(it.get("number"))
         names0 = _label_names(it)
-        if (source.goal_blocked_label in names0 and source.parked_label not in names0
-                and _map_still_waiting(sdlc_dir, config, n, map_cache)):
+        blocked_only = source.goal_blocked_label in names0 and source.parked_label not in names0
+        if blocked_only and _map_still_waiting(sdlc_dir, config, n, map_cache):
+            _note_why(why_out, n, "map")
             continue                                    # #1625: the map shows an open blocker -- no reads
         goal_doc = {"ref": n, "raw": (it.get("title") or "") + "\n" + (it.get("body") or "")}
         raw_comments = reads.get(config, it, goal_doc, run=run)
         if _is_exempt(raw_comments):
+            _note_why(why_out, n, "exempt")
             continue                                    # #1152: deliberate park, opted out -- untouched
         if gate_hold.declared_gate_kind(raw_comments):
+            _note_why(why_out, n, "gate")
             continue                                    # #1005: scope_hold / owner_hold wait for the registry edit
         extra_text = backlog_check._cap_join_excerpts(
             backlog_check._strip_offboard_prefixes(
                 backlog_check._filter_dismissal_comments(raw_comments)))
         refs = backlog_check._referenced_blocker_refs(goal_doc, extra_text)
         if not refs:
+            _note_why(why_out, n, "no-ref")
             continue
-        docs = [{"ref": r, "open": _ref_is_open(source, r, open_cache)} for r in refs]
-        if backlog_check._explicit_blockers(goal_doc, docs, extra_text):
-            continue                                    # at least one referenced blocker is still open
+        held = _holding_findings(goal_doc, refs, extra_text, source, open_cache, blocked_only)
+        if held:
+            _note_why(why_out, n, "open", sorted({f["ref"] for f in held}, key=int))
+            continue                                    # a blocker that still holds it is open (#2139: see the helper)
         names = _label_names(it)
         # #1394: a PARKED goal is never resumed here. The sweep decides on TEXTUAL SHAPE alone --
         # its own docstring says it "has no way to tell a genuinely-stale block apart from a human's
@@ -534,10 +585,12 @@ def compute_unpark_actions(sdlc_dir, config, source, issues, run=None, open_cach
         #
         # `compute_blocking_actions` deliberately still scans BOTH: a parked issue can name a live
         # blocker, and that blocker genuinely blocks something. Only RESUMING narrows.
-        if source.parked_label in names and not _waits_on_dependency(raw_comments):
-            continue                                    # #1549: only a "wait for it" decision may resume a park
-        if source.parked_label in names and _reparked_by_label_after_note(source, n):
-            continue                                    # #1630: a label-only re-park outranks the older note
+        # #1549: only a "wait for it" decision may resume a park; #1630: a label-only re-park outranks the older
+        # note (read only when there is a note, as before). One `continue`, so `why_out` names it in one place.
+        if source.parked_label in names and (not _waits_on_dependency(raw_comments)
+                                             or _reparked_by_label_after_note(source, n)):
+            _note_why(why_out, n, "parked")
+            continue
         # #1392: ONE atomic `swap-label` action, replacing the add/remove PAIR this used to emit.
         # The stakes are highest exactly here: this is the automatic sweep, running unattended, and
         # a half-applied unpark left `sdlc:goal` added with `sdlc:parked` never removed -- which
@@ -575,7 +628,9 @@ def compute_unpark_actions(sdlc_dir, config, source, issues, run=None, open_cach
             if getattr(source, "board_active", False):
                 actions.append({"action": "set-status", "issue": n, "detail": source.col["ready"],
                                 "result": None, "error": None})
-        resolved[n] = sorted(refs, key=int)
+        # #2139: the refs that really closed (all were read into `open_cache` above). A weak mention of an issue still
+        # open no longer holds a goal that names an explicit blocker, and must not be named as a closed blocker either.
+        resolved[n] = sorted((r for r in refs if not open_cache.get(r, True)), key=int)
     return actions, resolved
 
 

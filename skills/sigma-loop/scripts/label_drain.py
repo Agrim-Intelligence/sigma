@@ -476,7 +476,9 @@ def plan(sdlc_dir, label, config=None, run=None, hide_answered=True, sleep=None)
         row["display"] = verdict
         in_progress = source.in_progress_label in names
         row["in_progress"] = in_progress
-        row["reason"] = _reason(row, in_progress, source.goal_blocked_label in names)
+        # #2139: the overlay as a flag, beside the reason text: a chain run's stop names a root held only by it
+        row["blocked"] = source.goal_blocked_label in names
+        row["reason"] = _reason(row, in_progress, row["blocked"])
         row["ready"] = row["reason"] is None
         rows.append(row)
     for r in rows + outside:

@@ -4,7 +4,10 @@ The first pass of `arm`, before the chain label and the arming: for each member 
 
   release it         `unpark.resolve(..., "unpark")`, the one atomic gesture `/sigma-unpark` uses (+goal, -parked in one
                      swap, then the Q&A block and one comment); an undeclared kind is declared with the guess the
-                     sheet recommended. A member that is no longer parked is skipped.
+                     sheet recommended. The same for a member that carries the blocked label (`blocked:N`, #2139;
+                     the gesture removes that label). A member that is no longer parked or blocked is skipped, and
+                     a `blocked:N` release skips one that no longer carries the blocked label (parked since, say:
+                     that park is a person's), with a note.
   take it over       assign the runner, then remove the old assignee(s): one assignee per issue. Never for a member
                      that is in progress in another session.
   confirm a wait    `deps.mark`, the write every reader trusts (`Blocked by #B` in the body, one note); skipped when
@@ -85,6 +88,12 @@ def enact(sdlc_dir, config, rec, source, rd, dry_run):
         if source.parked_label not in names and source.goal_blocked_label not in names:
             continue                                            # already released: nothing to do
         row = by[n]
+        if row["verdict"] != "parked" and source.goal_blocked_label not in names:
+            # #2139: a row the plan did not read as parked is in `released` for its `blocked:N` answer, which was
+            # about the blocked label, and that label is gone; a park put on since (after approval) is a person's,
+            # and only `park:N` or `/sigma-unpark` reverses it
+            notes.append("#%d is parked now, not blocked; not released (the answer was about the blocked label)" % n)
+            continue
         kind = row.get("kind_guess") if row.get("kind") == "undeclared" else None
         kind = kind if kind and kind != "unknown" else None
 

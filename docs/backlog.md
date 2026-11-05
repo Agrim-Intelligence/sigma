@@ -521,9 +521,16 @@ it reads each open `sdlc:blocked` issue. If every `blocked by #N` reference the 
 its body or its comments; Sigma's own fixed "Parked by Sigma — needs human review: " prefix is never
 read as one) now points at a closed issue or a merged pull request (a pull request closed without merging does not resolve it), it drops `sdlc:blocked` (and a stale
 `sdlc:in-progress`), re-adds `sdlc:goal` if it is missing, moves the card back to Ready on a board
-repository, and posts a comment naming the closed blocker(s). A label never changes silently. A goal
+repository, and posts a comment naming the closed blocker(s), and only those. A label never changes silently.
+Once an issue names an explicit blocker (`blocked by #N` and the other explicit forms), only the explicit
+ones hold it: the sweep does not hold a goal that names an explicit blocker on a weak mention (`needs`,
+`after`, `requires`, `waiting on`) of an issue that is still open, in its title, body or comments. An issue
+that names only weak references is held while one of them is open. A goal
 naming several blockers waits for all of them, and one with no machine-detectable reference is left
-alone. The same sweep keeps `sdlc:blocking` in sync on the blocker issues themselves.
+alone: a blocked label put on by hand with no reference is released with `/sigma-unpark` (one put on by
+hand on a goal that names a blocker is lifted by the same rule as any other). The same sweep keeps
+`sdlc:blocking` in sync on the blocker issues themselves, and that sync still counts a weak reference to an
+open issue (not changed yet).
 
 **It never resumes an `sdlc:parked` issue** (#1394) from its text, with one exception (#1549): a dependency park that carries the waiting note a "wait for it" decision posts (a person's answer or an applied Rulebook rule) is resumed when its last named blocker closes, recorded as an autonomous sweep unpark. A newer park comment cancels the note, and the keep-parked opt-out marker still wins. The sweep decides from the text's shape alone,
 so it cannot tell a stale dependency from a person's deliberate checkpoint that happens to say

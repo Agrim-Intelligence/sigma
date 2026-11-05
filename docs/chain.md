@@ -48,7 +48,22 @@ about 8 columns opens fitted but small; zoom, or click a question, which pans an
 
 No GitHub write exists in any verb before `approve`. `run` is one cycle and is called again until it
 reports done; exit 3 means capped or stuck with one reason (decision, held-gate, claimed, external,
-checkpoint, rate-limit, degraded-read, capped). The stop names what HOLDS the chain: of the members still open, only
+checkpoint, rate-limit, degraded-read, capped). A cycle whose sweep freed a member is not stuck: the sweep lifted that
+member's blocked label, and the cooldown keeps a goal the sweep just lifted out of the same cycle's pick, so the pick
+comes back empty; that cycle is `running`, exit 0, prints `#N was freed this cycle (the sweep lifted its blocked
+label); the next cycle can claim it`, and the next cycle claims it unless something else holds it (assigned to
+someone else, or still waiting on an open member). A cycle whose read or pick failed is never `running` this way.
+When the sweep interval skipped the cycle's own sweep, the run forces one sweep for a member that carries the blocked
+label with no open wait, is not in progress and is not one the pick skips for an answer (kept blocked, kept waiting,
+a paid step answered `do not`) or held back, once per member per run (the members forced are kept in the run record
+as `forced`); a later lift is the ordinary interval sweep's. A root held by the blocked label alone (nothing in the
+chain explains it: no open wait, no prerequisite outside the chain, not in progress, and no answer holds it: a paid
+step answered `do not` keeps its `held-gate` stop and one kept waiting its own `decision`) stops on `decision`, never
+`claimed`: `#N carries the blocked label and nothing in this chain lifts it: release it with /sigma-unpark #N`, and
+`chain.py status` names `/sigma-unpark #N`. Before that stop the run re-reads each such root once, past the cycle's
+read cache (at most 7 reads): the pick's own sweep may have lifted the label after the cycle read it, and a label
+already gone counts as freed, once per member per run, without moving the run's heartbeat. The forecast gives the
+same stop. The stop names what HOLDS the chain: of the members still open, only
 those that wait on no other open member are considered (a parked goal that itself waits on an open goal is held, not
 holding), and the same rule gives the forecast's roots. When more than one member holds the chain, the run prints the
 others on a line of its own (`also holding the chain: #a, #b`, at most 6 and a count), and `chain.py status` repeats it;
@@ -75,6 +90,7 @@ run that stops on something the sheet never asked is a defect. A question is ask
 | Question | Asked for | `keep` / `wait` (recommended) | The other answer, enacted at `arm` |
 |---|---|---|---|
 | `park:<n>` | a parked member: why it is parked (its recorded park question, else the first line of its park note or body, cut to 140 characters; withheld when the decision records are keys-only) and who waits behind it | `keep it parked`: the chain stops before it and the members that wait on it, named | `release it`: the existing atomic unpark gesture (`unpark.resolve`, decision `unpark`: one label swap, the Q&A block, one comment); an undeclared kind is declared with the recommended guess |
+| `blocked:<n>` | a member that carries the blocked label with no wait the chain explains (no open wait, no prerequisite outside the chain, not in progress, armed or assigned elsewhere) and that the auto-unpark sweep, checked read-only at plan time, would not lift; the ask says why (no blocker is recorded on it, a blocker it names still reads open, the sweep is off, a read failed). At most 20 members are checked per plan; the sheet lists the rest, and a run stops before each one still labelled | `keep it blocked`: the chain stops before it and the members that wait on it, named; the run never claims it, even after a sweep lifts its label | `release it`: the same atomic unpark gesture a parked member gets (`unpark.resolve`, decision `unpark`), which removes the blocked label; a member that no longer carries it at `arm` is skipped, and one that was parked since is left parked, with a note |
 | `wait:<a>-<b>` | a wait read only from prose or a comment, whose blocker is **open** and in the chain and whose edge the explicit edges do not already imply (a wait on a closed issue is only shown) | `confirm it`: the marker `deps.py mark` writes (`**Blocked by:** #b` in the body, one note) | `dismiss it`: the dismissal marker (`backlog_check.dismiss_comment`, posted the way `loop.py note` posts it); the plan, the forecast and the run drop the wait |
 | `elsewhere:<n>` | a member assigned to someone else, or in progress in another session | `wait for them`: the run pauses there and says whose it is | `take it over`: assign the runner, then remove the old assignee (one assignee). The runner is the `--as` login the plan was made for, not the login that ran `plan`; the ask says "Planned by X for Y" when they differ. Never offered for a member in progress: only `wait for them` is, and the sheet says why |
 | `irreversible:<n>` | a paid step: a declared paid line in the body, or a label listed in `chain.paid_labels` | none: never defaulted | `go ahead`; anything else is skipped by every run cycle |
@@ -83,12 +99,12 @@ run that stops on something the sheet never asked is a defect. A question is ask
 
 The old per-kind question for a parked member (a 13-option "which kind of question is this?" and the per-kind route
 questions) is not asked of a chain; the park question replaces them. A question with no listed option says where it
-is answered (`/sigma-unpark`); only the cap offers a number. Park, wait and elsewhere questions are never folded into
-a group (each carries its own reason), however long the sheet is. `arm --dry-run` prints the same lines the sheet's
+is answered (`/sigma-unpark`); only the cap offers a number. Park, blocked, wait and elsewhere questions are never
+folded into a group (each carries its own reason), however long the sheet is. `arm --dry-run` prints the same lines the sheet's
 "Writes that follow approval" lists, and a second `arm` finds nothing to do: each step reads the member's current
 state first. A step that fails is reported, the chain is not stamped armed, and running `arm` again finishes it.
-The sheet's forecast is computed from the answers (a released member is armed, a kept-parked one stops the run, a
-taken-over one is the runner's, a dismissed wait is no edge), `approve` prints it, and it equals what the run does.
+The sheet's forecast is computed from the answers (a released member is armed, a kept-parked or kept-blocked one stops
+the run, a taken-over one is the runner's, a dismissed wait is no edge), `approve` prints it, and it equals what the run does.
 Not measured: a live repository; the harness replay is offline.
 
 
@@ -162,7 +178,7 @@ really get, before anything is armed:
 |---|---|
 | `ready now` | a run may claim it and it waits on nothing open |
 | `after #N` | a run may claim it once the named members are done |
-| `needs decision` | parked, not armed, upper-tier, not a goal, waiting for its owner, or kept waiting on a closed prerequisite's open follow-up: a person must act |
+| `needs decision` | parked, not armed, upper-tier, not a goal, waiting for its owner, answered `keep it blocked`, or kept waiting on a closed prerequisite's open follow-up: a person must act |
 | `someone else's` | assigned to another login, or already in progress |
 | `checkpoint` | never worked: met when its unit lands or a person closes it |
 | `not workable` | held by a gate, a paid step the owner answered not to run, carries the blocked label, waits on a prerequisite outside the chain, or could not be read |
@@ -172,6 +188,17 @@ A member counts as in progress only while a live holder backs the label: a regis
 A member that carries the blocked label because of waits on other members of the chain is classified by those
 waits (`after #N`) and is counted as finishing once they do: Sigma's own sweep sets that label and clears it when the
 waits close, so reading it as permanent promised 1 goal where a run did 3.
+
+A member that carries the blocked label with no such wait (and no prerequisite outside the chain, and not in progress)
+is checked at `plan`, read-only, by the auto-unpark sweep's own rule: GETs only, no state file written, at most 20
+members per plan. One the sweep would lift (for example, every explicit blocker it names is closed) is `ready now`: the run's own
+sweep lifts it before the pick. One it would not lift, or whose read failed, is asked about (`blocked:<n>`, see the
+sheet); until it is answered the forecast stops on `decision` with `#N carries the blocked label and needs an answer`.
+A member the check did not reach (past the bound, or a record planned before the check existed) keeps the
+`not workable` marker, and the stop names it with `/sigma-unpark #N`. Not measured: the check's and the forced sweep's
+calls on a real repository; on the offline fake a checked member cost one issue GET, its comment pages (none to two)
+and one GET per distinct blocker not already read, so a plan's ceiling is about 20 x 3 GETs plus one per distinct
+blocker, and a plan with no blocked member makes no added call.
 
 One line follows: `a run from <login> can finish K of N before it stops on <reason>: <each root>`. The roots are
 the members that wait on nothing else that is left, each with its marker; the reason is the one word `run` itself
@@ -245,7 +272,9 @@ and still leaves it untouched, listing it as refused.
 
 `run` calls the loop's own pick, scoped to the chain label, and adds what only the record knows. It hands the pick
 a skip list of: members the person said to keep waiting on a closed prerequisite; paid steps answered anything but
-`go ahead`; and members whose recorded blocker (an unconfirmed wait included) is not yet confirmed closed. A member
+`go ahead`; members the person answered `keep it blocked` about (so a later sweep lift never claims one against the
+answer; the stop says `#N is blocked and you answered to keep it blocked`, reason `decision`); and members whose
+recorded blocker (an unconfirmed wait included) is not yet confirmed closed. A member
 that was never labelled (a checkpoint, or a not-a-goal or awaiting-owner member nobody promoted) is not a member of
 the run: it is neither claimed nor waited on to close, and work that waits on it stops the run, naming it. The
 reasons are the existing ones: a paid step the owner declined is `held-gate` ("answer go ahead, or change the
