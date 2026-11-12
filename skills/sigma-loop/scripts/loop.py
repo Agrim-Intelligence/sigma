@@ -5202,12 +5202,38 @@ _AWAITING_MERGE_NOTE = ("PR #{pr} is open and awaiting a merge. This goal is not
                         "the merge is observed.")
 
 
+#: #2151: the three redaction clauses `_redact_detail` applies to a free-text detail before it can reach an issue
+#: note, the ledger or the action log. Each is its own pattern so each can be broken (and seen red) on its own.
+#: An absolute path: a Windows drive or UNC path, a `~/` path, or a POSIX path of two or more segments that does
+#: not start inside a word or a URL (the `:` / `/` look-behind keeps `https://host/x` whole).
+_DETAIL_PATH_RE = re.compile(r"(?:(?<![\w])[A-Za-z]:[\\/][^\s'\"`<>)\]]*|\\\\[^\s'\"`<>)\]]+"
+                             r"|(?<![\w.:/~-])~/[^\s'\"`<>)\]]*"
+                             r"|(?<![\w.:/-])/[\w.@+~-]+(?:/[^\s'\"`<>)\]]*)+)(?<![,;:!?.])")
+#: A mention: `@name` or `@org/team`, not an address inside a word (`a@b`).
+_DETAIL_MENTION_RE = re.compile(r"(?<![\w`])@(?=[A-Za-z0-9])[\w-]*(?:/[\w-]+)?")
+
+
+def _redact_detail(text):
+    """#2151: whitespace collapsed, then redacted: an absolute path becomes `<path>`, an `@name` mention becomes
+    `<mention>` (so nobody is notified), and the trigger phrase of a blocker match (`blocker_scan._BLOCK_RE`, the one
+    vocabulary; never a second regex) becomes an ellipsis, so the text cannot read as a dependency edge. Order:
+    paths first (a path can contain an `@`), then mentions, then blockers."""
+    out = " ".join(str(text or "").split())
+    if not out:
+        return ""
+    out = _DETAIL_PATH_RE.sub("<path>", out)
+    out = _DETAIL_MENTION_RE.sub("<mention>", out)
+    scan = _load("blocker_scan")
+    return scan._BLOCK_RE.sub(lambda m: m.group(0).replace(m.group(1), "…", 1), out)
+
+
 def _awaiting_merge_note(pr, detail=""):
     """#2144: the audit note, plus WHY the loop did not merge when `record review` was given that reason (the merge
-    stop line). One line, whitespace collapsed, capped at 400 characters, so a long or multi-line detail cannot
-    make the note a block. No detail: the note is exactly what it always was."""
+    stop line). One line, whitespace collapsed, REDACTED first (#2151: `_redact_detail`), then capped at 400
+    characters, so a long or multi-line detail cannot make the note a block. No detail: the note is exactly what it
+    always was."""
     note = _AWAITING_MERGE_NOTE.format(pr=pr)
-    why = " ".join(str(detail or "").split())
+    why = _redact_detail(detail)
     if why:
         if len(why) > 400:
             why = why[:399].rstrip() + "…"
@@ -5235,6 +5261,7 @@ def _record_awaiting_merge(sdlc_dir, source, goal, detail="", retro_grade=None):
         per-goal bookkeeping a terminal outcome gets, because this session is finished with it.
     It does NOT release the checkout (the `done` recorded at merge time does), close the issue, or
     signal unit completion. Returns "review"."""
+    detail = _redact_detail(detail)               # #2151: the ledger and action log carry it too
     pr, first = work.mark_awaiting_merge(sdlc_dir, goal)
     note = _awaiting_merge_note(pr, detail) if first else None
     try:
