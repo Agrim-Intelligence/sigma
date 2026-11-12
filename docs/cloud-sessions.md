@@ -698,8 +698,21 @@ showed `.protected` false. Also MEASURED 2026-10-28: the three classic 404 bodie
 (`Branch not protected`, `Branch not found`, `Not Found`); `rules/branches/<b>` answers `200 []` for a public repository
 with no rulesets.
 
+(c) MEASURED (#2144, reported from a cloud session and reproduced from a second one in the same environment): a
+GitHub App-style token whose `GET repos/<o>/<r>` `permissions` read admin, maintain, push, triage and pull all true
+answered the classic read HTTP 403 `Resource not accessible by integration` and `rules/branches/<b>?per_page=100` `200
+[]`. That 403 is the credential's, not the branch's: the same answer would come for the default branch. It used to end
+every cloud `--land` run under `always` at the stop. Now, ONLY when all three hold, `protection()` reports the base as
+not protected (and `always` merges with the usual WARNING): the classic read is a permission 403 (not a 404, 5xx, rate
+limit or transport failure), the rules read answered a JSON list with nothing counted, and `GET branches/<b>` read a
+boolean `protected` that is `false`. A missing, true, non-boolean or unreadable flag, a failed rules read, or any other
+classic failure still raises `ProtectionUndetermined`. Where the stop still applies, `record review` given the merge
+line as its detail puts it in the issue note, so a person sees why the loop did not merge.
+
 UNMEASURED: maintain-level tokens; a write-level token on a plan that has rulesets (expected to read as (b), not seen);
-GitHub Enterprise Server; GitHub App and fine-grained tokens; the rules reply through a cloud session's proxy; the
+GitHub Enterprise Server; fine-grained tokens; a live `--land` run through the fallback to a merged PR (only offline
+tests with a stubbed `api` ran, each clause broken alone and seen red); whether `protected: false` can be trusted for a
+base enforced only by a ruleset (the rules read is what covers that case); the
 private free-plan CLASSIC 403 body (the 404 in (b) is what was seen; `strict_protection`'s docstring in
 `skills/sigma-status/scripts/merge_queue.py` records a 403 on that endpoint from an earlier observation). So how many
 installs `always` now stops on is unknown.

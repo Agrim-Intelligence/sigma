@@ -4,6 +4,11 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **A cloud session's 403 on the classic protection read no longer stops `work.auto_merge: always` on every base, and the awaiting-merge note says why the loop did not merge (#2144).**
+  - **What changed.** `protection()` now falls back to `GET branches/<base>` (its `protected` flag) when the classic read is a permission 403. The base reads as unprotected only when ALL THREE hold: the classic read was a permission 403, the rulesets read answered a list with nothing counted, and the flag is the boolean `false`. Every other case, a missing, true or non-boolean flag, an unreadable flag, a failed rules read, a 404, 5xx, rate limit or transport failure on the classic read, still raises `ProtectionUndetermined` and fails closed. `loop.py record review` given the merge line as its detail adds `Why the loop did not merge it: <line>` (one line, at most 400 characters) to the issue note; with no detail the note is unchanged. `docs/cloud-sessions.md`, `skills/sigma-goal/references/land.md` and `skills/sigma-loop/references/landing.md` say so.
+  - **Measured:** offline, `tests/test_protection_cloud_403_2144.py` and one test in `tests/test_merge_reconcile.py`, with a stubbed `api`. Each clause was broken alone (classic must be exactly the permission 403, rules must have answered, flag must be exactly false in two weakened forms and removed) and its own tests went red, then green again. The 403/`[]` reads are the issue reporter's measurement from two cloud sessions.
+  - **Not measured:** a live cloud `--land` run through the fallback to a merged PR; whether `protected: false` is reliable for a base enforced only by a ruleset (the rules read covers it); the agent actually passing the stop line as `record review`'s detail (the docs now say to).
+
 ## 1.0.28 — 2026-11-05 — a blocked goal is freed once its explicit blockers close and a chain asks about it, and a commit-signing outage is reported once in plain words
 
 - **A blocked goal leaves `sdlc:blocked` once its explicit blockers close, and a chain asks about, frees and names a blocked member instead of stopping `claimed` (#2139).**

@@ -5094,6 +5094,29 @@ def _read_rules(api, base):
     return checks, reviews, True, ""
 
 
+#: What `_read_classic` reports for a permission 403 (#2144): a credential that may not read classic protection
+#: at all (a GitHub App or cloud proxy token), which says nothing about the branch.
+_CLASSIC_FORBIDDEN = _failed_read(403, "permission")
+
+
+def _read_branch_flag(api, base):
+    """(protected, why) for `GET branches/<base>` (#2144): `protected` is the bool the reply carries, or None
+    when the reply could not be read or is not an object with a bool `protected`. A non-admin token can read
+    this flag. Never raises; `why` is a fixed phrase, never the failure text."""
+    try:
+        text = api(["api", f"repos/{{owner}}/{{repo}}/branches/{base}"])
+    except Exception as exc:                # noqa: BLE001 - classified, never swallowed
+        return None, _failed_read(*gh_api.classify(exc))
+    try:
+        data = json.loads((text or "").strip())
+    except ValueError:
+        return None, "the reply was not JSON"
+    flag = data.get("protected") if isinstance(data, dict) else None
+    if not isinstance(flag, bool):
+        return None, "the reply carried no boolean `protected`"
+    return flag, ""
+
+
 def protection(sdlc_dir, config, goal, run=None):
     """(enforces_something, detail): `protection_requirements` without the required-check set. Same reads,
     same raise (ProtectionUndetermined); kept for its callers' two-value contract."""
@@ -5140,8 +5163,14 @@ def protection_requirements(sdlc_dir, config, goal, run=None):
     `merge_rights`); (b) measured once, NOT reproduced, with a write-level token lacking admin rights on two
     private repositories on a plan without rulesets: classic read 404 `Not Found`, rules read 403 `Upgrade to
     GitHub Pro or make this repository public to enable this feature.`, `branches/<b>` `.protected` false.
-    UNMEASURED: maintain-level tokens, GitHub Enterprise Server, GitHub App and fine-grained tokens, a cloud
-    session's proxy, the private free-plan CLASSIC 403 body. On a repository whose plan has no rulesets every PR
+    #2144 MEASURED (reported from a cloud session, reproduced from a second one): an App-style token that reads
+    its own `permissions` as admin gets classic HTTP 403 `Resource not accessible by integration`, rules `200 []`.
+    Such a 403 says nothing about the branch, so ONLY when the classic read is that permission 403 AND the rules
+    read answered nothing AND `GET branches/<b>` reads `protected: false` (a bool) is the base unprotected; a
+    missing, true, non-bool or unreadable flag, a failed rules read or any other classic failure still raises.
+    UNMEASURED: maintain-level tokens, GitHub Enterprise Server, fine-grained tokens, whether `protected: false`
+    is reliable for a base enforced only by a ruleset (the rules read is what covers that), the private free-plan
+    CLASSIC 403 body. On a repository whose plan has no rulesets every PR
     under `always` ends at this stop and the only lever is merging by hand (a plan limit cannot be fixed by
     token access).
     RESIDUAL, behaviour unchanged (#984): a rules list that was READ but not UNDERSTOOD is still an answer of
@@ -5165,6 +5194,15 @@ def protection_requirements(sdlc_dir, config, goal, run=None):
            ([f"{reviews} required review{'' if reviews == 1 else 's'}"] if reviews else [])
     if bits:
         return True, f"`{base}` enforces " + " + ".join(bits), frozenset(checks)
+    # #2144: a credential that may not read classic protection (403, MEASURED for a cloud session's token) says
+    # nothing about the base. Fall back to the branch's own `protected` flag, and only when ALL THREE hold: the
+    # classic read was a permission 403, the rulesets read answered (a list, nothing counted above), and the
+    # flag read `false`. Any other combination keeps failing closed below.
+    if c_why == _CLASSIC_FORBIDDEN and r_ok:
+        flag, _ = _read_branch_flag(api, base)
+        if flag is False:
+            return (False, f"`{base}` is not protected — nothing is enforced on merge (the classic read was refused "
+                           "with HTTP 403; rulesets listed nothing and `protected` is false)", frozenset())
     if c_state == "unreadable" or not r_ok:
         said = ("classic branch protection: "
                 + ("none configured" if c_state == "none" else "configured, requires nothing" if c_state == "object"

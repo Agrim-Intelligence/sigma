@@ -273,7 +273,8 @@ records `done` as before only if `work.enabled` is off or it changed nothing; wi
 (docs-only too) or with uncommitted edits and no PR is REFUSED (`work.py pr`, `record review`, or `record parked`).
 
 **`record review`** (exit `2` if `work.enabled` is off or no PR is on record — there is nothing to
-await) flags the goal's work record `awaiting_merge`, moves the card to QC, leaves one note on the
+await; pass the `work.py merge` stop line as its detail, `record review "<that line>"`, and the issue note
+says why the loop did not merge, one line, capped at 400 characters, #2144) flags the goal's work record `awaiting_merge`, moves the card to QC, leaves one note on the
 issue saying why it is still open, ends the claim in the ledger (so the lease sweep never hands the
 goal back to Ready) and **keeps the checkout** — the later `done` releases it. `loop.py next` never
 serves a goal awaiting merge.
