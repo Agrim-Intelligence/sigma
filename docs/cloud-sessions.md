@@ -1356,6 +1356,30 @@ documented `work.py commit` and `sync.py publish` gestures were run as processes
 cloud signer, Windows git, a real ssh or gpg agent. **Not covered:** a pre-flight probe, `work.py`'s own signing
 `git merge` and `git rebase`, and the commit sites in `release_manifest.py`, `decision_store.py` and `sigma-define`.
 
+## The setup wizard in a cloud session (#2143)
+
+A Claude Code cloud session never gets the setup wizard's yes/no question. `hooks/session_start.sh`
+skips the wizard when `CLAUDE_CODE_REMOTE` is `true` or `1` (the check is `setup_wizard.is_cloud_session()`,
+Python; the hook is only the accelerator), exactly as it does for a supervised run (`SIGMA_RUN_ID`): the
+hook stays silent, or emits the policy brief if `session_start.enabled` is on. Two reasons: the container
+is deleted, so a dismissal written to the gitignored `.sdlc/state/setup-wizard-dismissed.json` can never be
+remembered and the question would return every session; and a session started as `/sigma-goal <N> --land`
+has nobody to answer it, while the hook runs before the first prompt. `/sigma-doctor` still lists every
+unresolved item.
+
+A repo can state a deliberate opt-out that holds in any throwaway container (cloud, devcontainer, CI) in
+committed config, read alongside the state file:
+
+```json
+{"setup_wizard": {"dismissed": ["graphify installed"]}}
+```
+
+Only the wizard's own check names count; a missing, malformed or non-list value dismisses nothing, and an
+unknown name does nothing. Not measured: a real cloud session started as `/sigma-goal <N> --land` (the
+hook is tested as a process with the variable set, not inside a container). Not covered: the other
+SessionStart tiers gated on `SIGMA_RUN_ID` (upkeep, north-star, dag, watcher, loop liveness, kg) do not
+read `CLAUDE_CODE_REMOTE`.
+
 ## What this does NOT do
 
 - `read_issue`, `list_issues_gh`, the seven issue write helpers and the six PR read helpers (`view_pr_gh`,

@@ -9,6 +9,11 @@ All notable changes to Sigma are recorded here, newest first.
   - **Measured:** offline, `tests/test_protection_cloud_403_2144.py` and one test in `tests/test_merge_reconcile.py`, with a stubbed `api`. Each clause was broken alone (classic must be exactly the permission 403, rules must have answered, flag must be exactly false in two weakened forms and removed) and its own tests went red, then green again. The 403/`[]` reads are the issue reporter's measurement from two cloud sessions.
   - **Not measured:** a live cloud `--land` run through the fallback to a merged PR; whether `protected: false` is reliable for a base enforced only by a ruleset (the rules read covers it); the agent actually passing the stop line as `record review`'s detail (the docs now say to).
 
+- **A cloud session no longer gets the setup wizard's question, and a repo can decline a check in committed config (#2143).**
+  - **What changed.** `hooks/session_start.sh` skips the wizard when `CLAUDE_CODE_REMOTE` is `true` or `1` (new `setup_wizard.is_cloud_session()`), the same fall-through as a supervised run: silent, or the policy brief if enabled. `/sigma-doctor` still lists every item. `.sdlc/config.json` takes `setup_wizard.dismissed`, a list of wizard check names, read alongside the gitignored state file by `wizard_status()` (new `read_committed_dismissed()`); a malformed value dismisses nothing. Docs: `docs/cloud-sessions.md`, `docs/configuration.md`, the `sigma-wizard` skill.
+  - **Measured:** offline, the real hook run as a process with and without the variable (control: the same fixture asks without it); the cloud skip, the committed list (with and without the state file) and the unit parsers were each broken on their own and seen red.
+  - **Not measured:** a real cloud session started as `/sigma-goal <N> --land`. **Not covered:** the other SessionStart tiers gated on `SIGMA_RUN_ID` do not read `CLAUDE_CODE_REMOTE`.
+
 ## 1.0.28 — 2026-11-05 — a blocked goal is freed once its explicit blockers close and a chain asks about it, and a commit-signing outage is reported once in plain words
 
 - **A blocked goal leaves `sdlc:blocked` once its explicit blockers close, and a chain asks about, frees and names a blocked member instead of stopping `claimed` (#2139).**

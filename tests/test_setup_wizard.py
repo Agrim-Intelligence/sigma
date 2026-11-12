@@ -419,3 +419,25 @@ def test_236_the_interrupted_scaffold_fix_uses_the_shared_python_and_quoting(mon
         assert f'"{spaced}" .' in fix, fix
     monkeypatch.setattr(shutil, "which", lambda name: "/x/python" if name == "python" else None)
     assert "Codex/Cursor: python " in setup_wizard._interrupted_step()["fix"]
+
+
+# --- #2143 -------------------------------------------------------------------------------------
+
+def test_is_cloud_session_reads_only_true_or_1():
+    assert setup_wizard.is_cloud_session({"CLAUDE_CODE_REMOTE": "true"})
+    assert setup_wizard.is_cloud_session({"CLAUDE_CODE_REMOTE": " 1 "})
+    for env in ({}, {"CLAUDE_CODE_REMOTE": ""}, {"CLAUDE_CODE_REMOTE": "0"},
+                {"CLAUDE_CODE_REMOTE": "false"}, {"CLAUDE_CODE_REMOTE": "yes"}):
+        assert not setup_wizard.is_cloud_session(env)
+
+
+def test_committed_dismissal_reads_and_never_raises(tmp_path):
+    d = tmp_path / ".sdlc"
+    d.mkdir()
+    assert setup_wizard.read_committed_dismissed(d) == set()           # no config
+    (d / "config.json").write_text("{not json")
+    assert setup_wizard.read_committed_dismissed(d) == set()
+    (d / "config.json").write_text('{"setup_wizard": {"dismissed": ["gh auth", 3, null]}}')
+    assert setup_wizard.read_committed_dismissed(d) == {"gh auth"}
+    (d / "config.json").write_text('{"setup_wizard": []}')
+    assert setup_wizard.read_committed_dismissed(d) == set()

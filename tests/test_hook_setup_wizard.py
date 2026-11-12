@@ -283,3 +283,64 @@ def test_236_an_interrupted_sigma_scaffold_gets_the_init_nudge(tmp_path):
     ctx = _ctx(_run_hook(tmp_path))
     assert "sigma-wizard" in ctx and "sigma-init" in ctx, ctx
     assert sorted(str(p.relative_to(tmp_path)) for p in tmp_path.rglob("*")) == before
+
+
+# --- #2143: a cloud session never gets the wizard question; a committed opt-out is honoured -------
+
+def _kg_repo(tmp_path, extra=None):
+    sdlc = tmp_path / ".sdlc"
+    sdlc.mkdir()
+    cfg = {"knowledge_graph": {"enabled": True, "builder": "graphify"}, **(extra or {})}
+    (sdlc / "config.json").write_text(json.dumps(cfg))
+    return sdlc
+
+
+@pytest.mark.parametrize("value", ["true", "1", "TRUE"])
+def test_cloud_session_gets_no_wizard_question(tmp_path, value):
+    """CONTROL first: the same fixture without the variable DOES ask, so the silence below is the
+    guard working and not an empty fixture."""
+    _kg_repo(tmp_path)
+    shim = _shimmed_graphify(tmp_path)
+    assert "sigma-wizard" in _ctx(_run_hook(tmp_path, path_prefix=shim))
+    p = _run_hook(tmp_path, path_prefix=shim, CLAUDE_CODE_REMOTE=value)
+    assert p.returncode == 0, p.stderr
+    assert "sigma-wizard" not in _ctx(p)
+    assert "graphify installed" not in _ctx(p)
+
+
+@pytest.mark.parametrize("value", ["", "false", "0"])
+def test_a_non_cloud_value_still_asks(tmp_path, value):
+    _kg_repo(tmp_path)
+    p = _run_hook(tmp_path, path_prefix=_shimmed_graphify(tmp_path), CLAUDE_CODE_REMOTE=value)
+    assert "sigma-wizard" in _ctx(p)
+
+
+def test_cloud_session_still_gets_the_policy_brief(tmp_path):
+    """Same fall-through as a supervised run: the brief block runs exactly as it always has."""
+    _kg_repo(tmp_path, {"session_start": {"enabled": True}})
+    shim = _shimmed_graphify(tmp_path)
+    cloud = _ctx(_run_hook(tmp_path, path_prefix=shim, CLAUDE_CODE_REMOTE="true"))
+    headless = _ctx(_run_hook(tmp_path, path_prefix=shim, SIGMA_RUN_ID="r"))
+    assert "reviewer should not be the author" in cloud
+    assert "sigma-wizard" not in cloud
+    assert cloud == headless
+
+
+@pytest.mark.parametrize("with_state_file", [False, True], ids=["no-state-file", "state-file"])
+def test_a_committed_dismissal_is_not_reported(tmp_path, with_state_file):
+    sdlc = _kg_repo(tmp_path)
+    shim = _shimmed_graphify(tmp_path)
+    assert "graphify installed" in _ctx(_run_hook(tmp_path, path_prefix=shim))      # control
+    (sdlc / "config.json").write_text(json.dumps({
+        "knowledge_graph": {"enabled": True, "builder": "graphify"},
+        "setup_wizard": {"dismissed": ["graphify installed"]}}))
+    if with_state_file:
+        (sdlc / "state").mkdir(exist_ok=True)
+        (sdlc / "state" / "setup-wizard-dismissed.json").write_text("[]")
+    assert "graphify installed" not in _ctx(_run_hook(tmp_path, path_prefix=shim))
+
+
+@pytest.mark.parametrize("bad", ["graphify installed", 7, None, {"x": 1}, [None, 3]])
+def test_a_malformed_committed_dismissal_dismisses_nothing(tmp_path, bad):
+    _kg_repo(tmp_path, {"setup_wizard": {"dismissed": bad}})
+    assert "graphify installed" in _ctx(_run_hook(tmp_path, path_prefix=_shimmed_graphify(tmp_path)))

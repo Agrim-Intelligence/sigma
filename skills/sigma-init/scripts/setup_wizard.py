@@ -21,6 +21,7 @@ stays unresolved. This is not optional decoration; per this session's explicit p
 requirement, no fallback may be presented without stating its cost in the same breath.
 """
 import json
+import os
 import pathlib
 import time
 
@@ -134,6 +135,38 @@ def read_dismissed(sdlc_dir):
         return set(data) if isinstance(data, list) else set()
     except (OSError, ValueError):
         return set()
+
+
+def is_cloud_session(env=None):
+    """#2143: is this a Claude Code cloud session (`CLAUDE_CODE_REMOTE` true or 1, any case)? The
+    container is thrown away, so a dismissal written to `.sdlc/state/` could never be remembered
+    and the question would return every session; and a session started unattended has nobody to
+    answer it. The SessionStart hook treats it like a supervised run: no wizard question.
+    `/sigma-doctor` still reports every unresolved item. Never raises."""
+    try:
+        value = (os.environ if env is None else env).get("CLAUDE_CODE_REMOTE", "")
+        return str(value).strip().lower() in ("true", "1")
+    except Exception:
+        return False
+
+
+def read_committed_dismissed(sdlc_dir):
+    """#2143: a repo's deliberate, COMMITTED opt-out: `.sdlc/config.json` ->
+    `{"setup_wizard": {"dismissed": ["graphify installed"]}}`. Read alongside the gitignored state
+    file, so it holds in any throwaway container (cloud, devcontainer, CI). Never raises: a
+    missing, unreadable or malformed config, or a non-list value, reads as nothing dismissed;
+    non-string entries are dropped."""
+    try:
+        cfg = json.loads((pathlib.Path(sdlc_dir) / "config.json").read_text(encoding="utf-8"))
+        names = cfg["setup_wizard"]["dismissed"]
+        return {n for n in names if isinstance(n, str)} if isinstance(names, list) else set()
+    except (OSError, ValueError, KeyError, TypeError):
+        return set()
+
+
+def _effective_dismissed(sdlc_dir):
+    """The state file's names plus the committed list: what `wizard_status` honours."""
+    return read_dismissed(sdlc_dir) | read_committed_dismissed(sdlc_dir)
 
 
 def _adopted(sdlc_dir):
@@ -328,7 +361,7 @@ def wizard_status(sdlc_dir, run=None, dismissed=None, allow_cache=True, now=None
     now = now if now is not None else time.time()
     if not adopted_by_sigma(sdlc_dir):
         if sigma_scaffold_interrupted(sdlc_dir) and "project layer" not in (
-                read_dismissed(sdlc_dir) if dismissed is None else dismissed):
+                _effective_dismissed(sdlc_dir) if dismissed is None else dismissed):
             mode, degraded = _classify("project layer")
             return {"needs_wizard": True, "steps": [dict(_interrupted_step(), mode=mode, degraded=degraded)]}
         return {"needs_wizard": False, "steps": []}      # #186: not adopted -> say nothing
@@ -346,11 +379,11 @@ def wizard_status(sdlc_dir, run=None, dismissed=None, allow_cache=True, now=None
         if (isinstance(until, (int, float)) and not isinstance(until, bool)
                 and 0 <= (now - cached["checked_at"]) and now < until):
             if dismissed is None:
-                dismissed = read_dismissed(sdlc_dir)
+                dismissed = _effective_dismissed(sdlc_dir)
             return _transient_result(dismissed)
 
     if dismissed is None:
-        dismissed = read_dismissed(sdlc_dir)
+        dismissed = _effective_dismissed(sdlc_dir)
     checks = _doctor_check(sdlc_dir=sdlc_dir, run=run)
     if _only_auth_failing(checks):
         checks = _doctor_check(sdlc_dir=sdlc_dir, run=run)      # #1334: one retry of a blip
