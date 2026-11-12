@@ -4,6 +4,11 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **A committed `setup_wizard.dismissed` can no longer silence a setup-critical check, and session start says how many checks it declined (#2152).**
+  - **What changed.** New `setup_wizard.SETUP_CRITICAL` (`project layer`, `gh installed`, `gh auth`, `verify command present (enforce is on)`): a committed entry for one is ignored, the question still shows, and `wizard_status()` returns `ignored_committed` naming it (the hook prints it). `gh project scope`, the two board-state rows and `graphify installed` stay declinable; the per-user state-file dismissal is unchanged. `committed_dismissal_notice()` (also `python3 skills/sigma-init/scripts/setup_wizard.py notice .sdlc`) gives one line when a committed list declined at least one check or had an entry ignored, and nothing otherwise; `hooks/session_start.sh` only relays it, also in a cloud session. Docs: `docs/configuration.md`, `docs/cloud-sessions.md`, the `sigma-wizard` skill.
+  - **Measured:** offline, unit tests plus the real hook run as a process; each clause (each critical name, the state-file path, the ignored key, each half of the notice, the empty case, the hook tier and its ignored line) was broken on its own and seen red.
+  - **Not measured:** a real cloud session; a live repo with a committed list.
+
 ## 1.0.29 — 2026-11-13 — a cloud session no longer gets the setup wizard question, a protection 403 falls back to the branch flag, and /sigma-orchestrate plans a batch in waves
 
 - **`/sigma-orchestrate` runs a batch of goals as parallel `--land` sessions in dependency waves (#2145).**

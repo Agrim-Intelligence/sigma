@@ -187,6 +187,21 @@ if [ -z "${SIGMA_RUN_ID:-}" ] && [ -f "$PROJECT/.sdlc/config.json" ]; then
         fi
     fi
 fi
+# --- Committed setup-wizard opt-out (#2152) -----------------------------------------------------
+# ACCELERATOR only: the line and the rule live in setup_wizard.py (`committed_dismissal_notice`, also
+# `python3 setup_wizard.py notice <sdlc>`), so a host without hooks asks the same. Silent when the
+# committed `setup_wizard.dismissed` list declines nothing and ignores nothing. Also shown in a cloud
+# session, where the list is the only opt-out that holds. Rides with the notices above.
+if [ -z "${SIGMA_RUN_ID:-}" ] && [ -f "$PROJECT/.sdlc/config.json" ]; then
+    HOOK_WZ_LINE="$(python3 "$PLUGIN_ROOT/skills/sigma-init/scripts/setup_wizard.py" notice "$PROJECT/.sdlc" 2>/dev/null)" || HOOK_WZ_LINE=""
+    if [ -n "$HOOK_WZ_LINE" ]; then
+        if [ -n "$HOOK_COEXIST_NOTICE" ]; then
+            HOOK_COEXIST_NOTICE="$HOOK_COEXIST_NOTICE"$'\n\n'"$HOOK_WZ_LINE"
+        else
+            HOOK_COEXIST_NOTICE="$HOOK_WZ_LINE"
+        fi
+    fi
+fi
 export HOOK_COEXIST_NOTICE
 
 # --- Guided setup wizard (issue #1560) ---------------------------------------------------------
@@ -247,6 +262,9 @@ lines = ["Sigma setup is incomplete. Run the sigma-wizard skill now, conversatio
          "(never assume an action worked), and on 'no' persist the skip via "
          "setup_wizard.write_dismissed() -- a dismissed check is never asked about again until "
          "someone edits or removes .sdlc/state/setup-wizard-dismissed.json."]
+if status.get("ignored_committed"):                # #2152: a committed list cannot decline these
+    lines.append("Ignored: the committed setup_wizard.dismissed list names setup-critical "
+                 "check(s) that stay in force: " + ", ".join(status["ignored_committed"]))
 for step in status["steps"]:
     lines.append(f"- [{step['mode']}] {step['name']}: {step['fix']} "
                  f"-- if skipped: {step['degraded']}")
