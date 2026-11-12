@@ -60,7 +60,7 @@ def test_a_bullet_before_the_marker_is_not_an_item():
     assert items_of(ITEM + "\n" + M) == []
 
 
-def test_prose_and_non_bullets_after_the_marker_are_ignored_not_rejected():
+def test_plain_prose_after_the_marker_is_ignored_not_rejected():
     assert deferred.parse_body(M + "\nthree follow-ups below\n\n" + ITEM + "\nthanks") == (items_of(M + "\n" + ITEM), [])
 
 
@@ -237,6 +237,45 @@ def test_cli_bad_input_exits_two():
         assert _run("parse", path).returncode == 2
 
 
+@pytest.mark.parametrize("line", [
+    "1. [area:api] tidy it - dup (files: a.py)",
+    "2) [area:api] tidy it - dup (files: a.py)",
+    "+ [area:api] tidy it - dup (files: a.py)",
+    "-[area:api] tidy it - dup (files: a.py)",
+    "*[area:api] tidy it - dup (files: a.py)",
+    "[area:api] tidy it - dup (files: a.py)",
+    "\u2022 [area:api] tidy it - dup (files: a.py)",
+])
+def test_a_list_line_that_is_not_a_dash_or_star_bullet_is_rejected_not_skipped(line):
+    items, rejected = deferred.parse_body(M + "\n" + ITEM + "\n" + line)
+    assert len(items) == 1 and len(rejected) == 1
+    assert rejected[0]["line"] == line and "- " in rejected[0]["reason"]
+
+
+def test_each_alternative_of_the_list_like_test_is_its_own_case():
+    """Numbered `1.` and `1)`, `+`, a leader glued to `[`, a bare `[area:` and a unicode dot are separate clauses."""
+    for line in ("3. x", "3) x", "+ x", "-[x", "\u2022 x", "[area:x] y"):
+        assert deferred.parse_body(M + "\n" + line)[1], line
+
+
+@pytest.mark.parametrize("line", ["-5 degrees is the limit", "1.5 times as slow", "a - b", "+1 from me", "Done."])
+def test_prose_that_only_resembles_a_marker_of_a_list_is_still_ignored(line):
+    assert deferred.parse_body(M + "\n" + line) == ([], [])
+
+
+def test_a_rejected_list_line_inside_a_fence_or_quote_or_before_the_marker_is_not_read():
+    assert deferred.parse_body("1. x\n" + M + "\n```\n1. x\n```\n> 1. x") == ([], [])
+
+
+def test_cli_check_exits_nonzero_for_a_numbered_item_next_to_a_valid_bullet():
+    with tempfile.TemporaryDirectory() as t:
+        path = os.path.join(t, "b")
+        with open(path, "w") as fh:
+            fh.write(M + "\n" + ITEM + "\n2. [area:api] second - why (files: none)\n")
+        r = _run("check", path)
+    assert r.returncode == 1 and len(json.loads(r.stdout)["rejected"]) == 1
+
+
 # CONTROLS (#2153), each break applied alone to deferred.py and its named test seen red:
 #   trust: TRUSTED widened / the association test dropped (test_an_untrusted_association_..., ..._no_association_field_...)
 #   marker: required-marker test dropped (test_no_marker_means_no_items...); fence skip dropped
@@ -248,3 +287,6 @@ def test_cli_bad_input_exits_two():
 #   files: absolute, `..` segment, backslash, control, empty-element checks each dropped (the unsafe-path cases);
 #     `..` as a substring instead of a segment (test_a_dot_dot_inside_a_name...)
 #   bounds: line, field, files, items, rejected (their own tests); dedup (test_items_from_several_comments_...)
+# CONTROLS (#2157), each applied alone to deferred.py, its tests seen red: the numbered `1.` and `1)` alternatives
+#   (separately), the `+` leader, the leader-glued-to-`[` branch, the unicode-dot leader, the bare `[area:` branch,
+#   the reject-instead-of-skip branch, and `check`'s exit rule loosened to ignore rejections.

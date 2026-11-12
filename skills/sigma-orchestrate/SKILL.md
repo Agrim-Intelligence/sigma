@@ -46,7 +46,7 @@ machine's memory and disk are the limit there, not GitHub. Say so on the go-ahea
   `.sdlc/config.json`, and the person's notes for this project before step 2. Areas, iteration rules, model
   policy, merge method, branch rules, single-writer files and "never" lists bind you exactly as they bind a
   goal session. The exception is follow-ups, which depend on the project's `followups.mode`
-  (`handoff.py followup-mode .sdlc`, [follow-ups](references/follow-ups.md)): `in-goal` means the project
+  (`handoff.py followup-mode "$S"`, [follow-ups](references/follow-ups.md)): `in-goal` means the project
   already decided it, so nothing is replaced; `file` (the default) means that for goals in this batch the
   person's standing decision replaces the project's own rule for filing follow-up issues. Name the project
   rules it replaces on the go-ahead screen.
@@ -60,14 +60,21 @@ machine's memory and disk are the limit there, not GitHub. Say so on the go-ahea
   PRs, comments, commits) and the tracker, never only from session messages.
 - **REST for every GitHub read and write** (`gh api ...`): it works on every host, including cloud sessions,
   where GraphQL is unavailable, so the issue and pull-request list and view subcommands of `gh` do not work.
-- **Writes wait for the go-ahead.** Steps 1-5 only read; their working files go in a scratch directory.
-  `--dry-run` stops at step 5.
+- **Writes wait for the go-ahead.** Steps 1-5 only read GitHub and the repository; their working files go in a
+  scratch directory. `--dry-run` stops at step 5. "Read-only" does not cover the kit's own call counter: the
+  scripts still append to `.sdlc/state/gh-calls.jsonl` (git-ignored local state) for each GitHub call they make.
 - **Talk to the person the way their instructions say** (plain words, outcome first). The tables below are
   for your tracker; the person gets the short version.
 
 Paths used below (`<o>/<r>` is the repository's owner/name; every kit script is spelled in full with
 `${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/`, this skill's own with `${CLAUDE_SKILL_DIR}/scripts/`):
 
+- `S` is the project's `.sdlc` directory **as a path**, the second argument of most kit scripts (`deps.py`,
+  `promote.py`, `goal_cost.py`, `loop.py`, `unpark.py`, `handoff.py` take it positionally; `dag.py` takes
+  `--sdlc "$S"`). `.sdlc/*` is git-ignored, so a worktree or a fresh clone has no config of its own: set `S`
+  to the main checkout's directory with
+  `S="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)/.sdlc"` (in the main checkout this is just `./.sdlc`).
+  Without it, `deps.py` ends in a `ConfigMissing` traceback and `dag.py` exits 3 "map unusable (missing)".
 - `T` is the tracker directory from step 6 on: `.sdlc/state/orchestrate/<batch>` holding `goals.json`,
   `state.json`, `tracker.md` and `launches.jsonl`.
 
@@ -77,8 +84,9 @@ Before step 6, `goals.json` lives in a scratch directory (the session's scratchp
 
 Stop with one plain sentence when any of these fails:
 
-1. A git repository with a GitHub remote, and `.sdlc/config.json` present. No Sigma, no run: "this works in
-   Sigma Loop projects only".
+1. A git repository with a GitHub remote, and `"$S/config.json"` present (`S` as defined above: from a
+   worktree it is the main checkout's `.sdlc`, because the worktree has none of its own). No config at
+   either place, no run: "this works in Sigma Loop projects only".
 2. The kit's scripts resolve: `${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py` exists. A plugin copy that
    lacks it is too old or broken: say so and point at `/sigma-doctor`.
 3. `/sigma-goal --land` can end merged here: `discovery.source` is `github`, `work.enabled` is true,
@@ -108,8 +116,8 @@ Turn the input into issue numbers:
 - A GitHub search: `gh api -X GET search/issues -f q="repo:<o>/<r> is:issue is:open <query>" -f per_page=100 --paginate --jq '.items[].number'`
   (the search API stops at 1000 results; say so if it hits that).
 - A description: translate it into a search or a computed set and show the translation — "everything
-  blocking #N" is `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/dag.py" chain N --json --verify` (exit 2 goal not in the map, 3 map
-  unusable, 4 map mode off: use `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/deps.py" report .sdlc --chain N`); "children of epic #N" is
+  blocking #N" is `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/dag.py" chain N --json --verify --sdlc "$S"` (exit 2 goal not in the map, 3 map
+  unusable, 4 map mode off: use `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/deps.py" report "$S" --chain N`); "children of epic #N" is
   `gh api repos/<o>/<r>/issues/N/sub_issues --paginate`.
 
 An epic, or an issue labelled `needs-decomposition`, is replaced by its open sub-issues (say so); one with
@@ -119,13 +127,34 @@ Classify every number (`gh api repos/<o>/<r>/issues/N` each):
 
 | Class | When | Goes to |
 |---|---|---|
-| in scope | open, agent-ready by the project's definition, current iteration, ours to run | the batch |
+| in scope | open, agent-ready (below), current iteration, ours to run | the batch |
 | closed | closed | excluded |
-| held by another run | `sdlc:in-progress`, or a live claim, that this batch did not create | excluded |
+| held by another run | `sdlc:in-progress`, a live claim, or an open pull request that links the issue (below), that this batch did not create | excluded |
 | parked or blocked | `sdlc:parked` or `sdlc:blocked` | needs-you with its reason — unless it waits only on a blocker inside the batch: then in scope, waiting until that blocker lands |
 | later iteration | the project's iteration rule puts it later | excluded |
 | person's gate | an approval or release check meant for people (project rules) | excluded |
-| not ready | missing what the project's definition of agent-ready needs, or assigned to another account | needs-you, naming what is missing |
+| upper tier or not a goal | carries `story`, `epic`, `dossier` or `spec`, or `promote.py` says it is not a goal (below) | needs-you: "slice it into goals first" |
+| not ready | not agent-ready (below), or assigned to another account | needs-you, naming what is missing |
+
+**Agent-ready** means all of: the issue carries `sdlc:goal` or can be given it (`promote.py apply --dry-run`
+below does not refuse it); it is not an upper tier (`story`, `epic`, `dossier`, `spec`) and not an issue
+filed only for triage; and its body says how to tell it is done (an acceptance or "done when" section or
+checklist). A project's own definition in its `CLAUDE.md` adds to this and never relaxes it.
+
+**Classification probe.** Before the go-ahead, run, for each number still in scope,
+`python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/promote.py" apply "$S" <N> --dry-run`. It only reads and prints what
+promotion would do: a line such as "an upper tier (story), not a goal" or a refusal for a parked, blocked or
+unit-held goal moves the issue to the matching row above, with that line as the reason. An issue that already carries
+`sdlc:goal` and is armed is not a refusal. This is the same command [launch](references/launch.md#just-before-a-launch)
+runs again right before a launch; running it here keeps a story out of the plan and off the go-ahead screen.
+
+**Open pull requests.** An open pull request with no `sdlc:in-progress` label and no claim file still means the
+work is in flight, on any branch name. For each in-scope issue read
+`gh api repos/<o>/<r>/issues/N/timeline --paginate --jq '.[] | select(.event=="cross-referenced") | select(.source.issue.pull_request != null and .source.issue.state=="open") | .source.issue.number'`,
+then read each of those pull requests' bodies and keep the ones with a closing reference to the issue
+(`closes`, `fixes` or `resolves`, with an optional colon, then `#N` or the issue's URL). A match is held by
+another run: excluded, or, when the person keeps it in the batch, put into the goal's `open_prs` in `goals.json` so
+`waves.py` holds it and everything waiting on it. A mere mention is not a link.
 
 **Acknowledge** to the person: how many you were given, how many are in scope, and each exclusion with its
 reason in one line.
@@ -136,13 +165,17 @@ For each in-scope goal gather one `goals.json` row (schema at the top of `${CLAU
 
 - `priority` from its `priority:*` label; `base` = `feature/<unit>` from its `feature:<unit>` label, else
   `work.base`.
-- Dependencies: `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/deps.py" report .sdlc <N>` lists every `#ref` in the title, body and
+- Dependencies: `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/deps.py" report "$S" <N>` lists every `#ref` in the title, body and
   comments and how Sigma reads it; it does not say whether a ref is open. Read each one: an open blocker
   inside the batch goes in `blockers`, one outside in `external_blockers`. A real prose dependency that is
   unmarked is noted for `deps.py mark` in step 6 (`mark` is a write).
 - `claims`: the files, directories and contracts the goal will touch (its "may touch", scope, named paths),
-  plus any single-writer file the project lists **that this goal will change**. Nothing named: use its
-  `area:*` directories from CODEOWNERS. Nothing at all: `["*"]` — it runs alone.
+  plus any hot shared file **that this goal will change**: a single-writer file the project lists, or, with
+  no such list, the files most goals end up editing (a registry, a lockfile, a changelog, a shared
+  configuration or schema file, a central index) when the goal's text names one. Nothing named: use its
+  `area:*` directories from CODEOWNERS. When CODEOWNERS has no area mapping and the project lists no single-writer
+  files, use the paths the goal's own text mentions; with none of those either, `["*"]` — it runs alone. Say on the
+  go-ahead screen which goals fell back to `*` or to their own file mentions, because that is what limits parallelism.
 - Model signals and needs-a-person signals ([launch § model](references/launch.md#model)).
 
 For more than ~15 goals, hand batches of 10-15 numbers to read-only subagents that return exactly these
@@ -167,7 +200,9 @@ Show the person, briefly:
 - held, cross-base and needs-you items, each with what would release it;
 - seats (the limit, or "no limit"), where, models (how many on Opus and why — or "the cloud environment's
   model" where the launcher cannot choose), merging on or off, and a cost line from
-  `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/goal_cost.py" report .sdlc` when it has data;
+  `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/goal_cost.py" report "$S"`, keeping only the rows of
+  this batch's goals: when it has none for them (it also prints unrelated goals, or "not measured"), the line says
+  "no data for these goals";
 - the follow-up rule in one line — "follow-up work stays in its goal: found before the goal's first green
   full verify, it joins that goal; found later, it is grouped into one clean-up goal per unit and area at
   the end of each wave" — and which it is: the project's own setting (`followups.mode: in-goal`), or, with the
@@ -183,7 +218,7 @@ nothing written.
    (already there: reuse it) and add it to every in-scope goal, held ones included
    (`gh api repos/<o>/<r>/issues/N/labels -f "labels[]=orchestrate:<batch>"`).
 2. Mark the real prose dependencies from step 3, while their blockers are still open:
-   `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/deps.py" mark .sdlc <N> <ref> "<reason>"`. This is what keeps other loops on the
+   `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/deps.py" mark "$S" <N> <ref> "<reason>"`. This is what keeps other loops on the
    same account from taking an already-labelled goal before its blocker lands. `mark` refuses a goal with no
    Sigma label and a reference that is not open; skip those (the batch's own ordering still holds them).
 3. Move `goals.json` into `$T`; write `$T/state.json` (`{}`) and `$T/tracker.md`.

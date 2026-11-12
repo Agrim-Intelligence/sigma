@@ -32,18 +32,25 @@ unblocking, stuck sessions, the tracker, the final report) and `references/follo
    are reported as warnings.
 2. **Resolve and acknowledge.** Numbers as given, a GitHub search, or a description translated into a search or a
    dependency chain. Epics and `needs-decomposition` issues become their open sub-issues. Each number is classed
-   in scope, closed, held by another run, parked, later iteration, a person's gate or not ready, and every
-   exclusion is told to the person with its reason.
+   in scope, closed, held by another run (a label, a claim, or an open pull request that links the issue on any
+   branch), an upper tier or not a goal, parked, later iteration, a person's gate or not ready, and every
+   exclusion is told to the person with its reason. `promote.py apply --dry-run` is the classification probe that
+   catches a story or another non-goal before the go-ahead. Agent-ready means: carries or can carry `sdlc:goal`, not
+   an upper tier, and its body says how to tell it is done.
+   Every script call spells the sdlc directory as a path, `"$S"` (`dag.py` takes `--sdlc "$S"`); from a worktree that
+   is the main checkout's `.sdlc`, because `.sdlc/*` is git-ignored and a worktree has no config.
 3. **Facts per goal (read only).** Priority, base (`feature/<unit>`, else `work.base`), blockers inside and
-   outside the batch (`deps.py report`), file and contract claims plus the single-writer files the goal will
-   change (the area's directories if none are named, else `*`, which runs alone), and model signals.
+   outside the batch (`deps.py report`), file and contract claims plus the hot shared files the goal will
+   change (a project's single-writer list, or a registry, lockfile, changelog or shared schema the goal names; the
+   area's directories if none are named; with no CODEOWNERS area mapping, the goal's own file mentions; else `*`,
+   which runs alone, and the go-ahead screen says which goals fell back), and model signals.
 4. **Waves.** `skills/sigma-orchestrate/scripts/waves.py plan` groups goals into waves. A wave is a set of goals
    that can run at the same time: every in-batch blocker sits in an earlier wave and no two share a claim. Rank is
    priority, then how many in-batch goals wait on it, then issue number. A goal with an outside blocker, a cycle
-   or a hold of its own is held, and so is every goal that waits on one. Width comes from the dependency
+   or a hold of its own (a reason, or `open_prs` in the goal's row) is held, and so is every goal that waits on one. Width comes from the dependency
    structure: with no `--max-seats`, every ready goal runs at once.
 5. **One go-ahead.** Waves, held and needs-you items, seats, where, model mix, merging on or off, a cost line from
-   `goal_cost.py report`, and the follow-up rule with the project rules it replaces. `--dry-run` ends here.
+   `goal_cost.py report` (or "no data for these goals"), and the follow-up rule with the project rules it replaces. `--dry-run` ends here.
 6. **Start.** The batch label `orchestrate:<batch>` and the confirmed prose dependencies (`deps.py mark`). Each goal is
    promoted with `promote.py apply` right before its own launch, so other loops cannot take it early.
 7. **Run, rolling.** `waves.py ready` lists what may start now: every blocker has merged into the goal's own base
@@ -96,8 +103,9 @@ python3 skills/sigma-orchestrate/scripts/deferred.py check <body-file>       # a
 
 Standard library only, no network, no writes. A comment counts only from an `OWNER`, `MEMBER` or `COLLABORATOR` (on a
 public repository anyone can paste the marker); the marker `<!-- sigma-orchestrate:deferred -->` must stand on a line
-that is not quoted or fenced; bullets before it are not items; and a bullet after it that does not read
-`- [area:<area>] <what> - <why> (files: <paths>)` is listed under `rejected` with its reason, never dropped. `what` ends
+that is not quoted or fenced; bullets before it are not items; plain prose after it is ignored; and a bullet after it
+that does not read `- [area:<area>] <what> - <why> (files: <paths>)`, including a list-shaped line that does not start
+`- ` or `* ` (a numbered item, `+ [area:...]`, `-[area:...]`), is listed under `rejected` with its reason, never dropped. `what` ends
 at the first spaced hyphen. An absolute path, a `..` segment, a backslash or a control character rejects the item;
 identical items collapse; line, field, file-count and item-count bounds are at the top of the script. `parse` exits 0
 with rejections listed, `check` exits 0 only for a clean, non-empty draft, and 2 is bad input. Tests:
@@ -121,6 +129,10 @@ says so. Every GitHub read and write is REST (`gh api`), which works in cloud se
 
 ## What is not here yet
 
+- The validation of 13 Nov ran steps 1 to 5 for real, read-only, which found the defects fixed under #2157; the
+  re-run is in that issue's pull request. Launch, merge checks, the wake loop, the follow-up filing path,
+  cloud-burst checks and a multi-wave plan from real data are still not exercised, and the open-pull-request
+  lookup is described in prose, not scripted.
 - No real batch has been run end to end with this skill. The planner, the deferred-items parser, the follow-up setting
   and the head-naming approve are tested offline; the launchers, the merge checks and the wake loop have not been
   exercised on a live repository, and neither has the setting against a real phase subagent's behaviour.

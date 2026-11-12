@@ -9,7 +9,8 @@ The format is written in `references/follow-ups.md`: one comment on the goal's i
 Standard library only; makes no network call and writes nothing. Tests: tests/test_orchestrate_deferred.py.
 
   deferred.py parse <comments.json>     comments as `gh api .../issues/<n>/comments` returns them; prints JSON
-  deferred.py check <body-file>         a draft comment body; exit 0 only when every bullet after the marker parses
+  deferred.py check <body-file>         a draft comment body; exit 0 only when at least one item parses and nothing is
+                                        rejected (a malformed bullet and a list line that is not a `- `/`* ` bullet both fail it)
 
 `parse` prints {"items": [{"area", "what", "why", "files": [..]}], "rejected": [{"comment", "line", "reason"}]},
 the shape `follow-ups.md` stores under a goal's `"deferred"` key. It exits 0 even when something was rejected: the
@@ -21,7 +22,9 @@ Rules (each has a test):
     string, or any other association is rejected, never read.
   * The marker must stand on a line that is not `>`-quoted and not inside a code fence (a marker shown as a
     sample is documentation). It may sit anywhere on its line (the host may wrap the text). Only bullets
-    AFTER the marker line count; prose and bullets that do not start `- ` or `* ` are ignored.
+    AFTER the marker line count; plain prose is ignored. A list-shaped line that does not start `- ` or `* `
+    (a numbered item, `+ [area:...]`, `-[area:...]`, a bare `[area:...]`, a unicode-dot bullet) is REJECTED with
+    a reason, never skipped (#2157).
   * A bullet after the marker that does not match the grammar is REJECTED with a reason, never dropped.
   * `<what>` is the text up to the first space-hyphen-space, `<why>` is the rest up to ` (files: `; a `what`
     containing a spaced hyphen is therefore read as a shorter `what` and a longer `why` (named, not detected).
@@ -40,6 +43,10 @@ TRUSTED = ("OWNER", "MEMBER", "COLLABORATOR")
 MAX_LINE, MAX_FIELD, MAX_FILES, MAX_ITEMS, MAX_REJECTED = 1000, 500, 50, 200, 50
 _BULLET = re.compile(r"^\s*[-*]\s+")
 _ITEM = re.compile(r"^\s*[-*]\s+\[area:([A-Za-z0-9][A-Za-z0-9._/-]*)\]\s+(.+?) - (.+) \(files:\s*([^()]*)\)\s*$")
+# A line that is shaped like a list item but is not a `- ` / `* ` bullet: a numbered item (`1.`, `1)`), a `+` or
+# unicode-dot bullet, a leader glued to `[` (`-[area:x]`), or a bare `[area:` line. Rejected with a reason, never
+# skipped: a person who wrote it meant it as an item (#2157). Prose such as `-5 degrees` or `1.5 times` is not one.
+_LISTLIKE = re.compile(r"^\s*(?:[-*+\u2022](?:\s|\[)|\d+[.)]\s|\[area:)")
 _BAD_PATH = re.compile(r"[\\\x00-\x1f\x7f]")
 
 
@@ -95,6 +102,9 @@ def parse_body(body):
             seen_marker = MARKER in line
             continue
         if not _BULLET.match(line):
+            if _LISTLIKE.match(line):
+                rejected.append({"line": line.strip()[:120],
+                                 "reason": "a list line must start with `- ` or `* ` (`- [area:<area>] <what> - <why> (files: <paths>)`)"})
             continue
         if len(items) >= MAX_ITEMS:
             rejected.append({"line": line.strip()[:120], "reason": "more than %d items in one comment" % MAX_ITEMS})

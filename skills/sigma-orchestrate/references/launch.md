@@ -51,7 +51,7 @@ Sigma's own burst guidance ([sigma-goal/cloud-burst.md](../../sigma-goal/referen
 launch prompt — a gate or config edit, an action on another PR, "stop on any refusal", a goal-specific
 verify command — was refused or caused a needless park. The follow-up decision is the single deliberate
 exception, and only while the project's own setting does not carry it: read
-`python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" followup-mode .sdlc`. `in-goal` means the
+`python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" followup-mode "$S"`. `in-goal` means the
 project has made the decision itself (`followups.mode`, [configuration](../../../docs/configuration.md)): leave
 the standing decision out of the prompt, and `handoff.py track` itself refuses a follow-up filing. `file` (the
 default) means the decision rides in the prompt, for this batch only, as below.
@@ -74,8 +74,8 @@ to do, rather than what is true, is not a fact: leave it out.
 For a goal that lacks `sdlc:goal`:
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/promote.py" apply .sdlc <N> --dry-run   # read what it would do
-python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/promote.py" apply .sdlc <N>
+python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/promote.py" apply "$S" <N> --dry-run   # read what it would do
+python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/promote.py" apply "$S" <N>
 ```
 
 - It refuses a goal with an open blocker and skips a parked, epic or unit-held goal, printing why: do not
