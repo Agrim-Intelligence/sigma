@@ -224,7 +224,7 @@ Then repeat until the helper says stop:
    timeout before running it**: the safe minimum is **~1,350,000ms (22.5 minutes)**, more
    with the quality ratchet on. **Read its first word and record accordingly — never merge past
    it by hand:** `PARK: …` → `record parked` (but a **failing required check** is a fix → `record
-   failed`); `PR #N merged …` → **`record done`**; any other line → **`record review`** (done
+   failed`); `PR #N merged …` → **`record done`**; any other line → **`record review "<that line>"`**, the stop line as its detail (done
    means merged; `record done` is REFUSED until then). Every ending, and why **`record done`
    releases the checkout itself — do not run `work.py finish`**: `references/landing.md`. **Read it before the first merge of a run.**
 

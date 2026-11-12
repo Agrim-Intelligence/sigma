@@ -119,7 +119,7 @@ Keyed on the last `record` verb. Which `work.py merge` line leads to which verb 
 | `record parked "<reason>" --qkind <kind>` | **parked** — `record` posts the reason on the issue |
 | a step-3 pre-check (`precheck`, `decompose-check`, `design-check`) printed `PARKED <reason>` or `BLOCKED <reason>` | **parked** — the pre-check has already posted the reason on the issue |
 | step 3a stopped: `agent-start` exited nonzero, or `work.py start` exited 4 | **failed (not started)** for `agent-start` (another live agent may own N); for exit 4, **parked** when it printed a conflict it parked, else **failed (not started)** — it has already released or parked N, so never `record` on top of it |
-| `record review` | **parked, awaiting merge (not `sdlc:parked`)** — `record review` posts why on the issue; see below. Run it with the `work.py merge` line as its detail, `record review "<that line>"`, and the note carries it (#2144) |
+| `record review` | **parked, awaiting merge (not `sdlc:parked`)** — `record review` posts why on the issue; see below. Run it with the `work.py merge` line as its detail, `record review "<that line>"`, and the note carries it, redacted of paths, mentions and blocker phrasing (#2144, #2151) |
 | `record failed "<reason>"` | **failed** — the reason is on the issue and in the final message |
 | the pick printed `loop.py: --land #<N> not taken (not started): <why>`, `BUDGET`, `HANDOFF` or a second `DEGRADED`, or refused with exit 2 | **failed (not started)** — that line is the reason. Nothing was claimed. A refusal at attach, scope or owner may have left a hold and a comment on N, which say what a person must do; a re-run after they act takes N |
 
