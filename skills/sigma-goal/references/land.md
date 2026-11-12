@@ -32,7 +32,10 @@ Each is refused by the picker before any query (exit 2, one stderr line), which 
   so the run could never end merged. `protected` against a base with no required checks or reviews
   always ends **parked, awaiting merge**; use `always` there. `always` merges only where protection could be read
   or nothing is enforced: where it cannot be read it ends parked too (the `protection()` note in
-  `docs/cloud-sessions.md`).
+  `docs/cloud-sessions.md`). A cloud session's credential may be refused the classic protection read (HTTP 403).
+  `protection()` then falls back to the branch's own `protected` flag and treats the base as unprotected only when
+  the rulesets read answered with nothing enforced AND that flag reads false; otherwise `always` cannot merge there
+  and the run ends awaiting merge (#2144).
 - `--land` on its own: never beside `--feature` or `--label`, and never on `next-batch`.
 
 `work.require_review` is unchanged: whatever the project sets binds this run exactly as it binds
@@ -115,7 +118,7 @@ Keyed on the last `record` verb. Which `work.py merge` line leads to which verb 
 | `record parked "<reason>" --qkind <kind>` | **parked** — `record` posts the reason on the issue |
 | a step-3 pre-check (`precheck`, `decompose-check`, `design-check`) printed `PARKED <reason>` or `BLOCKED <reason>` | **parked** — the pre-check has already posted the reason on the issue |
 | step 3a stopped: `agent-start` exited nonzero, or `work.py start` exited 4 | **failed (not started)** for `agent-start` (another live agent may own N); for exit 4, **parked** when it printed a conflict it parked, else **failed (not started)** — it has already released or parked N, so never `record` on top of it |
-| `record review` | **parked, awaiting merge (not `sdlc:parked`)** — `record review` posts why on the issue; see below |
+| `record review` | **parked, awaiting merge (not `sdlc:parked`)** — `record review` posts why on the issue; see below. Run it with the `work.py merge` line as its detail, `record review "<that line>"`, and the note carries it (#2144) |
 | `record failed "<reason>"` | **failed** — the reason is on the issue and in the final message |
 | the pick printed `loop.py: --land #<N> not taken (not started): <why>`, `BUDGET`, `HANDOFF` or a second `DEGRADED`, or refused with exit 2 | **failed (not started)** — that line is the reason. Nothing was claimed. A refusal at attach, scope or owner may have left a hold and a comment on N, which say what a person must do; a re-run after they act takes N |
 

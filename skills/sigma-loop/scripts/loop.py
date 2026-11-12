@@ -5202,6 +5202,19 @@ _AWAITING_MERGE_NOTE = ("PR #{pr} is open and awaiting a merge. This goal is not
                         "the merge is observed.")
 
 
+def _awaiting_merge_note(pr, detail=""):
+    """#2144: the audit note, plus WHY the loop did not merge when `record review` was given that reason (the merge
+    stop line). One line, whitespace collapsed, capped at 400 characters, so a long or multi-line detail cannot
+    make the note a block. No detail: the note is exactly what it always was."""
+    note = _AWAITING_MERGE_NOTE.format(pr=pr)
+    why = " ".join(str(detail or "").split())
+    if why:
+        if len(why) > 400:
+            why = why[:399].rstrip() + "…"
+        note += f" Why the loop did not merge it: {why}"
+    return note
+
+
 def _record_awaiting_merge(sdlc_dir, source, goal, detail="", retro_grade=None):
     """#232: `record review` -- the goal's work is finished and its PR is open, awaiting a merge the
     loop does not perform now (`auto_merge: off`, a fork / read-only repo, `protected` against an
@@ -5223,7 +5236,7 @@ def _record_awaiting_merge(sdlc_dir, source, goal, detail="", retro_grade=None):
     It does NOT release the checkout (the `done` recorded at merge time does), close the issue, or
     signal unit completion. Returns "review"."""
     pr, first = work.mark_awaiting_merge(sdlc_dir, goal)
-    note = _AWAITING_MERGE_NOTE.format(pr=pr) if first else None
+    note = _awaiting_merge_note(pr, detail) if first else None
     try:
         if hasattr(source, "await_merge"):
             source.await_merge(goal, note)
