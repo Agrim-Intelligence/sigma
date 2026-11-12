@@ -441,3 +441,88 @@ def test_committed_dismissal_reads_and_never_raises(tmp_path):
     assert setup_wizard.read_committed_dismissed(d) == {"gh auth"}
     (d / "config.json").write_text('{"setup_wizard": []}')
     assert setup_wizard.read_committed_dismissed(d) == set()
+
+
+# --- #2152: setup-critical rows cannot be declined from committed config -----------------------
+
+def _committed(tmp_path, names):
+    d = tmp_path / ".sdlc"
+    d.mkdir(exist_ok=True)
+    (d / "config.json").write_text(json.dumps({"setup_wizard": {"dismissed": names}}))
+    return d
+
+
+def _failing(*names):
+    return _fake_doctor_check([{"name": n, "ok": False, "fix": "f"} for n in names])
+
+
+CRITICAL = ["project layer", "gh auth", "gh installed", "verify command present (enforce is on)"]
+
+
+def test_setup_critical_set_is_exactly_the_four_rows():
+    assert setup_wizard.SETUP_CRITICAL == frozenset(CRITICAL)
+    assert setup_wizard.SETUP_CRITICAL <= set(setup_wizard._MODES)
+
+
+@pytest.mark.parametrize("name", CRITICAL)
+def test_committed_entry_for_a_setup_critical_row_is_ignored(tmp_path, monkeypatch, name):
+    d = _committed(tmp_path, [name])
+    monkeypatch.setattr(setup_wizard, "_doctor_check", _failing(name))
+    status = setup_wizard.wizard_status(str(d), allow_cache=False)
+    assert [s["name"] for s in status["steps"]] == [name]
+    assert status["ignored_committed"] == [name]
+
+
+@pytest.mark.parametrize("name", ["gh project scope", "board marks closed items Done",
+                                  "no open issue stranded at board Done", "graphify installed"])
+def test_committed_entry_for_a_dismissible_row_still_dismisses(tmp_path, monkeypatch, name):
+    d = _committed(tmp_path, [name])
+    monkeypatch.setattr(setup_wizard, "_doctor_check", _failing(name))
+    status = setup_wizard.wizard_status(str(d), allow_cache=False)
+    assert status == {"needs_wizard": False, "steps": []}
+
+
+def test_state_file_dismissal_of_a_setup_critical_row_is_unchanged(tmp_path, monkeypatch):
+    d = tmp_path / ".sdlc"
+    d.mkdir()
+    setup_wizard.write_dismissed(str(d), {"gh auth"})
+    monkeypatch.setattr(setup_wizard, "_doctor_check", _failing("gh auth"))
+    status = setup_wizard.wizard_status(str(d), allow_cache=False)
+    assert status == {"needs_wizard": False, "steps": []}
+
+
+def test_committed_critical_entry_does_not_silence_the_transient_gh_auth_step(tmp_path, monkeypatch):
+    d = _committed(tmp_path, ["gh auth"])
+    monkeypatch.setattr(setup_wizard, "_doctor_check", _failing("gh auth"))
+    status = setup_wizard.wizard_status(str(d), allow_cache=False)
+    assert status["needs_wizard"] is True
+
+
+def test_committed_report_splits_honoured_ignored_and_unknown(tmp_path):
+    d = _committed(tmp_path, ["graphify installed", "gh auth", "no such check", "gh project scope"])
+    rep = setup_wizard.committed_dismissal_report(d)
+    assert rep == {"honoured": ["gh project scope", "graphify installed"], "ignored": ["gh auth"]}
+
+
+def test_notice_is_empty_when_nothing_is_declined(tmp_path):
+    d = tmp_path / ".sdlc"
+    d.mkdir()
+    assert setup_wizard.committed_dismissal_notice(d) == ""            # no config
+    _committed(tmp_path, [])
+    assert setup_wizard.committed_dismissal_notice(d) == ""
+    _committed(tmp_path, ["no such check"])                            # unknown names decline nothing
+    assert setup_wizard.committed_dismissal_notice(d) == ""
+
+
+def test_notice_says_how_many_and_by_what_mechanism(tmp_path):
+    d = _committed(tmp_path, ["graphify installed", "gh project scope"])
+    line = setup_wizard.committed_dismissal_notice(d)
+    assert "\n" not in line
+    assert "2 setup check" in line and "setup_wizard.dismissed" in line and "config.json" in line
+
+
+def test_notice_names_ignored_critical_entries(tmp_path):
+    d = _committed(tmp_path, ["gh auth"])
+    line = setup_wizard.committed_dismissal_notice(d)
+    assert "gh auth" in line and "ignored" in line
+    assert "0 setup check" not in line

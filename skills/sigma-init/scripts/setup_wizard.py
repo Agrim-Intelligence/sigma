@@ -23,6 +23,7 @@ requirement, no fallback may be presented without stating its cost in the same b
 import json
 import os
 import pathlib
+import sys
 import time
 
 
@@ -119,6 +120,18 @@ _DEFAULT_MODE = ("guidance_only",
     "informational until someone adds one; nothing has been verified about its real impact.")
 
 
+#: #2152: the rows whose absence makes the loop unsafe or unable to run at all, so a COMMITTED
+#: `setup_wizard.dismissed` entry for one is ignored (it would apply to every clone and hide the
+#: gap from every future session). Why each: "project layer" -- nothing in Sigma runs without it;
+#: "gh installed" and "gh auth" -- the loop cannot read the backlog or open PRs, so it would run
+#: against nothing real; "verify command present (enforce is on)" -- every goal is refused at
+#: `record done`. NOT critical, so declinable: "gh project scope" (issues still work, only board
+#: cards stop moving), the two board-state rows (cosmetic), "graphify installed" (optional
+#: feature). A person's own per-user state-file dismissal of any row is unchanged.
+SETUP_CRITICAL = frozenset({"project layer", "gh installed", "gh auth",
+                            "verify command present (enforce is on)"})
+
+
 def _classify(name):
     return _MODES.get(name, _DEFAULT_MODE)
 
@@ -164,9 +177,36 @@ def read_committed_dismissed(sdlc_dir):
         return set()
 
 
+def committed_dismissal_report(sdlc_dir):
+    """#2152: the committed list split three ways, sorted. `honoured`: wizard rows a committed list
+    may decline. `ignored`: setup-critical rows (never declinable from committed config). Names that
+    are not wizard rows decline nothing and appear in neither."""
+    names = read_committed_dismissed(sdlc_dir)
+    return {"honoured": sorted(n for n in names if n in _MODES and n not in SETUP_CRITICAL),
+            "ignored": sorted(n for n in names if n in SETUP_CRITICAL)}
+
+
+def committed_dismissal_notice(sdlc_dir):
+    """#2152: the one session-start line for a committed list, or "" when it declines nothing and
+    ignores nothing (a quiet session stays quiet). Lives here, not in the hook, so any host's own
+    entry point can ask the same (`python3 setup_wizard.py notice <sdlc_dir>`)."""
+    rep = committed_dismissal_report(sdlc_dir)
+    parts = []
+    if rep["honoured"]:
+        n = len(rep["honoured"])
+        parts.append(f"{n} setup check{'s' if n != 1 else ''} declined for every clone by the committed "
+                     "setup_wizard.dismissed list in .sdlc/config.json")
+    if rep["ignored"]:
+        parts.append("ignored setup-critical entries still asked about: " + ", ".join(rep["ignored"]))
+    if not parts:
+        return ""
+    return "Sigma: " + "; ".join(parts) + ". /sigma-doctor lists every one."
+
+
 def _effective_dismissed(sdlc_dir):
-    """The state file's names plus the committed list: what `wizard_status` honours."""
-    return read_dismissed(sdlc_dir) | read_committed_dismissed(sdlc_dir)
+    """The state file's names plus the committed list's honoured names: what `wizard_status`
+    honours. Setup-critical names in the committed list are dropped (#2152)."""
+    return read_dismissed(sdlc_dir) | set(committed_dismissal_report(sdlc_dir)["honoured"])
 
 
 def _adopted(sdlc_dir):
@@ -349,7 +389,7 @@ def _transient_result(dismissed):
             "steps": [{"name": "gh auth", "fix": _TRANSIENT_FIX, "mode": mode, "degraded": degraded}]}
 
 
-def wizard_status(sdlc_dir, run=None, dismissed=None, allow_cache=True, now=None):
+def _wizard_status(sdlc_dir, run=None, dismissed=None, allow_cache=True, now=None):
     """The one entry point the hook calls. `dismissed`, when None, is read from disk; tests pass
     an explicit set to avoid touching the filesystem for pure-logic assertions.
 
@@ -409,3 +449,25 @@ def wizard_status(sdlc_dir, run=None, dismissed=None, allow_cache=True, now=None
     if allow_cache:
         _write_cache(sdlc_dir, result["needs_wizard"], now=now)
     return result
+
+
+def wizard_status(sdlc_dir, run=None, dismissed=None, allow_cache=True, now=None):
+    """`_wizard_status` plus #2152: when the result still asks, `ignored_committed` names the
+    setup-critical entries of the committed list that were ignored (key absent otherwise, so a
+    clean result keeps its exact shape)."""
+    result = _wizard_status(sdlc_dir, run=run, dismissed=dismissed, allow_cache=allow_cache, now=now)
+    if result["needs_wizard"]:
+        ignored = committed_dismissal_report(sdlc_dir)["ignored"]
+        if ignored:
+            result = dict(result, ignored_committed=ignored)
+    return result
+
+
+if __name__ == "__main__":
+    if len(sys.argv) == 3 and sys.argv[1] == "notice":
+        line = committed_dismissal_notice(sys.argv[2])
+        if line:
+            print(line)
+    else:
+        print("usage: setup_wizard.py notice <sdlc_dir>", file=sys.stderr)
+        sys.exit(2)
