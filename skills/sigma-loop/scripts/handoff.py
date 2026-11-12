@@ -92,6 +92,41 @@ def _settings(config):
     return (ledger.settings(config).get("handoff") or {})
 
 
+#: #2153: where a follow-up goes. `file` (the default, and what every project did before this key existed)
+#: files it as a new issue through `track`; `in-goal` keeps it inside the goal that found it (a slice before
+#: the first green verify, else one marked deferred-items comment). Only the exact string `in-goal` turns it
+#: on: a missing key, a wrong type, a typo or a different case all read `file`, so a bad edit can never
+#: silently stop follow-ups being filed.
+FOLLOWUP_MODES = ("file", "in-goal")
+#: `track --kind`: what a tracked issue is. Only `followup` (the default when the flag is absent) is
+#: refused under `in-goal`; the others are work that is not a follow-up of the goal filing it.
+TRACK_KINDS = ("followup", "prerequisite", "cleanup", "child")
+FOLLOWUP_REFUSED_EXIT = 3
+IN_GOAL_RULE = (
+    "follow-up work stays in its goal. Before this goal's first green full verify, add it to the goal's plan "
+    "as a new slice and re-run the phases from plan-review (at most 2 added slices); after that, or past the "
+    "cap, post ONE comment on the goal's issue with the line `<!-- sigma-orchestrate:deferred -->` and one "
+    "line per item, `- [area:<area>] <what> - <why> (files: <paths>)`, and do not file an issue. See "
+    "skills/sigma-orchestrate/references/follow-ups.md. A blocker is not a follow-up: file it with "
+    "`--blocks yes`, or pass `--kind prerequisite`.")
+
+
+def followup_mode(config):
+    """`file` or `in-goal`, from `followups.mode`. Total: anything but the exact string `in-goal` is `file`."""
+    block = config.get("followups") if isinstance(config, dict) else None
+    mode = block.get("mode") if isinstance(block, dict) else None
+    return "in-goal" if mode == "in-goal" else "file"
+
+
+def followup_refusal(config, kind, blocks):
+    """The refusal text when `track` must not file this as a new issue, else None. Refused only when the
+    project says `in-goal`, the filing is a follow-up (`--kind` absent or `followup`), and it blocks nothing
+    (`--blocks no`): a blocker is a prerequisite and keeps its own routing."""
+    if followup_mode(config) != "in-goal" or (kind or "followup") != "followup" or blocks != "no":
+        return None
+    return "not filed (followups.mode is in-goal): " + IN_GOAL_RULE
+
+
 def dependency_label(config):
     return _settings(config).get("label") or DEPENDENCY_LABEL
 
@@ -1444,7 +1479,8 @@ def _issue_clause(report):
 USAGE = ("usage: handoff.py open <dir> <goal> --area A --why TEXT [--priority P --title T] | "
          "track <dir> <goal> --area A --why TEXT --queue actionable|queued "
          "--assignee same-area|cross-area --blocks yes|no "
-         "[--priority P --title T --label L --body-file F --needs-person QKIND] | "
+         "[--priority P --title T --label L --body-file F --needs-person QKIND "
+         "--kind followup|prerequisite|cleanup|child] | followup-mode <dir> | "
          f"ack <dir> --issue N | --goal G [--area A] --state {'|'.join(ledger.STATES)} [--why TEXT]")
 
 
@@ -1523,6 +1559,11 @@ def main(argv):
                   "[--priority P --title T --label L1,L2 --body-file F --target-unit NAME]",
                   file=sys.stderr)
             return 2
+        kind = flags.get("kind")
+        if kind is not None and kind not in TRACK_KINDS:
+            print("handoff.py track: --kind must be one of %s, got %r" % ("|".join(TRACK_KINDS), kind),
+                  file=sys.stderr)
+            return 2
         person = flags.get("needs-person")
         if person is not None and (person == "unknown" or person not in _load("qkind").QKINDS):
             print("handoff.py track: --needs-person must be a declared question kind (not 'unknown'), got %r"
@@ -1545,6 +1586,10 @@ def main(argv):
                       file=sys.stderr)
                 return 2
         config = ledger._config(sdlc_dir)
+        refusal = followup_refusal(config, kind, blocks)            # #2153: nothing is read or written first
+        if refusal:
+            print("handoff.py track: " + refusal, file=sys.stderr)
+            return FOLLOWUP_REFUSED_EXIT
         report = create_tracked_issue(
             sdlc_dir, config, goal, area, why,
             same_area=assignee_map[assignee], immediately_actionable=queue_map[queue],
@@ -1582,6 +1627,12 @@ def main(argv):
                   f"owner {report['owner'] or '(unowned)'} -- nothing was filed (see the warning "
                   "above for the cause)", file=sys.stderr)
             return 1
+        return 0
+    if len(argv) >= 3 and argv[1] == "followup-mode":
+        try:
+            print(followup_mode(ledger._config(argv[2])))           # #2153: what the orchestrate skill reads
+        except (OSError, ValueError):
+            print("file")                                           # unreadable config = today's behaviour
         return 0
     if len(argv) >= 3 and argv[1] == "ack":
         sdlc_dir = argv[2]

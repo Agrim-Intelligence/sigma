@@ -8,6 +8,10 @@
     {
       "path": "skills/sigma-orchestrate/scripts/waves.py",
       "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-orchestrate/scripts/deferred.py",
+      "role": "gesture"
     }
   ],
   "artifacts": []

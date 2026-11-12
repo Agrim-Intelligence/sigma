@@ -169,7 +169,10 @@ blocking finding costs a full fix -> push -> re-review round, and `work.max_revi
   on, a [test review](references/test-review.md) finding blocks too. Your reasons ARE the fix instructions: write them so the next pass can act.
 - **Follow-up** — real, but the change is better landed than held: **Concern**, **Coverage**, **Nit**
   — or a **Missing** you could not write a failing case for (an absent piece, like missing
-  observability, that resists a probeable check). File it with `--label sdlc:followup` instead of blocking.
+  observability, that resists a probeable check). File it with `--label sdlc:followup` instead of blocking. Where the project's `followups.mode` is `in-goal`
+  (`handoff.py followup-mode .sdlc` prints it; default `file`), do not file it: record it as a follow-up in
+  your report and let the goal keep it (a slice before its first green verify, else a deferred-items comment, see
+  `skills/sigma-orchestrate/references/follow-ups.md`); `handoff.py track` refuses it in that mode.
 
 Reporting a real finding as follow-up is a judgement you may make, except for a project-rule violation: that blocks unless the owners waive it. The failing-case rule binds this general review's findings; a dedicated risk review's `critical`/`high`
 blocks without one. A

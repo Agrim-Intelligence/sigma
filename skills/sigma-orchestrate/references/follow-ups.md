@@ -7,9 +7,23 @@ waits and is grouped with others so that many follow-ups share one verify.
 
 A defect in the goal's own change is not a follow-up. It is fixed in the same PR, as always.
 
-## The standing decision
+## The setting, and the standing decision
 
-Paste this, verbatim, into every launch prompt (`<batch>` filled in):
+The decision is a project setting, `followups.mode` in `.sdlc/config.json` ([configuration](../../../docs/configuration.md)),
+read with `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" followup-mode .sdlc`, which prints `file` or `in-goal`.
+
+- **`in-goal`**: the project has decided that follow-ups stay in their goal, for every run, not only this batch.
+  `handoff.py track` refuses a non-blocking follow-up (exit 3, nothing filed) and prints the rule, `sigma-review` and
+  the landing path route follow-ups the same way, and the launch prompt carries nothing about follow-ups. Say so on
+  the go-ahead screen. Everything below about slices, deferred items and clean-up goals applies unchanged.
+- **`file`** (default): the project files follow-ups as new goals. For goals in this batch only, the standing
+  decision below replaces that rule, and goes into every launch prompt. The go-ahead screen names the replaced rule.
+  A session that still calls `handoff.py track` for a follow-up files it (the leak net at the end catches it).
+
+When asked to turn the project setting on, the person edits `.sdlc/config.json` themselves (this skill never edits
+config): `"followups": {"mode": "in-goal"}`.
+
+Paste this, verbatim, into every launch prompt when the mode is `file` (`<batch>` filled in):
 
 ```
 Standing decision by the person who started this batch (sigma-orchestrate, batch <batch>), on follow-up
@@ -24,6 +38,8 @@ as usual). For this goal it replaces the project's own rule for filing follow-up
 - After the first green full verify, or past the cap: do not implement it now. Post ONE comment on this
   goal's issue containing the line `<!-- sigma-orchestrate:deferred -->` and one line per item:
   `- [area:<area>] <what> - <why> (files: <paths>)`. Edit that same comment if you find more.
+  Check a draft first with `python3 "${CLAUDE_SKILL_DIR}/scripts/deferred.py" check <file>` (exit 0 only when every
+  bullet parses).
   Exception: when a post-PR `sigma:block` already forces a fix and a new verify, one small same-area item
   may ride along as a slice (a fresh plan-review first, then a fresh review and retrospective after it);
   it counts against the cap of 2.
@@ -34,10 +50,15 @@ Sigma's own rules; the session already knows them.
 
 ## Collecting deferred items
 
-Each wake, for every goal that ended since the last wake, read its issue comments
-(`gh api repos/<o>/<r>/issues/<N>/comments --paginate`) and find the marker
-`sigma-orchestrate:deferred` anywhere in a comment body (Sigma may wrap the text). Parse the item lines and
-store them in `goals.json` under that goal as `"deferred": [{"area", "what", "why", "files"}]`. Only a
+Each wake, for every goal that ended since the last wake, save its issue comments
+(`gh api repos/<o>/<r>/issues/<N>/comments --paginate`, merged into one JSON list) and run
+`python3 "${CLAUDE_SKILL_DIR}/scripts/deferred.py" parse <comments.json>`. It finds the marker
+`sigma-orchestrate:deferred` anywhere on a line that is not quoted or fenced (Sigma may wrap the text), reads only
+comments from an `OWNER`, `MEMBER` or `COLLABORATOR` (on a public repository anyone can paste the marker), and prints
+`{"items": [...], "rejected": [...]}`. Store `items` in `goals.json` under that goal as
+`"deferred": [{"area", "what", "why", "files"}]`, and put every `rejected` entry (a malformed bullet, an unsafe
+path, an untrusted commenter) on the needs-you list with its reason: a rejected line is never silently dropped.
+Identical items collapse to one. The format and its limits are at the top of the script. Only a
 merged goal's items go to a clean-up goal; a stopped goal's items go to the final report, because the work
 they follow up on never landed.
 
@@ -54,7 +75,7 @@ source goals so the unit is inherited:
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" track .sdlc <source goal number> --area <area> \
   --why "Deferred follow-ups from sigma-orchestrate batch <batch>, wave <k>" \
-  --queue queued --blocks no --assignee same-area|cross-area \
+  --queue queued --blocks no --assignee same-area|cross-area --kind cleanup \
   --title "Clean-up: deferred follow-ups from <batch> wave <k> (<area>)" --body-file <file>
 ```
 

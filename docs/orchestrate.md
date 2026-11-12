@@ -71,16 +71,45 @@ grouping condition broken on its own and seen red (a table is at the bottom of t
 
 ## Follow-ups stay in their goal
 
-Every launch prompt carries one standing decision (verbatim in `references/follow-ups.md`): no new issue for a
-follow-up. Found before the goal's first green full verify, it joins the goal's plan as a slice and the phases
+The decision is a project setting, `followups.mode` in `.sdlc/config.json` ([configuration](configuration.md)): `file`
+(the default, today's behaviour) or `in-goal`. `handoff.py followup-mode .sdlc` prints it. With `in-goal`, the
+project has decided for every run: `handoff.py track` refuses a non-blocking follow-up (exit 3, nothing filed; a
+blocker, `--blocks yes`, and work marked `--kind prerequisite|cleanup|child` are still filed), `sigma-review` and the
+landing path route follow-ups the same way, and the launch prompt says nothing about follow-ups. With `file`, every
+launch prompt carries one standing decision (verbatim in `references/follow-ups.md`) for the goals of this batch only:
+no new issue for a follow-up. Found before the goal's first green full verify, it joins the goal's plan as a slice and the phases
 re-run from plan-review, so one verify covers everything (at most 2 slices per goal). Found later, or past the
-cap, it is written onto the goal as one marked deferred-items comment. When a wave ends, the orchestrator groups
-the merged goals' deferred items by unit and area and files one clean-up goal per group through
-`handoff.py track`. Clean-up goals never spawn more. A follow-up issue filed anyway is folded into its goal's
+cap, it is written onto the goal as one marked deferred-items comment, which `scripts/deferred.py` parses (below).
+When a wave ends, the orchestrator groups the merged goals' deferred items by unit and area and files one clean-up
+goal per group through `handoff.py track --kind cleanup`. Clean-up goals never spawn more. A follow-up issue filed anyway is folded into its goal's
 deferred items, or, if it blocks its parent, run first as a prerequisite.
 
-For goals in the batch this replaces the project's own rule for filing follow-up issues; the go-ahead screen
-names the rules it replaces.
+Under `file`, for goals in the batch this replaces the project's own rule for filing follow-up issues; the go-ahead
+screen names the rules it replaces.
+
+### The deferred-items parser
+
+```
+python3 skills/sigma-orchestrate/scripts/deferred.py parse <comments.json>   # comments as the REST API returns them
+python3 skills/sigma-orchestrate/scripts/deferred.py check <body-file>       # a draft comment, before posting
+```
+
+Standard library only, no network, no writes. A comment counts only from an `OWNER`, `MEMBER` or `COLLABORATOR` (on a
+public repository anyone can paste the marker); the marker `<!-- sigma-orchestrate:deferred -->` must stand on a line
+that is not quoted or fenced; bullets before it are not items; and a bullet after it that does not read
+`- [area:<area>] <what> - <why> (files: <paths>)` is listed under `rejected` with its reason, never dropped. `what` ends
+at the first spaced hyphen. An absolute path, a `..` segment, a backslash or a control character rejects the item;
+identical items collapse; line, field, file-count and item-count bounds are at the top of the script. `parse` exits 0
+with rejections listed, `check` exits 0 only for a clean, non-empty draft, and 2 is bad input. Tests:
+`tests/test_orchestrate_deferred.py`, each clause broken on its own and seen red (a note at the bottom of that file).
+
+## Approve names its head
+
+The merge check reads the post-PR review's `sigma:approve` comment. It may name the commit it approved:
+`sigma:approve <commit id>` (a full id, or a prefix of at least 7 hex digits). A named id counts only while it is the
+PR's current head; an unnamed marker keeps comparing times, as before. Sigma's own `post-review` writes the head it
+reviewed, and the gate in `work.py` applies the same rule and fails closed on a wrong, malformed or ambiguous id or an
+unreadable head ([the rule](worktrees-and-merging.md)). Tests: `tests/test_approve_names_head.py`.
 
 ## Hosts
 
@@ -92,13 +121,8 @@ says so. Every GitHub read and write is REST (`gh api`), which works in cloud se
 
 ## What is not here yet
 
-- The follow-up decision still rides in the launch prompt. Cloud burst asks for a prompt that is only
-  `/sigma-goal <N> --land` plus facts; moving the decision into a config key that `--land` runs and phase
-  subagents read is separate work, as is making `sigma-review` and the landing repair path route follow-ups to the
-  goal instead of `handoff.py track`.
-- The post-PR review's `sigma:approve` comment does not name the head commit it approved, so the merge check
-  binds an approval to a head by comparing times. A comment that names the head is separate work.
-- The deferred-items comment format and the clean-up filing are written as instructions to the agent, not parsed
-  or enforced by a script.
-- No real batch has been run end to end with this skill. The planner is tested offline; the launchers, the merge
-  checks and the wake loop have not been exercised on a live repository.
+- No real batch has been run end to end with this skill. The planner, the deferred-items parser, the follow-up setting
+  and the head-naming approve are tested offline; the launchers, the merge checks and the wake loop have not been
+  exercised on a live repository, and neither has the setting against a real phase subagent's behaviour.
+- An approve typed by a person with no id still falls back to a time comparison, which has the known gap in
+  `references/run.md`.

@@ -45,9 +45,11 @@ machine's memory and disk are the limit there, not GitHub. Say so on the go-ahea
 - **The project's rules win, with one exception.** Read its `CLAUDE.md` (and what it points to),
   `.sdlc/config.json`, and the person's notes for this project before step 2. Areas, iteration rules, model
   policy, merge method, branch rules, single-writer files and "never" lists bind you exactly as they bind a
-  goal session. The exception is follow-ups: for goals in this batch, the person's standing decision
-  ([follow-ups](references/follow-ups.md)) replaces the project's own rule for filing follow-up issues. Name
-  the project rules it replaces on the go-ahead screen.
+  goal session. The exception is follow-ups, which depend on the project's `followups.mode`
+  (`handoff.py followup-mode .sdlc`, [follow-ups](references/follow-ups.md)): `in-goal` means the project
+  already decided it, so nothing is replaced; `file` (the default) means that for goals in this batch the
+  person's standing decision replaces the project's own rule for filing follow-up issues. Name the project
+  rules it replaces on the go-ahead screen.
 - **Only this batch.** Never steer, message, merge, promote, unpark or comment on a goal or session outside
   this batch, except to read it.
 - **Never**: force-push or rewrite history; edit `.sdlc/config.json`, gates, workflows or rulesets; add
@@ -168,7 +170,8 @@ Show the person, briefly:
   `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/goal_cost.py" report .sdlc` when it has data;
 - the follow-up rule in one line — "follow-up work stays in its goal: found before the goal's first green
   full verify, it joins that goal; found later, it is grouped into one clean-up goal per unit and area at
-  the end of each wave" — and the project rules it replaces for this batch;
+  the end of each wave" — and which it is: the project's own setting (`followups.mode: in-goal`), or, with the
+  default `file`, this batch's decision and the project rules it replaces;
 - the readiness warnings from step 1.
 
 `--dry-run`: stop here. Otherwise ask once and wait for a clear yes, unless `--yes`. A no ends the run with
@@ -191,14 +194,15 @@ nothing written.
 
 Follow [run](references/run.md) every wake until step 9's stop condition. In short: refresh each goal's
 state from GitHub; merge what is approved ([run § merge](references/run.md#merge)); unpark dependents that
-were waiting only on a merged blocker; collect deferred follow-ups and close finished waves
+were waiting only on a merged blocker; collect deferred follow-ups (`scripts/deferred.py parse`) and close finished waves
 ([follow-ups](references/follow-ups.md)); then `python3 "${CLAUDE_SKILL_DIR}/scripts/waves.py" ready "$T/goals.json" "$T/state.json"
 [--seats N]` and launch what it lists ([launch](references/launch.md)); write the tracker; schedule the
 next check-in.
 
 ## 8. Follow-ups stay in their goal
 
-Every launch prompt carries one standing decision: follow-up work never becomes a new goal. Found before the
+Under the project's `followups.mode: in-goal`, or through one standing decision in each launch prompt under the
+default `file`: follow-up work never becomes a new goal. Found before the
 goal's first green full verify, it is added to that goal's plan as a slice and re-reviewed; found after, it
 is written onto the goal as a deferred item, and when a wave ends you group those items into one clean-up
 goal per unit and area. Clean-up goals do not spawn more. Full text, formats and the safety net for runs

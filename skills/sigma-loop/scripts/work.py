@@ -1556,6 +1556,47 @@ _DIRECTIVE_RE = re.compile(r"^\s*" + legacy.MARKER_PREFIX_RE + r":(approve|block
 _TRUSTED_ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR")
 
 
+# #2153: an approve may name the commit it approved: `sigma:approve <commit id>` (a full id, or a prefix of at
+# least 7 hex digits). A named id counts only when it is the PR's current head (or a prefix of it); an
+# unnamed marker is exactly what it always was. Anything that LOOKS like an id but is not a clean one fails
+# closed (the approve does not count), so a typo can never be read as "unnamed".
+_COMMIT_PREFIX_MIN = 7
+_COMMIT_FULL_LENGTHS = (40, 64)         # sha-1 and sha-256 object names
+_HEX_RUN = re.compile(r"[0-9a-fA-F]{7,}")
+_HEX_WORD = re.compile(r"[0-9a-fA-F]+")
+_UNNAMED, _BAD_ID = None, False
+
+
+def _approve_commit(rest):
+    """What the text after `sigma:approve` on its marker line says about the commit: `_UNNAMED` (None) for
+    a plain marker or a rationale with no hex-looking word, a lower-case id string for a clean id, or
+    `_BAD_ID` (False) for anything id-shaped that is not clean: an all-hex first word shorter than 7 or
+    of a length no object name has (41-63, over 64), a first word that holds a 7+ digit hex run among
+    other characters (`abc1234,`, `:abc1234`), or a second all-hex word of 7+ digits (two ids). The price of
+    failing closed is that a rationale opening with a hex-only word (`added`, `decade`) does not count as an
+    approve: reword it, or name the commit."""
+    words = (rest or "").split()
+    if not words:
+        return _UNNAMED
+    first = words[0]
+    if _HEX_WORD.fullmatch(first):
+        clean = _COMMIT_PREFIX_MIN <= len(first) <= 40 or len(first) == 64
+        if not clean or any(_HEX_WORD.fullmatch(w) and len(w) >= _COMMIT_PREFIX_MIN for w in words[1:]):
+            return _BAD_ID
+        return first.lower()
+    return _BAD_ID if _HEX_RUN.search(first) else _UNNAMED
+
+
+def _pr_head_sha(rec, run):
+    """The PR's current head commit id as lower-case hex, or None when it cannot be read or is not an id."""
+    try:
+        head = gh_api.view_pr_gh(_pr_api_run(run, rec["worktree"]), rec["pr"], ["headRefOid"]).get("headRefOid")
+    except Exception:                           # noqa: BLE001 - an unreadable head means the named approve does not count
+        return None
+    head = head.strip().lower() if isinstance(head, str) else ""
+    return head if re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", head) else None
+
+
 def ci_required(config):
     """False only for a real boolean `work.ci_required: false`; anything else keeps the CI gate on."""
     return settings(config).get("ci_required") is not False
@@ -7094,7 +7135,12 @@ def _unresolved_threads(rec, run):
 
 
 def _line_directive(body):
-    """The LAST standalone marker line in one comment body, or None (F9). Scanned line-by-line against
+    """The marker of `_line_directive_text` alone: the LAST standalone marker line's directive, or None."""
+    return _line_directive_text(body)[0]
+
+
+def _line_directive_text(body):
+    """(marker, rest) for the LAST standalone marker line in one comment body, or (None, "") (F9; #2153: `rest` is the text after the marker). Scanned line-by-line against
     `_DIRECTIVE_RE` instead of a whole-body substring test, so position controls whether a mention
     counts: fenced (```) and `>`-quoted lines are skipped outright (a marker shown as a code sample or
     quoted back in a reply is documentation, not a command), and the line-start anchor means text
@@ -7102,6 +7148,7 @@ def _line_directive(body):
     it from matching at all. Text AFTER the marker on its line is fine (a human's rationale following
     the directive); only what precedes it on that line is disqualifying."""
     found = None
+    rest = ""
     fenced = False
     for line in (body or "").splitlines():
         stripped = line.strip()
@@ -7113,7 +7160,8 @@ def _line_directive(body):
         match = _DIRECTIVE_RE.match(line)
         if match:
             found = match.group(1).lower()  # last matching line in the comment wins, same "latest" rule
-    return found
+            rest = line[match.end():]       # #2153: what follows the marker on that line (a commit id, a rationale)
+    return found, rest
 
 
 def _comment_directive(rec, run):
@@ -7155,8 +7203,9 @@ def _comment_directive(rec, run):
     pr_author = (data.get("author") or {}).get("login") or None   # "" (no REST user) is unknown, never a match
     directive = None
     same_author = None
+    head = False                                # #2153: read lazily, only when an approve names a commit
     for comment in data.get("comments") or []:  # chronological; the last marker is the current state
-        marker = _line_directive(comment.get("body") or "")
+        marker, rest = _line_directive_text(comment.get("body") or "")
         commenter = (comment.get("author") or {}).get("login")
         if marker and "authorAssociation" not in comment:
             # The field is absent altogether (an old `gh`, an odd host): trust cannot be judged, and
@@ -7171,6 +7220,20 @@ def _comment_directive(rec, run):
             directive = "block"
             same_author = pr_author is not None and commenter == pr_author
         elif marker == "approve":
+            named = _approve_commit(rest)
+            if named is not _UNNAMED:
+                if head is False:
+                    head = _pr_head_sha(rec, run)
+                if named is _BAD_ID or head is None or not head.startswith(named):
+                    # #2153: it names a commit that is not the PR's current head, or names one badly, or the head
+                    # cannot be read: this approve does not count for this head. It also ends an earlier approve
+                    # (the latest word on approval is "not this commit"); a block stands.
+                    print(f"sigma: ignoring a sigma:approve comment on PR #{rec['pr']} from "
+                          f"{commenter or 'an unknown commenter'}: it does not name the PR's current head commit",
+                          file=sys.stderr)
+                    if directive == "approve":
+                        directive, same_author = None, None
+                    continue
             directive = "approve"
             same_author = pr_author is not None and commenter == pr_author
         elif marker == "unblock":
@@ -9106,7 +9169,8 @@ def post_review(sdlc_dir, config, goal, run=None, verdict="", reason="", evidenc
         over_cap = cap and cycles >= cap
 
     if v == "approve":
-        body = "sigma:approve\n\n**Sigma post-PR review** — no blocking issues on the final diff."
+        body = (f"sigma:approve {expected_head}\n\n"
+                "**Sigma post-PR review** — no blocking issues on the final diff.")
     elif v == "unblock":
         body = "sigma:unblock\n\n**Sigma post-PR review** — prior review block cleared on this PR revision."
     elif over_cap:

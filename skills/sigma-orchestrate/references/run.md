@@ -80,13 +80,20 @@ Re-read everything right before merging. Merge only when all hold:
      start of any line that is not quoted (`>`) or inside a code fence;
    - take the trusted markers in time order: the latest must be an approve (an unblock clears a block but is
      not an approval);
-   - that approve must be newer than the PR's last head update. Sigma's approve comment does not name the
-     commit it approved, so compare times: the head commit's committer date, and any
-     `head_ref_force_pushed` event in `gh api repos/<o>/<r>/issues/<pr>/timeline --paginate`.
+   - the approve must be for the PR's current head. Read the first line of the latest trusted approve. When it
+     names a commit (`sigma:approve <id>`, a full commit id or a prefix of at least 7 hex digits, any case), that id
+     must equal the head sha you are about to merge, or be a prefix of it; anything else after the marker that
+     looks like an id but is not a clean one (under 7 digits, 41 to 63 or over 64 digits, punctuation stuck to
+     it, two ids) does not count, so do not merge. Sigma's own post-review writes it this way, and so should an
+     approve you post yourself: `sigma:approve <head sha>` as the first line. An approve that names no commit
+     (a plain `sigma:approve`, or one followed by ordinary words) falls back to times: it must be newer than the
+     PR's last head update, the head commit's committer date and any `head_ref_force_pushed` event in
+     `gh api repos/<o>/<r>/issues/<pr>/timeline --paginate`.
 
-   If you cannot establish this, do not merge. Known gap: a commit made before the approve but pushed after
-   it passes the date test; Sigma commits and pushes together, so this is unlikely, and check 5 still
-   requires verify evidence for the head.
+   If you cannot establish this, do not merge. Known gap for an unnamed approve: a commit made before the
+   approve but pushed after it passes the date test; Sigma commits and pushes together, so this is unlikely, and
+   check 5 still requires verify evidence for the head. Sigma's own merge gate (`work.py`) applies the named-id
+   rule itself: a named id that is not the head does not count there either.
 3. **GitHub agrees it is clean.** `gh api repos/<o>/<r>/pulls/<pr>` shows `mergeable: true` and
    `mergeable_state: "clean"`. `"unstable"` (only checks that are not required are failing) is acceptable
    only where the project's rules say those checks are not a gate. `blocked`, `dirty`, `behind` or unknown:

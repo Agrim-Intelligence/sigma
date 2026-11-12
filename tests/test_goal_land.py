@@ -660,7 +660,10 @@ class CloudGitHub:
             self.comments.append(next(str(a)[5:] for a in argv if str(a).startswith("body=")))
             return tw._comment_reply(99)
         if prfake.comments_get(7) in line:
-            return prfake.rest_comments([{"body": b, "author": {"login": "owner"}, "authorAssociation": "OWNER"}
+            # #2153: post_review names the head it reviewed (the worktree's git head), while this world's PR
+            # head is the fixed HEAD_SHA every other fake here reports; serve the approve as naming that head.
+            return prfake.rest_comments([{"body": re.sub(r"^(sigma:approve) [0-9a-f]{40}", r"\1 " + tw.HEAD_SHA, b),
+                                          "author": {"login": "owner"}, "authorAssociation": "OWNER"}
                                          for b in self.comments])
         if prfake.merge_put(7) in line:
             self.merged = True

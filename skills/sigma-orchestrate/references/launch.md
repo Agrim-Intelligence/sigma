@@ -44,13 +44,17 @@ and which launch of this goal it is (1st, 2nd). A goal with a launch row and no 
 
 ## The prompt
 
-> **The prompt is `/sigma-goal <N> --land`, facts about the environment, and the one standing decision
-> below. Nothing else.**
+> **The prompt is `/sigma-goal <N> --land`, facts about the environment, and, unless the project already
+> carries it, the one standing decision below. Nothing else.**
 
 Sigma's own burst guidance ([sigma-goal/cloud-burst.md](../../sigma-goal/references/cloud-burst.md)) found that every extra rule in a
 launch prompt — a gate or config edit, an action on another PR, "stop on any refusal", a goal-specific
 verify command — was refused or caused a needless park. The follow-up decision is the single deliberate
-exception, because nothing in the repository can carry it yet.
+exception, and only while the project's own setting does not carry it: read
+`python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" followup-mode .sdlc`. `in-goal` means the
+project has made the decision itself (`followups.mode`, [configuration](../../../docs/configuration.md)): leave
+the standing decision out of the prompt, and `handoff.py track` itself refuses a follow-up filing. `file` (the
+default) means the decision rides in the prompt, for this batch only, as below.
 
 ```
 /sigma-goal <N> --land
@@ -59,7 +63,7 @@ Facts about this environment, not instructions to change anything:
 - <one line per fact the run cannot read for itself: which services the setup starts, which token is
   absent, how the project's verify behaves on this launcher, the worktree bootstrap for local sessions>
 
-<the standing decision, verbatim from follow-ups.md § The standing decision>
+<the standing decision, verbatim from follow-ups.md § The standing decision; omitted when followup-mode says in-goal>
 ```
 
 Facts come from the project's docs and the person's notes for this launcher. A line that tells the run what

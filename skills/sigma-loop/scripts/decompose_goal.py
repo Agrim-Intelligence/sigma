@@ -74,7 +74,7 @@ sibling references them) via:
 
     handoff.py track <sdlc_dir> <THIS issue> --area <#{parent}'s area> --why "<one line>" \\
         --queue actionable --assignee same-area --blocks no --priority <#{parent}'s priority> \\
-        --label model:<predicted tier> --title "<child title>" --body-file <tmp>
+        --label model:<predicted tier> --kind child --title "<child title>" --body-file <tmp>
 
     (the second argument is THIS goal's OWN issue number, never #{parent} -- `track` posts each
     child's narrative on THAT goal's timeline, and step 0 above reads it back as the child ledger;
