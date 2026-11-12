@@ -344,3 +344,45 @@ def test_a_committed_dismissal_is_not_reported(tmp_path, with_state_file):
 def test_a_malformed_committed_dismissal_dismisses_nothing(tmp_path, bad):
     _kg_repo(tmp_path, {"setup_wizard": {"dismissed": bad}})
     assert "graphify installed" in _ctx(_run_hook(tmp_path, path_prefix=_shimmed_graphify(tmp_path)))
+
+
+# --- #2152: committed list: critical rows still ask; one line says what was declined -----------
+
+def test_hook_prints_one_line_when_a_committed_list_declined_a_check(tmp_path):
+    sdlc = _kg_repo(tmp_path, {"session_start": {"enabled": True},
+                               "setup_wizard": {"dismissed": ["graphify installed"]}})
+    ctx = _ctx(_run_hook(tmp_path, path_prefix=_shimmed_graphify(tmp_path)))
+    assert "1 setup check" in ctx and "setup_wizard.dismissed" in ctx
+    assert "sigma-wizard" not in ctx
+
+
+def test_hook_is_quiet_when_nothing_was_declined(tmp_path):
+    _kg_repo(tmp_path, {"session_start": {"enabled": True}})
+    (tmp_path / "shim").mkdir()
+    ctx = _ctx(_run_hook(tmp_path, path_prefix=str(tmp_path / "shim")))
+    assert "setup_wizard.dismissed" not in ctx
+
+
+def test_hook_notice_also_shows_in_a_cloud_session(tmp_path):
+    _kg_repo(tmp_path, {"session_start": {"enabled": True},
+                        "setup_wizard": {"dismissed": ["graphify installed"]}})
+    ctx = _ctx(_run_hook(tmp_path, path_prefix=_shimmed_graphify(tmp_path), CLAUDE_CODE_REMOTE="true"))
+    assert "1 setup check" in ctx
+
+
+def test_hook_still_asks_a_setup_critical_row_the_committed_list_tried_to_decline(tmp_path):
+    """`verify command present (enforce is on)` is the critical row a fixture can force without
+    network or gh: enforce on, no command."""
+    sdlc = tmp_path / ".sdlc"
+    sdlc.mkdir()
+    base = {"verify": {"enforce": True}}
+    (sdlc / "config.json").write_text(json.dumps(base))
+    shim = _shimmed_graphify(tmp_path)
+    ctx = _ctx(_run_hook(tmp_path, path_prefix=shim))
+    if "verify command present" not in ctx:
+        pytest.skip("fixture cannot force the verify row on this box")      # control failed: say so
+    (sdlc / "config.json").write_text(json.dumps(
+        {**base, "setup_wizard": {"dismissed": ["verify command present (enforce is on)"]}}))
+    ctx = _ctx(_run_hook(tmp_path, path_prefix=shim))
+    assert "verify command present" in ctx
+    assert "Ignored: the committed setup_wizard.dismissed list" in ctx   # wizard text, not only the notice line

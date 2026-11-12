@@ -28,7 +28,11 @@ makes the hook skip it, because the container is thrown away (a skip written to 
 nobody to answer. If you are in such a session, do not start this flow on your own and never put its
 yes/no question to the user; `/sigma-doctor` lists every unresolved item. A repo opts out for good in
 committed config: `.sdlc/config.json` -> `{"setup_wizard": {"dismissed": ["graphify installed"]}}`,
-read alongside the state file by `wizard_status()` in any throwaway container.
+read alongside the state file by `wizard_status()` in any throwaway container. A committed entry for a
+setup-critical row (`project layer`, `gh installed`, `gh auth`, `verify command present (enforce is on)`) is
+ignored (#2152): ask that item as usual, and when `wizard_status()` returns `ignored_committed`, tell the user
+those entries were ignored and why. Session start prints one line saying how many checks the committed list
+declined.
 
 **Engine:** `setup_wizard.py` (`wizard_status()`, `read_dismissed()`, `write_dismissed()`) and
 `wizard_actions.py` (`run_scaffold()`, `run_graphify_install()`), both in the sibling `sigma-init`

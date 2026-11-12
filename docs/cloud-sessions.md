@@ -1375,7 +1375,15 @@ committed config, read alongside the state file:
 ```
 
 Only the wizard's own check names count; a missing, malformed or non-list value dismisses nothing, and an
-unknown name does nothing. Not measured: a real cloud session started as `/sigma-goal <N> --land` (the
+unknown name does nothing. A committed list cannot decline a setup-critical row (#2152): `project layer`
+(nothing runs without it), `gh installed` and `gh auth` (the loop cannot read the backlog or open PRs) and
+`verify command present (enforce is on)` (every goal is refused at `record done`). Such an entry is ignored,
+the question still shows and names it as ignored. `gh project scope`, the two board-state rows and
+`graphify installed` stay declinable. A person's own state-file dismissal is unchanged. When the list
+declines at least one check, session start adds one line saying how many and by what mechanism (from
+`setup_wizard.committed_dismissal_notice()`, also `python3 skills/sigma-init/scripts/setup_wizard.py notice
+.sdlc`, so a host without hooks asks the same); with nothing declined it prints nothing. Not measured: a
+real cloud session. Not measured: a real cloud session started as `/sigma-goal <N> --land` (the
 hook is tested as a process with the variable set, not inside a container). Not covered: the other
 SessionStart tiers gated on `SIGMA_RUN_ID` (upkeep, north-star, dag, watcher, loop liveness, kg) do not
 read `CLAUDE_CODE_REMOTE`.
