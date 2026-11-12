@@ -144,8 +144,9 @@ checklist). A project's own definition in its `CLAUDE.md` adds to this and never
 **Classification probe.** Before the go-ahead, run, for each number still in scope,
 `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/promote.py" apply "$S" <N> --dry-run`. It only reads and prints what
 promotion would do: a line such as "an upper tier (story), not a goal" or a refusal for a parked, blocked or
-unit-held goal moves the issue to the matching row above, with that line as the reason. An issue that already carries
-`sdlc:goal` and is armed is not a refusal. This is the same command [launch](references/launch.md#just-before-a-launch)
+unit-held goal moves the issue to the matching row above, with that line as the reason. "already carries `sdlc:goal` — nothing to do"
+is not a refusal, and "names a blocker that is not confirmed CLOSED" is not one either when that blocker is in the
+batch (the goal is in scope, waiting until it lands). This is the same command [launch](references/launch.md#just-before-a-launch)
 runs again right before a launch; running it here keeps a story out of the plan and off the go-ahead screen.
 
 **Open pull requests.** An open pull request with no `sdlc:in-progress` label and no claim file still means the
