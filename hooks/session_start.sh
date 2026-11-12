@@ -217,6 +217,14 @@ export HOOK_COEXIST_NOTICE
 # (something the launcher sets to mean non-interactive specifically) is real follow-up work, not
 # built in this plan. The direction of the error is the safe one: a skipped wizard leaves the user
 # in exactly today's status quo, and `/sigma-doctor` still reports everything it would have said.
+#
+# A CLAUDE CODE CLOUD SESSION ALSO SKIPS IT (#2143): `CLAUDE_CODE_REMOTE` true or 1 is read by
+# setup_wizard.is_cloud_session() (Python, so any host's own entry point can ask the same). The
+# container is thrown away, so a skip written to the gitignored state file is never remembered and
+# the question would return every session, and a session started unattended has nobody to answer it.
+# Same fall-through as SIGMA_RUN_ID: silent, or the policy brief if separately enabled. A repo can
+# also state a deliberate opt-out in committed config (`setup_wizard.dismissed` in
+# .sdlc/config.json), honoured by wizard_status() itself.
 if [ -z "${SIGMA_RUN_ID:-}" ] && python3 - "$PROJECT" "$PLUGIN_ROOT" <<'PY' 2>/dev/null
 import json, os, sys
 project, plugin_root = sys.argv[1], sys.argv[2]
@@ -224,6 +232,8 @@ _notice = (os.environ.get("HOOK_COEXIST_NOTICE") or "") and os.environ["HOOK_COE
 sys.path.insert(0, os.path.join(plugin_root, "skills", "sigma-init", "scripts"))
 try:
     import setup_wizard
+    if setup_wizard.is_cloud_session():            # #2143: a throwaway container cannot remember a skip
+        sys.exit(1)
     status = setup_wizard.wizard_status(os.path.join(project, ".sdlc"))
 except Exception:
     sys.exit(1)                                    # never let the wizard check break the session
