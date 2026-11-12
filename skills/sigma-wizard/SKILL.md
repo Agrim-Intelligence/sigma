@@ -22,6 +22,14 @@ new repository starts with
 `/sigma-init`, the one entry point, on every host. If you are reading this, `setup_wizard.wizard_status()`
 already found something incomplete.
 
+**A Claude Code cloud session never gets this question (#2143).** `CLAUDE_CODE_REMOTE` true or 1
+makes the hook skip it, because the container is thrown away (a skip written to the gitignored
+`.sdlc/state/setup-wizard-dismissed.json` is never remembered) and an unattended `--land` run has
+nobody to answer. If you are in such a session, do not start this flow on your own and never put its
+yes/no question to the user; `/sigma-doctor` lists every unresolved item. A repo opts out for good in
+committed config: `.sdlc/config.json` -> `{"setup_wizard": {"dismissed": ["graphify installed"]}}`,
+read alongside the state file by `wizard_status()` in any throwaway container.
+
 **Engine:** `setup_wizard.py` (`wizard_status()`, `read_dismissed()`, `write_dismissed()`) and
 `wizard_actions.py` (`run_scaffold()`, `run_graphify_install()`), both in the sibling `sigma-init`
 skill's `scripts/`. Neither has a CLI — they are import-only, so every call below goes through

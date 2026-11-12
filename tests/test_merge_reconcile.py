@@ -142,6 +142,23 @@ def test_record_review_posts_its_audit_note_once():
         assert not any(e[0] in ("complete", "park") for e in src.events)
 
 
+def test_record_review_note_carries_the_reason_the_loop_did_not_merge_2144():
+    """#2144: given the merge stop line as its detail, the awaiting-merge note says WHY (one line, capped); with no
+    detail it is byte-identical to the old note."""
+    with tempfile.TemporaryDirectory() as d:
+        base = _sdlc(d)
+        lp = _load("loop")
+        _started(lp, base, "0001")
+        src = RecordingSource()
+        why = "PR #7 clean and safe, but protection could not be determined for `main` (classic read 403)"
+        lp._record(base, src, "0001", "review", why + "\n" + "x" * 600)
+        note = [e[2] for e in src.events if e[0] == "await_merge"][0]
+        assert "PR #7 is open and awaiting a merge." in note and "Why the loop did not merge it: " + why in note, note
+        assert "\n" not in note and len(note) < 800 and note.endswith("…"), note
+        assert lp._awaiting_merge_note("7") == lp._AWAITING_MERGE_NOTE.format(pr="7")
+        assert lp._awaiting_merge_note("7", "  \n ") == lp._AWAITING_MERGE_NOTE.format(pr="7")
+
+
 def test_record_review_ends_the_ledger_claim_without_a_park_event():
     with tempfile.TemporaryDirectory() as d:
         base = _sdlc(d, {"work": {"enabled": True}, "ledger": {"enabled": True, "actor": "rae"}})

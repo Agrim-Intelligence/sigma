@@ -698,8 +698,21 @@ showed `.protected` false. Also MEASURED 2026-10-28: the three classic 404 bodie
 (`Branch not protected`, `Branch not found`, `Not Found`); `rules/branches/<b>` answers `200 []` for a public repository
 with no rulesets.
 
+(c) MEASURED (#2144, reported from a cloud session and reproduced from a second one in the same environment): a
+GitHub App-style token whose `GET repos/<o>/<r>` `permissions` read admin, maintain, push, triage and pull all true
+answered the classic read HTTP 403 `Resource not accessible by integration` and `rules/branches/<b>?per_page=100` `200
+[]`. That 403 is the credential's, not the branch's: the same answer would come for the default branch. It used to end
+every cloud `--land` run under `always` at the stop. Now, ONLY when all three hold, `protection()` reports the base as
+not protected (and `always` merges with the usual WARNING): the classic read is a permission 403 (not a 404, 5xx, rate
+limit or transport failure), the rules read answered a JSON list with nothing counted, and `GET branches/<b>` read a
+boolean `protected` that is `false`. A missing, true, non-boolean or unreadable flag, a failed rules read, or any other
+classic failure still raises `ProtectionUndetermined`. Where the stop still applies, `record review` given the merge
+line as its detail puts it in the issue note, so a person sees why the loop did not merge.
+
 UNMEASURED: maintain-level tokens; a write-level token on a plan that has rulesets (expected to read as (b), not seen);
-GitHub Enterprise Server; GitHub App and fine-grained tokens; the rules reply through a cloud session's proxy; the
+GitHub Enterprise Server; fine-grained tokens; a live `--land` run through the fallback to a merged PR (only offline
+tests with a stubbed `api` ran, each clause broken alone and seen red); whether `protected: false` can be trusted for a
+base enforced only by a ruleset (the rules read is what covers that case); the
 private free-plan CLASSIC 403 body (the 404 in (b) is what was seen; `strict_protection`'s docstring in
 `skills/sigma-status/scripts/merge_queue.py` records a 403 on that endpoint from an earlier observation). So how many
 installs `always` now stops on is unknown.
@@ -1342,6 +1355,30 @@ counting variant that signs the first commit or two and then fails), against a r
 documented `work.py commit` and `sync.py publish` gestures were run as processes. **Not measured:** the real
 cloud signer, Windows git, a real ssh or gpg agent. **Not covered:** a pre-flight probe, `work.py`'s own signing
 `git merge` and `git rebase`, and the commit sites in `release_manifest.py`, `decision_store.py` and `sigma-define`.
+
+## The setup wizard in a cloud session (#2143)
+
+A Claude Code cloud session never gets the setup wizard's yes/no question. `hooks/session_start.sh`
+skips the wizard when `CLAUDE_CODE_REMOTE` is `true` or `1` (the check is `setup_wizard.is_cloud_session()`,
+Python; the hook is only the accelerator), exactly as it does for a supervised run (`SIGMA_RUN_ID`): the
+hook stays silent, or emits the policy brief if `session_start.enabled` is on. Two reasons: the container
+is deleted, so a dismissal written to the gitignored `.sdlc/state/setup-wizard-dismissed.json` can never be
+remembered and the question would return every session; and a session started as `/sigma-goal <N> --land`
+has nobody to answer it, while the hook runs before the first prompt. `/sigma-doctor` still lists every
+unresolved item.
+
+A repo can state a deliberate opt-out that holds in any throwaway container (cloud, devcontainer, CI) in
+committed config, read alongside the state file:
+
+```json
+{"setup_wizard": {"dismissed": ["graphify installed"]}}
+```
+
+Only the wizard's own check names count; a missing, malformed or non-list value dismisses nothing, and an
+unknown name does nothing. Not measured: a real cloud session started as `/sigma-goal <N> --land` (the
+hook is tested as a process with the variable set, not inside a container). Not covered: the other
+SessionStart tiers gated on `SIGMA_RUN_ID` (upkeep, north-star, dag, watcher, loop liveness, kg) do not
+read `CLAUDE_CODE_REMOTE`.
 
 ## What this does NOT do
 
