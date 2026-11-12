@@ -273,6 +273,7 @@ Everyday commands:
 | `/sigma-scope <idea>` | Turn a rough idea into planned, prioritised issues. |
 | `/sigma-triage` | Plan a dependency-ordered run over the backlog. |
 | `/sigma-chain <N>` | Solve the whole chain of open blockers behind one goal: plan, ask once, arm, run. |
+| `/sigma-orchestrate <goals>` | Run a batch of goals as parallel `--land` sessions in dependency waves, merge and report. |
 | `/sigma-doctor` | Check the setup and print the exact fix for anything wrong. |
 | `/sigma-audit` · `/sigma-align` | Audit the codebase's health, or check shipped work against your strategy. |
 
@@ -393,6 +394,7 @@ see which features are live for your config.
 | [The dependency map and Sigma Chain](docs/dependency-map-and-chain.md) | the full reference: how dependencies are read, the map, Chain, keys, verbs, doctor rows and recovery |
 | [The dependency map](docs/dag.md) | see what waits on what, ask for a goal's chain, and read the shadow-to-on criterion |
 | [Sigma Chain](docs/chain.md) | plan, approve and run every open prerequisite behind one goal |
+| [Running a batch of goals](docs/orchestrate.md) | run unrelated goals as parallel `--land` sessions in dependency waves |
 | [Worktrees, PRs and merging](docs/worktrees-and-merging.md) | control how goals become pull requests and get merged |
 | [Planning the backlog](docs/planning-the-backlog.md) | use `/sigma-scope` and `/sigma-triage` |
 | [Action log and team ledger](docs/action-log-and-ledger.md) | trace what the loop did, or coordinate a team |

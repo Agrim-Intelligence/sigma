@@ -1,0 +1,14 @@
+{
+  "skill": "sigma-orchestrate",
+  "kind": "pinned",
+  "gates": [
+    "Writes wait for the go-ahead"
+  ],
+  "scripts": [
+    {
+      "path": "skills/sigma-orchestrate/scripts/waves.py",
+      "role": "gesture"
+    }
+  ],
+  "artifacts": []
+}
