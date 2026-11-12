@@ -10,7 +10,7 @@ A defect in the goal's own change is not a follow-up. It is fixed in the same PR
 ## The setting, and the standing decision
 
 The decision is a project setting, `followups.mode` in `.sdlc/config.json` ([configuration](../../../docs/configuration.md)),
-read with `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" followup-mode .sdlc`, which prints `file` or `in-goal`.
+read with `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" followup-mode "$S"`, which prints `file` or `in-goal`.
 
 - **`in-goal`**: the project has decided that follow-ups stay in their goal, for every run, not only this batch.
   `handoff.py track` refuses a non-blocking follow-up (exit 3, nothing filed) and prints the rule, `sigma-review` and
@@ -38,8 +38,8 @@ as usual). For this goal it replaces the project's own rule for filing follow-up
 - After the first green full verify, or past the cap: do not implement it now. Post ONE comment on this
   goal's issue containing the line `<!-- sigma-orchestrate:deferred -->` and one line per item:
   `- [area:<area>] <what> - <why> (files: <paths>)`. Edit that same comment if you find more.
-  Check a draft first with `python3 "${CLAUDE_SKILL_DIR}/scripts/deferred.py" check <file>` (exit 0 only when every
-  bullet parses).
+  Check a draft first with `python3 "${CLAUDE_SKILL_DIR}/scripts/deferred.py" check <file>` (exit 0 only when at least one item parses and nothing is rejected; a numbered item, a `+` bullet or `-[area:...]`
+  written without the space is listed as rejected, not skipped).
   Exception: when a post-PR `sigma:block` already forces a fix and a new verify, one small same-area item
   may ride along as a slice (a fresh plan-review first, then a fresh review and retrospective after it);
   it counts against the cap of 2.
@@ -56,7 +56,7 @@ Each wake, for every goal that ended since the last wake, save its issue comment
 `sigma-orchestrate:deferred` anywhere on a line that is not quoted or fenced (Sigma may wrap the text), reads only
 comments from an `OWNER`, `MEMBER` or `COLLABORATOR` (on a public repository anyone can paste the marker), and prints
 `{"items": [...], "rejected": [...]}`. Store `items` in `goals.json` under that goal as
-`"deferred": [{"area", "what", "why", "files"}]`, and put every `rejected` entry (a malformed bullet, an unsafe
+`"deferred": [{"area", "what", "why", "files"}]`, and put every `rejected` entry (a malformed bullet, a list line that does not start `- ` or `* `, an unsafe
 path, an untrusted commenter) on the needs-you list with its reason: a rejected line is never silently dropped.
 Identical items collapse to one. The format and its limits are at the top of the script. Only a
 merged goal's items go to a clean-up goal; a stopped goal's items go to the final report, because the work
@@ -73,7 +73,7 @@ feature unit, item area). For each group, file one clean-up goal through Sigma, 
 source goals so the unit is inherited:
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" track .sdlc <source goal number> --area <area> \
+python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" track "$S" <source goal number> --area <area> \
   --why "Deferred follow-ups from sigma-orchestrate batch <batch>, wave <k>" \
   --queue queued --blocks no --assignee same-area|cross-area --kind cleanup \
   --title "Clean-up: deferred follow-ups from <batch> wave <k> (<area>)" --body-file <file>

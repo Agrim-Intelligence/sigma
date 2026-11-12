@@ -239,6 +239,36 @@ class Ready(unittest.TestCase):
         self.assertNotIn("1", r["waiting"])
 
 
+class OpenPullRequests(unittest.TestCase):
+    """#2157: an open pull request that links the issue (any branch name) holds the goal, like a label would."""
+
+    def test_an_open_pr_holds_the_goal_and_names_it(self):
+        p = waves.plan(doc(g(1, open_prs=[2150]), g(2)))
+        self.assertIn("#2150", p["held"]["1"])
+        self.assertEqual(p["waves"], [[2]])
+
+    def test_a_goal_waiting_on_one_held_by_a_pr_is_held_too(self):
+        p = waves.plan(doc(g(1, open_prs=[7]), g(2, [1])))
+        self.assertIn("#1", p["held"]["2"])
+
+    def test_no_open_prs_key_or_an_empty_list_changes_nothing(self):
+        self.assertEqual(waves.plan(doc(g(1), g(2))), waves.plan(doc(g(1, open_prs=[]), g(2, open_prs=None))))
+        self.assertEqual(waves.plan(doc(g(1)))["held"], {})
+
+    def test_an_explicit_reason_wins_over_the_pr_note(self):
+        p = waves.plan(doc(g(1, held="needs a person", open_prs=[7])))
+        self.assertEqual(p["held"]["1"], "needs a person")
+
+    def test_ready_does_not_launch_a_goal_with_an_open_pr(self):
+        r = waves.ready(doc(g(1, open_prs=[7]), g(2)), {})
+        self.assertEqual(r["launch"], [2])
+        self.assertIn("1", r["held"])
+
+    def test_md_lists_it_as_held(self):
+        d = doc(g(1, open_prs=[7]))
+        self.assertIn("| held | #1 |", waves._md(waves.plan(d), d))
+
+
 class Cli(unittest.TestCase):
     def test_plan_and_ready_from_files(self):
         here = SCRIPTS
@@ -270,3 +300,8 @@ class Cli(unittest.TestCase):
 #   rank: priority dropped, reach dropped (test_dependents_of_a_moved_goal..., test_rank_priority_then...)
 #   ready: base ancestry, reservation, awaiting-merge claims and seat, PR files over claims, cross-base stuck,
 #     stopped blocker stuck, seat limit, claim clash, unmet blockers, running goal relaunched (the Ready class)
+
+# CONTROLS (#2157), each applied alone to waves.py and its named test seen red: the open_prs hold dropped
+#   (test_an_open_pr_holds_the_goal_and_names_it); a None value read as a list
+#   (test_no_open_prs_key_or_an_empty_list_changes_nothing); the PR note ranked above an explicit reason
+#   (test_an_explicit_reason_wins_over_the_pr_note); the PR numbers dropped from the reason.

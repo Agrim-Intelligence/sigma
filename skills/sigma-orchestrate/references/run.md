@@ -80,12 +80,12 @@ Re-read everything right before merging. Merge only when all hold:
      start of any line that is not quoted (`>`) or inside a code fence;
    - take the trusted markers in time order: the latest must be an approve (an unblock clears a block but is
      not an approval);
-   - the approve must be for the PR's current head. Read the first line of the latest trusted approve. When it
+   - the approve must be for the PR's current head. Read the last marker line of the latest trusted approve (a comment may hold several marker lines; `work.py` reads the last one). When it
      names a commit (`sigma:approve <id>`, a full commit id or a prefix of at least 7 hex digits, any case), that id
      must equal the head sha you are about to merge, or be a prefix of it; anything else after the marker that
      looks like an id but is not a clean one (under 7 digits, 41 to 63 or over 64 digits, punctuation stuck to
      it, two ids) does not count, so do not merge. Sigma's own post-review writes it this way, and so should an
-     approve you post yourself: `sigma:approve <head sha>` as the first line. An approve that names no commit
+     approve you post yourself: `sigma:approve <head sha>` as its last marker line (one line is simplest). An approve that names no commit
      (a plain `sigma:approve`, or one followed by ordinary words) falls back to times: it must be newer than the
      PR's last head update, the head commit's committer date and any `head_ref_force_pushed` event in
      `gh api repos/<o>/<r>/issues/<pr>/timeline --paginate`.
@@ -108,7 +108,7 @@ arm auto-merge on a PR.
 
 After a merge: if the base is not the default branch, close the issue as completed (a PR into another
 branch does not close it) and comment the merge SHA; clear a leftover claim with
-`python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" release .sdlc <N> "merged in <sha> by sigma-orchestrate batch <batch>"`, not
+`python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" release "$S" <N> "merged in <sha> by sigma-orchestrate batch <batch>"`, not
 by editing labels. Merge promptly: an approved PR that waits collects conflicts.
 
 **Conflicts.** A conflict in Sigma's unit registry between sibling PRs of one unit (`.sdlc/features/units/<unit>.json`
@@ -129,8 +129,8 @@ When a merge lands, look at batch goals that named it as a blocker:
 - parked or blocked only on that blocker: release it through Sigma, never by editing labels:
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/unpark.py" brief .sdlc <N> --json
-python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/unpark.py" resolve .sdlc <N> --answers <file.json> --decision unpark
+python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/unpark.py" brief "$S" <N> --json
+python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/unpark.py" resolve "$S" <N> --answers <file.json> --decision unpark
 ```
 
 with the answers recording "blocker #M merged (PR #P, <sha>); released by sigma-orchestrate batch <batch>".
@@ -148,7 +148,7 @@ next `ready`.
 - **Needs a person** (a decision, a waiver, a design fork, an irreversible or production step, a safety
   refusal you cannot route around): needs-you list with the exact action. Never work around a refusal.
 - **Stalled** 60 minutes: check the session where the host lets you. If it is gone, the goal holds
-  `sdlc:in-progress` and no PR is open, release it (`python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" release .sdlc <N> "<why>"`)
+  `sdlc:in-progress` and no PR is open, release it (`python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" release "$S" <N> "<why>"`)
   and relaunch once. A merged PR is never relaunched: it has landed. An open PR with a dead session:
   [refresh](#refresh-state).
 - **Never started**: 60 minutes after launch with no claim (`sdlc:in-progress`), no goal branch, no PR and no

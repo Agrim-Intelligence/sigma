@@ -15,6 +15,7 @@ goals.json
               "blockers": [34],            # open blockers inside the batch
               "external_blockers": [99],   # open blockers outside the batch (the goal is held)
               "claims": ["src/app/x.py", "ui/src/", "contract:runs-api"],
+              "open_prs": [101],           # open pull requests that link the issue and are not this batch's (held)
               "held": null}]}              # or a reason string set by the orchestrator
   Other keys (wave, deferred, cleanup, ...) are the orchestrator's and are ignored here.
 
@@ -30,7 +31,7 @@ Rules
   * Placement walks goals in dependency order, best rank first; a goal goes in the smallest wave after
     all its blockers' waves where it clashes with nothing already there.
   * Rank: priority (P0 first), then more in-batch goals waiting on it (transitively), then issue number.
-  * Held goals (outside blocker, cycle, a reason from the orchestrator) are not placed, and neither is any
+  * Held goals (outside blocker, cycle, an open pull request linking the issue, a reason from the orchestrator) are not placed, and neither is any
     goal that waits on a held one. An edge between goals on different bases is listed in `cross_base`.
   * Claims: a path covers itself and everything under it ("ui/src", "ui/src/", "ui/src/**", "/ui/src" all
     cover "ui/src/a.ts"); a glob is cut back to the directory before its first wildcard ("src/**/*.ts" is
@@ -109,6 +110,7 @@ def _goals(doc):
             "external": {int(b) for b in g.get("external_blockers", [])},
             "claims": list(g.get("claims") or ["*"]),
             "held": g.get("held"),
+            "open_prs": sorted({int(x) for x in (g.get("open_prs") or [])}),
         }
     for n, g in goals.items():
         inside = {b for b in g["external"] if b in goals}
@@ -168,6 +170,8 @@ def _plan(goals):
     for n, g in goals.items():
         if g["held"]:
             held[n] = str(g["held"])
+        elif g["open_prs"]:
+            held[n] = "an open pull request already links it (" + ", ".join(f"#{b}" for b in g["open_prs"]) + ")"
         elif g["self_block"]:
             held[n] = "lists itself as a blocker"
         elif g["external"]:
