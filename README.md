@@ -287,7 +287,7 @@ Claude Code in auto mode, the permission classifier denied the approval as self-
 live run, and the loop stopped after opening the PR with no recorded review. Sigma does not work
 around a host refusal and never fakes an approval. The loop's instructions say to park the goal and
 not retry (no code produces that park; it is instruction text), and the **attended fallback** is yours to take: read the PR, then comment `sigma:approve`
-from your own account (a comment from an owner, member or collaborator counts; GitHub's formal
+(optionally followed by the commit id you reviewed) from your own account (a comment from an owner, member or collaborator counts; GitHub's formal
 approval needs a second identity because the loop opens the PR under yours), then re-queue the goal
 with `/sigma-unpark`. To let the loop post the approval itself you need a host
 permission rule you set yourself; a stock install has none, so plan for attended review.

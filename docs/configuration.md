@@ -163,6 +163,21 @@ the command environment, the limits and the recovery lever are in [quality-delta
 With `gates.quality_ratchet.enabled`, `work.py merge` acts on `required` metrics; that section of the same page
 gives the budget, the worst case and the owner-only `work.py quality-waive` verb.
 
+## Where a follow-up goes: `followups.mode`
+
+`followups.mode` is `"file"` (default, and what every project did before the key existed) or `"in-goal"`. With `"file"`
+a follow-up, work a session finds that is outside its own goal, is filed as a new issue through `handoff.py track`. With
+`"in-goal"` it stays inside the goal that found it: before that goal's first green full verify it becomes a slice of the
+goal's plan (at most 2, then the phases re-run from plan-review); after that, or past the cap, it is one deferred-items
+comment on the goal's issue (format in `skills/sigma-orchestrate/references/follow-ups.md`, parsed by
+`skills/sigma-orchestrate/scripts/deferred.py`). In that mode `handoff.py track` refuses a non-blocking follow-up with
+exit 3 and files nothing; a blocker (`--blocks yes`) and work marked `--kind prerequisite`, `--kind cleanup` or
+`--kind child` are filed as before, and so is everything else that opens an issue (hand-offs, upkeep findings). Only the
+exact string `in-goal` turns it on: a typo, a different case or a wrong type reads `file`, so a bad edit never stops
+follow-ups being filed. `handoff.py followup-mode .sdlc` prints the effective value; `/sigma-orchestrate` reads it,
+`sigma-review` routes its follow-up findings by it, and the setting is a project decision, not a batch one.
+Not measured: how reliably a phase subagent obeys the refusal text; the check is the exit code, not the model.
+
 ## Filing caps: `ai_filed.on_cap`
 
 `ai_filed.max_per_goal` and `ai_filed.max_per_run` cap how many AI-filed issues are armed. `ai_filed.on_cap` says what a

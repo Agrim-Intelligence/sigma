@@ -124,6 +124,16 @@ be the loop's channel. Plain comments have no such restriction: **`sigma:approve
 approve). The same markers let a **human** review a loop PR when they want to, and a formal `APPROVE` or an
 unresolved review thread still counts whenever a second identity leaves one.
 
+**An approve may name the commit it approved (#2153).** `sigma:approve <commit id>`, where the id is the full commit
+id or a prefix of at least 7 hex digits (any case), counts only while that id is the PR's current head. `post-review`
+writes it that way, naming the head it reviewed, so a push after the review leaves an approve that no longer counts
+for the new head. A plain `sigma:approve` (no id, or text that does not start like an id, such as `sigma:approve - ship
+it`) behaves exactly as before. The check fails closed: an id that is not the head, a malformed one (fewer than 7
+digits, 41 to 63 or over 64, an id with punctuation stuck to it such as `abc1234,`, or two ids on one line), or a head
+that cannot be read means that approve does not count for this head, and it also ends an earlier approve (a block
+stands). A reason that opens with a word made only of hex digits (`added`, `decade`) reads as a malformed id, so open
+it with another word or name the commit. Not measured: a live pull request.
+
 **Who may comment a marker.** A `sigma:approve`, `sigma:block` or `sigma:unblock` comment counts only
 when GitHub reports the commenter's `authorAssociation` as `OWNER`, `MEMBER` or `COLLABORATOR`. On a public
 repository anyone can comment, so any other commenter (including an absent or unknown association) is

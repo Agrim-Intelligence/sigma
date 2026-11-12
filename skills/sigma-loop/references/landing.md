@@ -147,7 +147,7 @@ a fresh host subagent, then run `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py" r
 approve|block|unblock --reason "<reviewer result>" --agent-id <its id>`. Finally run `python3 "${CLAUDE_SKILL_DIR}/scripts/work.py"
 review-evidence .sdlc "$goal" --manifest "$REVIEW_MANIFEST" --review-result "$REVIEW_RESULT"`.
 **No human approves — the loop reviews and clears its own PR:**
-- **No blocking issues** → `work.py post-review .sdlc "$goal" --evidence "$REVIEW_EVIDENCE" --verdict approve` (posts `sigma:approve`).
+- **No blocking issues** → `work.py post-review .sdlc "$goal" --evidence "$REVIEW_EVIDENCE" --verdict approve` (posts `sigma:approve <head commit id>`, naming the head it reviewed; a plain `sigma:approve` typed by a person still counts, see [worktrees-and-merging](../../../docs/worktrees-and-merging.md)).
 - **Blocking issues** → `work.py post-review .sdlc "$goal" --evidence "$REVIEW_EVIDENCE" --verdict block --reason "<the issues>"`, then
   **fix them in the worktree, dispatched to a fresh subagent** (back to Implement — never a resume
   of the subagent whose diff got blocked; the fresh-redispatch rule, step 3, names the exact

@@ -25,8 +25,13 @@ documented the right command for it until now. Use `handoff.py track` the same w
 blocker already goes through `handoff.py open`:
 `python3 "${CLAUDE_SKILL_DIR}/scripts/handoff.py" track .sdlc "$goal" --area <area> --why "<what
 you found>" --queue actionable|queued --assignee same-area|cross-area --blocks yes|no [--priority
-P0|P1|P2] [--label model:<tier>] [--title T] [--body-file F]`. All three value-flags are
-required, with no default, on purpose. **Triage decides, by default.** Unless `ai_filed.triage.enabled` is false, an AI-filed issue is checked against a
+P0|P1|P2] [--label model:<tier>] [--title T] [--body-file F] [--kind followup|prerequisite|cleanup|child]`. All
+three value-flags are required, with no default, on purpose. **Where a follow-up goes is a project setting,
+`followups.mode`** (default `file`: what this section describes). With `"in-goal"`, `track` refuses a
+non-blocking follow-up (`--blocks no`, `--kind` absent or `followup`) with exit 3 and files nothing: the follow-up
+stays in its goal as a slice or one deferred-items comment ([the rule](../../sigma-orchestrate/references/follow-ups.md)).
+A blocker (`--blocks yes`) and work that is not a follow-up of this goal (`--kind prerequisite`, `cleanup` or
+`child`) are filed as always. `--kind` changes nothing when the mode is `file`. **Triage decides, by default.** Unless `ai_filed.triage.enabled` is false, an AI-filed issue is checked against a
 deny-list (hard-stop words and shapes, secret shapes, a recorded-permission marker on the first body line) and then
 either ARMED at its bucket priority (urgent P2, routine P3, unclear P4, below any human-filed P1) or PARKED with
 a question kind. `--queue queued` lets triage decide; `--queue actionable` still runs the deny-list and arms
