@@ -4,6 +4,11 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The loop skill's routing rule passes the merge stop line to `record review`, and the detail is redacted before it is posted (#2150, #2151).**
+  - **What changed.** `skills/sigma-loop/SKILL.md` now says `record review "<that line>"`, the stop line as its detail, in the routing rule itself, not only in `landing.md` and `land.md`. `loop.py record review` redacts the detail (after the whitespace collapse, before the 400-character cap) for the issue note, the ledger entry and the action log: an absolute path (a drive or UNC path, `~/...`, or a path of two or more segments) becomes `<path>`, an `@name` or `@org/team` mention becomes `<mention>`, and the trigger phrase of anything `blocker_scan._BLOCK_RE` matches becomes an ellipsis, so it cannot create a dependency edge. The blocker clause reuses that pattern; there is no second regex.
+  - **Measured:** offline, `tests/test_record_review_detail_2150_2151.py` drives the documented `loop.py record <sdlc> <goal> review "<line>"` gesture. Each clause (path, mention, blocker, the ledger and action-log redaction, the redact-before-cap order, the SKILL.md rule and its detail wording) was broken on its own and its own test went red, then green again.
+  - **Not measured / not covered:** a live goal ending awaiting a merge with a real agent following the new rule; the path pattern is a heuristic (a single-segment path such as a bare `/tmp` is left alone); the stop line's other free text is not otherwise filtered.
+
 ## 1.0.29 — 2026-11-13 — a cloud session no longer gets the setup wizard question, a protection 403 falls back to the branch flag, and /sigma-orchestrate plans a batch in waves
 
 - **`/sigma-orchestrate` runs a batch of goals as parallel `--land` sessions in dependency waves (#2145).**
