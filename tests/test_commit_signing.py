@@ -272,6 +272,10 @@ def _pr_fixture(tmp_path, monkeypatch, status):
         line = " ".join(str(a) for a in argv)
         if "rev-list" in line:
             return "2"
+        if line == "git remote get-url origin":                # #2172: the push remote a real checkout answers
+            return "https://github.com/acme/widgets.git"
+        if line == "gh api repos/{owner}/{repo} --jq .full_name":    # #2172: gh's default repo
+            return "acme/widgets"
         if "pulls?head=" in line:
             return "9"
         if line.endswith("pulls/9"):
