@@ -54,7 +54,7 @@ exception, and only while the project's own setting does not carry it: read
 `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" followup-mode "$S"`. `in-goal` means the
 project has made the decision itself (`followups.mode`, [configuration](../../../docs/configuration.md)): leave
 the standing decision out of the prompt, and `handoff.py track` itself refuses a follow-up filing. `file` (the
-default) means the decision rides in the prompt, for this batch only, as below.
+default) means the decision rides in the prompt, for this batch only, as below, with `<limit>` filled in from the `max_added_slices` line of the same `followup-mode` output (the configured limit, default 10), never from prose.
 
 A project's approved known-flake exception is not a launch fact and never rides in the prompt: it is a
 project setting, `verify.known_flakes` ([configuration](../../../docs/configuration.md#known-flake-exceptions-verifyknown_flakes)),

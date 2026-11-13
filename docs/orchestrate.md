@@ -86,7 +86,7 @@ blocker, `--blocks yes`, and work marked `--kind prerequisite|cleanup|child` are
 landing path route follow-ups the same way, and the launch prompt says nothing about follow-ups. With `file`, every
 launch prompt carries one standing decision (verbatim in `references/follow-ups.md`) for the goals of this batch only:
 no new issue for a follow-up. Found before the goal's first green full verify, it joins the goal's plan as a slice and the phases
-re-run from plan-review, so one verify covers everything (at most 2 slices per goal). Found later, or past the
+re-run from plan-review, so one verify covers everything (at most the configured limit of slices per goal, `followups.max_added_slices`, default 10). Found later, or past the
 cap, it is written onto the goal as one marked deferred-items comment, which `scripts/deferred.py` parses (below).
 When a wave ends, the orchestrator groups the merged goals' deferred items by unit and area and files one clean-up
 goal per group through `handoff.py track --kind cleanup`. Clean-up goals never spawn more. A follow-up issue filed anyway is folded into its goal's

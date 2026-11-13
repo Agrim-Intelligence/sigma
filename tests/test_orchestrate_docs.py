@@ -55,7 +55,7 @@ def test_the_launch_prompt_names_the_standing_decision_once_and_launch_points_at
 def test_no_follow_up_issue_is_filed_by_the_decision():
     follow = _text(SKILL_DIR / "references" / "follow-ups.md")
     assert "Do not open a new issue for a follow-up" in follow
-    assert "At most 2 added slices per goal" in follow
+    assert "At most <limit> added slices per goal" in follow
 
 
 def test_the_skill_is_listed_where_skills_are_listed():
