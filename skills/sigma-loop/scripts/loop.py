@@ -56,6 +56,7 @@ work = _load("work")                # per-goal worktree/branch/PR (config-gated,
 tamper_scan = _load("tamper_scan")  # #1937: diff parser; #1933 reuses changed_test_files()
 flake_check = _load("flake_check")  # #1933: 3x varied-order re-run of a goal's changed tests
 witness = _load("witness")          # #1934: red-before-green as data (+ #1935's vocabulary)
+known_flakes = _load("known_flakes")  # #2160: the recorded known-flake exception (pure standard library)
 goal_python = _load("goal_python")  # #2079: which interpreter runs a goal's planned tests (one copy: it caches)
 diff_revert = _load("diff_revert")  # #2240: mutmut-free kill control -- writes #1935's `mutation`
                                      # witness kind, which nothing else in this repo ever produces
@@ -6404,6 +6405,11 @@ _evidence_path = state.evidence_path       # both live in state.py so work.py ca
 _done_refusal = state.done_refusal         # evidence without loop.py and work.py importing each other
 
 
+def _done_refusal_for_goal(sdlc_dir, goal):
+    """#2160: `state.done_refusal` with the goal's recorded base, which known-flake evidence is judged against."""
+    return state.done_refusal(sdlc_dir, goal, base=(work._record(sdlc_dir, goal) or {}).get("base"))
+
+
 FLAKE_RUNS = 3          # #2084: the runner branch re-runs each runner bullet this many times, like flake_check
 
 
@@ -7235,9 +7241,17 @@ def _verify_goal_body(sdlc_dir, goal, guard):
             and content_before.get("fingerprint") != content_after.get("fingerprint")):
         test_first.update(passed=False, error="repository content changed during verify")
         proc.returncode = proc.returncode or 1
+    # #2160: a red full verify whose every failure is on the project's recorded, unexpired known-flake list for
+    # this goal's base, and passes alone on this head, is `passed-with-known-flakes` -- evidence whose `exit` stays
+    # nonzero, so every reader that does not know the state still reads red. Anything else changes nothing.
+    known = _known_flakes_verdict(sdlc_dir, config, root, _wrec.get("base"), proc.returncode, test_first,
+                                  "\n".join(outputs), content_before, content_after, _python,
+                                  ran=len(outputs), declared=len(commands))
     ev.write_text(_json.dumps({"command": cmd, "exit": proc.returncode,
                                "acceptance_sha256": acceptance_hash,
-                               "verify_state": "pass" if proc.returncode == 0 else "fail",
+                               "verify_state": (known_flakes.STATE if known and known.get("accepted")
+                                                else "pass" if proc.returncode == 0 else "fail"),
+                               "known_flakes": known,
                                "at": time.time(), "run": this_run, "pid": os.getpid(),
                                "root": root, "head": head, "trust": trust.source,
                                "content": content_after,
@@ -7289,12 +7303,72 @@ def _verify_goal_body(sdlc_dir, goal, guard):
               "not deterministic: fix or remove the listed test(s), then re-run "
               f"`loop.py verify {sdlc_dir} {goal}`", file=sys.stderr)
         return 5
+    if known and known.get("accepted"):
+        print(f"PASSED-WITH-KNOWN-FLAKES exit=0 evidence={ev} -- the full verify was red on "
+              f"{len(known['ids'])} test(s), all on the recorded known-flake list for base "
+              f"{known['base']!r} and each passing alone; this is not a clean pass")
+        return 0
+    if known and known.get("reason") and known.get("attempted"):
+        print("loop.py verify: known-flake exception not applied: " + known["reason"], file=sys.stderr)
     print(f"{'VERIFIED' if proc.returncode == 0 else 'FAILED'} exit={proc.returncode} evidence={ev}")
     if proc.returncode != 0:
         # D7: stdout above is a contract (`FAILED exit=N evidence=...`); the way forward rides stderr.
         print(f"loop.py verify: failed -- the last output lines are in {ev} under \"tail\"; fix the "
               f"failing check, then re-run `loop.py verify {sdlc_dir} {goal}`", file=sys.stderr)
     return 0 if proc.returncode == 0 else 1
+
+
+def _known_flakes_verdict(sdlc_dir, config, root, base, returncode, test_first, output, before, after, python,
+                          run_solo=None, today=None, ran=None, declared=None):
+    """#2160: -> None when the exception is not in play (green, or no `verify.known_flakes`), else the dict
+    `known_flakes.evaluate` returns plus `attempted`, `entries`. Never raises; every doubt is `accepted: False`.
+    Not in play: a verify that passed. In play but refused (the evidence stays red): a malformed setting, a planned
+    test that did not pass, a tree that changed during verify, no base, or anything `evaluate` refuses."""
+    try:
+        if returncode == 0:
+            return None
+        entries, error = known_flakes.read(config)
+        if error is None and not entries:
+            return None
+        out = {"attempted": True, "accepted": False, "reason": error, "ids": [], "matched": {}, "solo": {},
+               "base": base, "entries": []}
+        if error:
+            return out
+        if test_first.get("provenance") and not test_first.get("passed"):
+            out["reason"] = "the goal's planned tests did not pass"
+            return out
+        if (before or {}).get("fingerprint") != (after or {}).get("fingerprint"):
+            out["reason"] = "repository content changed during verify"
+            return out
+        if ran is not None and declared is not None and ran < declared:
+            out["reason"] = ("%d of %d declared verify command(s) ran; the rest never ran, so a green on the "
+                             "listed failures proves nothing about them" % (ran, declared))
+            return out
+        if not base:
+            out["reason"] = "the goal has no recorded base"
+            return out
+        if python is None:
+            out["reason"] = "no usable interpreter for the solo re-runs"
+            return out
+        if run_solo is None:
+            bounded, deadline = _load("bounded_run"), time.monotonic() + _verify_timeout_seconds(config)
+
+            def run_solo(test_id):
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    return "timeout", None, "the verify timeout was spent before this re-run started"
+                done = bounded.run_group([str(python), "-m", "pytest", "-q", test_id], root,
+                                         min(left, bounded.MAX_SECONDS), shell=False,
+                                         env=bounded.unattended_env(dict(os.environ)), merge=True)
+                return done.outcome, done.code, (done.out or "") + (("\n" + done.detail) if done.detail else "")
+        got = known_flakes.evaluate(output, entries, base, today or _datetime.date.today(), run_solo,
+                                    known_flakes.integration_set(config, base, root))
+        out.update(got)
+        out["entries"] = known_flakes.record_for(entries, got["matched"]) if got["accepted"] else []
+        return out
+    except Exception as exc:                  # noqa: BLE001 - the exception can only ever fail closed
+        return {"attempted": True, "accepted": False, "reason": "known-flake check failed: %s" % exc, "ids": [],
+                "matched": {}, "solo": {}, "base": base, "entries": []}
 
 
 def _arm_run_id(session_pid):
@@ -8778,7 +8852,7 @@ def _dispatch(argv):
             # caught here (exit 2, matching verify_goal's own unsafe-goal convention) instead of
             # letting it reach `main`'s ConfigMissing-only catch as a raw traceback.
             try:
-                refusal = _done_refusal(argv[2], argv[3])
+                refusal = _done_refusal_for_goal(argv[2], argv[3])
             except ValueError as exc:
                 print(f"loop.py record: {exc}", file=sys.stderr)
                 return 2

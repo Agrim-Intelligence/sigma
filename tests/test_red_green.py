@@ -670,7 +670,7 @@ def test_work_pr_accepts_runner_proof_without_no_tests(b, monkeypatch):
     ev_path = w.state.evidence_path(b.sdlc, '84')
     ev_path.parent.mkdir(parents=True, exist_ok=True)
     ev_path.write_text(json.dumps({'root': str(b.root), 'content': {'fingerprint': 'x'}, 'test_first': green}))
-    monkeypatch.setattr(w.state, 'done_refusal', lambda *a: None)
+    monkeypatch.setattr(w.state, 'done_refusal', lambda *a, **k: None)
     rec = {'worktree': str(b.root), 'remote': 'origin', 'base': 'main', 'branch': 'sdlc/84'}
     config = dict(b.config, work={'enabled': True}, verify={'enforce': True, 'command': 'true'})
     got = outcome(lambda: w._test_first_refusal(b.sdlc, config, rec, '84', lambda cwd, argv: ''))
