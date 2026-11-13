@@ -52,7 +52,11 @@ def pr_case(case, monkeypatch, trusted=False, extra=None):
             return '1'
         if argv[:2] == ['git', 'log']:
             return 'Change'
-        if argv[:3] == ['gh', 'api', 'repos/{owner}/{repo}/pulls']:
+        if argv[:4] == ['git', 'remote', 'get-url', 'origin']:      # #2172: the push remote a real checkout answers
+            return 'https://github.com/acme/widgets.git'
+        if argv[:3] == ['gh', 'api', 'repos/{owner}/{repo}'] and argv[3:] == ['--jq', '.full_name']:
+            return 'acme/widgets'                                       # #2172: gh's default repo, same as the remote
+        if argv[:3] == ['gh', 'api', 'repos/acme/widgets/pulls']:
             return '7'
         return ''
     return w, {'work': {'enabled': True}, 'verify': {'enforce': True}, **(extra or {})}, run, calls
