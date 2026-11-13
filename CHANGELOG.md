@@ -4,6 +4,11 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`work.py pr` names the repository it opens against and refuses before pushing when it cannot (#2165).**
+  - **What changed.** Every PR call (find, create, body update, receipt read) now carries the configured `owner/name` (`discovery.github.repo`, else the push remote's URL) instead of `gh`'s `{owner}/{repo}` placeholders. Before the push it refuses, naming the cause, when that repository cannot be worked out, when the push remote's URL names a different one, or when `gh`'s own default repository (readable over REST, which a fork can capture) is not the configured one or cannot be read; the remedy named is `gh repo set-default`.
+  - **Measured:** offline, 5 new tests in `tests/test_work.py` (one per clause plus the explicit-slug check), each seen red against the old code or with its clause broken.
+  - **Not measured:** a real fork-default checkout; the extra REST read adds one call per `work.py pr`.
+
 - **The session-start notice no longer says an ignored setup-critical entry is "still asked about" in a cloud session (#2163).** `committed_dismissal_notice()` now words it for a cloud session (no question is asked there; `/sigma-doctor` still reports it); a repeated "Not measured" clause in `docs/cloud-sessions.md` is removed. Measured: offline unit tests, both wordings. Not measured: a real cloud session.
 
 - **`/sigma-orchestrate`: a wrongly typed `open_prs` is refused, the deferred-items parser lists lines it used to skip, and the doc shows the current follow-up command (#2162).**
