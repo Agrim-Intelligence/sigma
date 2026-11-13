@@ -79,7 +79,7 @@ def test_a_later_push_never_retitles_an_existing_pull_request(case, monkeypatch)
     def existing(cwd, argv):
         if argv[:2] == ["gh", "api"] and "pulls?head=" in argv[2]:
             return "7"
-        if argv[:3] == ["gh", "api", "repos/{owner}/{repo}/pulls/7"] and "--method" not in argv:
+        if argv[:3] == ["gh", "api", "repos/acme/widgets/pulls/7"] and "--method" not in argv:
             return '{"body": "Existing body\\n"}'
         if "--method" in argv and any(x.startswith("title=") for x in argv):
             patched.append(argv)
