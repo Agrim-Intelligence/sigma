@@ -4839,8 +4839,6 @@ _SHA40 = re.compile(r"^[0-9a-f]{40}$")
 _PLAN_COPY_MARK = re.compile(r"^<!-- sigma:plan-copy goal=(\S+) sha256=([0-9a-f]{64}) part=\d+/\d+ -->")
 
 
-_SHA40 = re.compile(r"^[0-9a-f]{40}$")
-_PLAN_COPY_MARK = re.compile(r"^<!-- sigma:plan-copy goal=(\S+) sha256=([0-9a-f]{64}) part=\d+/\d+ -->")
 #: #2161: seconds `checkpoint_audit`'s one `git ls-remote` may take before the audit says it could not read the remote.
 CHECKPOINT_AUDIT_TIMEOUT_S = 20
 _PUSH_MOVED = re.compile(r"non-fast-forward|fetch first|\[rejected\]")
@@ -5033,12 +5031,16 @@ def _post_issue_note(sdlc_dir, config, goal, run, root, body):
 
 
 def _drop_cut(run, base_root, path, branch):
-    """Take back the worktree and branch a failed resume just made (both are ours, made seconds ago)."""
-    for argv in (["git", "worktree", "remove", "--force", str(path)], ["git", "branch", "-D", branch]):
-        try:
-            run(base_root, argv)
-        except Exception:               # noqa: BLE001 - the re-cut below then fails loudly, which is correct
-            pass
+    """Take back the worktree and branch a failed resume just made (both are ours, made seconds ago). No force: the
+    worktree is clean there (after `merge --abort`, or after a merge that finished), so a plain remove is enough. If git
+    still refuses it, stop with the reason instead of forcing: a person looks at what is in that worktree. The local
+    branch is deleted with `-D` because its tip is the remote's, not merged here; it never touches the remote."""
+    try:
+        run(base_root, ["git", "worktree", "remove", str(path)])
+    except Exception as exc:            # noqa: BLE001
+        raise RuntimeError(f"could not take back the worktree {path} made for a resume that failed ({_first_line(exc)}); "
+                           f"look at what it holds, remove it by hand, then re-run `work.py start --land`") from exc
+    run(base_root, ["git", "branch", "-D", branch])
 
 
 def _head_pr_merged(run, cwd, ref):
@@ -5078,7 +5080,7 @@ def _fresh_branch(config, goal, run, base_root, remote, base, branch):
 def _checkpoint_resume(sdlc_dir, config, goal, run, base_root, s, branch, path, base):
     """#2161: `(resumed, branch, note)` for a `--land` start. `resumed` is the checkpoint record ({"ref","sha"}) when the
     worktree was cut from the remote checkpoint branch, else None. `branch` is the name the work goes on: the goal
-    branch, or `<branch>-2`, `-3` when the remote holds a branch of that name this run cannot resume. It never raises.
+    branch, or `<branch>-2`, `-3` when the remote holds a branch of that name this run cannot resume. It never raises, except when a failed resume's own worktree cannot be taken back (`_drop_cut`).
 
     A branch on the remote that the base already contains is nothing to resume. One whose pull request merged (a
     squash merge leaves its commits out of the base's history) is not resumable either. Otherwise: fetch it, cut the

@@ -3,6 +3,7 @@ refused, rejected or leased is the real thing; only the issue (a `gh` read and a
 import importlib.util
 import json
 import pathlib
+import re
 import subprocess
 
 import pytest
@@ -535,9 +536,41 @@ def test_no_force_push_exists_in_the_checkpoint_code():
     text = (SCRIPTS / "work.py").read_text()
     block = text[text.index("def _checkpoint_ref"):text.index("def _receipt_pending")]
     assert "force-with-lease" not in block and "checkpoint_lease" not in text and "-previous" not in block
-    assert [l.strip() for l in block.splitlines() if "--force" in l] == [
-        'for argv in (["git", "worktree", "remove", "--force", str(path)], ["git", "branch", "-D", branch]):'], \
-        "the only --force is the removal of the worktree this very call just made"
+    assert "--force" not in block and not re.search(r'"\+refs|f"\+|:refs/heads/[^"]*"\]?\s*\+', block)
+    assert '"--delete"' not in block and '":refs' not in block and "push\", remote, f\":" not in block
+    assert 'run(base_root, ["git", "branch", "-D", branch])' in block   # local only, never a remote ref
+
+
+def test_a_worktree_that_cannot_be_taken_back_stops_the_run_instead_of_being_forced(env, tmp_path, monkeypatch):
+    _worked_and_checkpointed(env)
+    env.shas = {_plan_sha("# other\n")}
+    _container_lost(env, tmp_path, monkeypatch)
+
+    class Refuse(Recorder):
+        def __call__(self, cwd, argv):
+            if argv[:3] == ["git", "worktree", "remove"]:
+                self.calls.append(" ".join(argv))
+                raise RuntimeError("git worktree remove: contains modified or untracked files")
+            return super().__call__(cwd, argv)
+    run = Refuse()
+    with pytest.raises(RuntimeError, match="could not take back the worktree"):
+        work.start(str(env.sdlc), CONFIG, GOAL, land=True, run=run)
+    assert not any("--force" in c for c in run.calls)
+
+
+def test_the_review_brief_reads_the_recorded_branch_not_the_old_unresumed_one(env):
+    old_plan, new_plan = "# OLD plan\n", "# NEW plan\n"
+    _leftover(env, "sdlc/2161", plan=old_plan)
+    out = _start(env, land=True)
+    assert "working on sdlc/2161-2" in out
+    _commit_file(env, plan=new_plan)
+    work.checkpoint(str(env.sdlc), CONFIG, GOAL)
+    plans = env.sdlc / "plans"
+    for f in plans.glob("*"):
+        f.unlink()                                    # nothing on disk: the brief must read a branch
+    git(env.root, "fetch", "-q", "origin")
+    pointer, text = rc._branch_doc(str(env.sdlc), GOAL, "plans")
+    assert text == new_plan.strip() and "sdlc/2161-2" in pointer
 
 
 def test_land_prose_names_checkpoint_before_verify_and_the_resume():

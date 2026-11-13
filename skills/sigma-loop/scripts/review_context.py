@@ -446,6 +446,9 @@ def _branch_doc(sdlc_dir, goal, subdir):
             config = {}                               # config.json still gets work.DEFAULTS
         settings = work.settings(config)
         branch = "%s%s" % (settings["branch_prefix"], work.stem(goal))
+        rec = work._record(sdlc_dir, goal)             # #2161: a re-cut goal lives on `<branch>-2`; the old branch is not its own
+        if isinstance(rec, dict) and isinstance(rec.get("branch"), str) and rec["branch"]:
+            branch = rec["branch"]
         exact, pattern = _artifact_names(goal)
         refs = (branch, "%s/%s" % (settings["remote"], branch))
     except Exception:                                 # noqa: BLE001 - config/IO; fail open like the rest
