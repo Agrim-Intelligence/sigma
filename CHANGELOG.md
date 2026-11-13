@@ -9,6 +9,18 @@ All notable changes to Sigma are recorded here, newest first.
   - **Measured:** offline, 7 new tests in `tests/test_record_review_detail_2150_2151.py`; each new clause was broken on its own and its own test went red.
   - **Not measured:** a single-segment path outside the listed roots is not redacted (a bare `/word` is indistinguishable from prose); a leading-slash path inside a markdown link target is redacted like any other; no live issue post was made.
 
+- **`work.py pr` names the repository it opens against and refuses before pushing when it cannot (#2165).**
+  - **What changed.** Every PR call (find, create, body update, receipt read) now carries the configured `owner/name` (`discovery.github.repo`, else the push remote's URL) instead of `gh`'s `{owner}/{repo}` placeholders. Before the push it refuses, naming the cause, when that repository cannot be worked out, when the push remote's URL names a different one, or when `gh`'s own default repository (readable over REST, which a fork can capture) is not the configured one or cannot be read; the remedy named is `gh repo set-default`.
+  - **Measured:** offline, 5 new tests in `tests/test_work.py` (one per clause plus the explicit-slug check), each seen red against the old code or with its clause broken.
+  - **Not measured:** a real fork-default checkout; the extra REST read adds one call per `work.py pr`.
+
+- **The session-start notice no longer says an ignored setup-critical entry is "still asked about" in a cloud session (#2163).** `committed_dismissal_notice()` now words it for a cloud session (no question is asked there; `/sigma-doctor` still reports it); a repeated "Not measured" clause in `docs/cloud-sessions.md` is removed. Measured: offline unit tests, both wordings. Not measured: a real cloud session.
+
+- **`/sigma-orchestrate`: a wrongly typed `open_prs` is refused, the deferred-items parser lists lines it used to skip, and the doc shows the current follow-up command (#2162).**
+  - **What changed.** `waves.py` refuses an `open_prs` that is not a list of positive integers (a string, a number, a boolean, a float, a nested list, zero or a negative) with a one-line message and exit 2 instead of a traceback, and no longer reads a numeric string as a PR number. `deferred.py` lists a list-shaped line after the marker that sits inside a code fence or a `>` quote as rejected with a reason (it is still not read as an item), so `check` exits 1 for it; no new bullet glyph is accepted (the glyphs it names as rejected are the numbered, `+`, glued-`[`, bare `[area:` and unicode-dot shapes). `docs/orchestrate.md` shows `handoff.py followup-mode "$S"` and states both rules.
+  - **Measured:** offline, 3 new waves tests (13 wrong values) and 3 new deferred tests (plus parametrized cases); each clause was broken on its own and its test seen red (notes at the bottom of both files).
+  - **Not measured:** a real batch; a comment that came back from the live API with fences or quotes.
+
 ## 1.0.30 — 2026-11-13 — the loop passes the merge stop line and redacts it, a committed list cannot silence setup-critical checks, follow-ups become a setting, and /sigma-orchestrate survives a real dry run
 
 - **`/sigma-orchestrate`: the dry-run path no longer lets in-flight or non-goal issues into the plan, and its commands work from a worktree (#2157).**

@@ -521,6 +521,16 @@ def test_notice_says_how_many_and_by_what_mechanism(tmp_path):
     assert "2 setup check" in line and "setup_wizard.dismissed" in line and "config.json" in line
 
 
+def test_notice_wording_in_cloud_session_does_not_claim_a_question(tmp_path):
+    """#2163: in a cloud session the wizard is skipped, so the line must not say "still asked about"."""
+    d = _committed(tmp_path, ["gh auth"])
+    cloud = setup_wizard.committed_dismissal_notice(d, env={"CLAUDE_CODE_REMOTE": "true"})
+    local = setup_wizard.committed_dismissal_notice(d, env={})
+    assert "gh auth" in cloud and "still asked about" not in cloud
+    assert "cloud session" in cloud and "/sigma-doctor" in cloud
+    assert "still asked about" in local and "gh auth" in local
+
+
 def test_notice_names_ignored_critical_entries(tmp_path):
     d = _committed(tmp_path, ["gh auth"])
     line = setup_wizard.committed_dismissal_notice(d)

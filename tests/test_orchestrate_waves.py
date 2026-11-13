@@ -287,6 +287,34 @@ class Cli(unittest.TestCase):
 
 
 
+class OpenPrsInput(unittest.TestCase):
+    """A wrongly typed open_prs is refused, never a traceback and never a guess (#2162)."""
+
+    def _cli(self, value):
+        with tempfile.TemporaryDirectory() as t:
+            path = os.path.join(t, "g.json")
+            with open(path, "w") as fh:
+                json.dump(doc(g(1, open_prs=value)), fh)
+            return subprocess.run([sys.executable, os.path.join(SCRIPTS, "waves.py"), "plan", path],
+                                  capture_output=True, text=True)
+
+    def test_each_wrong_type_exits_two_with_one_line(self):
+        for value in ("101", "7", 7, 7.0, {"a": 1}, True, [True], ["101"], [1.5], [None], [[1]], [0], [-3]):
+            r = self._cli(value)
+            self.assertEqual(r.returncode, 2, value)
+            self.assertEqual(r.stdout, "", value)
+            self.assertEqual(len(r.stderr.strip().splitlines()), 1, value)
+            self.assertIn("open_prs", r.stderr, value)
+            self.assertNotIn("Traceback", r.stderr, value)
+
+    def test_ready_refuses_too(self):
+        with self.assertRaises(ValueError):
+            waves.ready(doc(g(1, open_prs="101")), {})
+
+    def test_a_list_of_integers_still_works_and_dedupes(self):
+        self.assertEqual(waves._goals(doc(g(1, open_prs=[9, 7, 9])))[1]["open_prs"], [7, 9])
+
+
 # CONTROLS (#2145). Each row was applied alone to waves.py and the named test went red; all 28 were
 # run, and the one that first stayed green (a running goal relaunched) got its own test above.
 #   dependency floor: max -> min (test_a_goal_goes_after_its_latest_blocker_not_its_first); floor dropped
@@ -305,3 +333,7 @@ class Cli(unittest.TestCase):
 #   (test_an_open_pr_holds_the_goal_and_names_it); a None value read as a list
 #   (test_no_open_prs_key_or_an_empty_list_changes_nothing); the PR note ranked above an explicit reason
 #   (test_an_explicit_reason_wins_over_the_pr_note); the PR numbers dropped from the reason.
+# CONTROLS (#2162), each applied alone to waves.py, its test seen red: the not-a-list check dropped (the string, number,
+#   float, dict and boolean values of test_each_wrong_type_exits_two_with_one_line), the bool exclusion, the int
+#   check (strings, floats, None, nested list in a list), the x < 1 bound (0 and negatives); the refusal removed
+#   from the ready path (test_ready_refuses_too).
