@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+## 1.0.32 — 2026-11-13 — the in-goal follow-up limit is a setting, followups.max_added_slices, default 10
+
 - **In-goal follow-ups: the added-slice limit is a setting, `followups.max_added_slices`, default 10 (#2178).** Under `followups.mode: in-goal` a goal could add follow-ups to its own plan as new slices only up to a fixed 2 written into prose and code. The limit is now a whole number of at least 1, default 10; a missing key, a wrong type, a boolean, zero, a negative, a fraction or a numeric string reads 10, never unlimited. `handoff.py` reads it with one helper (`max_added_slices`) next to `followup_mode`; the rule text `track` prints in its refusal carries the configured number; `handoff.py followup-mode` still prints the mode on line 1 and now prints `max_added_slices <n>` on line 2, which the `/sigma-orchestrate` launch prompt reads instead of prose. The config template, `docs/configuration.md`, `docs/orchestrate.md` and the orchestrate references say "the configured limit (default 10)". **Measured:** offline, `tests/test_followup_mode.py`, one test per clause, each seen red with its clause broken. **Not measured:** how a real phase subagent behaves at a limit other than the old 2; no real orchestrate batch.
 
 ## 1.0.31 — 2026-11-13 — a goal run reads a project's recorded known-flake exception, a --land run's work survives its container, and work.py pr names the repository it opens against
