@@ -92,6 +92,31 @@ def integration_branch(config):
     return base
 
 
+def default_branch(root, remote="origin"):
+    """The remote's default branch as the LOCAL clone knows it (`refs/remotes/<remote>/HEAD`), '' when it cannot be
+    read. No network."""
+    import subprocess
+    try:
+        done = subprocess.run(["git", "-C", str(root), "symbolic-ref", "--short", "refs/remotes/%s/HEAD" % remote],
+                              capture_output=True, text=True, timeout=20)
+        name = done.stdout.strip() if done.returncode == 0 else ""
+    except Exception:                                          # noqa: BLE001 - unreadable adds nothing
+        return ""
+    return name[len(remote) + 1:] if name.startswith(remote + "/") else name
+
+
+def integration_set(config, base, root=None):
+    """The branches no wildcard may cover. `work.base` when it is set; when it is UNSET the goal's own recorded base
+    counts as the integration branch (so only an entry naming it exactly covers it); and the remote's default
+    branch, when the local clone knows it, always does."""
+    found = {integration_branch(config) or base}
+    if root:
+        block = (config or {}).get("work") if isinstance(config, dict) else None
+        remote = block.get("remote") if isinstance(block, dict) else None
+        found.add(default_branch(root, remote if isinstance(remote, str) and remote else "origin"))
+    return {b for b in found if isinstance(b, str) and b}
+
+
 def _glob(pattern, text):
     return re.fullmatch("".join(".*" if c == "*" else "." if c == "?" else re.escape(c) for c in pattern),
                         text, re.S) is not None
@@ -107,7 +132,9 @@ def covers_base(entry, base, integration=None):
     pattern that IS that branch's name, never by a wildcard."""
     if not isinstance(base, str) or not base:
         return False
-    if integration and base == integration:
+    if integration is not None and not isinstance(integration, (set, frozenset, list, tuple)):
+        integration = {integration} if integration else set()
+    if integration and base in integration:
         return base in entry["bases"]
     return any(_glob(p, base) for p in entry["bases"])
 
@@ -129,13 +156,13 @@ def parse_failures(output):
         return ids, "the run stopped early, so the failures listed are not all of them"
     if not ids:
         return ids, "no failing test id could be read from the output"
+    last = next((l.strip() for l in reversed(lines) if l.strip()), "")
+    final = last.strip("= ").strip()
     counted = None
-    for line in reversed(lines):                                # the final `=== N failed, M passed ===` line
-        if line.strip().startswith("=") and _COUNT.search(line):
-            counted = sum(int(n) for n, _ in _COUNT.findall(line))
-            break
+    if _COUNT.search(final) and re.search(r" in [\d.]+s\b", final):   # the very last line: `=== 1 failed in 1s ===` or `-q`'s bare form
+        counted = sum(int(n) for n, _ in _COUNT.findall(final))
     if counted is None:
-        return ids, "the output has no final failure count to check the listed ids against"
+        return ids, "the output does not end with pytest's final failure count line, so other output may follow the failures"
     if counted != len(ids):
         return ids, "the output counts %d failure(s) but lists %d id(s)" % (counted, len(ids))
     return ids, None
@@ -179,6 +206,9 @@ def evaluate(output, entries, base, today, run_solo, integration=None):
         if status != "ok" or code != 0:
             result["reason"] = "solo re-run of %s did not pass (%s, exit %s)" % (tid, status, code)
             return result
+        if not re.search(r"\b[1-9]\d* passed\b", out or "") or re.search(r"\b\d+ (skipped|xfailed|deselected)\b", out or ""):
+            result["reason"] = "solo re-run of %s exited 0 but did not report the test as passed (skipped?)" % tid
+            return result
     result["accepted"] = True
     return result
 
@@ -197,12 +227,12 @@ def record_for(entries, matched):
     return out
 
 
-def evidence_refusal(data, config, base, today=None):
+def evidence_refusal(data, config, base, today=None, root=None):
     """None when `data` (a parsed evidence file) is VALID known-flake evidence for `base` right now, else the
     reason it is not. Re-reads the CURRENT setting: an entry that has since expired, been removed or stopped
     covering the base voids evidence written earlier."""
     today = today or datetime.date.today()
-    integration = integration_branch(config)
+    integration = integration_set(config, base, root if root is not None else data.get("root"))
     if data.get("verify_state") != STATE:
         return "last verify FAILED (exit %s)" % data.get("exit")
     kf = data.get("known_flakes")

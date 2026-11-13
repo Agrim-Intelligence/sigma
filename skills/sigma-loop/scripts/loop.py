@@ -7230,7 +7230,8 @@ def _verify_goal_body(sdlc_dir, goal, guard):
     # this goal's base, and passes alone on this head, is `passed-with-known-flakes` -- evidence whose `exit` stays
     # nonzero, so every reader that does not know the state still reads red. Anything else changes nothing.
     known = _known_flakes_verdict(sdlc_dir, config, root, _wrec.get("base"), proc.returncode, test_first,
-                                  "\n".join(outputs), content_before, content_after, _python)
+                                  "\n".join(outputs), content_before, content_after, _python,
+                                  ran=len(outputs), declared=len(commands))
     ev.write_text(_json.dumps({"command": cmd, "exit": proc.returncode,
                                "acceptance_sha256": acceptance_hash,
                                "verify_state": (known_flakes.STATE if known and known.get("accepted")
@@ -7303,7 +7304,7 @@ def _verify_goal_body(sdlc_dir, goal, guard):
 
 
 def _known_flakes_verdict(sdlc_dir, config, root, base, returncode, test_first, output, before, after, python,
-                          run_solo=None, today=None):
+                          run_solo=None, today=None, ran=None, declared=None):
     """#2160: -> None when the exception is not in play (green, or no `verify.known_flakes`), else the dict
     `known_flakes.evaluate` returns plus `attempted`, `entries`. Never raises; every doubt is `accepted: False`.
     Not in play: a verify that passed. In play but refused (the evidence stays red): a malformed setting, a planned
@@ -7324,6 +7325,10 @@ def _known_flakes_verdict(sdlc_dir, config, root, base, returncode, test_first, 
         if (before or {}).get("fingerprint") != (after or {}).get("fingerprint"):
             out["reason"] = "repository content changed during verify"
             return out
+        if ran is not None and declared is not None and ran < declared:
+            out["reason"] = ("%d of %d declared verify command(s) ran; the rest never ran, so a green on the "
+                             "listed failures proves nothing about them" % (ran, declared))
+            return out
         if not base:
             out["reason"] = "the goal has no recorded base"
             return out
@@ -7342,7 +7347,7 @@ def _known_flakes_verdict(sdlc_dir, config, root, base, returncode, test_first, 
                                          env=bounded.unattended_env(dict(os.environ)), merge=True)
                 return done.outcome, done.code, (done.out or "") + (("\n" + done.detail) if done.detail else "")
         got = known_flakes.evaluate(output, entries, base, today or _datetime.date.today(), run_solo,
-                                    known_flakes.integration_branch(config))
+                                    known_flakes.integration_set(config, base, root))
         out.update(got)
         out["entries"] = known_flakes.record_for(entries, got["matched"]) if got["accepted"] else []
         return out

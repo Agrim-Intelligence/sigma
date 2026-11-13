@@ -42,9 +42,7 @@ def entry(**over):
 
 
 def cfg(*entries, **work):
-    c = {"verify": {"known_flakes": list(entries)}}
-    if work:
-        c["work"] = work
+    c = {"verify": {"known_flakes": list(entries)}, "work": dict({"base": "trunk"}, **work)}
     return c
 
 
@@ -161,7 +159,7 @@ def test_every_failing_test_is_rerun_alone_and_one_failure_among_many_is_red():
 
     def solo(i):
         calls.append(i)
-        return ("ok", 0, "") if i == A else ("failed", 1, "")
+        return ("ok", 0, "1 passed") if i == A else ("failed", 1, "")
     got = evaluate(pytest_output(A, B), parsed(entry(test="tests/*")), solo=solo)
     assert calls == [A, B] and got["accepted"] is False
 
@@ -226,13 +224,13 @@ def _tree(tmp_path):
 
 
 def _verdict(config, output=None, base="feature/x", returncode=1, test_first=None, before=None, after=None,
-             python="python3", solo=solo_ok):
+             python="python3", solo=solo_ok, ran=1, declared=1):
     lp = _loop()
     same = {"fingerprint": "f"}
     return lp._known_flakes_verdict(
         ".sdlc", config, ".", base, returncode, test_first if test_first is not None else {},
         output if output is not None else pytest_output(A), before if before is not None else same,
-        after if after is not None else same, python, run_solo=solo, today=TODAY)
+        after if after is not None else same, python, run_solo=solo, today=TODAY, ran=ran, declared=declared)
 
 
 def test_verdict_accepts_a_covered_red_verify():
@@ -285,7 +283,7 @@ def _solo_project(tmp_path, base="feature/x", entries=None):
     out = tmp_path / "out.txt"
     out.write_text(pytest_output(A))
     config = {"verify": {"command": "cat out.txt; exit 1", "known_flakes": entries if entries is not None
-                         else [entry()]}, "work": {"enabled": False}}
+                         else [entry()]}, "work": {"enabled": False, "base": "trunk"}}
     (sdlc / "config.json").write_text(json.dumps(config))
     (sdlc / "state" / "STATE.md").write_text("iteration: 0\nrun_iteration: 0\nlast_run: none\n")
     goal = sdlc / "goals" / "0001.md"
@@ -369,6 +367,7 @@ def test_gate_refuses_once_the_entry_is_removed_or_the_setting_unreadable():
 def test_gate_refuses_the_integration_branch_unless_an_entry_names_it():
     ev = _evidence()
     ev["known_flakes"]["base"] = "trunk"
+    assert "feature/x" not in (refusal(ev, config=cfg(entry(bases=["*"]), base="trunk"), base="trunk") or "")
     assert refusal(ev, config=cfg(entry(bases=["*"]), base="trunk"), base="trunk")
     assert refusal(ev, config=cfg(entry(bases=["trunk"]), base="trunk"), base="trunk") is None
 
@@ -486,3 +485,106 @@ def test_doctor_warns_about_an_expired_entry():
 def test_doctor_flags_an_unreadable_list_and_is_silent_without_the_setting():
     assert _rows({"verify": {"known_flakes": "x"}})[0]["ok"] is False
     assert _rows({}) == []
+
+
+# ---- review fixes: integration branch when work.base is unset, every declared command, -q output ----------------
+
+def _unset(*entries):
+    return {"verify": {"known_flakes": list(entries)}}
+
+
+def test_unset_work_base_treats_the_goals_own_base_as_integration():
+    assert kf.integration_set({}, "main") == {"main"}
+    assert kf.integration_set(cfg(), "feature/x") == {"trunk"}
+
+
+def test_a_wildcard_does_not_cover_the_default_branch_when_work_base_is_unset():
+    wild = parsed(entry(bases=["*"]))[0]
+    assert kf.covers_base(wild, "main", kf.integration_set({}, "main")) is False
+    assert kf.covers_base(parsed(entry(bases=["main"]))[0], "main", kf.integration_set({}, "main")) is True
+
+
+def test_verdict_with_work_base_unset_needs_the_base_named_exactly():
+    assert _verdict(_unset(entry(bases=["*"])))["accepted"] is False
+    assert _verdict(_unset(entry(bases=["feature/*"])))["accepted"] is False
+    assert _verdict(_unset(entry(bases=["feature/x"])))["accepted"] is True
+
+
+def test_verdict_with_work_base_set_still_lets_a_wildcard_cover_a_unit_branch():
+    assert _verdict(cfg(entry(bases=["feature/*"]), base="trunk"))["accepted"] is True
+
+
+def test_the_remote_default_branch_is_never_covered_by_a_wildcard(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "symbolic-ref", "refs/remotes/origin/HEAD",
+                    "refs/remotes/origin/develop"], check=True)
+    assert kf.default_branch(tmp_path) == "develop"
+    assert kf.default_branch(tmp_path / "missing") == ""
+    assert "develop" in kf.integration_set(cfg(), "feature/x", tmp_path)
+    wild = parsed(entry(bases=["*"]))[0]
+    assert kf.covers_base(wild, "develop", kf.integration_set(cfg(), "develop", tmp_path)) is False
+
+
+def test_gate_with_work_base_unset_refuses_a_wildcard_and_takes_the_named_base():
+    assert refusal(_evidence(), config=_unset(entry(bases=["*"])))
+    assert refusal(_evidence(), config=_unset(entry(bases=["feature/x"]))) is None
+
+
+def test_commands_that_never_ran_keep_the_verify_red():
+    got = _verdict(cfg(entry()), ran=1, declared=2)
+    assert got["accepted"] is False and "1 of 2 declared" in got["reason"]
+
+
+def test_every_declared_command_having_run_is_accepted():
+    assert _verdict(cfg(entry()), ran=2, declared=2)["accepted"] is True
+
+
+def test_output_after_the_pytest_summary_keeps_the_verify_red():
+    got = _verdict(cfg(entry()), output=pytest_output(A) + "src/x.py:1:1: E501 line too long\n")
+    assert got["accepted"] is False and "final failure count" in got["reason"]
+
+
+def test_end_to_end_a_later_declared_command_that_never_ran_stays_red(tmp_path, capsys):
+    from test_goal_verify_command import Source
+    sdlc, goal = _solo_project(tmp_path)
+    _mod("acceptance").record(pathlib.Path(sdlc), "0001", config=json.loads((pathlib.Path(sdlc) / "config.json").read_text()),
+                              source=Source(), verify_command="true")
+    assert _loop().verify_goal(sdlc, goal) == 1
+    assert "declared verify command" in capsys.readouterr().err
+
+
+def test_pytest_q_output_without_equals_signs_is_read():
+    out = "FAILED %s - AssertionError: boom\n1 failed, 1 passed in 0.04s\n" % A
+    assert evaluate(out, parsed(entry()))["accepted"] is True
+    assert evaluate(out.replace("1 failed", "2 failed"), parsed(entry()))["accepted"] is False
+
+
+def test_real_pytest_q_output_is_read(tmp_path):
+    (tmp_path / "test_q.py").write_text("def test_bad():\n    assert False\n\ndef test_good():\n    assert True\n")
+    done = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "test_q.py"],
+                          cwd=tmp_path, capture_output=True, text=True)
+    ids, reason = kf.parse_failures(done.stdout)
+    assert ids == ["test_q.py::test_bad"] and reason is None, (done.stdout, reason)
+
+
+def test_a_solo_run_that_skipped_the_test_is_not_a_pass():
+    got = evaluate(pytest_output(A), parsed(entry()), solo=lambda _i: ("ok", 0, "1 skipped in 0.01s"))
+    assert got["accepted"] is False and "skipped" in got["reason"]
+    assert evaluate(pytest_output(A), parsed(entry()), solo=lambda _i: ("ok", 0, ""))["accepted"] is False
+
+
+def test_the_review_template_line_is_not_a_judgment(tmp_path):
+    st, sdlc = _state_project(tmp_path, _evidence(), cfg(entry()))
+    work = _mod("work")
+    for echoed in ("KNOWN-FLAKES: accept - <why>", "KNOWN-FLAKES: accept", "KNOWN-FLAKES: reject - <why>"):
+        assert "did not judge" in work._known_flakes_review_refusal(sdlc, "0001", echoed)
+
+
+def test_a_bare_count_without_a_duration_is_not_the_final_line():
+    out = "FAILED %s - x\n1 failed, 2 passed\n" % A
+    assert evaluate(out, parsed(entry()))["accepted"] is False
+
+
+def test_a_solo_run_that_passed_one_and_skipped_another_is_not_a_pass():
+    got = evaluate(pytest_output(A), parsed(entry()), solo=lambda _i: ("ok", 0, "1 passed, 1 skipped in 0.01s"))
+    assert got["accepted"] is False and "skipped" in got["reason"]

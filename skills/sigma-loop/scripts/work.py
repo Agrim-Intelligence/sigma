@@ -1124,7 +1124,8 @@ def _known_flakes_review_refusal(sdlc_dir, goal, review_text):
         return None
     if not isinstance(data, dict) or data.get("verify_state") != state.known_flakes_module().STATE:
         return None
-    said = {m.group(1).lower(): m.group(2) for m in _KNOWN_FLAKES_LINE.finditer(review_text or "")}
+    said = {m.group(1).lower(): m.group(2) for m in _KNOWN_FLAKES_LINE.finditer(review_text or "")
+            if m.group(2).strip() and not re.fullmatch(r"<[^<>]*>", m.group(2).strip())}   # the template line is not a judgment
     if "reject" in said:
         return "the reviewer rejected the known-flake exception: " + (said["reject"] or "(no reason given)")
     if "accept" in said:
