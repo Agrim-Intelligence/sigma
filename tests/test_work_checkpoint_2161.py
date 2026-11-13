@@ -436,26 +436,32 @@ def test_a_start_without_land_makes_no_remote_branch_read(env):
 
 
 def test_a_pr_that_fails_after_the_push_can_be_retried_with_a_new_commit(env):
+    config = {**CONFIG, "discovery": {"github": {"repo": "acme/app"}}}     # #2165: `pr` names its repository explicitly
     _start(env)
     _commit_file(env)
     base = Recorder()
     state = {"fail": True}
 
     def run(cwd, argv):
+        line = " ".join(argv)
+        if "remote get-url" in line:
+            return "git@github.com:acme/app.git"
         if argv[0] == "gh":
+            if "full_name" in line:
+                return "acme/app"
             if state["fail"]:
                 raise RuntimeError("gh: HTTP 502")
             return "7"
         return base(cwd, argv)
     try:
-        work.pr(str(env.sdlc), CONFIG, GOAL, run=run)
+        work.pr(str(env.sdlc), config, GOAL, run=run)
         raise AssertionError("pr should have failed")
     except RuntimeError:
         pass
     assert _remote_sha(env, "sdlc/2161") == git(_wt(env), "rev-parse", "HEAD")      # the push had happened
     _commit_file(env, "y.txt", "y\n")
     state["fail"] = False
-    assert work.pr(str(env.sdlc), CONFIG, GOAL, run=run) == "PR #7"
+    assert work.pr(str(env.sdlc), config, GOAL, run=run) == "PR #7"
     assert _remote_sha(env, "sdlc/2161") == git(_wt(env), "rev-parse", "HEAD")
     assert not any("force" in c or " -f " in c for c in base.pushes())
 
