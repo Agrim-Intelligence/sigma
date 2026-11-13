@@ -4,6 +4,11 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`record review` redaction covers more path shapes and uses placeholders that render (#2164).**
+  - **What changed.** `_redact_detail` now also redacts `file://` URLs, UNC-style `//server/share` paths, single-segment absolute paths for well-known roots (`/etc`, `/tmp`, `/home` and similar), `~user/...`, `$HOME`/`${HOME}`/`$USER`-style references with their remainder, and `%USERPROFILE%`-style references. The placeholders are now `[path]` and `[mention]` instead of `<path>` and `<mention>`, which GitHub markdown reads as HTML tags and hides. Redaction still runs before the 400-character cap. Prose, version numbers, fractions such as 1/2, `https://` URLs, slash words, repo-relative markdown links, `~5` and `$5` are left alone (tests pin each).
+  - **Measured:** offline, 7 new tests in `tests/test_record_review_detail_2150_2151.py`; each new clause was broken on its own and its own test went red.
+  - **Not measured:** a single-segment path outside the listed roots is not redacted (a bare `/word` is indistinguishable from prose); a leading-slash path inside a markdown link target is redacted like any other; no live issue post was made.
+
 - **`work.py pr` names the repository it opens against and refuses before pushing when it cannot (#2165).**
   - **What changed.** Every PR call (find, create, body update, receipt read) now carries the configured `owner/name` (`discovery.github.repo`, else the push remote's URL) instead of `gh`'s `{owner}/{repo}` placeholders. Before the push it refuses, naming the cause, when that repository cannot be worked out, when the push remote's URL names a different one, or when `gh`'s own default repository (readable over REST, which a fork can capture) is not the configured one or cannot be read; the remedy named is `gh repo set-default`.
   - **Measured:** offline, 5 new tests in `tests/test_work.py` (one per clause plus the explicit-slug check), each seen red against the old code or with its clause broken.
