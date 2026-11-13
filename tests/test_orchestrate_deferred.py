@@ -52,8 +52,25 @@ def test_a_fenced_marker_does_not_open_a_list():
     assert items_of("```\n" + M + "\n```\n" + ITEM) == []
 
 
-def test_a_bullet_inside_a_fence_or_quote_after_the_marker_is_not_read():
+def test_a_bullet_inside_a_fence_or_quote_after_the_marker_is_not_an_item():
     assert items_of(M + "\n```\n" + ITEM + "\n```\n> " + ITEM) == []
+
+
+def test_a_bullet_inside_a_fence_or_quote_after_the_marker_is_listed_not_skipped():
+    items, rejected = deferred.parse_body(M + "\n```\n" + ITEM + "\n```\n> " + ITEM)
+    assert items == [] and len(rejected) == 2
+    assert "code fence" in rejected[0]["reason"] and "quoted" in rejected[1]["reason"]
+    assert rejected[0]["line"] == ITEM
+
+
+@pytest.mark.parametrize("line", ["1. x", "+ [area:api] x - y (files: none)", "\u2022 x", "[area:api] x - y (files: none)"])
+def test_each_list_shape_inside_a_fence_or_quote_is_listed(line):
+    assert len(deferred.parse_body(M + "\n```\n" + line + "\n```")[1]) == 1
+    assert len(deferred.parse_body(M + "\n> " + line)[1]) == 1
+
+
+def test_prose_and_the_fence_lines_inside_a_fence_or_quote_stay_silent():
+    assert deferred.parse_body(M + "\n```python\nprint(1)\n```\n> just prose") == ([], [])
 
 
 def test_a_bullet_before_the_marker_is_not_an_item():
@@ -263,8 +280,12 @@ def test_prose_that_only_resembles_a_marker_of_a_list_is_still_ignored(line):
     assert deferred.parse_body(M + "\n" + line) == ([], [])
 
 
-def test_a_rejected_list_line_inside_a_fence_or_quote_or_before_the_marker_is_not_read():
-    assert deferred.parse_body("1. x\n" + M + "\n```\n1. x\n```\n> 1. x") == ([], [])
+def test_a_list_line_before_the_marker_is_not_read():
+    assert deferred.parse_body("1. x\n" + M) == ([], [])
+
+
+def test_a_list_line_inside_a_fence_or_quote_before_the_marker_is_not_read():
+    assert deferred.parse_body("```\n1. x\n```\n> 1. x\n" + M) == ([], [])
 
 
 def test_cli_check_exits_nonzero_for_a_numbered_item_next_to_a_valid_bullet():
@@ -290,3 +311,6 @@ def test_cli_check_exits_nonzero_for_a_numbered_item_next_to_a_valid_bullet():
 # CONTROLS (#2157), each applied alone to deferred.py, its tests seen red: the numbered `1.` and `1)` alternatives
 #   (separately), the `+` leader, the leader-glued-to-`[` branch, the unicode-dot leader, the bare `[area:` branch,
 #   the reject-instead-of-skip branch, and `check`'s exit rule loosened to ignore rejections.
+# CONTROLS (#2162), each applied alone to deferred.py, its tests seen red: the fenced-line report dropped, the quoted-line
+#   report dropped, the `>`-prefixed list-shape regex dropped (the quoted unicode-dot and numbered cases), the
+#   reject-instead-of-skip branch replaced by a bare continue, and the report made to fire before the marker.
