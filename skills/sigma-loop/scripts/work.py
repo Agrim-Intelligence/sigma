@@ -4734,6 +4734,37 @@ def _pr_title(path, run, remote, base, goal):
     return title
 
 
+def _pr_repo(config, rec, run):
+    """#2165 -> (slug, refusal). The repository `pr()` pushes to and opens against, named EXPLICITLY, or the reason it
+    cannot be. Three clauses, each its own refusal, all before anything is pushed or opened: the configured repo
+    (`discovery.github.repo`, else the remote's own URL) cannot be worked out; the push remote's URL names a different
+    repo than the configured one; `gh`'s own default repo (what its `{owner}/{repo}` placeholders resolve to, which a
+    fork can capture) is not the configured one or cannot be read."""
+    sync = _feature_sync()
+    path, remote = rec["worktree"], rec["remote"]
+    slug = sync.repo_slug(config, run, path, remote)
+    if not slug:
+        return None, (f"could not work out which repository this goal's PR belongs to -- `discovery.github.repo` is "
+                      f"unset and the `{remote}` remote named no `owner/name` (nothing pushed, nothing opened)")
+    try:
+        url = str(run(path, ["git", "remote", "get-url", remote]) or "").strip()
+    except Exception:                                  # noqa: BLE001 - an unreadable remote is no proof it matches
+        url = ""
+    pushed = sync._slug_from_url(url)
+    if not pushed or not sync.same_repo(pushed, slug):
+        return None, (f"the `{remote}` remote is {pushed or 'unreadable'} but the configured repository is {slug}; "
+                      f"a push would not land where the PR opens (nothing pushed, nothing opened)")
+    try:
+        resolved = str(run(path, ["gh", "api", "repos/{owner}/{repo}", "--jq", ".full_name"]) or "").strip()
+    except Exception:                                  # noqa: BLE001 - fail closed
+        resolved = ""
+    if not resolved or not sync.same_repo(resolved, slug):
+        return None, (f"gh resolves this checkout's default repository to {resolved or 'nothing readable'} but the "
+                      f"configured repository is {slug}; refusing so the PR cannot open on a fork -- fix it with "
+                      f"`gh repo set-default {slug}` (nothing pushed, nothing opened)")
+    return slug, ""
+
+
 def pr(sdlc_dir, config, goal, run=None, no_tests=None, land=False):
     """Push the branch and open (or re-find) its PR. Refuses on an unclean or empty branch — or one
     missing the plan or research dossier it is meant to be read against (#1548, #1801) — rather than
@@ -4846,26 +4877,29 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None, land=False):
     if refusal:
         return refusal
     kf_section = _known_flakes_section(sdlc_dir, goal, base)             # #2160
+    slug, repo_refusal = _pr_repo(config, rec, run)     # #2165: named explicitly, or refuse before the push
+    if repo_refusal:
+        return f"REFUSED: {repo_refusal}"
     run(path, ["git", "push", "-u", remote, rec["branch"]])
     number = run(path, ["gh", "api",
-                        f"repos/{{owner}}/{{repo}}/pulls?head={{owner}}:{rec['branch']}",
+                        f"repos/{slug}/pulls?head={slug.split('/')[0]}:{rec['branch']}",
                         "--jq", ".[0].number"])
     if not number:
         title = _pr_title(path, run, remote, base, goal)
         body = _no_tests_body(_pr_body(path, run, remote, base, goal, config), no_tests)
         body = _known_flakes_body(body, kf_section)
-        number = run(path, ["gh", "api", "repos/{owner}/{repo}/pulls",
+        number = run(path, ["gh", "api", f"repos/{slug}/pulls",
                             "-f", f"title={title}", "-f", f"body={body}", "-f", f"base={base}",
                             "-f", f"head={rec['branch']}", "--jq", ".number"])
     elif no_tests is not None or kf_section:
-        endpoint = f"repos/{{owner}}/{{repo}}/pulls/{number}"
+        endpoint = f"repos/{slug}/pulls/{number}"
         current = json.loads(run(path, ["gh", "api", endpoint])).get("body") or ""
         body = _known_flakes_body(_no_tests_body(current, no_tests), kf_section)
         if body != current:
             run(path, ["gh", "api", endpoint, "--method", "PATCH", "-f", f"body={body}"])
     if _receipt_sharing_enabled(config):
         try:
-            raw = json.loads(run(path, ["gh", "api", f"repos/{{owner}}/{{repo}}/pulls/{number}"]))
+            raw = json.loads(run(path, ["gh", "api", f"repos/{slug}/pulls/{number}"]))
             facts = _receipt_parent_facts(raw, goal, "goal", goal, "work.pr")
             status = _publish_parent_receipt(sdlc_dir, config, facts)
         except Exception as exc:

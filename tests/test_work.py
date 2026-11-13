@@ -57,6 +57,8 @@ def _runner(handlers):
             return prfake.rest_merged()   # #895 4b-1: the REST merge lands, as an unmatched `gh pr merge` did
         if re.search(r"pulls/\d+ --method PATCH .*state=closed", line):
             return json.dumps({"state": "closed"})    # #895 4b-3: the REST design-PR close lands
+        if ".full_name" in line:
+            return "acme/app"        # #2165: what gh's `{owner}/{repo}` resolves to, matching REMOTE_URL
         if "remote get-url" in line:
             return REMOTE_URL        # what feature_sync.repo_slug falls back to (#1577)
         if re.search(r"/branches/[^ ]+/protection$", line):
@@ -2270,6 +2272,47 @@ def test_pr_creates_and_records_the_number(tmp_path):
     assert "-f body=" in create_call
 
 
+def _pr_refusal_case(tmp_path, handlers, config=ON):
+    d = _sdlc(tmp_path)
+    goal = _started(d, pr="")
+    run = _runner([("rev-list", "2")] + handlers + [("pulls -f title=", "12")])
+    out = work.pr(d, config, goal, run=run)
+    assert out.startswith("REFUSED")
+    assert not any(c.startswith("git push") or "pulls -f title=" in c for c in run.calls)   # nothing pushed or opened
+    return out
+
+
+def test_pr_names_the_configured_repository_in_every_call_it_makes(tmp_path):
+    """#2165: no `{owner}/{repo}` placeholder reaches a PR call; the slug is explicit."""
+    d = _sdlc(tmp_path)
+    goal = _started(d, pr="")
+    run = _runner([("rev-list", "2"), ("pulls?head=", ""), ("pulls -f title=", "12")])
+    assert work.pr(d, ON, goal, run=run) == "PR #12"
+    api = [c for c in run.calls if "pulls" in c]
+    assert api and all("repos/acme/app/pulls" in c for c in api)
+    assert any("pulls?head=acme:sdlc/0001-x" in c for c in api)
+
+
+def test_pr_refuses_when_gh_resolves_a_different_repository(tmp_path):
+    out = _pr_refusal_case(tmp_path, [(".full_name", "someone/app")])
+    assert "someone/app" in out and "acme/app" in out
+
+
+def test_pr_refuses_when_gh_cannot_say_which_repository_it_resolves(tmp_path):
+    _pr_refusal_case(tmp_path, [(".full_name", RuntimeError("boom"))])
+
+
+def test_pr_refuses_when_the_push_remote_names_another_repository(tmp_path):
+    cfg = {"work": {"enabled": True}, "discovery": {"github": {"repo": "acme/other"}}}
+    out = _pr_refusal_case(tmp_path, [(".full_name", "acme/other")], cfg)
+    assert "acme/app" in out and "acme/other" in out
+
+
+def test_pr_refuses_when_the_configured_repository_cannot_be_determined(tmp_path):
+    out = _pr_refusal_case(tmp_path, [("remote get-url", "not a url")])
+    assert "could not work out" in out
+
+
 def test_pr_reuses_an_existing_pr(tmp_path):
     d = _sdlc(tmp_path)
     goal = _started(d, pr="")
@@ -2298,7 +2341,7 @@ def test_pr_never_invokes_a_graphql_routed_gh_subcommand(tmp_path):
     # every gh call this makes is a REST call through `gh api repos/{owner}/{repo}/...`
     gh_calls = [c for c in run.calls if c.startswith("gh ")]
     assert gh_calls, "expected at least one gh call"
-    assert all(c.startswith("gh api repos/{owner}/{repo}/") for c in gh_calls)
+    assert all(c.startswith("gh api repos/") for c in gh_calls)
 
 
 def test_pr_body_is_never_empty_for_the_default_bodyless_commit(tmp_path):

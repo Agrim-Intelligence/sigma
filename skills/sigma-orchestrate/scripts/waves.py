@@ -95,6 +95,19 @@ def _load(path):
         return json.load(fh)
 
 
+def _open_prs(n, value):
+    """Sorted PR numbers from a goal's `open_prs`: absent, null or [] is none; anything but a list of positive
+    integers is refused (a numeric string would name a PR the caller did not mean) (#2162)."""
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"goal #{n}: open_prs must be a list of pull request numbers, not a {type(value).__name__}")
+    for x in value:
+        if isinstance(x, bool) or not isinstance(x, int) or x < 1:
+            raise ValueError(f"goal #{n}: open_prs holds {x!r}; each entry must be a positive integer")
+    return sorted(set(value))
+
+
 def _goals(doc):
     goals = {}
     for g in doc["goals"]:
@@ -110,7 +123,7 @@ def _goals(doc):
             "external": {int(b) for b in g.get("external_blockers", [])},
             "claims": list(g.get("claims") or ["*"]),
             "held": g.get("held"),
-            "open_prs": sorted({int(x) for x in (g.get("open_prs") or [])}),
+            "open_prs": _open_prs(n, g.get("open_prs")),
         }
     for n, g in goals.items():
         inside = {b for b in g["external"] if b in goals}
