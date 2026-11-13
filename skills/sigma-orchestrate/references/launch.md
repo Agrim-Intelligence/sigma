@@ -56,6 +56,10 @@ project has made the decision itself (`followups.mode`, [configuration](../../..
 the standing decision out of the prompt, and `handoff.py track` itself refuses a follow-up filing. `file` (the
 default) means the decision rides in the prompt, for this batch only, as below.
 
+A project's approved known-flake exception is not a launch fact and never rides in the prompt: it is a
+project setting, `verify.known_flakes` ([configuration](../../../docs/configuration.md#known-flake-exceptions-verifyknown_flakes)),
+and the goal run reads it itself. Do not message a running session about it.
+
 ```
 /sigma-goal <N> --land
 

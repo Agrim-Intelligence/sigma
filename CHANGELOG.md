@@ -4,6 +4,11 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **A project's recorded known-flake exception is read by the goal run itself, not passed in a launch prompt (#2160).**
+  - **What changed.** New setting `verify.known_flakes` (entries with `test`, `tracking`, `approved_by`, `record`, `expires`, `bases`), documented in `docs/configuration.md`. When a full `loop.py verify` fails and every failing test matches an unexpired entry covering the goal's recorded base, each is re-run alone on the same head; if all pass, the evidence is the distinct state `passed-with-known-flakes` (`exit` stays nonzero) with the ids, matched entries and solo output. `work.py pr` writes that into the PR body; `pr` and `merge` accept it only for the covered base, re-reading the setting; the post-PR review must judge it (`KNOWN-FLAKES: accept|reject`); `/sigma-doctor` lists entries and warns about expired ones; `/sigma-orchestrate` no longer carries the exception as a launch fact. It fails closed on a malformed setting, an unmatched failure, an expired or non-covering entry, a failing, erroring or timed-out solo re-run, and an unreadable failure list; it never skips or loosens a test and never adds an entry. New: `skills/sigma-loop/scripts/known_flakes.py`.
+  - **Measured:** offline, `tests/test_known_flakes_2160.py` (73), including an end-to-end `loop.py verify` against real pytest solo re-runs; each clause was broken on its own and went red (a mutation sweep; redundant guards were removed or given their own message test). The related state, work, review, merge, land, red-green and enforcement-table tests pass.
+  - **Not measured / not done:** no real cloud batch or live pull request; ids are read from pytest's summary only, so another runner stays red; how reliably a reviewer follows the `KNOWN-FLAKES` line is untested; a stale PR-body section is not removed when a later clean verify replaces the evidence.
+
 ## 1.0.30 — 2026-11-13 — the loop passes the merge stop line and redacts it, a committed list cannot silence setup-critical checks, follow-ups become a setting, and /sigma-orchestrate survives a real dry run
 
 - **`/sigma-orchestrate`: the dry-run path no longer lets in-flight or non-goal issues into the plan, and its commands work from a worktree (#2157).**

@@ -1516,6 +1516,32 @@ def _dag_ledger_row(cfg, sdlc_dir, now=None):
         return None
 
 
+def _known_flakes_rows(cfg, today=None):
+    """#2160: one row per `verify.known_flakes` entry (`known flake: <test> until <date> (<bases>)`), ok while it is
+    active; an EXPIRED entry fails (it is ignored by verify, so the goal run is red on it again); a malformed list is
+    one failing row (the whole list is ignored). No rows when the setting is absent. No network. Never raises."""
+    try:
+        kf = _load_loop_script("known_flakes")
+        entries, error = kf.read(cfg)
+        if error:
+            return [_chk("known flakes: unreadable (%s)" % error, False,
+                         "fix `verify.known_flakes` in .sdlc/config.json; until then no exception applies and a "
+                         "red verify stays red")]
+        import datetime as _dt
+        today = today or _dt.date.today()
+        rows = []
+        for e in entries:
+            gone = kf.expired(e, today)
+            rows.append(_chk("known flake: %s %s %s (bases %s; tracking %s)"
+                             % (e["test"], "EXPIRED" if gone else "until", e["expires"], ", ".join(e["bases"]),
+                                e["tracking"]), not gone,
+                             "renew the entry (a person with the approval record) or remove it; an expired entry "
+                             "is ignored by `loop.py verify`"))
+        return rows
+    except Exception:                        # noqa: BLE001
+        return []
+
+
 def _chain_row(cfg, sdlc_dir, now=None):
     """#1594 LIVENESS: `chain: #N <state> (<age of last progress>)` from the local chain records
     (`.sdlc/state/chains/`), no network. Informational ok, except a STALE running chain or a stuck one, which
@@ -4902,6 +4928,8 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     _chr = _chain_row(cfg, sdlc_dir)  # #1594: absent when no chain record exists
     if _chr is not None:
         out.append(_chr)
+
+    out.extend(_known_flakes_rows(cfg))  # #2160: absent when `verify.known_flakes` is not set
 
     _lsr = _loop_session_model_row(sdlc_dir)  # #1951
     if _lsr is not None:

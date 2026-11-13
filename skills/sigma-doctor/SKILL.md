@@ -40,6 +40,8 @@ with "timed out". The session-start setup check never runs `ls-remote` or the ow
 this full run does.
 
 `host config` and `[INFO]` [burst](../sigma-goal/references/cloud-burst.md) rows are read-only (never block); relay them as printed.
+With `verify.known_flakes` set (#2160), one row per entry reads `known flake: <test> until <date> (bases ...)`; an
+entry past its date reads `EXPIRED` and fails (verify ignores it), and an unreadable list is one failing row.
 
 Present the checklist plainly. Offer a safe fix, but **never run an
 interactive login (`gh auth …`) or a package install on their behalf** — hand them the command.

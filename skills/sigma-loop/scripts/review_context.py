@@ -707,6 +707,24 @@ def _test_first_exception(sdlc_dir, goal):
         return ""
 
 
+def _known_flakes_facts(sdlc_dir, goal):
+    """#2160: the matched known-flake entries and failing ids of the goal's `passed-with-known-flakes` evidence, as
+    brief text, else "". Fail-open: the brief is."""
+    try:
+        state = _load("state")
+        data = json.loads(state.evidence_path(sdlc_dir, goal).read_text())
+        kf = data.get("known_flakes")
+        if data.get("verify_state") != state.known_flakes_module().STATE or not isinstance(kf, dict):
+            return ""
+        lines = ["- `%s` (entry `%s`)" % (t, (kf.get("matched") or {}).get(t)) for t in kf.get("ids") or []]
+        lines += ["- entry `%s`: tracking %s, approved by %s, record %s, expires %s, bases %s"
+                  % (e.get("test"), e.get("tracking"), e.get("approved_by"), e.get("record"), e.get("expires"),
+                     ", ".join(e.get("bases") or [])) for e in kf.get("entries") or []]
+        return "\n".join(lines)
+    except Exception:                                 # noqa: BLE001 - an unreadable record adds nothing to the brief
+        return ""
+
+
 def brief(sdlc_dir, goal, phase, artifact="", repo_root=".", source=None):
     """The independent reviewer's context pack: who they are, what the project is for, what to review,
     and the one rule that separates a real review from a rubber-stamp. Returns a string ready to hand a
@@ -804,6 +822,17 @@ def brief(sdlc_dir, goal, phase, artifact="", repo_root=".", source=None):
                 "findings with exactly one line, `TEST-FIRST-EXCEPTION: accept - <why>` or `TEST-FIRST-EXCEPTION: "
                 "reject - <why>`. A reject is a blocking finding: your verdict is then `VERDICT: block`. A review "
                 "with neither line is written as a block." % exception.strip().replace("\n", "\n> "))
+
+    if phase == "pr-review":
+        flakes = _known_flakes_facts(sdlc_dir, goal)
+        if flakes:
+            parts.append(
+                "## Known-flake exception (you must judge it)\nThe full verify of this PR was red. It was accepted "
+                "only because every failing test is on the project's recorded known-flake list and each passed when "
+                "re-run alone:\n\n%s\n\nSay whether this diff could plausibly affect those tests (their code, "
+                "fixtures, config, ordering or shared state). End your findings with exactly one line, "
+                "`KNOWN-FLAKES: accept - <why>` or `KNOWN-FLAKES: reject - <why>`. A reject is a blocking finding: "
+                "your verdict is then `VERDICT: block`. A review with neither line is written as a block." % flakes)
 
     parent = _parent(sdlc_dir, goal_body, source)
     if parent:

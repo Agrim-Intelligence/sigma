@@ -319,6 +319,16 @@ ENFORCEMENT_GATES = (
      "condition": "the line, like the verdict, is relayed by the orchestrator on the subagent route and written by the "
                   "maker on the inline route; it proves the question was answered, not answered well; only the review "
                   "route is gated, `work.py merge` does not re-read it; no real review has run under it"},
+    {"control": "Known-flake exception judged by the post-PR review",
+     "function": "_known_flakes_review_refusal", "kind": "python-gate", "hosts": "all",
+     "enabled_by": ("work.enabled", "verify.known_flakes"), "settings": (),
+     "mechanism": "when the goal's last verify is `passed-with-known-flakes` evidence (#2160), the pr-review brief "
+                  "carries the matched entries and the failing ids and asks for one `KNOWN-FLAKES: accept` or "
+                  "`reject` line (can the diff plausibly affect those tests?); a PR review's `approve` or `unblock` "
+                  "that rejects it, or says neither, is written as `block` with the finding",
+     "condition": "the line, like the verdict, is relayed by the orchestrator on the subagent route and written by the "
+                  "maker on the inline route; it proves the question was answered, not answered well; only the review "
+                  "route is gated, `work.py merge` does not re-read it; no real review has run under it"},
     {"control": "Sealed acceptance tests authored by an author-blind breaker (opt-in)",
      "function": "_seal_tests_refusal", "kind": "python-gate", "hosts": "all",
      "enabled_by": ("work.enabled", "gates.sealed_acceptance.enabled"), "settings": ("review.timeout_seconds",),
@@ -1100,6 +1110,29 @@ def _exception_review_refusal(sdlc_dir, goal, review_text):
             "the review with `TEST-FIRST-EXCEPTION: accept - <why>` or `TEST-FIRST-EXCEPTION: reject - <why>`")
 
 
+_KNOWN_FLAKES_LINE = re.compile(r"(?im)^[ \t>*_`+-]*KNOWN-FLAKES[ \t*_`]*:[ \t*_`]*(accept|reject)(?:ed)?\b[ \t*_`:.-]*(.*?)[ \t*_`]*$")
+
+
+def _known_flakes_review_refusal(sdlc_dir, goal, review_text):
+    """#2160: None, or why an approving PR review may not stand: the goal's evidence is `passed-with-known-flakes` and
+    the review did not accept it with `KNOWN-FLAKES: accept - <why>`, or rejected it, or said both. A rejection is an
+    ordinary block. Evidence absent, unreadable or not known-flake evidence -> None (nothing to judge). Like the
+    verdict word, the line proves the question was answered, not that it was answered well."""
+    try:
+        data = json.loads(state.evidence_path(sdlc_dir, goal).read_text())
+    except (OSError, ValueError, TypeError):
+        return None
+    if not isinstance(data, dict) or data.get("verify_state") != state.known_flakes_module().STATE:
+        return None
+    said = {m.group(1).lower(): m.group(2) for m in _KNOWN_FLAKES_LINE.finditer(review_text or "")}
+    if "reject" in said:
+        return "the reviewer rejected the known-flake exception: " + (said["reject"] or "(no reason given)")
+    if "accept" in said:
+        return None
+    return ("the PR passed its verify only through the known-flake exception and the review did not judge it: end the "
+            "review with `KNOWN-FLAKES: accept - <why>` or `KNOWN-FLAKES: reject - <why>`")
+
+
 #: Under GitHub's 65,536-character comment limit with room for post_review's own header and marker.
 _MAX_POSTED_REASON = 60000
 
@@ -1117,6 +1150,9 @@ def _write_review_result(sdlc_dir, manifest, resolution_path, verdict, reason, w
         excepted = _exception_review_refusal(sdlc_dir, manifest.get("goal"), reason)     # #2116
         if excepted:
             refusal = excepted + ("\n" + refusal if refusal else "")
+        flaky = _known_flakes_review_refusal(sdlc_dir, manifest.get("goal"), reason)     # #2160
+        if flaky:
+            refusal = flaky + ("\n" + refusal if refusal else "")
         if refusal:
             print(f"work: the test review turned this `{verdict}` into a block:\n{refusal}\nIf the reviewer's "
                   "output was summarised, record its full text instead (`--reason \"$(cat <file>)\"`): the "
@@ -4341,7 +4377,7 @@ def _test_first_refusal(sdlc_dir, config, rec, goal, run, no_tests=None, remote=
         return "TEST-FIRST REFUSED: --no-tests requires a nonempty reason (nothing pushed)"
     if not state.enforce_enabled(config.get("verify")):
         return ""
-    refused = state.done_refusal(sdlc_dir, goal)
+    refused = state.done_refusal(sdlc_dir, goal, base=base)       # #2160: known-flake evidence counts per base
     declared, code = _declared_no_tests(sdlc_dir, rec, goal, run, remote, base)
     if declared and not code and no_tests is None and not refused:
         return ""                                    # #1942: a docs-only change with a stated reason
@@ -4365,6 +4401,30 @@ def _test_first_refusal(sdlc_dir, config, rec, goal, run, no_tests=None, remote=
         return ("TEST-FIRST REFUSED: " + refused + "; record red with `loop.py red <sdlc> <goal>` "
                 "while the planned tests fail, then run `loop.py verify` when green; or supply --no-tests <reason> for an explicit exception (nothing pushed)")
     return ""
+
+
+_KNOWN_FLAKES_HEADING = "## Verify passed with known flakes"
+
+
+def _known_flakes_section(sdlc_dir, goal, base):
+    """#2160: the PR-body section for the goal's CURRENT evidence when it is valid known-flake evidence for `base`,
+    else ''. The summary, the failing ids and the solo re-run output are written into the PR itself."""
+    try:
+        data = json.loads(state.evidence_path(sdlc_dir, goal).read_text())
+        if data.get("verify_state") != state.known_flakes_module().STATE or state.done_refusal(sdlc_dir, goal, base=base):
+            return ""
+        return state.known_flakes_module().pr_section(data)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return ""
+
+
+def _known_flakes_body(body, section):
+    """`body` with its known-flake section replaced by `section` (or removed when '' and one is there)."""
+    start = body.find(_KNOWN_FLAKES_HEADING)
+    if start >= 0:
+        end = body.find("\n## ", start + 1)
+        body = body[:start].rstrip("\n") + ("\n" + body[end:] if end >= 0 else "")
+    return body if not section else body.rstrip("\n") + "\n" + section
 
 
 def _no_tests_body(body, reason):
@@ -4783,6 +4843,7 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None, land=False):
                or _hs_diff_stop(config, run, path, ["git", "diff", f"{remote}/{base}...HEAD"], ("tamper_oversight",)))
     if refusal:
         return refusal
+    kf_section = _known_flakes_section(sdlc_dir, goal, base)             # #2160
     run(path, ["git", "push", "-u", remote, rec["branch"]])
     number = run(path, ["gh", "api",
                         f"repos/{{owner}}/{{repo}}/pulls?head={{owner}}:{rec['branch']}",
@@ -4790,13 +4851,14 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None, land=False):
     if not number:
         title = _pr_title(path, run, remote, base, goal)
         body = _no_tests_body(_pr_body(path, run, remote, base, goal, config), no_tests)
+        body = _known_flakes_body(body, kf_section)
         number = run(path, ["gh", "api", "repos/{owner}/{repo}/pulls",
                             "-f", f"title={title}", "-f", f"body={body}", "-f", f"base={base}",
                             "-f", f"head={rec['branch']}", "--jq", ".number"])
-    elif no_tests is not None:
+    elif no_tests is not None or kf_section:
         endpoint = f"repos/{{owner}}/{{repo}}/pulls/{number}"
         current = json.loads(run(path, ["gh", "api", endpoint])).get("body") or ""
-        body = _no_tests_body(current, no_tests)
+        body = _known_flakes_body(_no_tests_body(current, no_tests), kf_section)
         if body != current:
             run(path, ["gh", "api", endpoint, "--method", "PATCH", "-f", f"body={body}"])
     if _receipt_sharing_enabled(config):
@@ -8727,7 +8789,7 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
         command = state.declared_verify_command(goal, config, sdlc_dir)
     except (OSError, ValueError) as exc:
         return f"PARK: invalid acceptance record: {exc}; repair it and re-run verify"
-    refusal = state.done_refusal(sdlc_dir, goal) if required else None
+    refusal = state.done_refusal(sdlc_dir, goal, base=rec.get("base")) if required else None
     if refusal:
         if command is None:
             # enforce on, nothing to run: "run verify" would be the wrong advice (#228's lesson).

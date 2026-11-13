@@ -242,7 +242,7 @@ def pr_case(case, monkeypatch):
     root, sdlc, plan = case
     w = load('work')
     w._save(sdlc, '42', {'worktree': str(root), 'remote': 'origin', 'base': 'main', 'branch': 'sdlc/42'})
-    monkeypatch.setattr(w.state, 'done_refusal', lambda *a: None)
+    monkeypatch.setattr(w.state, 'done_refusal', lambda *a, **k: None)
     original = w._load
     acceptance = original('acceptance')
     monkeypatch.setattr(acceptance, 'refusal', lambda *a: '')
@@ -297,7 +297,7 @@ def test_existing_pr_exception_is_published_idempotently(case, monkeypatch):
 
 def test_exception_cannot_bypass_verify_or_plan_review(case, monkeypatch):
     w, config, run, _ = pr_case(case, monkeypatch)
-    monkeypatch.setattr(w.state, 'done_refusal', lambda *a: 'production changed since verify')
+    monkeypatch.setattr(w.state, 'done_refusal', lambda *a, **k: 'production changed since verify')
     assert 'production changed' in w.pr(case[1], config, '42', run=run, no_tests='Docs')
     monkeypatch.setattr(w, '_plan_review_refusal', lambda *a: 'plan review required')
     assert w.pr(case[1], config, '42', run=run, no_tests='Docs') == 'plan review required'
@@ -759,7 +759,7 @@ def test_none_plan_with_an_empty_diff_is_refused(case, monkeypatch):
 
 def test_none_plan_does_not_skip_the_verify_evidence_check(case, monkeypatch):
     w, config, run, calls = none_case(case, monkeypatch, ['docs/a.md'])
-    monkeypatch.setattr(w.state, 'done_refusal', lambda *a: 'production changed since verify')
+    monkeypatch.setattr(w.state, 'done_refusal', lambda *a, **k: 'production changed since verify')
     result = w.pr(case[1], config, '42', run=run)
     assert 'production changed since verify' in result
     assert not any(a[:2] == ['git', 'push'] for a in calls)

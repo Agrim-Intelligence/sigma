@@ -36,7 +36,7 @@ def pr_case(case, monkeypatch, trusted=False, extra=None):
     root, sdlc, plan = case
     w = load('work')
     w._save(sdlc, '42', {'worktree': str(root), 'remote': 'origin', 'base': 'main', 'branch': 'sdlc/42'})
-    monkeypatch.setattr(w.state, 'done_refusal', lambda *a: None)
+    monkeypatch.setattr(w.state, 'done_refusal', lambda *a, **k: None)
     monkeypatch.setattr(w.shell_policy, 'repository_shell_commands_allowed', lambda path: trusted)
     original = w._load
     acceptance = original('acceptance')
