@@ -87,9 +87,16 @@ def integration_branch(config):
     block = block if isinstance(block, dict) else {}
     base, remote = block.get("base"), block.get("remote")
     base = base.strip() if isinstance(base, str) else ""
-    if isinstance(remote, str) and remote and base.startswith(remote + "/") and len(base) > len(remote) + 1:
+    remote = remote if isinstance(remote, str) and remote else "origin"      # `work.settings`' default remote
+    if base.startswith(remote + "/") and len(base) > len(remote) + 1:
         base = base[len(remote) + 1:]
     return base
+
+
+def _work_base_raw(config):
+    block = (config or {}).get("work") if isinstance(config, dict) else None
+    base = block.get("base") if isinstance(block, dict) else None
+    return base.strip() if isinstance(base, str) else ""
 
 
 def default_branch(root, remote="origin"):
@@ -109,7 +116,7 @@ def integration_set(config, base, root=None):
     """The branches no wildcard may cover. `work.base` when it is set; when it is UNSET the goal's own recorded base
     counts as the integration branch (so only an entry naming it exactly covers it); and the remote's default
     branch, when the local clone knows it, always does."""
-    found = {integration_branch(config) or base}
+    found = {integration_branch(config) or base, _work_base_raw(config)}      # both `origin/main` and `main`
     if root:
         block = (config or {}).get("work") if isinstance(config, dict) else None
         remote = block.get("remote") if isinstance(block, dict) else None

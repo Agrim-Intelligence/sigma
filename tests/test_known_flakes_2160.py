@@ -588,3 +588,20 @@ def test_a_bare_count_without_a_duration_is_not_the_final_line():
 def test_a_solo_run_that_passed_one_and_skipped_another_is_not_a_pass():
     got = evaluate(pytest_output(A), parsed(entry()), solo=lambda _i: ("ok", 0, "1 passed, 1 skipped in 0.01s"))
     assert got["accepted"] is False and "skipped" in got["reason"]
+
+
+def test_work_base_with_the_default_remote_prefix_is_protected_in_both_forms():
+    config = {"work": {"base": "origin/main"}}
+    assert kf.integration_branch(config) == "main"
+    assert kf.integration_set(config, "main") == {"main", "origin/main"}
+    wild = parsed(entry(bases=["*"]))[0]
+    assert kf.covers_base(wild, "main", kf.integration_set(config, "main")) is False
+    assert kf.covers_base(parsed(entry(bases=["main"]))[0], "main", kf.integration_set(config, "main")) is True
+
+
+def test_a_review_line_echoing_both_template_options_is_not_a_judgment(tmp_path):
+    st, sdlc = _state_project(tmp_path, _evidence(), cfg(entry()))
+    work = _mod("work")
+    echoed = "KNOWN-FLAKES: accept - <why> or KNOWN-FLAKES: reject - <why>"
+    assert "did not judge" in work._known_flakes_review_refusal(sdlc, "0001", echoed)
+    assert "did not judge" in work._known_flakes_review_refusal(sdlc, "0001", "KNOWN-FLAKES: accept - fine <why> ok")
