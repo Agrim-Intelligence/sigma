@@ -6,6 +6,11 @@ All notable changes to Sigma are recorded here, newest first.
 
 - **The session-start notice no longer says an ignored setup-critical entry is "still asked about" in a cloud session (#2163).** `committed_dismissal_notice()` now words it for a cloud session (no question is asked there; `/sigma-doctor` still reports it); a repeated "Not measured" clause in `docs/cloud-sessions.md` is removed. Measured: offline unit tests, both wordings. Not measured: a real cloud session.
 
+- **`/sigma-orchestrate`: a wrongly typed `open_prs` is refused, the deferred-items parser lists lines it used to skip, and the doc shows the current follow-up command (#2162).**
+  - **What changed.** `waves.py` refuses an `open_prs` that is not a list of positive integers (a string, a number, a boolean, a float, a nested list, zero or a negative) with a one-line message and exit 2 instead of a traceback, and no longer reads a numeric string as a PR number. `deferred.py` lists a list-shaped line after the marker that sits inside a code fence or a `>` quote as rejected with a reason (it is still not read as an item), so `check` exits 1 for it; no new bullet glyph is accepted (the glyphs it names as rejected are the numbered, `+`, glued-`[`, bare `[area:` and unicode-dot shapes). `docs/orchestrate.md` shows `handoff.py followup-mode "$S"` and states both rules.
+  - **Measured:** offline, 3 new waves tests (13 wrong values) and 3 new deferred tests (plus parametrized cases); each clause was broken on its own and its test seen red (notes at the bottom of both files).
+  - **Not measured:** a real batch; a comment that came back from the live API with fences or quotes.
+
 ## 1.0.30 — 2026-11-13 — the loop passes the merge stop line and redacts it, a committed list cannot silence setup-critical checks, follow-ups become a setting, and /sigma-orchestrate survives a real dry run
 
 - **`/sigma-orchestrate`: the dry-run path no longer lets in-flight or non-goal issues into the plan, and its commands work from a worktree (#2157).**
