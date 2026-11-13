@@ -1382,8 +1382,8 @@ the question still shows and names it as ignored. `gh project scope`, the two bo
 `graphify installed` stay declinable. A person's own state-file dismissal is unchanged. When the list
 declines at least one check, session start adds one line saying how many and by what mechanism (from
 `setup_wizard.committed_dismissal_notice()`, also `python3 skills/sigma-init/scripts/setup_wizard.py notice
-.sdlc`, so a host without hooks asks the same); with nothing declined it prints nothing. Not measured: a
-real cloud session. Not measured: a real cloud session started as `/sigma-goal <N> --land` (the
+.sdlc`, so a host without hooks asks the same); with nothing declined it prints nothing. In a cloud session an ignored critical entry is reported as ignored and
+reported by `/sigma-doctor`, not as "still asked about" (#2163). Not measured: a real cloud session started as `/sigma-goal <N> --land` (the
 hook is tested as a process with the variable set, not inside a container). Not covered: the other
 SessionStart tiers gated on `SIGMA_RUN_ID` (upkeep, north-star, dag, watcher, loop liveness, kg) do not
 read `CLAUDE_CODE_REMOTE`.
