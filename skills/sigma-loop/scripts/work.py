@@ -3201,10 +3201,10 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None, land=False):
     # #2161: a `--land` pick looks for the goal's checkpoint branch on the remote and resumes from it, or
     # keeps it as `<branch>-previous` and re-cuts. Only `land` pays the one `ls-remote`, so every other
     # start makes exactly the git calls it always did.
-    resumed, lease, resume_note = (None, None, "")
+    resumed, resume_note = (None, "")
     if land:
-        resumed, lease, resume_note = _checkpoint_resume(sdlc_dir, config, goal, run, base_root, s, branch,
-                                                         path, base)
+        resumed, branch, resume_note = _checkpoint_resume(sdlc_dir, config, goal, run, base_root, s, branch,
+                                                          path, base)
     reattached = False                      # #2009: initialised HERE, not only in the except -- an
                                             # un-taken except would otherwise NameError on the
                                             # guard below, on the fresh-cut path every pick uses.
@@ -3235,8 +3235,6 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None, land=False):
              "base_resolved": base_resolved, "remote": s["remote"], "pr": ""}
     if resumed:                             # #2161: the record names what the checkpoint resumed from
         saved["checkpoint"] = resumed
-    if lease:
-        saved["checkpoint_lease"] = lease
     if not reattached and _upkeep_was_busy() and base.startswith(features.BRANCH_PREFIX):
         upkeep_note += _recut_after_busy(run, path, s["remote"], base)      # #1483: BEFORE the cut tip is read
     if not reattached and not resumed:      # a reattached branch is not at its cut tip: record nothing, replay the legacy way
@@ -4807,10 +4805,7 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None, land=False):
                or _hs_diff_stop(config, run, path, ["git", "diff", f"{remote}/{base}...HEAD"], ("tamper_oversight",)))
     if refusal:
         return refusal
-    lease = _checkpoint_lease_argv(rec, rec["branch"])
-    run(path, ["git", "push"] + lease + ["-u", remote, rec["branch"]])
-    if lease:                                             # #2161: the one lease-pinned overwrite is spent
-        rec.pop("checkpoint_lease", None)
+    run(path, ["git", "push", "-u", remote, rec["branch"]])
     number = run(path, ["gh", "api",
                         f"repos/{{owner}}/{{repo}}/pulls?head={{owner}}:{rec['branch']}",
                         "--jq", ".[0].number"])
@@ -4844,27 +4839,29 @@ _SHA40 = re.compile(r"^[0-9a-f]{40}$")
 _PLAN_COPY_MARK = re.compile(r"^<!-- sigma:plan-copy goal=(\S+) sha256=([0-9a-f]{64}) part=\d+/\d+ -->")
 
 
+_SHA40 = re.compile(r"^[0-9a-f]{40}$")
+_PLAN_COPY_MARK = re.compile(r"^<!-- sigma:plan-copy goal=(\S+) sha256=([0-9a-f]{64}) part=\d+/\d+ -->")
+#: #2161: seconds `checkpoint_audit`'s one `git ls-remote` may take before the audit says it could not read the remote.
+CHECKPOINT_AUDIT_TIMEOUT_S = 20
+_PUSH_MOVED = re.compile(r"non-fast-forward|fetch first|\[rejected\]")
+
+
 def _checkpoint_ref(config, goal, branch):
-    """#2161: the remote branch `checkpoint` pushes to: the goal branch itself, or `work.checkpoint_prefix` + the
-    goal stem when the project keeps checkpoints off the branches its workflows run on."""
-    prefix = settings(config).get("checkpoint_prefix")
-    return f"{prefix}{stem(goal)}" if isinstance(prefix, str) and prefix else branch
+    """#2161: the remote branch `checkpoint` pushes `branch` to: the branch itself, or, under `work.checkpoint_prefix`,
+    the prefix plus the branch's name without `work.branch_prefix` (so `sdlc/2161-2` checkpoints to `wip/2161-2`)."""
+    s = settings(config)
+    prefix = s.get("checkpoint_prefix")
+    if not (isinstance(prefix, str) and prefix):
+        return branch
+    lead = s.get("branch_prefix") or ""
+    tail = branch[len(lead):] if lead and branch.startswith(lead) else stem(goal)
+    return f"{prefix}{tail}"
 
 
 def _remote_tip(run, cwd, remote, ref):
     """The sha `remote` holds for branch `ref`, or "" when the branch is not there. Raises on a transport failure."""
     first = (run(cwd, ["git", "ls-remote", "--heads", remote, f"refs/heads/{ref}"]) or "").split()
     return first[0] if first and _SHA40.match(first[0]) else ""
-
-
-def _checkpoint_lease_argv(rec, ref):
-    """#2161: `--force-with-lease` pinned to the exact tip a re-cut preserved as `<ref>-previous`, for the ONE push that
-    replaces a leftover branch; [] otherwise, so every other push stays the plain one it always was. The lease
-    makes the overwrite fail if the remote branch is not byte-for-byte what was preserved."""
-    lease = rec.get("checkpoint_lease") if isinstance(rec, dict) else None
-    if isinstance(lease, dict) and lease.get("ref") == ref and _SHA40.match(str(lease.get("sha") or "")):
-        return [f"--force-with-lease=refs/heads/{ref}:{lease['sha']}"]
-    return []
 
 
 def _checkpoint_push_stop(sdlc_dir, config, rec, goal, run, ref):
@@ -4898,10 +4895,10 @@ def checkpoint(sdlc_dir, config, goal, run=None):
     """#2161: push the goal branch to the remote WITHOUT opening a PR, so a container that dies mid-run leaves the work.
 
     Run after each implement commit and before every full verify. It goes through the gates `pr`'s push is behind
-    (`_checkpoint_push_stop`); a refusal pushes nothing. A push that fails for any other reason, transport first, only
-    WARNs: a checkpoint is a safety copy, not a gate, and the run goes on. The push is a plain fast-forward, never
-    forced; the one lease-pinned overwrite is a re-cut's, spent on its first push (`_checkpoint_lease_argv`).
-    In an issue-backed goal it also leaves the plan's durable copy on the issue (the resume compares against it)."""
+    (`_checkpoint_push_stop`); a refusal pushes nothing. A push that fails for any other reason only WARNs, and the run
+    goes on: a checkpoint is a safety copy, not a gate. A rejection because the remote branch moved is reported as that
+    (it is not a transport failure, and retrying will not fix it). The push is a plain fast-forward and nothing in
+    this file forces one. In an issue-backed goal it also leaves the plan's durable copy on the issue."""
     run = run or _run
     rec = _record(sdlc_dir, goal)
     if not rec:
@@ -4913,16 +4910,17 @@ def checkpoint(sdlc_dir, config, goal, run=None):
         return stop
     if run(path, ["git", "rev-list", "--count", f"{remote}/{base}..HEAD"]) == "0":
         return "no commits on the branch — nothing to checkpoint (nothing pushed)"
-    lease = _checkpoint_lease_argv(rec, ref)
     try:
-        run(path, ["git", "push"] + lease + [remote, f"HEAD:refs/heads/{ref}"])
+        run(path, ["git", "push", remote, f"HEAD:refs/heads/{ref}"])
     except Exception as exc:            # noqa: BLE001 - a safety copy, not a gate
+        if _PUSH_MOVED.search(str(exc)):
+            return (f"WARN: checkpoint not pushed: {remote}/{ref} has commits this worktree does not (the branch "
+                    f"moved; non-fast-forward). Nothing was overwritten. Merge it in with `git -C {path} pull "
+                    f"--no-rebase {remote} {ref}`, then re-run `work.py checkpoint {sdlc_dir} {goal}`; the run continues")
         return (f"WARN: checkpoint not pushed ({_first_line(exc)}); the run continues — "
                 f"re-run `work.py checkpoint {sdlc_dir} {goal}` when the remote is reachable")
     head = run(path, ["git", "rev-parse", "HEAD"])
     rec["checkpoint"] = {"ref": ref, "sha": head}
-    if lease:
-        rec.pop("checkpoint_lease", None)
     _save(sdlc_dir, goal, rec)
     line = f"checkpoint {remote}/{ref} at {head[:12]}"
     if _reads_a_declaration(config, goal):
@@ -4934,19 +4932,62 @@ def checkpoint(sdlc_dir, config, goal, run=None):
     return line
 
 
-def checkpoint_audit(sdlc_dir, config, goal, run=None):
-    """#2161: `loop.py release`'s audit clause: the checkpoint branch and its last commit as the remote holds them
-    now, so a person can see what survived. "" when there is no work record or no such branch; never raises."""
+def _ls_remote_bounded(run, cwd, remote, patterns, timeout):
+    """`git ls-remote --heads <remote> <patterns>` output. With no injected `run` it is a child process killed after
+    `timeout` seconds and never prompts, so a dead remote cannot hang a release."""
+    argv = ["git", "ls-remote", "--heads", remote, *patterns]
+    if run is not None:
+        return run(cwd, argv) or ""
+    env = {k: v for k, v in os.environ.items() if k not in _GIT_LOCATION_ENV}
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    proc = subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True, env=env, timeout=timeout)
+    if proc.returncode:
+        raise RuntimeError("ls-remote failed")
+    return proc.stdout
+
+
+def checkpoint_audit(sdlc_dir, config, goal, run=None, timeout=CHECKPOINT_AUDIT_TIMEOUT_S):
+    """#2161: `loop.py release`'s audit clause: the checkpoint branch(es) and last commit as the remote holds them
+    now, so a person can see what survived. It needs no work record (the release may run on another machine than the
+    one that died): the ref comes from the goal number, `work.branch_prefix` and `work.checkpoint_prefix`, the branch
+    and its `-2`, `-3` successors are listed, and the read runs from the repository root.
+
+    "" when `work` is off, the goal is not an issue-backed one, the root is not a git checkout, or no such branch is
+    there; `could not read the remote for a checkpoint branch` when the read fails or takes over `timeout` seconds.
+    Never raises. COST: one `git ls-remote` per release, bounded by `timeout`; the auto-reclaim sweep releases each
+    stale claim through this, so a sweep of N claims on an unreachable remote can wait up to N * `timeout` seconds."""
     try:
-        run = run or _run
-        rec = _record(sdlc_dir, goal)
-        if not rec:
+        if not (enabled(config) and _reads_a_declaration(config, goal)):
             return ""
-        ref = _checkpoint_ref(config, goal, rec["branch"])
-        sha = _remote_tip(run, rec["worktree"], rec["remote"], ref)
-        return f"checkpoint branch {rec['remote']}/{ref}, last commit {sha[:12]}" if sha else ""
+        root = project_root(sdlc_dir)
+        if not (root / ".git").exists():
+            return ""
+        s = settings(config)
+        rec = _record(sdlc_dir, goal)
+        branch = rec["branch"] if rec else f"{s['branch_prefix']}{stem(goal)}"
+        remote = rec["remote"] if rec else s["remote"]
+        ref = _checkpoint_ref(config, goal, branch)
+        stripped = re.sub(r"-\d+$", "", ref) if rec else ref
+        names = {ref, stripped}
     except Exception:                   # noqa: BLE001 - an audit line must never block a release
         return ""
+    try:
+        out = _ls_remote_bounded(run, root, remote, [f"refs/heads/{n}{suffix}" for n in sorted(names) for suffix in ("", "-*")],
+                                 timeout)
+    except Exception:                   # noqa: BLE001 - includes a timeout: bounded, short, never raised
+        return "could not read the remote for a checkpoint branch"
+    found = {}
+    for line in out.splitlines():
+        sha, _, full = line.strip().partition("\t")
+        name = full[len("refs/heads/"):] if full.startswith("refs/heads/") else ""
+        if _SHA40.match(sha) and any(name == n or re.fullmatch(re.escape(n) + r"-\d+", name) for n in names):
+            found[name] = sha
+    if not found:
+        return ""
+    if len(found) == 1:
+        (name, sha), = found.items()
+        return f"checkpoint branch {remote}/{name}, last commit {sha[:12]}"
+    return "checkpoint branches " + ", ".join(f"{remote}/{n} (last commit {found[n][:12]})" for n in sorted(found))
 
 
 def _durable_plan_shas(sdlc_dir, config, goal, run, root):
@@ -5000,84 +5041,105 @@ def _drop_cut(run, base_root, path, branch):
             pass
 
 
-def _checkpoint_resume(sdlc_dir, config, goal, run, base_root, s, branch, path, base):
-    """#2161: `(resumed, lease, note)` for a `--land` start. `resumed` is the checkpoint record ({"ref","sha"}) when the
-    worktree was cut from the remote checkpoint branch, else None; `lease` is the pinned overwrite a re-cut may use on
-    its first push; `note` is text for the start line. It never raises.
+def _head_pr_merged(run, cwd, ref):
+    """True when a merged pull request has `ref` as its head: a squash-merged leftover is not resumable (its commits
+    are not in the base's history, but its work is landed). Raises when GitHub cannot be read."""
+    out = run(cwd, ["gh", "api", f"repos/{{owner}}/{{repo}}/pulls?head={{owner}}:{ref}&state=closed",
+                    "--jq", "[.[] | select(.merged_at != null)] | length"])
+    return int((out or "0").strip() or 0) > 0
 
-    A branch on the remote that the base already contains is nothing to resume. Otherwise: fetch it, cut the worktree
-    from it, rebase onto the base, require the plan on the branch to match a durable plan copy on the issue. Any
-    miss (a read that failed, a conflict, a plan that changed or has no copy) takes the fallback: the old tip is
-    pushed to `<ref>-previous` FIRST, the issue is told, and only then is a lease armed for the re-cut's first
-    push. If the copy cannot be made, no lease is armed, so a re-cut cannot overwrite what was not preserved.
-    Nothing here force-pushes, and what is resumed re-earns plan-review, review and verify: their records are
-    local state this does not recreate."""
+
+def _holds_unmerged(run, base_root, remote, base, ref):
+    """True when `remote` holds branch `ref` with commits the base does not (a push of a fresh cut there would be
+    refused). A branch the base already contains is free: a cut from the base descends from it. Raises on a read failure."""
+    tip = _remote_tip(run, base_root, remote, ref)
+    if not tip:
+        return False
+    run(base_root, ["git", "fetch", remote, f"refs/heads/{ref}"])
+    return run(base_root, ["git", "rev-list", "--count", f"{remote}/{base}..{tip}"]) != "0"
+
+
+def _fresh_branch(config, goal, run, base_root, remote, base, branch):
+    """`<branch>-2`, `-3`, ...: the first name neither held locally nor (with its checkpoint ref) on the remote with
+    unmerged commits, so the first push of the new work is a plain one and no old branch is touched."""
+    for n in range(2, 30):
+        name = f"{branch}-{n}"
+        try:
+            run(base_root, ["git", "rev-parse", "--verify", "-q", f"refs/heads/{name}"])
+            continue                    # a local branch of that name exists
+        except Exception:               # noqa: BLE001 - exit 1 is the answer "free"
+            pass
+        ck = _checkpoint_ref(config, goal, name)
+        if not any(_holds_unmerged(run, base_root, remote, base, r) for r in dict.fromkeys((name, ck))):
+            return name
+    raise RuntimeError("no free branch name")
+
+
+def _checkpoint_resume(sdlc_dir, config, goal, run, base_root, s, branch, path, base):
+    """#2161: `(resumed, branch, note)` for a `--land` start. `resumed` is the checkpoint record ({"ref","sha"}) when the
+    worktree was cut from the remote checkpoint branch, else None. `branch` is the name the work goes on: the goal
+    branch, or `<branch>-2`, `-3` when the remote holds a branch of that name this run cannot resume. It never raises.
+
+    A branch on the remote that the base already contains is nothing to resume. One whose pull request merged (a
+    squash merge leaves its commits out of the base's history) is not resumable either. Otherwise: fetch it, cut the
+    worktree from it, MERGE the current base into it (a merge commit, so the remote's branch stays an ancestor and the
+    next push is a fast-forward; a conflict is aborted), and require the plan on the branch to match a durable plan
+    copy on the issue. Any miss takes the fallback: the old branch is left exactly as it is, the work is cut onto a
+    fresh name, and the issue is told both names. Nothing here force-pushes or deletes a remote branch, and what is
+    resumed re-earns plan-review, review and verify: their records are local state this does not recreate."""
     remote = s["remote"]
     ref = _checkpoint_ref(config, goal, branch)
+    why, tip = "", ""
     try:
-        tip = _remote_tip(run, base_root, remote, ref)
+        if _holds_unmerged(run, base_root, remote, base, ref):
+            tip = _remote_tip(run, base_root, remote, ref)
+            if _head_pr_merged(run, base_root, ref):
+                why = "its pull request already merged"
+        elif ref != branch and _holds_unmerged(run, base_root, remote, base, branch):
+            why = "the goal branch is already on the remote with commits this run has not recorded"
+    except Exception as exc:                # noqa: BLE001 - cannot tell: never resume, never claim a name is free
         if not tip:
-            return None, None, ""
-        run(base_root, ["git", "fetch", remote, f"refs/heads/{ref}"])
-        if run(base_root, ["git", "rev-list", "--count", f"{remote}/{base}..{tip}"]) == "0":
-            return None, None, ""           # already in the base: a re-cut descends from it, a plain push fast-forwards
-    except Exception:                       # noqa: BLE001 - cannot read the remote: cut as today, the push says why
-        return None, None, ""
-    try:
-        run(base_root, ["git", "worktree", "add", "-b", branch, str(path), tip])
-    except Exception:                       # noqa: BLE001 - a branch or path already there is `start`'s own reattach, not ours to touch
-        return None, None, ""
-    why = ""
-    try:
+            return None, branch, ""         # the remote cannot be read at all: cut as today, the push says why
+        why = f"could not tell whether it already merged ({_first_line(exc)})"
+    if tip and not why:
         try:
-            run(path, ["git", "rebase", f"{remote}/{base}"])
-        except Exception:                   # noqa: BLE001
+            run(base_root, ["git", "worktree", "add", "-b", branch, str(path), tip])
+        except Exception:                   # noqa: BLE001 - a branch or path already there is `start`'s own reattach
+            return None, branch, ""
+        try:
             try:
-                run(path, ["git", "rebase", "--abort"])
+                run(path, ["git", "merge", "--no-edit", f"{remote}/{base}"])
             except Exception:               # noqa: BLE001
-                pass
-            raise RuntimeError("the rebase onto the current base conflicts")
-        rc = _load("review_context")
-        doc = rc.phase_doc_file(pathlib.Path(path) / pathlib.Path(sdlc_dir).resolve().name, goal, "plans")
-        if not doc:
-            raise RuntimeError("the branch holds no plan to compare with the issue's copy")
-        if rc.plan_sha256(doc) not in _durable_plan_shas(sdlc_dir, config, goal, run, path):
-            raise RuntimeError("the plan on the branch matches no durable copy on the issue (it changed, or none was kept)")
-    except Exception as exc:                # noqa: BLE001 - every miss is the same fallback
-        why = _first_line(exc)
-        _drop_cut(run, base_root, path, branch)
+                try:
+                    run(path, ["git", "merge", "--abort"])
+                except Exception:           # noqa: BLE001
+                    pass
+                raise RuntimeError("merging the current base into the branch conflicts or fails")
+            rc = _load("review_context")
+            doc = rc.phase_doc_file(pathlib.Path(path) / pathlib.Path(sdlc_dir).resolve().name, goal, "plans")
+            if not doc:
+                raise RuntimeError("the branch holds no plan to compare with the issue's copy")
+            if rc.plan_sha256(doc) not in _durable_plan_shas(sdlc_dir, config, goal, run, path):
+                raise RuntimeError("the plan on the branch matches no durable copy on the issue (it changed, or none was kept)")
+        except Exception as exc:            # noqa: BLE001 - every miss is the same fallback
+            why = _first_line(exc)
+            _drop_cut(run, base_root, path, branch)
+        if not why:
+            return {"ref": ref, "sha": tip}, branch, (
+                f"resumed from {remote}/{ref} at {tip[:12]}: worktree {path} on {branch}; "
+                f"re-enter at {_open_phase(sdlc_dir, goal)}; plan-review, review and verify run again")
     if not why:
-        # A rebase that rewrote the branch leaves the remote's copy not an ancestor, so the next plain push would be
-        # refused. Pin the one push that moves it to the tip just fetched (a lease), so a commit this run never saw
-        # is never overwritten.
-        try:
-            run(path, ["git", "merge-base", "--is-ancestor", tip, "HEAD"])
-            lease = None
-        except Exception:                   # noqa: BLE001 - exit 1 is the answer "no": rewritten
-            lease = {"ref": ref, "sha": tip, "kept": ""}
-        return {"ref": ref, "sha": tip}, lease, (
-            f"resumed from {remote}/{ref} at {tip[:12]}: worktree {path} on {branch}; "
-            f"re-enter at {_open_phase(sdlc_dir, goal)}; plan-review, review and verify run again")
-    previous = f"{ref}-previous"
+        return None, branch, ""             # nothing on the remote in the way
     try:
-        for i in range(1, 10):
-            name = previous if i == 1 else f"{previous}-{i}"
-            if not _remote_tip(run, base_root, remote, name):
-                run(base_root, ["git", "push", remote, f"{tip}:refs/heads/{name}"])
-                if _remote_tip(run, base_root, remote, name) != tip:
-                    raise RuntimeError("the copy did not land")
-                break
-        else:
-            raise RuntimeError("no free -previous name")
-    except Exception as exc:                # noqa: BLE001 - nothing preserved, nothing armed
-        return None, None, (f"; could not resume ({why}) and could not keep {remote}/{ref} as {previous} "
-                            f"({_first_line(exc)}), so the old branch stays as it is and the first push of the re-cut "
-                            f"will be refused until a person moves it")
-    msg = (f"Sigma could not resume this goal from `{ref}` ({why}). The old tip `{tip[:12]}` is kept as `{name}`; "
-           f"the goal was re-cut from `{base}`.")
+        fresh = _fresh_branch(config, goal, run, base_root, remote, base, branch)
+    except Exception as exc:                # noqa: BLE001
+        return None, branch, (f"; could not resume from {remote}/{ref} ({why}) and found no free branch name "
+                              f"({_first_line(exc)}), so the first push will be refused until a person intervenes")
+    msg = (f"Sigma could not resume this goal from `{ref}` ({why}). The old branch is left untouched; the work "
+           f"continues on `{fresh}`, cut from `{base}`.")
     noted = _post_issue_note(sdlc_dir, config, goal, run, base_root, msg)
-    return None, {"ref": ref, "sha": tip, "kept": name}, (
-        f"; could not resume from {remote}/{ref} ({why}): kept it as {name}, re-cut from {remote}/{base}"
+    return None, fresh, (
+        f"; could not resume from {remote}/{ref} ({why}): left it untouched, working on {fresh}, cut from {remote}/{base}"
         + ("" if not noted else f" (issue note not posted: {noted})"))
 
 

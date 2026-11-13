@@ -37,7 +37,7 @@ def git(cwd, *argv):
 class Fake:
     """Records the one-and-only seams: the issue's durable plan copies and the comment posted on it."""
     def __init__(self):
-        self.shas, self.notes = set(), []
+        self.shas, self.notes, self.merged = set(), [], False
 
 
 @pytest.fixture
@@ -65,6 +65,7 @@ def env(tmp_path, monkeypatch):
     fake = Fake()
     monkeypatch.setattr(work, "_durable_plan_shas", lambda *a, **k: set(fake.shas))
     monkeypatch.setattr(work, "_post_issue_note", lambda sd, c, g, run, r, body: fake.notes.append(body) or "")
+    monkeypatch.setattr(work, "_head_pr_merged", lambda *a, **k: fake.merged)
     monkeypatch.setattr(work, "_durable_plan_copy", lambda *a, **k: ("", "durable copy FAILED: seam"))
     fake.root, fake.sdlc, fake.remote, fake.seed = root, sdlc, remote, seed
     return fake
@@ -260,7 +261,21 @@ def test_a_resume_with_no_log_re_enters_at_implement_and_skips_no_later_gate(env
     assert "gates.plan_review is on" in work.pr(str(env.sdlc), strict, GOAL, run=Recorder(fail="NEVER"))
 
 
-def test_resume_rebases_onto_a_moved_base_and_pins_a_lease_for_the_rewritten_branch(env, tmp_path, monkeypatch):
+def _leftover(env, name="sdlc/2161", plan=None):
+    """An unmerged branch left on the remote by an earlier run."""
+    git(env.seed, "checkout", "-q", "-b", name, "main")
+    (env.seed / "old.txt").write_text("old run\n")
+    if plan is not None:
+        (env.seed / ".sdlc" / "plans").mkdir(parents=True, exist_ok=True)
+        (env.seed / ".sdlc" / "plans" / f"{GOAL}.md").write_text(plan)
+    git(env.seed, "add", "-A", "-f")
+    git(env.seed, "commit", "-q", "-m", "old run")
+    git(env.seed, "push", "-q", "origin", name)
+    git(env.seed, "checkout", "-q", "main")
+    return _remote_sha(env, name)
+
+
+def test_resume_merges_a_moved_base_so_the_remote_branch_stays_an_ancestor(env, tmp_path, monkeypatch):
     old = _worked_and_checkpointed(env)
     env.shas = {_plan_sha(PLAN)}
     (env.seed / "other.txt").write_text("o\n")
@@ -272,28 +287,40 @@ def test_resume_rebases_onto_a_moved_base_and_pins_a_lease_for_the_rewritten_bra
     assert out.startswith("resumed from"), out
     wt = _wt(env)
     assert git(wt, "rev-parse", "HEAD") != old and (wt / "other.txt").exists() and (wt / "x.txt").exists()
-    assert work._record(str(env.sdlc), GOAL)["checkpoint_lease"] == {"ref": "sdlc/2161", "sha": old, "kept": ""}
+    git(wt, "merge-base", "--is-ancestor", old, "HEAD")                    # the old tip is still in the history
+    assert len(git(wt, "rev-list", "--parents", "-n", "1", "HEAD").split()) == 3, "a merge commit, not a rewrite"
     run = Recorder()
     assert work.checkpoint(str(env.sdlc), CONFIG, GOAL, run=run).startswith("checkpoint origin/sdlc/2161")
-    assert run.pushes() == [f"git push --force-with-lease=refs/heads/sdlc/2161:{old} origin HEAD:refs/heads/sdlc/2161"]
+    assert run.pushes() == ["git push origin HEAD:refs/heads/sdlc/2161"]
     assert _remote_sha(env, "sdlc/2161") == git(wt, "rev-parse", "HEAD")
 
 
-def test_a_plan_that_changed_falls_back_to_previous_and_recuts(env, tmp_path, monkeypatch):
+def _assert_fresh_branch(env, old, out, why):
+    assert why in out and "working on sdlc/2161-2" in out, out
+    assert _remote_sha(env, "sdlc/2161") == old, "the old branch is untouched"
+    assert _remote_sha(env, "sdlc/2161-previous") == "", "no copy is made: the old branch is simply left"
+    rec = work._record(str(env.sdlc), GOAL)
+    assert rec["branch"] == "sdlc/2161-2" and "checkpoint" not in rec
+    wt = _wt(env)
+    assert git(wt, "rev-parse", "--abbrev-ref", "HEAD") == "sdlc/2161-2"
+    assert git(wt, "rev-parse", "HEAD") == git(wt, "rev-parse", "origin/main") and not (wt / "x.txt").exists()
+    assert len(env.notes) == 1 and "`sdlc/2161`" in env.notes[0] and "`sdlc/2161-2`" in env.notes[0]
+    _commit_file(env)
+    run = Recorder()
+    assert work.checkpoint(str(env.sdlc), CONFIG, GOAL, run=run).startswith("checkpoint origin/sdlc/2161-2 at ")
+    assert run.pushes() == ["git push origin HEAD:refs/heads/sdlc/2161-2"]
+    assert _remote_sha(env, "sdlc/2161") == old
+
+
+def test_a_plan_that_changed_falls_back_to_a_fresh_branch_name(env, tmp_path, monkeypatch):
     old = _worked_and_checkpointed(env)
     env.shas = {_plan_sha("# a different, later plan\n")}         # the issue's copy is not the branch's plan
     _container_lost(env, tmp_path, monkeypatch)
     out = work.start(str(env.sdlc), CONFIG, GOAL, land=True)
-    assert "could not resume from origin/sdlc/2161" in out and "kept it as sdlc/2161-previous" in out, out
-    assert _remote_sha(env, "sdlc/2161-previous") == old
-    assert len(env.notes) == 1 and "sdlc/2161-previous" in env.notes[0] and old[:12] in env.notes[0]
-    wt = _wt(env)
-    assert git(wt, "rev-parse", "HEAD") == git(wt, "rev-parse", "origin/main") and not (wt / "x.txt").exists()
-    rec = work._record(str(env.sdlc), GOAL)
-    assert "checkpoint" not in rec and rec["checkpoint_lease"]["sha"] == old
+    _assert_fresh_branch(env, old, out, "matches no durable copy")
 
 
-def test_a_rebase_conflict_falls_back_the_same_way(env, tmp_path, monkeypatch):
+def test_a_merge_conflict_falls_back_the_same_way_and_leaves_no_half_merge(env, tmp_path, monkeypatch):
     _start(env)
     _commit_file(env, "README.md", "mine\n", plan=PLAN)
     work.checkpoint(str(env.sdlc), CONFIG, GOAL)
@@ -303,71 +330,94 @@ def test_a_rebase_conflict_falls_back_the_same_way(env, tmp_path, monkeypatch):
     git(env.seed, "commit", "-q", "-am", "base moved")
     git(env.seed, "push", "-q", "origin", "main")
     _container_lost(env, tmp_path, monkeypatch)
-    out = work.start(str(env.sdlc), CONFIG, GOAL, land=True)
-    assert "the rebase onto the current base conflicts" in out
-    assert _remote_sha(env, "sdlc/2161-previous") == old
-    assert git(_wt(env), "status", "--porcelain") == ""             # no half-applied rebase is left behind
+    run = Recorder()
+    out = work.start(str(env.sdlc), CONFIG, GOAL, land=True, run=run)
+    assert "conflicts or fails" in out and _remote_sha(env, "sdlc/2161") == old
+    merge_at = next(i for i, c in enumerate(run.calls) if c.startswith("git merge --no-edit"))
+    assert run.calls[merge_at + 1] == "git merge --abort"
+    assert git(_wt(env), "status", "--porcelain") == ""
+    assert git(env.root, "branch", "--list", "sdlc/2161") == "", "the failed resume's own branch was taken back"
+    assert work._record(str(env.sdlc), GOAL)["branch"] == "sdlc/2161-2"
 
 
 def test_an_unreadable_durable_copy_falls_back_rather_than_resuming(env, tmp_path, monkeypatch):
-    _worked_and_checkpointed(env)
+    old = _worked_and_checkpointed(env)
 
     def unreadable(*a, **k):
         raise RuntimeError("HTTP 502")
     monkeypatch.setattr(work, "_durable_plan_shas", unreadable)
     _container_lost(env, tmp_path, monkeypatch)
-    assert "could not resume" in work.start(str(env.sdlc), CONFIG, GOAL, land=True)
+    out = work.start(str(env.sdlc), CONFIG, GOAL, land=True)
+    _assert_fresh_branch(env, old, out, "HTTP 502")
 
 
-def test_a_leftover_branch_is_never_overwritten_without_a_preserved_copy(env):
-    """The old failure: a leftover remote branch made the re-cut's first push a rejection. Without `--land` the start
-    is as it was, and the push stays a plain one the remote refuses; nothing the branch held is lost."""
-    git(env.seed, "checkout", "-q", "-b", "sdlc/2161")
-    (env.seed / "old.txt").write_text("old run\n")
-    git(env.seed, "add", "-A")
-    git(env.seed, "commit", "-q", "-m", "old run")
-    git(env.seed, "push", "-q", "origin", "sdlc/2161")
-    old = _remote_sha(env, "sdlc/2161")
+def test_a_squash_merged_leftover_is_not_resumable(env, tmp_path, monkeypatch):
+    old = _worked_and_checkpointed(env)
+    env.shas, env.merged = {_plan_sha(PLAN)}, True                   # everything else says "resume"
+    _container_lost(env, tmp_path, monkeypatch)
+    out = work.start(str(env.sdlc), CONFIG, GOAL, land=True)
+    _assert_fresh_branch(env, old, out, "its pull request already merged")
+
+
+def test_an_unreadable_merged_state_is_not_resumable(env, tmp_path, monkeypatch):
+    old = _worked_and_checkpointed(env)
+    env.shas = {_plan_sha(PLAN)}
+
+    def unreadable(*a, **k):
+        raise RuntimeError("HTTP 502")
+    monkeypatch.setattr(work, "_head_pr_merged", unreadable)
+    _container_lost(env, tmp_path, monkeypatch)
+    out = work.start(str(env.sdlc), CONFIG, GOAL, land=True)
+    _assert_fresh_branch(env, old, out, "could not tell whether it already merged")
+
+
+def test_a_leftover_branch_without_land_is_never_overwritten_and_the_warning_says_it_moved(env):
+    old = _leftover(env)
     _start(env)
     _commit_file(env)
     result = work.checkpoint(str(env.sdlc), CONFIG, GOAL)
-    assert result.startswith("WARN: checkpoint not pushed"), result
+    assert result.startswith("WARN: checkpoint not pushed: origin/sdlc/2161 has commits this worktree does not"), result
+    assert "non-fast-forward" in result and "pull --no-rebase" in result and "transport" not in result
     assert _remote_sha(env, "sdlc/2161") == old
 
 
-def test_the_leftover_branch_with_land_is_kept_then_replaced_under_a_lease(env):
-    git(env.seed, "checkout", "-q", "-b", "sdlc/2161")
-    (env.seed / "old.txt").write_text("old run\n")
-    git(env.seed, "add", "-A")
-    git(env.seed, "commit", "-q", "-m", "old run")
-    git(env.seed, "push", "-q", "origin", "sdlc/2161")
-    old = _remote_sha(env, "sdlc/2161")
+def test_a_transport_failure_is_not_reported_as_a_moved_branch(env):
+    _start(env)
+    _commit_file(env)
+    result = work.checkpoint(str(env.sdlc), CONFIG, GOAL, run=Recorder(fail="git push"))
+    assert "the branch moved" not in result and "unable to access" in result
+
+
+def test_the_leftover_branch_with_land_gets_a_fresh_name_and_the_old_one_is_untouched(env):
+    old = _leftover(env)                                              # no plan on it: it cannot be resumed
     out = _start(env, land=True)
-    assert "kept it as sdlc/2161-previous" in out, out
-    _commit_file(env)
-    run = Recorder()
-    assert work.checkpoint(str(env.sdlc), CONFIG, GOAL, run=run).startswith("checkpoint origin/sdlc/2161")
-    assert run.pushes() == [f"git push --force-with-lease=refs/heads/sdlc/2161:{old} origin HEAD:refs/heads/sdlc/2161"]
-    assert _remote_sha(env, "sdlc/2161-previous") == old
-    assert _remote_sha(env, "sdlc/2161") == git(_wt(env), "rev-parse", "HEAD")
-    assert "checkpoint_lease" not in work._record(str(env.sdlc), GOAL)
+    assert "the branch holds no plan" in out and "working on sdlc/2161-2" in out, out
+    assert _remote_sha(env, "sdlc/2161") == old and work._record(str(env.sdlc), GOAL)["branch"] == "sdlc/2161-2"
 
 
-def test_the_lease_refuses_when_the_leftover_branch_moved_after_it_was_kept(env):
-    git(env.seed, "checkout", "-q", "-b", "sdlc/2161")
-    (env.seed / "old.txt").write_text("old run\n")
-    git(env.seed, "add", "-A")
-    git(env.seed, "commit", "-q", "-m", "old run")
-    git(env.seed, "push", "-q", "origin", "sdlc/2161")
-    _start(env, land=True)
-    (env.seed / "late.txt").write_text("a commit nobody recorded\n")
-    git(env.seed, "add", "-A")
-    git(env.seed, "commit", "-q", "-m", "late")
-    git(env.seed, "push", "-q", "origin", "sdlc/2161")
-    late = _remote_sha(env, "sdlc/2161")
+def test_the_fresh_name_is_the_first_one_absent_on_the_remote(env):
+    _leftover(env)
+    two = _leftover(env, "sdlc/2161-2")
+    out = _start(env, land=True)
+    assert "working on sdlc/2161-3" in out, out
+    assert _remote_sha(env, "sdlc/2161-2") == two
+
+
+def test_a_fresh_name_is_also_checked_for_its_prefixed_checkpoint_ref(env):
+    config = {"work": {"enabled": True, "base": "main", "checkpoint_prefix": "wip/"}}
+    _leftover(env, "wip/2161")
+    out = _start(env, config, land=True)
+    assert "working on sdlc/2161-2" in out, out
     _commit_file(env)
-    assert work.checkpoint(str(env.sdlc), CONFIG, GOAL).startswith("WARN")
-    assert _remote_sha(env, "sdlc/2161") == late
+    assert work.checkpoint(str(env.sdlc), config, GOAL).startswith("checkpoint origin/wip/2161-2 at ")
+
+
+def test_a_fresh_name_whose_checkpoint_ref_is_taken_is_skipped(env):
+    config = {"work": {"enabled": True, "base": "main", "checkpoint_prefix": "wip/"}}
+    _leftover(env, "wip/2161")
+    _leftover(env, "wip/2161-2")                  # sdlc/2161-2 itself is free, its checkpoint ref is not
+    out = _start(env, config, land=True)
+    assert "working on sdlc/2161-3" in out, out
 
 
 def test_a_branch_the_base_already_contains_is_not_a_resume(env):
@@ -375,7 +425,7 @@ def test_a_branch_the_base_already_contains_is_not_a_resume(env):
     git(env.seed, "push", "-q", "origin", "sdlc/2161")          # same tip as main: nothing unmerged
     out = _start(env, land=True)
     assert out.startswith("worktree ") and "resume" not in out
-    assert "checkpoint_lease" not in work._record(str(env.sdlc), GOAL)
+    assert work._record(str(env.sdlc), GOAL)["branch"] == "sdlc/2161"
 
 
 def test_a_start_without_land_makes_no_remote_branch_read(env):
@@ -384,20 +434,90 @@ def test_a_start_without_land_makes_no_remote_branch_read(env):
     assert not any("ls-remote" in c for c in run.calls)
 
 
+def test_a_pr_that_fails_after_the_push_can_be_retried_with_a_new_commit(env):
+    _start(env)
+    _commit_file(env)
+    base = Recorder()
+    state = {"fail": True}
+
+    def run(cwd, argv):
+        if argv[0] == "gh":
+            if state["fail"]:
+                raise RuntimeError("gh: HTTP 502")
+            return "7"
+        return base(cwd, argv)
+    try:
+        work.pr(str(env.sdlc), CONFIG, GOAL, run=run)
+        raise AssertionError("pr should have failed")
+    except RuntimeError:
+        pass
+    assert _remote_sha(env, "sdlc/2161") == git(_wt(env), "rev-parse", "HEAD")      # the push had happened
+    _commit_file(env, "y.txt", "y\n")
+    state["fail"] = False
+    assert work.pr(str(env.sdlc), CONFIG, GOAL, run=run) == "PR #7"
+    assert _remote_sha(env, "sdlc/2161") == git(_wt(env), "rev-parse", "HEAD")
+    assert not any("force" in c or " -f " in c for c in base.pushes())
+
+
+GH_CONFIG = {**CONFIG, "discovery": {"source": "github"}}
+
+
 def test_release_audit_names_the_checkpoint_branch_and_its_last_commit(env):
     head = _worked_and_checkpointed(env)
-    assert work.checkpoint_audit(str(env.sdlc), CONFIG, GOAL) == (
+    assert work.checkpoint_audit(str(env.sdlc), GH_CONFIG, GOAL) == (
         f"checkpoint branch origin/sdlc/2161, last commit {head[:12]}")
 
 
-def test_release_audit_is_empty_with_no_checkpoint_or_no_work(env):
-    assert work.checkpoint_audit(str(env.sdlc), CONFIG, GOAL) == ""          # never started
-    _start(env)
-    assert work.checkpoint_audit(str(env.sdlc), CONFIG, GOAL) == ""          # started, nothing pushed
+def test_release_audit_works_without_the_work_record_and_lists_the_numbered_branches(env, tmp_path, monkeypatch):
+    first = _worked_and_checkpointed(env)
+    second = _leftover(env, "sdlc/2161-2")
+    _container_lost(env, tmp_path, monkeypatch)                          # another machine: no record at all
+    assert work._record(str(env.sdlc), GOAL) is None
+    assert work.checkpoint_audit(str(env.sdlc), GH_CONFIG, GOAL) == (
+        f"checkpoint branches origin/sdlc/2161 (last commit {first[:12]}), origin/sdlc/2161-2 (last commit {second[:12]})")
+
+
+def test_release_audit_honours_the_checkpoint_prefix_without_a_record(env, tmp_path, monkeypatch):
+    config = {"work": {"enabled": True, "base": "main", "checkpoint_prefix": "wip/"}, "discovery": {"source": "github"}}
+    _start(env, CONFIG)
+    _commit_file(env)
+    work.checkpoint(str(env.sdlc), {**config, "discovery": {}}, GOAL)
+    head = git(_wt(env), "rev-parse", "HEAD")
+    _container_lost(env, tmp_path, monkeypatch)
+    assert work.checkpoint_audit(str(env.sdlc), config, GOAL) == f"checkpoint branch origin/wip/2161, last commit {head[:12]}"
+
+
+def test_release_audit_is_empty_with_no_checkpoint_or_work_off_or_a_local_goal(env):
+    assert work.checkpoint_audit(str(env.sdlc), GH_CONFIG, GOAL) == ""
+    _worked_and_checkpointed(env)
+    assert work.checkpoint_audit(str(env.sdlc), CONFIG, GOAL) == ""                      # a local backlog
+    assert work.checkpoint_audit(str(env.sdlc), {"discovery": {"source": "github"}}, GOAL) == ""   # work off
+
+
+def test_release_audit_says_it_could_not_read_the_remote_instead_of_raising(env):
+    _worked_and_checkpointed(env)
+
+    def down(cwd, argv):
+        raise RuntimeError("fatal: unable to access")
+    assert work.checkpoint_audit(str(env.sdlc), GH_CONFIG, GOAL, run=down) == (
+        "could not read the remote for a checkpoint branch")
+
+
+def test_release_audit_read_is_bounded_by_a_timeout(env, monkeypatch):
+    _worked_and_checkpointed(env)
+    seen = {}
+
+    def hang(argv, **kw):
+        seen.update(kw)
+        raise subprocess.TimeoutExpired(argv, kw["timeout"])
+    monkeypatch.setattr(work.subprocess, "run", hang)
+    assert work.checkpoint_audit(str(env.sdlc), GH_CONFIG, GOAL) == "could not read the remote for a checkpoint branch"
+    assert seen["timeout"] == work.CHECKPOINT_AUDIT_TIMEOUT_S and seen["env"]["GIT_TERMINAL_PROMPT"] == "0"
 
 
 def test_loop_release_puts_the_audit_in_the_comment_and_not_in_the_ledger(env, monkeypatch):
     head = _worked_and_checkpointed(env)
+    (env.sdlc / "config.json").write_text(json.dumps(GH_CONFIG))
     seen = []
 
     class Source:
@@ -411,28 +531,16 @@ def test_loop_release_puts_the_audit_in_the_comment_and_not_in_the_ledger(env, m
     assert [k["why"] for a, k in ledger_calls if a[1] == "release"] == ["session died"]
 
 
-def test_pr_spends_the_lease_on_its_own_first_push(env):
-    git(env.seed, "checkout", "-q", "-b", "sdlc/2161")
-    (env.seed / "old.txt").write_text("old run\n")
-    git(env.seed, "add", "-A")
-    git(env.seed, "commit", "-q", "-m", "old run")
-    git(env.seed, "push", "-q", "origin", "sdlc/2161")
-    old = _remote_sha(env, "sdlc/2161")
-    _start(env, land=True)
-    _commit_file(env)
-    base = Recorder()
-
-    def run(cwd, argv):
-        if argv[0] == "gh":
-            base.calls.append(" ".join(argv))
-            return "7"
-        return base(cwd, argv)
-    assert work.pr(str(env.sdlc), CONFIG, GOAL, run=run) == "PR #7"
-    assert base.pushes() == [f"git push --force-with-lease=refs/heads/sdlc/2161:{old} -u origin sdlc/2161"]
-    assert "checkpoint_lease" not in work._record(str(env.sdlc), GOAL)
+def test_no_force_push_exists_in_the_checkpoint_code():
+    text = (SCRIPTS / "work.py").read_text()
+    block = text[text.index("def _checkpoint_ref"):text.index("def _receipt_pending")]
+    assert "force-with-lease" not in block and "checkpoint_lease" not in text and "-previous" not in block
+    assert [l.strip() for l in block.splitlines() if "--force" in l] == [
+        'for argv in (["git", "worktree", "remove", "--force", str(path)], ["git", "branch", "-D", branch]):'], \
+        "the only --force is the removal of the worktree this very call just made"
 
 
 def test_land_prose_names_checkpoint_before_verify_and_the_resume():
     text = (ROOT / "skills" / "sigma-goal" / "references" / "land.md").read_text()
     assert 'work.py" checkpoint' in text and text.index('work.py" checkpoint') < text.index('loop.py" verify')
-    assert "-previous" in text and "start .sdlc" in text
+    assert "<branch>-2" in text and "start .sdlc" in text and "-previous" not in text and "no push in this flow is a force push" in text

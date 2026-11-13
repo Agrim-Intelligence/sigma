@@ -109,15 +109,22 @@ fast-forward, never forced. `work.checkpoint_prefix` (default empty: the goal br
 ([configuration](../../../docs/configuration.md)). In an issue-backed goal it also leaves the plan's durable copy on the issue.
 
 `start --land` looks for that branch on the remote. One that holds commits the base does not is **resumed**: the
-worktree is cut from it, rebased onto the current base, and the plan on the branch must match a durable plan copy on the
-issue. It prints `resumed from ... re-enter at <phase>`: the first phase this checkout's log shows started and not
-ended, else P5 IMPLEMENT. A resume carries over no plan-review verdict, review or verify evidence, so each runs
-again before `pr`. When it cannot resume (a rebase conflict, a plan that changed or has no durable copy, a read that
-failed) it pushes the old tip to `<branch>-previous` first, re-cuts from the base as before, says so on the issue and
-in its output, and only then lets that re-cut's first push replace the old branch, pinned with a lease to the tip it
-kept (a commit that appeared since is never overwritten). If the copy cannot be made, nothing is replaced and the
-first push of the re-cut is refused. UNMEASURED live: no real container has taken this path; the tests use a local
-bare remote and a seam for the issue's comments.
+worktree is cut from it, the current base is **merged** into it (a merge commit, so the remote's branch stays an ancestor
+and the next push is a plain fast-forward; a conflict is aborted), and the plan on the branch must match a durable plan
+copy on the issue. It prints `resumed from ... re-enter at <phase>`: the first phase this checkout's log shows started
+and not ended, else P5 IMPLEMENT. A resume carries over no plan-review verdict, review or verify evidence, so each runs
+again before `pr`. A branch whose pull request already merged (a squash merge leaves its commits out of the base's
+history) is never resumed.
+
+When it cannot resume (a merge conflict, a plan that changed or has no durable copy, a merged pull request, a read that
+failed, or a leftover branch holding commits it cannot account for) the old branch is **left exactly as it is**. The
+work is cut onto a fresh name, `<branch>-2`, then `-3`, the first one absent on the remote (its checkpoint ref
+too), recorded as the goal's branch so `pr` opens the PR from it, and the issue gets a note naming both branches.
+Nothing is forced, copied or deleted: no push in this flow is a force push, and a person removes the old branch when
+they choose. A checkpoint push the remote refuses because the branch moved prints `WARN ... the branch moved` and
+names the fix (merge the remote branch in, then checkpoint again); the run continues. UNMEASURED live: no real
+container has taken this path; the tests use a local bare remote and a seam for the issue's comments and the
+merged-pull-request read.
 
 ### A goal whose tests no runner here can record red for (#2116)
 
@@ -204,8 +211,10 @@ The lever is a person's, and it depends on the PR:
   removes the claim with an audit comment, then start `--land` again. When the run had pushed a checkpoint
   branch, the comment names it and its last commit (`checkpoint branch origin/sdlc/<N>, last commit <sha>`),
   and the next `--land` pick **resumes from it** instead of starting over
-  ([above](#the-goal-branch-is-pushed-before-the-full-verify-2161)). A branch that cannot be resumed is kept as
-  `<branch>-previous`; nothing deletes it.
+  ([above](#the-goal-branch-is-pushed-before-the-full-verify-2161)). The comment is built from the goal number, so a
+  release from another machine than the one that died still names it; it lists `<branch>-2`, `-3` too, and says
+  `could not read the remote for a checkpoint branch` when its one bounded `ls-remote` fails. A branch that cannot be
+  resumed is left as it is and the next run works on `<branch>-2`; nothing deletes anything.
 
 An unscoped `/sigma-loop` pick reclaims a claim whose lease is older than `ledger.lease.ttl_hours`
 only where `ledger.enabled` is on and that checkout's ledger holds the dead run's claim. A run in a
