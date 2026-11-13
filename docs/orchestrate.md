@@ -64,7 +64,8 @@ unblocking, stuck sessions, the tracker, the final report) and `references/follo
 
 `waves.py` is Python standard library only, makes no network call and writes nothing. The orchestrating agent
 gathers the facts into `goals.json` (and, for `ready`, `state.json`); the script orders them, so two check-ins over
-the same facts never disagree.
+the same facts never disagree. A goal row's `open_prs` must be a list of positive integers (absent, `null` or `[]` mean
+none); a string, a number, a non-integer entry or a boolean is refused with a one-line message and exit 2.
 
 ```
 python3 skills/sigma-orchestrate/scripts/waves.py plan  <goals.json> [--md]
@@ -79,7 +80,7 @@ grouping condition broken on its own and seen red (a table is at the bottom of t
 ## Follow-ups stay in their goal
 
 The decision is a project setting, `followups.mode` in `.sdlc/config.json` ([configuration](configuration.md)): `file`
-(the default, today's behaviour) or `in-goal`. `handoff.py followup-mode .sdlc` prints it. With `in-goal`, the
+(the default, today's behaviour) or `in-goal`. `python3 skills/sigma-loop/scripts/handoff.py followup-mode "$S"` prints it. With `in-goal`, the
 project has decided for every run: `handoff.py track` refuses a non-blocking follow-up (exit 3, nothing filed; a
 blocker, `--blocks yes`, and work marked `--kind prerequisite|cleanup|child` are still filed), `sigma-review` and the
 landing path route follow-ups the same way, and the launch prompt says nothing about follow-ups. With `file`, every
@@ -105,7 +106,7 @@ Standard library only, no network, no writes. A comment counts only from an `OWN
 public repository anyone can paste the marker); the marker `<!-- sigma-orchestrate:deferred -->` must stand on a line
 that is not quoted or fenced; bullets before it are not items; plain prose after it is ignored; and a bullet after it
 that does not read `- [area:<area>] <what> - <why> (files: <paths>)`, including a list-shaped line that does not start
-`- ` or `* ` (a numbered item, `+ [area:...]`, `-[area:...]`), is listed under `rejected` with its reason, never dropped. `what` ends
+`- ` or `* ` (a numbered item, `+ [area:...]`, `-[area:...]`, a bare `[area:...]`, a unicode-dot bullet), is listed under `rejected` with its reason, never dropped; so is a list-shaped line inside a code fence or a `>` quote after the marker (it is not read, and the reason says so). No other glyph is accepted. `what` ends
 at the first spaced hyphen. An absolute path, a `..` segment, a backslash or a control character rejects the item;
 identical items collapse; line, field, file-count and item-count bounds are at the top of the script. `parse` exits 0
 with rejections listed, `check` exits 0 only for a clean, non-empty draft, and 2 is bad input. Tests:
