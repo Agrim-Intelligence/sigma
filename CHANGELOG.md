@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`setup_wizard.py` and `deferred.py` answer `--help` and `-h` with exit 0 and a usage text on stdout (#2175).** Both exited 2 with a usage line on stderr, so `tests/test_script_help.py` failed two tests on main (it is not in `.github/smoke-tests.txt`, so the required check did not run it). The stale "library, no CLI" allowlist entry for `setup_wizard` is removed now that it has a `__main__` block; every existing subcommand behaves as before. **Measured:** both tests red on main, green after; see the pull request for the other test files checked.
+
 - **The `sigma-loop` eval card lists `known_flakes.py`, so the per-skill smoke check passes again.** The known-flake change added the script without a card entry and merged with that check red; this adds the entry. No behaviour change.
 
 - **A project's recorded known-flake exception is read by the goal run itself, not passed in a launch prompt (#2160).**
