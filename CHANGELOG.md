@@ -4,6 +4,11 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`work.py pr` names the repository it opens against and refuses before pushing when it cannot (#2165).**
+  - **What changed.** Every PR call (find, create, body update, receipt read) now carries the configured `owner/name` (`discovery.github.repo`, else the push remote's URL) instead of `gh`'s `{owner}/{repo}` placeholders. Before the push it refuses, naming the cause, when that repository cannot be worked out, when the push remote's URL names a different one, or when `gh`'s own default repository (readable over REST, which a fork can capture) is not the configured one or cannot be read; the remedy named is `gh repo set-default`.
+  - **Measured:** offline, 5 new tests in `tests/test_work.py` (one per clause plus the explicit-slug check), each seen red against the old code or with its clause broken.
+  - **Not measured:** a real fork-default checkout; the extra REST read adds one call per `work.py pr`.
+
 ## 1.0.30 — 2026-11-13 — the loop passes the merge stop line and redacts it, a committed list cannot silence setup-critical checks, follow-ups become a setting, and /sigma-orchestrate survives a real dry run
 
 - **`/sigma-orchestrate`: the dry-run path no longer lets in-flight or non-goal issues into the plan, and its commands work from a worktree (#2157).**
