@@ -470,7 +470,10 @@ def wizard_status(sdlc_dir, run=None, dismissed=None, allow_cache=True, now=None
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 3 and sys.argv[1] == "notice":
+    if len(sys.argv) == 2 and sys.argv[1] in ("--help", "-h"):
+        print("usage: setup_wizard.py notice <sdlc_dir>\n"
+              "Print the one-line notice for a committed setup dismissal, if any (no side effects).")
+    elif len(sys.argv) == 3 and sys.argv[1] == "notice":
         line = committed_dismissal_notice(sys.argv[2])
         if line:
             print(line)

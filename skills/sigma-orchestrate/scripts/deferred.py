@@ -158,6 +158,9 @@ def parse_comments(comments):
 
 
 def main(argv):
+    if len(argv) == 2 and argv[1] in ("--help", "-h"):
+        print(__doc__.split("\n\n")[0] + "\nusage: deferred.py parse <comments.json> | check <body-file>")
+        return 0
     if len(argv) != 3 or argv[1] not in ("parse", "check"):
         print(__doc__.split("\n\n")[0] + "\nusage: deferred.py parse <comments.json> | check <body-file>", file=sys.stderr)
         return 2
