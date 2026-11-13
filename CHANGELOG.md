@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The session-start notice no longer says an ignored setup-critical entry is "still asked about" in a cloud session (#2163).** `committed_dismissal_notice()` now words it for a cloud session (no question is asked there; `/sigma-doctor` still reports it); a repeated "Not measured" clause in `docs/cloud-sessions.md` is removed. Measured: offline unit tests, both wordings. Not measured: a real cloud session.
+
 ## 1.0.30 — 2026-11-13 — the loop passes the merge stop line and redacts it, a committed list cannot silence setup-critical checks, follow-ups become a setting, and /sigma-orchestrate survives a real dry run
 
 - **`/sigma-orchestrate`: the dry-run path no longer lets in-flight or non-goal issues into the plan, and its commands work from a worktree (#2157).**
