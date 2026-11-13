@@ -113,6 +113,9 @@ DEFAULTS = {"worktree_dir": ".sdlc/work", "branch_prefix": "sdlc/", "base": "",
             # #465: opt-in. True lets `loop.py start` / `record done` sweep goal worktrees whose PR
             # provably merged (worktree_prune.py); it spends REST quota, so it is off by default.
             "reclaim_merged_worktrees": False,
+            # #2161: where `work.py checkpoint` pushes the goal branch before its PR exists. "" = the goal
+            # branch itself; a prefix (`wip/`) keeps push-triggered workflows off unverified checkpoints.
+            "checkpoint_prefix": "",
             # CI is optional: teams that run Jenkins (or any pipeline outside GitHub) after the
             # feature branch is built set this false. Default true = today's behaviour exactly.
             "ci_required": True}
@@ -1645,7 +1648,8 @@ def settings(config):
     block = config.get("work") if isinstance(config, dict) else None
     s.update(block if isinstance(block, dict) else {})
     for key, label in (("remote", "work.remote"), ("base", "work.base"),
-                       ("branch_prefix", "work.branch_prefix")):
+                       ("branch_prefix", "work.branch_prefix"),
+                       ("checkpoint_prefix", "work.checkpoint_prefix")):
         s[key] = state.safe_ref(label, s.get(key))      # #710: option injection into git
     lead = "%s/" % s["remote"] if isinstance(s.get("remote"), str) and s["remote"] else ""
     if lead and isinstance(s["base"], str) and s["base"].startswith(lead) and len(s["base"]) > len(lead):
@@ -3103,7 +3107,7 @@ def _missing_remote_message(sdlc_dir, base_root, remote, run, error):
         return None
 
 
-def start(sdlc_dir, config, goal, run=None, session_pid=None):
+def start(sdlc_dir, config, goal, run=None, session_pid=None, land=False):
     """Cut a fresh worktree + branch from the tip of THIS GOAL'S base. Idempotent, and
     resumable: the record lives in gitignored state, so a supervisor relaunch re-attaches instead of
     starting a second worktree for the same goal — whether the record is still there (`already
@@ -3232,11 +3236,19 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None):
             fix = (f" -- check access to {s['remote']} (`git ls-remote {s['remote']}`), then re-run "
                    f"`work.py start {sdlc_dir} {goal}`")
         raise RuntimeError(f"{exc} — base {base!r} came from {provenance}{fix}") from exc
+    # #2161: a `--land` pick looks for the goal's checkpoint branch on the remote and resumes from it, or
+    # keeps it as `<branch>-previous` and re-cuts. Only `land` pays the one `ls-remote`, so every other
+    # start makes exactly the git calls it always did.
+    resumed, resume_note = (None, "")
+    if land:
+        resumed, branch, resume_note = _checkpoint_resume(sdlc_dir, config, goal, run, base_root, s, branch,
+                                                          path, base)
     reattached = False                      # #2009: initialised HERE, not only in the except -- an
                                             # un-taken except would otherwise NameError on the
                                             # guard below, on the fresh-cut path every pick uses.
     try:
-        run(base_root, ["git", "worktree", "add", "-b", branch, str(path), f"{s['remote']}/{base}"])
+        if not resumed:
+            run(base_root, ["git", "worktree", "add", "-b", branch, str(path), f"{s['remote']}/{base}"])
     except Exception:                       # noqa: BLE001 - the branch outliving its record is a resume, not an error
         # Same "mine to resume?" question as the `already started` path above, just noticed a
         # different way (record missing, branch/worktree already on disk) — must not skip the
@@ -3259,9 +3271,11 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None):
     # which #1572 clears on reattach on purpose.
     saved = {"worktree": str(path), "branch": branch, "base": base,
              "base_resolved": base_resolved, "remote": s["remote"], "pr": ""}
+    if resumed:                             # #2161: the record names what the checkpoint resumed from
+        saved["checkpoint"] = resumed
     if not reattached and _upkeep_was_busy() and base.startswith(features.BRANCH_PREFIX):
         upkeep_note += _recut_after_busy(run, path, s["remote"], base)      # #1483: BEFORE the cut tip is read
-    if not reattached:                      # a reattached branch is not at its cut tip: record nothing, replay the legacy way
+    if not reattached and not resumed:      # a reattached branch is not at its cut tip: record nothing, replay the legacy way
         saved.update(_cut_tip_fields(config, run, path, s["remote"], base))
     carried = (rec or {}).get("stale_resume_releases")
     if carried is not None:
@@ -3295,8 +3309,10 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None):
         stale = _stale_resume_refusal(sdlc_dir, config, goal, run=run)
         if stale:
             return f"{stale}{note}{sync_note}{upkeep_note}"
+    if resumed:
+        return f"{resume_note}{note}{sync_note}{upkeep_note}"
     return (f"worktree {path} on {branch} (cut from {s['remote']}/{base})"
-            f"{note}{sync_note}{upkeep_note}")
+            f"{resume_note}{note}{sync_note}{upkeep_note}")
 
 
 #: Container formats that ALWAYS carry a private key — a .p12/.pfx/.jks/.keystore with only public
@@ -3646,9 +3662,14 @@ _SCAN_FLAGS = ["--cached", "-M", "--no-ext-diff", "--no-textconv", "--no-color",
 _HUNK_HEADER = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
-def _staged_raw_paths(path, clean_env):
+def _scan_flags(rev):
+    """`_SCAN_FLAGS`, reading the index (`--cached`) or, for #2161's checkpoint, a committed range `rev`."""
+    return [rev] + _SCAN_FLAGS[1:] if rev else _SCAN_FLAGS
+
+
+def _staged_raw_paths(path, clean_env, rev=None):
     """The index's changed paths in git's own order, as raw `-z` names: `[new_path, ...]`."""
-    proc = subprocess.Popen(["git", "diff", *_SCAN_FLAGS, "--raw", "-z"], cwd=str(path),
+    proc = subprocess.Popen(["git", "diff", *_scan_flags(rev), "--raw", "-z"], cwd=str(path),
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=clean_env)
     out, _ = proc.communicate()
     if proc.returncode:
@@ -3711,7 +3732,7 @@ def _parse_added_rows(stream, keep):
     return sections
 
 
-def _staged_added_rows(path, keep):
+def _staged_added_rows(path, keep, rev=None):
     """`{raw_path: [keep(line, text)]}` for every row the index adds, read by STRUCTURE, never by text.
 
     Files are attributed by position — the n-th `diff --git` section of the patch is the n-th entry of
@@ -3728,8 +3749,8 @@ def _staged_added_rows(path, keep):
     if not (pathlib.Path(path) / ".git").exists():
         return {}                        # a synthetic worktree used by unit callers has no index to read
     clean_env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-    names = _staged_raw_paths(path, clean_env)
-    proc = subprocess.Popen(["git", "diff", *_SCAN_FLAGS, "--unified=0"], cwd=str(path),
+    names = _staged_raw_paths(path, clean_env, rev)
+    proc = subprocess.Popen(["git", "diff", *_scan_flags(rev), "--unified=0"], cwd=str(path),
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=clean_env)
     try:
         sections = _parse_added_rows(proc.stdout, keep)
@@ -3758,7 +3779,7 @@ def _row_hits(line, text, line_hashes=frozenset()):
     return [(rule, line, column, code_exempt) for rule, column, code_exempt in found] or None
 
 
-def _added_secret_hits(path, allowed=None):
+def _added_secret_hits(path, allowed=None, rev=None):
     """`{path: [(rule, line, column)]}` for staged added lines, without retaining their text.
 
     `--unified=0` is deliberate: context/removal lines are already committed or are leaving the
@@ -3773,7 +3794,8 @@ def _added_secret_hits(path, allowed=None):
     paths, line_hashes, _ignored = allowed or (frozenset(), frozenset(), 0)
     hits = {}
     keep = lambda line, text: _row_hits(line, text, line_hashes)     # noqa: E731 - the shared 2-arg callback
-    for name, per_row in _staged_added_rows(path, keep).items():
+    rows = _staged_added_rows(path, keep, rev) if rev else _staged_added_rows(path, keep)
+    for name, per_row in rows.items():
         code, cleared = scrub_module.commit_code_path(name), name in paths
         kept = [(rule, line, column) for found in per_row for rule, line, column, code_exempt in found
                 if not (code_exempt and code) and not (cleared and rule == _CONTENT_RULE)]
@@ -4909,6 +4931,316 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None, land=False):
     rec["pr"] = number
     _save(sdlc_dir, goal, rec)
     return f"PR #{number}"
+
+
+_SHA40 = re.compile(r"^[0-9a-f]{40}$")
+_PLAN_COPY_MARK = re.compile(r"^<!-- sigma:plan-copy goal=(\S+) sha256=([0-9a-f]{64}) part=\d+/\d+ -->")
+
+
+#: #2161: seconds `checkpoint_audit`'s one `git ls-remote` may take before the audit says it could not read the remote.
+CHECKPOINT_AUDIT_TIMEOUT_S = 20
+_PUSH_MOVED = re.compile(r"non-fast-forward|fetch first|\[rejected\]")
+
+
+def _checkpoint_ref(config, goal, branch):
+    """#2161: the remote branch `checkpoint` pushes `branch` to: the branch itself, or, under `work.checkpoint_prefix`,
+    the prefix plus the branch's name without `work.branch_prefix` (so `sdlc/2161-2` checkpoints to `wip/2161-2`)."""
+    s = settings(config)
+    prefix = s.get("checkpoint_prefix")
+    if not (isinstance(prefix, str) and prefix):
+        return branch
+    lead = s.get("branch_prefix") or ""
+    tail = branch[len(lead):] if lead and branch.startswith(lead) else stem(goal)
+    return f"{prefix}{tail}"
+
+
+def _remote_tip(run, cwd, remote, ref):
+    """The sha `remote` holds for branch `ref`, or "" when the branch is not there. Raises on a transport failure."""
+    first = (run(cwd, ["git", "ls-remote", "--heads", remote, f"refs/heads/{ref}"]) or "").split()
+    return first[0] if first and _SHA40.match(first[0]) else ""
+
+
+def _checkpoint_push_stop(sdlc_dir, config, rec, goal, run, ref):
+    """#2161: the gates `pr`'s push is behind, applied to a checkpoint push. "" when the branch may go out, else the
+    refusal (nothing is pushed). Beyond `pr`'s own: a path scan and a content scan of everything this branch adds,
+    because a checkpoint leaves the container before any review has read the diff. An unreadable diff refuses."""
+    path, remote, base = rec["worktree"], rec["remote"], rec["base"]
+    refused = _push_refused(path, rec["branch"])
+    if refused:
+        return f"{refused} (nothing pushed)"
+    if run(path, ["git", "status", "--porcelain"]):
+        return (f"worktree has uncommitted changes — run `work.py commit {sdlc_dir} {goal}` "
+                "first (nothing pushed)")
+    rev = f"{remote}/{base}...HEAD"
+    try:
+        allowed = _allowed_secret_paths(config)
+        names = run(path, ["git", "diff", "--name-only", "--diff-filter=d", rev]) or ""
+        shaped = [n for n in names.splitlines() if _is_offender(n, allowed)]
+        hits = _added_secret_hits(path, _allowed_secret_content(config), rev)
+    except Exception:                   # noqa: BLE001 - never render scanner failures: they can contain a secret
+        return "REFUSED — the branch's added content could not be scanned, so nothing was pushed"
+    if shaped or hits:
+        shown = ", ".join(sorted({_diagnostic_path(n) for n in shaped} | {_diagnostic_path(n) for n in hits}))
+        return (f"REFUSED — the branch adds {len(shaped) + len(hits)} secret-shaped path(s) or content match(es) "
+                f"({shown}); nothing was pushed. Remove them from the branch, then re-run `work.py checkpoint`.")
+    return (_hs_push_stop(sdlc_dir, config, rec, f"git push {remote} HEAD:{ref}", prefix="REFUSED")
+            or _hs_diff_stop(config, run, path, ["git", "diff", rev], ("access_secrets", "tamper_oversight")))
+
+
+def checkpoint(sdlc_dir, config, goal, run=None):
+    """#2161: push the goal branch to the remote WITHOUT opening a PR, so a container that dies mid-run leaves the work.
+
+    Run after each implement commit and before every full verify. It goes through the gates `pr`'s push is behind
+    (`_checkpoint_push_stop`); a refusal pushes nothing. A push that fails for any other reason only WARNs, and the run
+    goes on: a checkpoint is a safety copy, not a gate. A rejection because the remote branch moved is reported as that
+    (it is not a transport failure, and retrying will not fix it). The push is a plain fast-forward and nothing in
+    this file forces one. In an issue-backed goal it also leaves the plan's durable copy on the issue."""
+    run = run or _run
+    rec = _record(sdlc_dir, goal)
+    if not rec:
+        return "not started — run `work.py start` first (nothing pushed)"
+    path, remote, base = rec["worktree"], rec["remote"], rec["base"]
+    ref = _checkpoint_ref(config, goal, rec["branch"])
+    stop = _checkpoint_push_stop(sdlc_dir, config, rec, goal, run, ref)
+    if stop:
+        return stop
+    if run(path, ["git", "rev-list", "--count", f"{remote}/{base}..HEAD"]) == "0":
+        return "no commits on the branch — nothing to checkpoint (nothing pushed)"
+    try:
+        run(path, ["git", "push", remote, f"HEAD:refs/heads/{ref}"])
+    except Exception as exc:            # noqa: BLE001 - a safety copy, not a gate
+        if _PUSH_MOVED.search(str(exc)):
+            return (f"WARN: checkpoint not pushed: {remote}/{ref} has commits this worktree does not (the branch "
+                    f"moved; non-fast-forward). Nothing was overwritten. Merge it in with `git -C {path} pull "
+                    f"--no-rebase {remote} {ref}`, then re-run `work.py checkpoint {sdlc_dir} {goal}`; the run continues")
+        return (f"WARN: checkpoint not pushed ({_first_line(exc)}); the run continues — "
+                f"re-run `work.py checkpoint {sdlc_dir} {goal}` when the remote is reachable")
+    head = run(path, ["git", "rev-parse", "HEAD"])
+    rec["checkpoint"] = {"ref": ref, "sha": head}
+    _save(sdlc_dir, goal, rec)
+    line = f"checkpoint {remote}/{ref} at {head[:12]}"
+    if _reads_a_declaration(config, goal):
+        main, branch_doc = plan_copies(sdlc_dir, goal, rec, run)
+        doc = branch_doc or main
+        if doc:
+            url, why = _durable_plan_copy(sdlc_dir, config, goal, doc, run, path)
+            line += f"; durable copy of the plan: {url}" if url else f"; {why}"
+    return line
+
+
+def _ls_remote_bounded(run, cwd, remote, patterns, timeout):
+    """`git ls-remote --heads <remote> <patterns>` output. With no injected `run` it is a child process killed after
+    `timeout` seconds and never prompts, so a dead remote cannot hang a release."""
+    argv = ["git", "ls-remote", "--heads", remote, *patterns]
+    if run is not None:
+        return run(cwd, argv) or ""
+    env = {k: v for k, v in os.environ.items() if k not in _GIT_LOCATION_ENV}
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    proc = subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True, env=env, timeout=timeout)
+    if proc.returncode:
+        raise RuntimeError("ls-remote failed")
+    return proc.stdout
+
+
+def checkpoint_audit(sdlc_dir, config, goal, run=None, timeout=CHECKPOINT_AUDIT_TIMEOUT_S):
+    """#2161: `loop.py release`'s audit clause: the checkpoint branch(es) and last commit as the remote holds them
+    now, so a person can see what survived. It needs no work record (the release may run on another machine than the
+    one that died): the ref comes from the goal number, `work.branch_prefix` and `work.checkpoint_prefix`, the branch
+    and its `-2`, `-3` successors are listed, and the read runs from the repository root.
+
+    "" when `work` is off, the goal is not an issue-backed one, the root is not a git checkout, or no such branch is
+    there; `could not read the remote for a checkpoint branch` when the read fails or takes over `timeout` seconds.
+    Never raises. COST: one `git ls-remote` per release, bounded by `timeout`; the auto-reclaim sweep releases each
+    stale claim through this, so a sweep of N claims on an unreachable remote can wait up to N * `timeout` seconds."""
+    try:
+        if not (enabled(config) and _reads_a_declaration(config, goal)):
+            return ""
+        root = project_root(sdlc_dir)
+        if not (root / ".git").exists():
+            return ""
+        s = settings(config)
+        rec = _record(sdlc_dir, goal)
+        branch = rec["branch"] if rec else f"{s['branch_prefix']}{stem(goal)}"
+        remote = rec["remote"] if rec else s["remote"]
+        ref = _checkpoint_ref(config, goal, branch)
+        stripped = re.sub(r"-\d+$", "", ref) if rec else ref
+        names = {ref, stripped}
+    except Exception:                   # noqa: BLE001 - an audit line must never block a release
+        return ""
+    try:
+        out = _ls_remote_bounded(run, root, remote, [f"refs/heads/{n}{suffix}" for n in sorted(names) for suffix in ("", "-*")],
+                                 timeout)
+    except Exception:                   # noqa: BLE001 - includes a timeout: bounded, short, never raised
+        return "could not read the remote for a checkpoint branch"
+    found = {}
+    for line in out.splitlines():
+        sha, _, full = line.strip().partition("\t")
+        name = full[len("refs/heads/"):] if full.startswith("refs/heads/") else ""
+        if _SHA40.match(sha) and any(name == n or re.fullmatch(re.escape(n) + r"-\d+", name) for n in names):
+            found[name] = sha
+    if not found:
+        return ""
+    if len(found) == 1:
+        (name, sha), = found.items()
+        return f"checkpoint branch {remote}/{name}, last commit {sha[:12]}"
+    return "checkpoint branches " + ", ".join(f"{remote}/{n} (last commit {found[n][:12]})" for n in sorted(found))
+
+
+def _durable_plan_shas(sdlc_dir, config, goal, run, root):
+    """The plan sha256 values the goal's issue holds a durable copy of (trusted authors only). Raises on a read failure."""
+    ref, shas = stem(goal), set()
+    api = _pr_api_run(run, root)
+    for c in gh_api.view_issue(api, int(ref), repo=_issue_repo(config), comments="all")["comments"]:
+        if isinstance(c, dict) and c.get("author_association") in _PLAN_COPY_TRUSTED:
+            m = _PLAN_COPY_MARK.match(str(c.get("body") or "").split("\n", 1)[0])
+            if m and m.group(1) == ref:
+                shas.add(m.group(2))
+    return shas
+
+
+def _open_phase(sdlc_dir, goal):
+    """The first phase token with a `start` and no later `end` in this checkout's action log, else P5 IMPLEMENT: a
+    log that is gone (a new container) or shows nothing open cannot vouch for the commits, so the run re-enters where
+    they were made and every later phase runs again."""
+    try:
+        tokens = list(_load("phase_report").PHASE_TOKENS)
+        open_ = {}
+        for e in _load("actionlog").read_goal(sdlc_dir, goal):
+            if e.get("kind") == "phase":
+                open_[e.get("phase")] = e.get("state") == "start"
+        for key, token in tokens:
+            if open_.get(key):
+                return token
+    except Exception:                   # noqa: BLE001 - the safe answer below
+        pass
+    return "P5 IMPLEMENT"
+
+
+def _post_issue_note(sdlc_dir, config, goal, run, root, body):
+    """Best-effort issue comment; "" on success, else the reason."""
+    try:
+        if not _reads_a_declaration(config, goal):
+            return "no issue to note it on"
+        got = gh_api.comment_issue(_pr_api_run(run, root), int(stem(goal)), body, repo=_issue_repo(config),
+                                   sdlc_dir=sdlc_dir)
+        return "" if isinstance(got, dict) and got.get("html_url") else "the comment was not confirmed"
+    except Exception as exc:            # noqa: BLE001
+        return _first_line(exc)
+
+
+def _drop_cut(run, base_root, path, branch):
+    """Take back the worktree and branch a failed resume just made (both are ours, made seconds ago). No force: the
+    worktree is clean there (after `merge --abort`, or after a merge that finished), so a plain remove is enough. If git
+    still refuses it, stop with the reason instead of forcing: a person looks at what is in that worktree. The local
+    branch is deleted with `-D` because its tip is the remote's, not merged here; it never touches the remote."""
+    try:
+        run(base_root, ["git", "worktree", "remove", str(path)])
+    except Exception as exc:            # noqa: BLE001
+        raise RuntimeError(f"could not take back the worktree {path} made for a resume that failed ({_first_line(exc)}); "
+                           f"look at what it holds, remove it by hand, then re-run `work.py start --land`") from exc
+    run(base_root, ["git", "branch", "-D", branch])
+
+
+def _head_pr_merged(run, cwd, ref):
+    """True when a merged pull request has `ref` as its head: a squash-merged leftover is not resumable (its commits
+    are not in the base's history, but its work is landed). Raises when GitHub cannot be read."""
+    out = run(cwd, ["gh", "api", f"repos/{{owner}}/{{repo}}/pulls?head={{owner}}:{ref}&state=closed",
+                    "--jq", "[.[] | select(.merged_at != null)] | length"])
+    return int((out or "0").strip() or 0) > 0
+
+
+def _holds_unmerged(run, base_root, remote, base, ref):
+    """True when `remote` holds branch `ref` with commits the base does not (a push of a fresh cut there would be
+    refused). A branch the base already contains is free: a cut from the base descends from it. Raises on a read failure."""
+    tip = _remote_tip(run, base_root, remote, ref)
+    if not tip:
+        return False
+    run(base_root, ["git", "fetch", remote, f"refs/heads/{ref}"])
+    return run(base_root, ["git", "rev-list", "--count", f"{remote}/{base}..{tip}"]) != "0"
+
+
+def _fresh_branch(config, goal, run, base_root, remote, base, branch):
+    """`<branch>-2`, `-3`, ...: the first name neither held locally nor (with its checkpoint ref) on the remote with
+    unmerged commits, so the first push of the new work is a plain one and no old branch is touched."""
+    for n in range(2, 30):
+        name = f"{branch}-{n}"
+        try:
+            run(base_root, ["git", "rev-parse", "--verify", "-q", f"refs/heads/{name}"])
+            continue                    # a local branch of that name exists
+        except Exception:               # noqa: BLE001 - exit 1 is the answer "free"
+            pass
+        ck = _checkpoint_ref(config, goal, name)
+        if not any(_holds_unmerged(run, base_root, remote, base, r) for r in dict.fromkeys((name, ck))):
+            return name
+    raise RuntimeError("no free branch name")
+
+
+def _checkpoint_resume(sdlc_dir, config, goal, run, base_root, s, branch, path, base):
+    """#2161: `(resumed, branch, note)` for a `--land` start. `resumed` is the checkpoint record ({"ref","sha"}) when the
+    worktree was cut from the remote checkpoint branch, else None. `branch` is the name the work goes on: the goal
+    branch, or `<branch>-2`, `-3` when the remote holds a branch of that name this run cannot resume. It never raises, except when a failed resume's own worktree cannot be taken back (`_drop_cut`).
+
+    A branch on the remote that the base already contains is nothing to resume. One whose pull request merged (a
+    squash merge leaves its commits out of the base's history) is not resumable either. Otherwise: fetch it, cut the
+    worktree from it, MERGE the current base into it (a merge commit, so the remote's branch stays an ancestor and the
+    next push is a fast-forward; a conflict is aborted), and require the plan on the branch to match a durable plan
+    copy on the issue. Any miss takes the fallback: the old branch is left exactly as it is, the work is cut onto a
+    fresh name, and the issue is told both names. Nothing here force-pushes or deletes a remote branch, and what is
+    resumed re-earns plan-review, review and verify: their records are local state this does not recreate."""
+    remote = s["remote"]
+    ref = _checkpoint_ref(config, goal, branch)
+    why, tip = "", ""
+    try:
+        if _holds_unmerged(run, base_root, remote, base, ref):
+            tip = _remote_tip(run, base_root, remote, ref)
+            if _head_pr_merged(run, base_root, ref):
+                why = "its pull request already merged"
+        elif ref != branch and _holds_unmerged(run, base_root, remote, base, branch):
+            why = "the goal branch is already on the remote with commits this run has not recorded"
+    except Exception as exc:                # noqa: BLE001 - cannot tell: never resume, never claim a name is free
+        if not tip:
+            return None, branch, ""         # the remote cannot be read at all: cut as today, the push says why
+        why = f"could not tell whether it already merged ({_first_line(exc)})"
+    if tip and not why:
+        try:
+            run(base_root, ["git", "worktree", "add", "-b", branch, str(path), tip])
+        except Exception:                   # noqa: BLE001 - a branch or path already there is `start`'s own reattach
+            return None, branch, ""
+        try:
+            try:
+                run(path, ["git", "merge", "--no-edit", f"{remote}/{base}"])
+            except Exception:               # noqa: BLE001
+                try:
+                    run(path, ["git", "merge", "--abort"])
+                except Exception:           # noqa: BLE001
+                    pass
+                raise RuntimeError("merging the current base into the branch conflicts or fails")
+            rc = _load("review_context")
+            doc = rc.phase_doc_file(pathlib.Path(path) / pathlib.Path(sdlc_dir).resolve().name, goal, "plans")
+            if not doc:
+                raise RuntimeError("the branch holds no plan to compare with the issue's copy")
+            if rc.plan_sha256(doc) not in _durable_plan_shas(sdlc_dir, config, goal, run, path):
+                raise RuntimeError("the plan on the branch matches no durable copy on the issue (it changed, or none was kept)")
+        except Exception as exc:            # noqa: BLE001 - every miss is the same fallback
+            why = _first_line(exc)
+            _drop_cut(run, base_root, path, branch)
+        if not why:
+            return {"ref": ref, "sha": tip}, branch, (
+                f"resumed from {remote}/{ref} at {tip[:12]}: worktree {path} on {branch}; "
+                f"re-enter at {_open_phase(sdlc_dir, goal)}; plan-review, review and verify run again")
+    if not why:
+        return None, branch, ""             # nothing on the remote in the way
+    try:
+        fresh = _fresh_branch(config, goal, run, base_root, remote, base, branch)
+    except Exception as exc:                # noqa: BLE001
+        return None, branch, (f"; could not resume from {remote}/{ref} ({why}) and found no free branch name "
+                              f"({_first_line(exc)}), so the first push will be refused until a person intervenes")
+    msg = (f"Sigma could not resume this goal from `{ref}` ({why}). The old branch is left untouched; the work "
+           f"continues on `{fresh}`, cut from `{base}`.")
+    noted = _post_issue_note(sdlc_dir, config, goal, run, base_root, msg)
+    return None, fresh, (
+        f"; could not resume from {remote}/{ref} ({why}): left it untouched, working on {fresh}, cut from {remote}/{base}"
+        + ("" if not noted else f" (issue note not posted: {noted})"))
 
 
 def _receipt_pending(number, why):
@@ -10086,7 +10418,7 @@ def close_design(sdlc_dir, config, goal, run=None, comment=None, sleep=time.slee
                 f"by hand; see stderr for detail)")
     return f"closed PR #{pr['number']}"
 
-_COMMANDS = {"start": start, "commit": commit, "pr": pr, "rebase": rebase,
+_COMMANDS = {"start": start, "commit": commit, "pr": pr, "checkpoint": checkpoint, "rebase": rebase,
              "post-review": post_review, "merge": merge, "finish": finish}
 
 
@@ -10148,7 +10480,7 @@ def main(argv):
             "seal-tests": _SEAL_TESTS_USAGE,
             "seal-retire": _SEAL_RETIRE_USAGE,
         }
-        print(usage.get(command, "usage: work.py start|commit|pr|rebase|post-review|merge|finish <sdlc_dir> <goal>"))
+        print(usage.get(command, "usage: work.py start|commit|pr|checkpoint|rebase|post-review|merge|finish <sdlc_dir> <goal>"))
         return 0
     if len(argv) >= 4 and argv[1] == "review-paths":
         manifest = _flag(argv, "--manifest")
@@ -10442,6 +10774,8 @@ def main(argv):
             kwargs["no_tests"] = _flag(argv, "--no-tests")
         if argv[1] == "pr" and "--land" in argv:
             kwargs["land"] = True               # #2116: a `/sigma-goal <N> --land` run, see skills/sigma-goal/references/land.md
+        if argv[1] == "start" and "--land" in argv:
+            kwargs["land"] = True               # #2161: a `--land` pick resumes from the goal's checkpoint branch
         if argv[1] == "commit":
             kwargs["message"] = _flag(argv, "--message")
         if argv[1] == "post-review":
@@ -10486,8 +10820,8 @@ def main(argv):
                                    commit_signing.PARK_PREFIX)):
             return 4
         return 0
-    print("usage: work.py start|commit|pr|rebase|post-review|merge|finish <sdlc_dir> <goal>\n"
-          "         start [--session-pid <pid>]   commit --message \"<text>\"   finish [--force]\n"
+    print("usage: work.py start|commit|pr|checkpoint|rebase|post-review|merge|finish <sdlc_dir> <goal>\n"
+          "         start [--session-pid <pid>] [--land]   checkpoint   commit --message \"<text>\"   finish [--force]\n"
           "         post-review --verdict approve|block|unblock --evidence <path> [--reason \"<changes>\"]\n"
           "       work.py record-plan-review <sdlc_dir> <goal> --verdict SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST "
           "--plan-sha256 <hex> [--reason \"<text>\"]\n"

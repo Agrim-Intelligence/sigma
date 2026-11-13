@@ -91,6 +91,41 @@ only a person can make, or an irreversible or expensive action (`gates.irreversi
 hard stops) that `loop.py spend-approval` has not approved; record a failure you cannot resolve as
 failed.
 
+### The goal branch is pushed before the full verify (#2161)
+
+The first push of the goal branch used to be `work.py pr`, after a green full verify, so a container that died
+before it took the code with it. Two changes, both for this run only:
+
+- Start with `--land`: `work.py start .sdlc "$goal" --land --session-pid "$PPID"`.
+- After each implement commit, and before every full verify, push a checkpoint (no PR):
+  `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/work.py" checkpoint .sdlc "$goal"`, then
+  `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" verify .sdlc "$goal"`.
+
+`checkpoint` goes through the gates `pr`'s push is behind and adds a path scan and a content scan of everything the
+branch adds. A refusal (`REFUSED`) pushes nothing: fix it as `commit`'s refusals say, then checkpoint again. A push that fails
+for any other reason prints `WARN: checkpoint not pushed` and the run goes on: it is a safety copy, not a gate. The push is a plain
+fast-forward, never forced. `work.checkpoint_prefix` (default empty: the goal branch itself) sends it to
+`<prefix><N>` instead, so a push-triggered workflow on goal branches does not run on unverified checkpoints
+([configuration](../../../docs/configuration.md)). In an issue-backed goal it also leaves the plan's durable copy on the issue.
+
+`start --land` looks for that branch on the remote. One that holds commits the base does not is **resumed**: the
+worktree is cut from it, the current base is **merged** into it (a merge commit, so the remote's branch stays an ancestor
+and the next push is a plain fast-forward; a conflict is aborted), and the plan on the branch must match a durable plan
+copy on the issue. It prints `resumed from ... re-enter at <phase>`: the first phase this checkout's log shows started
+and not ended, else P5 IMPLEMENT. A resume carries over no plan-review verdict, review or verify evidence, so each runs
+again before `pr`. A branch whose pull request already merged (a squash merge leaves its commits out of the base's
+history) is never resumed.
+
+When it cannot resume (a merge conflict, a plan that changed or has no durable copy, a merged pull request, a read that
+failed, or a leftover branch holding commits it cannot account for) the old branch is **left exactly as it is**. The
+work is cut onto a fresh name, `<branch>-2`, then `-3`, the first one absent on the remote (its checkpoint ref
+too), recorded as the goal's branch so `pr` opens the PR from it, and the issue gets a note naming both branches.
+Nothing is forced, copied or deleted: no push in this flow is a force push, and a person removes the old branch when
+they choose. A checkpoint push the remote refuses because the branch moved prints `WARN ... the branch moved` and
+names the fix (merge the remote branch in, then checkpoint again); the run continues. UNMEASURED live: no real
+container has taken this path; the tests use a local bare remote and a seam for the issue's comments and the
+merged-pull-request read.
+
 ### A goal whose tests no runner here can record red for (#2116)
 
 Open the PR with `work.py pr .sdlc "$goal" --land` (the flag is `--land`'s only effect there). When the test-first gate would
@@ -173,7 +208,13 @@ The lever is a person's, and it depends on the PR:
   (a `Refs #N` body never closes it). Do not re-run `--land`: it would redo merged work.
 - **The PR was closed, or there is none:** run
   `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" release .sdlc <N> "<why>"`, which
-  removes the claim with an audit comment, then start `--land` again.
+  removes the claim with an audit comment, then start `--land` again. When the run had pushed a checkpoint
+  branch, the comment names it and its last commit (`checkpoint branch origin/sdlc/<N>, last commit <sha>`),
+  and the next `--land` pick **resumes from it** instead of starting over
+  ([above](#the-goal-branch-is-pushed-before-the-full-verify-2161)). The comment is built from the goal number, so a
+  release from another machine than the one that died still names it; it lists `<branch>-2`, `-3` too, and says
+  `could not read the remote for a checkpoint branch` when its one bounded `ls-remote` fails. A branch that cannot be
+  resumed is left as it is and the next run works on `<branch>-2`; nothing deletes anything.
 
 An unscoped `/sigma-loop` pick reclaims a claim whose lease is older than `ledger.lease.ttl_hours`
 only where `ledger.enabled` is on and that checkout's ledger holds the dead run's claim. A run in a

@@ -2981,7 +2981,7 @@
       "function": "_durable_plan_copy",
       "rule": "gh-api-write",
       "count": 1,
-      "gate": "work.enabled; only after a confirmed merge; only in a Claude Code cloud session (CLAUDE_CODE_REMOTE true or 1); only the goal's own plan, only when it is untracked and absent from <remote>/<base>; only a github-mode goal with an issue number; at most 3 REST comment POSTs of the plan (secret-shaped strings redacted) via gh_api.comment_issue on that goal's own issue, skipped when an OWNER, MEMBER or COLLABORATOR comment with the same goal, plan sha256 and part marker already exists; no retry; a failure keeps the old warning and says so (#2087)",
+      "gate": "work.enabled; two callers: after a confirmed merge, only in a Claude Code cloud session (CLAUDE_CODE_REMOTE true or 1), and `work.py checkpoint` (#2161), in any session, once its push succeeded; only the goal's own plan, only when it is untracked and absent from <remote>/<base>; only a github-mode goal with an issue number; at most 3 REST comment POSTs of the plan (secret-shaped strings redacted) via gh_api.comment_issue on that goal's own issue, skipped when an OWNER, MEMBER or COLLABORATOR comment with the same goal, plan sha256 and part marker already exists; no retry; a failure keeps the old warning and says so (#2087)",
       "risk": "medium"
     },
     {
@@ -4639,6 +4639,30 @@
       "count": 1,
       "gate": "explicit `sync.py bootstrap` (what /sigma-ledger runs); removes only the self-created marker under the runtime state directory, an OS error is swallowed",
       "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/work.py",
+      "function": "_drop_cut",
+      "rule": "git-destructive",
+      "count": 2,
+      "gate": "work.enabled; only on `work.py start --land` after a resume attempt failed; removes only the worktree and the local branch that same call created seconds earlier from the remote checkpoint branch; the worktree removal is a plain `git worktree remove` with no force (git refusing it stops the run with a message), the branch is deleted with `-D` because its tip is the remote's; never touches a remote ref, never a pre-existing branch (a branch or path already present skips the resume before anything is created) (#2161)",
+      "risk": "high"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/work.py",
+      "function": "_post_issue_note",
+      "rule": "gh-api-write",
+      "count": 1,
+      "gate": "work.enabled; only on `work.py start --land` when a leftover remote branch could not be resumed; only a github-mode goal with an issue number; one REST comment via gh_api.comment_issue on that goal's own issue, naming the old and the new branch (no file content, no secrets); no retry; a failure is reported in the start line and never stops the run (#2161)",
+      "risk": "low"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/work.py",
+      "function": "checkpoint",
+      "rule": "git-push",
+      "count": 1,
+      "gate": "work.enabled; run by the goal's own `--land` run after an implement commit and before a full verify (skill prose, not a hook); refuses on a rebase-would-drop marker, an uncommitted worktree, a path-shaped or content-shaped secret in anything the branch adds (an unreadable scan refuses too), or a hard-stop classifier hit; one plain `git push <remote> HEAD:refs/heads/<ref>`, never forced, so a remote branch that moved is rejected and reported, not overwritten; <ref> is the goal branch or `work.checkpoint_prefix` + its name; a failed push only warns (#2161)",
+      "risk": "high"
     }
   ]
 }
