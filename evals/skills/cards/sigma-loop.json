@@ -482,6 +482,10 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/known_flakes.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/label_drain.py",
       "role": "gesture"
     },
