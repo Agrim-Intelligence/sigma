@@ -10,7 +10,7 @@ A defect in the goal's own change is not a follow-up. It is fixed in the same PR
 ## The setting, and the standing decision
 
 The decision is a project setting, `followups.mode` in `.sdlc/config.json` ([configuration](../../../docs/configuration.md)),
-read with `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" followup-mode "$S"`, which prints `file` or `in-goal`.
+read with `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" followup-mode "$S"`, which prints `file` or `in-goal` on its first line and `max_added_slices <n>` (the configured limit, default 10) on its second.
 
 - **`in-goal`**: the project has decided that follow-ups stay in their goal, for every run, not only this batch.
   `handoff.py track` refuses a non-blocking follow-up (exit 3, nothing filed) and prints the rule, `sigma-review` and
@@ -34,7 +34,7 @@ as usual). For this goal it replaces the project's own rule for filing follow-up
 - Before this goal's first green full verify (`loop.py verify`), add it to this goal's plan as a new slice,
   then re-run the phases in order from plan-review - a fresh plan-review recorded for the amended plan,
   then implement, review and retrospective, each as a fresh subagent - so one verify covers everything.
-  At most 2 added slices per goal; beyond that, treat it as found late.
+  At most <limit> added slices per goal (<limit> is the number on the second line of `followup-mode`, from `followups.max_added_slices`, default 10); beyond that, treat it as found late.
 - After the first green full verify, or past the cap: do not implement it now. Post ONE comment on this
   goal's issue containing the line `<!-- sigma-orchestrate:deferred -->` and one line per item:
   `- [area:<area>] <what> - <why> (files: <paths>)`. Edit that same comment if you find more.
@@ -42,7 +42,7 @@ as usual). For this goal it replaces the project's own rule for filing follow-up
   written without the space is listed as rejected, not skipped).
   Exception: when a post-PR `sigma:block` already forces a fix and a new verify, one small same-area item
   may ride along as a slice (a fresh plan-review first, then a fresh review and retrospective after it);
-  it counts against the cap of 2.
+  it counts against that cap.
 ```
 
 Nothing else about follow-ups goes in the prompt. A blocker in another area's code is still handed off by

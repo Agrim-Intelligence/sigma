@@ -102,13 +102,25 @@ FOLLOWUP_MODES = ("file", "in-goal")
 #: refused under `in-goal`; the others are work that is not a follow-up of the goal filing it.
 TRACK_KINDS = ("followup", "prerequisite", "cleanup", "child")
 FOLLOWUP_REFUSED_EXIT = 3
-IN_GOAL_RULE = (
+#: `followups.max_added_slices` (#2178): how many follow-ups a goal may add to its own plan as new slices under
+#: `in-goal`. A whole number of at least 1; anything else (a missing key, a wrong type, a boolean, zero, a
+#: negative, a fraction, a numeric string) reads this default, never unlimited.
+DEFAULT_MAX_ADDED_SLICES = 10
+_IN_GOAL_RULE_TEMPLATE = (
     "follow-up work stays in its goal. Before this goal's first green full verify, add it to the goal's plan "
-    "as a new slice and re-run the phases from plan-review (at most 2 added slices); after that, or past the "
+    "as a new slice and re-run the phases from plan-review (at most {n} added slices); after that, or past the "
     "cap, post ONE comment on the goal's issue with the line `<!-- sigma-orchestrate:deferred -->` and one "
     "line per item, `- [area:<area>] <what> - <why> (files: <paths>)`, and do not file an issue. See "
     "skills/sigma-orchestrate/references/follow-ups.md. A blocker is not a follow-up: file it with "
     "`--blocks yes`, or pass `--kind prerequisite`.")
+
+
+def in_goal_rule(limit=DEFAULT_MAX_ADDED_SLICES):
+    """The `in-goal` rule text carrying the configured added-slice limit."""
+    return _IN_GOAL_RULE_TEMPLATE.format(n=limit)
+
+
+IN_GOAL_RULE = in_goal_rule()
 
 
 def followup_mode(config):
@@ -118,13 +130,27 @@ def followup_mode(config):
     return "in-goal" if mode == "in-goal" else "file"
 
 
+def max_added_slices(config):
+    """`followups.max_added_slices` (#2178): a whole number of at least 1. Total: a missing key, a wrong type, a
+    boolean, zero, a negative, a fraction or a numeric string reads the default (10), never unlimited."""
+    block = config.get("followups") if isinstance(config, dict) else None
+    value = block.get("max_added_slices") if isinstance(block, dict) else None
+    if isinstance(value, bool):
+        return DEFAULT_MAX_ADDED_SLICES
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    if isinstance(value, int) and value >= 1:
+        return value
+    return DEFAULT_MAX_ADDED_SLICES
+
+
 def followup_refusal(config, kind, blocks):
     """The refusal text when `track` must not file this as a new issue, else None. Refused only when the
     project says `in-goal`, the filing is a follow-up (`--kind` absent or `followup`), and it blocks nothing
     (`--blocks no`): a blocker is a prerequisite and keeps its own routing."""
     if followup_mode(config) != "in-goal" or (kind or "followup") != "followup" or blocks != "no":
         return None
-    return "not filed (followups.mode is in-goal): " + IN_GOAL_RULE
+    return "not filed (followups.mode is in-goal): " + in_goal_rule(max_added_slices(config))
 
 
 def dependency_label(config):
@@ -1630,9 +1656,12 @@ def main(argv):
         return 0
     if len(argv) >= 3 and argv[1] == "followup-mode":
         try:
-            print(followup_mode(ledger._config(argv[2])))           # #2153: what the orchestrate skill reads
+            config = ledger._config(argv[2])
+            print(followup_mode(config))                            # #2153: line 1 is the mode, stable for readers
+            print("max_added_slices " + str(max_added_slices(config)))   # #2178: line 2, the added-slice limit
         except (OSError, ValueError):
             print("file")                                           # unreadable config = today's behaviour
+            print("max_added_slices " + str(DEFAULT_MAX_ADDED_SLICES))
         return 0
     if len(argv) >= 3 and argv[1] == "ack":
         sdlc_dir = argv[2]

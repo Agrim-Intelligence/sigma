@@ -188,13 +188,13 @@ A project lead can approve a time-limited exception for flaky tests. Record it h
 `followups.mode` is `"file"` (default, and what every project did before the key existed) or `"in-goal"`. With `"file"`
 a follow-up, work a session finds that is outside its own goal, is filed as a new issue through `handoff.py track`. With
 `"in-goal"` it stays inside the goal that found it: before that goal's first green full verify it becomes a slice of the
-goal's plan (at most 2, then the phases re-run from plan-review); after that, or past the cap, it is one deferred-items
+goal's plan (up to the configured limit, `followups.max_added_slices`, default 10, then the phases re-run from plan-review); after that, or past the cap, it is one deferred-items
 comment on the goal's issue (format in `skills/sigma-orchestrate/references/follow-ups.md`, parsed by
 `skills/sigma-orchestrate/scripts/deferred.py`). In that mode `handoff.py track` refuses a non-blocking follow-up with
 exit 3 and files nothing; a blocker (`--blocks yes`) and work marked `--kind prerequisite`, `--kind cleanup` or
 `--kind child` are filed as before, and so is everything else that opens an issue (hand-offs, upkeep findings). Only the
 exact string `in-goal` turns it on: a typo, a different case or a wrong type reads `file`, so a bad edit never stops
-follow-ups being filed. `handoff.py followup-mode .sdlc` prints the effective value; `/sigma-orchestrate` reads it,
+follow-ups being filed. `followups.max_added_slices` is a whole number of at least 1 (default 10): a missing key, a wrong type, a boolean, zero, a negative, a fraction or a numeric string reads 10, never unlimited, and `handoff.py track` prints the configured number in its refusal. `handoff.py followup-mode .sdlc` prints the effective mode on line 1 and `max_added_slices <n>` on line 2; `/sigma-orchestrate` reads it,
 `sigma-review` routes its follow-up findings by it, and the setting is a project decision, not a batch one.
 Not measured: how reliably a phase subagent obeys the refusal text; the check is the exit code, not the model.
 
