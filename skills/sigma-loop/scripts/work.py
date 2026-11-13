@@ -113,6 +113,9 @@ DEFAULTS = {"worktree_dir": ".sdlc/work", "branch_prefix": "sdlc/", "base": "",
             # #465: opt-in. True lets `loop.py start` / `record done` sweep goal worktrees whose PR
             # provably merged (worktree_prune.py); it spends REST quota, so it is off by default.
             "reclaim_merged_worktrees": False,
+            # #2161: where `work.py checkpoint` pushes the goal branch before its PR exists. "" = the goal
+            # branch itself; a prefix (`wip/`) keeps push-triggered workflows off unverified checkpoints.
+            "checkpoint_prefix": "",
             # CI is optional: teams that run Jenkins (or any pipeline outside GitHub) after the
             # feature branch is built set this false. Default true = today's behaviour exactly.
             "ci_required": True}
@@ -1607,7 +1610,8 @@ def settings(config):
     block = config.get("work") if isinstance(config, dict) else None
     s.update(block if isinstance(block, dict) else {})
     for key, label in (("remote", "work.remote"), ("base", "work.base"),
-                       ("branch_prefix", "work.branch_prefix")):
+                       ("branch_prefix", "work.branch_prefix"),
+                       ("checkpoint_prefix", "work.checkpoint_prefix")):
         s[key] = state.safe_ref(label, s.get(key))      # #710: option injection into git
     lead = "%s/" % s["remote"] if isinstance(s.get("remote"), str) and s["remote"] else ""
     if lead and isinstance(s["base"], str) and s["base"].startswith(lead) and len(s["base"]) > len(lead):
@@ -3065,7 +3069,7 @@ def _missing_remote_message(sdlc_dir, base_root, remote, run, error):
         return None
 
 
-def start(sdlc_dir, config, goal, run=None, session_pid=None):
+def start(sdlc_dir, config, goal, run=None, session_pid=None, land=False):
     """Cut a fresh worktree + branch from the tip of THIS GOAL'S base. Idempotent, and
     resumable: the record lives in gitignored state, so a supervisor relaunch re-attaches instead of
     starting a second worktree for the same goal — whether the record is still there (`already
@@ -3194,11 +3198,19 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None):
             fix = (f" -- check access to {s['remote']} (`git ls-remote {s['remote']}`), then re-run "
                    f"`work.py start {sdlc_dir} {goal}`")
         raise RuntimeError(f"{exc} — base {base!r} came from {provenance}{fix}") from exc
+    # #2161: a `--land` pick looks for the goal's checkpoint branch on the remote and resumes from it, or
+    # keeps it as `<branch>-previous` and re-cuts. Only `land` pays the one `ls-remote`, so every other
+    # start makes exactly the git calls it always did.
+    resumed, lease, resume_note = (None, None, "")
+    if land:
+        resumed, lease, resume_note = _checkpoint_resume(sdlc_dir, config, goal, run, base_root, s, branch,
+                                                         path, base)
     reattached = False                      # #2009: initialised HERE, not only in the except -- an
                                             # un-taken except would otherwise NameError on the
                                             # guard below, on the fresh-cut path every pick uses.
     try:
-        run(base_root, ["git", "worktree", "add", "-b", branch, str(path), f"{s['remote']}/{base}"])
+        if not resumed:
+            run(base_root, ["git", "worktree", "add", "-b", branch, str(path), f"{s['remote']}/{base}"])
     except Exception:                       # noqa: BLE001 - the branch outliving its record is a resume, not an error
         # Same "mine to resume?" question as the `already started` path above, just noticed a
         # different way (record missing, branch/worktree already on disk) — must not skip the
@@ -3221,9 +3233,13 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None):
     # which #1572 clears on reattach on purpose.
     saved = {"worktree": str(path), "branch": branch, "base": base,
              "base_resolved": base_resolved, "remote": s["remote"], "pr": ""}
+    if resumed:                             # #2161: the record names what the checkpoint resumed from
+        saved["checkpoint"] = resumed
+    if lease:
+        saved["checkpoint_lease"] = lease
     if not reattached and _upkeep_was_busy() and base.startswith(features.BRANCH_PREFIX):
         upkeep_note += _recut_after_busy(run, path, s["remote"], base)      # #1483: BEFORE the cut tip is read
-    if not reattached:                      # a reattached branch is not at its cut tip: record nothing, replay the legacy way
+    if not reattached and not resumed:      # a reattached branch is not at its cut tip: record nothing, replay the legacy way
         saved.update(_cut_tip_fields(config, run, path, s["remote"], base))
     carried = (rec or {}).get("stale_resume_releases")
     if carried is not None:
@@ -3257,8 +3273,10 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None):
         stale = _stale_resume_refusal(sdlc_dir, config, goal, run=run)
         if stale:
             return f"{stale}{note}{sync_note}{upkeep_note}"
+    if resumed:
+        return f"{resume_note}{note}{sync_note}{upkeep_note}"
     return (f"worktree {path} on {branch} (cut from {s['remote']}/{base})"
-            f"{note}{sync_note}{upkeep_note}")
+            f"{resume_note}{note}{sync_note}{upkeep_note}")
 
 
 #: Container formats that ALWAYS carry a private key — a .p12/.pfx/.jks/.keystore with only public
@@ -3608,9 +3626,14 @@ _SCAN_FLAGS = ["--cached", "-M", "--no-ext-diff", "--no-textconv", "--no-color",
 _HUNK_HEADER = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 
 
-def _staged_raw_paths(path, clean_env):
+def _scan_flags(rev):
+    """`_SCAN_FLAGS`, reading the index (`--cached`) or, for #2161's checkpoint, a committed range `rev`."""
+    return [rev] + _SCAN_FLAGS[1:] if rev else _SCAN_FLAGS
+
+
+def _staged_raw_paths(path, clean_env, rev=None):
     """The index's changed paths in git's own order, as raw `-z` names: `[new_path, ...]`."""
-    proc = subprocess.Popen(["git", "diff", *_SCAN_FLAGS, "--raw", "-z"], cwd=str(path),
+    proc = subprocess.Popen(["git", "diff", *_scan_flags(rev), "--raw", "-z"], cwd=str(path),
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=clean_env)
     out, _ = proc.communicate()
     if proc.returncode:
@@ -3673,7 +3696,7 @@ def _parse_added_rows(stream, keep):
     return sections
 
 
-def _staged_added_rows(path, keep):
+def _staged_added_rows(path, keep, rev=None):
     """`{raw_path: [keep(line, text)]}` for every row the index adds, read by STRUCTURE, never by text.
 
     Files are attributed by position — the n-th `diff --git` section of the patch is the n-th entry of
@@ -3690,8 +3713,8 @@ def _staged_added_rows(path, keep):
     if not (pathlib.Path(path) / ".git").exists():
         return {}                        # a synthetic worktree used by unit callers has no index to read
     clean_env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-    names = _staged_raw_paths(path, clean_env)
-    proc = subprocess.Popen(["git", "diff", *_SCAN_FLAGS, "--unified=0"], cwd=str(path),
+    names = _staged_raw_paths(path, clean_env, rev)
+    proc = subprocess.Popen(["git", "diff", *_scan_flags(rev), "--unified=0"], cwd=str(path),
                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=clean_env)
     try:
         sections = _parse_added_rows(proc.stdout, keep)
@@ -3720,7 +3743,7 @@ def _row_hits(line, text, line_hashes=frozenset()):
     return [(rule, line, column, code_exempt) for rule, column, code_exempt in found] or None
 
 
-def _added_secret_hits(path, allowed=None):
+def _added_secret_hits(path, allowed=None, rev=None):
     """`{path: [(rule, line, column)]}` for staged added lines, without retaining their text.
 
     `--unified=0` is deliberate: context/removal lines are already committed or are leaving the
@@ -3735,7 +3758,8 @@ def _added_secret_hits(path, allowed=None):
     paths, line_hashes, _ignored = allowed or (frozenset(), frozenset(), 0)
     hits = {}
     keep = lambda line, text: _row_hits(line, text, line_hashes)     # noqa: E731 - the shared 2-arg callback
-    for name, per_row in _staged_added_rows(path, keep).items():
+    rows = _staged_added_rows(path, keep, rev) if rev else _staged_added_rows(path, keep)
+    for name, per_row in rows.items():
         code, cleared = scrub_module.commit_code_path(name), name in paths
         kept = [(rule, line, column) for found in per_row for rule, line, column, code_exempt in found
                 if not (code_exempt and code) and not (cleared and rule == _CONTENT_RULE)]
@@ -4783,7 +4807,10 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None, land=False):
                or _hs_diff_stop(config, run, path, ["git", "diff", f"{remote}/{base}...HEAD"], ("tamper_oversight",)))
     if refusal:
         return refusal
-    run(path, ["git", "push", "-u", remote, rec["branch"]])
+    lease = _checkpoint_lease_argv(rec, rec["branch"])
+    run(path, ["git", "push"] + lease + ["-u", remote, rec["branch"]])
+    if lease:                                             # #2161: the one lease-pinned overwrite is spent
+        rec.pop("checkpoint_lease", None)
     number = run(path, ["gh", "api",
                         f"repos/{{owner}}/{{repo}}/pulls?head={{owner}}:{rec['branch']}",
                         "--jq", ".[0].number"])
@@ -4811,6 +4838,247 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None, land=False):
     rec["pr"] = number
     _save(sdlc_dir, goal, rec)
     return f"PR #{number}"
+
+
+_SHA40 = re.compile(r"^[0-9a-f]{40}$")
+_PLAN_COPY_MARK = re.compile(r"^<!-- sigma:plan-copy goal=(\S+) sha256=([0-9a-f]{64}) part=\d+/\d+ -->")
+
+
+def _checkpoint_ref(config, goal, branch):
+    """#2161: the remote branch `checkpoint` pushes to: the goal branch itself, or `work.checkpoint_prefix` + the
+    goal stem when the project keeps checkpoints off the branches its workflows run on."""
+    prefix = settings(config).get("checkpoint_prefix")
+    return f"{prefix}{stem(goal)}" if isinstance(prefix, str) and prefix else branch
+
+
+def _remote_tip(run, cwd, remote, ref):
+    """The sha `remote` holds for branch `ref`, or "" when the branch is not there. Raises on a transport failure."""
+    first = (run(cwd, ["git", "ls-remote", "--heads", remote, f"refs/heads/{ref}"]) or "").split()
+    return first[0] if first and _SHA40.match(first[0]) else ""
+
+
+def _checkpoint_lease_argv(rec, ref):
+    """#2161: `--force-with-lease` pinned to the exact tip a re-cut preserved as `<ref>-previous`, for the ONE push that
+    replaces a leftover branch; [] otherwise, so every other push stays the plain one it always was. The lease
+    makes the overwrite fail if the remote branch is not byte-for-byte what was preserved."""
+    lease = rec.get("checkpoint_lease") if isinstance(rec, dict) else None
+    if isinstance(lease, dict) and lease.get("ref") == ref and _SHA40.match(str(lease.get("sha") or "")):
+        return [f"--force-with-lease=refs/heads/{ref}:{lease['sha']}"]
+    return []
+
+
+def _checkpoint_push_stop(sdlc_dir, config, rec, goal, run, ref):
+    """#2161: the gates `pr`'s push is behind, applied to a checkpoint push. "" when the branch may go out, else the
+    refusal (nothing is pushed). Beyond `pr`'s own: a path scan and a content scan of everything this branch adds,
+    because a checkpoint leaves the container before any review has read the diff. An unreadable diff refuses."""
+    path, remote, base = rec["worktree"], rec["remote"], rec["base"]
+    refused = _push_refused(path, rec["branch"])
+    if refused:
+        return f"{refused} (nothing pushed)"
+    if run(path, ["git", "status", "--porcelain"]):
+        return (f"worktree has uncommitted changes — run `work.py commit {sdlc_dir} {goal}` "
+                "first (nothing pushed)")
+    rev = f"{remote}/{base}...HEAD"
+    try:
+        allowed = _allowed_secret_paths(config)
+        names = run(path, ["git", "diff", "--name-only", "--diff-filter=d", rev]) or ""
+        shaped = [n for n in names.splitlines() if _is_offender(n, allowed)]
+        hits = _added_secret_hits(path, _allowed_secret_content(config), rev)
+    except Exception:                   # noqa: BLE001 - never render scanner failures: they can contain a secret
+        return "REFUSED — the branch's added content could not be scanned, so nothing was pushed"
+    if shaped or hits:
+        shown = ", ".join(sorted({_diagnostic_path(n) for n in shaped} | {_diagnostic_path(n) for n in hits}))
+        return (f"REFUSED — the branch adds {len(shaped) + len(hits)} secret-shaped path(s) or content match(es) "
+                f"({shown}); nothing was pushed. Remove them from the branch, then re-run `work.py checkpoint`.")
+    return (_hs_push_stop(sdlc_dir, config, rec, f"git push {remote} HEAD:{ref}", prefix="REFUSED")
+            or _hs_diff_stop(config, run, path, ["git", "diff", rev], ("access_secrets", "tamper_oversight")))
+
+
+def checkpoint(sdlc_dir, config, goal, run=None):
+    """#2161: push the goal branch to the remote WITHOUT opening a PR, so a container that dies mid-run leaves the work.
+
+    Run after each implement commit and before every full verify. It goes through the gates `pr`'s push is behind
+    (`_checkpoint_push_stop`); a refusal pushes nothing. A push that fails for any other reason, transport first, only
+    WARNs: a checkpoint is a safety copy, not a gate, and the run goes on. The push is a plain fast-forward, never
+    forced; the one lease-pinned overwrite is a re-cut's, spent on its first push (`_checkpoint_lease_argv`).
+    In an issue-backed goal it also leaves the plan's durable copy on the issue (the resume compares against it)."""
+    run = run or _run
+    rec = _record(sdlc_dir, goal)
+    if not rec:
+        return "not started — run `work.py start` first (nothing pushed)"
+    path, remote, base = rec["worktree"], rec["remote"], rec["base"]
+    ref = _checkpoint_ref(config, goal, rec["branch"])
+    stop = _checkpoint_push_stop(sdlc_dir, config, rec, goal, run, ref)
+    if stop:
+        return stop
+    if run(path, ["git", "rev-list", "--count", f"{remote}/{base}..HEAD"]) == "0":
+        return "no commits on the branch — nothing to checkpoint (nothing pushed)"
+    lease = _checkpoint_lease_argv(rec, ref)
+    try:
+        run(path, ["git", "push"] + lease + [remote, f"HEAD:refs/heads/{ref}"])
+    except Exception as exc:            # noqa: BLE001 - a safety copy, not a gate
+        return (f"WARN: checkpoint not pushed ({_first_line(exc)}); the run continues — "
+                f"re-run `work.py checkpoint {sdlc_dir} {goal}` when the remote is reachable")
+    head = run(path, ["git", "rev-parse", "HEAD"])
+    rec["checkpoint"] = {"ref": ref, "sha": head}
+    if lease:
+        rec.pop("checkpoint_lease", None)
+    _save(sdlc_dir, goal, rec)
+    line = f"checkpoint {remote}/{ref} at {head[:12]}"
+    if _reads_a_declaration(config, goal):
+        main, branch_doc = plan_copies(sdlc_dir, goal, rec, run)
+        doc = branch_doc or main
+        if doc:
+            url, why = _durable_plan_copy(sdlc_dir, config, goal, doc, run, path)
+            line += f"; durable copy of the plan: {url}" if url else f"; {why}"
+    return line
+
+
+def checkpoint_audit(sdlc_dir, config, goal, run=None):
+    """#2161: `loop.py release`'s audit clause: the checkpoint branch and its last commit as the remote holds them
+    now, so a person can see what survived. "" when there is no work record or no such branch; never raises."""
+    try:
+        run = run or _run
+        rec = _record(sdlc_dir, goal)
+        if not rec:
+            return ""
+        ref = _checkpoint_ref(config, goal, rec["branch"])
+        sha = _remote_tip(run, rec["worktree"], rec["remote"], ref)
+        return f"checkpoint branch {rec['remote']}/{ref}, last commit {sha[:12]}" if sha else ""
+    except Exception:                   # noqa: BLE001 - an audit line must never block a release
+        return ""
+
+
+def _durable_plan_shas(sdlc_dir, config, goal, run, root):
+    """The plan sha256 values the goal's issue holds a durable copy of (trusted authors only). Raises on a read failure."""
+    ref, shas = stem(goal), set()
+    api = _pr_api_run(run, root)
+    for c in gh_api.view_issue(api, int(ref), repo=_issue_repo(config), comments="all")["comments"]:
+        if isinstance(c, dict) and c.get("author_association") in _PLAN_COPY_TRUSTED:
+            m = _PLAN_COPY_MARK.match(str(c.get("body") or "").split("\n", 1)[0])
+            if m and m.group(1) == ref:
+                shas.add(m.group(2))
+    return shas
+
+
+def _open_phase(sdlc_dir, goal):
+    """The first phase token with a `start` and no later `end` in this checkout's action log, else P5 IMPLEMENT: a
+    log that is gone (a new container) or shows nothing open cannot vouch for the commits, so the run re-enters where
+    they were made and every later phase runs again."""
+    try:
+        tokens = list(_load("phase_report").PHASE_TOKENS)
+        open_ = {}
+        for e in _load("actionlog").read_goal(sdlc_dir, goal):
+            if e.get("kind") == "phase":
+                open_[e.get("phase")] = e.get("state") == "start"
+        for key, token in tokens:
+            if open_.get(key):
+                return token
+    except Exception:                   # noqa: BLE001 - the safe answer below
+        pass
+    return "P5 IMPLEMENT"
+
+
+def _post_issue_note(sdlc_dir, config, goal, run, root, body):
+    """Best-effort issue comment; "" on success, else the reason."""
+    try:
+        if not _reads_a_declaration(config, goal):
+            return "no issue to note it on"
+        got = gh_api.comment_issue(_pr_api_run(run, root), int(stem(goal)), body, repo=_issue_repo(config),
+                                   sdlc_dir=sdlc_dir)
+        return "" if isinstance(got, dict) and got.get("html_url") else "the comment was not confirmed"
+    except Exception as exc:            # noqa: BLE001
+        return _first_line(exc)
+
+
+def _drop_cut(run, base_root, path, branch):
+    """Take back the worktree and branch a failed resume just made (both are ours, made seconds ago)."""
+    for argv in (["git", "worktree", "remove", "--force", str(path)], ["git", "branch", "-D", branch]):
+        try:
+            run(base_root, argv)
+        except Exception:               # noqa: BLE001 - the re-cut below then fails loudly, which is correct
+            pass
+
+
+def _checkpoint_resume(sdlc_dir, config, goal, run, base_root, s, branch, path, base):
+    """#2161: `(resumed, lease, note)` for a `--land` start. `resumed` is the checkpoint record ({"ref","sha"}) when the
+    worktree was cut from the remote checkpoint branch, else None; `lease` is the pinned overwrite a re-cut may use on
+    its first push; `note` is text for the start line. It never raises.
+
+    A branch on the remote that the base already contains is nothing to resume. Otherwise: fetch it, cut the worktree
+    from it, rebase onto the base, require the plan on the branch to match a durable plan copy on the issue. Any
+    miss (a read that failed, a conflict, a plan that changed or has no copy) takes the fallback: the old tip is
+    pushed to `<ref>-previous` FIRST, the issue is told, and only then is a lease armed for the re-cut's first
+    push. If the copy cannot be made, no lease is armed, so a re-cut cannot overwrite what was not preserved.
+    Nothing here force-pushes, and what is resumed re-earns plan-review, review and verify: their records are
+    local state this does not recreate."""
+    remote = s["remote"]
+    ref = _checkpoint_ref(config, goal, branch)
+    try:
+        tip = _remote_tip(run, base_root, remote, ref)
+        if not tip:
+            return None, None, ""
+        run(base_root, ["git", "fetch", remote, f"refs/heads/{ref}"])
+        if run(base_root, ["git", "rev-list", "--count", f"{remote}/{base}..{tip}"]) == "0":
+            return None, None, ""           # already in the base: a re-cut descends from it, a plain push fast-forwards
+    except Exception:                       # noqa: BLE001 - cannot read the remote: cut as today, the push says why
+        return None, None, ""
+    try:
+        run(base_root, ["git", "worktree", "add", "-b", branch, str(path), tip])
+    except Exception:                       # noqa: BLE001 - a branch or path already there is `start`'s own reattach, not ours to touch
+        return None, None, ""
+    why = ""
+    try:
+        try:
+            run(path, ["git", "rebase", f"{remote}/{base}"])
+        except Exception:                   # noqa: BLE001
+            try:
+                run(path, ["git", "rebase", "--abort"])
+            except Exception:               # noqa: BLE001
+                pass
+            raise RuntimeError("the rebase onto the current base conflicts")
+        rc = _load("review_context")
+        doc = rc.phase_doc_file(pathlib.Path(path) / pathlib.Path(sdlc_dir).resolve().name, goal, "plans")
+        if not doc:
+            raise RuntimeError("the branch holds no plan to compare with the issue's copy")
+        if rc.plan_sha256(doc) not in _durable_plan_shas(sdlc_dir, config, goal, run, path):
+            raise RuntimeError("the plan on the branch matches no durable copy on the issue (it changed, or none was kept)")
+    except Exception as exc:                # noqa: BLE001 - every miss is the same fallback
+        why = _first_line(exc)
+        _drop_cut(run, base_root, path, branch)
+    if not why:
+        # A rebase that rewrote the branch leaves the remote's copy not an ancestor, so the next plain push would be
+        # refused. Pin the one push that moves it to the tip just fetched (a lease), so a commit this run never saw
+        # is never overwritten.
+        try:
+            run(path, ["git", "merge-base", "--is-ancestor", tip, "HEAD"])
+            lease = None
+        except Exception:                   # noqa: BLE001 - exit 1 is the answer "no": rewritten
+            lease = {"ref": ref, "sha": tip, "kept": ""}
+        return {"ref": ref, "sha": tip}, lease, (
+            f"resumed from {remote}/{ref} at {tip[:12]}: worktree {path} on {branch}; "
+            f"re-enter at {_open_phase(sdlc_dir, goal)}; plan-review, review and verify run again")
+    previous = f"{ref}-previous"
+    try:
+        for i in range(1, 10):
+            name = previous if i == 1 else f"{previous}-{i}"
+            if not _remote_tip(run, base_root, remote, name):
+                run(base_root, ["git", "push", remote, f"{tip}:refs/heads/{name}"])
+                if _remote_tip(run, base_root, remote, name) != tip:
+                    raise RuntimeError("the copy did not land")
+                break
+        else:
+            raise RuntimeError("no free -previous name")
+    except Exception as exc:                # noqa: BLE001 - nothing preserved, nothing armed
+        return None, None, (f"; could not resume ({why}) and could not keep {remote}/{ref} as {previous} "
+                            f"({_first_line(exc)}), so the old branch stays as it is and the first push of the re-cut "
+                            f"will be refused until a person moves it")
+    msg = (f"Sigma could not resume this goal from `{ref}` ({why}). The old tip `{tip[:12]}` is kept as `{name}`; "
+           f"the goal was re-cut from `{base}`.")
+    noted = _post_issue_note(sdlc_dir, config, goal, run, base_root, msg)
+    return None, {"ref": ref, "sha": tip, "kept": name}, (
+        f"; could not resume from {remote}/{ref} ({why}): kept it as {name}, re-cut from {remote}/{base}"
+        + ("" if not noted else f" (issue note not posted: {noted})"))
 
 
 def _receipt_pending(number, why):
@@ -9988,7 +10256,7 @@ def close_design(sdlc_dir, config, goal, run=None, comment=None, sleep=time.slee
                 f"by hand; see stderr for detail)")
     return f"closed PR #{pr['number']}"
 
-_COMMANDS = {"start": start, "commit": commit, "pr": pr, "rebase": rebase,
+_COMMANDS = {"start": start, "commit": commit, "pr": pr, "checkpoint": checkpoint, "rebase": rebase,
              "post-review": post_review, "merge": merge, "finish": finish}
 
 
@@ -10050,7 +10318,7 @@ def main(argv):
             "seal-tests": _SEAL_TESTS_USAGE,
             "seal-retire": _SEAL_RETIRE_USAGE,
         }
-        print(usage.get(command, "usage: work.py start|commit|pr|rebase|post-review|merge|finish <sdlc_dir> <goal>"))
+        print(usage.get(command, "usage: work.py start|commit|pr|checkpoint|rebase|post-review|merge|finish <sdlc_dir> <goal>"))
         return 0
     if len(argv) >= 4 and argv[1] == "review-paths":
         manifest = _flag(argv, "--manifest")
@@ -10344,6 +10612,8 @@ def main(argv):
             kwargs["no_tests"] = _flag(argv, "--no-tests")
         if argv[1] == "pr" and "--land" in argv:
             kwargs["land"] = True               # #2116: a `/sigma-goal <N> --land` run, see skills/sigma-goal/references/land.md
+        if argv[1] == "start" and "--land" in argv:
+            kwargs["land"] = True               # #2161: a `--land` pick resumes from the goal's checkpoint branch
         if argv[1] == "commit":
             kwargs["message"] = _flag(argv, "--message")
         if argv[1] == "post-review":
@@ -10388,8 +10658,8 @@ def main(argv):
                                    commit_signing.PARK_PREFIX)):
             return 4
         return 0
-    print("usage: work.py start|commit|pr|rebase|post-review|merge|finish <sdlc_dir> <goal>\n"
-          "         start [--session-pid <pid>]   commit --message \"<text>\"   finish [--force]\n"
+    print("usage: work.py start|commit|pr|checkpoint|rebase|post-review|merge|finish <sdlc_dir> <goal>\n"
+          "         start [--session-pid <pid>] [--land]   checkpoint   commit --message \"<text>\"   finish [--force]\n"
           "         post-review --verdict approve|block|unblock --evidence <path> [--reason \"<changes>\"]\n"
           "       work.py record-plan-review <sdlc_dir> <goal> --verdict SOUND|SOUND-WITH-REFINEMENTS|FIX-FIRST "
           "--plan-sha256 <hex> [--reason \"<text>\"]\n"

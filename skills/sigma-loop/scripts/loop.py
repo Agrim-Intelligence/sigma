@@ -5833,7 +5833,14 @@ def _release(sdlc_dir, source, goal, reason="", claim_actor=None, claim_run=None
     # describes wrongly (a stale-resume release is on a goal that WAS started). Forwarded only when
     # given, so every existing caller -- and the seven `release(self, goal, reason)` test doubles --
     # keep being called with exactly the two arguments they declare.
-    released = source.release(goal, reason, note=note) if note else source.release(goal, reason)
+    # #2161: the audit comment names the checkpoint branch and its last commit, so a person can see what survived.
+    # Only the comment carries it; the ledger and action log below keep the reason as given.
+    try:
+        survived = work.checkpoint_audit(sdlc_dir, state.load_config(sdlc_dir), goal)
+    except Exception:                                   # noqa: BLE001 - an audit line never blocks a release
+        survived = ""
+    posted = f"{reason}; {survived}" if reason and survived else (survived or reason)
+    released = source.release(goal, posted, note=note) if note else source.release(goal, posted)
     # #1121: run_id is THIS call's own run (the writing process), same as `actor` always is --
     # for a human/CLI release that's simply this process's own attribution; for an automated
     # `_auto_reclaim_stale_claims` sweep it is the SWEEP's run, not the original claim's -- that
