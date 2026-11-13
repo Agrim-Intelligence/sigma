@@ -186,10 +186,12 @@ def committed_dismissal_report(sdlc_dir):
             "ignored": sorted(n for n in names if n in SETUP_CRITICAL)}
 
 
-def committed_dismissal_notice(sdlc_dir):
+def committed_dismissal_notice(sdlc_dir, env=None):
     """#2152: the one session-start line for a committed list, or "" when it declines nothing and
     ignores nothing (a quiet session stays quiet). Lives here, not in the hook, so any host's own
-    entry point can ask the same (`python3 setup_wizard.py notice <sdlc_dir>`)."""
+    entry point can ask the same (`python3 setup_wizard.py notice <sdlc_dir>`). #2163: in a cloud
+    session (`is_cloud_session(env)`) the wizard question is skipped, so an ignored critical entry
+    is not "still asked about" there; the line says it is ignored and that /sigma-doctor reports it."""
     rep = committed_dismissal_report(sdlc_dir)
     parts = []
     if rep["honoured"]:
@@ -197,7 +199,11 @@ def committed_dismissal_notice(sdlc_dir):
         parts.append(f"{n} setup check{'s' if n != 1 else ''} declined for every clone by the committed "
                      "setup_wizard.dismissed list in .sdlc/config.json")
     if rep["ignored"]:
-        parts.append("ignored setup-critical entries still asked about: " + ", ".join(rep["ignored"]))
+        if is_cloud_session(env):
+            parts.append("ignored setup-critical entries (not declinable; no question is asked in a cloud "
+                         "session, /sigma-doctor still reports them): " + ", ".join(rep["ignored"]))
+        else:
+            parts.append("ignored setup-critical entries still asked about: " + ", ".join(rep["ignored"]))
     if not parts:
         return ""
     return "Sigma: " + "; ".join(parts) + ". /sigma-doctor lists every one."
