@@ -4,6 +4,11 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`record review` redaction covers more path shapes and uses placeholders that render (#2164).**
+  - **What changed.** `_redact_detail` now also redacts `file://` URLs, UNC-style `//server/share` paths, single-segment absolute paths for well-known roots (`/etc`, `/tmp`, `/home` and similar), `~user/...`, `$HOME`/`${HOME}`/`$USER`-style references with their remainder, and `%USERPROFILE%`-style references. The placeholders are now `[path]` and `[mention]` instead of `<path>` and `<mention>`, which GitHub markdown reads as HTML tags and hides. Redaction still runs before the 400-character cap. Prose, version numbers, fractions such as 1/2, `https://` URLs, slash words, repo-relative markdown links, `~5` and `$5` are left alone (tests pin each).
+  - **Measured:** offline, 7 new tests in `tests/test_record_review_detail_2150_2151.py`; each new clause was broken on its own and its own test went red.
+  - **Not measured:** a single-segment path outside the listed roots is not redacted (a bare `/word` is indistinguishable from prose); a leading-slash path inside a markdown link target is redacted like any other; no live issue post was made.
+
 ## 1.0.30 — 2026-11-13 — the loop passes the merge stop line and redacts it, a committed list cannot silence setup-critical checks, follow-ups become a setting, and /sigma-orchestrate survives a real dry run
 
 - **`/sigma-orchestrate`: the dry-run path no longer lets in-flight or non-goal issues into the plan, and its commands work from a worktree (#2157).**
