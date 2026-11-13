@@ -35,7 +35,7 @@
     },
     {
       "path": "skills/sigma-init/scripts/setup_wizard.py",
-      "role": "library"
+      "role": "gesture"
     },
     {
       "path": "skills/sigma-init/scripts/verify_detect.py",
