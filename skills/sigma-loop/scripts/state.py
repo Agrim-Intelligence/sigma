@@ -1616,6 +1616,13 @@ def acceptance_module():
     return module
 
 
+def known_flakes_module():
+    spec = importlib.util.spec_from_file_location("known_flakes", _HERE / "known_flakes.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def repository_verify_commands(config):
     """The repository's own proving command as a list: `[verify.command]`, or `[]` when it declares none (#2085).
     A malformed `verify` block raises exactly as `declared_verify_commands` always did."""
@@ -1774,7 +1781,7 @@ ENFORCEMENT_GATES = (
 ENFORCEMENT_EXEMPT = ()
 
 
-def done_refusal(sdlc_dir, goal):
+def done_refusal(sdlc_dir, goal, base=None):
     """None when fresh passing evidence exists for this goal, else the reason to refuse.
     Fresh = produced at/after this run's start (a stale green from yesterday proves nothing) AND,
     #498, by THIS run (a concurrent sibling's green, though fresh, must not be inherited). Since
@@ -1790,7 +1797,15 @@ def done_refusal(sdlc_dir, goal):
     except Exception:             # noqa: BLE001 - unreadable evidence proves nothing either
         return "verify evidence is unreadable"
     if data.get("exit") != 0:
-        return f"last verify FAILED (exit {data.get('exit')})"
+        # #2160: the one nonzero-exit evidence that counts, and only for the base the caller names: `known_flakes`
+        # re-reads the CURRENT setting, so an expired or removed entry voids it. No `base` -> not accepted.
+        try:
+            refused = known_flakes_module().evidence_refusal(data, load_config(sdlc_dir), base)
+        except Exception as exc:          # noqa: BLE001 - unreadable means red
+            refused = f"known-flake evidence could not be checked ({exc})"
+        if refused:
+            return refused if refused.startswith("last verify FAILED") else (
+                f"last verify FAILED (exit {data.get('exit')}); {refused}")
     # Sub-second float compare (F11/#341): `at` and `run_started_at` used to be floored to whole
     # seconds by `int(time.time())` on both sides, so a verify at T-0.4s from a PRIOR run and a run
     # starting at T+0.3s both rounded to the same integer second — the floor made a stale green
