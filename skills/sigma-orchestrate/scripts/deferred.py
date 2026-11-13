@@ -25,6 +25,8 @@ Rules (each has a test):
     AFTER the marker line count; plain prose is ignored. A list-shaped line that does not start `- ` or `* `
     (a numbered item, `+ [area:...]`, `-[area:...]`, a bare `[area:...]`, a unicode-dot bullet) is REJECTED with
     a reason, never skipped (#2157).
+  * A list-shaped line after the marker that sits inside a code fence or a `>` quote is not read as an item but is
+    REJECTED with a reason saying so, never skipped silently (#2162).
   * A bullet after the marker that does not match the grammar is REJECTED with a reason, never dropped.
   * `<what>` is the text up to the first space-hyphen-space, `<why>` is the rest up to ` (files: `; a `what`
     containing a spaced hyphen is therefore read as a shorter `what` and a longer `why` (named, not detected).
@@ -96,10 +98,17 @@ def parse_body(body):
         if stripped.startswith("```"):
             fenced = not fenced
             continue
-        if fenced or stripped.startswith(">"):
-            continue
         if not seen_marker:
-            seen_marker = MARKER in line
+            if not (fenced or stripped.startswith(">")):
+                seen_marker = MARKER in line
+            continue
+        if fenced or stripped.startswith(">"):
+            # Not read, but a list-shaped line here is listed, not silently skipped (#2162).
+            if _BULLET.match(line) or _LISTLIKE.match(line) or re.match(r"^\s*>[\s>]*(?:[-*+\u2022]\s|\d+[.)]\s|\[area:)", line):
+                where = "a code fence" if fenced else "a quoted line"
+                rejected.append({"line": line.strip()[:120],
+                                 "reason": "a list line inside %s is not read; move it out of the %s to file it"
+                                           % (where, "fence" if fenced else "quote")})
             continue
         if not _BULLET.match(line):
             if _LISTLIKE.match(line):

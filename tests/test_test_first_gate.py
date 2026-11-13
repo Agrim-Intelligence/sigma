@@ -256,7 +256,11 @@ def pr_case(case, monkeypatch):
             return '1'
         if argv[:2] == ['git', 'log']:
             return 'Change'
-        if argv[:3] == ['gh', 'api', 'repos/{owner}/{repo}/pulls']:
+        if argv[:4] == ['git', 'remote', 'get-url', 'origin']:      # #2172: the push remote a real checkout answers
+            return 'https://github.com/acme/widgets.git'
+        if argv[:3] == ['gh', 'api', 'repos/{owner}/{repo}'] and argv[3:] == ['--jq', '.full_name']:
+            return 'acme/widgets'                                       # #2172: gh's default repo, same as the remote
+        if argv[:3] == ['gh', 'api', 'repos/acme/widgets/pulls']:
             return '7'
         return ''
     return w, {'work': {'enabled': True}, 'verify': {'enforce': True}}, run, calls
@@ -284,7 +288,7 @@ def test_existing_pr_exception_is_published_idempotently(case, monkeypatch):
     def existing(cwd, argv):
         if argv[:2] == ['gh', 'api'] and 'pulls?head=' in argv[2]:
             return '7'
-        if argv[:3] == ['gh', 'api', 'repos/{owner}/{repo}/pulls/7']:
+        if argv[:3] == ['gh', 'api', 'repos/acme/widgets/pulls/7']:
             if '--method' in argv:
                 bodies.append(next(x[5:] for x in argv if x.startswith('body=')))
                 return '{}'

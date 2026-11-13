@@ -5206,23 +5206,38 @@ _AWAITING_MERGE_NOTE = ("PR #{pr} is open and awaiting a merge. This goal is not
 #: note, the ledger or the action log. Each is its own pattern so each can be broken (and seen red) on its own.
 #: An absolute path: a Windows drive or UNC path, a `~/` path, or a POSIX path of two or more segments that does
 #: not start inside a word or a URL (the `:` / `/` look-behind keeps `https://host/x` whole).
-_DETAIL_PATH_RE = re.compile(r"(?:(?<![\w])[A-Za-z]:[\\/][^\s'\"`<>)\]]*|\\\\[^\s'\"`<>)\]]+"
-                             r"|(?<![\w.:/~-])~/[^\s'\"`<>)\]]*"
-                             r"|(?<![\w.:/-])/[\w.@+~-]+(?:/[^\s'\"`<>)\]]*)+)(?<![,;:!?.])")
+#: #2164: top-level directories whose bare single-segment form (`/etc`, `/tmp`) is still a path worth hiding.
+_DETAIL_ROOTS = ("etc|tmp|var|usr|home|root|opt|srv|mnt|bin|sbin|lib|proc|dev|run|private|Users|Volumes|"
+                 "Library|Applications|System")
+_DETAIL_PATH_RE = re.compile(
+    r"(?:(?<![\w])[A-Za-z]:[\\/][^\s'\"`<>)\]]*|\\\\[^\s'\"`<>)\]]+"
+    r"|(?<![\w.:/~-])~/[^\s'\"`<>)\]]*"
+    r"|(?<![\w.:/-])/[\w.@+~-]+(?:/[^\s'\"`<>)\]]*)+"
+    # #2164: a `file://` URL, whatever follows (a host, an empty host, a path).
+    r"|(?<![\w])file://[^\s'\"`<>)\]]*"
+    # #2164: a UNC-style `//server/share[/...]`; the look-behind keeps `https://host/x` and `a//b` whole.
+    r"|(?<![\w.:/-])//[\w.@+~-]+/[^\s'\"`<>)\]]*"
+    # #2164: a single-segment absolute path, only for well-known roots, so `/or` and `/sigma-loop` stay prose.
+    r"|(?<![\w.:/~-])/(?:" + _DETAIL_ROOTS + r")(?![\w/@+~-])(?!\.\w)"
+    # #2164: a `~user/...` home reference, an environment-style home reference and its remainder.
+    r"|(?<![\w.:/~-])~[A-Za-z_][\w-]*/[^\s'\"`<>)\]]*"
+    r"|\$\{?(?:HOME|USER|USERNAME|LOGNAME|PWD|OLDPWD|TMPDIR|XDG_[A-Z_]+)\}?(?![\w])(?:[\\/][^\s'\"`<>)\]]*)?"
+    r"|%(?:USERPROFILE|HOMEPATH|APPDATA|LOCALAPPDATA|TEMP|TMP)%(?:[\\/][^\s'\"`<>)\]]*)?"
+    r")(?<![,;:!?.])")
 #: A mention: `@name` or `@org/team`, not an address inside a word (`a@b`).
 _DETAIL_MENTION_RE = re.compile(r"(?<![\w`])@(?=[A-Za-z0-9])[\w-]*(?:/[\w-]+)?")
 
 
 def _redact_detail(text):
-    """#2151: whitespace collapsed, then redacted: an absolute path becomes `<path>`, an `@name` mention becomes
-    `<mention>` (so nobody is notified), and the trigger phrase of a blocker match (`blocker_scan._BLOCK_RE`, the one
-    vocabulary; never a second regex) becomes an ellipsis, so the text cannot read as a dependency edge. Order:
+    """#2151: whitespace collapsed, then redacted: an absolute path becomes `[path]`, an `@name` mention becomes
+    `[mention]` (square brackets: `<path>` is read as an HTML tag and vanishes in GitHub markdown; a mention is neutralised so nobody is notified), and the trigger phrase of a blocker
+    match (`blocker_scan._BLOCK_RE`, the one vocabulary; never a second regex) becomes an ellipsis, so the text cannot read as a dependency edge. Order:
     paths first (a path can contain an `@`), then mentions, then blockers."""
     out = " ".join(str(text or "").split())
     if not out:
         return ""
-    out = _DETAIL_PATH_RE.sub("<path>", out)
-    out = _DETAIL_MENTION_RE.sub("<mention>", out)
+    out = _DETAIL_PATH_RE.sub("[path]", out)
+    out = _DETAIL_MENTION_RE.sub("[mention]", out)
     scan = _load("blocker_scan")
     return scan._BLOCK_RE.sub(lambda m: m.group(0).replace(m.group(1), "…", 1), out)
 

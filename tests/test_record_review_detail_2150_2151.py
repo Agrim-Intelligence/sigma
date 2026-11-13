@@ -59,19 +59,19 @@ def _note_for(detail, also_log=False):
                                   "C:\\Us" + "ers\\someone\\proj", "D:/a/r/r/.sdlc", "~/proj/.sdlc"])
 def test_an_absolute_path_becomes_a_placeholder(path):
     note = _note_for(f"PR #7 clean, but stopped in {path} (read 403)")
-    assert "<path>" in note and "someone" not in note and "runner" not in note and "/.sdlc" not in note, note
-    assert "PR #7 clean, but stopped in <path>" in note, note
+    assert "[path]" in note and "someone" not in note and "runner" not in note and "/.sdlc" not in note, note
+    assert "PR #7 clean, but stopped in [path]" in note, note
 
 
 def test_a_url_and_a_slash_word_are_not_paths():
     note = _note_for("see https://example.com/a/b and read/write and and/or")
-    assert "https://example.com/a/b" in note and "read/write" in note and "<path>" not in note, note
+    assert "https://example.com/a/b" in note and "read/write" in note and "[path]" not in note, note
 
 
 def test_a_mention_is_neutralised():
     note = _note_for("ask @octo-cat and @some-org/some-team about it; mail a@b.example is not one")
     assert "@octo-cat" not in note and "@some-org" not in note, note
-    assert note.count("<mention>") == 2 and "a@b.example" in note, note
+    assert note.count("[mention]") == 2 and "a@b.example" in note, note
 
 
 def test_blocker_phrasing_cannot_make_an_edge():
@@ -84,12 +84,12 @@ def test_blocker_phrasing_cannot_make_an_edge():
 
 
 def test_redaction_runs_before_the_cap_and_the_note_stays_one_line():
-    # A long path shrinks to `<path>`, so the text after it must survive; capped first, it would be cut off.
+    # A long path shrinks to `[path]`, so the text after it must survive; capped first, it would be cut off.
     note = _note_for(U + "/someone/" + "a/" * 300 + " tail-marker")
     why = note.split("Why the loop did not merge it: ")[1].splitlines()[0]
-    assert why == "<path> tail-marker", note
+    assert why == "[path] tail-marker", note
     direct = _load("loop")._awaiting_merge_note("7", U + "/someone/" + "a/" * 300 + " tail-marker")
-    assert direct.endswith("Why the loop did not merge it: <path> tail-marker"), direct   # the seam itself
+    assert direct.endswith("Why the loop did not merge it: [path] tail-marker"), direct   # the seam itself
     long = _note_for("z" * 600).split("Why the loop did not merge it: ")[1].splitlines()[0]
     assert len(long) == 399 + 0 and long.endswith("…") or len(long) <= 400, long
 
@@ -100,13 +100,13 @@ def test_a_tilde_not_followed_by_a_slash_is_not_a_path():
 
 def test_redaction_also_covers_the_ledger_and_action_log_text():
     lp = _load("loop")
-    assert lp._redact_detail("in " + U + "/someone/x/.sdlc " + BLOCK + " #5") == "in <path> … #5"
+    assert lp._redact_detail("in " + U + "/someone/x/.sdlc " + BLOCK + " #5") == "in [path] … #5"
     assert lp._redact_detail("") == "" and lp._redact_detail(None) == ""
 
 
 def test_the_action_log_gets_the_redacted_detail_too():
     text = _note_for("stopped in " + U + "/someone/proj/.sdlc, ask @octo-cat", also_log=True)
-    assert "someone" not in text and "@octo-cat" not in text and text.count("<path>") >= 2 and "recorded" in text, text
+    assert "someone" not in text and "@octo-cat" not in text and text.count("[path]") >= 2 and "recorded" in text, text
 
 
 def test_the_blocker_clause_reuses_the_shared_pattern():
@@ -124,3 +124,46 @@ def test_the_loop_skill_routing_rule_passes_the_stop_line_to_record_review():
     assert m, "the routing rule for any other stop line must name `record review`"
     rule = m.group(0)
     assert 'record review "<that line>"' in rule and "detail" in rule, rule
+
+
+# --- #2164: more path shapes, placeholders that render ------------------------------------------------------------
+
+def _why(detail):
+    return _load("loop")._redact_detail(detail)
+
+
+def test_a_file_url_is_redacted():
+    out = _why("opened file://" + U + "/someone/x.html and file:///" + "etc/hosts then file://host/share/a")
+    assert out == "opened [path] and [path] then [path]", out
+
+
+def test_a_unc_style_path_is_redacted_but_a_url_is_not():
+    out = _why("copied //fileserver/team/dir/a.txt, see https://example.com//a/b and a//b")
+    assert out == "copied [path], see https://example.com//a/b and a//b", out
+
+
+def test_a_single_segment_absolute_path_is_redacted():
+    out = _why("wrote /tmp, then /etc. and (" + U + ") but not /or, /sigma-loop or /tmpfoo")
+    assert out == "wrote [path], then [path]. and ([path]) but not /or, /sigma-loop or /tmpfoo", out
+
+
+def test_home_style_references_are_redacted():
+    out = _why("in $HOME/proj, ${HOME}, $USER and ~someone/x and %USERPROFILE%\\x; $HOMEWARD and $5 stay")
+    assert out == "in [path], [path], [path] and [path] and [path]; $HOMEWARD and $5 stay", out
+
+
+def test_placeholders_render_in_github_markdown():
+    out = _why("in " + U + "/someone/x, ask @octo-cat")
+    assert out == "in [path], ask [mention]" and "<" not in out, out
+
+
+def test_ordinary_prose_versions_fractions_and_repo_links_are_untouched():
+    text = ("1/2 done, v1.0.30 and 3/4 of 2026/11, 5 tests/s, read [the doc](docs/a.md) or ./docs/b.md and "
+            "../c/d.md, use `loop.py`, email a@b.example, cost ~5%, $5, 100%, 50% of $PATHWAY")
+    assert _why(text) == text
+
+
+def test_redaction_of_the_new_shapes_runs_before_the_cap():
+    long = "file://" + U + "/someone/" + "a/" * 300 + " tail-marker"
+    direct = _load("loop")._awaiting_merge_note("7", long)
+    assert direct.endswith("Why the loop did not merge it: [path] tail-marker"), direct
