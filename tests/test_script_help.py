@@ -99,6 +99,7 @@ LIBRARY_ONLY = {
     "feature_provenance",
     "commit_signing",
     "known_flakes",
+    "followup_route",
 }
 
 

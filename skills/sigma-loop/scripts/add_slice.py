@@ -126,6 +126,9 @@ def _heading_titles(text):
 
 
 def main(argv):
+    if argv and argv[0] in ("--help", "-h"):
+        print(USAGE)
+        return 0
     parsed = _parse(argv)
     if not parsed:
         print(USAGE, file=sys.stderr)
