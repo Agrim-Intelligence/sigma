@@ -1,0 +1,22 @@
+# Plan-review 1 for goal 2222 — VERDICT: FIX-FIRST
+
+Independent reviewer, fresh context, read-only. The plan to fix is `.sdlc/plans/2222.md`. Findings (all from reading code; nothing was run):
+
+BLOCKERS
+1. Divergence park (D4/T3) would park every drafted goal at `work.py pr`. `acceptance.record --draft` writes criteria that were never in the issue body (they live in a `<!-- sigma:acceptance -->` comment, `drafted: true`), so "issue criteria != record original" is true for every drafted goal. Today an existing record deliberately wins over issue edits (acceptance.py ~161). Fix: skip divergence when `drafted: true` or when the issue has no criteria section; compare only records that carry `criteria_sha256` (legacy records never get the new park); compare after alias normalisation, ignoring checkbox state. Tests: drafted, legacy, issue-without-section, `[x]`-ticked.
+2. D1's ledger witness rests on a false claim. `ledger.py` is NOT "no change": `OPTIONAL_FIELDS` (ledger.py ~117) is a closed whitelist and `ENTRY_SCHEMAS` (~215) validates fields; `safe_append` goes through `append()` so `criteria_sha256` would be dropped or fail open. It also touches `contract/vocabulary.json` and `contract/golden/entries.jsonl` and their pin tests, is off when `ledger.enabled` is false, and lives in a per-actor file the agent can write. Fix: drop the ledger witness and state the pre-commit residual plainly, OR specify the full change. Never rely on it as a guard clause.
+3. The "earliest committed blob" baseline is not what `_branch_doc` does (review_context.py ~395-484 returns the TIP of the local or remote branch; no `git log --reverse`). A tampered record committed at the tip becomes the baseline. Fix: specify a new helper that finds the first commit that ADDED the file (`git log --diff-filter=A --reverse`) and reads that blob; say what happens when git is unreadable (refuse only on a clear mismatch). Test: tampered blob committed first, a second commit made, guard still refuses. `review_context.py` must be in the Files list.
+
+MAJOR
+4. At `work.py commit` say which copy is checked. `_copy_acceptance_into_worktree` is create-only (work.py ~4504-4521) and `git add -A` stages the WORKTREE copy. Check the bytes about to be staged AND the root copy; refuse if they differ and the difference is not a legitimate extension. Test: worktree-only edit.
+5. "In the open" is not enforced for added criteria: an agent can hand-write `- [ ] x (added: s; reason: because)` and skip `extend`. At `pr` require each added criterion's text and reason to appear in an issue comment carrying the extend marker (reuse the comment read at acceptance.py ~204-209); an unreadable history refuses (fail closed). Local-file goals exempt, stated. Test: hand-written addition.
+6. T9's open point has an answer: `reviewer.py` has no forced-block path for a brief line. The deterministic seam is `independent_run_refusal` (reviewer.py ~944+). Decide now: attach "reasonless added criterion N>0" there with a test, or state that the `work.py pr` refusal is the only hard stop and Done-when 6 is met by it, naming it.
+7. `pr` is not the only exit. Other push/merge sites: work.py ~4986/5010, ~6519 (rebase/merge force-push), `merge()` ~9096. Add the same unconditional guard at `merge()` or document the limit like the raw-push note (work.py ~288), and test that `merge` refuses.
+
+MINOR
+8. D10: `criteria()` is a single pass returning the first matching section (acceptance.py 50-85); an alias section appearing first wins today. Specify two-pass behaviour; test with the alias before the canonical heading.
+9. Legacy records have no `criteria_sha256`; the guard is vacuous for that window before the first commit. State it. Rollout test: legacy record + unchanged bytes passes at commit and pr; metadata-only `set-verify-command` passes.
+10. Ceilings check out (17 criteria x 1024 chars < 32 KiB MAX_BYTES; ceiling 10 named; doctor read bounded at 50 with "N+ unchecked"). Pin in T1 with a test against the existing golden that the old parser ignores `## Added criteria`.
+11. D9's no-bypass structural test cannot see a config key: add `state.load_config` and any `config.get` use inside the guard path to the forbidden set.
+
+CHECKED AND FINE: per-clause controls and documented gestures; no hook is load-bearing, no SIGSTOP; additive format change; no verb edits or removes a criterion; no new untracked root file as long as `extend` syncs through `_sync_worktree_copy`.
