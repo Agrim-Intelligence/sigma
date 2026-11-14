@@ -84,8 +84,10 @@ def _entry(sdlc, config, cache, now):
     return hit
 
 
-def map_hold(sdlc, config, goal, cache, now=None):
-    """`(sorted open blocker numbers, "ok")` or `(None, reason)`. Never raises."""
+def map_hold(sdlc, config, goal, cache, now=None, closed=()):
+    """`(sorted open blocker numbers, "ok")` or `(None, reason)`. Never raises. `closed` (#2223): goal numbers
+    the caller has itself just confirmed closed; the map's (possibly stale) entry for them is not consulted.
+    Every other blocker is read from the map exactly as before; the default `()` changes nothing."""
     try:
         now = time.time() if now is None else now
         m, graph, why = _entry(sdlc, config, cache, now)
@@ -100,7 +102,7 @@ def map_hold(sdlc, config, goal, cache, now=None):
         out = []
         for e in graph.edges:
             blocker, blocked, source = e[0], e[1], e[2]
-            if blocked != g or source == "comment":
+            if blocked != g or source == "comment" or blocker in closed:
                 continue
             b = graph.nodes.get(blocker)
             if b is None or b.state == "unknown":
