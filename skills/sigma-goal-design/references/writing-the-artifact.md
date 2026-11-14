@@ -137,7 +137,8 @@ is a real answer and must be written, because an absent heading and an empty one
 claim. The same holds for `Premise check`, `Functional requirements` and `Out of scope`: all three are
 written on every artifact, and where there is genuinely nothing to say the answer is a single
 `- None.` bullet, which takes no id. The `Slice-count estimate` rows are what `goal-review` step 4b turns into `compile_plan.py`
-`issues[]` entries: `Covers` becomes the body, `Requirements` becomes the child's `## Requirements served` block and
+`issues[]` entries: `Covers` becomes the body, `Requirements` becomes the child's `## Requirements served` block and a
+`## Done when` derived from the same sentences (`goal_design.py served ... --done-when`, #2222), and
 `Depends on` becomes the `blocked_by` edges.
 (#1922 settled the half that was a defect — `goal-review` demanding a priority these rows never
 carried — by omitting it, and is closed; whether they should carry one at all is the residual

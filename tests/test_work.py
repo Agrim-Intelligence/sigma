@@ -6788,7 +6788,11 @@ def test_cli_commit_still_succeeds_when_the_loop_module_cannot_be_loaded(tmp_pat
     d = _sdlc(tmp_path); goal = _started(d)
     monkeypatch.setattr(work, "_run", lambda cwd, argv: "")
 
+    real_load = work._load
+
     def boom(name):
+        if name != "loop":      # #2222: the acceptance guard must load, or the commit refuses; only loop.py is the fault here
+            return real_load(name)
         raise RuntimeError("simulated: loop.py could not be loaded")
     monkeypatch.setattr(work, "_load", boom)
 

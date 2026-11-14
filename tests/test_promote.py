@@ -402,7 +402,7 @@ def test_no_blocker_marker_costs_nothing_extra_and_behaves_exactly_as_before():
     run = _runner(views={"5": _view("sdlc:needs-confirmation")})     # no body at all
     result = p.promote(".sdlc", _config(), ["5"], run=run)
     assert result["results"][0]["outcome"] == "promoted"
-    assert result["results"][0]["detail"] == "+sdlc:goal -sdlc:needs-confirmation"
+    assert result["results"][0]["detail"] .startswith("+sdlc:goal -sdlc:needs-confirmation")  # #2222: warn mode may append a readiness note
     views = [c for c in run.calls if gqlfake.rest_issue_target(c)]
     assert len(views) == 1 and run.fallbacks == []     # only #5 itself -- nothing to check, nothing fetched
 
@@ -644,7 +644,7 @@ def test_a_label_queue_repo_is_never_warned_about_a_card_it_does_not_have():
     p = _mod("promote")
     run = _runner(views={"5": _view("sdlc:needs-confirmation")})
     result = p.promote(".sdlc", _config(), ["5"], run=run)          # no `project` block at all
-    assert result["results"][0]["detail"] == "+sdlc:goal -sdlc:needs-confirmation"
+    assert result["results"][0]["detail"] .startswith("+sdlc:goal -sdlc:needs-confirmation")  # #2222: warn mode may append a readiness note
 
 
 def test_promote_refuses_a_parked_issue_and_names_the_route_out():
@@ -719,7 +719,7 @@ def test_dry_run_writes_nothing_but_names_the_exact_swap():
     run = _runner(views={"5": _view("sdlc:needs-confirmation")})
     result = p.promote(".sdlc", _config(), ["5"], run=run, apply=False)
     assert result["results"][0]["outcome"] == "would"
-    assert result["results"][0]["detail"] == "+sdlc:goal -sdlc:needs-confirmation"
+    assert result["results"][0]["detail"] .startswith("+sdlc:goal -sdlc:needs-confirmation")  # #2222: warn mode may append a readiness note
     assert not any(str(a).startswith("query=mutation") for c in run.gql_calls for a in c)
 
 

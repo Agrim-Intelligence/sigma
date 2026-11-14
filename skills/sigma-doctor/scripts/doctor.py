@@ -2384,6 +2384,52 @@ _MACHINE_PARK_KINDS = frozenset({"merge_conflict", "failing_check", "no_evidence
 _REBASE_PARK_MARKER = "Rebase parked:"
 
 
+_READINESS_BODY_CAP = 50
+
+
+def _goal_readiness_rows(cfg, base, gh_cfg, run, github):
+    """#2222: `goal_readiness` rows. (1) the mode (an invalid one is a not-OK row, never defaulted); (2) with GitHub
+    discovery, how many OPEN `sdlc:goal` issues lack a readable `## Done when`, read through `_list` (REST, one list
+    request of at most `_READINESS_BODY_CAP` = 50 bodies per run; the list carries bodies, so that is 1 core-budget
+    read, not 50, and nothing here is GraphQL). Says `N of M checked` and `50+ unchecked` when the cap truncated the
+    read, and an unreadable source is its own not-OK row, never a silent zero; (3) when `.sdlc/acceptance` is
+    gitignored in this checkout, the append-only guard has no committed baseline (`baseline: unavailable`), so say so.
+    Never raises."""
+    rows = []
+    try:
+        ib = _load_loop_script("issue_body")
+        try:
+            mode = ib.readiness_mode(cfg)
+        except ValueError as exc:
+            return [_chk("goal_readiness setting is valid", False, "%s; fix .sdlc/config.json (never defaulted)" % exc)]
+        rows.append(_chk("goal readiness mode: %s" % mode, True, ""))
+        root = pathlib.Path(base).parent
+        # `-v` prints the matching ignore rule on a hit, so a runner that returns nothing (or fails) is "not ignored"
+        ignored = run(["git", "-C", str(root), "check-ignore", "-v", "--", ".sdlc/acceptance/probe.md"])
+        if not isinstance(ignored, _RawFailure) and str(ignored).strip():
+            rows.append(_chk("acceptance records are tracked (not gitignored)", False,
+                             ".sdlc/acceptance is gitignored here, so `acceptance.py check` has no committed baseline "
+                             "(`baseline: unavailable`) and only the stored criteria_sha256 protects the record; "
+                             "un-ignore .sdlc/acceptance/"))
+        if github and mode != "off":
+            sources = _load_loop_script("sources")
+            label = sources.GitHubSource(cfg, run=_raising_gh(run)).goal_label
+            issues = _list(run, gh_cfg, ["number", "title", "body"], [label], cap=_READINESS_BODY_CAP)
+            if issues is None:
+                rows.append(_chk("goal readiness: open goals checked for a Done when section", False,
+                                 "could not read the open goals (REST list failed); the count is UNKNOWN, not zero"))
+            else:
+                required = ib.readiness_required(cfg)
+                lacking = [i for i in issues if ib.check(i.get("body") or "", required)]
+                more = "; %d+ unchecked" % _READINESS_BODY_CAP if len(issues) >= _READINESS_BODY_CAP else ""
+                name = "goal readiness: %d of %d checked open goal(s) lack %s%s" % (
+                    len(lacking), len(issues), " / ".join("`## %s`" % r for r in required), more)
+                rows.append(_chk(name, True, ""))
+    except Exception:
+        return rows
+    return rows
+
+
 def _mis_kinded_hardstop_parks(cfg, gh_cfg, run, cap=20):
     """#1498: open parked issues whose title or body matches the filing deny-list (a hard stop) but whose
     declared kind is not a hard-stop kind. -> a list of issue numbers (empty = none), or None when the
@@ -4341,6 +4387,8 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     out.extend(_unit_record_rows(base, run, cheap_only))
     out.extend(_stale_record_rows(base, run))      # #1474
     out.extend(_chain_block_rows(base))            # #1593
+    out.extend(_goal_readiness_rows(cfg, base, _block(disc, "github"), run,        # #2222
+                                    disc.get("source") == "github" and not cheap_only))
     if disc.get("source") == "github":
         gh_disc = _block(disc, "github")
         if _block(gh_disc, "project").get("enabled"):

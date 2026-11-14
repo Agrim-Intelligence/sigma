@@ -953,7 +953,20 @@ def independent_run_refusal(sdlc_dir, goal, phase, plan_sha256=""):
     chose, or that nothing was configured for, stays allowed. (4) On a process/command route the
     approval must match a receipt the runner wrote -- never the agent restating a verdict -- bound to
     the brief's phase, the plan bytes (plan-review) or the checkout (code review). Proves the process
-    ran and approved these bytes; a maker can still call the CLI by hand or write the file."""
+    ran and approved these bytes; a maker can still call the CLI by hand or write the file.
+
+    BEFORE all of that, and for the review phase only (#2222 D11): an added acceptance criterion with no slice and
+    reason refuses an approving verdict. It sits above the `review.independent` early return on purpose, because
+    this is the one forced-block path `reviewer.py` has (the brief text is advisory), and it must hold with
+    independent review off. It reads no config: the decision is the same with a damaged config.
+    Where `work.py pr` and `merge()` refuse the same record is `acceptance.prefix_refusal`'s own clause."""
+    if phase == "review":
+        lacking = _load("acceptance").reasonless_added(sdlc_dir, goal)
+        if lacking:
+            return ("acceptance record has added criteria without a slice and reason (%s): no approving verdict is "
+                    "recorded until each has one. Add criteria only with `acceptance.py extend %s %s --slice <ref> "
+                    "--reason <why> --criterion <text>`; a wrongly written line is corrected by a person editing "
+                    "the goal and re-recording through /sigma-unpark" % ("; ".join(lacking), sdlc_dir, goal))
     cfg, unreadable = _config_state(sdlc_dir)
     if unreadable:
         return ("%s/config.json is unreadable, so whether review.independent is on cannot be told: no "

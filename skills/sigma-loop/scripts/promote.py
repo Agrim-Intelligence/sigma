@@ -553,6 +553,27 @@ def _refusal(source, number, names, closed, demote, hold=None, unresolved=None):
     return None
 
 
+def _readiness(config, body):
+    """`(refusal, note)` for `goal_readiness` (#2222) on the PROMOTE direction. `refusal` is set only under
+    `require` with a section missing (or an invalid setting, never defaulted); `note` is the `warn` text appended to
+    the outcome. Reads the body `_read_state` already fetched: no extra call. GitHub goals only (D8): a local-file
+    goal has no promote gesture and gets the pick-time and `work.py start` checks instead."""
+    ib = _load("issue_body")
+    try:
+        mode = ib.readiness_mode(config)
+        if mode == "off":
+            return None, ""
+        missing = ib.readiness_missing(body or "", config)
+    except ValueError as exc:
+        return "invalid goal_readiness setting: %s" % exc, ""
+    if not missing:
+        return None, ""
+    detail = "not agent-ready: missing " + ", ".join("`## %s`" % m for m in missing)
+    if mode == "require":
+        return detail + "; add it to the issue body, then promote again (labels unchanged)", ""
+    return None, "; " + detail + " (goal_readiness.mode is warn)"
+
+
 def promote(sdlc_dir, config, numbers, source=None, run=None, apply=True, demote=False):
     """Cross the gate (or come back across it) for each issue, one atomic swap apiece.
 
@@ -602,6 +623,9 @@ def promote(sdlc_dir, config, numbers, source=None, run=None, apply=True, demote
         refusal = _refusal(source, n, names, closed, demote, hold, unresolved)
         if not refusal and not demote:                  # #1948: arming only; a demotion leaves the queue anyway
             refusal = _epic_refusal(n, title, body, names)
+        ready_note = ""
+        if not refusal and not demote:                  # #2222: goal_readiness, arming only
+            refusal, ready_note = _readiness(config, body)
         if refusal:
             out["results"].append({"number": n, "outcome": "skipped", "detail": refusal})
             continue
@@ -621,7 +645,7 @@ def promote(sdlc_dir, config, numbers, source=None, run=None, apply=True, demote
         # #1888: every blocker CHECKED (not just an unresolved one -- unresolved already returned
         # above) is named here too, on both the dry-run and the real outcome -- the issue's own
         # explicit ask, so a human can catch a mismatch visually rather than just trust the tool.
-        note = _blocker_note(checked)
+        note = _blocker_note(checked) + ready_note
         if not apply:
             out["results"].append({"number": n, "outcome": "would",
                                    "detail": triage._swap_detail(this_add, this_remove) + note})

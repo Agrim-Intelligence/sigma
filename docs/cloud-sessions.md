@@ -83,6 +83,52 @@ python3 -I <installed-sigma>/skills/sigma-loop/scripts/acceptance.py set-verify-
   verify evidence written afterwards carries the new one.
 - Measured on fixtures only. The run in a real cloud environment is UNMEASURED.
 
+**Acceptance criteria are append-only (#2222).** After P1 the criteria in `.sdlc/acceptance/<goal>.md` can only
+grow. `acceptance.py record` stores the sha256 of the original `## Done when` block as `criteria_sha256` (first record
+only), and `work.py commit`, `work.py pr` and `merge()` refuse, whether or not `verify.enforce` is on, when the record's
+criteria were edited, removed, weakened, reordered, deleted or re-recorded, or when an added criterion has no slice and
+reason. The guard has no flag, environment variable or config key that loosens it (`goal_readiness` never reaches it).
+Read it with `python3 skills/sigma-loop/scripts/acceptance.py check .sdlc <goal>` (it prints `baseline: <first commit>`
+or `baseline: unavailable (<reason>)`); add with
+`python3 skills/sigma-loop/scripts/acceptance.py extend .sdlc <goal> --slice <ref> --reason <why> --criterion <text>`
+(the only verb that adds; at most 10 added criteria per goal, a goal that needs more is a new goal). `extend` appends
+`- [ ] <text> (added: <slice>; reason: <why>)` under `## Added criteria`, leaves the original block byte-identical,
+posts an issue comment carrying `<!-- sigma:acceptance-extend <sha256> -->` first (a failed post writes nothing; a retry
+is idempotent), and syncs the worktree copy. Because the record's bytes change, verify evidence is stale: run
+`loop.py verify` again. A wrong criterion is corrected by a person editing the goal and re-recording through
+`/sigma-unpark`; no verb edits or removes one.
+
+- **What is checked, clause by clause.** H: the stored `criteria_sha256` equals the hash of the current original block.
+  B: the first committed blob of the record (the earliest-added across the goal branch, its remote and the base) has
+  criteria that are an exact, ordered prefix of the current list, and equal hashes when both carry one. P: the record
+  parses (3 to 7 original items, added items only under `## Added criteria`). R: no added criterion lacks slice and
+  reason. D: when a committed baseline exists, a missing or unparseable record refuses. At `commit` the worktree copy
+  (the bytes about to be staged) and the root copy may differ only by appended criteria. At `merge()` with neither copy
+  on disk (the root copy removed after a merge, #1474) the committed branch tip is read, so absence of the root file is
+  not a refusal.
+- **Issue divergence (GitHub goals).** `commit` and `pr` compare the record's original criteria with the issue's
+  `## Done when` (alias normalised, checkbox state and whitespace ignored) and refuse on a difference (the record wins and
+  is never rewritten; a person decides). It is skipped, and says so, for a drafted record, a legacy record without
+  `criteria_sha256`, an issue with no criteria section, and a local-file goal. An unreadable issue fails closed at `pr`
+  (the next tick retries) and open at `commit` (offline work stays possible). `pr` also requires, for every added
+  criterion, an issue comment carrying its extend marker for that exact text, slice and reason; unreadable comment
+  history refuses.
+- **Residuals, stated.** Tamper-evident, not tamper-proof. Before the first `work.py commit` there is no committed
+  baseline: a record with `criteria_sha256` is checked by that hash alone and a legacy record (no hash) not at all, so a
+  record rewritten together with its hash before the first commit passes (the divergence check narrows this for
+  non-drafted GitHub goals; drafted and local-file goals have no compensating check). A legacy record also accepts
+  reasonless criteria appended inside its `## Done when` block (up to 7). The baseline is the earliest-added blob, so a
+  tampered first commit is the baseline forever, and a force-push that rewrites the remote history defeats it: only host
+  branch protection stops that. Where `.sdlc/acceptance` is gitignored there is no committed baseline;
+  `/sigma-doctor` reports it. The extend comment can be fabricated by anyone who can comment: it is an audit trail, not
+  proof of authorship.
+- **Exits not guarded.** The checkpoint push and the `work.py rebase` force-push push bytes that `commit` already
+  checked and run no guard of their own; a raw `git push` or a hand edit after the last `commit` and before `pr` is
+  caught only at `pr` and `merge()`.
+- **Cost.** One file read, one `git log` bounded to one path and one `git show` per guarded call, plus one issue read
+  at `commit` and `pr` and one comment-history read at `pr` for a GitHub goal. At 10x and 100x goals the cost is per
+  goal, not per fleet. Not measured; no live GitHub run (fakes only).
+
 **Identity:** the identity is the `origin` URL's last two path segments, whatever the host. The same `owner/name` on
 another host, a mirror or a local path reads the same, so set the value only in an environment used for that
 repository.

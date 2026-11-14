@@ -392,6 +392,52 @@ def _git_out(root, args):
     return proc.stdout if proc.returncode == 0 else None
 
 
+def first_added_blob(root, refs, path):
+    """``(bytes_or_None, reason)``: the bytes `path` had in the EARLIEST commit that added it, across ``refs``.
+
+    #2222 D1/m1. This is the acceptance guard's committed baseline, and it is deliberately NOT `_branch_doc`
+    (which serves the TIP): a tampered record committed first and changed again would make the tip look like its
+    own baseline. For each ref `git log <ref> --diff-filter=A --reverse` lists the commits that ADDED the path
+    (a delete and re-add lists both; the first line is the earliest). Across refs the earliest commit by committer
+    time wins, ties going to the earlier ref in ``refs`` (callers list the remote first, since a pushed copy
+    outlives a local amend). A local `commit --amend` or reset therefore cannot replace the baseline once it was
+    pushed; a FORCE-PUSH rewriting the remote still can, and only host branch protection stops that.
+
+    Every git failure returns ``(None, "<reason>")`` and never raises: the CALLER decides what an unavailable
+    baseline means (acceptance.prefix_refusal skips clause B and prints it). The body is capped at the acceptance
+    record's MAX_BYTES before it is read. Cost: one `git log` per ref bounded to one path, then one `cat-file -s`
+    and one `git show`; none of them grows with the fleet."""
+    best, reasons = None, []
+    for order, ref in enumerate(refs):
+        if not ref or str(ref).startswith("-"):
+            reasons.append("unsafe ref %r" % (ref,))
+            continue
+        out = _git_out(root, ["log", ref, "--diff-filter=A", "--reverse", "--format=%H %ct", "--", path])
+        if out is None:
+            reasons.append("%s unreadable" % ref)
+            continue
+        lines = [ln.split() for ln in out.splitlines() if ln.strip()]
+        if not lines:
+            reasons.append("%s never added %s" % (ref, path))
+            continue
+        sha, ts = lines[0][0], int(lines[0][1])
+        if best is None or ts < best[1]:
+            best = (sha, ts, order)
+    if best is None:
+        return None, "; ".join(reasons) or "no refs"
+    size = _git_out(root, ["cat-file", "-s", "%s:%s" % (best[0], path)])
+    if not size or not size.strip().isdigit() or int(size) > _load("acceptance").MAX_BYTES:
+        return None, "baseline blob size unreadable or over the acceptance limit"
+    try:
+        proc = subprocess.run(["git", "-C", str(root), "show", "%s:%s" % (best[0], path)],
+                              capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, "git show failed: %s" % exc
+    if proc.returncode != 0:
+        return None, "git show failed"
+    return proc.stdout, "first added in %s" % best[0][:12]
+
+
 def _branch_doc(sdlc_dir, goal, subdir):
     """(pointer, text) for this goal's phase artifact read from its own BRANCH, or (None, "").
 
@@ -482,6 +528,35 @@ def _branch_doc(sdlc_dir, goal, subdir):
         if text and text.strip():
             return "git -C %s show %s:%s" % (root, ref, path), (text if subdir == "acceptance" else text.strip())
     return None, ""
+
+
+def added_criteria_block(sdlc_dir, goal):
+    """The brief's `Added criteria` block (#2222), or "" when the record has none: a goal that never added a
+    criterion produces a byte-identical brief. Every added line is listed with its slice and reason; the count of
+    reasonless ones and whether the ORIGINAL criteria are unchanged since the first commit are MACHINE-computed
+    (`acceptance.reasonless_added`, `acceptance.prefix_refusal`), not asked of the reviewer. Advisory text: the hard
+    stops are `reviewer.independent_run_refusal` and the `work.py pr` / `merge()` refusals."""
+    try:
+        acceptance = _load("acceptance")
+        rec = recorded_acceptance(sdlc_dir, goal)
+        if not rec.get("added"):
+            return ""
+        lines = ["## Added criteria (appended after P1 through `acceptance.py extend`)",
+                 "Each needs a slice and a reason; judge whether the reason justifies growing the goal."]
+        for item in rec["added"]:
+            if item["reason"] is None:
+                lines.append("- %s — NO SLICE OR REASON (a block)" % item["text"])
+            else:
+                lines.append("- %s — slice %s; reason: %s" % (item["text"], item["slice"], item["reason"]))
+        reasonless = [x for x in rec["added"] if x["reason"] is None]
+        lines.append("Reasonless added criteria: %d%s" % (
+            len(reasonless), " (above zero is a block: no approving review verdict is recorded)" if reasonless else ""))
+        refusal = acceptance.prefix_refusal(sdlc_dir, goal)
+        lines.append("Original criteria unchanged since the first record (`acceptance.py check`): %s"
+                     % ("yes" if refusal is None else "NO, " + refusal))
+        return "\n".join(lines)
+    except (OSError, ValueError):
+        return ""
 
 
 def recorded_acceptance(sdlc_dir, goal):
@@ -807,6 +882,9 @@ def brief(sdlc_dir, goal, phase, artifact="", repo_root=".", source=None):
         parts.append("## Recorded acceptance (P1 intent)\nGrade each criterion against evidence "
                      "as achieved, partial, or diverged. Do not substitute the current issue text.\n\n"
                      + acceptance)
+        added_block = added_criteria_block(sdlc_dir, goal)         # #2222: "" (no change at all) when none were added
+        if added_block:
+            parts.append(added_block)
     if phase in ("code-review", "pr-review"):
         # #1964: the test-trust facts the verify already measured, and (with `review.test_review` on)
         # the TEST-MAP instruction that makes the reviewer's criterion -> test map checkable.

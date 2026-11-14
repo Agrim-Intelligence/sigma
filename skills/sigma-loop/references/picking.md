@@ -274,6 +274,16 @@ acts — unlike `goal_decompose.mode`, there is no log-only rung here. `sdlc:des
 written only by `goal-review` (contract §7) confirming a design. Where `sigma-goal-review` is not
 installed, a human applies the label by hand once a filed design pass is confirmed.
 
+## Goal readiness (`goal_readiness`, #2222)
+
+After design-check, run `result=$(python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" readiness-check .sdlc "$goal")`.
+The first word is `OFF`, `PROCEED`, `WARN <missing sections>` (the default mode `warn`: say what is missing and carry
+on) or `PARKED <reason>` (`require`: the goal is parked with the missing sections named, **loop back to step 1**). An
+invalid `goal_readiness.mode` exits 2 with `REFUSED` and prints nothing on stdout: fix the setting, do not treat it as
+`warn`. This prose step is not load-bearing: `work.py start` runs the same check in Python, and `/sigma-promote` runs it
+at the label write. The other writers of `sdlc:goal` do not, so `require` reaches those goals at `start`. Settings:
+`docs/configuration.md`.
+
 ## Dependencies in prose
 
 `deps.py report .sdlc "$goal"` lists every `#N` in the title, body and comments (`edge`, `comment-edge`,

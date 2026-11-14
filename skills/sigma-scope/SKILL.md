@@ -74,8 +74,11 @@ The skill is seven steps:
      placeholder text), a real `P0`–`P4` priority (default `P1` if nothing about the work argues
      for a different tier), and `blocked_by` edges to sibling keys where a genuine build-order
      dependency exists.
+   - Every issue carries acceptance criteria (#2222): give it `"criteria": [3-7 checkable statements]`, which
+     `compile_plan` renders as a `## Done when` section through `skills/sigma-loop/scripts/issue_body.py`, or put
+     that section in `body` yourself. An issue with neither is refused before anything is created.
    - Write the plan as JSON in the exact shape `compile_plan.compile_plan()` documents
-     (`{"epic": {...} | None, "issues": [{"key", "title", "body", "priority", "blocked_by"}, ...]}`)
+     (`{"epic": {...} | None, "issues": [{"key", "title", "body", "criteria", "priority", "blocked_by"}, ...]}`)
      to `.sdlc/plans/scope/<slug>.plan.json` — durable and inspectable, the same general idea as
      `/sigma-triage`'s own plan artifacts (JSON left on disk under `.sdlc/plans/` so a later session
      can see what was decided), though without triage's date-prefixed slug, human-readable `.md`

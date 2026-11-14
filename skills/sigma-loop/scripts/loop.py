@@ -6395,6 +6395,42 @@ def design_check(sdlc_dir, goal, config, source):
         return "PROCEED"
 
 
+def readiness_check(sdlc_dir, goal, config, source):
+    """Pre-work agent-readiness check (#2222, `goal_readiness`): does the picked goal's body carry the sections an
+    agent needs (`## Done when` and, where the repo has a verify command, `## Verification command`)?
+
+    Returns a one-line result the SKILL reads by its first word: 'OFF' (mode off) | 'PROCEED' (nothing missing, or
+    the body could not be fetched: fail-open, a retry costs nothing) | 'WARN <sections>' (mode warn, the default:
+    say what is missing and continue) | 'PARKED <reason>' (mode require: parked with the missing sections named).
+    An invalid `goal_readiness` block raises ValueError (the verb prints a refusal), never a silent default.
+    This is the pick-time half; `work.py start` runs the same check in Python so a host that skips this prose step
+    is still covered. Other writers of `sdlc:goal` (triage, auto_unpark, blockers, unpark, reconcile) do not run it:
+    `require` is advisory on them and enforced at `promote` and at `start`."""
+    ib = _load("issue_body")
+    mode = ib.readiness_mode(config)
+    if mode == "off":
+        return "OFF"
+    try:
+        body = (source.fetch_title_body(goal) or {}).get("body", "")
+    except Exception as e:                      # noqa: BLE001 - fail-open: the next pick retries
+        print(f"loop.py readiness-check: non-fatal ({e}) — proceeding", file=sys.stderr)
+        return "PROCEED"
+    if not isinstance(body, str) or not body.strip():
+        return "PROCEED"
+    missing = ib.readiness_missing(body, config)
+    if not missing:
+        return "PROCEED"
+    detail = "not agent-ready: missing " + ", ".join("`## %s`" % m for m in missing)
+    if mode == "warn":
+        return "WARN " + detail
+    try:
+        _record(sdlc_dir, source, goal, "parked", detail, qkind="needs_decision")
+    except Exception as e:                      # noqa: BLE001 - the park decision stands
+        print(f"loop.py readiness-check: park record failed after park — treating as PARKED anyway: {e}",
+              file=sys.stderr)
+    return "PARKED " + detail
+
+
 def _park_design(sdlc_dir, source, goal, detail):
     """The no-issue-tracker degrade path for `design_check`, factored out so it shares the exact
     same guarded-`_record` contract as the nested `_park` closure above without duplicating it
@@ -7980,7 +8016,7 @@ USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> [--se
          "agent-start <dir> <goal> --pid PID [--thread T] | agent-reclaim <dir> <goal> [--thread T] | "
          "phases <dir> <goal> | waive-phases <dir> <goal> research,retro --reason <why> | "
          "precheck <dir> <goal> | "
-         "qc <dir> <goal> | decompose-check <dir> <goal> | design-check <dir> <goal> | "
+         "qc <dir> <goal> | decompose-check <dir> <goal> | design-check <dir> <goal> | readiness-check <dir> <goal> | "
           "spend-approval <dir> <goal> --action \"<text>\" [--class <name>] | "
          "mark-designed <dir> <goal> | feature-frontier <dir> <unit> | "
          "note <dir> <goal> <text> | "
@@ -8720,6 +8756,14 @@ def _dispatch(argv):
     if len(argv) >= 4 and argv[1] == "design-check":   # opt-in undesigned-goal retrofit gate (fail-open)
         config = state.load_config(argv[2])
         print(design_check(argv[2], argv[3], config, sources.get_source(argv[2], config)))
+        return 0
+    if len(argv) >= 4 and argv[1] == "readiness-check":   # #2222: agent-readiness of the picked goal (off|warn|require)
+        config = state.load_config(argv[2])
+        try:
+            print(readiness_check(argv[2], argv[3], config, sources.get_source(argv[2], config)))
+        except ValueError as e:
+            print(f"loop.py readiness-check: REFUSED: {e}", file=sys.stderr)
+            return 2
         return 0
     if len(argv) >= 4 and argv[1] == "spend-approval":   # #722: exempt THIS goal's park-on-spend
         # Deliberately NOT in `_ARMS_CLAIM`: asking whether a step is approved is not "work has

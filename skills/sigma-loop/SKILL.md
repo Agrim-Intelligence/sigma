@@ -70,6 +70,7 @@ Then repeat until the helper says stop:
    result=$(python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" precheck .sdlc "$goal")        # duplicate  (backlog_check)
    result=$(python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" decompose-check .sdlc "$goal") # epic       (goal_decompose)
    result=$(python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" design-check .sdlc "$goal")    # undesigned (goal_design)
+   result=$(python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" readiness-check .sdlc "$goal") # no Done when (goal_readiness)
    ```
 
    That order is load-bearing. It, what each park writes, and how to dismiss a false positive

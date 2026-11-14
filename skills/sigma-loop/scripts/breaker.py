@@ -95,7 +95,7 @@ _SECTION_ANY = re.compile(r"^##+\s*done[_ ]when\s*$|^##+\s*judged_when\s*$", re.
 _BULLET_ANY = re.compile(r"^[ \t]*[-*][ \t]+(?:\[[ xX]?\][ \t]*)?(.+?)[ \t]*$", re.M)
 
 #: Derived caps for `validate_output`: a derivation, not a measurement.
-_MAX_CRITERIA = 7          # pinned to acceptance.criteria's upper bound by a test
+_MAX_CRITERIA = _load("acceptance").MAX_CRITERIA  # the ORIGINAL block cap; added criteria never raise it (#2222)
 _MAX_BLOCKS = 2 * _MAX_CRITERIA
 _MAX_BLOCK_BYTES = 32768   # same order as the acceptance record's own 32 KiB limit
 _MAX_TOTAL_BYTES = _MAX_BLOCKS * _MAX_BLOCK_BYTES

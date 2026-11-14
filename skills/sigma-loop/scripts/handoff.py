@@ -454,6 +454,16 @@ def _duplicate_context_comment(goal, area, why):
             "second one was not opened. Reply here if this is actually a different problem.")
 
 
+#: #2222: the fixed criteria a hand-off or tracked follow-up carries, rendered through `issue_body.render` so the
+#: filed issue parses with `acceptance.criteria`. Fixed text, so backlog_check strips it from duplicate scoring.
+_BLOCKING_CRITERIA = ("The need described above is delivered.",
+                      "The delivery is verified against the owning area's own checks.",
+                      "The blocked goal can proceed.")
+_TRACKED_CRITERIA = ("The work described above is done.",
+                     "It is verified against the owning area's own checks.",
+                     "No regression is introduced in the area's tests.")
+
+
 def issue_body(goal, area, why, blocked_by_url=""):
     """The body a human (or their loop) reads cold. It has to say what is blocked, on what, and what
     'done' means — an unactionable hand-off is worse than none, because it looks handled."""
@@ -462,15 +472,22 @@ def issue_body(goal, area, why, blocked_by_url=""):
         "",
         f"**Area:** `{area}`",
         f"**What is needed:** {why}",
-        "",
-        "**Done when:** the dependency above exists and the blocked goal can proceed.",
+    ]
+    if blocked_by_url:
+        lines.insert(4, f"**Blocked goal:** {blocked_by_url}")
+    lines += [
         "",
         "Reply on this issue if this should be re-scoped, re-assigned, or declined — the blocked "
         "goal is parked until then.",
     ]
-    if blocked_by_url:
-        lines.insert(4, f"**Blocked goal:** {blocked_by_url}")
-    return "\n".join(lines)
+    return _issue_body_module().render("\n".join(lines), _BLOCKING_CRITERIA)
+
+
+def _issue_body_module():
+    spec = importlib.util.spec_from_file_location("issue_body", pathlib.Path(__file__).with_name("issue_body.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _tracked_issue_body(goal, area, why, blocks_goal):
@@ -488,12 +505,10 @@ def _tracked_issue_body(goal, area, why, blocks_goal):
     if blocks_goal:
         lines += [
             "",
-            "**Done when:** the work above exists and the blocked goal can proceed.",
-            "",
             "Reply on this issue if this should be re-scoped, re-assigned, or declined — the "
             "blocked goal is parked until then.",
         ]
-    return "\n".join(lines)
+    return _issue_body_module().render("\n".join(lines), _BLOCKING_CRITERIA if blocks_goal else _TRACKED_CRITERIA)
 
 
 #: #1551: `upstream` is loaded on FIRST FILING, not at import -- the same reason and the same shape
@@ -1611,6 +1626,11 @@ def main(argv):
                 print(f"handoff.py track: could not read --body-file {body_file!r}: {exc}",
                       file=sys.stderr)
                 return 2
+            # #2222: the caller's body is CHECKED, never rewritten; a missing section is reported, not blocked.
+            absent = _issue_body_module().check(body, ["Done when"])
+            if absent:
+                print("handoff.py track: --body-file has no readable `## Done when` section (%s); the goal will need "
+                      "criteria before it is agent-ready" % ", ".join(absent), file=sys.stderr)
         config = ledger._config(sdlc_dir)
         refusal = followup_refusal(config, kind, blocks)            # #2153: nothing is read or written first
         if refusal:
