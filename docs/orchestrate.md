@@ -50,15 +50,14 @@ unblocking, stuck sessions, the tracker, the final report) and `references/follo
    or a hold of its own (a reason, or `open_prs` in the goal's row) is held, and so is every goal that waits on one. Width comes from the dependency
    structure: with no `--max-seats`, every ready goal runs at once.
 5. **One go-ahead.** Waves, held and needs-you items, seats, where, model mix, merging on or off, a cost line from
-   `goal_cost.py report` (or "no data for these goals"), and the follow-up rule with the project rules it replaces. `--dry-run` ends here.
+   `goal_cost.py report` (or "no data for these goals"), and the follow-up rule. `--dry-run` ends here.
 6. **Start.** The batch label `orchestrate:<batch>` and the confirmed prose dependencies (`deps.py mark`). Each goal is
    promoted with `promote.py apply` right before its own launch, so other loops cannot take it early.
 7. **Run, rolling.** `waves.py ready` lists what may start now: every blocker has merged into the goal's own base
    (ancestry, not only a closed issue), a seat is free, and its claims are free. A higher-ranked ready goal
    reserves its claims, so lower-ranked goals cannot jump it, and a PR awaiting merge holds its claims but no
    seat. Launches go out in groups of 10, pause on any rate-limit report, and each goal is launched at most twice.
-8. **Report.** Merged, needs a person (with the exact action), held, clean-up goals and how they ended, leaked
-   follow-ups, and Opus use.
+8. **Report.** Merged, needs a person (with the exact action), held, and Opus use.
 
 ## The planner
 
@@ -79,38 +78,14 @@ grouping condition broken on its own and seen red (a table is at the bottom of t
 
 ## Follow-ups stay in their goal
 
-The decision is a project setting, `followups.mode` in `.sdlc/config.json` ([configuration](configuration.md)): `file`
-(the default, today's behaviour) or `in-goal`. `python3 skills/sigma-loop/scripts/handoff.py followup-mode "$S"` prints it. With `in-goal`, the
-project has decided for every run: `handoff.py track` refuses a non-blocking follow-up (exit 3, nothing filed; a
-blocker, `--blocks yes`, and work marked `--kind prerequisite|cleanup|child` are still filed), `sigma-review` and the
-landing path route follow-ups the same way, and the launch prompt says nothing about follow-ups. With `file`, every
-launch prompt carries one standing decision (verbatim in `references/follow-ups.md`) for the goals of this batch only:
-no new issue for a follow-up. Found before the goal's first green full verify, it joins the goal's plan as a slice and the phases
-re-run from plan-review, so one verify covers everything (at most the configured limit of slices per goal, `followups.max_added_slices`, default 10). Found later, or past the
-cap, it is written onto the goal as one marked deferred-items comment, which `scripts/deferred.py` parses (below).
-When a wave ends, the orchestrator groups the merged goals' deferred items by unit and area and files one clean-up
-goal per group through `handoff.py track --kind cleanup`. Clean-up goals never spawn more. A follow-up issue filed anyway is folded into its goal's
-deferred items, or, if it blocks its parent, run first as a prerequisite.
-
-Under `file`, for goals in the batch this replaces the project's own rule for filing follow-up issues; the go-ahead
-screen names the rules it replaces.
-
-### The deferred-items parser
-
-```
-python3 skills/sigma-orchestrate/scripts/deferred.py parse <comments.json>   # comments as the REST API returns them
-python3 skills/sigma-orchestrate/scripts/deferred.py check <body-file>       # a draft comment, before posting
-```
-
-Standard library only, no network, no writes. A comment counts only from an `OWNER`, `MEMBER` or `COLLABORATOR` (on a
-public repository anyone can paste the marker); the marker `<!-- sigma-orchestrate:deferred -->` must stand on a line
-that is not quoted or fenced; bullets before it are not items; plain prose after it is ignored; and a bullet after it
-that does not read `- [area:<area>] <what> - <why> (files: <paths>)`, including a list-shaped line that does not start
-`- ` or `* ` (a numbered item, `+ [area:...]`, `-[area:...]`, a bare `[area:...]`, a unicode-dot bullet), is listed under `rejected` with its reason, never dropped; so is a list-shaped line inside a code fence or a `>` quote after the marker (it is not read, and the reason says so). No other glyph is accepted. `what` ends
-at the first spaced hyphen. An absolute path, a `..` segment, a backslash or a control character rejects the item;
-identical items collapse; line, field, file-count and item-count bounds are at the top of the script. `parse` exits 0
-with rejections listed, `check` exits 0 only for a clean, non-empty draft, and 2 is bad input. Tests:
-`tests/test_orchestrate_deferred.py`, each clause broken on its own and seen red (a note at the bottom of that file).
+The decision is a project setting, `followups.mode` in `.sdlc/config.json` ([configuration](configuration.md)): `in-goal`
+(the default) or `file`. `python3 skills/sigma-loop/scripts/handoff.py followup-mode "$S"` prints it. Under `in-goal`,
+`handoff.py track` routes every filing through one function (`followup_route.route`): a find in the goal's own feature
+joins its plan as a slice (`work.py add-slice`, at most `followups.max_added_slices` per goal, default 10), and is filed
+as a separate goal only for another feature or past the cap, with the reason recorded; a same-feature filing is refused,
+exit 3. Nothing about follow-ups goes in a launch prompt, and the orchestrator collects and files nothing for follow-ups.
+`file` is the repo-wide opt-out that turns routing off for every goal. Decompose children and chain prerequisites
+are same-feature filings that routing refuses: an open conflict for the owner, with `file` as the interim lever.
 
 ## Approve names its head
 
@@ -134,7 +109,7 @@ says so. Every GitHub read and write is REST (`gh api`), which works in cloud se
   re-run is in that issue's pull request. Launch, merge checks, the wake loop, the follow-up filing path,
   cloud-burst checks and a multi-wave plan from real data are still not exercised, and the open-pull-request
   lookup is described in prose, not scripted.
-- No real batch has been run end to end with this skill. The planner, the deferred-items parser, the follow-up setting
+- No real batch has been run end to end with this skill. The planner, the follow-up setting
   and the head-naming approve are tested offline; the launchers, the merge checks and the wake loop have not been
   exercised on a live repository, and neither has the setting against a real phase subagent's behaviour.
 - An approve typed by a person with no id still falls back to a time comparison, which has the known gap in

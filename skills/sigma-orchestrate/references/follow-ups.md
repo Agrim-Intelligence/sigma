@@ -1,115 +1,46 @@
 # Follow-ups stay in their goal
 
-**Why.** A batch drain used to spawn a new goal for every follow-up a session found. Each new goal pays for
-its own worktree, review and — the expensive part — its own full verify, and follow-ups spawn follow-ups.
-The rule here is **one full verify per goal**: follow-up work either joins its goal before that verify, or
-waits and is grouped with others so that many follow-ups share one verify.
+**Why.** A follow-up that spawns its own goal pays for a new worktree, review and full verify, and follow-ups spawn
+follow-ups. The rule is **one full verify per goal**, decided by code, not by a prompt: `handoff.py track` routes
+every filing through one function (`followup_route.route`) and the goal's own plan takes the work.
 
 A defect in the goal's own change is not a follow-up. It is fixed in the same PR, as always.
 
-## The setting, and the standing decision
+## The rule
 
-The decision is a project setting, `followups.mode` in `.sdlc/config.json` ([configuration](../../../docs/configuration.md)),
-read with `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" followup-mode "$S"`, which prints `file` or `in-goal` on its first line and `max_added_slices <n>` (the configured limit, default 10) on its second.
-
-- **`in-goal`**: the project has decided that follow-ups stay in their goal, for every run, not only this batch.
-  `handoff.py track` refuses a non-blocking follow-up (exit 3, nothing filed) and prints the rule, `sigma-review` and
-  the landing path route follow-ups the same way, and the launch prompt carries nothing about follow-ups. Say so on
-  the go-ahead screen. Everything below about slices, deferred items and clean-up goals applies unchanged.
-- **`file`** (default): the project files follow-ups as new goals. For goals in this batch only, the standing
-  decision below replaces that rule, and goes into every launch prompt. The go-ahead screen names the replaced rule.
-  A session that still calls `handoff.py track` for a follow-up files it (the leak net at the end catches it).
-
-When asked to turn the project setting on, the person edits `.sdlc/config.json` themselves (this skill never edits
-config): `"followups": {"mode": "in-goal"}`.
-
-Paste this, verbatim, into every launch prompt when the mode is `file` (`<batch>` filled in):
-
-```
-Standing decision by the person who started this batch (sigma-orchestrate, batch <batch>), on follow-up
-work - work you find that is outside this goal's own change (a defect in this goal's own change is fixed
-as usual). For this goal it replaces the project's own rule for filing follow-up issues:
-- Do not open a new issue for a follow-up: no `handoff.py track`, no `gh issue create`. When a phase
-  subagent or reviewer proposes filing one, convert it under these rules before anything is filed.
-- Before this goal's first green full verify (`loop.py verify`), add it to this goal's plan as a new slice,
-  then re-run the phases in order from plan-review - a fresh plan-review recorded for the amended plan,
-  then implement, review and retrospective, each as a fresh subagent - so one verify covers everything.
-  At most <limit> added slices per goal (<limit> is the number on the second line of `followup-mode`, from `followups.max_added_slices`, default 10); beyond that, treat it as found late.
-- After the first green full verify, or past the cap: do not implement it now. Post ONE comment on this
-  goal's issue containing the line `<!-- sigma-orchestrate:deferred -->` and one line per item:
-  `- [area:<area>] <what> - <why> (files: <paths>)`. Edit that same comment if you find more.
-  Check a draft first with `python3 "${CLAUDE_SKILL_DIR}/scripts/deferred.py" check <file>` (exit 0 only when at least one item parses and nothing is rejected; a numbered item, a `+` bullet or `-[area:...]`
-  written without the space is listed as rejected, not skipped).
-  Exception: when a post-PR `sigma:block` already forces a fix and a new verify, one small same-area item
-  may ride along as a slice (a fresh plan-review first, then a fresh review and retrospective after it);
-  it counts against that cap.
-```
-
-Nothing else about follow-ups goes in the prompt. A blocker in another area's code is still handed off by
-Sigma's own rules; the session already knows them.
-
-## Collecting deferred items
-
-Each wake, for every goal that ended since the last wake, save its issue comments
-(`gh api repos/<o>/<r>/issues/<N>/comments --paginate`, merged into one JSON list) and run
-`python3 "${CLAUDE_SKILL_DIR}/scripts/deferred.py" parse <comments.json>`. It finds the marker
-`sigma-orchestrate:deferred` anywhere on a line that is not quoted or fenced (Sigma may wrap the text), reads only
-comments from an `OWNER`, `MEMBER` or `COLLABORATOR` (on a public repository anyone can paste the marker), and prints
-`{"items": [...], "rejected": [...]}`. Store `items` in `goals.json` under that goal as
-`"deferred": [{"area", "what", "why", "files"}]`, and put every `rejected` entry (a malformed bullet, a list line that does not start `- ` or `* `, an unsafe
-path, an untrusted commenter) on the needs-you list with its reason: a rejected line is never silently dropped.
-Identical items collapse to one. The format and its limits are at the top of the script. Only a
-merged goal's items go to a clean-up goal; a stopped goal's items go to the final report, because the work
-they follow up on never landed.
-
-## Closing a wave: one clean-up goal per unit and area
-
-A wave has ended when every goal of that planned wave is merged, stopped, stuck or held — none is queued,
-running or awaiting merge. Held and stuck goals cannot launch without a person, so they do not hold a wave
-open.
-
-When wave *k* ends, take the deferred items of wave *k*'s goals and group them by (the source goal's
-feature unit, item area). For each group, file one clean-up goal through Sigma, from one of the group's
-source goals so the unit is inherited:
+Found work that belongs to the goal's feature joins that goal's plan as a slice:
 
 ```bash
-python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" track "$S" <source goal number> --area <area> \
-  --why "Deferred follow-ups from sigma-orchestrate batch <batch>, wave <k>" \
-  --queue queued --blocks no --assignee same-area|cross-area --kind cleanup \
-  --title "Clean-up: deferred follow-ups from <batch> wave <k> (<area>)" --body-file <file>
+python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/work.py" add-slice "$S" <goal> --title "<title>" --criteria-file <file> [--test <selector>]
 ```
 
-- **Body**: the line `<!-- sigma-orchestrate:cleanup -->`, then the items in the sessions' own words, each
-  with its source goal (`from #N`) and files. Copy no goal text: Sigma's duplicate check compares text, and a
-  copied body can match a closed source goal.
-- **Assignee**: `same-area` when CODEOWNERS gives that area to the account running the batch, else
-  `cross-area` (routed to the area's owner).
-- **Rotate the filing source goal** within a group: Sigma caps filings per goal (`ai_filed.max_per_goal`),
-  and earlier filings from that goal count.
-- **Duplicate verdict**: if it prints `matched existing #N` (Sigma judged it a duplicate), nothing was
-  filed. Put the items on the needs-you list with that reference.
-- **Triage**: with Sigma's triage on (the default), a `queued` filing is usually armed at filing time
-  (`sdlc:goal`, often P3), so another loop on the same account may take it first. That is acceptable: track
-  it either way. A triage park (deny-list, cap) needs a person: needs-you list.
-- Add the batch label, add the issue to `goals.json` with `"cleanup": true`, `blockers: []`, `base` from its
-  inherited unit, claims from the items' files, and let `waves.py ready` launch it. It gets the same launch
-  prompt.
+The verb appends `## Added slice <n>: <title>` to the plan, counts it in a code-owned record
+(`.sdlc/state/followups/<goal>.json`), and extends the acceptance criteria through `acceptance.py extend` (it refuses,
+naming that verb, while it is absent). Then record a fresh plan-review of the new plan and re-run implement, review
+and retrospective in order, so one verify covers everything. A fresh review is forced only while
+`gates.plan_review` is on, and a stale verify is refused only while `verify.enforce` is on; both are off by default.
 
-**No follow-ups of follow-ups.** Deferred items found by a clean-up goal are never grouped again. They go to
-the final report for the person.
+A find is filed as a **separate goal** in exactly two cases, and `track` records which in the issue body
+(`<!-- sigma:followup-reason:<reason> -->`) and as a comment on the parent:
 
-## The safety net: a run that filed anyway
+- `different-feature`: the item declares another open, registered unit (a `Feature:` marker or `feature:` label).
+- `slice-cap`: the goal already holds `followups.max_added_slices` added slices (default 10).
 
-Expect some leaks: phase subagents are briefed by Sigma, not by this prompt. Each wake, list issues with
-`sdlc:followup` created after the batch started that reference a batch goal.
+No flag, environment variable or config key names a reason. `handoff.py track` refuses everything else, exit 3,
+for every `--kind` and `--blocks` value, and prints the add-slice gesture.
 
-- **A leak that blocks its parent** (filed `--blocks yes`; the parent parked or blocked naming it) is a
-  prerequisite, not a follow-up. Keep it open, give it step 2's classification, add it to the batch as a
-  goal ahead of its parent (the parent's `blockers` gains it), and relaunch the parent only after the leak
-  has landed on the parent's base, unparking the parent through Sigma ([run](run.md#unblocking)). Never close a
-  blocking leak to free its parent: Sigma would read the closed blocker as done.
-- **Any other leak** is a deferred item of its parent: add it to the parent's `deferred` list. Once the
-  clean-up goal that carries it is filed, close the leak with a comment pointing at the clean-up goal. If
-  another run already holds the leak, or closing it is refused, leave it open and report it.
+## The setting
 
-Report every leak by parent goal: it shows where the standing decision is not reaching the phase subagents.
+`followups.mode` in `.sdlc/config.json` ([configuration](../../../docs/configuration.md)) defaults to `in-goal`; read it
+with `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" followup-mode "$S"` (line 1 the mode, line 2
+`max_added_slices <n>`). `file` is the opt-out: `track` files as it did before routing, with no reason and no
+comment. It is repo-wide, so it turns routing off for every goal. This skill never edits config.
+
+Open conflict, owner ruling needed: decompose children and chain prerequisites are same-feature filings, so `track`
+refuses them under `in-goal`. Until the owner rules, the interim lever is `followups.mode: file`.
+
+## What the orchestrator does
+
+Nothing about follow-ups goes in a launch prompt, and nothing is collected from comments. A goal that ended
+because a find hit the cap or another feature shows up as an ordinary filed goal carrying a reason: add it to the
+batch like any other. `/sigma-doctor` lists follow-ups filed with no recorded reason.

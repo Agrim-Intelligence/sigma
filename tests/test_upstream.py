@@ -53,10 +53,13 @@ def _config(**over):
     return cfg
 
 
-def _project(tmp_path, config=None):
+def _project(tmp_path, config=None, raw=False):
     sdlc = tmp_path / ".sdlc"
     (sdlc / "state").mkdir(parents=True, exist_ok=True)
-    (sdlc / "config.json").write_text(json.dumps(config or ON))
+    cfg = dict(config or ON)
+    if not raw and "followups" not in cfg:                    # #2224: these tests exercise the filing path itself, so they opt out of routing (`followups.mode: file`); `raw=True` keeps the default.
+        cfg["followups"] = {"mode": "file"}
+    (sdlc / "config.json").write_text(json.dumps(cfg))
     return sdlc
 
 

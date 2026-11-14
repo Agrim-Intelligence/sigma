@@ -10585,6 +10585,8 @@ def main(argv):
         except (OSError, ValueError) as exc:
             print(f"work: {exc}", file=sys.stderr)
             return 2
+    if len(argv) >= 2 and argv[1] == "add-slice":                 # #2224: a follow-up joins its goal as a slice
+        return _load("add_slice").main(argv[2:])
     if len(argv) >= 2 and argv[1] == "record-plan-review":
         # #258: dispatched OUTSIDE `_COMMANDS`, like the review verbs above: plan-review is a portable
         # executor that also runs with `work.enabled` off, where the verb keeps no file but still

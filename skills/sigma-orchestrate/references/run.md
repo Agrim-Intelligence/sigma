@@ -14,7 +14,7 @@ between passes because GitHub and the tracker are the record. On each wake, in o
 3. **Merge** what is ready ([merge](#merge)).
 4. **Unblock** what the merges freed ([unblocking](#unblocking)), and re-check held goals' outside
    blockers.
-5. **Follow-ups**: collect deferred items, handle leaks, close ended waves ([follow-ups](follow-ups.md)).
+5. **Follow-ups**: a filed follow-up with a recorded reason is an ordinary batch goal ([follow-ups](follow-ups.md)).
 6. **Stuck sessions** ([stuck sessions](#stuck-sessions)) and the [circuit breaker](#circuit-breaker).
 7. **Launch**: `python3 "${CLAUDE_SKILL_DIR}/scripts/waves.py" ready "$T/goals.json" "$T/state.json" [--seats N]`, then launch what it
    lists, in order, within the pace rules ([launch § pace](launch.md#pace)). Its `stuck` goals go on the
@@ -172,10 +172,9 @@ the running sessions going, and resume when they say the cause is fixed.
 
 - one row per goal: number, priority, unit/base, planned wave, model (and why when Opus), session, state
   (queued, running, PR #, merged `<sha>`, finished: already fixed, stopped: `<reason>`, stuck: `<reason>`,
-  stalled, needs you: `<what>`), what it waits on, deferred items count;
+  stalled, needs you: `<what>`), what it waits on;
 - counts: finished, running, awaiting merge, stopped, stuck, held, needs-you, launches so far, Opus
   running, merges per base since the last integration check;
-- clean-up goals filed per wave, and leaks.
 
 ## Final report
 
@@ -184,9 +183,6 @@ To the person, plain and short, offering detail rather than dumping it:
 - what merged (PR and SHA), against the batch size;
 - what needs them, each with the exact action (stopped, stuck, cross-base, merges not covered);
 - held goals and what would release them;
-- clean-up goals filed and how they ended; deferred items from stopped goals and from clean-up goals (not
-  run, for them to decide);
-- leaks by parent goal;
 - goals left unlaunched, in order, and why;
 - Opus use and any escalations;
 - goals that merged into a unit branch that has not reached the integration branch yet (landing the unit is

@@ -16,6 +16,7 @@ import test_handoff as th
 
 handoff = th.handoff
 IN_GOAL = dict(th.ON, followups={"mode": "in-goal"})
+FILE = dict(th.ON, followups={"mode": "file"})
 ARGS = ["--area", "engine", "--why", "found while here", "--queue", "queued", "--assignee", "same-area"]
 
 
@@ -33,64 +34,59 @@ def _track(tmp_path, config, *extra, blocks="no"):
     return handoff.main(["handoff.py", "track", str(sdlc), "g.md", *ARGS, "--blocks", blocks, *extra])
 
 
-@pytest.mark.parametrize("block", [None, {}, {"mode": "file"}, {"mode": "In-Goal"}, {"mode": "in_goal"},
-                                   {"mode": True}, {"mode": ["in-goal"]}, "in-goal", ["in-goal"], 7])
-def test_anything_but_the_exact_string_reads_file(block):
+@pytest.mark.parametrize("block", [None, {}, {"mode": "In-Goal"}, {"mode": "in_goal"}, {"mode": "File"},
+                                   {"mode": True}, {"mode": ["in-goal"]}, "file", ["file"], 7])
+def test_anything_but_the_exact_string_file_reads_in_goal(block):
     cfg = {} if block is None else {"followups": block}
-    assert handoff.followup_mode(cfg) == "file"
+    assert handoff.followup_mode(cfg) == "in-goal"
 
 
-def test_the_exact_string_in_goal_reads_in_goal():
-    assert handoff.followup_mode(IN_GOAL) == "in-goal"
+def test_missing_config_reads_in_goal():
+    assert handoff.followup_mode({}) == "in-goal"
+
+
+def test_the_exact_string_file_reads_file():
+    assert handoff.followup_mode(FILE) == "file"
 
 
 @pytest.mark.parametrize("config", ["x", None, [], 3])
-def test_a_non_object_config_reads_file(config):
-    assert handoff.followup_mode(config) == "file"
+def test_a_non_object_config_reads_in_goal(config):
+    assert handoff.followup_mode(config) == "in-goal"
 
 
-def test_in_goal_refuses_an_unmarked_non_blocking_follow_up_and_files_nothing(tmp_path, src, capsys):
+def test_in_goal_refuses_a_same_feature_follow_up_names_the_gesture_and_files_nothing(tmp_path, src, capsys):
     assert _track(tmp_path, IN_GOAL) == handoff.FOLLOWUP_REFUSED_EXIT
     assert src.created is None and src.notes == []
     err = capsys.readouterr().err
-    assert "followups.mode is in-goal" in err and "sigma-orchestrate:deferred" in err
+    assert "followups.mode is in-goal" in err and "work.py add-slice" in err
+    assert "deferred" not in err and "sigma-orchestrate" not in err
 
 
-def test_the_same_follow_up_files_at_the_default(tmp_path, src):
-    assert _track(tmp_path, th.ON) == 0
-    assert src.created is not None
+def test_the_default_config_is_in_goal_and_refuses_unpatched(tmp_path, src):
+    """The one default-config smoke test: no `followups` key, `raw=True`, nothing switched to `file`."""
+    sdlc = th._project(tmp_path, th.ON, raw=True)
+    rc = handoff.main(["handoff.py", "track", str(sdlc), "g.md", *ARGS, "--blocks", "no"])
+    assert rc == handoff.FOLLOWUP_REFUSED_EXIT and src.created is None
 
 
-def test_the_same_follow_up_files_when_the_mode_is_file_spelled_out(tmp_path, src):
-    assert _track(tmp_path, dict(th.ON, followups={"mode": "file"})) == 0
-    assert src.created is not None
+def test_file_mode_files_as_before(tmp_path, src):
+    assert _track(tmp_path, FILE, "--kind", "child", blocks="yes") == 0
+    assert src.created is not None and "followup-reason" not in src.created["body"]
+    assert all("SEPARATE" not in note for _, note in src.notes)
 
 
-def test_in_goal_still_files_a_blocker(tmp_path, src):
-    assert _track(tmp_path, IN_GOAL, blocks="yes") == 0
-    assert src.created is not None
-
-
-def test_in_goal_refuses_an_explicit_follow_up_kind(tmp_path, src):
-    assert _track(tmp_path, IN_GOAL, "--kind", "followup") == handoff.FOLLOWUP_REFUSED_EXIT
-    assert src.created is None
-
-
-@pytest.mark.parametrize("kind", ["prerequisite", "cleanup", "child"])
-def test_in_goal_files_work_that_is_not_a_follow_up(tmp_path, src, kind):
-    assert _track(tmp_path, IN_GOAL, "--kind", kind) == 0
-    assert src.created is not None
-
-
-@pytest.mark.parametrize("config", [IN_GOAL, th.ON], ids=["in-goal", "default"])
+@pytest.mark.parametrize("config", [IN_GOAL, FILE], ids=["in-goal", "file"])
 def test_an_unknown_kind_is_a_usage_error_in_either_mode(tmp_path, src, config):
     assert _track(tmp_path, config, "--kind", "other") == 2
     assert src.created is None
 
 
-def test_kind_changes_nothing_at_the_default(tmp_path, src):
-    assert _track(tmp_path, th.ON, "--kind", "followup") == 0
-    assert src.created is not None
+def test_track_exits_2_and_files_nothing_on_an_unreadable_config(tmp_path, src):
+    sdlc = tmp_path / ".sdlc"
+    sdlc.mkdir()
+    (sdlc / "config.json").write_text("{not json")
+    rc = handoff.main(["handoff.py", "track", str(sdlc), "g.md", *ARGS, "--blocks", "no"])
+    assert rc == 2 and src.created is None
 
 
 def test_the_followup_mode_verb_prints_the_mode(tmp_path, capsys):
@@ -99,18 +95,18 @@ def test_the_followup_mode_verb_prints_the_mode(tmp_path, capsys):
     assert capsys.readouterr().out.splitlines()[0] == "in-goal"          # line 1 stays the mode (#2153)
 
 
-def test_the_followup_mode_verb_reads_file_when_the_config_is_unreadable(tmp_path, capsys):
+def test_the_followup_mode_verb_reads_in_goal_when_the_config_is_unreadable(tmp_path, capsys):
     sdlc = tmp_path / ".sdlc"
     sdlc.mkdir()
     (sdlc / "config.json").write_text("{not json")
     assert handoff.main(["handoff.py", "followup-mode", str(sdlc)]) == 0
-    assert capsys.readouterr().out.splitlines() == ["file", "max_added_slices 10"]
+    assert capsys.readouterr().out.splitlines() == ["in-goal", "max_added_slices 10"]
 
 
 def test_the_scaffolded_config_ships_the_default_and_the_docs_name_it():
     root = pathlib.Path(__file__).resolve().parent.parent
     tmpl = (root / "skills" / "sigma-init" / "templates" / "config.json.tmpl").read_text(encoding="utf-8")
-    assert json.loads(tmpl)["followups"] == {"mode": "file", "max_added_slices": 10}
+    assert json.loads(tmpl)["followups"] == {"mode": "in-goal", "max_added_slices": 10}
     assert "followups.mode" in (root / "docs" / "configuration.md").read_text(encoding="utf-8")
 
 
@@ -181,12 +177,9 @@ def test_no_literal_two_remains_as_the_added_slice_limit():
         assert "(at most 2)" not in text and "cap of 2" not in text, rel
 
 
-# CONTROLS (#2153), each applied alone to `followup_refusal` and the named test seen red:
-#   mode clause dropped (`!= "in-goal"` removed): test_the_same_follow_up_files_at_the_default
-#   kind clause dropped: test_in_goal_files_work_that_is_not_a_follow_up
-#   blocks clause dropped: test_in_goal_still_files_a_blocker
-#   `(kind or "followup")` made `kind`: test_in_goal_refuses_an_unmarked_non_blocking_follow_up_and_files_nothing
-#   followup_mode accepts any truthy string: test_anything_but_the_exact_string_reads_file
+# CONTROLS (#2224): each applied alone and the named test seen red:
+#   default restored to `file`: test_missing_config_reads_in_goal (C20)
+#   mode `file` routed anyway: test_file_mode_files_as_before (C19)
 # CONTROLS (#2178), each applied alone and the named tests seen red:
 #   `isinstance(value, bool)` guard dropped: test_every_invalid_limit_reads_10_never_unlimited (True reads 1)
 #   `value >= 1` weakened to `>= 0` or removed: test_every_invalid_limit_reads_10_never_unlimited (0, -1)

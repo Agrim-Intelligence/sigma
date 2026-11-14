@@ -58,7 +58,10 @@ ON = {"ledger": {"enabled": True, "actor": "dana"}}
 def _sdlc(root, config=None):
     base = root / ".sdlc"
     (base / "state").mkdir(parents=True, exist_ok=True)
-    (base / "config.json").write_text(json.dumps(config or ON), encoding="utf-8")
+    cfg = dict(config or ON)
+    if "followups" not in cfg:                                # #2224: these tests exercise the filing path itself, so they opt out of routing (`followups.mode: file`); `raw=True` keeps the default.
+        cfg["followups"] = {"mode": "file"}
+    (base / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
     return base
 
 

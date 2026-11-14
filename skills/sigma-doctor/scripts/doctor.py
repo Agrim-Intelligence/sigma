@@ -2463,6 +2463,39 @@ def _epic_shaped_issues(cfg, gh_cfg, run, cap=200):
         return None
 
 
+_FOLLOWUP_READ_CAP = 200
+
+
+def _followup_reason_row(cfg, gh_cfg, run):
+    """#2224: the check row for open `sdlc:followup` issues filed with no recorded routing reason, or None when the
+    read failed (fail-open: an outage is not a finding). ONE capped list read; the cutoff is the earliest `createdAt`
+    among marker-bearing issues in that same read (`followup_route.unrecorded`). Sees only OPEN issues carrying the
+    label: a direct `gh issue create` with no label and a closed leak are invisible, and `handoff open` / `feature_rebase`
+    filings bypass routing, carry the label and count as unrecorded. Ceiling 200 open issues; above it, under-reports."""
+    try:
+        fr = _load_loop_script("followup_route")
+        mode = _load_loop_script("handoff").followup_mode(cfg)
+    except Exception:
+        return None
+    issues = _list(run, gh_cfg, ["number", "createdAt", "body"], ["sdlc:followup"], cap=_FOLLOWUP_READ_CAP)
+    if issues is None:
+        return None
+    name = f"follow-ups: filed with a recorded reason ({len(issues)}/{_FOLLOWUP_READ_CAP} open sdlc:followup issues read)"
+    if mode == "file":
+        return _chk(name + " -- followups.mode is file: routing off, row not applicable", True, "")
+    cutoff, flagged = fr.unrecorded(issues, mode)
+    if cutoff is None:
+        return _chk(name + " -- not yet in use (no filing carries a reason)", True, "")
+    return _chk(name, not flagged,
+                "open sdlc:followup issue(s) created since routing began (%s) with no recorded reason: #" % cutoff
+                + ", #".join(str(n) for n in flagged[:10])
+                + (f" (+{len(flagged) - 10} more)" if len(flagged) > 10 else "")
+                + (" (the read cap was hit; there may be more)" if len(issues) >= _FOLLOWUP_READ_CAP else "")
+                + " -- file follow-ups with `handoff.py track` (it records the reason) or add a goal slice with "
+                "`work.py add-slice`. Sees open labelled issues only (an unlabelled `gh issue create` and closed "
+                "issues are invisible); `handoff open` and feature_rebase filings bypass routing and count here.")
+
+
 def _dependency_marker_scan(gh_cfg, bchk_cfg, run):
     """An issue with a comment matching `backlog_check._BLOCK_RE` ("blocked by #N" / "depends on #N"
     / ...) but NO matching marker in its own body is likely a human-authored dependency, left via the
@@ -4450,6 +4483,10 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
             # backlog_check OFF has zero auto-skip happening at all, so this is arguably more useful
             # there (a nudge toward turning it on); a repo with it ON benefits from catching the exact
             # blind spot that would otherwise waste a token on a goal that should have been parked.
+            fu = _followup_reason_row(cfg, gh_disc, run)           # #2224: separate hunk, fail-open
+            if fu is not None:
+                out.append(fu)
+
             dm = _dependency_marker_scan(gh_disc, bchk, run)
             if dm is not None:
                 flagged, scanned, total = dm

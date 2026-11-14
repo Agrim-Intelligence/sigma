@@ -69,6 +69,12 @@ plan — the independent reviewer judges the split itself, not just this templat
 
 ## Step 3 — implement: create each child (never `gh issue create` directly)
 
+BEFORE creating any child, set `followups.mode: file` in `.sdlc/config.json`: under the default `in-goal`,
+`track` refuses same-feature children (use `work.py add-slice` for work that belongs to a goal). That
+setting is a repo-wide lever that disables follow-up routing for every goal until it is set back; undo it
+when the children exist. OPEN CONFLICT for the owner: decompose cannot create same-feature children under
+the default.
+
 Create each child in dependency order (blockers first, so their issue numbers exist before a
 sibling references them) via:
 

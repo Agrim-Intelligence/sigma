@@ -185,18 +185,36 @@ A project lead can approve a time-limited exception for flaky tests. Record it h
 
 ## Where a follow-up goes: `followups.mode`
 
-`followups.mode` is `"file"` (default, and what every project did before the key existed) or `"in-goal"`. With `"file"`
-a follow-up, work a session finds that is outside its own goal, is filed as a new issue through `handoff.py track`. With
-`"in-goal"` it stays inside the goal that found it: before that goal's first green full verify it becomes a slice of the
-goal's plan (up to the configured limit, `followups.max_added_slices`, default 10, then the phases re-run from plan-review); after that, or past the cap, it is one deferred-items
-comment on the goal's issue (format in `skills/sigma-orchestrate/references/follow-ups.md`, parsed by
-`skills/sigma-orchestrate/scripts/deferred.py`). In that mode `handoff.py track` refuses a non-blocking follow-up with
-exit 3 and files nothing; a blocker (`--blocks yes`) and work marked `--kind prerequisite`, `--kind cleanup` or
-`--kind child` are filed as before, and so is everything else that opens an issue (hand-offs, upkeep findings). Only the
-exact string `in-goal` turns it on: a typo, a different case or a wrong type reads `file`, so a bad edit never stops
-follow-ups being filed. `followups.max_added_slices` is a whole number of at least 1 (default 10): a missing key, a wrong type, a boolean, zero, a negative, a fraction or a numeric string reads 10, never unlimited, and `handoff.py track` prints the configured number in its refusal. `handoff.py followup-mode .sdlc` prints the effective mode on line 1 and `max_added_slices <n>` on line 2; `/sigma-orchestrate` reads it,
-`sigma-review` routes its follow-up findings by it, and the setting is a project decision, not a batch one.
-Not measured: how reliably a phase subagent obeys the refusal text; the check is the exit code, not the model.
+`followups.mode` is `"in-goal"` (the default since #2224) or `"file"` (the opt-out, and what every project did before
+routing existed). Under `"in-goal"`, `handoff.py track` routes EVERY filing, every `--kind` and both `--blocks` values,
+through one function, `followup_route.route`, which maps recorded facts to `slice` or a separate goal with one of two
+reasons. A find in the goal's own feature is refused (exit 3, nothing filed) and belongs in the goal's plan: `work.py
+add-slice <sdlc_dir> <goal> --title T --criteria-file F` appends a slice, counts it in a code-owned record
+(`.sdlc/state/followups/<goal>.json`, machine-local, plus the plan's own `## Added slice` headings) and extends the
+acceptance criteria through `acceptance.py extend`, which the verb refuses to run without (#2222: the end-to-end
+path through the real `extend` is unproven until it lands). A find is filed as a separate goal only for `different-feature`
+(the item declares another open, registered unit) or `slice-cap` (the goal holds `followups.max_added_slices`, default 10, a
+whole number of at least 1; anything else reads 10, never unlimited). The reason rides in the filed issue as
+`<!-- sigma:followup-reason:<reason> -->` and in a comment on the parent. No flag, environment variable or config key
+names a reason, and `--target-unit` does not feed routing. `/sigma-doctor` lists open `sdlc:followup` issues filed with no
+recorded reason (reads at most 200; unlabeled direct `gh issue create` and closed issues are invisible; `handoff open`
+and `feature_rebase` filings bypass routing and count as unrecorded; not applicable under `file`).
+
+Ceilings and conditions, stated plainly. The count is machine-local, so on its own the cap holds per machine; the plan
+headings narrow it to the cap wherever the plan is present. Each added slice re-runs plan-review, implement, review and
+retro (up to 10 re-reviews of one growing plan; not measured). A forced fresh review needs `gates.plan_review` (off by
+default), and a refused stale verify needs `verify.enforce` (off by default): with either off, the verb prints the gesture
+and nothing forces it. The item's feature is caller-declared text (a `Feature:` marker in `--body-file`, a `feature:`
+label): it must name an open registered unit, and the `<goal>` must match the work record whose worktree holds the cwd,
+but an agent that declares another registered unit buys `different-feature`, and a filing from the root checkout has
+nothing to bind to. A filing with no goal from inside a goal's worktree is refused.
+
+Invalid or unreadable config now reads `in-goal`: a typo in `followups.mode` refuses filings (the refusal names the
+opt-out) instead of filing them, the inverse of the old fail-safe. Only the exact string `file` opts out, and it is repo-wide:
+it turns routing off for every goal. OPEN CONFLICT for the owner: decompose children (`--kind child`) and chain
+prerequisites are same-feature filings, so routing refuses them under `in-goal`; `followups.mode: file` is the interim
+lever until the owner rules. `handoff.py followup-mode .sdlc` prints the mode on line 1 and `max_added_slices <n>` on line 2.
+Not measured: how reliably a phase subagent obeys the refusal text; the check is the exit code.
 
 ## Filing caps: `ai_filed.on_cap`
 

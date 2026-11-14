@@ -1,0 +1,122 @@
+"""The one routing function for follow-ups (#2224): recorded facts in, `slice` or `separate(<reason>)` out.
+
+Run: python3 -m pytest tests/test_followup_route.py
+(generic form: python -m pytest tests/test_followup_route.py)
+
+CONTROLS (each clause broken alone and seen red; evidence in .sdlc/evidence/2224-controls.md):
+  C1 test_undeclared_item_inherits   C2 test_different_feature   C3 test_slice_cap_at_exactly_cap
+  C4 test_different_feature_wins_over_cap   C24 test_non_registered_unit_inherits   C28 test_body_wins_over_label
+"""
+import importlib.util
+import inspect
+import itertools
+import json
+import os
+import pathlib
+
+import pytest
+
+S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
+
+
+def _mod(name):
+    spec = importlib.util.spec_from_file_location(name, S / f"{name}.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+fr = _mod("followup_route")
+feature_registry = _mod("feature_registry")
+CAP = 10
+
+
+def test_undeclared_item_inherits():
+    assert fr.route("A", None, 0, CAP) == ("slice", None)
+
+
+def test_different_feature():
+    assert fr.route("A", "B", 0, CAP) == ("separate", "different-feature")
+
+
+def test_goal_without_unit_and_item_with_one_is_a_different_feature():
+    assert fr.route(None, "B", 0, CAP) == ("separate", "different-feature")
+
+
+def test_both_undeclared_is_a_slice():
+    assert fr.route(None, None, 0, CAP) == ("slice", None)
+
+
+def test_same_unit_is_a_slice_under_the_cap():
+    assert fr.route("A", "A", CAP - 1, CAP) == ("slice", None)
+
+
+def test_slice_cap_at_exactly_cap():
+    assert fr.route("A", "A", CAP, CAP) == ("separate", "slice-cap")
+    assert fr.route("A", None, CAP + 5, CAP) == ("separate", "slice-cap")
+
+
+def test_different_feature_wins_over_cap():
+    assert fr.route("A", "B", CAP + 3, CAP) == ("separate", "different-feature")
+
+
+def test_reasons_are_a_closed_set_by_exhaustive_grid():
+    seen = set()
+    for g, i, added, cap in itertools.product([None, "A"], [None, "A", "B"], range(0, 13), [1, 3, 10]):
+        verdict, reason = fr.route(g, i, added, cap)
+        assert verdict in ("slice", "separate")
+        assert (reason is None) == (verdict == "slice")
+        if reason:
+            seen.add(reason)
+    assert seen == set(fr.REASONS) == {"different-feature", "slice-cap"}
+
+
+def test_signature_has_no_reason_input_and_no_kwargs():
+    params = inspect.signature(fr.route).parameters
+    assert list(params) == ["goal_unit", "item_unit", "added", "cap"]
+    assert all(p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD and p.default is p.empty for p in params.values())
+
+
+def test_the_result_does_not_read_the_environment(monkeypatch):
+    before = [fr.route(g, i, a, CAP) for g, i, a in itertools.product([None, "A"], [None, "A", "B"], [0, 10])]
+    for name in ("SIGMA_FOLLOWUP_REASON", "FOLLOWUP_REASON", "SIGMA_REASON", "SIGMA_FOLLOWUPS_MODE", "SIGMA_X"):
+        monkeypatch.setenv(name, "slice-cap")
+    after = [fr.route(g, i, a, CAP) for g, i, a in itertools.product([None, "A"], [None, "A", "B"], [0, 10])]
+    assert before == after
+
+
+# --- gather_facts: the item's declared unit must be an open registered unit (C24), body wins (C28) ---------
+
+def _registry(tmp_path, names, closed=()):
+    entries = {n: {"title": "t", "owner": None, "open": n not in closed, "parent": None,
+                   "tracking_issue": None, "repos": {}} for n in list(names)}
+    sdlc = tmp_path / ".sdlc"
+    feature_registry.write_index(feature_registry.registry_dir(sdlc), entries)
+    return sdlc
+
+
+def test_non_registered_unit_inherits(tmp_path):
+    sdlc = _registry(tmp_path, ["alpha"])
+    unit, warnings = fr.item_unit(sdlc, "Feature: nowhere\n", [])
+    assert unit is None and any("nowhere" in w for w in warnings)
+
+
+def test_closed_unit_is_not_a_declaration(tmp_path):
+    sdlc = _registry(tmp_path, ["alpha", "old"], closed=["old"])
+    assert fr.item_unit(sdlc, "Feature: old\n", [])[0] is None
+
+
+def test_registered_open_unit_is_a_declaration_in_body_or_label(tmp_path):
+    sdlc = _registry(tmp_path, ["alpha"])
+    assert fr.item_unit(sdlc, "Feature: alpha\n", [])[0] == "alpha"
+    assert fr.item_unit(sdlc, None, ["feature:alpha"])[0] == "alpha"
+
+
+def test_body_wins_over_label(tmp_path):
+    sdlc = _registry(tmp_path, ["alpha", "beta"])
+    assert fr.item_unit(sdlc, "Feature: alpha\n", ["feature:beta"])[0] == "alpha"
+
+
+def test_item_with_nothing_declared_reads_none(tmp_path):
+    sdlc = _registry(tmp_path, ["alpha"])
+    assert fr.item_unit(sdlc, None, []) == (None, [])

@@ -39,10 +39,13 @@ ON = {"ledger": {"enabled": True, "actor": "amy"}}
 ONL = dict(ON, ai_filed={"triage": {"enabled": False}})
 
 
-def _project(tmp_path, config=None, codeowners=CODEOWNERS):
+def _project(tmp_path, config=None, codeowners=CODEOWNERS, raw=False):
     sdlc = tmp_path / ".sdlc"
     (sdlc / "state").mkdir(parents=True)
-    (sdlc / "config.json").write_text(json.dumps(config or ON))
+    cfg = dict(config or ON)
+    if not raw and "followups" not in cfg:                    # #2224: these tests exercise the filing path itself, so they opt out of routing (`followups.mode: file`); `raw=True` keeps the default.
+        cfg["followups"] = {"mode": "file"}
+    (sdlc / "config.json").write_text(json.dumps(cfg))
     if codeowners is not None:
         (tmp_path / ".github").mkdir()
         (tmp_path / ".github" / "CODEOWNERS").write_text(codeowners)
