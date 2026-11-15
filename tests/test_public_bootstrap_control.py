@@ -208,7 +208,7 @@ def git_rev_parse(state, ref):
 _JQ_KEYS = {
     ".number": "number", ".default_branch": "default_branch", ".viewerPermission": "viewerPermission",
     ".nameWithOwner": "nameWithOwner", ".permissions": "permissions", ".allow_auto_merge": "allow_auto_merge", ".state": "state",
-    ".login": "login",
+    ".login": "login", ".full_name": "full_name",
 }
 
 
@@ -613,7 +613,9 @@ def cmd_api(state, argv, pos, flags, multi):
     if endpoint == "repos/%s" % repo:
         ladder = ("pull", "triage", "push", "maintain", "admin")     # #895 4b-2: REST `permissions`
         top = {"READ": 0, "TRIAGE": 1, "WRITE": 2, "MAINTAIN": 3, "ADMIN": 4}[state.get("viewer_permission", "ADMIN")]
-        obj = {"default_branch": state["default_branch"],
+        # #2165: `work._pr_repo` reads `.full_name` and refuses the PR unless gh's default repo is the
+        # configured one; this fake's default repo is the one it models, as real `gh` reports it.
+        obj = {"full_name": repo, "default_branch": state["default_branch"],
                "allow_auto_merge": state.get("allow_auto_merge", True),
                "permissions": {k: i <= top for i, k in enumerate(ladder)}}
         emit(obj, flags.get("jq"), argv); return
@@ -887,7 +889,12 @@ def _make_env(bin_dir, home_dir, state_path, log_path, unhandled_path):
 def _make_repo_world(root, repo=FAKE_REPO):
     """A real bare remote + clone with one seed commit on `main`, a fake `gh` on PATH, and a fresh
     scratch env. No adoption yet -- `_adopt()` does that."""
-    remote_dir = root / "remote.git"
+    # #2165: `work._pr_repo` refuses a push remote whose URL names another repo than the configured
+    # one, so the bare remote's path ends `<owner>/<name>.git` -- the product's own `_slug_from_url`
+    # reads `repo` back out of it, as it would from a real GitHub remote URL.
+    owner, name = repo.split("/")
+    (root / owner).mkdir()
+    remote_dir = root / owner / (name + ".git")
     clone_dir = root / "clone"
     bin_dir = root / "bin"; bin_dir.mkdir()
     home_dir = root / "home"; home_dir.mkdir()

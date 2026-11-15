@@ -46,8 +46,12 @@ def _isolated_git_config(tmp_path, monkeypatch):
     empty.write_text("", encoding="utf-8")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty))
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", str(empty))
-    for var in ("CLAUDE_CODE_REMOTE", "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
+    for var in ("CLAUDE_CODE_REMOTE", "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE",
+                "GIT_CONFIG_COUNT", "GIT_CONFIG_PARAMETERS"):
         monkeypatch.delenv(var, raising=False)
+    for var in list(os.environ):                     # config a host injects through the environment (#2225)
+        if var.startswith(("GIT_CONFIG_KEY_", "GIT_CONFIG_VALUE_")):
+            monkeypatch.delenv(var)
 
 
 def _git(cwd, *args, check=True):

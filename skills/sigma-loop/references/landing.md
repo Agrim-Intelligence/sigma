@@ -159,8 +159,7 @@ review-evidence .sdlc "$goal" --manifest "$REVIEW_MANIFEST" --review-result "$RE
   --verdict approve`. If a repair changed behaviour after Retrospective, re-run `sigma-retro` on the final diff and pass that grade at `record review`/`done`.
   **`commit` is LOCAL; only `pr` pushes.** Skipping it leaves the PR head at the pre-fix commit,
   so GitHub's checks and reviews all pass — correctly — about code nobody approved, and an armed
-  auto-merge squashes that. This shipped defects to a protected `main` three times before
-  `gate()` grew a STALE HEAD refusal; the guard is the backstop, this line is the intent. **The cycle is hard-capped:** `post-review` counts the
+  auto-merge squashes that (`gate()`'s STALE HEAD refusal is the backstop). **The cycle is hard-capped:** `post-review` counts the
   block cycles and, once they hit `work.max_review_cycles` (default **3**), returns a `PARK: …` line
   instead of asking for another fix — the review genuinely didn't converge, so `record parked "<why>"`
   for a human.
@@ -288,16 +287,10 @@ moves the card to Done, replays the merge observation, releases the checkout) an
 **still open or unreadable** → nothing. With nothing awaiting it makes no `gh` call at all.
 
 - **Cost, measured** (`tests/test_merge_reconcile.py`): one REST `pulls/<n>` read per goal, at most
-  **10** per pass, oldest-checked first. There is no `gh pr view` (GraphQL) read on this path: the
-  close reuses that read, and so does the checkout release. Closing a goal adds one more REST read
-  only when the ledger or journal is on, for the merge facts. This bound is for **PR reads**.
-  Issue completion uses GraphQL too: a cold-cache, board-disabled `GitHubSource.complete()`
-  dispatches six gh commands for an open issue: one REST issue state probe (#895; one `gh issue view` fallback
-  only on rate limit/5xx/transport), one REST completion comment, one issue close, two GraphQL
-  queries (issue node and label ids), and one GraphQL label mutation. This count is measured
-  through the real complete method with an injected runner, not live quota or latency. Board
-  operations, retries, and comment fallback for an already-closed issue add calls. The automatic triggers skip a PR re-read within the last 120 s, so a larger backlog costs
-  close latency, never more calls.
+  **10** per pass, oldest-checked first. There is no `gh pr view` (GraphQL) read: the close and the checkout
+  release reuse it. That bounds **PR reads** only: issue completion adds a REST issue state probe, a comment, a close and
+  GraphQL label calls (the full count: [features](../../../docs/features.md)). The automatic triggers skip a
+  PR re-read within 120 s, so a larger backlog costs close latency, never more calls.
 - **One pass at a time.** A `next` and the watch tick used to race and could both record `done`.
   With work enabled, the pass and CLI `record done` share a kernel lock (`.sdlc/state/merge-reconcile.lock`; `flock` on POSIX,
   `msvcrt.locking` on Windows), and a second pass skips with `another merge-reconcile pass is
@@ -336,9 +329,7 @@ Do not close an awaiting issue by hand: merge (or close) the PR, and the next pa
 the base branch genuinely REQUIRES checks or reviews — autonomy proportional to the guardrails that
 actually exist. **`record done` releases the checkout itself — do not run `work.py finish`.**
 It calls `finish` for you, on the `done` outcome only, after every other piece of the goal's
-bookkeeping has landed; a failure there is reported and never costs the goal its `done`. This
-used to be your job, and that was the bug: a turn that ended between `record done` and the
-command leaked the checkout permanently, because nothing ever revisited a closed goal.
+bookkeeping has landed; a failure there is reported and never costs the goal its `done`.
 The release deliberately KEEPS a worktree that still holds uncommitted work, so a parked goal
 stays intact for whoever picks it up. Since `done` now always means merged, `finish`'s own
 open-PR refusal (#1202, a `loop: kept …` line on stderr) is reachable only through a hand-run

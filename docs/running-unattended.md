@@ -57,3 +57,16 @@ the record still `running` with the lock free, closes it as a `failed` outcome, 
 one unaddressed note. A job stopped by the wall-clock cap or a stop file already records its own outcome and is noted the same
 way. The tick's time budget is checked before each git read inside a unit's measurement as well as between units; a unit
 whose measurement is cut short is retried first on the next tick.
+
+## Claim ownership across a dispatch
+
+The detail behind one line of the loop's picking reference (`skills/sigma-loop/references/picking.md`). The
+orchestrator's own `next`/`next-batch` call writes the goal's claim under ITS `--session-pid`; the dispatched
+subagent then reaches step 3a in its OWN fresh context and captures its own `$PPID` for `agent-start --pid` and
+`work.py start --session-pid`. That was MEASURED (section 2 of the plan for #2521) to be the SAME value the
+orchestrator's own `$PPID` capture used to write the claim, within one continuous session, not a fresh pid, so
+there is no cross-pid comparison to make on that boundary. The cross-process boundary `work.py start`'s resume
+guard was built for is CROSS-SESSION: a dead picker pid left by an ENDED orchestrating session (a crash, or a
+HANDOFF/BUDGET relaunch), corroborated against a live worker marker. It ships tested (#1687, #1197, #1284, #2394),
+extended by #2521's claim-ownership regression tests for this shape. A goal picked for the first time never
+reaches the guard: there is no worktree yet to resume, only to cut.

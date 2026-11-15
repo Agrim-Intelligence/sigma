@@ -283,6 +283,8 @@ import signal
 import threading
 import time
 
+import unattended_support as support
+
 SCRIPT = SCRIPTS / "quality_delta.py"
 PLENTY = lambda: (10 ** 12, 10 ** 12)                      # a probe that never gates
 WORDS = [sys.executable, "-c", "import sys;print(len(open('data.txt').read().split()))"]
@@ -829,25 +831,6 @@ def test_ac2_one_sided_unmeasured_is_not_a_measured_row(tmp_path):
     assert line.startswith("words: unmeasured") and "base=" not in line.split(":", 1)[1].split("(")[0]
 
 
-def _alive(pid):
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
-def _wait_gone(pid, seconds):
-    end = time.monotonic() + seconds
-    while time.monotonic() < end:
-        if not _alive(pid):
-            return True
-        time.sleep(0.05)
-    return not _alive(pid)
-
-
 GRANDCHILD = ("import os,subprocess,sys,time\n"
               "kid=subprocess.Popen(['sleep','300'])\n"
               "open(sys.argv[1],'w').write(str(kid.pid))\n"
@@ -868,10 +851,10 @@ def test_ac3_timeout_kills_process_group_and_removes_scratch(tmp_path):
         pid = int(pidfile.read_text())
         assert metric_lines(got)[0].startswith("words: unmeasured") and "timed out" in metric_lines(got)[0]
         assert elapsed < 1.5 + 2 + 4, "run_group must stop the group inside its grace, took %.1fs" % elapsed
-        assert _wait_gone(pid, 1.0), "the grandchild survived the group kill"
+        assert support.gone(pid, 1.0), "the grandchild survived the group kill"
         assert no_scratch(r)
     finally:
-        if pid and _alive(pid):
+        if pid and support.alive(pid):
             os.kill(pid, signal.SIGKILL)
 
 
@@ -889,9 +872,9 @@ def test_setsid_grandchild_escapes_group_kill(tmp_path):
     try:
         measure(r)
         pid = int(pidfile.read_text())
-        assert _alive(pid), "if this ever fails, the documented limit no longer holds and the doc must change"
+        assert support.alive(pid), "if this ever fails, the documented limit no longer holds and the doc must change"
     finally:
-        if pid and _alive(pid):
+        if pid and support.alive(pid):
             os.kill(pid, signal.SIGKILL)
 
 
@@ -916,7 +899,7 @@ def test_sigkill_of_quality_delta_kills_metric_group_and_rerun_reclaims(tmp_path
         pid = int(pidfile.read_text())
         os.kill(proc.pid, signal.SIGKILL)
         proc.wait(timeout=10)
-        assert _wait_gone(pid, 20), "the lifeline did not stop the metric group after SIGKILL of quality_delta"
+        assert support.gone(pid, 20), "the lifeline did not stop the metric group after SIGKILL of quality_delta"
         assert (scratch_root(r) / "1635-base.owner").exists(), "a SIGKILLed run leaves its owner marker"
         pidfile.unlink()
         again = measure(r, runner=ok_runner("6\n"))
@@ -927,7 +910,7 @@ def test_sigkill_of_quality_delta_kills_metric_group_and_rerun_reclaims(tmp_path
             proc.kill()
         for stream in (proc.stdout, proc.stderr):
             stream.close()
-        if pid and _alive(pid):
+        if pid and support.alive(pid):
             os.kill(pid, signal.SIGKILL)
 
 

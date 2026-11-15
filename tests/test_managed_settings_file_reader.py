@@ -8,6 +8,8 @@ import json
 import pathlib
 import pytest
 
+import unprivileged
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
 
@@ -148,20 +150,29 @@ def test_read_valid_access_revoked_returns_status(tmp_path):
     assert refreshed_at == "2026-09-18T10:30:00Z"
 
 
-def test_read_unreadable_file_returns_locked_key_unverifiable(tmp_path):
-    """File exists but cannot be read (permissions) → locked-key-unverifiable."""
-    sdlc_dir = tmp_path / ".sdlc"
-    sdlc_dir.mkdir()
-    settings_file = sdlc_dir / managed_settings.MANAGED_SETTINGS_FILENAME
-    settings_file.write_text("{}")
-    # Make file unreadable
-    settings_file.chmod(0o000)
-    try:
-        status, locked_dict, refreshed_at = managed_settings.read(str(sdlc_dir))
-        assert status == managed_settings.STATUS_LOCKED_KEY_UNVERIFIABLE
-    finally:
-        # Restore permissions for cleanup
-        settings_file.chmod(0o644)
+def test_read_unreadable_file_returns_locked_key_unverifiable():
+    """File exists but cannot be read (permissions) → locked-key-unverifiable.
+
+    The body is a VALID `ok` file, read once while readable to prove it (a `{}` body is unverifiable
+    whether or not it can be read, so the denial was never tested, #2225). The denied read runs
+    through `tests/unprivileged.py`: as root, mode 000 denies nothing."""
+    with unprivileged.tree() as root:
+        sdlc_dir = root / ".sdlc"
+        sdlc_dir.mkdir()
+        settings_file = sdlc_dir / managed_settings.MANAGED_SETTINGS_FILENAME
+        settings_file.write_text(json.dumps({
+            "version": 1,
+            "status": "ok",
+            "issued_at": "2026-09-18T10:00:00Z",
+            "refreshed_at": "2026-09-18T10:30:00Z",
+            "locked": {"work.require_review": "approval"}
+        }))
+        unprivileged.hand_over(root)
+        readable = unprivileged.call(SCRIPTS / "managed_settings.py", "mod.read(d)[0]", d=str(sdlc_dir))
+        assert readable == {"ok": managed_settings.STATUS_OK}, readable
+        settings_file.chmod(0o000)
+        got = unprivileged.call(SCRIPTS / "managed_settings.py", "mod.read(d)", d=str(sdlc_dir))
+    assert got == {"ok": [managed_settings.STATUS_LOCKED_KEY_UNVERIFIABLE, None, None]}, got
 
 
 # ============================================================================== gated_check tests

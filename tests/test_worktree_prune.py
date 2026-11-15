@@ -18,6 +18,8 @@ import time
 
 import pytest
 
+import unattended_support as support
+
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 sys.path.insert(0, str(S))
 GENV = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@example.test",
@@ -122,8 +124,11 @@ class Proj:
     def record(self, n):
         return self.sdlc / "state" / "work" / f"{n}.json"
 
-    def cli(self, *args, cwd=None, timeout=120, env=None):
-        proc = subprocess.run([sys.executable, str(S / "worktree_prune.py"), *args, str(self.sdlc)],
+    def cli(self, *args, cwd=None, timeout=120, env=None, without=None):
+        argv = [*args, str(self.sdlc)]
+        argv = (support.without_module(without, S / "worktree_prune.py", *argv) if without
+                else [sys.executable, str(S / "worktree_prune.py"), *argv])
+        proc = subprocess.run(argv,
                               cwd=str(cwd or self.proj), capture_output=True, text=True,
                               env=env or self.env(), timeout=timeout)
         return proc
@@ -707,10 +712,8 @@ def test_a_session_registered_between_proof_and_removal_aborts_it(p):
 
 def test_without_flock_the_sweep_refuses_loudly(p, tmp_path):
     path = p.goal(145)
-    shim = tmp_path / "shim"
-    shim.mkdir()
-    (shim / "fcntl.py").write_text("raise ImportError('no flock on this platform')\n")
-    proc = p.cli("sweep", env=p.env(PYTHONPATH=str(shim)))
+    # fcntl hidden by the runpy driver, not a PYTHONPATH shim: a builtin fcntl ignores the shim (#2225)
+    proc = p.cli("sweep", without="fcntl")
     assert proc.returncode == 2 and "not supported on this platform" in proc.stderr, proc
     assert path.exists()
 
