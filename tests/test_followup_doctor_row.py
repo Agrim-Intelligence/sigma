@@ -90,3 +90,55 @@ def test_file_mode_row_is_ok_and_says_not_applicable(monkeypatch):
 def test_not_yet_in_use_is_ok(monkeypatch):
     row = _row(monkeypatch, [issue(1, "2026-01-01T00:00:00Z")])
     assert row["ok"] and "not yet in use" in row["name"]
+
+
+# --- #2224 amendment A1: the row states the mode in force, and whether it was set or is the default (C41) ---------
+
+def test_row_says_default_when_no_mode_key(monkeypatch):
+    row = _row(monkeypatch, [issue(1, "2026-01-01T00:00:00Z")], {})
+    assert "mode in-goal (default)" in row["name"]
+
+
+def test_row_says_default_for_an_empty_followups_block(monkeypatch):
+    row = _row(monkeypatch, [issue(1, "2026-01-01T00:00:00Z")], {"followups": {"max_added_slices": 4}})
+    assert "mode in-goal (default)" in row["name"]
+
+
+def test_row_says_set_for_an_explicit_in_goal(monkeypatch):
+    row = _row(monkeypatch, [issue(1, "2026-01-01T00:00:00Z")], {"followups": {"mode": "in-goal"}})
+    assert "mode in-goal (set)" in row["name"] and "(default)" not in row["name"]
+
+
+def test_row_says_set_for_file(monkeypatch):
+    row = _row(monkeypatch, [issue(1, "2026-01-01T00:00:00Z")], {"followups": {"mode": "file"}})
+    assert "mode file (set)" in row["name"]
+
+
+def test_row_for_an_unknown_value_reads_in_goal_by_default(monkeypatch):
+    row = _row(monkeypatch, [issue(1, "2026-01-01T00:00:00Z")], {"followups": {"mode": "File"}})
+    assert "mode in-goal (default)" in row["name"]
+
+
+# --- #2224 amendment A6: a proven decompose child carries no reason marker and must not be flagged -----------------
+# CONTROLS: C56 test_first_line_decomposed_from_is_recorded (clause dropped), C57 test_decomposed_from_on_a_later_line_is_flagged
+# (first-line-only weakened to "anywhere").
+
+def _child(n, at, first, later=""):
+    return {"number": n, "createdAt": at, "body": first + "\nbody" + later}
+
+
+def test_first_line_decomposed_from_is_recorded():
+    rows = [issue(1, "2026-01-01T00:00:00Z", True),
+            _child(2, "2026-02-01T00:00:00Z", "<!-- sigma:decomposed-from=#9 -->")]
+    assert fr.unrecorded(rows, "in-goal") == ("2026-01-01T00:00:00Z", [])
+
+
+def test_decomposed_from_on_a_later_line_is_flagged():
+    rows = [issue(1, "2026-01-01T00:00:00Z", True),
+            _child(2, "2026-02-01T00:00:00Z", "intro", "\n<!-- sigma:decomposed-from=#9 -->")]
+    assert fr.unrecorded(rows, "in-goal") == ("2026-01-01T00:00:00Z", [2])
+
+
+def test_decomposed_from_alone_does_not_start_the_cutoff():
+    rows = [_child(2, "2026-02-01T00:00:00Z", "<!-- sigma:decomposed-from=#9 -->"), issue(3, "2026-03-01T00:00:00Z")]
+    assert fr.unrecorded(rows, "in-goal") == (None, [])

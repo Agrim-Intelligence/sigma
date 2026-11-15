@@ -120,3 +120,120 @@ def test_body_wins_over_label(tmp_path):
 def test_item_with_nothing_declared_reads_none(tmp_path):
     sdlc = _registry(tmp_path, ["alpha"])
     assert fr.item_unit(sdlc, None, []) == (None, [])
+
+
+# --- #2224 amendment A2: the decompose-child exemption, a pure decision over already-read facts ------------------
+# Every clause is its own test and leaves the others true. CONTROLS (each broken alone, python -m pytest on this file):
+# C43 kind clause dropped, C44 meta-marker leg, C45 parent-comment leg (M equality weakened to membership of any marker),
+# C46 child-marker leg (equality of P weakened to "has a marker"), C47 plan-review leg, C47b plan-review route (R1),
+# C47c plan-present (R2), C47d meta label (R5), C47e P != M (R5), C48 unreadable fails closed, C49 child cap.
+# The M verdict is hash-bound to M's plan only, not to the child set (R3): the docstring of `decompose_decision` says so.
+
+GOOD_GATE = {"plan_present": True, "plan_ok": True, "plan_review_ok": True, "route": "subagent", "agent_id": "a1"}
+
+
+def dd(**over):
+    facts = dict(kind="child", goal="21", m_first_line="<!-- sigma:decompose-of=#9 -->", m_labels=["sdlc:decompose"],
+                 parent_comments=["Too large. <!-- sigma:decompose-filed=#21 -->"],
+                 child_first_line="<!-- sigma:decomposed-from=#9 -->", gate=dict(GOOD_GATE), children_filed=0,
+                 max_children=8)
+    facts.update(over)
+    return fr.decompose_decision(**facts)
+
+
+def test_all_legs_proven_is_exempt():
+    assert dd() == (True, "")
+
+
+@pytest.mark.parametrize("kind", ["prerequisite", "cleanup", "followup", None, "Child", ""])
+def test_child_exempt_kind_only_child(kind):
+    ok, why = dd(kind=kind)
+    assert (ok, why) == (False, "kind")
+
+
+@pytest.mark.parametrize("line", ["intro\n<!-- sigma:decompose-of=#9 -->", "", "<!-- sigma:decompose-of=# -->",
+                                  "<!-- sigma:decompose-of=#9x -->", "text <!-- sigma:decompose-of=#9 -->"])
+def test_exempt_needs_meta_marker(line):
+    # the marker must be the WHOLE first line; `dd` passes only a first line, so "intro\n..." models a later-line marker
+    assert dd(m_first_line=line) == (False, "meta-marker")
+
+
+def test_exempt_meta_marker_may_be_the_legacy_spelling():
+    assert dd(m_first_line="<!-- loopsmith:decompose-of=#9 -->")[0] is True
+
+
+def test_a_goal_cannot_decompose_itself():
+    assert dd(m_first_line="<!-- sigma:decompose-of=#21 -->", child_first_line="<!-- sigma:decomposed-from=#21 -->") \
+        == (False, "meta-marker")
+
+
+@pytest.mark.parametrize("labels", [[], ["sdlc:goal"], ["sdlc:decompose-ish"]])
+def test_exempt_needs_the_decompose_label_on_the_meta_goal(labels):
+    assert dd(m_labels=labels) == (False, "meta-label")
+
+
+def test_exempt_needs_parent_comment():
+    assert dd(parent_comments=[]) == (False, "parent-comment")
+    assert dd(parent_comments=["Too large. <!-- sigma:decompose-filed=#22 -->"]) == (False, "parent-comment")
+    assert dd(parent_comments=["<!-- sigma:decompose-filed=#2 -->", "<!-- sigma:decompose-filed=#210 -->"]) \
+        == (False, "parent-comment")                    # #2 and #210 are not #21: equality, not a prefix or membership
+    assert dd(parent_comments=["x", "<!-- sigma:decompose-filed=#21 -->"])[0] is True
+
+
+@pytest.mark.parametrize("goal", ["21", "#21", "21.md", " 21 ", 21])
+def test_goal_spellings_all_match_the_marker(goal):
+    assert dd(goal=goal)[0] is True
+
+
+@pytest.mark.parametrize("goal", ["22", "#22", "22.md", "", "abc", "21x", None])
+def test_goal_spellings_are_each_tested_against_marker_equality(goal):
+    assert dd(goal=goal)[0] is False
+
+
+def test_exempt_needs_child_marker_same_parent():
+    assert dd(child_first_line=None) == (False, "child-marker")
+    assert dd(child_first_line="") == (False, "child-marker")
+    assert dd(child_first_line="<!-- sigma:decomposed-from=#8 -->") == (False, "child-marker")
+    assert dd(child_first_line="intro") == (False, "child-marker")
+    assert dd(child_first_line="<!-- sigma:decomposed-from=#99 -->") == (False, "child-marker")
+
+
+@pytest.mark.parametrize("gate,why", [
+    ({"plan_present": False}, "plan"),
+    ({"plan_ok": False}, "plan"),
+    ({"plan_review_ok": False}, "plan-review"),
+    ({"route": "inline"}, "plan-review-route"),
+    ({"route": None}, "plan-review-route"),
+    ({"agent_id": ""}, "plan-review-route"),
+    ({"agent_id": None}, "plan-review-route"),
+])
+def test_exempt_needs_independent_plan_review(gate, why):
+    assert dd(gate=dict(GOOD_GATE, **gate)) == (False, why)
+
+
+@pytest.mark.parametrize("name", ["m_first_line", "m_labels", "parent_comments", "gate", "children_filed"])
+def test_exempt_fails_closed_on_unreadable_leg(name):
+    ok, why = dd(**{name: None})
+    assert ok is False and why.startswith("unreadable:"), (name, why)
+
+
+def test_exempt_child_cap():
+    assert dd(children_filed=7)[0] is True
+    assert dd(children_filed=8) == (False, "child-cap")
+    assert dd(children_filed=9, max_children=8) == (False, "child-cap")
+
+
+def test_every_refusal_code_has_a_text_naming_the_leg_and_add_slice_and_never_the_lever():
+    for code in ("kind", "meta-marker", "meta-label", "parent-comment", "child-marker", "plan", "plan-review",
+                 "plan-review-route", "child-cap", "unreadable:gate"):
+        text = fr.decompose_refusal(code)
+        assert code.split(":")[-1].split("-")[0] in text and "work.py add-slice" in text, code
+        assert "followups.mode" not in text, code
+
+
+def test_decompose_decision_reads_no_environment_or_config(monkeypatch):
+    names = set(fr.decompose_decision.__code__.co_names) | set(fr.decompose_decision.__code__.co_varnames)
+    assert not names & {"os", "environ", "getenv", "open", "config", "load_config", "_load", "Path", "pathlib"}, names
+    for var in ("SIGMA_DECOMPOSE", "FOLLOWUP_DECOMPOSE", "SIGMA_FOLLOWUP_MODE"):
+        monkeypatch.setenv(var, "1")
+    assert dd(kind="followup") == (False, "kind")

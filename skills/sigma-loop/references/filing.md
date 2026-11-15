@@ -27,10 +27,10 @@ blocker already goes through `handoff.py open`:
 you found>" --queue actionable|queued --assignee same-area|cross-area --blocks yes|no [--priority
 P0|P1|P2] [--label model:<tier>] [--title T] [--body-file F] [--kind followup|prerequisite|cleanup|child]`. All
 three value-flags are required, with no default, on purpose. **Where a follow-up goes is a project setting,
-`followups.mode`** (default `in-goal`). Every filing is routed by `followup_route.route`: a same-feature find is refused
-(exit 3, nothing filed, every `--kind` and `--blocks`) and belongs in the goal's plan as a slice (`work.py add-slice`,
+`followups.mode`**. Every filing is routed by `followup_route.route`: a same-feature find is refused
+(exit 3) and belongs in the goal's plan (`work.py add-slice`,
 [the rule](../../sigma-orchestrate/references/follow-ups.md)); another feature or a goal past `max_added_slices` is
-filed with the reason recorded. `file` opts out of routing. **Triage decides, by default.** Unless `ai_filed.triage.enabled` is false, an AI-filed issue is checked against a
+filed with the reason recorded. `in-goal` is the default; `file` is an explicit opt-out. A proven decompose child is exempt. **Triage decides, by default.** Unless `ai_filed.triage.enabled` is false, an AI-filed issue is checked against a
 deny-list (hard-stop words and shapes, secret shapes, a recorded-permission marker on the first body line) and then
 either ARMED at its bucket priority (urgent P2, routine P3, unclear P4, below any human-filed P1) or PARKED with
 a question kind. `--queue queued` lets triage decide; `--queue actionable` still runs the deny-list and arms

@@ -2480,7 +2480,10 @@ def _followup_reason_row(cfg, gh_cfg, run):
     issues = _list(run, gh_cfg, ["number", "createdAt", "body"], ["sdlc:followup"], cap=_FOLLOWUP_READ_CAP)
     if issues is None:
         return None
-    name = f"follow-ups: filed with a recorded reason ({len(issues)}/{_FOLLOWUP_READ_CAP} open sdlc:followup issues read)"
+    block = cfg.get("followups") if isinstance(cfg, dict) else None
+    set_by_key = isinstance(block, dict) and block.get("mode") in ("file", "in-goal")      # A1: stated, never implied
+    name = (f"follow-ups: filed with a recorded reason ({len(issues)}/{_FOLLOWUP_READ_CAP} open sdlc:followup issues read)"
+            f", mode {mode} ({'set' if set_by_key else 'default'})")
     if mode == "file":
         return _chk(name + " -- followups.mode is file: routing off, row not applicable", True, "")
     cutoff, flagged = fr.unrecorded(issues, mode)

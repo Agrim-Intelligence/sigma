@@ -33,11 +33,9 @@ for every `--kind` and `--blocks` value, and prints the add-slice gesture.
 
 `followups.mode` in `.sdlc/config.json` ([configuration](../../../docs/configuration.md)) defaults to `in-goal`; read it
 with `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" followup-mode "$S"` (line 1 the mode, line 2
-`max_added_slices <n>`). `file` is the opt-out: `track` files as it did before routing, with no reason and no
-comment. It is repo-wide, so it turns routing off for every goal. This skill never edits config.
-
-Open conflict, owner ruling needed: decompose children and chain prerequisites are same-feature filings, so `track`
-refuses them under `in-goal`. Until the owner rules, the interim lever is `followups.mode: file`.
+`max_added_slices <n>`). `in-goal` is the default and `file` is an explicit opt-out for humans: `track` files as it did before routing, with no
+reason and no comment, repo-wide. This skill never edits config. A proven decompose child is exempt;
+chain prerequisites stay routed.
 
 ## What the orchestrator does
 

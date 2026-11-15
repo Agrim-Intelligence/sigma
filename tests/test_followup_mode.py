@@ -187,3 +187,41 @@ def test_no_literal_two_remains_as_the_added_slice_limit():
 #   default constant changed from 10: test_the_limit_defaults_to_10_and_the_constant_says_so
 #   refusal built from IN_GOAL_RULE instead of in_goal_rule(...): test_the_refusal_track_prints_carries_the_configured_number
 #   verb's second print removed: test_the_followup_mode_verb_prints_the_limit_on_line_two
+
+
+# --- #2224 amendment A1: the default is in-goal, and each way of being absent is its own test (C39) ----------------
+
+def test_absent_followups_key_reads_in_goal():
+    assert handoff.followup_mode({"ledger": {"enabled": True}}) == "in-goal"
+
+
+def test_absent_mode_key_reads_in_goal():
+    assert handoff.followup_mode({"followups": {"max_added_slices": 3}}) == "in-goal"
+
+
+def test_empty_config_reads_in_goal():
+    assert handoff.followup_mode({}) == "in-goal"
+
+
+def test_followups_null_reads_in_goal():
+    assert handoff.followup_mode({"followups": None}) == "in-goal"
+
+
+def test_mode_null_reads_in_goal():
+    assert handoff.followup_mode({"followups": {"mode": None}}) == "in-goal"
+
+
+def test_no_config_file_verb_reads_in_goal(tmp_path, capsys):
+    assert handoff.main(["handoff.py", "followup-mode", str(tmp_path / "nowhere")]) == 0
+    assert capsys.readouterr().out.splitlines()[0] == "in-goal"
+
+
+def test_only_the_exact_string_file_reads_file():
+    assert [handoff.followup_mode({"followups": {"mode": v}}) for v in ("file", "File", "FILE", " file", "files")] \
+        == ["file", "in-goal", "in-goal", "in-goal", "in-goal"]
+
+
+def test_max_added_slices_defaults_to_ten_with_absent_keys():
+    assert handoff.max_added_slices({}) == 10
+    assert handoff.max_added_slices({"followups": {}}) == 10
+    assert handoff.max_added_slices({"followups": None}) == 10

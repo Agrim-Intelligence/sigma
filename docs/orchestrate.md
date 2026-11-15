@@ -84,8 +84,8 @@ The decision is a project setting, `followups.mode` in `.sdlc/config.json` ([con
 joins its plan as a slice (`work.py add-slice`, at most `followups.max_added_slices` per goal, default 10), and is filed
 as a separate goal only for another feature or past the cap, with the reason recorded; a same-feature filing is refused,
 exit 3. Nothing about follow-ups goes in a launch prompt, and the orchestrator collects and files nothing for follow-ups.
-`file` is the repo-wide opt-out that turns routing off for every goal. Decompose children and chain prerequisites
-are same-feature filings that routing refuses: an open conflict for the owner, with `file` as the interim lever.
+`in-goal` is the default; `file` is an explicit opt-out for humans that turns routing off for every goal. A decompose child
+with its four recorded legs is exempt from routing; chain prerequisites stay routed.
 
 ## Approve names its head
 

@@ -209,11 +209,19 @@ label): it must name an open registered unit, and the `<goal>` must match the wo
 but an agent that declares another registered unit buys `different-feature`, and a filing from the root checkout has
 nothing to bind to. A filing with no goal from inside a goal's worktree is refused.
 
-Invalid or unreadable config now reads `in-goal`: a typo in `followups.mode` refuses filings (the refusal names the
-opt-out) instead of filing them, the inverse of the old fail-safe. Only the exact string `file` opts out, and it is repo-wide:
-it turns routing off for every goal. OPEN CONFLICT for the owner: decompose children (`--kind child`) and chain
-prerequisites are same-feature filings, so routing refuses them under `in-goal`; `followups.mode: file` is the interim
-lever until the owner rules. `handoff.py followup-mode .sdlc` prints the mode on line 1 and `max_added_slices <n>` on line 2.
+`in-goal` is the default: an absent key, an empty config or an unreadable one reads `in-goal`, and `file` is an explicit
+opt-out. Only the exact string `file` opts out; any other value (`"File"`, `true`, `"off"`) reads `in-goal` and
+`handoff.py track` prints one stderr line naming the value it ignored.
+
+To opt out (humans only): set `followups.mode: file` in `.sdlc/config.json`; it is repo-wide and turns routing off for every goal.
+
+A decompose child (`--kind child`) is filed without routing only when four recorded
+legs hold: the meta-goal's first-line `decompose-of` marker, the parent's `decompose-filed` comment naming that meta-goal, the
+child's first-line `decomposed-from` marker for the same parent, and an approving subagent plan-review of the meta-goal's plan
+(hash-bound to that plan, not to the child set), under `goal_decompose.max_children` (default 8, counted per machine). Any
+missing leg refuses and names it; `prerequisite`, `cleanup`, `followup` and `--blocks yes` stay routed. A hand-written
+marker comment defeats the first three legs: this stops a worker that merely calls `track --kind child`, not a hostile one.
+`handoff.py followup-mode .sdlc` prints the mode on line 1 and `max_added_slices <n>` on line 2.
 Not measured: how reliably a phase subagent obeys the refusal text; the check is the exit code.
 
 ## Filing caps: `ai_filed.on_cap`

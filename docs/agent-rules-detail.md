@@ -224,4 +224,4 @@ a walkthrough, an explanation) is given in full.
 
 ## Follow-ups stay in their goal
 
-Found work in the goal's own feature joins its plan with `work.py add-slice`; `handoff.py track` files a separate goal only for `different-feature` or `slice-cap`, decided by `followup_route.route`, never by a flag. Rules, ceilings and the open decompose/chain conflict: [configuration](configuration.md#where-a-follow-up-goes-followupsmode).
+Found work in the goal's own feature joins its plan with `work.py add-slice`; `handoff.py track` files a separate goal only for `different-feature` or `slice-cap`, decided by `followup_route.route`, never by a flag. Rules, ceilings and the proven-decompose-child exemption: [configuration](configuration.md#where-a-follow-up-goes-followupsmode).

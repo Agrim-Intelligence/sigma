@@ -11,6 +11,13 @@ Residual, stated: the item's feature is still caller-declared text (a `Feature:`
 whose worktree holds the cwd) but cannot prove the agent declared its find's TRUE feature. The count is
 machine-local state (`.sdlc/state/followups/<stem>.json`); the plan's `## Added slice` headings travel with the
 branch and can only raise it, so the ceiling is the cap wherever the plan is present and `cap x machines` otherwise.
+
+The one exemption from routing (#2224 amendment A): `decompose_decision` proves a `--kind child` filing is a decompose
+meta-goal's child and exempts only that. It is a pure conjunction over already-read facts (the reader is
+`read_decompose_facts`); any leg that cannot be read fails closed. Residual, stated: legs a-c are GitHub text a worker
+with `gh` can write by hand and leg d is written through a verb, so this stops a worker that merely calls
+`track --kind child`, not a hostile one. The meta-goal's plan-review verdict is hash-bound to the META-GOAL's plan only,
+not to the set of children actually filed.
 """
 import contextlib
 import hashlib
@@ -51,6 +58,22 @@ REASONS = ("different-feature", "slice-cap")
 MARKER_PREFIX = "<!-- sigma:followup-reason:"
 _MARKER_RE = re.compile(r"<!-- sigma:followup-reason:(different-feature|slice-cap) -->")
 SLICE_HEADING_RE = re.compile(r"^## Added slice \d+: (.+?)\s*$", re.M)
+DECOMPOSE_OF_RE = re.compile(r"^<!-- (?:sigma|loopsmith):decompose-of=#(\d+) -->\s*$")
+DECOMPOSED_FROM_RE = re.compile(r"^<!-- (?:sigma|loopsmith):decomposed-from=#(\d+) -->\s*$")
+DECOMPOSE_FILED_RE = re.compile(r"(?:sigma|loopsmith):decompose-filed=#(\d+)(?!\d)")
+DECOMPOSE_LABEL = "sdlc:decompose"
+#: Why a decompose child was not exempt: the leg that failed. `unreadable:<leg>` is a leg that could not be read.
+DECOMPOSE_LEGS = {
+    "kind": "only `--kind child` can be a decompose child",
+    "meta-marker": "the goal's body does not start with `<!-- sigma:decompose-of=#P -->` for a different goal P",
+    "meta-label": "the goal does not carry the `sdlc:decompose` label",
+    "parent-comment": "the parent's comments hold no `sigma:decompose-filed=#<this goal>` marker",
+    "child-marker": "the child's --body-file does not start with `<!-- sigma:decomposed-from=#P -->` for the same P",
+    "plan": "the goal's plan is not recorded and present",
+    "plan-review": "no approving plan-review verdict is recorded for the goal's plan",
+    "plan-review-route": "the plan-review verdict was not recorded by an independent subagent (inline route or no agent id)",
+    "child-cap": "this decompose goal already has its `goal_decompose.max_children` children recorded",
+}
 #: The doctor row reads at most this many open `sdlc:followup` issues; above it the row says it under-reports.
 DOCTOR_CEILING = 200
 
@@ -80,6 +103,128 @@ def route(goal_unit, item_unit, added, cap):
     if added >= cap:                                # (3) same feature, plan already holds `cap` added slices
         return ("separate", "slice-cap")
     return ("slice", None)                          # (4)
+
+
+def goal_number(goal):
+    """The digits of `2224`, `#2224`, `2224.md` (surrounding space ignored), else None. One parse for every spelling."""
+    found = re.fullmatch(r"#?(\d+)(?:\.md)?", str(goal).strip()) if goal is not None else None
+    return int(found.group(1)) if found else None
+
+
+def decompose_decision(kind, goal, m_first_line, m_labels, parent_comments, child_first_line, gate, children_filed,
+                       max_children):
+    """-> (ok, why). Pure: already-read facts in, no I/O, no environment, no configuration. `why` is the first failing
+    leg (`DECOMPOSE_LEGS`) or `unreadable:<fact>` for a fact the reader could not get (None = unreadable: fail closed).
+    All legs required, in order: (0) kind child; (a) the goal M's body FIRST line is `decompose-of=#P`, P != M, and M
+    carries `sdlc:decompose`; (b) P's comments hold `decompose-filed=#M`, M equal to this goal; (c) the child's body
+    first line is `decomposed-from=#P`, the same P; (d) M's plan is present and recorded and its approving plan-review
+    came from an independent subagent (`gate`); (e) fewer than `max_children` children recorded for M.
+    The plan-review verdict is hash-bound to M's own plan, not to the children filed under it."""
+    if kind != "child":
+        return False, "kind"
+    meta = goal_number(goal)
+    if m_first_line is None:
+        return False, "unreadable:meta-marker"
+    found = DECOMPOSE_OF_RE.match(m_first_line)
+    if found is None or meta is None or int(found.group(1)) == meta:
+        return False, "meta-marker"
+    parent = int(found.group(1))
+    if m_labels is None:
+        return False, "unreadable:meta-label"
+    if DECOMPOSE_LABEL not in m_labels:
+        return False, "meta-label"
+    if parent_comments is None:
+        return False, "unreadable:parent-comment"
+    if not any(int(n) == meta for text in parent_comments for n in DECOMPOSE_FILED_RE.findall(text or "")):
+        return False, "parent-comment"
+    mark = DECOMPOSED_FROM_RE.match(child_first_line) if child_first_line else None
+    if mark is None or int(mark.group(1)) != parent:
+        return False, "child-marker"
+    if gate is None:
+        return False, "unreadable:gate"
+    if not (gate.get("plan_present") and gate.get("plan_ok")):
+        return False, "plan"
+    if not gate.get("plan_review_ok"):
+        return False, "plan-review"
+    if gate.get("route") != "subagent" or not gate.get("agent_id"):
+        return False, "plan-review-route"
+    if children_filed is None:
+        return False, "unreadable:child-cap"
+    if children_filed >= max_children:
+        return False, "child-cap"
+    return True, ""
+
+
+def _status(sdlc_dir, config, goal):
+    """The one call into `phase_gate.status` (a seam: a test makes it raise)."""
+    return _load("phase_gate").status(sdlc_dir, config, goal)
+
+
+def _first_line(text):
+    return text.split("\n", 1)[0].rstrip("\r") if isinstance(text, str) else None
+
+
+def _label_names(labels):
+    return [str(x.get("name")) if isinstance(x, dict) else str(x) for x in labels]
+
+
+def max_children(config):
+    """`goal_decompose.max_children`: a whole number of at least 1, else the default 8 (as `loop.py`)."""
+    block = config.get("goal_decompose") if isinstance(config, dict) else None
+    value = block.get("max_children") if isinstance(block, dict) else None
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 1 else 8
+
+
+def read_decompose_facts(sdlc_dir, config, source, goal, body):
+    """-> the keyword facts `decompose_decision` takes (less `kind` and `goal`). The only place they are read; any fact
+    that cannot be read is None, which the decision treats as failing its leg. Parent P is parsed from the goal's own
+    body, never passed in. `fetch_comments_strict(P)` is read at most once per call (one `track` call, one read)."""
+    number = goal_number(goal)
+    key = str(number) if number is not None else str(goal)
+    facts = {"m_first_line": None, "m_labels": None, "parent_comments": None, "gate": None, "children_filed": None,
+             "child_first_line": _first_line(body) if body else None, "max_children": max_children(config)}
+    if source is not None and hasattr(source, "fetch_body_labels"):
+        try:
+            issue = source.fetch_body_labels(key)
+            facts["m_first_line"] = _first_line(issue.get("body"))
+            if isinstance(issue.get("labels"), list):
+                facts["m_labels"] = _label_names(issue["labels"])
+        except Exception:                                  # noqa: BLE001 - unreadable: the leg fails closed
+            pass
+    found = DECOMPOSE_OF_RE.match(facts["m_first_line"] or "")
+    if found and hasattr(source, "fetch_comments_strict"):
+        try:
+            comments = source.fetch_comments_strict(found.group(1))["comments"]
+            if isinstance(comments, list):
+                facts["parent_comments"] = [str(c.get("body") if isinstance(c, dict) else c) for c in comments]
+        except Exception:                                  # noqa: BLE001
+            pass
+    try:
+        if _load("actionlog").enabled(config):
+            pg = _load("phase_gate")
+            rows = {r[0]: r for r in _status(sdlc_dir, config, key)["rows"]}
+            verdicts = [r for r in pg._rows(sdlc_dir, key) if r.get("kind") == "verdict" and r.get("phase") == "plan_review"]
+            plan = _load("review_context").phase_doc_file(sdlc_dir, key, "plans")
+            facts["gate"] = {"plan_present": pg._file_ok(plan), "plan_ok": bool(rows.get("plan") and rows["plan"][1]),
+                             "plan_review_ok": bool(rows.get("plan_review") and rows["plan_review"][1]),
+                             "route": verdicts[-1].get("route") if verdicts else None,
+                             "agent_id": verdicts[-1].get("agent_id") if verdicts else None}
+    except Exception:                                      # noqa: BLE001 - an unreadable record is never a pass
+        facts["gate"] = None
+    try:
+        facts["children_filed"] = children_filed(sdlc_dir, key)
+    except (RecordError, ValueError, OSError):
+        pass
+    return facts
+
+
+def decompose_refusal(why):
+    """The exit-3 text for a child that was not exempt: names the failing leg and the in-goal gesture, never a lever."""
+    leg = DECOMPOSE_LEGS.get(why) or ("a fact could not be read (%s)" % why)
+    return ("not filed: this `--kind child` is not a proven decompose child [%s]: %s. A decompose child is exempt from "
+            "routing only when its meta-goal, the parent's decompose-filed comment, the child's marker and an independent "
+            "plan-review of the meta-goal's plan are all recorded; work that belongs to a goal goes in its plan with "
+            "`work.py add-slice`" % (why, leg))
 
 
 def reason_marker(reason):
@@ -140,14 +285,22 @@ def bound_goal(sdlc_dir, cwd):
     return None
 
 
-def gather_facts(sdlc_dir, config, goal, source, body, labels, cwd):
-    """-> (goal_unit, item_unit, added, cap, warnings). The only place the router's facts are read."""
-    handoff_cap = _load("handoff").max_added_slices(config)
-    stem = _stem(goal)
+def check_bound(sdlc_dir, goal, cwd):
+    """Refuse (`RouteRefused`, exit 2) a follow-up naming another goal than the one whose worktree holds `cwd`. Every
+    spelling of a numeric goal (`21`, `#21`, `21.md`) is one goal. Shared by `gather_facts` and the decompose exemption,
+    which skips `gather_facts` and so must bind the goal itself."""
+    number = goal_number(goal)
+    stem = str(number) if number is not None else _stem(goal)
     bound = bound_goal(sdlc_dir, cwd)
     if bound is not None and bound != stem:
         raise RouteRefused("this session works in goal %s's worktree but the follow-up names goal %s: refused, "
                            "nothing filed (file it against %s)" % (bound, stem, bound))
+
+
+def gather_facts(sdlc_dir, config, goal, source, body, labels, cwd):
+    """-> (goal_unit, item_unit, added, cap, warnings). The only place the router's facts are read."""
+    handoff_cap = _load("handoff").max_added_slices(config)
+    check_bound(sdlc_dir, goal, cwd)
     features = _features()
     gunit = goal_unit(source, goal)
     try:
@@ -243,6 +396,36 @@ def append_slice(sdlc_dir, goal, sid, plan_sha_before, held=False, _pause=None):
         return body()
 
 
+def _meta_stem(goal):
+    number = goal_number(goal)
+    return str(number) if number is not None else _stem(goal)
+
+
+def children_filed(sdlc_dir, goal):
+    """Children recorded for decompose goal `goal` (the exempt filings `track` made on this machine). Raises
+    `RecordError` on a record whose `children` is not a list: never read as zero. Machine-local, like the slice count:
+    the ceiling is `max_children x machines`. A crash between filing a child and recording it under-counts by one; the
+    recovery lever is the decompose goal's own step-0 read-back of the children on its timeline, not this count."""
+    children = read_record(sdlc_dir, _meta_stem(goal)).get("children", [])
+    if not isinstance(children, list):
+        raise RecordError("follow-up record for %s has a corrupt `children` list" % goal)
+    return len(children)
+
+
+def append_child(sdlc_dir, goal, child_id):
+    """Count one decompose child, idempotent on its issue id, under the same lock and atomic write as `append_slice`."""
+    meta = _meta_stem(goal)
+    with locked(sdlc_dir, meta):
+        rec = read_record(sdlc_dir, meta)
+        children = rec.get("children", [])
+        if not isinstance(children, list):
+            raise RecordError("follow-up record for %s has a corrupt `children` list" % goal)
+        if str(child_id) not in children:
+            rec["children"] = children + [str(child_id)]
+            _write(sdlc_dir, meta, rec)
+        return rec
+
+
 def first_routed(sdlc_dir, goal):
     return read_record(sdlc_dir, goal).get("first_routed_at")
 
@@ -264,6 +447,12 @@ def added_count(sdlc_dir, goal):
 
 # --- doctor ------------------------------------------------------------------------------------------------------
 
+def _decomposed_child(body):
+    """A proven decompose child is filed with no reason marker (A2), so it is recorded by its FIRST-LINE
+    `decomposed-from` marker (the same first-line rule the exemption reads)."""
+    return bool(DECOMPOSED_FROM_RE.match(str(body or "").split("\n", 1)[0].rstrip("\r")))
+
+
 def unrecorded(issues, mode):
     """-> (cutoff | None, [numbers]) for the doctor row. `issues` are the rows of ONE capped read of open
     `sdlc:followup` issues ({number, createdAt, body}). The cutoff is the earliest `createdAt` among rows carrying
@@ -276,5 +465,6 @@ def unrecorded(issues, mode):
         return None, []
     cutoff = stamped[0]
     flagged = [i.get("number") for i in issues
-               if not parse_reason(i.get("body")) and str(i.get("createdAt") or "") >= cutoff]
+               if not parse_reason(i.get("body")) and not _decomposed_child(i.get("body"))
+               and str(i.get("createdAt") or "") >= cutoff]
     return cutoff, flagged
