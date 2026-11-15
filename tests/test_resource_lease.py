@@ -680,14 +680,21 @@ def test_non_session_lease_measures_only_its_pid(lease, monkeypatch):
     assert lease._seen({"kind": "verify", "pid": 100, "peak": 0}) == 14
 
 
+def _take_over(lease, got, pid):
+    """Make the lease record claim to be process `pid`: its pid AND that process's own start.
+
+    Rewriting only the pid leaves admit's pid_start (the test process's start), so a real, older
+    process at that pid reads as pid reuse and note_peak refuses it (#2228)."""
+    path = pathlib.Path(lease.state_dir()) / "leases" / (got.id + ".json")
+    path.write_text(json.dumps(dict(json.loads(path.read_text()), pid=pid, pid_start=lease.process_start(pid))))
+
+
 def test_peak_taken_while_the_session_runs_is_what_release_records(lease, monkeypatch):
     """#1816: the tree is gone at release; the observation is the peak sampled while it lived."""
     monkeypatch.setattr(lease, "take_descendants", lambda pid: [101] if pid == 100 else [])
     lease.box["foot"].update({100: 14, 101: 400})
     got = lease.admit("session", 1, "r", "supervisor:x", pid=os.getpid(), now=1000.0)
-    path = pathlib.Path(lease.state_dir()) / "leases" / (got.id + ".json")
-    record = json.loads(path.read_text())
-    path.write_text(json.dumps(dict(record, pid=100)))
+    _take_over(lease, got, 100)
     monkeypatch.setattr(lease, "pid_alive", lambda pid: True)
     assert lease.note_peak(got.id) is True
     lease.box["foot"].pop(101)  # the session exited; only the supervisor remains
@@ -720,7 +727,7 @@ def test_ring_unit_is_bytes_per_sizeable_process_of_the_run(lease, monkeypatch):
     lease.box["foot"].update({100: 500, 101: 500, 102: 480, 103: 520, 104: 500, 105: 1})  # 105 is a tiny helper
     got = lease.admit("verify", 1, "r", "g1", pid=os.getpid(), now=1000.0)
     path = pathlib.Path(lease.state_dir()) / "leases" / (got.id + ".json")
-    path.write_text(json.dumps(dict(json.loads(path.read_text()), pid=100)))
+    _take_over(lease, got, 100)
     monkeypatch.setattr(lease, "pid_alive", lambda pid: True)
     assert lease.note_peak(got.id) is True
     assert json.loads(path.read_text())["procs"] == 5
@@ -728,6 +735,21 @@ def test_ring_unit_is_bytes_per_sizeable_process_of_the_run(lease, monkeypatch):
     ring = _ring(lease)
     assert ring["verify"] == [500 // 5]
     assert ring["verify_run"] == [500]
+
+
+@pytest.mark.parametrize("body", [
+    "test_peak_taken_while_the_session_runs_is_what_release_records",
+    "test_ring_unit_is_bytes_per_sizeable_process_of_the_run",
+], ids=["peak", "ring"])
+def test_session_tests_hold_with_a_live_process_at_the_fake_pid(lease, monkeypatch, body):
+    """#2228: a real, long-lived process 100 must not turn the fake-pid premise hostile.
+
+    The wrapper simulates that occupant with a FIXED start far outside START_TOLERANCE (never
+    computed from the real pid 100, which is usually absent), then runs the real body of each
+    named test. The bodies must make the record say which process it claims to be."""
+    real = lease.process_start
+    monkeypatch.setattr(lease, "process_start", lambda pid: 1e6 if pid == 100 else real(pid))
+    globals()[body](lease, monkeypatch)
 
 
 def test_verify_admission_is_bounded_by_the_largest_whole_run_peak(lease):

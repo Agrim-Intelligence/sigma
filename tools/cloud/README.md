@@ -170,6 +170,7 @@ Each failure family, its cause in this container, and its fix (all in #2225, non
 | a hung-credential-helper control that could not hang | the environment injects `credential.interactive=false` through `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>`, so git never runs askpass | `hermetic()` drops `GIT_CONFIG_COUNT`, `GIT_CONFIG_PARAMETERS` and every `GIT_CONFIG_KEY_*`/`GIT_CONFIG_VALUE_*` |
 | a signing park that quoted git, not the signer | git 2.56 prints `Could not apply <sha>... <subject>` after the signer's line | product fix: `commit_signing._detail_line` skips that narration |
 | a descriptor test failing inside pytest | it faked the process-wide `os.fstat`, and pytest 9.2's fd capture calls `os.fstat` while the fake is live | the fakes answer only for the fake descriptor |
+| tests that fake a pid against the real `/proc` | rewriting only the record's `pid` leaves `pid_start` from the real test process; a real, older process at that pid then reads as reuse and `note_peak` returns False (#2228; whether the failing container had such a process is inferred, not observed) | a test that fakes a pid rewrites `pid_start` with it (`_take_over` in `tests/test_resource_lease.py`); production is unchanged, a different process at a recorded pid is reuse |
 | the rest | merged drift (fixtures, inventories, prose budgets) and the collection memory guard, unrelated to the container | fixtures and inventories caught up; prose trimmed with no ceiling changed |
 
 **If a verify holds.** When the guard holds a verify, `loop.py verify` exits 5 with no evidence. Here that most
@@ -201,6 +202,9 @@ read, so the next person can read it again.
 | git config from the environment | `GIT_CONFIG_COUNT=3`: `credential.interactive=false` and two `url.https://github.com/.insteadOf` | `git config --show-origin --list \| grep '^command line'` |
 | checkout | a fresh container's checkout can be a detached HEAD (reported on #2225; not re-seen in this run). `git checkout -B main origin/main` puts `main` back on the remote's tip | `git status -sb` |
 | session limits | a background command is stopped at its timeout, 30 minutes unless the call asks for more (up to 2 hours), and the full verify takes about 61 minutes: give it the longer timeout or it is cut short | the host tool's documented timeout (not measured here beyond the lost 40-minute call) |
+| PID view | low PIDs can be held by long-lived processes (here PID 1 is `process_api`, about 80 processes, `pid_max` 32768); PID 100 may be occupied (whether the failing container's was is inferred, not observed) | `ls -d /proc/100` |
+| `ns_last_pid` | writable as root here (it needs the capability to restore PIDs, which root has): write 99 and the next spawn gets PID 100, which is how #2228's live control forces an occupant | `cat /proc/sys/kernel/ns_last_pid`; `ls -l /proc/sys/kernel/ns_last_pid` |
+| pid-reuse tolerance | `START_TOLERANCE = 2.0` s in `resource_lease.py`: a process at a recorded pid that started within it counts as the same one, so an occupant under 2.0 s old passes by luck | `grep -n START_TOLERANCE skills/sigma-loop/scripts/resource_lease.py` |
 
 ## How to diagnose a verify that fails only here
 
