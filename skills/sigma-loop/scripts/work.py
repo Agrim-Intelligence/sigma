@@ -10843,6 +10843,7 @@ def main(argv):
             "run-resolved-review": "usage: work.py run-resolved-review <sdlc_dir> <goal> --manifest <path> --resolution <path> [--verdict approve|block|unblock --reason <text>]  (the verdict flags are for the inline route only)",
             "record-subagent-review": "usage: work.py record-subagent-review <sdlc_dir> <goal> --manifest <path> --resolution <path> --verdict approve|block|unblock --reason <text> --agent-id <reviewer agentId>",
             "reconcile-review-post": "usage: work.py reconcile-review-post <sdlc_dir> <goal> --evidence <path>",
+            "add-slice": "usage: work.py add-slice <sdlc_dir> <goal> --title <title> --criteria-file <file> [--test <selector> ...]  (a follow-up joins its goal as a slice; see add_slice.py)",
             "post-review": "usage: work.py post-review <sdlc_dir> <goal> --verdict approve|block|unblock --evidence <path> [--reason <text>]",
             "record-plan-review": _RECORD_PLAN_REVIEW_USAGE,
             "quality-waive": _QUALITY_WAIVE_USAGE,
@@ -10956,6 +10957,8 @@ def main(argv):
         except (OSError, ValueError) as exc:
             print(f"work: {exc}", file=sys.stderr)
             return 2
+    if len(argv) >= 2 and argv[1] == "add-slice":                 # #2224: a follow-up joins its goal as a slice
+        return _load("add_slice").main(argv[2:])
     if len(argv) >= 2 and argv[1] == "record-plan-review":
         # #258: dispatched OUTSIDE `_COMMANDS`, like the review verbs above: plan-review is a portable
         # executor that also runs with `work.enabled` off, where the verb keeps no file but still

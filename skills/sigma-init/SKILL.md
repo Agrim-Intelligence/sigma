@@ -32,6 +32,7 @@ alias: it runs this same flow. The flow is `scripts/init_flow.py`, the same Pyth
    `github-templates/ISSUE_TEMPLATE/goal.md.tmpl`, written to the repo's .github/ISSUE_TEMPLATE/goal.md only when
    absent and never overwritten, #2222), `5/5 summary` and a `Next:` line
    (`/sigma-loop`, or `--demo` first when nothing is queued).
+   Follow-ups: `in-goal` is the default (`followups.mode`); setup never changes it.
    Every question not yet answered is ONE `[ask]` line naming the flag that answers it, in one
    machine-readable shape: `[ask] <id>: <prose> -> <answer> ; <answer>`, each answer a bare
    `--flag` or `--flag VALUE|VALUE` (upper-case values are placeholders you fill in). Everything

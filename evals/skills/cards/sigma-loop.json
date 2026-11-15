@@ -10,12 +10,20 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/add_slice.py",
+      "role": "gesture"
+    },
+    {
       "path": "skills/sigma-loop/scripts/actionlog.py",
       "role": "library"
     },
     {
       "path": "skills/sigma-loop/scripts/agent_watch.py",
       "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/followup_route.py",
+      "role": "library"
     },
     {
       "path": "skills/sigma-loop/scripts/ai_filed_counter.py",

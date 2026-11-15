@@ -69,6 +69,11 @@ plan — the independent reviewer judges the split itself, not just this templat
 
 ## Step 3 — implement: create each child (never `gh issue create` directly)
 
+File children only after this goal's plan-review is recorded: `track --kind child` is then exempt from
+follow-up routing because four recorded facts hold (this goal's first-line marker, the parent's
+decompose-filed comment, the child's first-line marker below, an independent plan-review of this plan). A
+missing fact refuses and names it; fix that fact, never route around it.
+
 Create each child in dependency order (blockers first, so their issue numbers exist before a
 sibling references them) via:
 

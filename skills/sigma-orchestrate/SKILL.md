@@ -45,11 +45,8 @@ machine's memory and disk are the limit there, not GitHub. Say so on the go-ahea
 - **The project's rules win, with one exception.** Read its `CLAUDE.md` (and what it points to),
   `.sdlc/config.json`, and the person's notes for this project before step 2. Areas, iteration rules, model
   policy, merge method, branch rules, single-writer files and "never" lists bind you exactly as they bind a
-  goal session. The exception is follow-ups, which depend on the project's `followups.mode`
-  (`handoff.py followup-mode "$S"`, [follow-ups](references/follow-ups.md)): `in-goal` means the project
-  already decided it, so nothing is replaced; `file` (the default) means that for goals in this batch the
-  person's standing decision replaces the project's own rule for filing follow-up issues. Name the project
-  rules it replaces on the go-ahead screen.
+  goal session. Follow-ups are decided in code by the project's `followups.mode`
+  (`handoff.py followup-mode "$S"`, [follow-ups](references/follow-ups.md)): nothing goes in a prompt.
 - **Only this batch.** Never steer, message, merge, promote, unpark or comment on a goal or session outside
   this batch, except to read it.
 - **Never**: force-push or rewrite history; edit `.sdlc/config.json`, gates, workflows or rulesets; add
@@ -204,10 +201,8 @@ Show the person, briefly:
   `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/goal_cost.py" report "$S"`, keeping only the rows of
   this batch's goals: when it has none for them (it also prints unrelated goals, or "not measured"), the line says
   "no data for these goals";
-- the follow-up rule in one line — "follow-up work stays in its goal: found before the goal's first green
-  full verify, it joins that goal; found later, it is grouped into one clean-up goal per unit and area at
-  the end of each wave" — and which it is: the project's own setting (`followups.mode: in-goal`), or, with the
-  default `file`, this batch's decision and the project rules it replaces;
+- the follow-up rule in one line — "follow-up work stays in its goal as a slice (`work.py add-slice`); it is
+  filed separately only for another feature or past the slice cap" — and the project's `followups.mode`;
 - the readiness warnings from step 1.
 
 `--dry-run`: stop here. Otherwise ask once and wait for a clear yes, unless `--yes`. A no ends the run with
@@ -229,22 +224,18 @@ nothing written.
 ## 7. Run
 
 Follow [run](references/run.md) every wake until step 9's stop condition. In short: refresh each goal's
-state from GitHub; merge what is approved ([run § merge](references/run.md#merge)); release the blocked dependents of every merged goal (`release_dependents.py`, [run § unblocking](references/run.md#unblocking); a parked dependent still goes through `/sigma-unpark`); collect deferred follow-ups (`scripts/deferred.py parse`) and close finished waves
-([follow-ups](references/follow-ups.md)); then `python3 "${CLAUDE_SKILL_DIR}/scripts/waves.py" ready "$T/goals.json" "$T/state.json"
+state from GitHub; merge what is approved ([run § merge](references/run.md#merge)); release the blocked dependents of every merged goal (`release_dependents.py`, [run § unblocking](references/run.md#unblocking); a parked dependent still goes through `/sigma-unpark`);
+then `python3 "${CLAUDE_SKILL_DIR}/scripts/waves.py" ready "$T/goals.json" "$T/state.json"
 [--seats N]` and launch what it lists ([launch](references/launch.md)); write the tracker; schedule the
 next check-in.
 
 ## 8. Follow-ups stay in their goal
 
-Under the project's `followups.mode: in-goal`, or through one standing decision in each launch prompt under the
-default `file`: follow-up work never becomes a new goal. Found before the
-goal's first green full verify, it is added to that goal's plan as a slice and re-reviewed; found after, it
-is written onto the goal as a deferred item, and when a wave ends you group those items into one clean-up
-goal per unit and area. Clean-up goals do not spawn more. Full text, formats and the safety net for runs
-that file anyway: [follow-ups](references/follow-ups.md).
+Follow-up work never becomes a new goal on its own: `handoff.py track` routes it, and the session adds it to its goal's plan
+as a slice with `work.py add-slice`. A separate goal appears only for another feature or past the slice cap, with its
+reason recorded. Details: [follow-ups](references/follow-ups.md).
 
 ## 9. Stop and report
 
-Stop when every batch goal is merged, stopped (parked, failed, needs-you), stuck or held, every ended wave's
-deferred items are filed or reported, and nothing is running or awaiting merge. Cancel your pending
+Stop when every batch goal is merged, stopped (parked, failed, needs-you), stuck or held, and nothing is running or awaiting merge. Cancel your pending
 check-in, then give the final report ([run § final report](references/run.md#final-report)).

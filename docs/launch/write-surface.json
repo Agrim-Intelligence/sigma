@@ -497,6 +497,14 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/add_slice.py",
+      "function": "_critical",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "only under `work.py add-slice`, inside the per-goal lock; rewrites the goal's plan copies and acceptance record atomically and bumps the count last (#2224)",
+      "risk": "medium"
+    },
+    {
       "path": "skills/sigma-loop/scripts/agent_watch.py",
       "function": "_save_cursor",
       "rule": "fs-write",
@@ -1438,6 +1446,22 @@
       "rule": "fs-write",
       "count": 1,
       "gate": "opt-in; upkeep.enabled; one create-once manifest per unit under the review store in the local state directory",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/followup_route.py",
+      "function": "_write",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "only from `work.py add-slice` / `handoff.py track` under the per-goal lock; one atomic write of .sdlc/state/followups/<goal>.json (#2224)",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/followup_route.py",
+      "function": "locked",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "only from `work.py add-slice` / `handoff.py track`; creates the sibling .lock file beside the follow-up record, refuses where fcntl is absent (#2224)",
       "risk": "medium"
     },
     {

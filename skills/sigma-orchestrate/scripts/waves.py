@@ -17,7 +17,7 @@ goals.json
               "claims": ["src/app/x.py", "ui/src/", "contract:runs-api"],
               "open_prs": [101],           # open pull requests that link the issue and are not this batch's (held)
               "held": null}]}              # or a reason string set by the orchestrator
-  Other keys (wave, deferred, cleanup, ...) are the orchestrator's and are ignored here.
+  Other keys (wave, ...) are the orchestrator's and are ignored here.
 
 state.json (for `ready`)
   {"landed": {"34": ["main"]},             # bases whose tip contains the goal's merge commit

@@ -15,8 +15,8 @@ This replaces SKILL.md's steps 1 to 5: no `loop.py claim`, no approvals, no gate
 
 Four exceptions, named rather than hidden: with `ledger.enabled`, the loop's verbs keep the ledger
 watcher alive, a separate process whose own sweeps are not this run's; an issue the run files
-through `handoff.py` (a hand-off or a tracked follow-up) is a NEW issue, never an existing goal (with
-`followups.mode: in-goal`, `track` files no non-blocking follow-up at all: it stays in its goal);
+through `handoff.py` (a hand-off or a tracked follow-up) is a NEW issue, never an existing goal (under the default
+`followups.mode: in-goal`, it is filed only for another feature or past the slice cap; else `work.py add-slice`); and
 with `backlog_check.enabled`, the pre-check that finds N blocked resolves N's blockers, which writes
 to those blocker issues; and when N itself closes, `record done` runs `release_dependents.py`, whose writes
 are limited to dependents of N (open `sdlc:blocked` goals that name N, only when every dependency they name

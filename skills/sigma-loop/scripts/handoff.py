@@ -27,6 +27,7 @@ preserving wrapper around it — a formal hand-off is exactly its
 is the same-area/non-blocking sibling of `open`, for a finding that doesn't need a human decision.
 """
 import hashlib
+import os
 import importlib.util
 import pathlib
 import re
@@ -92,14 +93,15 @@ def _settings(config):
     return (ledger.settings(config).get("handoff") or {})
 
 
-#: #2153: where a follow-up goes. `file` (the default, and what every project did before this key existed)
-#: files it as a new issue through `track`; `in-goal` keeps it inside the goal that found it (a slice before
-#: the first green verify, else one marked deferred-items comment). Only the exact string `in-goal` turns it
-#: on: a missing key, a wrong type, a typo or a different case all read `file`, so a bad edit can never
-#: silently stop follow-ups being filed.
+#: #2153/#2224: where a follow-up goes. `in-goal` (the default) keeps found work in the goal that found it: `track`
+#: routes every filing through `followup_route.route` and refuses a same-feature find, pointing at `work.py
+#: add-slice`; only another feature or a goal past its slice cap is filed (as a separate goal, with the reason
+#: recorded). `file` is the opt-out: `track` files as it did before routing existed. Only the exact string `file`
+#: reads `file`: a missing key, a typo or a wrong type reads `in-goal`, so a bad edit now REFUSES a filing (and `track`
+#: prints one stderr line naming the ignored value) instead of silently filing one -- the inverse of the old fail-safe.
 FOLLOWUP_MODES = ("file", "in-goal")
-#: `track --kind`: what a tracked issue is. Only `followup` (the default when the flag is absent) is
-#: refused under `in-goal`; the others are work that is not a follow-up of the goal filing it.
+#: `track --kind`: what a tracked issue is. Every kind is routed (#2224) except a PROVEN decompose `child`
+#: (`followup_route.decompose_decision`, only `track` calls it); `--blocks yes` stays routed for every kind.
 TRACK_KINDS = ("followup", "prerequisite", "cleanup", "child")
 FOLLOWUP_REFUSED_EXIT = 3
 #: `followups.max_added_slices` (#2178): how many follow-ups a goal may add to its own plan as new slices under
@@ -107,12 +109,10 @@ FOLLOWUP_REFUSED_EXIT = 3
 #: negative, a fraction, a numeric string) reads this default, never unlimited.
 DEFAULT_MAX_ADDED_SLICES = 10
 _IN_GOAL_RULE_TEMPLATE = (
-    "follow-up work stays in its goal. Before this goal's first green full verify, add it to the goal's plan "
-    "as a new slice and re-run the phases from plan-review (at most {n} added slices); after that, or past the "
-    "cap, post ONE comment on the goal's issue with the line `<!-- sigma-orchestrate:deferred -->` and one "
-    "line per item, `- [area:<area>] <what> - <why> (files: <paths>)`, and do not file an issue. See "
-    "skills/sigma-orchestrate/references/follow-ups.md. A blocker is not a follow-up: file it with "
-    "`--blocks yes`, or pass `--kind prerequisite`.")
+    "follow-up work stays in its goal. Add it to the goal's plan with `work.py add-slice <sdlc_dir> <goal> --title T "
+    "--criteria-file F` (at most {n} added slices), then re-record plan-review and re-run implement, review and "
+    "retro. It is filed as a separate goal only for another feature (reason different-feature) or past the cap "
+    "(reason slice-cap), and `handoff.py track` does that itself.")
 
 
 def in_goal_rule(limit=DEFAULT_MAX_ADDED_SLICES):
@@ -124,10 +124,10 @@ IN_GOAL_RULE = in_goal_rule()
 
 
 def followup_mode(config):
-    """`file` or `in-goal`, from `followups.mode`. Total: anything but the exact string `in-goal` is `file`."""
+    """`file` or `in-goal`, from `followups.mode`. Total: only the exact string `file` is `file`; the default is `in-goal`."""
     block = config.get("followups") if isinstance(config, dict) else None
     mode = block.get("mode") if isinstance(block, dict) else None
-    return "in-goal" if mode == "in-goal" else "file"
+    return "file" if mode == "file" else "in-goal"
 
 
 def max_added_slices(config):
@@ -144,13 +144,34 @@ def max_added_slices(config):
     return DEFAULT_MAX_ADDED_SLICES
 
 
-def followup_refusal(config, kind, blocks):
-    """The refusal text when `track` must not file this as a new issue, else None. Refused only when the
-    project says `in-goal`, the filing is a follow-up (`--kind` absent or `followup`), and it blocks nothing
-    (`--blocks no`): a blocker is a prerequisite and keeps its own routing."""
-    if followup_mode(config) != "in-goal" or (kind or "followup") != "followup" or blocks != "no":
-        return None
+_FOLLOWUP_ROUTE = None
+
+
+def _followup_route():
+    """One cached module instance, so `RouteRefused` is one class for every raiser and catcher."""
+    global _FOLLOWUP_ROUTE
+    if _FOLLOWUP_ROUTE is None:
+        _FOLLOWUP_ROUTE = _load_sibling("followup_route")
+    return _FOLLOWUP_ROUTE
+
+
+def route_refusal(config, verdict, decompose_why=None):
+    """The refusal text for a `slice` verdict (the find stays in its goal). `decompose_why`: the leg a `--kind child`
+    failed to prove (`followup_route.decompose_decision`); the text then names that leg."""
+    if decompose_why:
+        return _followup_route().decompose_refusal(decompose_why)
     return "not filed (followups.mode is in-goal): " + in_goal_rule(max_added_slices(config))
+
+
+def followup_mode_warning(config):
+    """One line when `followups.mode` is present and is not a mode (a typo reads `in-goal`, so it would otherwise be
+    silent), else None. An absent key or `null` is the default and says nothing. Printed by `track` only."""
+    block = config.get("followups") if isinstance(config, dict) else None
+    value = block.get("mode") if isinstance(block, dict) else None
+    if value is None or (isinstance(value, str) and value in FOLLOWUP_MODES):
+        return None
+    return ("handoff: followups.mode %r is not a mode (%s): ignored, read as in-goal"
+            % (value, "|".join(FOLLOWUP_MODES)))
 
 
 def dependency_label(config):
@@ -678,7 +699,7 @@ def create_tracked_issue(sdlc_dir, config, goal, area, why, *,
                           extra_labels=(), source=None, run=None, dedup=True,
                           upstream_run=None, target_unit=None, idempotency_key=None,
                           upkeep_finding=False, upkeep_qkind="needs_decision",
-                          priority_requested=False, needs_person=None):
+                          priority_requested=False, needs_person=None, reason=None):
     """Open a tracked issue, address it, record it. The one real place the kit ever opens an issue on
     its own behalf — `hand_off()` below is a thin wrapper around this. Generalizes what used to be
     hand-off-only discipline (owner resolution, labels, the `gh` call, the ledger write, the dual
@@ -869,6 +890,15 @@ def create_tracked_issue(sdlc_dir, config, goal, area, why, *,
     # (`idempotency_key` replaces it) and the key rides in the body as an inert line. A caller passing a goal gets
     # the code below byte for byte as before.
     nogoal = goal is None
+    if nogoal and followup_mode(config) == "in-goal":
+        # #2224: a filing with no goal has nothing to route, but from INSIDE a goal's worktree it is that goal's
+        # find under another name. Refused loudly rather than let `goal=None` bypass the router. Residual: from the
+        # root checkout (the loop orchestrator, upkeep) there is nothing to bind to, so it files as before.
+        bound = _followup_route().bound_goal(sdlc_dir, os.getcwd())
+        if bound is not None:
+            raise _followup_route().RouteRefused(
+                "a filing with no goal from inside goal %s's worktree would bypass follow-up routing: pass the goal "
+                "to `handoff.py track` (nothing filed)" % bound)
     if nogoal:
         dedup = False
         scope = idempotency_key or hashlib.sha256(("%s\0%s" % (title, why)).encode("utf-8", "replace")).hexdigest()[:16]
@@ -922,6 +952,8 @@ def create_tracked_issue(sdlc_dir, config, goal, area, why, *,
         heading = title or (f"[{area}] {'dependency' if blocks_goal else 'finding'} from "
                             f"{pathlib.Path(str(goal)).name}")
         text = body if body is not None else _tracked_issue_body(goal, area, why, blocks_goal)
+        if reason:                                # #2224: the one recorded reason this is a separate goal
+            text = "%s\n\n%s\n" % (text.rstrip("\n"), _followup_route().reason_marker(reason))
         # #1471: the new issue inherits the UNIT of the goal it is being filed FROM. Resolved here
         # rather than passed in by each caller for precisely the reason FOLLOWUP_LABEL is added
         # here: this is the one place the kit opens an issue on its own behalf, and an inherited
@@ -1357,6 +1389,13 @@ def create_tracked_issue(sdlc_dir, config, goal, area, why, *,
                 source.note(str(goal), narrative)
             except Exception as exc:                            # noqa: BLE001
                 report["warnings"].append(f"could not comment on the issue: {exc}")
+            if reason:
+                try:
+                    source.note(str(goal), "Filed #%s as a SEPARATE goal, reason %s (%s)." % (
+                        report["issue"], reason, "another feature" if reason == "different-feature"
+                        else "this goal already holds its cap of added slices"))
+                except Exception as exc:                        # noqa: BLE001
+                    report["warnings"].append(f"could not comment the follow-up reason on the issue: {exc}")
         if blocks_goal and hasattr(source, "append_to_body"):
             try:
                 source.append_to_body(str(goal), f"**Blocked by:** #{report['issue']}")
@@ -1631,11 +1670,43 @@ def main(argv):
             if absent:
                 print("handoff.py track: --body-file has no readable `## Done when` section (%s); the goal will need "
                       "criteria before it is agent-ready" % ", ".join(absent), file=sys.stderr)
-        config = ledger._config(sdlc_dir)
-        refusal = followup_refusal(config, kind, blocks)            # #2153: nothing is read or written first
-        if refusal:
-            print("handoff.py track: " + refusal, file=sys.stderr)
-            return FOLLOWUP_REFUSED_EXIT
+        try:
+            config = ledger._config(sdlc_dir)
+        except (OSError, ValueError) as exc:                        # a filing must not guess the mode
+            print(f"handoff.py track: config unreadable ({exc}): nothing filed", file=sys.stderr)
+            return 2
+        extra_labels = [part.strip() for part in (flags.get("label") or "").split(",") if part.strip()]
+        warning = followup_mode_warning(config)
+        if warning:                                                 # #2224 A4: once per invocation, from here only
+            print(warning, file=sys.stderr)
+        reason, routed_source, exempt_child, decompose_why = None, None, False, None
+        if followup_mode(config) == "in-goal":                      # #2224: every kind and `--blocks` value is routed ...
+            fr = _followup_route()
+            try:
+                routed_source = sources.get_source(sdlc_dir, config)
+            except Exception:                                       # noqa: BLE001 - no source: goal reads no unit
+                routed_source = None
+            if kind == "child" and not blocks_map[blocks]:          # ... except a PROVEN decompose child (A2)
+                try:
+                    fr.check_bound(sdlc_dir, goal, os.getcwd())     # the exemption skips gather_facts: bind here
+                except fr.RouteRefused as exc:
+                    print(f"handoff.py track: {exc}", file=sys.stderr)
+                    return exc.code
+                exempt_child, decompose_why = fr.decompose_decision(
+                    kind, goal, **fr.read_decompose_facts(sdlc_dir, config, routed_source, goal, body))
+            if not exempt_child:
+                try:
+                    gunit, iunit, added, cap, notes = fr.gather_facts(sdlc_dir, config, goal, routed_source, body,
+                                                                      extra_labels, os.getcwd())
+                except fr.RouteRefused as exc:
+                    print(f"handoff.py track: {exc}", file=sys.stderr)
+                    return exc.code
+                for note in notes:
+                    print(f"handoff: {note}", file=sys.stderr)
+                verdict, reason = fr.route(gunit, iunit, added, cap)
+                if verdict == "slice":
+                    print("handoff.py track: " + route_refusal(config, verdict, decompose_why), file=sys.stderr)
+                    return FOLLOWUP_REFUSED_EXIT
         report = create_tracked_issue(
             sdlc_dir, config, goal, area, why,
             same_area=assignee_map[assignee], immediately_actionable=queue_map[queue],
@@ -1653,14 +1724,19 @@ def main(argv):
             # the plugin and pinned since #541, so teaching IT about commas would silently change
             # how every flag everywhere reads one. Empty elements are dropped and each is stripped —
             # a trailing comma or a typed space must not become a nameless label.
-            extra_labels=[part.strip() for part in (flags.get("label") or "").split(",")
-                          if part.strip()],
+            extra_labels=extra_labels, source=routed_source, reason=reason,
             # #1820: optional, and its absence changes nothing -- see create_tracked_issue's own
             # `target_unit` doc for the scope boundary (operator/CLI-level only; the autonomous
             # loop's own SKILL.md-driven filing does not pass this).
             target_unit=flags.get("target-unit"), needs_person=person)
         for warning in report["warnings"]:
             print(f"handoff: {warning}", file=sys.stderr)
+        if exempt_child and report["issue"]:
+            try:
+                fr.append_child(sdlc_dir, goal, report["issue"])
+            except (fr.RecordError, fr.LockUnavailable, ValueError, OSError) as exc:
+                print(f"handoff: the decompose child was filed but not counted toward max_children ({exc})",
+                      file=sys.stderr)
         print(f"tracked to {report['owner'] or '(unowned)'}"
               + _issue_clause(report)                          # #2133: "matched existing #N" on reuse
               + _routing_clause(report)                        # #1551, as in `open` above
@@ -1680,7 +1756,7 @@ def main(argv):
             print(followup_mode(config))                            # #2153: line 1 is the mode, stable for readers
             print("max_added_slices " + str(max_added_slices(config)))   # #2178: line 2, the added-slice limit
         except (OSError, ValueError):
-            print("file")                                           # unreadable config = today's behaviour
+            print("in-goal")                                        # unreadable config reads the default (#2224)
             print("max_added_slices " + str(DEFAULT_MAX_ADDED_SLICES))
         return 0
     if len(argv) >= 3 and argv[1] == "ack":

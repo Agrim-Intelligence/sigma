@@ -58,7 +58,7 @@ class UnitSource:
 def _project(tmp_path):
     sdlc = tmp_path / ".sdlc"
     (sdlc / "state").mkdir(parents=True)
-    (sdlc / "config.json").write_text(json.dumps(ON))
+    (sdlc / "config.json").write_text(json.dumps(dict(ON, followups={"mode": "file"})))   # #2224: these tests exercise the filing path itself, so they opt out of routing (`followups.mode: file`); `raw=True` keeps the default.
     return sdlc
 
 
