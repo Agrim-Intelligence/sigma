@@ -41,6 +41,13 @@ def _run(cwd, argv):
         return done.stdout.strip()
     if argv[:2] == ["gh", "api"] and any("pulls?head=" in a for a in argv):
         return "9"
+    if argv[:3] == ["gh", "api", "repos/{owner}/{repo}"]:
+        # #2165: `work._pr_repo` asks gh which repo `{owner}/{repo}` resolves to and refuses unless it is
+        # the configured one. This fake models a gh whose default repo IS this checkout's `origin`: the
+        # answer is the product's own slug for that remote, never a constant, so a fork-shaped answer
+        # still refuses (the control in the #2225 evidence answers `someone/fork` and goes red).
+        url = _run(cwd, ["git", "remote", "get-url", "origin"])
+        return work._feature_sync()._slug_from_url(url) or ""
     return ""
 
 

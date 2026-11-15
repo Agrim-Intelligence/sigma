@@ -17,6 +17,8 @@ import time
 
 import pytest
 
+import unattended_support as support
+
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 STALE = time.time() - 2 * 86400          # far past the 12 h claim-lease TTL
 OLD_DONE = time.time() - 10 * 86400      # past goal_state_prune's seven-day window
@@ -161,12 +163,9 @@ def test_goal_in_a_live_session_is_kept(sdlc, tmp_path):
 
 def test_without_flock_the_lock_family_refuses_loudly(sdlc, tmp_path):
     lock = _lock(sdlc, "34")
-    shim = tmp_path / "shim"
-    shim.mkdir()
-    (shim / "fcntl.py").write_text("raise ImportError('no flock on this platform')\n")
-    env = dict(os.environ, PYTHONPATH=str(shim))
-    proc = subprocess.run([sys.executable, str(S / "liveness_prune.py"), "sweep", ".sdlc"], cwd=tmp_path,
-                          capture_output=True, text=True, env=env, timeout=120)
+    # fcntl hidden by the runpy driver, not a PYTHONPATH shim: a builtin fcntl ignores the shim (#2225)
+    proc = subprocess.run(support.without_module("fcntl", S / "liveness_prune.py", "sweep", ".sdlc"), cwd=tmp_path,
+                          capture_output=True, text=True, timeout=120)
     assert proc.returncode == 2 and "not supported on this platform" in proc.stderr
     assert lock.exists()
 

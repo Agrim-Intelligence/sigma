@@ -241,16 +241,7 @@ last 30 days, and whether it carries `model` — same enforcement (`actionlog.ap
 bare `--role slice` dispatch, #2514/#2521) and the same band names as the phase row (`LOGGED
 ONLY`/`PARTIAL`/`MISSING`), with gaps named `#<goal> (slice <thread>)` [`x<count>`].
 
-Two differences from the phase row: it gates on `action_log.enabled`, not `journal.enabled` (its
-data is local-log-only, no ledger dependency); and it can't see a slice that ran with zero log
-entries at all, or tell apart two slices that both omitted `--thread` (a `--thread` compliance gap
-of its own, out of scope here) — named limitations, not silently equivalent to the phase row's
-ledger-backed coverage.
-
-`--role goal-slot` gets no row: #2514 deliberately excluded it from the `--model` requirement (its
-tier resolves *inside* the dispatched subagent, after dispatch — nothing to pass at the call site),
-so nothing requires `--model` there on `main` today and a row would only produce false gaps. #2557
-tracks adding one once that requirement lands.
+Its gate, its named limitations, and why `--role goal-slot` has no row: [slice row](references/dispatch-slice-row.md).
 
 Same posture as both rows above: diagnostic, never a gate.
 

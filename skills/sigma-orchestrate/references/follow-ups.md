@@ -13,9 +13,14 @@ The decision is a project setting, `followups.mode` in `.sdlc/config.json` ([con
 read with `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/handoff.py" followup-mode "$S"`, which prints `file` or `in-goal` on its first line and `max_added_slices <n>` (the configured limit, default 10) on its second.
 
 - **`in-goal`**: the project has decided that follow-ups stay in their goal, for every run, not only this batch.
-  `handoff.py track` refuses a non-blocking follow-up (exit 3, nothing filed) and prints the rule, `sigma-review` and
-  the landing path route follow-ups the same way, and the launch prompt carries nothing about follow-ups. Say so on
-  the go-ahead screen. Everything below about slices, deferred items and clean-up goals applies unchanged.
+  `handoff.py track` refuses a non-blocking follow-up (`--blocks no`, with `--kind` absent or `followup`; exit 3,
+  nothing filed) and prints the rule; the follow-up stays in its goal as a slice or one deferred-items comment. A
+  blocker (`--blocks yes`) and work that is not a follow-up of this goal (`--kind prerequisite`, `cleanup` or
+  `child`) are filed as always, and `--kind` changes nothing when the mode is `file`. `sigma-review` and the landing
+  path route follow-ups the same way: a reviewer does not file a follow-up finding, it records it as a follow-up in
+  its report and lets the goal keep it (a slice before the goal's first green verify, else a deferred-items comment).
+  The launch prompt carries nothing about follow-ups. Say so on the go-ahead screen. Everything below about slices,
+  deferred items and clean-up goals applies unchanged.
 - **`file`** (default): the project files follow-ups as new goals. For goals in this batch only, the standing
   decision below replaces that rule, and goes into every launch prompt. The go-ahead screen names the replaced rule.
   A session that still calls `handoff.py track` for a follow-up files it (the leak net at the end catches it).

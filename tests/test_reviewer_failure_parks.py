@@ -4,6 +4,7 @@
 `record-review` / `record-plan-review` refuse an APPROVING verdict on a process/command route unless
 that receipt says the process ran, printed a lone `VERDICT: approve`, and (plan-review) saw these
 plan bytes. Each guard clause has its own test below; the PR body names the red test per break."""
+import contextlib
 import hashlib
 import importlib.util
 import time
@@ -14,6 +15,8 @@ import subprocess
 import sys
 
 import pytest
+
+import unprivileged
 
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 GOAL = ".sdlc/goals/0001-x.md"
@@ -320,20 +323,32 @@ def test_a_corrupt_config_cannot_turn_a_failed_route_into_an_inline_approval(tmp
 
 @pytest.mark.parametrize("damage", ["garbage", "list", "directory", "unreadable"])
 def test_a_damaged_receipt_refuses(tmp_path, damage):
-    p = _project(tmp_path)
-    reviewer_script(p, APPROVE); run_reviewer(p)
-    f = p / ".sdlc/state/reviewer-runs/0001-x.review.json"
-    if damage == "garbage":
-        f.write_text("\x00{")
-    elif damage == "list":
-        f.write_text("[]")
-    elif damage == "directory":
-        f.unlink(); f.mkdir()
-    else:
-        f.chmod(0)
-    r = record_review(p)
-    f.chmod(0o600) if damage == "unreadable" else None
-    assert r.returncode == 2, damage
+    """`unreadable` runs `record-review` through `tests/unprivileged.py`: as root, mode 0 denies nothing (#2225)."""
+    with contextlib.ExitStack() as stack:
+        base = tmp_path
+        if damage == "unreadable":                    # a root-owned project in the reader's tree, handed over below
+            base = stack.enter_context(unprivileged.tree()) / "project"
+            base.mkdir()
+        p = _project(base)
+        reviewer_script(p, APPROVE); run_reviewer(p)
+        f = p / ".sdlc/state/reviewer-runs/0001-x.review.json"
+        if damage == "garbage":
+            f.write_text("\x00{")
+        elif damage == "list":
+            f.write_text("[]")
+        elif damage == "directory":
+            f.unlink(); f.mkdir()
+        if damage == "unreadable":
+            assert record_review(p).returncode == 0, "control: the receipt is accepted while it is readable"
+            (p / ".sdlc/state/log/0001-x.jsonl").unlink()    # forget that row, keep the receipt
+            unprivileged.hand_over(p)
+            f.chmod(0)
+            r = unprivileged.run([sys.executable, str(S / "work.py"), "record-review", ".sdlc", GOAL, "--verdict",
+                                  "APPROVE"], cwd=p, home=p / "home", reach=[p, S / "work.py"],
+                                 capture_output=True, text=True, timeout=120)
+        else:
+            r = record_review(p)
+        assert r.returncode == 2, (damage, r.stdout, r.stderr)
 
 
 def test_unknown_phase_and_unsafe_goal_are_refused_not_allowed(tmp_path):

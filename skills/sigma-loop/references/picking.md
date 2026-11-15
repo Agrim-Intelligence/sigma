@@ -108,17 +108,10 @@ resolve a blocker or uncertain verdict. Wait for a live slot with the
 host's blocking/event wait; do not issue short repeated status polls that each add a model turn.
 
 **Claim ownership across this exact boundary needs no new mechanism, and nothing is "handed off".**
-The orchestrator's own `next`/`next-batch` call already wrote the goal's claim under ITS
-`--session-pid`; the dispatched subagent then reaches step 3a in its OWN fresh context and captures
-its own `$PPID` for `agent-start --pid`/`work.py start --session-pid` — MEASURED (§2 of
-the plan for #2521) to be the SAME value the orchestrator's own `$PPID` capture already used to
-write the claim, within one continuous session, not a distinct, fresh pid. So there is no cross-pid
-comparison to make at all on THIS boundary. The genuine cross-process boundary `work.py start`'s
-resume guard was built for is CROSS-SESSION instead: a dead picker pid left by an ENDED orchestrating
-session (a crash, or a HANDOFF/BUDGET relaunch) corroborated against a genuinely live worker marker —
-and ships tested: `#1687`/`#1197`/`#1284`/`#2394`, extended by #2521's own claim-ownership regression
-tests for this exact shape. A goal picked for the first time never even reaches the guard — there is
-no worktree yet to resume, only to cut.
+The dispatched subagent's own `$PPID` (for `agent-start --pid`/`work.py start --session-pid` at step 3a)
+is the SAME value the orchestrator used to write the claim within one session (measured for #2521), so
+there is no cross-pid comparison here; `work.py start`'s resume guard is for the cross-session case
+([why](../../../docs/running-unattended.md#claim-ownership-across-a-dispatch)).
 
 Each dispatched subagent is a full agent session, not a lightweight thread — that's the real cost of
 `max_concurrent`, not anything sigma itself holds onto (see the "Memory & sizing"

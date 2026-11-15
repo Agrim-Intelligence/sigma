@@ -262,15 +262,16 @@ def test_a_killed_merge_runner_is_recovered_by_the_documented_gestures(tmp_path)
 
     # the old session registered itself as the agent for this goal; its pid is the runner's, dead after the kill
     config = tw.state.load_config(sd)
-    marker_path = None
+    marker_path = marker_record = None
 
     def register(pid):
-        nonlocal marker_path
+        nonlocal marker_path, marker_record
         import importlib.util
         spec = importlib.util.spec_from_file_location("loop_for_marker", ROOT / "skills" / "sigma-loop" / "scripts" / "loop.py")
         lp = importlib.util.module_from_spec(spec); spec.loader.exec_module(lp)
         assert lp.agent_start(sd, goal, pid, config) is True
         marker_path = lp._agent_marker_path(sd, goal, "main")
+        marker_record = lambda: lp._agent_marker_record(sd, goal, "main")    # noqa: E731
 
     # 1. a real merge runner, required check still pending
     out_f, err_f = tmp_path / "merge.out", tmp_path / "merge.err"
@@ -291,7 +292,8 @@ def test_a_killed_merge_runner_is_recovered_by_the_documented_gestures(tmp_path)
             runner.wait()
     assert runner.returncode == -signal.SIGKILL
     register(runner.pid)                                              # the old session's marker, now naming a dead pid
-    assert marker_path.read_text().split()[0] == str(runner.pid)
+    # the marker is JSON since #2116-#2119; read it with the product's own reader
+    assert marker_record()["pid"] == runner.pid
     assert not _has(world, "/merge --method PUT"), "the kill must land before any merge"
     receipt = json.loads(_rpath(sd, "merge", goal).read_text())
     assert receipt["outcome"] == "running" and receipt["pid"] == runner.pid, receipt
@@ -315,8 +317,9 @@ def test_a_killed_merge_runner_is_recovered_by_the_documented_gestures(tmp_path)
     assert waited.returncode == 1 and "open and unmerged" in waited.stdout, (waited.stdout, waited.stderr)
     registered = _sh(reg_g, env, tmp_path)
     assert registered.returncode == 0, registered.stderr
-    assert marker_path.read_text().split()[0].isdigit()
-    assert marker_path.read_text().split()[0] != str(runner.pid), "the dead runner's pid is still the marker"
+    reregistered = marker_record()
+    assert isinstance(reregistered["pid"], int) and reregistered["pid"] > 0, marker_path.read_text()
+    assert reregistered["pid"] != runner.pid, "the dead runner's pid is still the marker"
 
     mw.flag(world, "green")                                            # the pending check has finished
     merged = _sh(merge_g, env, tmp_path)

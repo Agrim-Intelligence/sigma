@@ -6,6 +6,7 @@ fixture.  A clean-report assertion alone would pass if `running.md` were never c
 import importlib.util
 import json
 import pathlib
+import shutil
 import subprocess
 import sys
 
@@ -105,15 +106,19 @@ def test_a_measurement_above_the_committed_ceiling_fails(tmp_path):
     assert any("research: measured words" in item and "exceeds ceiling" in item for item in findings)
 
 
-def test_documented_gate_turns_red_for_a_planted_500_word_running_reference():
-    """The exact documented gesture catches a real added instruction, then restores the fixture."""
-    running = ROOT / "skills" / "sigma-loop" / "references" / "running.md"
-    original = running.read_text(encoding="utf-8")
-    try:
-        running.write_text(original + "\n\n" + ("planted-budget-word " * 500), encoding="utf-8")
-        result = subprocess.run([sys.executable, str(MODULE)], cwd=ROOT, capture_output=True, text=True)
-        assert result.returncode == 1
-        assert "orchestrator: measured words" in result.stdout
-        assert "goal-slot: measured words" in result.stdout
-    finally:
-        running.write_text(original, encoding="utf-8")
+def test_documented_gate_turns_red_for_a_planted_500_word_running_reference(tmp_path):
+    """The exact documented gesture catches a real added instruction, run on a COPY of the tree.
+
+    It used to plant the words in the tracked `running.md` itself and restore it afterwards, so a second test
+    process, or a kill mid-test, saw (or kept) the planted text: verify's flake check, which runs the planned
+    files two at a time, failed `test_committed_budget_is_fresh` and the regression-mutator gate test (#2225)."""
+    copy = tmp_path / "tree"
+    for d in ("skills", "evals", "examples"):
+        shutil.copytree(ROOT / d, copy / d, ignore=shutil.ignore_patterns("__pycache__"))
+    running = copy / "skills" / "sigma-loop" / "references" / "running.md"
+    running.write_text(running.read_text(encoding="utf-8") + "\n\n" + ("planted-budget-word " * 500), encoding="utf-8")
+    result = subprocess.run([sys.executable, str(copy / "evals" / "phase_context_budget.py")], cwd=copy,
+                            capture_output=True, text=True)
+    assert result.returncode == 1
+    assert "orchestrator: measured words" in result.stdout
+    assert "goal-slot: measured words" in result.stdout

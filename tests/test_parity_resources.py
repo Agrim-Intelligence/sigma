@@ -604,6 +604,13 @@ def test_posix_descriptor_type_identity_and_close_errors(modules, monkeypatch, t
     from types import SimpleNamespace
     import stat
     monkeypatch.setattr(sources.sys, 'platform', 'darwin')
+    # `sources.os` is the process-wide `os` module, so every fake below answers only for the fake
+    # descriptor 11 (or the path the product opens) and delegates anything else to the real call:
+    # pytest's own fd capture runs `os.fstat(<capture fd>).st_size` while these patches are live
+    # (pytest 9.2's FDCapture.snap), and a global fake that answers it fails the test from outside.
+    FAKE_FD = 11
+    real_open, real_fstat, real_close = os.open, os.fstat, os.close
+    real_fstatvfs = getattr(os, 'fstatvfs', None)
     original = dict(st_mode=stat.S_IFDIR|0o700, st_dev=1, st_ino=2)
     for field, value, when in [('st_dev', 3, 'opened'), ('st_ino', 3, 'opened'),
                                ('st_mode', stat.S_IFREG|0o600, 'opened'),
@@ -619,18 +626,32 @@ def test_posix_descriptor_type_identity_and_close_errors(modules, monkeypatch, t
                 return SimpleNamespace(**after)
             def __str__(self):
                 return '/chosen'
-        monkeypatch.setattr(sources, 'output_directory', lambda path: (Resolved(), SimpleNamespace(**original)))
-        monkeypatch.setattr(sources.os, 'open', lambda *args: 11)
-        monkeypatch.setattr(sources.os, 'fstat', lambda fd: SimpleNamespace(**opened))
-        monkeypatch.setattr(sources.os, 'fstatvfs', lambda fd: SimpleNamespace(f_bavail=7, f_frsize=4096), raising=False)
+        chosen = Resolved()
+        monkeypatch.setattr(sources, 'output_directory', lambda path, chosen=chosen: (chosen, SimpleNamespace(**original)))
+        def fake_open(path, *args, chosen=chosen):
+            return FAKE_FD if path is chosen else real_open(path, *args)
+        def fake_fstat(fd, opened=opened):
+            return SimpleNamespace(**opened) if fd == FAKE_FD else real_fstat(fd)
         closed = []
-        monkeypatch.setattr(sources.os, 'close', closed.append)
+        def fake_close(fd, closed=closed):
+            if fd != FAKE_FD:
+                return real_close(fd)
+            closed.append(fd)
+        monkeypatch.setattr(sources.os, 'open', fake_open)
+        monkeypatch.setattr(sources.os, 'fstat', fake_fstat)
+        def fake_fstatvfs(fd):
+            return SimpleNamespace(f_bavail=7, f_frsize=4096) if fd == FAKE_FD else real_fstatvfs(fd)
+        monkeypatch.setattr(sources.os, 'fstatvfs', fake_fstatvfs, raising=False)
+        monkeypatch.setattr(sources.os, 'close', fake_close)
         with pytest.raises(sources.Refused, match='invalid-source'):
             sources.disk_capacity('.')
-        assert closed == [11]
-    monkeypatch.setattr(sources.os, 'fstat', lambda fd: SimpleNamespace(**original))
+        assert closed == [FAKE_FD]
+    monkeypatch.setattr(sources.os, 'fstat',
+                        lambda fd: SimpleNamespace(**original) if fd == FAKE_FD else real_fstat(fd))
     after.update(original)
     def close_failure(fd):
+        if fd != FAKE_FD:
+            return real_close(fd)
         raise OSError('close failed')
     monkeypatch.setattr(sources.os, 'close', close_failure)
     with pytest.raises(sources.Refused, match='source-unavailable'):

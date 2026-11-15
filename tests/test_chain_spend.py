@@ -7,6 +7,8 @@ import json
 import pathlib
 import time
 
+import unprivileged
+
 S = pathlib.Path(__file__).resolve().parents[1] / "skills" / "sigma-loop" / "scripts"
 spec = importlib.util.spec_from_file_location("chain_spend_t1586", S / "chain_spend.py")
 cs = importlib.util.module_from_spec(spec)
@@ -73,24 +75,25 @@ def test_cap_fail_closed(tmp_path):
     _write(tmp_path, [_spend(1, 1)])
     ok, why = cs.admit(tmp_path, cfg, chain)
     assert not ok and why.startswith("capped:") and "spent" in why
-    bad = tmp_path / "bad"
-    (bad / "events").mkdir(parents=True)
-    (bad / "events" / "x.jsonl").write_bytes(b"{}\n")
-    (bad / "events" / "x.jsonl").chmod(0)
-    try:
-        ok, why = cs.admit(bad, cfg, chain)
-    finally:
-        (bad / "events" / "x.jsonl").chmod(0o644)
-    assert not ok and "unreadable" in why
-    assert cs.admit(bad, {}, chain) == (True, "")   # no cap set: nothing is read
-    dd = tmp_path / "dir"
-    (dd / "events").mkdir(parents=True)
-    (dd / "events").chmod(0)
-    try:
-        ok, why = cs.admit(dd, cfg, chain)
-    finally:
-        (dd / "events").chmod(0o755)
-    assert not ok and "unreadable" in why   # an unreadable directory is not an empty ledger
+    # The two denied reads run through `tests/unprivileged.py`: as root, mode 0 denies nothing (#2225).
+    admit = "mod.admit(Path(root), cfg, chain)"
+    with unprivileged.tree() as scratch:
+        bad = scratch / "bad"
+        (bad / "events").mkdir(parents=True)
+        (bad / "events" / "x.jsonl").write_bytes(b"{}\n")
+        dd = scratch / "dir"
+        (dd / "events").mkdir(parents=True)
+        unprivileged.hand_over(scratch)
+        (bad / "events" / "x.jsonl").chmod(0)
+        (dd / "events").chmod(0)
+        got = unprivileged.call(S / "chain_spend.py", admit, root=str(bad), cfg=cfg, chain=chain)
+        ok, why = got["ok"]
+        assert not ok and "unreadable" in why, got
+        assert unprivileged.call(S / "chain_spend.py", admit, root=str(bad), cfg={}, chain=chain) == \
+            {"ok": [True, ""]}   # no cap set: nothing is read
+        got = unprivileged.call(S / "chain_spend.py", admit, root=str(dd), cfg=cfg, chain=chain)
+        ok, why = got["ok"]
+        assert not ok and "unreadable" in why, got   # an unreadable directory is not an empty ledger
     for bad_cap in ("5", 0, -1, True):
         ok, why = cs.admit(tmp_path, {"chain": {"max_usd": bad_cap}}, chain)
         assert not ok and "invalid chain.max_usd" in why   # a mistyped cap is never "no cap"
