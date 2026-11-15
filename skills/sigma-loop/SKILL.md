@@ -21,7 +21,7 @@ or GitHub issues when `discovery.source: github` (needs `gh`).
 
 - `references/picking.md` — 1-2: batch dispatch, `DONE`/`BUDGET`, dependency gate, `--feature`, pre-checks.
 - `references/running.md` — 3: model tier, phase subagents, maker≠checker, lanes, worktree, slices.
-- `references/filing.md` — 3: hand-offs, follow-ups (`work.py add-slice`; separate only for different-feature or slice-cap), kit findings.
+- `references/filing.md` — 3: hand-offs, follow-up issues, kit findings.
 - `references/progress.md` — 3-5: phase notes, banners and costs, QC, retro.
 - `references/landing.md` — 6: verify, commit, PR, review, merge, record, pipeline card.
 - `references/stopping.md` — 7: spare-iteration gap work, the STOP report.
