@@ -126,6 +126,13 @@ _TEMPLATE_STRIP_PATTERNS = (
     # "...the work above exists..." (_tracked_issue_body) -- fully fixed, no variable in either.
     re.compile(r"\*\*Done when:\*\* the (?:dependency|work) above exists and the blocked goal can "
                r"proceed\."),
+    # #2222: the `## Done when` section `handoff` renders through `issue_body.render` -- the heading and its six
+    # possible fixed criteria (blocking and non-blocking variants), nothing variable in any of them.
+    re.compile(r"## Done when\n(?:- \[ \] (?:The need described above is delivered\.|"
+               r"The delivery is verified against the owning area's own checks\.|"
+               r"The blocked goal can proceed\.|The work described above is done\.|"
+               r"It is verified against the owning area's own checks\.|"
+               r"No regression is introduced in the area's tests\.)\n?)+"),
     # "Reply on this issue if this should be re-scoped, re-assigned, or declined — the blocked goal
     # is parked until then." -- fully fixed, identical text in both templates.
     re.compile(r"Reply on this issue if this should be re-scoped, re-assigned, or declined — the "

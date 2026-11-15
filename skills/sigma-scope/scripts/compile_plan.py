@@ -290,6 +290,22 @@ def _validate_and_order(items):
     return ordered
 
 
+def _with_criteria(item):
+    """#2222: an issue the plan opens must carry `## Done when`, rendered by `issue_body` so it parses with
+    `acceptance.criteria`. An item gives its criteria as ``criteria`` (a list; rendered after its body) or already
+    in its body. Raises ValueError, before any call is made, for an item with neither."""
+    ib = _load_loop_script("issue_body")
+    body = item.get("body") or ""
+    if not ib.check(body, ["Done when"]):
+        return item
+    if not item.get("criteria"):
+        raise ValueError(f"compile_plan: issue {item.get('key')!r} has no acceptance criteria -- give it `criteria` "
+                         "(3-7 statements) or a `## Done when` section in its body")
+    rendered = dict(item)
+    rendered["body"] = ib.render(body, item["criteria"])
+    return rendered
+
+
 def _blocker_marker_lines(numbers):
     """One `**Blocked by:** #{n}` line per blocker, never comma-joined -- see the module docstring's
     MULTI-BLOCKER MARKER SAFETY section. `numbers` is already the real, created issue numbers (this
@@ -438,6 +454,7 @@ def compile_plan(sdlc_dir, config, plan, *, source=None, goal_label=False,
         return report
 
     order = _validate_and_order(items)          # raises ValueError; zero side effects before this line
+    items = [_with_criteria(it) for it in items]    # #2222: raises ValueError for an item with no criteria
     by_key = {it["key"]: it for it in items}
 
     if source is None:

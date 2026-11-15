@@ -164,3 +164,76 @@ def test_rulebook_doc_says_when_the_legacy_label_is_still_written():
     _check("except the rebase upkeep's own findings" not in text, "rulebook doc says upkeep findings still get the legacy label")
     _check("With triage on" in text and "ai_filed.triage.enabled: false" in text
            and "rebase upkeep findings still filed with the label" in text, "rulebook doc lacks the triage-off exception")
+
+
+# ---- #2222: acceptance criteria and goal readiness are documented where an operator looks ----------------------
+
+def _doc(rel):
+    return (ROOT / rel).read_text(encoding="utf-8")
+
+
+def test_goal_readiness_docs_row_in_configuration_md():
+    text = _doc("docs/configuration.md")
+    row = [l for l in text.splitlines() if l.startswith('| `goal_readiness:')]
+    assert len(row) == 1
+    for word in ("warn", "require", "off", "required_sections", "never loosens the append-only"):
+        assert word in row[0]
+    assert "GitHub-only" in row[0] and "local-file goal" in row[0]        # D8
+
+
+def test_acceptance_docs_name_extend_and_check_gestures():
+    text = _doc("docs/cloud-sessions.md")
+    assert "acceptance.py check .sdlc <goal>" in text
+    assert "acceptance.py extend .sdlc <goal> --slice <ref> --reason <why> --criterion <text>" in text
+    assert "at most 10 added criteria per goal" in text and "/sigma-unpark" in text
+    # second review F3: the lever that exists (restore the issue, or a new goal), never a re-record through unpark
+    assert "re-recording through" not in text and "`/sigma-unpark` has no acceptance path" in text
+    assert "restores the issue's `## Done when` to match the record" in text and "file a new one" in text
+    unreleased = _doc("CHANGELOG.md").split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+    assert "re-recording through" not in unreleased and "files a new one" in unreleased
+
+
+def test_acceptance_cloud_sessions_documents_append_only_rewrite_rules():
+    text = _doc("docs/cloud-sessions.md")
+    for clause in ("criteria_sha256", "ordered prefix", "Issue divergence", "`drafted` flag", "a legacy record",
+                   "an issue with no valid criteria section", "fails closed at `pr`", "extend marker",
+                   "records the park itself", "never by commit date"):
+        assert clause in text, clause
+
+
+def test_acceptance_cloud_sessions_documents_exit_limits_and_pre_commit_residual():
+    text = _doc("docs/cloud-sessions.md")
+    # second review F1: the rebase force-push is guarded now; the checkpoint push and a no-force rebase are not
+    assert "The `work.py rebase` force-push judges local HEAD's record" in text and "raw `git push`" in text
+    assert "The checkpoint push and a no-force" in text
+    assert "Before the first `work.py commit` there is no committed" in text and "legacy record (no hash) not at all" in text
+    assert "can be fabricated by anyone who can comment" in text and "force-push" in text
+
+
+def test_acceptance_changelog_unreleased_entry():
+    unreleased = _doc("CHANGELOG.md").split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+    assert "#2222" in unreleased and "append-only" in unreleased and "goal_readiness" in unreleased
+    assert "Residuals" in unreleased and "Not measured" in unreleased
+
+
+def test_acceptance_work_py_control_table_names_guard_exits():
+    import ast
+    tree = ast.parse(_doc("skills/sigma-loop/scripts/work.py"))
+    gates = next(ast.literal_eval(n.value) for n in tree.body
+                 if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "ENFORCEMENT_GATES")
+    row = next(g for g in gates if g["function"] == "_acceptance_append_only_refusal")
+    text = row["mechanism"] + " " + row["condition"]
+    for phrase in ("checkpoint push", "the `work.py rebase` force-push", "no-force `rebase`", "raw `git push`",
+                   "baseline is the first add",
+                   "legacy record", "Before the first `work.py commit`", "force-push defeats it"):
+        assert phrase in text, phrase
+    assert "_acceptance_append_only_refusal" in _doc("docs/enforcement.md")
+
+
+def test_acceptance_ledger_and_goldens_untouched_by_the_guard():
+    import subprocess
+    out = subprocess.run(["git", "-C", str(ROOT), "diff", "--name-only", "HEAD", "--",
+                          "skills/sigma-loop/scripts/ledger.py", "contract/vocabulary.json",
+                          "contract/golden/entries.jsonl", "contract/golden/acceptance/42.md"],
+                         capture_output=True, text=True)
+    assert out.returncode == 0 and out.stdout.strip() == ""

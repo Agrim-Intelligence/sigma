@@ -687,6 +687,8 @@ class CloudGitHub:
 def _land_world(tmp_path, monkeypatch, post=True):
     monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
     gh = CloudGitHub(post=post)
+    # #2222 F6: `work.py pr` reads a GitHub goal's issue when it has no acceptance record; serve it from this world
+    monkeypatch.setattr(tw.work, "_acceptance_source", lambda sdlc, cfg: _cloud_source(_mod("loop"), sdlc, gh))
     d = tw._sdlc(tmp_path, LAND_CFG)
     goal = tw._started(d, goal=GOAL, pr="")
     tw._evidence(d, goal)

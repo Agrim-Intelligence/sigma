@@ -146,6 +146,10 @@ class LabelledLocalSource:
                 "labels": list(self._on.get(str(goal), []))}
 
 
+#: #2222: every issue a plan opens carries acceptance criteria (compile_plan refuses one without).
+CRITERIA = ["It works.", "It refuses bad input.", "It recovers."]
+
+
 def _init_sdlc(tmp_path):
     sdlc = tmp_path / ".sdlc"
     (sdlc / "goals").mkdir(parents=True)
@@ -161,9 +165,9 @@ def _plan():
         "epic": {"title": "Voice interview", "body": "The parent of the voice-interview work.",
                  "priority": "P1"},
         "issues": [
-            {"key": "a", "title": "Capture the audio stream", "priority": "P1",
+            {"key": "a", "criteria": CRITERIA, "title": "Capture the audio stream", "priority": "P1",
              "body": "Open the mic and buffer to disk."},
-            {"key": "b", "title": "Transcribe the buffer", "priority": "P2",
+            {"key": "b", "criteria": CRITERIA, "title": "Transcribe the buffer", "priority": "P2",
              "body": "Feed the buffer to the transcriber.", "blocked_by": ["a"]},
         ],
     }

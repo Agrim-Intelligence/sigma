@@ -33,7 +33,7 @@ The contract enables downstream readers to read, validate, and ingest core recor
 | **events** | `.sdlc/events/*.jsonl` | `journal.enabled`, or a managed-settings lock | Core | `{id, actor, ts, kind, goal, ...per-kind}` |
 | **verify** | `.sdlc/state/verify/*.json` | Always (kept at least 7 days after the goal's `done`, then pruned by `goal_state_prune.py`; #458) | Core | `{goal_id, result, ...}` |
 | **witness** | `.sdlc/state/witness/*.jsonl` | Always | Core | `{goal_id, witness_line, ...}` |
-| **acceptance** | `.sdlc/acceptance/*.md` | P1 GOAL, explicitly captured | Core | JSON-valued frontmatter `{kind, goal, verify_command, drafted}` (`drafted` optional) plus 3–7 checklist statements |
+| **acceptance** | `.sdlc/acceptance/*.md` | P1 GOAL, explicitly captured | Core | JSON-valued frontmatter `{kind, goal, verify_command, drafted}` (`drafted` optional; `criteria_sha256` optional, absent in older records, #2222) plus 3–7 checklist statements, optionally followed by an `## Added criteria` section (`- [ ] <text> (added: <slice>; reason: <why>)`, at most 10; a parser that predates it stops at the next `##` and reads only the original 3–7, pinned by `golden/acceptance/42-extended.md`) |
 | **plans** | `.sdlc/plans/*.md` | Always (hash only, body excluded) | Core | `{id, hash, frontmatter, ...}` |
 | **goal_frontmatter** | `.sdlc/goals/*.md` | Always (frontmatter only) | Core | `{id, title, phase, ...}` |
 | **config** | `.sdlc/config.json` | Always | User/operator | `{goal_default_model, ledger, ...}` |
@@ -113,6 +113,15 @@ Values in the flat frontmatter are JSON literals. See
 `golden/acceptance/42.md`; validate with `python3 contract/validate.py contract/golden/acceptance/42.md`.
 `record` uses atomic create-only hard links; a filesystem without that support refuses. `set-verify-command`
 uses an atomic same-directory replace.
+
+Additive in #2222, record format and ledger vocabulary unchanged: `record` also accepts a `## Acceptance criteria`
+heading in the source as an alias (written back as `## Done when`; the canonical heading wins wherever it sits) and
+writes an optional `criteria_sha256` frontmatter line, the sha256 of the original block, at first record only.
+`acceptance.py extend` is then the only writer: it appends `- [ ] <text> (added: <slice>; reason: <why>)` lines under
+`## Added criteria` (at most 10, each line at most 1024 characters) and never touches the original block. A parser that
+predates the section stops at the next `##` heading and reads the original 3–7 statements unchanged; see
+`golden/acceptance/42-extended.md` (the original `42.md` is byte-identical). No ledger field, `vocabulary.json` entry or
+golden `entries.jsonl` line changed.
 Retry the same capture after an outage or crash. Draft-comment retries first check the complete
 comment for an identical marker and body; concurrent captures or an ambiguous acknowledgement
 inside the source's bounded retry can still produce duplicate comments. The record remains unique.

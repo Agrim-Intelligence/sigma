@@ -2,6 +2,8 @@
 
     python3 skills/sigma-loop/scripts/acceptance.py record .sdlc <goal> [--draft file]
     python3 skills/sigma-loop/scripts/acceptance.py set-verify-command .sdlc <goal> (--verify-command CMD | --clear)
+    python3 skills/sigma-loop/scripts/acceptance.py check .sdlc <goal>
+    python3 skills/sigma-loop/scripts/acceptance.py extend .sdlc <goal> --slice <ref> --reason <why> --criterion <text> [--criterion <text> ...]
 
 No background work. Capture is explicit; only drafted GitHub criteria cause a comment.
 `record` is create-only. Existing records win over later issue edits. The one exception is
@@ -17,6 +19,7 @@ import os
 import pathlib
 import re
 import shlex
+import subprocess
 import sys
 import tempfile
 
@@ -47,8 +50,17 @@ def _text(file):
     return data.decode('utf-8')
 
 
-def criteria(text):
-    """Read a real level-two Done when section; fenced examples do not count."""
+MAX_CRITERIA = 7                    # the ORIGINAL block's upper bound (3 to 7); breaker.py reads this
+MAX_ADDED = 10                      # D2: a goal that needs more than 10 added criteria is a new goal
+_CANONICAL = r'##\s+Done when\s*'
+_ALIAS = r'##\s+Acceptance criteria\s*'
+_ADDED_HEADING = r'##\s+Added criteria\s*'
+_ADDED_SUFFIX = re.compile(r'(.*?)\s+\(added:\s*([^;()]+?);\s*reason:\s*(.+)\)\s*', re.S)
+
+
+def _section(text, heading):
+    """The checklist statements of the first real level-two section matching ``heading``, or None when absent.
+    Fenced examples do not count. Count and length bounds are the caller's."""
     found, fenced, lines, separated, footer = False, None, [], False, False
     for line in text.splitlines():
         fence = re.match(r'^\s*(`{3,}|~{3,})', line)
@@ -61,7 +73,7 @@ def criteria(text):
         if re.match(r'^##\s+', line):
             if found:
                 break
-            found = bool(re.fullmatch(r'##\s+Done when\s*', line, re.I))
+            found = bool(re.fullmatch(heading, line, re.I))
             continue
         if found and lines and not line.strip():
             separated = True
@@ -78,11 +90,43 @@ def criteria(text):
                 raise ValueError('acceptance statement is empty')
             lines.append(item.group(1))
             separated = False
-    if not found:
+    return lines if found else None
+
+
+def criteria(text):
+    """Read a real level-two Done when section; fenced examples do not count.
+
+    TWO-PASS (#2222 D10): the canonical `## Done when` wins wherever it sits; `## Acceptance criteria` is an alias
+    read only when the canonical heading is absent, so an alias appearing first never shadows it."""
+    lines = _section(text, _CANONICAL)
+    if lines is None:
+        lines = _section(text, _ALIAS)
+    if lines is None:
         return None
-    if not 3 <= len(lines) <= 7 or any(len(x) > 1024 for x in lines):
+    if not 3 <= len(lines) <= MAX_CRITERIA or any(len(x) > 1024 for x in lines):
         raise ValueError('acceptance requires 3–7 statements of at most 1024 characters each')
     return lines
+
+
+def criteria_hash(items):
+    """sha256 of the normalised ORIGINAL criteria block: heading plus statements, checkbox state and surrounding
+    whitespace ignored, so ticking a box never reads as a rewrite."""
+    block = '## Done when\n' + ''.join('- ' + item.strip() + '\n' for item in items)
+    return hashlib.sha256(block.encode('utf-8')).hexdigest()
+
+
+def added(text):
+    """The `## Added criteria` lines as ``[{text, slice, reason}]``. A line without the
+    `(added: <slice>; reason: <why>)` suffix yields ``slice`` and ``reason`` of None so review can see it."""
+    out = []
+    for raw in _section(text, _ADDED_HEADING) or []:
+        match = _ADDED_SUFFIX.fullmatch(raw)
+        if match and match.group(1).strip() and match.group(3).strip():
+            out.append({'text': match.group(1).strip(), 'slice': match.group(2).strip(),
+                        'reason': match.group(3).strip()})
+        else:
+            out.append({'text': raw, 'slice': None, 'reason': None})
+    return out
 
 
 def read(sdlc_dir, goal):
@@ -113,7 +157,17 @@ def parse(text, goal_stem):
     items = criteria(match.group(2))
     if items is None:
         raise ValueError('acceptance Done when is missing')
-    return {'text': text, 'criteria': items, 'verify_command': command, 'drafted': drafted}
+    extra = added(match.group(2))
+    if len(extra) > MAX_ADDED:
+        raise ValueError('acceptance has more than %d added criteria (at most %d); a goal that needs more is a new goal'
+                         % (MAX_ADDED, MAX_ADDED))
+    if any(len(x['text']) + len(x['slice'] or '') + len(x['reason'] or '') > 1024 for x in extra):
+        raise ValueError('an added criterion exceeds 1024 characters')
+    baseline = metadata.get('criteria_sha256')
+    if baseline is not None and not (isinstance(baseline, str) and re.fullmatch(r'[0-9a-f]{64}', baseline)):
+        raise ValueError('acceptance criteria_sha256 must be a sha256 hex string or absent')
+    return {'text': text, 'criteria': items, 'verify_command': command, 'drafted': drafted,
+            'added': extra, 'criteria_sha256': baseline}
 
 
 def digest(sdlc_dir, goal):
@@ -130,6 +184,258 @@ def refusal(sdlc_dir, goal):
         return ('acceptance record missing or invalid; run `acceptance.py record .sdlc <goal>` '
                 'during P1 GOAL before code: %s (nothing pushed)' % exc)
     return None
+
+
+def extend_marker(text, slice_ref, reason):
+    """The issue-comment marker `extend` posts and `pr` looks for (D12): the sha256 of `text|slice|reason`."""
+    digest_ = hashlib.sha256('|'.join((text, slice_ref, reason)).encode('utf-8')).hexdigest()
+    return '<!-- sigma:acceptance-extend %s -->' % digest_
+
+
+def _record_text(sdlc_dir, goal, text=None):
+    """``(text_or_None, reason)``: ``text`` when given (the bytes about to be staged), else the root record's."""
+    if text is not None:
+        return text, 'given'
+    try:
+        return _text(path(sdlc_dir, goal)), 'root record'
+    except FileNotFoundError:
+        return None, 'record absent'
+    except (OSError, ValueError) as exc:
+        return None, 'record unreadable: %s' % exc
+
+
+def baseline_refs(sdlc_dir, goal):
+    """The git refs whose history can hold the goal's first-added record, remote before local, then the base the
+    file may already have landed on. Read from the goal's own work record (`state/work/<goal>.json`), never from
+    config. ``[]`` when there is no work record: the baseline is then unavailable and `prefix_check` says so."""
+    try:
+        stem = path(sdlc_dir, goal).stem
+        work = json.loads((pathlib.Path(sdlc_dir) / 'state' / 'work' / (stem + '.json')).read_text(encoding='utf-8'))
+        remote, branch, base = work.get('remote'), work.get('branch'), work.get('base')
+        refs = []
+        for name in ((remote + '/' + branch) if remote and branch else None, branch,
+                     (remote + '/' + base) if remote and base else None):
+            if isinstance(name, str) and name and name not in refs:
+                refs.append(name)
+        return refs
+    except (OSError, ValueError, AttributeError, TypeError):
+        return []
+
+
+def branch_tip_refs(sdlc_dir, goal):
+    """The goal BRANCH refs whose tip holds the record as last committed: remote branch, then local branch. Read from
+    the goal's work record like `baseline_refs`; ``[]`` without one (the tip baseline then says it is unavailable)."""
+    try:
+        work = json.loads((pathlib.Path(sdlc_dir) / 'state' / 'work' / (path(sdlc_dir, goal).stem + '.json'))
+                          .read_text(encoding='utf-8'))
+        return tip_refs(work.get('remote'), work.get('branch'))
+    except (OSError, ValueError, AttributeError, TypeError):
+        return []
+
+
+def tip_refs(remote, branch):
+    """``[<remote>/<branch>, <branch>]``, dropping what a missing field cannot name."""
+    out = []
+    for name in ((remote + '/' + branch) if isinstance(remote, str) and remote and isinstance(branch, str) and branch
+                 else None, branch):
+        if isinstance(name, str) and name and not name.startswith('-') and name not in out:
+            out.append(name)
+    return out
+
+
+def _ref_blob(root, ref, rel):
+    """``(bytes_or_None, reason)``: ``rel`` at ``ref``'s tip, capped at MAX_BYTES. Never raises: absent and
+    unreadable are both None, with the reason."""
+    try:
+        size = subprocess.run(['git', '-C', str(root), 'cat-file', '-s', '%s:%s' % (ref, rel)],
+                              capture_output=True, text=True, timeout=10)
+        if size.returncode != 0:
+            return None, '%s has no record' % ref
+        if not size.stdout.strip().isdigit() or int(size.stdout) > MAX_BYTES:
+            return None, '%s record size unreadable or over the limit' % ref
+        shown = subprocess.run(['git', '-C', str(root), 'show', '%s:%s' % (ref, rel)], capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, '%s unreadable: %s' % (ref, exc)
+    return (shown.stdout, 'tip of %s' % ref) if shown.returncode == 0 else (None, '%s unreadable' % ref)
+
+
+def _combined(rec):
+    """Original criteria then added rows; an added row carries its slice and reason, so a rewritten suffix differs."""
+    return rec['criteria'] + [(x['text'], x['slice'], x['reason']) for x in rec['added']]
+
+
+def reasonless_added(sdlc_dir, goal, text=None):
+    """Texts of the added criteria that carry no `(added: <slice>; reason: <why>)` suffix. ``[]`` when the record
+    is absent or unparseable (other clauses own that). Reads no config and no environment."""
+    current, _ = _record_text(sdlc_dir, goal, text)
+    if current is None:
+        return []
+    try:
+        return [x['text'] for x in parse(current, path(sdlc_dir, goal).stem)['added'] if x['reason'] is None]
+    except ValueError:
+        return []
+
+
+def prefix_check(sdlc_dir, goal, refs=None, text=None, root=None, tip_refs_=None, tip=True):
+    """``(refusal_or_None, notes)``: the append-only guard (#2222 D1, D6, D9). No override argument, no flag, no
+    config key and no environment variable is read anywhere in this path.
+
+    Clauses, each independently refusing:
+      H  the record's stored `criteria_sha256` equals the hash of its current original block;
+      B  the first-added committed blob's criteria are an exact ORDERED prefix of the current combined list
+         (original then added), when both carry a hash the hashes are equal, a hash the baseline carried is
+         still present, and `drafted` equals the baseline's;
+      P  the record parses: original block 3 to 7 items, added items only in `## Added criteria`;
+      R  no added criterion lacks its slice and reason;
+      D  when a first-added baseline exists, a missing or unparseable current record refuses;
+      T  (#2222 third review B1) the record as last COMMITTED on the goal branch -- the remote branch tip and the
+         local branch tip (``tip_refs_``, default from the work record), each that holds one -- has a combined list
+         (original, then added rows WITH slice and reason) that is an ordered prefix of the current one, and a
+         missing or unparseable current record refuses when such a tip exists. B alone compares only with the first
+         add, so a later-committed added criterion could otherwise be deleted or rewritten. ``tip=False`` skips T
+         (the rebase guard judging HEAD's first add, which is older than the tip by construction).
+    A baseline that cannot be read skips B, T (and D) and says so in ``notes``: the guard refuses on git being
+    unreadable never, only on a clear mismatch from H, P, R or T."""
+    notes = []
+    stem = path(sdlc_dir, goal).stem
+    review = _load('review_context')
+    base_root = pathlib.Path(root) if root else pathlib.Path(sdlc_dir).resolve().parent
+    rel = pathlib.PurePosixPath(pathlib.Path(sdlc_dir).resolve().name) / 'acceptance' / (stem + '.md')
+    refs = baseline_refs(sdlc_dir, goal) if refs is None else refs
+    blob, why = review.first_added_blob(base_root, refs, rel.as_posix()) if refs else (None, 'no goal branch recorded')
+    baseline = None
+    if blob is not None:
+        try:
+            baseline = parse(blob.decode('utf-8'), stem)
+            notes.append('baseline: %s' % why)
+        except (ValueError, UnicodeDecodeError) as exc:
+            notes.append('baseline: unavailable (first committed record unparseable: %s)' % exc)
+    else:
+        notes.append('baseline: unavailable (%s)' % why)
+    tips = []
+    for ref in ((branch_tip_refs(sdlc_dir, goal) if tip_refs_ is None else tip_refs_) if tip else []):
+        raw, why_tip = _ref_blob(base_root, ref, rel.as_posix())
+        if raw is None:
+            notes.append('tip baseline: unavailable (%s)' % why_tip)
+            continue
+        try:
+            tips.append((ref, parse(raw.decode('utf-8'), stem)))
+            notes.append('tip baseline: %s' % why_tip)
+        except (ValueError, UnicodeDecodeError) as exc:
+            notes.append('tip baseline: unavailable (%s record unparseable: %s)' % (ref, exc))
+    current_text, how = _record_text(sdlc_dir, goal, text)
+    current = None
+    if current_text is not None:
+        try:
+            current = parse(current_text, stem)
+        except ValueError as exc:
+            how = 'unparseable: %s' % exc
+    if current is None:
+        if baseline is not None or tips:                                                          # clauses D, T
+            return ('the acceptance record is missing or unparseable (%s) but a committed baseline exists; '
+                    'criteria are append-only and cannot be deleted or re-recorded' % how, notes)
+        return None, notes
+    if current['criteria_sha256'] is not None and current['criteria_sha256'] != criteria_hash(current['criteria']):
+        return ('the Done when block no longer matches its recorded criteria_sha256; criteria are append-only: '
+                'add with `acceptance.py extend`, never edit', notes)                                # clause H
+    if baseline is not None:                                                                         # clause B
+        old = baseline['criteria'] + [x['text'] for x in baseline['added']]
+        new = current['criteria'] + [x['text'] for x in current['added']]
+        if new[:len(old)] != old:
+            return ('the committed criteria are not an ordered prefix of this record; criteria are append-only '
+                    '(no edit, removal, weakening or reorder)', notes)
+        if baseline['criteria_sha256'] and current['criteria_sha256'] and \
+                baseline['criteria_sha256'] != current['criteria_sha256']:
+            return 'criteria_sha256 differs from the first committed record; it is fixed at first record', notes
+        if baseline['criteria_sha256'] and not current['criteria_sha256']:
+            return ('criteria_sha256 was removed after the first committed record; it is fixed at first record',
+                    notes)
+        if baseline['drafted'] != current['drafted']:
+            return 'drafted differs from the first committed record; it is fixed at first record', notes
+    for ref, committed in tips:                                                                   # clause T
+        old_rows = _combined(committed)
+        if _combined(current)[:len(old_rows)] != old_rows:
+            return ('the record committed on the goal branch (%s) is not an ordered prefix of this record; committed '
+                    'criteria, added ones included with their slice and reason, are append-only (no edit, removal, '
+                    'weakening or reorder)' % ref, notes)
+    lacking = [x['text'] for x in current['added'] if x['reason'] is None]                           # clause R
+    if lacking:
+        return ('added criterion without slice and reason: %s; add with `acceptance.py extend --slice <ref> '
+                '--reason <why>`' % '; '.join(lacking), notes)
+    return None, notes
+
+
+def _norm_statement(item):
+    """Comparison form of one criterion: whitespace collapsed, trailing `(added: ...; reason: ...)` removed.
+    Checkbox state is already gone (`_section` drops it)."""
+    match = _ADDED_SUFFIX.fullmatch(item)
+    return ' '.join((match.group(1) if match else item).split())
+
+
+def issue_divergence(text, goal_stem, issue_body):
+    """``(state, detail)`` for the issue-vs-record check (D4): ``state`` is `skip`, `ok` or `diverge`.
+
+    Runs whenever the issue body has a valid criteria section (canonical or alias), whatever the record's
+    `drafted` flag or `criteria_sha256` presence say: both live in the record's own bytes, so neither may switch the
+    witness off (#2222 review B2; a drafted record legitimately arises only when the issue has no valid section).
+    Otherwise `skip` with the reason. Compares text only, alias-normalised, checkbox-blind. It reads no config and
+    no environment."""
+    try:
+        record_ = parse(text, goal_stem)
+    except ValueError as exc:
+        return 'skip', 'record unparseable: %s' % exc
+    try:
+        issue = criteria(issue_body or '')
+    except ValueError:
+        issue = None
+    if issue is None:
+        return 'skip', 'no criteria section in issue'
+    if [_norm_statement(x) for x in issue] != [_norm_statement(x) for x in record_['criteria']]:
+        return 'diverge', ('the issue\'s Done when no longer matches the recorded original criteria; the record '
+                           'wins and the agent never edits it: a person restores the issue\'s `## Done when` to '
+                           'match the record, or, to change the criteria, closes this goal and files a new one')
+    return 'ok', ''
+
+
+def extend_comment_refusal(sdlc_dir, goal, source, text=None):
+    """Refusal string or None (D12): every ADDED criterion needs an issue comment carrying its extend marker
+    for that exact text, slice and reason. Unreadable comment history refuses (fail closed; the next tick retries).
+    The caller exempts local-file goals. Reads no config and no environment. An actor who can post issue comments
+    can fabricate the comment: this is an audit trail, not proof of authorship."""
+    current, _ = _record_text(sdlc_dir, goal, text)
+    if current is None:
+        return None
+    try:
+        rows = [x for x in parse(current, path(sdlc_dir, goal).stem)['added'] if x['reason'] is not None]
+    except ValueError:
+        return None
+    if not rows:
+        return None
+    try:
+        comments = source.fetch_comments_strict(goal)['comments']
+        if not isinstance(comments, list):
+            raise ValueError('comment history is not a list')
+        bodies = [c.get('body') or '' for c in comments if isinstance(c, dict)]
+    except Exception as exc:  # noqa: BLE001 - any doubt refuses; a retry costs nothing
+        return 'could not read the issue comments to confirm the added criteria (%s)' % exc
+    missing = [x['text'] for x in rows
+               if not any(extend_marker(x['text'], x['slice'], x['reason']) in body for body in bodies)]
+    if missing:
+        return ('added criterion without its extend comment on the issue: %s; add criteria only with '
+                '`acceptance.py extend`, which posts it' % '; '.join(missing))
+    return None
+
+
+def prefix_refusal(sdlc_dir, goal, refs=None, text=None, root=None, tip_refs_=None, tip=True):
+    """The refusal string of `prefix_check`, or None."""
+    return prefix_check(sdlc_dir, goal, refs=refs, text=text, root=root, tip_refs_=tip_refs_, tip=tip)[0]
+
+
+def _guard(sdlc_dir, goal):
+    """Raise ValueError when the append-only guard refuses; used by record (existing file) and set-verify-command."""
+    why = prefix_refusal(sdlc_dir, goal)
+    if why:
+        raise ValueError(why)
 
 
 _FLAG_REMEDY = "drop `--verify-command` and record again"
@@ -159,6 +465,7 @@ def record(sdlc_dir, goal, config=None, source=None, draft=None, verify_command=
     file = path(sdlc_dir, goal)
     if file.exists():
         existing = read(sdlc_dir, goal)  # never overwrite intent, even on a retry after the issue changes
+        _guard(sdlc_dir, goal)
         if verify_command is not None and existing['verify_command'] != verify_command:
             print('acceptance.py: existing record kept, its verify_command is unchanged; change it with '
                   '`acceptance.py set-verify-command` (only before verify evidence exists)', file=sys.stderr)
@@ -194,7 +501,8 @@ def record(sdlc_dir, goal, config=None, source=None, draft=None, verify_command=
                               _FLAG_REMEDY if from_flag else _FILE_REMEDY % goal)
     if conflict:
         raise ValueError(conflict)
-    metadata = {'kind': 'acceptance', 'goal': file.stem, 'verify_command': verify_command, 'drafted': drafted}
+    metadata = {'kind': 'acceptance', 'goal': file.stem, 'verify_command': verify_command, 'drafted': drafted,
+                'criteria_sha256': criteria_hash(items)}
     text = ('---\n' + '\n'.join(k + ': ' + json.dumps(v, ensure_ascii=False) for k, v in metadata.items())
             + '\n---\n## Done when\n' + ''.join('- [ ] ' + item + '\n' for item in items))
     if len(text.encode('utf-8')) > MAX_BYTES:
@@ -348,6 +656,7 @@ def set_verify_command(sdlc_dir, goal, verify_command=None, clear=False):
     except FileNotFoundError:
         raise ValueError('no acceptance record for goal %s; run `acceptance.py record %s %s` first' % (stem, sdlc_dir, goal))
     old = parse(old_text, stem)['verify_command']
+    _guard(sdlc_dir, goal)
     evidence = state.evidence_path(sdlc_dir, goal)
     if evidence.exists():
         raise ValueError('verify evidence exists for goal %s (%s): it binds this record\'s exact bytes, so the record is '
@@ -384,14 +693,102 @@ def set_verify_command(sdlc_dir, goal, verify_command=None, clear=False):
     return 'cleared' if new is None else 'replaced'
 
 
+def _extend_line(text, slice_ref, reason):
+    return '- [ ] %s (added: %s; reason: %s)' % (text, slice_ref, reason)
+
+
+def _clean_field(value, what, forbidden=''):
+    value = (value or '').strip()
+    if not value:
+        raise ValueError('extend needs a non-blank %s' % what)
+    if any(c in value for c in '\n\r\0' + forbidden):
+        raise ValueError('extend %s must be one line%s' % (what, (' without ' + ' '.join(forbidden)) if forbidden else ''))
+    return value
+
+
+def extend(sdlc_dir, goal, slice_ref, reason, criteria_list, config=None, source=None):
+    """The ONE verb that adds criteria (#2222 D2, D3, D12). Appends ``- [ ] <text> (added: <slice>; reason: <why>)``
+    lines under `## Added criteria`; the original `## Done when` block stays byte-identical, and nothing here can
+    edit, replace or remove a line. Refuses (nothing written, nothing posted) when the append-only guard already
+    refuses, when slice or reason is blank, when the eleventh added criterion would be written, or when a line
+    would exceed 1024 characters.
+
+    ORDER: comment, then write. A GitHub goal gets one issue comment per criterion carrying `extend_marker`, so the
+    addition is in the open and `work.py pr` can find it; a retry skips a criterion whose marker is already there
+    (idempotent), and if a post fails the file is NOT written. A local-file goal has no issue and posts nothing.
+    The write is temp-then-replace, so a crash leaves the whole old record or the whole new one, and the worktree
+    copy is synced through `_sync_worktree_copy`. The record's bytes change, so verify evidence bound to the old
+    bytes is stale by design: run `loop.py verify` again."""
+    state = _load('state')
+    slice_ref = _clean_field(slice_ref, '--slice', ';()')
+    reason = _clean_field(reason, '--reason')
+    texts = [_clean_field(c, '--criterion') for c in (criteria_list or [])]
+    if not texts:
+        raise ValueError('extend needs at least one --criterion')
+    file = path(sdlc_dir, goal)
+    stem = file.stem
+    state.refuse_symlinks(sdlc_dir, 'acceptance/%s.md' % stem)
+    try:
+        old_text = _text(file)
+    except FileNotFoundError:
+        raise ValueError('no acceptance record for goal %s; run `acceptance.py record %s %s` first' % (stem, sdlc_dir, goal))
+    old = parse(old_text, stem)
+    _guard(sdlc_dir, goal)                                       # a tampered original is never extended over
+    if len(old['added']) + len(texts) > MAX_ADDED:
+        raise ValueError('a goal that needs more than %d added criteria is a new goal (this record has %d, '
+                         'adding %d)' % (MAX_ADDED, len(old['added']), len(texts)))
+    lines = [_extend_line(t, slice_ref, reason) for t in texts]
+    if any(len(line) - len('- [ ] ') > 1024 for line in lines):
+        raise ValueError('an added criterion exceeds 1024 characters including its suffix')
+    body = old_text.rstrip('\n') + '\n'
+    if old['added'] == [] and re.search(r'(?im)^##\s+Added criteria\s*$', old_text) is None:
+        body += '\n## Added criteria\n'
+    new_text = body + '\n'.join(lines) + '\n'
+    again = parse(new_text, stem)                                # bounds and contract, before any byte is written
+    if again['criteria'] != old['criteria'] or again['criteria_sha256'] != old['criteria_sha256'] \
+            or again['added'][:len(old['added'])] != old['added'] \
+            or [x['text'] for x in again['added'][len(old['added']):]] != texts:
+        raise ValueError('the record layout does not allow a safe append (is `## Added criteria` the last section?)')
+    config = config if config is not None else _safe_config(state, sdlc_dir)
+    if source is None and not str(goal).endswith('.md') and \
+            ((config.get('discovery') or {}).get('source')) == 'github':
+        source = _load('sources').get_source(sdlc_dir, config)
+    if source is not None and not str(goal).endswith('.md'):
+        comments = source.fetch_comments_strict(goal)['comments']
+        if not isinstance(comments, list):
+            raise ValueError('could not read the issue comment history; nothing was written')
+        bodies = [c.get('body') or '' for c in comments if isinstance(c, dict)]
+        for text in texts:
+            marker = extend_marker(text, slice_ref, reason)
+            if not any(marker in body_ for body_ in bodies):
+                posted = source.note(goal, '%s\nAcceptance criterion added (slice %s): %s\nReason: %s'
+                                     % (marker, slice_ref, text, reason))
+                if posted is False:              # a declined write (hard stops) is not a post: write nothing
+                    raise ValueError('the issue declined the extend comment for %r; nothing was written' % text)
+    state.atomic_write_text(file, new_text)
+    _sync_worktree_copy(sdlc_dir, stem, file, old_text, new_text, state)
+    _tracked_root_notice(sdlc_dir, file)
+    return file
+
+
+def _safe_config(state, sdlc_dir):
+    try:
+        return state.load_config(sdlc_dir)
+    except Exception:  # noqa: BLE001 - no config means no GitHub source to comment on
+        return {}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('verb', choices=['record', 'set-verify-command'])
+    parser.add_argument('verb', choices=['record', 'set-verify-command', 'check', 'extend'])
     parser.add_argument('sdlc_dir')
     parser.add_argument('goal')
     parser.add_argument('--draft')
     parser.add_argument('--verify-command')
     parser.add_argument('--clear', action='store_true')
+    parser.add_argument('--slice')
+    parser.add_argument('--reason')
+    parser.add_argument('--criterion', action='append')
     args = parser.parse_args(argv)
     if args.verb == 'record' and args.clear:
         parser.error('--clear is only valid for set-verify-command')
@@ -401,7 +798,16 @@ def main(argv=None):
         if args.clear == (args.verify_command is not None):
             parser.error('set-verify-command needs exactly one of --verify-command or --clear')
     try:
-        if args.verb == 'record':
+        if args.verb == 'extend':
+            print('acceptance.py: extended %s' % extend(args.sdlc_dir, args.goal, args.slice, args.reason, args.criterion))
+        elif args.verb == 'check':
+            refusal_text, notes = prefix_check(args.sdlc_dir, args.goal)
+            for note in notes:
+                print('acceptance.py: ' + note)
+            if refusal_text:
+                raise ValueError(refusal_text)
+            print('acceptance.py: criteria intact for %s' % path(args.sdlc_dir, args.goal).stem)
+        elif args.verb == 'record':
             print(record(args.sdlc_dir, args.goal, draft=args.draft, verify_command=args.verify_command))
         else:
             result = set_verify_command(args.sdlc_dir, args.goal, args.verify_command, args.clear)

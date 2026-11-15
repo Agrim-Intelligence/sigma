@@ -39,6 +39,11 @@ to the smaller of `SIGMA_WATCH_CALL_TIMEOUT` and 15s, so a dead host shows as `(
 with "timed out". The session-start setup check never runs `ls-remote` or the owner lookup; only
 this full run does.
 
+`goal readiness` rows (#2222) report `goal_readiness.mode` (invalid: a failing row, never defaulted); with GitHub
+discovery, how many of the first 50 open `sdlc:goal` issues lack `## Done when` (`50+ unchecked` if truncated; an
+unreadable source fails, never zero); and a failing `acceptance records are tracked` row when
+`.sdlc/acceptance` is gitignored (`acceptance.py check` then has no committed baseline).
+
 `host config` and `[INFO]` [burst](../sigma-goal/references/cloud-burst.md) rows are read-only (never block); relay them as printed.
 With `verify.known_flakes` set (#2160), one row per entry reads `known flake: <test> until <date> (bases ...)`; an
 entry past its date reads `EXPIRED` and fails (verify ignores it), and an unreadable list is one failing row.

@@ -28,7 +28,9 @@ alias: it runs this same flow. The flow is `scripts/init_flow.py`, the same Pyth
    `1/5 preflight` (git, remote, base, `gh`, auth, scopes -- 1b below), `2/5 mode` (local-goals or
    github; the default is github when `origin` is a GitHub repository), `3/5 verify` (3 below),
    `4/5 github` (github mode only: the `sdlc:*` + `priority:P0`-`P3` labels, `assignee: @me`, the
-   board OFFER -- 1c below -- and the ledger question), `5/5 summary` and a `Next:` line
+   board OFFER -- 1c below -- the ledger question, and with `--github` the agent-ready goal template
+   `github-templates/ISSUE_TEMPLATE/goal.md.tmpl`, written to the repo's .github/ISSUE_TEMPLATE/goal.md only when
+   absent and never overwritten, #2222), `5/5 summary` and a `Next:` line
    (`/sigma-loop`, or `--demo` first when nothing is queued).
    Every question not yet answered is ONE `[ask]` line naming the flag that answers it, in one
    machine-readable shape: `[ask] <id>: <prose> -> <answer> ; <answer>`, each answer a bare

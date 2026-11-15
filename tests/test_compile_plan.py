@@ -81,7 +81,12 @@ def _plan(*issues, epic=None):
     return {"epic": epic, "issues": list(issues)}
 
 
+#: #2222: every issue a plan opens carries `## Done when`; the fixtures' default body does too.
+_DONE_WHEN = "\n\n## Done when\n- [ ] It works.\n- [ ] It refuses bad input.\n- [ ] It recovers.\n"
+
+
 def _issue(key, title, priority="P2", blocked_by=(), body="body text"):
+    body = body if "## Done when" in body else body + _DONE_WHEN
     return {"key": key, "title": title, "body": body, "priority": priority,
             "blocked_by": list(blocked_by)}
 
@@ -533,7 +538,7 @@ def test_main_success_creates_a_real_local_goal_file(tmp_path, capsys):
     import json
     sdlc = _init_sdlc(tmp_path)
     plan_path = tmp_path / "plan.json"
-    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "Do the thing", "body": "b",
+    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "Do the thing", "body": "b" + _DONE_WHEN,
                                                   "priority": "P2"}]}))
     rc = compile_plan.main(["compile_plan.py", str(sdlc), "--plan", str(plan_path)])
     out = capsys.readouterr().out
@@ -548,7 +553,7 @@ def test_main_ignores_an_unrecognized_flag_rather_than_crashing(tmp_path):
     import json
     sdlc = _init_sdlc(tmp_path)
     plan_path = tmp_path / "plan.json"
-    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x"}]}))
+    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x", "body": "b" + _DONE_WHEN}]}))
     rc = compile_plan.main(["compile_plan.py", str(sdlc), "--bogus-flag", "--plan", str(plan_path)])
     assert rc == 0
 
@@ -557,7 +562,7 @@ def test_main_actionable_flag_reaches_compile_plan_as_goal_label_true(tmp_path, 
     import json
     sdlc = _init_sdlc(tmp_path)
     plan_path = tmp_path / "plan.json"
-    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x"}]}))
+    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x", "body": "b" + _DONE_WHEN}]}))
 
     seen = {}
 
@@ -577,7 +582,7 @@ def test_main_reports_failed_and_skipped_issues_with_exit_code_1(tmp_path, capsy
     import json
     sdlc = _init_sdlc(tmp_path)
     plan_path = tmp_path / "plan.json"
-    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x"}]}))
+    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x", "body": "b" + _DONE_WHEN}]}))
 
     def fake_compile_plan(sdlc_dir, config, plan, *, source=None, goal_label=False,
                           forbid_priority=False):
@@ -614,7 +619,7 @@ def test_main_json_prints_exactly_one_parseable_object_with_every_report_key(tmp
     import json
     sdlc = _init_sdlc(tmp_path)
     plan_path = tmp_path / "plan.json"
-    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x"}]}))
+    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x", "body": "b" + _DONE_WHEN}]}))
 
     def fake_compile_plan(sdlc_dir, config, plan, *, source=None, goal_label=False,
                           forbid_priority=False):
@@ -635,7 +640,7 @@ def test_main_json_suppresses_the_prose_lines_on_stdout(tmp_path, capsys, monkey
     import json
     sdlc = _init_sdlc(tmp_path)
     plan_path = tmp_path / "plan.json"
-    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x"}]}))
+    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x", "body": "b" + _DONE_WHEN}]}))
 
     def fake_compile_plan(sdlc_dir, config, plan, *, source=None, goal_label=False,
                           forbid_priority=False):
@@ -657,7 +662,7 @@ def test_main_json_leaves_the_stderr_diagnostics_exactly_where_they_were(tmp_pat
     import json
     sdlc = _init_sdlc(tmp_path)
     plan_path = tmp_path / "plan.json"
-    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x"}]}))
+    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x", "body": "b" + _DONE_WHEN}]}))
 
     def fake_compile_plan(sdlc_dir, config, plan, *, source=None, goal_label=False,
                           forbid_priority=False):
@@ -683,7 +688,7 @@ def test_main_json_stringifies_non_string_plan_keys(tmp_path, capsys, monkeypatc
     import json
     sdlc = _init_sdlc(tmp_path)
     plan_path = tmp_path / "plan.json"
-    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x"}]}))
+    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x", "body": "b" + _DONE_WHEN}]}))
 
     def fake_compile_plan(sdlc_dir, config, plan, *, source=None, goal_label=False,
                           forbid_priority=False):
@@ -710,7 +715,7 @@ def test_main_json_end_to_end_through_the_real_local_source(tmp_path, capsys):
     import json
     sdlc = _init_sdlc(tmp_path)
     plan_path = tmp_path / "plan.json"
-    plan_path.write_text(json.dumps({"issues": [{"key": "s1", "title": "Do the thing", "body": "b"}]}))
+    plan_path.write_text(json.dumps({"issues": [{"key": "s1", "title": "Do the thing", "body": "b" + _DONE_WHEN}]}))
     rc = compile_plan.main(["compile_plan.py", str(sdlc), "--plan", str(plan_path), "--json"])
     report = json.loads(capsys.readouterr().out)
     assert rc == 0
@@ -723,7 +728,7 @@ def test_main_without_json_still_prints_the_prose_and_no_json(tmp_path, capsys):
     import json
     sdlc = _init_sdlc(tmp_path)
     plan_path = tmp_path / "plan.json"
-    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "Do the thing", "body": "b"}]}))
+    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "Do the thing", "body": "b" + _DONE_WHEN}]}))
     rc = compile_plan.main(["compile_plan.py", str(sdlc), "--plan", str(plan_path)])
     out = capsys.readouterr().out
     assert rc == 0
@@ -953,7 +958,7 @@ def test_main_forbid_priority_flag_reaches_compile_plan(tmp_path, monkeypatch):
     import json
     sdlc = _init_sdlc(tmp_path)
     plan_path = tmp_path / "plan.json"
-    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x"}]}))
+    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x", "body": "b" + _DONE_WHEN}]}))
 
     seen = {}
 
@@ -975,7 +980,7 @@ def test_main_defaults_forbid_priority_off(tmp_path, monkeypatch):
     import json
     sdlc = _init_sdlc(tmp_path)
     plan_path = tmp_path / "plan.json"
-    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x"}]}))
+    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x", "body": "b" + _DONE_WHEN}]}))
 
     seen = {}
 
@@ -997,7 +1002,7 @@ def test_main_refuses_a_priority_bearing_plan_with_exit_code_2_and_creates_nothi
     sdlc = _init_sdlc(tmp_path)
     plan_path = tmp_path / "plan.json"
     plan_path.write_text(json.dumps({"issues": [{"key": "s1", "title": "Do the thing",
-                                                 "body": "b", "priority": "P2"}]}))
+                                                 "body": "b" + _DONE_WHEN, "priority": "P2"}]}))
     rc = compile_plan.main(["compile_plan.py", str(sdlc), "--plan", str(plan_path),
                             "--forbid-priority"])
     captured = capsys.readouterr()
@@ -1019,7 +1024,7 @@ def test_main_turns_the_guard_on_from_the_plan_path_without_the_flag(tmp_path, c
     plan_dir.mkdir(parents=True)
     plan_path = plan_dir / "2017.plan.json"
     plan_path.write_text(json.dumps({"issues": [{"key": "s1", "title": "Do the thing",
-                                                 "body": "b", "priority": "P2"}]}))
+                                                 "body": "b" + _DONE_WHEN, "priority": "P2"}]}))
     rc = compile_plan.main(["compile_plan.py", str(sdlc), "--plan", str(plan_path)])
     assert rc == 2
     assert "priority" in capsys.readouterr().err
@@ -1033,7 +1038,7 @@ def test_a_plan_outside_the_goal_review_dir_is_unaffected_by_the_backstop(tmp_pa
     sdlc = _init_sdlc(tmp_path)
     plan_path = tmp_path / "plan.json"
     plan_path.write_text(json.dumps({"issues": [{"key": "s1", "title": "Do the thing",
-                                                 "body": "b", "priority": "P0"}]}))
+                                                 "body": "b" + _DONE_WHEN, "priority": "P0"}]}))
     rc = compile_plan.main(["compile_plan.py", str(sdlc), "--plan", str(plan_path)])
     assert rc == 0, capsys.readouterr().err
 
@@ -1132,7 +1137,7 @@ def test_main_json_carries_parked_only_when_triage_is_on(tmp_path, capsys):
     import json
     sdlc = _init_sdlc(tmp_path)
     plan_path = tmp_path / "plan.json"
-    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x", "body": "b"}]}))
+    plan_path.write_text(json.dumps({"issues": [{"key": "a", "title": "x", "body": "b" + _DONE_WHEN}]}))
     assert compile_plan.main(["compile_plan.py", str(sdlc), "--plan", str(plan_path), "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["parked"] == {}
 

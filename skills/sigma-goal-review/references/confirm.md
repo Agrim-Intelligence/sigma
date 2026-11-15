@@ -42,6 +42,9 @@ today (contract §8: the markers are code-written and trigger-word-free), never 
   of a child is the slice number as a string** (`"key": "2"` for slice 2); a child whose key is not a
   slice number is refused by the check below. Put the block after the scope text and before the
   `Design:` / `Story #` pointer lines.
+  Then append the slice's acceptance section, derived from the same sentences (#2222): run the same verb with
+  `--done-when` and paste the `## Done when` block it prints after the served block, so the child issue parses with
+  `acceptance.criteria` and `/sigma-goal` can record its criteria without a draft.
 
 - **`Depends on` → `blocked_by`, and a token that is not a slice id is a schema violation —
   adjudicate it, never drop it (#1956).** Read each cell by splitting on commas and stripping the
