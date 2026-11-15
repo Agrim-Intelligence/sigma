@@ -158,3 +158,18 @@ def test_the_same_bullet_under_two_different_slices_is_extended_twice(proj):
     added = _added(record)
     assert len(added) == 2 and "slice 1" in added[0] and "slice 2" in added[1], added
     assert count(proj) == 2
+
+
+def test_a_reused_slice_number_with_a_different_title_is_still_extended(proj):
+    """Slice 1 "Foo" completes; its heading is then removed from the plan; "Bar" becomes slice 1 again. A row under the
+    same slice NUMBER but another reason must not make the verb skip Bar's criteria (the reason is the identity)."""
+    record = _with_real_record(proj)
+    assert cli(proj, title="Foo").returncode == 0
+    for plan in (proj.main_plan, proj.branch_plan):
+        text = plan.read_text()
+        plan.write_text(text[:text.index("## Added slice 1")].rstrip("\n") + "\n")
+    (proj.sdlc / "state" / "followups" / "2224.json").unlink()
+    r = cli(proj, title="Bar")
+    assert r.returncode == 0, r.stderr
+    added = _added(record)
+    assert len(added) == 2 and "reason: Foo" in added[0] and "reason: Bar" in added[1], added

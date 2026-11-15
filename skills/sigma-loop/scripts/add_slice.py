@@ -157,15 +157,18 @@ def _extend_preflight(acceptance, sdlc_dir, goal, slice_ref, reason, statements)
 
 
 def _already_extended(acceptance, sdlc_dir, goal, slice_ref, reason):
-    """True when the record already holds criteria under this slice and reason: `extend` writes all of a slice's
+    """True when the record already holds criteria whose reason is this slice's title: `extend` writes all of a slice's
     criteria or none, so any row means a resume after a crash between `extend` and the count, and it must not append
-    again (an edited --criteria-file on that resume is not applied; the plan text wins)."""
+    again (an edited --criteria-file on that resume is not applied; the plan text wins). The title IS the identity
+    (`followup_route.slice_id` normalises it), so the slice NUMBER is not compared: a plan edited between the crash and
+    the resume can move the number, and appending the same criteria again under the new number would duplicate them.
+    `slice_ref` is accepted so the call site reads the same as `extend`'s."""
     try:
         file = acceptance.path(sdlc_dir, goal)
         added = acceptance.parse(acceptance._text(file), file.stem)["added"]
     except (OSError, ValueError, AttributeError, KeyError):
         return False
-    return any(x["slice"] == slice_ref and x["reason"] == reason for x in added)
+    return any(x["reason"] == reason for x in added)
 
 
 def _heading_titles(text):
