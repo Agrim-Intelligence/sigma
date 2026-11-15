@@ -4,7 +4,7 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
-- **The full verify in the `sigma-cloud` container: baseline measured, fixes measured per file, whole-run result recorded below once run (#2225).** Its baseline at `524d533` failed 28 tests and
+- **Every test that failed in the `sigma-cloud` container's full verify is fixed at its cause (#2225).** Measured: the baseline run at `524d533`, `28 failed, 25043 passed, 5 errors` in 1:01:02, and a first run on the fix branch, `1 failed, 25094 passed` in 59:52 (the one failure was a version scan of the new README, fixed with five reasoned `VERSION_ALLOW` entries). Not measured in this entry: the final whole-suite run on the merged tree, whose summary line is on the pull request. Its baseline at `524d533` failed 28 tests and
   errored 5 for reasons a laptop never sees; each cause is now traced and fixed in the repository, none in the image.
   Permission-denial tests do the denied read as an unprivileged user when the suite runs as root (`tests/unprivileged.py`,
   loud when it cannot drop); process checks read a zombie as gone (`alive()`), since PID 1 there reaps orphans on a

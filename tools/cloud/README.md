@@ -158,6 +158,7 @@ That verify failed 18 tests. **Measured again for #2225**, the configured comman
 in 3662.33s (1:01:02)`. Some serial pytest runs shared the 4 vCPUs for its first ~25 minutes, so the time is an
 upper bound, not a clean two-worker figure. CI's nightly runs the same suite on a 3-core macOS runner, but it has
 been stopped at its 120-minute limit every day since 2026-10-19 (#2099), so it gives no baseline.
+On the fix branch the first full run was `1 failed, 25094 passed, 89 skipped, 9 xfailed in 3592.84s (0:59:52)`; the one failure was this file's own version numbers tripping the shipped-prose scan, fixed by five reasoned `VERSION_ALLOW` entries. The summary line of the final run is on the pull request, not here (a tree edited after a verify is not the tree that was verified).
 
 Each failure family, its cause in this container, and its fix (all in #2225, none in the image):
 
