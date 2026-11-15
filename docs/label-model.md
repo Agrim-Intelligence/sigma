@@ -275,7 +275,14 @@ FLAGGED tier of §5, and this label is what makes it queryable.
 **Why not just use `sdlc:blocked`?** They have the same *shape* and different *reasons*, and the
 reason is wired into machinery. `sdlc:blocked` means "waiting on another issue", and the auto-unpark
 sweep clears it from any goal whose body names a `blocked by #N` whose refs have all closed —
-whoever set it, and whyever. A goal held for a missing label that *also* names an already-closed
+whoever set it, and whyever. (Since #2223 `release_dependents.py` also removes `sdlc:blocked` when a goal it
+names closes: from `record done`, the watcher tick, and the orchestrate wave end. On such a goal it removes
+only that label (adding none), posts one audit note and, when a board is active, moves its card to Ready; on the
+finished goal it strips `sdlc:blocking`. It acts only when every dependency the goal names is closed, and
+**never from an `sdlc:parked` goal**, even one with a
+`sigma:waiting-on-dependency` note: a park is a person's, and `/sigma-unpark` or the full sweep remain its routes.
+A legacy blocked goal that lacks `sdlc:goal` is released into no pool, because the verb adds no label.)
+A goal held for a missing label that *also* names an already-closed
 dependency would be cleared by that sweep and re-held by this one, forever: two label swaps and one
 false "blocker closed" comment per cycle. Two reasons need two labels.
 

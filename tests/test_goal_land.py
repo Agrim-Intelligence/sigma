@@ -765,6 +765,15 @@ def test_land_md_states_the_exclusivity_sentence_and_its_exceptions():
     assert "ledger watcher" in after, "the watcher exception must sit directly under the sentence"
 
 
+def test_the_fourth_exception_names_what_it_writes_and_stays_limited_to_dependents():
+    """#2223 review r2: the exception names the dependent's label drop, audit note and board move, and the finished
+    goal's `sdlc:blocking` strip, and is still limited to dependents of N (a clause cannot be dropped silently)."""
+    after = _flat(LAND).split(_flat(SENTENCE), 1)[1][:1200]
+    assert "Four exceptions" in after and "limited to dependents of N" in after
+    assert "loses `sdlc:blocked`" in after and "one audit note" in after and "card moved to Ready" in after
+    assert "N itself loses `sdlc:blocking`" in after
+
+
 def test_land_prose_stays_out_of_the_budgeted_files():
     """#2075: #2067 copied the contract into SKILL.md and picking.md, which phases load by default,
     and pushed `evals/phase_context_budget.py` over its ceilings. The detail lives in land.md only."""
@@ -928,3 +937,20 @@ def test_the_cloud_doc_names_land_and_no_longer_says_approval_parks():
 def test_the_running_doc_documents_land():
     assert "### `/sigma-goal <N> --land`" in RUNNING
     assert "is not driven by `loop.py next`/`next-batch`" not in _flat(RUNNING)
+
+
+def test_land_record_done_release_dependents_scope(tmp_path, monkeypatch):
+    """#2223: under `--land` in a cloud container (REST only, every GraphQL shape refused, unknown reads
+    answer ""), the `record done` release is fail-closed: the closed goal itself reads open here and the
+    listing is unreadable, so NOTHING is written to any goal. The ready-made read-failure control."""
+    monkeypatch.setenv("CLAUDE_CODE_REMOTE", "true")
+    lp = _mod("loop")
+    assert hasattr(lp, "_release_dependents_after_done")   # #2223 test-first precondition
+    gh = CloudGitHub()
+    d = tw._sdlc(tmp_path, LAND_CFG)
+    src = lp.sources.GitHubSource(LAND_CFG, run=gh.source_run, sdlc_dir=d)
+    res = lp._release_dependents_after_done(d, src, GOAL, config=LAND_CFG)
+    assert res is not None and res["released"] == [] and res["not_open"] == [GOAL]
+    writes = [c for c in gh.calls if any(m in c for m in ("--method POST", "--method PATCH", "--method PUT",
+                                                          "--method DELETE", "issue edit", "issue comment"))]
+    assert writes == [], writes

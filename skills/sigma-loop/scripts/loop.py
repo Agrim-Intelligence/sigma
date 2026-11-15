@@ -1410,6 +1410,45 @@ def _auto_unpark_sweep(sdlc_dir, config, run=None, session_pid=None):
         return frozenset()
 
 
+def _release_dependents_after_done(sdlc_dir, source, goal, run=None, config=None, release_module=None):
+    """#2223: the goal just closed, so release the open `sdlc:blocked` goals that were waiting on it
+    (`release_dependents.py`: removes only `sdlc:blocked`, never resumes a park, any failed read releases
+    nothing). Called LAST in `_record`'s `done` tail, so it cannot cost any of the goal's own bookkeeping.
+
+    FAIL-OPEN like `_auto_unpark_sweep`: any exception is swallowed with one stderr line, and the watcher
+    duty (`reconcile_tick._release_blocked`) catches what this missed within `interval_minutes`. `_record`'s
+    `config` is None for its two in-process callers, so this LOADS the config itself: without it the mode
+    gate (`discovery.auto_unpark.mode`) and the REST reserve could not be honoured. Skips a goal ref that is
+    not an issue number, and any source that is not a `GitHubSource` (a local goal has no blocked-label
+    world). Bounded by a derived deadline (half of `SIGMA_WATCH_CALL_TIMEOUT`); what it does not reach is
+    reported `not checked` and left to the watcher. -> the result dict, or None when it did not run."""
+    try:
+        m = re.fullmatch(r"(?:GH-|#)?(\d+)", str(goal).strip(), re.IGNORECASE)
+        if not m or not isinstance(source, sources.GitHubSource):
+            return None
+        config = config if config is not None else ledger._config_for(sdlc_dir)
+        rel = release_module or _load("release_dependents")
+        deadline = time.time() + _load("dag_refresh").bounds()[1]
+        with gh_calls.component("release_dependents"):
+            res = rel.release(sdlc_dir, config, [m.group(1)], apply=True, run=run, source=source,
+                              unattended=True, deadline=deadline)
+        if res["status"] in ("refused", "deferred") or res["released"] or res["incomplete"] or res["not_checked"]:
+            print("loop.py: " + rel.render(res), file=sys.stderr)
+        return res
+    except Exception as exc:                        # noqa: BLE001 - a release must never cost a recorded done
+        print(f"loop.py: release-dependents failed non-fatally ({exc}) — the watcher will retry", file=sys.stderr)
+        return None
+
+
+def _release_source(sdlc_dir, config):
+    """#2223: the source the `reconcile-merges` CLI hands the release helper; None (so the helper skips)
+    when it cannot be built. Its own function so a test injects a fake and never reaches real `gh`."""
+    try:
+        return sources.get_source(sdlc_dir, config)
+    except Exception:                               # noqa: BLE001
+        return None
+
+
 def _reconcile_mode(config):
     """`discovery.reconcile.mode` -> 'off' (default) | 'on'. An unrecognised or missing value reads
     as off, because a typo must never switch on a mechanism that WRITES. (`sources._auto_unpark` is
@@ -5754,6 +5793,12 @@ def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transit
             work.prune_terminal_review_generations(sdlc_dir, goal, goal_done=True)
         except Exception as exc:              # noqa: BLE001 - terminal bookkeeping is already durable
             print(f"loop.py record: review-evidence cleanup skipped for {goal!r} ({exc})", file=sys.stderr)
+        # #2223: LAST, for the reason the block comment above gives for the signal: a release that hangs or
+        # fails cannot cost the bookkeeping that already landed. Not under the merge-reconcile pass
+        # (`housekeeping=False`): that pass holds a lock and a time budget; the watcher tick releases the
+        # dependents of the goals it just merged instead.
+        if housekeeping:
+            _release_dependents_after_done(sdlc_dir, source, goal, config=config)
     # #1562: LAST, for the reason #1478 gives one block up -- every piece of this goal's own
     # bookkeeping has already landed, so a builder that hangs, fails or is missing is structurally
     # incapable of costing any of it.
@@ -8737,9 +8782,12 @@ def _dispatch(argv):
         config = state.load_config(argv[2])
         # The explicit gesture re-reads every flagged PR (still at most MERGE_RECONCILE_MAX_PER_PASS);
         # only the automatic triggers (`next`, the watch tick) honour the re-check interval.
+        source_for_release = _release_source(argv[2], config)
         for goal, outcome, pr in _reconcile_awaiting_merges(argv[2], config, min_interval=0):
             what = "merged" if outcome == "done" else "closed without merging"
             print(f"{goal} {outcome} (PR #{pr} {what})")
+            if outcome == "done":                       # #2223: this pass skips the release (housekeeping=False)
+                _release_dependents_after_done(argv[2], source_for_release, goal, config=config)
         return 0
     if len(argv) >= 4 and argv[1] == "qc":          # board-only: move a goal to QC at the Review phase
         config = state.load_config(argv[2])

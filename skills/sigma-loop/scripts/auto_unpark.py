@@ -443,7 +443,7 @@ def _is_exempt(raw_comments):
     return legacy.has_marker("\n".join(raw_comments or []), KEEP_PARKED_MARKER)
 
 
-def _map_still_waiting(sdlc_dir, config, number, cache):
+def _map_still_waiting(sdlc_dir, config, number, cache, closed=()):
     """#1625: True only when the stored dependency map says goal `number` still has an open explicit
     blocker, so the caller may skip the comment read and the state reads for it. Acts only when
     `discovery.dag.mode` is written exactly `on` (shadow, off, a typo or a missing key: False, and
@@ -457,7 +457,8 @@ def _map_still_waiting(sdlc_dir, config, number, cache):
         dp = cache.get("dag_pick_mod")
         if dp is None:
             dp = cache["dag_pick_mod"] = _load("dag_pick")
-        held, _why = dp.map_hold(sdlc_dir, config, number, cache)
+        held, _why = (dp.map_hold(sdlc_dir, config, number, cache, closed=closed) if closed
+                      else dp.map_hold(sdlc_dir, config, number, cache))
         return bool(held)
     except Exception:                                   # noqa: BLE001 - the full check is always safe
         return False
@@ -492,7 +493,8 @@ def _note_why(why_out, n, why, refs=None):
         why_out[n] = {"why": why} if refs is None else {"why": why, "open": list(refs)}
 
 
-def compute_unpark_actions(sdlc_dir, config, source, issues, run=None, open_cache=None, reads=None, why_out=None):
+def compute_unpark_actions(sdlc_dir, config, source, issues, run=None, open_cache=None, reads=None, why_out=None,
+                           use_map=True, map_closed=()):
     """(actions, resolved) over every issue in `issues` (already known to carry `parked_label` OR
     `goal_blocked_label` -- see `_fetch_parked_issues`, #1358). `actions` is the enact-shaped,
     action list -- ONE `swap-label` per eligible issue (#1392), plus a card move where a board
@@ -538,7 +540,17 @@ def compute_unpark_actions(sdlc_dir, config, source, issues, run=None, open_cach
     (a declared scope/owner gate), `no-ref` (no blocker is recorded on it), `open` (with `"open":
     [refs]`, the holding refs still open, numbers only) or `parked` (a park the sweep never resumes
     here). A lifted issue gets no entry. `None` (every existing caller) changes nothing; the actions
-    and `resolved` are the same either way. The chain's read-only plan check reads it for its question."""
+    and `resolved` are the same either way. The chain's read-only plan check reads it for its question.
+
+    `use_map` (#2223): False skips the stored-map shortcut (`_map_still_waiting`) so every issue gets the
+    live reads. The scoped release (`release_dependents.py`) passes False: right after a blocker closes
+    the map still stores it as open until its next refresh, so the map may nominate candidates but must
+    never answer "still open". True (every other caller) is byte-identical to before.
+
+    `map_closed` (#2223): goal numbers (ints) the caller has just read closed itself; with `use_map` True the
+    map shortcut treats them as resolved (its stale "open" entry is ignored) but still HOLDS the goal on any
+    OTHER open blocker the map records, an edge (timeline, other) the issue's own text may not name. The
+    default `()` is byte-identical to before."""
     actions, resolved = [], {}
     open_cache = open_cache if open_cache is not None else {}
     reads = reads if reads is not None else _CommentReads(sdlc_dir)
@@ -547,7 +559,7 @@ def compute_unpark_actions(sdlc_dir, config, source, issues, run=None, open_cach
         n = str(it.get("number"))
         names0 = _label_names(it)
         blocked_only = source.goal_blocked_label in names0 and source.parked_label not in names0
-        if blocked_only and _map_still_waiting(sdlc_dir, config, n, map_cache):
+        if use_map and blocked_only and _map_still_waiting(sdlc_dir, config, n, map_cache, map_closed):
             _note_why(why_out, n, "map")
             continue                                    # #1625: the map shows an open blocker -- no reads
         goal_doc = {"ref": n, "raw": (it.get("title") or "") + "\n" + (it.get("body") or "")}

@@ -275,6 +275,17 @@ A second advisory row, `plans directory is git-ignored and cloud runs look confi
   to gh's comment `id`. Consequence: when a claimant is a GitHub App identity, `comment_watch` can surface
   its own comment as foreign. Human claimants are unaffected. Mapping comment authors is a follow-up.
 
+### Releasing a closed goal's dependents (#2223)
+
+`release_dependents.py` is REST-only through the source's own helpers (`_read_issue`, `_list_issues`,
+`fetch_comments_strict`, `_swap_labels`, `note`, `_issue_remove_label`), with no direct `gh` text; under a refused
+GraphQL the label swap takes `_swap_labels`' REST fallback, which has been read but never run in a real cloud container,
+so the end-to-end cloud run is unmeasured. A cloud container holds a dependency map only when the ledger snapshot restored one; without it the one bounded listing
+(100 rows plus a probe row) is the norm there. Residual gaps, stated: a crash after `work.merge` closes the goal and
+before `record done` leaves its dependents blocked until a live watcher's every-blocked-goal pass, and a cloud fleet
+has no watcher; goals reconciled by `loop.py next` (not the tick) wait up to `interval_minutes` plus one pick. REST
+call counts per close are arithmetic from the code, not measured.
+
 ### Slice 2b: ten more `gh issue view` sites
 
 The same `read_issue` now serves: `auto_unpark._ref_is_open` (state, stateReason), `blockers._state`,
