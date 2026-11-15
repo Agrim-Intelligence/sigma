@@ -4,6 +4,17 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **The full verify passes in the `sigma-cloud` container (#2225).** Its baseline at `524d533` failed 28 tests and
+  errored 5 for reasons a laptop never sees; each cause is now traced and fixed in the repository, none in the image.
+  Permission-denial tests do the denied read as an unprivileged user when the suite runs as root (`tests/unprivileged.py`,
+  loud when it cannot drop); process checks read a zombie as gone (`alive()`), since PID 1 there reaps orphans on a
+  ~2 s poll; the no-`fcntl` tests hide a built-in `fcntl` through `without_module()`; `hermetic()` drops git config
+  the environment injects (`GIT_CONFIG_COUNT`/`KEY_<n>`/`VALUE_<n>`, `GIT_CONFIG_PARAMETERS`); a descriptor test's
+  fakes answer only for their own descriptor, because pytest 9.2's capture calls `os.fstat` too. One product fix: a
+  signing park quoted git 2.56's `Could not apply <sha>...` line instead of the signer, and `commit_signing` now skips
+  it. Merged drift in fixtures, inventories and prose budgets caught up, with no ceiling, skip or known flake added.
+  `tools/cloud/README.md` records the container's facts and how to diagnose a verify that fails only there.
+
 ## 1.0.32 — 2026-11-13 — the in-goal follow-up limit is a setting, followups.max_added_slices, default 10
 
 - **In-goal follow-ups: the added-slice limit is a setting, `followups.max_added_slices`, default 10 (#2178).** Under `followups.mode: in-goal` a goal could add follow-ups to its own plan as new slices only up to a fixed 2 written into prose and code. The limit is now a whole number of at least 1, default 10; a missing key, a wrong type, a boolean, zero, a negative, a fraction or a numeric string reads 10, never unlimited. `handoff.py` reads it with one helper (`max_added_slices`) next to `followup_mode`; the rule text `track` prints in its refusal carries the configured number; `handoff.py followup-mode` still prints the mode on line 1 and now prints `max_added_slices <n>` on line 2, which the `/sigma-orchestrate` launch prompt reads instead of prose. The config template, `docs/configuration.md`, `docs/orchestrate.md` and the orchestrate references say "the configured limit (default 10)". **Measured:** offline, `tests/test_followup_mode.py`, one test per clause, each seen red with its clause broken. **Not measured:** how a real phase subagent behaves at a limit other than the old 2; no real orchestrate batch.

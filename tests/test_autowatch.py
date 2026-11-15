@@ -19,6 +19,8 @@ autowatch = _mod("autowatch")
 
 import pytest  # noqa: E402
 
+import unprivileged  # noqa: E402
+
 
 @pytest.fixture(autouse=True)
 def _operator_trusts_the_harness(monkeypatch):
@@ -870,18 +872,19 @@ def test_adapter_wired_tolerates_missing_scheduled_tasks_dir(tmp_path):
 
 def test_adapter_wired_tolerates_an_unreadable_skill_md(tmp_path):
     """A permission-denied SKILL.md (owned by a different user, odd filesystem ACLs, ...) must
-    degrade to 'not wired', not raise — matches this function's own fail-open direction."""
+    degrade to 'not wired', not raise — matches this function's own fail-open direction.
+    The read runs through `tests/unprivileged.py`: as root, mode 000 denies nothing (#2225)."""
     cfg = _config()
-    tasks = tmp_path / "scheduled-tasks" / "some-task"
-    tasks.mkdir(parents=True)
-    skill = tasks / "SKILL.md"
-    skill.write_text("autowatch.py tick\n")
-    os.chmod(skill, 0o000)
-    try:
-        assert autowatch.adapter_wired(
-            cfg, scheduled_tasks_dir=str(tmp_path / "scheduled-tasks")) is False
-    finally:
-        os.chmod(skill, 0o644)      # restore so tmp_path cleanup can remove it
+    with unprivileged.tree() as root:
+        tasks = root / "scheduled-tasks" / "some-task"
+        tasks.mkdir(parents=True)
+        skill = tasks / "SKILL.md"
+        skill.write_text("autowatch.py tick\n")
+        unprivileged.hand_over(root)
+        os.chmod(skill, 0o000)
+        got = unprivileged.call(S / "autowatch.py", "mod.adapter_wired(cfg, scheduled_tasks_dir=d)",
+                                cfg=cfg, d=str(root / "scheduled-tasks"))
+    assert got == {"ok": False}, got
 
 
 # ------------------------------------------------------------------ CLI

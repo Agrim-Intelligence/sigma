@@ -52,6 +52,7 @@ import types
 import pytest
 
 import path_recorder
+import unprivileged
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "skills" / "sigma-loop" / "scripts"
@@ -954,32 +955,34 @@ def test_a_file_with_damaged_markers_is_flagged_and_left_byte_identical(tmp_path
 
 def test_a_file_that_cannot_be_read_is_flagged_rather_than_replaced(tmp_path):
     """An unreadable file is not a missing one. Treating the two the same is how a mode-000 file
-    with a year of notes in it becomes a fresh stub."""
+    with a year of notes in it becomes a fresh stub.
+
+    `sync` runs through `tests/unprivileged.py`: as root, mode 000 denies nothing (#2225)."""
     m = _mod()
-    features = _features(tmp_path)
-    features.mkdir(parents=True)
-    path = features / "alpha.md"
-    path.write_bytes(b"precious\n")
-    path.chmod(0o000)
-    try:
-        report = m.sync(features, "alpha", _entry())
-    finally:
-        path.chmod(0o600)
-    assert report["outcome"] == m.FLAGGED
-    assert path.read_bytes() == b"precious\n"
+    with unprivileged.tree() as root:
+        features = _features(root)
+        features.mkdir(parents=True)
+        path = features / "alpha.md"
+        path.write_bytes(b"precious\n")
+        unprivileged.hand_over(root)
+        path.chmod(0o000)
+        got = unprivileged.call(P, "mod.sync(Path(features), 'alpha', entry)", features=str(features),
+                                entry=_entry())
+        assert got.get("ok", {}).get("outcome") == m.FLAGGED, got
+        path.chmod(0o600)                                   # so a non-root suite can read it back
+        assert path.read_bytes() == b"precious\n"
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can read a mode-000 file")
-def test_the_unreadable_file_fixture_is_really_unreadable(tmp_path):
-    """The control for the test above: if the mode does not take, that test proves nothing."""
-    path = tmp_path / "x"
-    path.write_bytes(b"x")
-    path.chmod(0o000)
-    try:
-        with pytest.raises(OSError):
-            path.read_bytes()
-    finally:
-        path.chmod(0o600)
+def test_the_unreadable_file_fixture_is_really_unreadable():
+    """The control for the test above: if the mode does not take, that test proves nothing. It reads
+    through the same seam, so it runs as root too (it used to skip there, #2225)."""
+    with unprivileged.tree() as root:
+        path = root / "x"
+        path.write_bytes(b"x")
+        unprivileged.hand_over(root)
+        path.chmod(0o000)
+        got = unprivileged.call(None, "Path(p).read_bytes()", p=str(path))
+    assert got.get("raised") == "PermissionError", got
 
 
 # --------------------------------------------------------------------------- 8. rule 4: no entry

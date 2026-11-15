@@ -45,11 +45,12 @@ REGISTERED_CALLERS = (
 )
 #: Registered callers that run only behind the upkeep gate: `feature_upkeep_prove.py` is loaded by `feature_rebase.py`
 #: only after `gate.enabled(config)` and the `conflicts.resolve` level check pass (see `_level1_inputs`), so with the
-#: gate closed it is never reached. `resource_verify.py` runs only when `resource.mode` is enforce. `red_green.py` (#2084) runs a configured test runner command in a bounded process group, only under the git-local trust grant (`loop._runner_scope` refuses it under the environment approval before anything runs). `goal_python.py` (#2079) runs the one-time `uv` build in a bounded process group, and only after the trust gate has accepted the goal's commands, under the exact no-`.venv` conditions of its AC-2. Any further caller must be added here in the same change that gates it.
+#: gate closed it is never reached. `resource_verify.py` runs only when `resource.mode` is enforce. `red_green.py` (#2084) runs a configured test runner command in a bounded process group, only under the git-local trust grant (`loop._runner_scope` refuses it under the environment approval before anything runs). `goal_python.py` (#2079) runs the one-time `uv` build in a bounded process group, and only after the trust gate has accepted the goal's commands, under the exact no-`.venv` conditions of its AC-2. `loop.py`'s `_known_flakes_verdict` (#2160) loads `bounded_run` for the solo re-runs of listed known flakes, and only when `verify.known_flakes` is configured (a well-formed, non-empty list) AND the verify failed, and then only after every other precondition in that function passed (the planned tests passed, the tree did not change during verify, every declared verify command ran, the goal has a base, an interpreter was found); each re-run is a bounded `pytest -q <id>` under `unattended_env` and the verify timeout, and arms no claim. Any further caller must be added here in the same change that gates it.
 GATED_CALLERS = (
     "skills/sigma-loop/scripts/feature_upkeep_prove.py:235",
     "skills/sigma-loop/scripts/feature_upkeep_prove.py:242",
     "skills/sigma-loop/scripts/goal_python.py:273",
+    "skills/sigma-loop/scripts/loop.py:7361",            # #2160 known-flake solo re-runs; gate in the comment above
     "skills/sigma-loop/scripts/red_green.py:49",
     "skills/sigma-loop/scripts/resource_verify.py:282",
 )
