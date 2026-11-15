@@ -138,6 +138,33 @@ def _criteria_lines(criteria):
     return chosen
 
 
+def _extend_preflight(acceptance, sdlc_dir, goal, slice_ref, reason, statements):
+    """A reason `acceptance.extend` is certain to decline, or None. Reads only; the verb still re-checks everything."""
+    try:
+        old = acceptance.parse(acceptance._text(acceptance.path(sdlc_dir, goal)), acceptance.path(sdlc_dir, goal).stem)
+        if len(old["added"]) + len(statements) > acceptance.MAX_ADDED:
+            return "a goal that needs more than %d added criteria is a new goal" % acceptance.MAX_ADDED
+        for text in statements:
+            if len(acceptance._extend_line(text, slice_ref, reason)) - len("- [ ] ") > 1024:
+                return "a criterion exceeds 1024 characters including its suffix"
+    except AttributeError:                           # a module without the read helpers: `extend` itself still decides
+        return None
+    except (OSError, ValueError) as exc:
+        return str(exc)
+    return None
+
+
+def _already_extended(acceptance, sdlc_dir, goal, slice_ref, reason, statements):
+    """True when the record already holds every one of these criteria under this slice (a resume after a crash between
+    `extend` and the count must not append them twice)."""
+    try:
+        file = acceptance.path(sdlc_dir, goal)
+        have = {(x["text"], x["slice"], x["reason"]) for x in acceptance.parse(acceptance._text(file), file.stem)["added"]}
+    except (OSError, ValueError, AttributeError, KeyError):
+        return False
+    return all((t, slice_ref, reason) in have for t in statements)
+
+
 def _heading_titles(text):
     return _load("followup_route").SLICE_HEADING_RE.findall(text)
 
@@ -221,6 +248,12 @@ def _critical(sdlc_dir, goal, config, title, criteria, opts, cap, sid, fr, work)
               "criterion (put them under `### Done when`). Nothing was written." % goal, file=sys.stderr)
         return 2
     number = len(_heading_titles(plan_text)) + 1
+    if has_record and not resume:
+        problem = _extend_preflight(acceptance, sdlc_dir, goal, "slice %d" % number, title, statements)
+        if problem:                                   # what `extend` would refuse, found BEFORE the plan is written
+            print("work.py add-slice: refused: `acceptance.extend` would decline (%s). Nothing was written." % problem,
+                  file=sys.stderr)
+            return 4
     if not resume:
         edits = []
         for path in targets:
@@ -243,7 +276,9 @@ def _critical(sdlc_dir, goal, config, title, criteria, opts, cap, sid, fr, work)
         if _load("review_context").phase_doc_file(pathlib.Path(wrec["worktree"]) / name, goal, "plans"):
             print("add-slice: the branch copy of the plan is modified or untracked, so only the main copy was "
                   "edited; `work.py commit` carries the main copy's bytes over it.")
-    if has_record:
+    if has_record and _already_extended(acceptance, sdlc_dir, goal, "slice %d" % number, title, statements):
+        print("add-slice: the acceptance criteria for slice %d are already in the record; not appended again." % number)
+    elif has_record:
         try:
             acceptance.extend(sdlc_dir, goal, "slice %d" % number, title, statements)
         except ValueError as exc:
@@ -255,6 +290,11 @@ def _critical(sdlc_dir, goal, config, title, criteria, opts, cap, sid, fr, work)
             print("work.py add-slice: refused: `acceptance.extend` has a signature this verb does not know (%s): not "
                   "guessing. The plan was %s; re-run once the verb is updated (the same command resumes)." %
                   (exc, "left as written" if not resume else "already written"), file=sys.stderr)
+            return 4
+        except Exception as exc:  # noqa: BLE001 - a failed issue read or post is a refusal, never a traceback
+            print("work.py add-slice: refused: `acceptance.extend` failed (%s: %s). The plan was %s; re-run (the same "
+                  "command resumes)." % (type(exc).__name__, exc, "left as written" if not resume else "already written"),
+                  file=sys.stderr)
             return 4
     else:
         print("add-slice: no acceptance record for %s: criteria not extended." % goal)

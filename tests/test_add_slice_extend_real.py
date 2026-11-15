@@ -57,3 +57,74 @@ def test_real_extend_rerun_is_idempotent(proj):
     r = cli(proj)
     assert r.returncode == 0 and "already counted" in r.stdout
     assert record.read_text() == once and count(proj) == 1
+
+
+# ---- #2224 review SEND-BACK at 85660ea: each clause below goes red when only it is broken -----------------------
+
+def _added(record):
+    return [x for x in record.read_text().splitlines() if "(added:" in x]
+
+
+def test_only_the_done_when_bullets_become_criteria(proj):
+    record = _with_real_record(proj)
+    proj.crit.write_text("### Task\n- a stray task bullet\n\n### Done when\n- the thing is done\n")
+    assert cli(proj).returncode == 0
+    added = _added(record)
+    assert len(added) == 1 and "the thing is done" in added[0] and "stray" not in record.read_text(), added
+
+
+def test_a_criteria_file_with_no_bullet_is_refused_before_anything_is_written(proj):
+    record = _with_real_record(proj)
+    proj.crit.write_text("### Task\nDo the thing, prose only.\n")
+    r = cli(proj)
+    assert r.returncode == 2 and "no bullet" in r.stderr, r.stderr
+    assert proj.main_plan.read_text().count("## Added slice") == 0 and count(proj) == 0
+    assert _added(record) == []
+
+
+def test_an_extend_that_cannot_succeed_is_refused_before_the_plan_is_written(proj):
+    record = _with_real_record(proj)
+    proj.crit.write_text("### Done when\n- " + "x" * 1100 + "\n")                  # over extend's 1024-character limit
+    r = cli(proj)
+    assert r.returncode == 4 and "acceptance.extend" in r.stderr, r.stderr
+    assert "## Added slice" not in proj.main_plan.read_text() and count(proj) == 0
+    assert _added(record) == []
+
+
+def test_a_resume_after_a_crash_before_the_count_does_not_duplicate_the_criteria(proj):
+    record = _with_real_record(proj)
+    assert cli(proj).returncode == 0
+    once = _added(record)
+    (proj.sdlc / "state" / "followups" / "2224.json").unlink()                    # the crash before the count landed
+    r = cli(proj)
+    assert r.returncode == 0, r.stderr
+    assert _added(record) == once and count(proj) == 1
+
+
+def test_any_exception_from_extend_is_a_refusal_not_a_traceback(proj):
+    _with_real_record(proj)
+    (proj.doubles / "boom.py").write_text(
+        "import pathlib\n"
+        "def path(sdlc_dir, goal): return pathlib.Path(sdlc_dir) / 'acceptance' / (str(goal) + '.md')\n"
+        "def extend(*a, **k): raise RuntimeError('gh exploded')\n")
+    r = cli(proj, mode="boom")
+    assert r.returncode == 4 and "gh exploded" in r.stderr and "Traceback" not in r.stderr, r.stderr
+
+
+def test_a_declining_extend_is_named_as_a_decline_and_leaves_the_plan_written(proj):
+    _with_real_record(proj)
+    (proj.doubles / "decline.py").write_text(
+        "import pathlib\n"
+        "def path(sdlc_dir, goal): return pathlib.Path(sdlc_dir) / 'acceptance' / (str(goal) + '.md')\n"
+        "def extend(*a, **k): raise ValueError('the issue declined the extend comment')\n")
+    r = cli(proj, mode="decline")
+    assert r.returncode == 4 and "declined (the issue declined" in r.stderr and "left as written" in r.stderr, r.stderr
+    assert "## Added slice 1" in proj.main_plan.read_text() and count(proj) == 0
+
+
+def test_more_added_criteria_than_the_cap_are_refused_before_the_plan_is_written(proj):
+    record = _with_real_record(proj)
+    proj.crit.write_text("### Done when\n" + "".join("- criterion number %d\n" % i for i in range(11)))
+    r = cli(proj)
+    assert r.returncode == 4 and "would decline" in r.stderr, r.stderr
+    assert "## Added slice" not in proj.main_plan.read_text() and _added(record) == []
