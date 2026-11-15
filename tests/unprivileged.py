@@ -146,7 +146,7 @@ def _preflight(who, reach, env):
 
 def _env(env, home):
     base = dict(os.environ if env is None else env)
-    for name in [n for n in base if any(w in n.upper() for w in ("TOKEN", "SECRET", "PASSWORD", "API_KEY", "CREDENTIAL"))]:
+    for name in [n for n in base if any(w in n.upper() for w in ("TOKEN", "SECRET", "PASSWORD", "KEY", "AUTH", "CREDENTIAL"))]:
         del base[name]                       # the dropped reader needs no credential the parent holds
     base["PYTHONDONTWRITEBYTECODE"] = "1"
     if home is not None:

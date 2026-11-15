@@ -8,8 +8,8 @@ verify command are this repository's.
 
 **Status: measured in a real container (2026-10-29, and again for #2225 in 2026-11).** A diagnostic session
 found setup's work in the session: the config below, the environment's verify approval, `python3` with pytest,
-xdist and PyYAML, and git 2.56. Its verify failed tests that pass on a laptop; #2225 traced every one: 14 to a fact of this container and 19 to merged drift that fails on any machine (the table below). The container facts are
-this container (see [The container](#the-container) and [How long a verify takes](#how-long-a-verify-takes)).
+xdist and PyYAML, and git 2.56. Its verify failed tests that pass on a laptop; #2225 traced every one: 14 to a fact of this container and 19 to merged drift that fails on any machine (the table below). The container facts are in
+this file (see [The container](#the-container) and [How long a verify takes](#how-long-a-verify-takes)).
 Everything else this page says the script does comes from its code and from `tests/test_cloud_setup_script.py`,
 which runs it offline with stubbed tools.
 
