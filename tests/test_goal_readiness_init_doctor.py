@@ -137,3 +137,33 @@ def test_goal_readiness_doctor_off_reads_no_issues(tmp_path):
     run = Run([{'number': 1, 'title': 'a', 'body': 'x'}])
     out = rows({**CFG, 'goal_readiness': {'mode': 'off'}}, run, tmp=tmp_path)
     assert 'goal readiness mode: off' in names(out) and not [c for c in run.calls if c[:2] == ['gh', 'api']]
+
+
+TEMPLATE = ROOT / 'skills/sigma-init/github-templates/ISSUE_TEMPLATE/goal.md.tmpl'
+
+
+def _issue_body_from_template(text):
+    return text.split('\n---\n', 1)[1]          # GitHub drops the front matter: the issue body is what follows it
+
+
+def test_goal_readiness_filled_in_template_passes_readiness_and_parses():
+    """Second review F2 (AC-4): a person who fills the scaffolded template's three checkboxes has a goal the loop can
+    read, so no guidance comment may sit inside `## Done when` (the criteria parser refuses one there, by design)."""
+    statements = ['The export finishes in under a minute.', 'A bad row is reported with its line number.',
+                  'Re-running the export changes nothing.']
+    filled = _issue_body_from_template(TEMPLATE.read_text())
+    for s in statements:
+        filled = filled.replace('- [ ] \n', '- [ ] %s\n' % s, 1)
+    acceptance = mod(ROOT / 'skills/sigma-loop/scripts/acceptance.py', 'acc_gr_filled')
+    issue_body = mod(ROOT / 'skills/sigma-loop/scripts/issue_body.py', 'ib_gr_filled')
+    assert acceptance.criteria(filled) == statements
+    assert issue_body.check(filled, ['Done when', 'Verification command']) == []
+
+
+def test_goal_readiness_unfilled_template_fails_readiness_for_its_empty_checkboxes():
+    body = _issue_body_from_template(TEMPLATE.read_text())
+    acceptance = mod(ROOT / 'skills/sigma-loop/scripts/acceptance.py', 'acc_gr_unfilled')
+    issue_body = mod(ROOT / 'skills/sigma-loop/scripts/issue_body.py', 'ib_gr_unfilled')
+    with pytest.raises(ValueError, match='acceptance statement is empty'):   # the right reason, not the comment
+        acceptance.criteria(body)
+    assert issue_body.check(body, ['Done when']) == ['Done when']

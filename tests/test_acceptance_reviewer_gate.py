@@ -56,7 +56,9 @@ def test_acceptance_reviewer_gate_refuses_approving_review_with_reasonless_added
 
 def test_acceptance_reviewer_gate_refusal_names_the_extend_gesture(tmp_path):
     out = reviewer.independent_run_refusal(make(tmp_path, REASONLESS), '42', 'review')
-    assert 'acceptance.py extend' in out and '--slice' in out and '--reason' in out and '/sigma-unpark' in out
+    assert 'acceptance.py extend' in out and '--slice' in out and '--reason' in out
+    # second review F3: /sigma-unpark has no acceptance path; the lever is restore, or close and file a new goal
+    assert '/sigma-unpark' not in out and 'never edits the record' in out and 'files a new one' in out
 
 
 def test_acceptance_reviewer_gate_passes_when_every_added_criterion_has_a_reason(tmp_path):

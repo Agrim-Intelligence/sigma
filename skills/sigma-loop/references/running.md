@@ -316,10 +316,10 @@ could not be read**, the base is a fallback, not an answer (`base_resolved: fals
 record): check `gh auth status` first, and if this project uses `feature:` units, park the goal
 rather than opening a PR against a base nobody resolved. If it uses none, the configured base
 was the right answer anyway.
-**If this command exits 4, STOP this goal and do NOT `record` it** (#2009). Exit 4 means it was
-resuming an existing worktree, found it behind its base, and could not bring it forward — so
-every phase after this one would read stale code, which is what makes a resumed goal produce a
-wrong research dossier and a wrong plan. It has already moved the goal out of the claimed state
+**If this command exits 4, STOP this goal and do NOT `record` it** (#2009). Exit 4 means `READINESS REFUSED`,
+or a resumed worktree behind its base could not be brought forward — so
+every phase after this one would read stale code, which makes a resumed goal produce a
+wrong dossier and plan. It has already moved the goal out of the claimed state
 for you: a genuine conflict is **parked** (a person has to resolve it), and a transient failure
 **releases the claim** so the next pick simply retries — a second consecutive transient parks
 instead, so an outage reaches a human rather than spinning. Recording anything on top of that

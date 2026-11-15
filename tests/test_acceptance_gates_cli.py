@@ -507,3 +507,204 @@ def test_acceptance_commit_proceeds_when_the_issue_source_cannot_be_built(fx, mo
     monkeypatch.setattr(work, '_acceptance_source', _no_source)
     out = fx.commit()
     assert not refused(out or '') and 'issue unreadable' in capsys.readouterr().err
+
+
+# ---- second review F1: `work.py rebase` force-pushes local HEAD, so it runs the guard before any push --------
+
+def _forge_local_first_add(f, tip_items=None):
+    """Rewrite the local goal branch so its FIRST add of the record holds EDITED criteria (the pushed original is the
+    baseline), optionally followed by a commit that puts ``tip_items`` back at the tip."""
+    git(f.wt, 'reset', '-q', '--hard', 'main')
+    f.wt_file.parent.mkdir(parents=True, exist_ok=True)
+    f.wt_file.write_text(f.root_file.read_text())
+    tamper(f.wt_file, EDITED)
+    git(f.wt, 'add', '-A')
+    git(f.wt, 'commit', '-qm', 'forged first add')
+    if tip_items is not None:
+        tamper(f.wt_file, tip_items)
+        git(f.wt, 'add', '-A')
+        git(f.wt, 'commit', '-qm', 'restore the tip')
+
+
+def _remote_tip(f):
+    return git(f.wt, 'ls-remote', 'origin', 'refs/heads/sdlc/42').split()[0]
+
+
+def test_acceptance_rebase_refuses_force_pushing_a_rewritten_first_add(fx):
+    """F1: commit, push, rewrite local history so the first add holds edited criteria, then `rebase` (the force-push
+    `_reconcile_behind` and feature upkeep call unprompted): refused before any push, remote baseline unchanged."""
+    first_commit(fx)
+    git(fx.wt, 'push', '-q', 'origin', 'sdlc/42')
+    before = _remote_tip(fx)
+    _forge_local_first_add(fx)
+    out = fx_rebase(fx)
+    assert refused(out) and '(nothing pushed)' in out, out
+    assert _remote_tip(fx) == before
+
+
+def test_acceptance_rebase_refuses_a_rewritten_first_add_even_when_the_tip_is_restored(fx):
+    """F1, the first-add clause on its own: the tip carries the original criteria (so the tip clause is silent) but
+    the pushed history's first add would hold the edited ones and become the next baseline."""
+    first_commit(fx)
+    git(fx.wt, 'push', '-q', 'origin', 'sdlc/42')
+    before = _remote_tip(fx)
+    _forge_local_first_add(fx, tip_items=ORIG)
+    out = fx_rebase(fx)
+    assert refused(out) and 'first add' in out, out
+    assert _remote_tip(fx) == before
+
+
+def test_acceptance_rebase_refuses_pushing_a_tip_edit_over_an_intact_first_add(fx):
+    """F1, the tip clause on its own: history is not rewritten (the first add is the pushed original), but a raw
+    commit past the guarded `work.py commit` edits the criteria at HEAD, and `rebase` would push it."""
+    first_commit(fx)
+    git(fx.wt, 'push', '-q', 'origin', 'sdlc/42')
+    before = _remote_tip(fx)
+    tamper(fx.wt_file, EDITED)
+    git(fx.wt, 'commit', '-qam', 'edit the criteria')
+    out = fx_rebase(fx)
+    assert refused(out) and 'ordered prefix' in out and 'first add' not in out, out
+    assert _remote_tip(fx) == before
+
+
+def test_acceptance_rebase_refuses_pushing_a_deleted_record_while_the_root_copy_is_intact(fx):
+    """F1: the bytes judged are HEAD's, never the root copy: a raw commit deleting the record is refused at rebase."""
+    first_commit(fx)
+    git(fx.wt, 'push', '-q', 'origin', 'sdlc/42')
+    git(fx.wt, 'rm', '-q', '.sdlc/acceptance/42.md')
+    git(fx.wt, 'commit', '-qm', 'drop the record')
+    out = fx_rebase(fx)
+    assert refused(out) and 'missing' in out, out
+
+
+def test_acceptance_rebase_still_pushes_an_intact_branch(fx):
+    first_commit(fx)
+    git(fx.wt, 'push', '-q', 'origin', 'sdlc/42')
+    out = fx_rebase(fx)
+    assert out.startswith('rebased'), out
+
+
+def test_acceptance_rebase_refusal_exits_4_through_work_main(fx):
+    first_commit(fx)
+    git(fx.wt, 'push', '-q', 'origin', 'sdlc/42')
+    _forge_local_first_add(fx)
+    cfg = fx.sdlc / 'config.json'
+    cfg.write_text('{"work": {"enabled": true}}')
+    assert work.main(['work.py', 'rebase', str(fx.sdlc), '42']) == 4
+
+
+def fx_rebase(f):
+    return work.rebase(f.sdlc, {}, '42')
+
+
+# ---- second review F1 (merge half): merge() runs the divergence check, fail-closed like its other checks -------
+
+def test_acceptance_merge_parks_when_issue_criteria_diverge_from_record(fx):
+    first_commit(fx)
+    fx.source.body = BODY.replace('Third recovers.', 'Third explodes.')
+    calls = []
+    out = work.merge(fx.sdlc, {}, '42', run=lambda cwd, argv: calls.append(argv) or '')
+    assert out.startswith('PARK: ACCEPTANCE REFUSED') and 'issue' in out and '(nothing merged)' in out, out
+    assert not calls and fx.parks == []            # merge's caller records the PARK line; the guard does not park twice
+
+
+def test_acceptance_merge_parks_when_the_issue_is_unreadable(fx):
+    first_commit(fx)
+    fx.source.fail = True
+    out = work.merge(fx.sdlc, {}, '42', run=lambda cwd, argv: '')
+    assert out.startswith('PARK: ACCEPTANCE REFUSED') and 'could not read the issue' in out, out
+
+
+def test_acceptance_merge_divergence_reads_the_branch_blob_when_both_copies_are_gone(fx):
+    first_commit(fx)
+    git(fx.wt, 'push', '-q', 'origin', 'sdlc/42')
+    fx.root_file.unlink()
+    fx.wt_file.unlink()
+    fx.source.body = BODY.replace('Third recovers.', 'Third explodes.')
+    out = work.merge(fx.sdlc, {}, '42', run=lambda cwd, argv: '')
+    assert out.startswith('PARK: ACCEPTANCE REFUSED') and 'issue' in out, out
+
+
+# ---- second review F6: `pr` refuses a GitHub goal whose issue has criteria but which has no record -------------
+
+def test_acceptance_pr_refuses_when_no_record_exists_but_the_issue_has_criteria(fx):
+    fx.root_file.unlink()                          # before the first commit: no baseline, no copy anywhere
+    assert not refused(fx.commit() or '')          # commit stays as it was (the residual is documented)
+    out = fx.pr()
+    assert refused(out) and 'no acceptance record' in out and '(nothing pushed)' in out, out
+    assert fx.parks == []
+
+
+def test_acceptance_pr_without_record_passes_when_the_issue_has_no_criteria_section(fx):
+    fx.root_file.unlink()
+    fx.source.body = 'Just prose, no checklist.\n'
+    assert not refused(fx.pr())
+
+
+# ---- second review F8: a goal already parked is not parked (and commented on) again --------------------------
+
+class LabelledSource(Source):
+    parked_label = 'sdlc:parked'
+
+    def __init__(self, labels, **kw):
+        super().__init__(**kw)
+        self.labels = labels
+
+    def fetch_body_labels_rest(self, goal):
+        return {'body': self.body, 'labels': [{'name': n} for n in self.labels]}
+
+
+def test_acceptance_divergence_does_not_repark_a_goal_already_parked(fx):
+    fx.source = LabelledSource(['sdlc:parked'], body=BODY.replace('Third recovers.', 'Third explodes.'))
+    out = fx.pr()
+    assert refused(out) and 'already parked' in out and fx.parks == [], out
+
+
+def test_acceptance_divergence_parks_a_goal_not_yet_parked(fx):
+    fx.source = LabelledSource(['sdlc:goal'], body=BODY.replace('Third recovers.', 'Third explodes.'))
+    out = fx.pr()
+    assert refused(out) and 'Parked it' in out and len(fx.parks) == 1, out
+
+
+# ---- second review F9: the `pr` divergence refusal exits 4 through `work.main` --------------------------------
+
+def test_acceptance_pr_divergence_exits_4_through_work_main(fx):
+    fx.source.body = BODY.replace('Third recovers.', 'Third explodes.')
+    (fx.sdlc / 'config.json').write_text('{"work": {"enabled": true}}')
+    assert work.main(['work.py', 'pr', str(fx.sdlc), '42']) == 4
+    assert len(fx.parks) == 1
+
+
+# ---- second review F3: the divergence refusal names the lever that exists, not a re-record through unpark -------
+
+def test_acceptance_divergence_refusal_names_restore_or_new_goal_not_rerecord(fx):
+    fx.source.body = BODY.replace('Third recovers.', 'Third explodes.')
+    out = fx.pr()
+    assert refused(out) and "restores the issue's `## Done when` to match the record" in out, out
+    assert 'closes this goal and files a new one' in out and 'agent never edits' in out
+    assert 're-record' not in out and 'they resolve it with' not in out
+    assert 'never edits' in fx.parks[0][1]                      # the park comment carries the same lever
+
+
+def test_acceptance_rerecord_after_baseline_is_refused_so_it_is_not_a_lever(fx):
+    """The probe behind F3: after a committed baseline, deleting both copies and re-recording from an edited issue is
+    refused by clause B, which is why the documented lever is restore-the-issue or a new goal."""
+    first_commit(fx)
+    fx.root_file.unlink()
+    fx.wt_file.unlink()
+    fx.source.body = BODY_EDITED
+    acc.record(fx.sdlc, '42', source=fx.source, config={})
+    out = fx.commit()
+    assert refused(out) and 'ordered prefix' in out and staged(fx) == '', out
+
+
+# ---- second review F4: the divergence comparison is ORDERED; a reorder in the issue is a divergence ------------
+
+SWAPPED = '## Done when\n- [ ] Second refuses bad input.\n- [ ] First works.\n- [ ] Third recovers.\n'
+
+
+def test_acceptance_divergence_issue_reordering_criteria_is_a_divergence(fx):
+    assert acc.issue_divergence(fx.root_file.read_text(), '42', SWAPPED)[0] == 'diverge'
+    fx.source.body = SWAPPED
+    out = fx.pr()
+    assert refused(out) and 'no longer matches' in out and len(fx.parks) == 1, out

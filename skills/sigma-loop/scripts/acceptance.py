@@ -326,7 +326,8 @@ def issue_divergence(text, goal_stem, issue_body):
         return 'skip', 'no criteria section in issue'
     if [_norm_statement(x) for x in issue] != [_norm_statement(x) for x in record_['criteria']]:
         return 'diverge', ('the issue\'s Done when no longer matches the recorded original criteria; the record '
-                           'wins and is never rewritten: a person decides whether the goal changes')
+                           'wins and the agent never edits it: a person restores the issue\'s `## Done when` to '
+                           'match the record, or, to change the criteria, closes this goal and files a new one')
     return 'ok', ''
 
 

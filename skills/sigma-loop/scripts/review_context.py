@@ -404,8 +404,9 @@ def first_added_blob(root, refs, path):
     dates are forgeable, so comparing them let a backdated local commit outrank a pushed one. Callers list the
     remote branch first, so once the record was pushed, a local `commit --amend`, reset or backdated rewrite cannot
     replace the baseline; before the first push the local branch is the only witness, and rewriting it before that
-    push does replace the baseline. `--first-parent` keeps a merged-in side branch's add out. A FORCE-PUSH rewriting
-    the remote still defeats it, and only host branch protection stops that.
+    push does replace the baseline. `--first-parent` keeps a merged-in side branch's add out. `work.py rebase` judges
+    local HEAD's tip and first add against this baseline before its force-push (`work._acceptance_push_refusal`); a
+    RAW force-push rewriting the remote still defeats it, and only host branch protection stops that.
 
     Every git failure returns ``(None, "<reason>")`` and never raises: the CALLER decides what an unavailable
     baseline means (acceptance.prefix_refusal skips clause B and prints it). The body is capped at the acceptance

@@ -186,6 +186,11 @@ def test_acceptance_docs_name_extend_and_check_gestures():
     assert "acceptance.py check .sdlc <goal>" in text
     assert "acceptance.py extend .sdlc <goal> --slice <ref> --reason <why> --criterion <text>" in text
     assert "at most 10 added criteria per goal" in text and "/sigma-unpark" in text
+    # second review F3: the lever that exists (restore the issue, or a new goal), never a re-record through unpark
+    assert "re-recording through" not in text and "`/sigma-unpark` has no acceptance path" in text
+    assert "restores the issue's `## Done when` to match the record" in text and "file a new one" in text
+    unreleased = _doc("CHANGELOG.md").split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+    assert "re-recording through" not in unreleased and "files a new one" in unreleased
 
 
 def test_acceptance_cloud_sessions_documents_append_only_rewrite_rules():
@@ -198,7 +203,9 @@ def test_acceptance_cloud_sessions_documents_append_only_rewrite_rules():
 
 def test_acceptance_cloud_sessions_documents_exit_limits_and_pre_commit_residual():
     text = _doc("docs/cloud-sessions.md")
-    assert "The checkpoint push and the `work.py rebase` force-push" in text and "raw `git push`" in text
+    # second review F1: the rebase force-push is guarded now; the checkpoint push and a no-force rebase are not
+    assert "The `work.py rebase` force-push judges local HEAD's record" in text and "raw `git push`" in text
+    assert "The checkpoint push and a no-force" in text
     assert "Before the first `work.py commit` there is no committed" in text and "legacy record (no hash) not at all" in text
     assert "can be fabricated by anyone who can comment" in text and "force-push" in text
 
@@ -216,7 +223,8 @@ def test_acceptance_work_py_control_table_names_guard_exits():
                  if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "ENFORCEMENT_GATES")
     row = next(g for g in gates if g["function"] == "_acceptance_append_only_refusal")
     text = row["mechanism"] + " " + row["condition"]
-    for phrase in ("checkpoint push", "rebase force-push", "raw `git push`", "baseline is the first add",
+    for phrase in ("checkpoint push", "the `work.py rebase` force-push", "no-force `rebase`", "raw `git push`",
+                   "baseline is the first add",
                    "legacy record", "Before the first `work.py commit`", "force-push defeats it"):
         assert phrase in text, phrase
     assert "_acceptance_append_only_refusal" in _doc("docs/enforcement.md")

@@ -965,8 +965,9 @@ def independent_run_refusal(sdlc_dir, goal, phase, plan_sha256=""):
         if lacking:
             return ("acceptance record has added criteria without a slice and reason (%s): no approving verdict is "
                     "recorded until each has one. Add criteria only with `acceptance.py extend %s %s --slice <ref> "
-                    "--reason <why> --criterion <text>`; a wrongly written line is corrected by a person editing "
-                    "the goal and re-recording through /sigma-unpark" % ("; ".join(lacking), sdlc_dir, goal))
+                    "--reason <why> --criterion <text>`; the agent never edits the record: a person restores it to "
+                    "its first committed form and re-adds with `extend`, or, if the line is in that first record, "
+                    "closes this goal and files a new one" % ("; ".join(lacking), sdlc_dir, goal))
     cfg, unreadable = _config_state(sdlc_dir)
     if unreadable:
         return ("%s/config.json is unreadable, so whether review.independent is on cannot be told: no "

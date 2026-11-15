@@ -85,7 +85,8 @@ python3 -I <installed-sigma>/skills/sigma-loop/scripts/acceptance.py set-verify-
 
 **Acceptance criteria are append-only (#2222).** After P1 the criteria in `.sdlc/acceptance/<goal>.md` can only
 grow. `acceptance.py record` stores the sha256 of the original `## Done when` block as `criteria_sha256` (first record
-only), and `work.py commit`, `work.py pr` and `merge()` refuse, whether or not `verify.enforce` is on, when the record's
+only), and `work.py commit`, `work.py pr`, `merge()` and the `work.py rebase` force-push refuse, whether or not
+`verify.enforce` is on, when the record's
 criteria were edited, removed, weakened, reordered, deleted or re-recorded, or when an added criterion has no slice and
 reason. The guard has no flag, environment variable or config key that loosens it (`goal_readiness` never reaches it).
 Read it with `python3 skills/sigma-loop/scripts/acceptance.py check .sdlc <goal>` (it prints `baseline: <first commit>`
@@ -95,8 +96,9 @@ or `baseline: unavailable (<reason>)`); add with
 `- [ ] <text> (added: <slice>; reason: <why>)` under `## Added criteria`, leaves the original block byte-identical,
 posts an issue comment carrying `<!-- sigma:acceptance-extend <sha256> -->` first (a failed post writes nothing; a retry
 is idempotent), and syncs the worktree copy. Because the record's bytes change, verify evidence is stale: run
-`loop.py verify` again. A wrong criterion is corrected by a person editing the goal and re-recording through
-`/sigma-unpark`; no verb edits or removes one.
+`loop.py verify` again. No verb edits or removes a criterion, and the agent never edits the record: a re-record
+after the first commit is refused (not an ordered prefix), and `/sigma-unpark` has no acceptance path. A person who
+wants different criteria closes the goal and files a new one.
 
 - **What is checked, clause by clause.** H: the stored `criteria_sha256` equals the hash of the current original block.
   B: the record's first committed blob has criteria that are an exact, ordered prefix of the current list, equal
@@ -109,15 +111,19 @@ is idempotent), and syncs the worktree copy. Because the record's bytes change, 
   disk `commit` and `pr` refuse (that is the deletion about to be staged or pushed). Only at `merge()`, with neither
   copy on disk (the root copy removed after a merge, #1474), is the committed branch tip read instead, so absence of
   the root file is not a refusal there.
-- **Issue divergence (GitHub goals).** `commit` and `pr` compare the record's original criteria with the issue's
-  `## Done when` (alias normalised, checkbox state and whitespace ignored) and refuse on a difference (the record wins and
-  is never rewritten). The refusal records the park itself (`needs_decision`), so exit 4 means the goal already left
-  the claimed state: do not `record`, never edit the record; a person resolves it with `/sigma-unpark`. It runs
+- **Issue divergence (GitHub goals).** `commit`, `pr` and `merge()` compare the record's original criteria with the
+  issue's `## Done when` in order (alias normalised, checkbox state and whitespace ignored) and refuse on a difference
+  (the record wins and is never rewritten). At `commit` and `pr` the refusal records the park itself
+  (`needs_decision`, skipped when the issue already carries the park label), so exit 4 means the goal already left
+  the claimed state: do not `record`. A person restores the issue's `## Done when` to match the record, then
+  `/sigma-unpark`; to change the criteria, they close the goal and file a new one. At `merge()` it is merge's own
+  `PARK:` line. It runs
   whatever the record's `drafted` flag or `criteria_sha256` line say (both are in the record's own bytes, so neither
   can switch it off), and is skipped, and says so, only for an issue with no valid criteria section and a local-file
-  goal. An unreadable issue fails closed at `pr` (the next tick retries, no park) and open at `commit` (offline work
-  stays possible). `pr` also requires, for every added criterion, an issue comment carrying its extend marker for that
-  exact text, slice and reason; unreadable comment history refuses.
+  goal. An unreadable issue fails closed at `pr` (the next tick retries, no park) and `merge()` (a `PARK:`, as merge's
+  other unreadable checks), and open at `commit` (offline work stays possible). `pr` also requires, for every added
+  criterion, an issue comment carrying its extend marker for that exact text, slice and reason (unreadable comment
+  history refuses), and refuses a goal with no record on disk while its issue has a valid criteria section.
 - **Residuals, stated.** Tamper-evident, not tamper-proof. Before the first `work.py commit` there is no committed
   baseline: a record with `criteria_sha256` is checked by that hash alone and a legacy record (no hash) not at all by
   the local clauses. The issue divergence check is then the only witness, and it covers only a GitHub goal whose issue
@@ -130,11 +136,15 @@ is idempotent), and syncs the worktree copy. Because the record's bytes change, 
   after it, a force-push that rewrites the remote history defeats it, and only host branch protection stops that.
   Where `.sdlc/acceptance` is gitignored there is no committed baseline; `/sigma-doctor` reports it. The extend
   comment can be fabricated by anyone who can comment: it is an audit trail, not proof of authorship.
-- **Exits not guarded.** The checkpoint push and the `work.py rebase` force-push push bytes that `commit` already
-  checked and run no guard of their own; a raw `git push` or a hand edit after the last `commit` and before `pr` is
-  caught only at `pr` and `merge()`.
-- **Cost.** One file read, one `git log` bounded to one path and one `git show` per guarded call, plus one issue read
-  at `commit` and `pr` and one comment-history read at `pr` for a GitHub goal. At 10x and 100x goals the cost is per
+- **Exits not guarded.** The `work.py rebase` force-push judges local HEAD's record and HEAD's own first add of it
+  against the remote baseline before pushing, and pushes nothing on a refusal. The checkpoint push and a no-force
+  `rebase` (a fast-forward, so the remote baseline stays) run no guard of their own; a raw `git push` or a hand edit
+  after the last `commit` and before `pr` is caught only at `pr` and `merge()`. `commit` with no record anywhere
+  passes (nothing is staged); only `pr` refuses that, and only for a GitHub goal.
+- **Cost.** One file read, one `git log` bounded to one path and one `git show` per guarded call (twice at the
+  `rebase` force-push, which judges HEAD's tip and first add), plus one issue read at `commit`, `pr` and `merge()`
+  (at `pr` also with no record), one comment-history read at `pr`, and one label read on a divergence for a GitHub
+  goal. At 10x and 100x goals the cost is per
   goal, not per fleet. Not measured; no live GitHub run (fakes only).
 
 **Identity:** the identity is the `origin` URL's last two path segments, whatever the host. The same `owner/name` on
