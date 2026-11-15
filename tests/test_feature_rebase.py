@@ -2568,11 +2568,14 @@ def _reverted_goal_world(tmp_path):
     return world, path, goal_sha
 
 
-def test_278_work_rebase_a_failed_put_back_refuses_every_later_push(tmp_path):
+def test_278_work_rebase_a_failed_put_back_refuses_every_later_push(tmp_path, monkeypatch):
     """#278 note (c), the goal-branch side: `reset --keep` failing leaves the worktree rebased, and
     the NEXT `rebase()` would find nothing to replay and force-push the loss. The marker stops it."""
     world, path, goal_sha = _reverted_goal_world(tmp_path)
     work = _load("work")
+    # #2222 F6: `work.py pr` reads a GitHub goal's issue when it has no acceptance record; this one has no criteria
+    monkeypatch.setattr(work, "_acceptance_source", lambda sdlc_dir, config: type(
+        "Issue", (), {"fetch_title_body": lambda self, goal: {"title": "Goal", "body": "No checklist here."}})())
     before = world.tip("sdlc/11")
 
     def failing(cwd, argv):

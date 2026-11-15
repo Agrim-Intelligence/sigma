@@ -2384,6 +2384,52 @@ _MACHINE_PARK_KINDS = frozenset({"merge_conflict", "failing_check", "no_evidence
 _REBASE_PARK_MARKER = "Rebase parked:"
 
 
+_READINESS_BODY_CAP = 50
+
+
+def _goal_readiness_rows(cfg, base, gh_cfg, run, github):
+    """#2222: `goal_readiness` rows. (1) the mode (an invalid one is a not-OK row, never defaulted); (2) with GitHub
+    discovery, how many OPEN `sdlc:goal` issues lack a readable `## Done when`, read through `_list` (REST, one list
+    request of at most `_READINESS_BODY_CAP` = 50 bodies per run; the list carries bodies, so that is 1 core-budget
+    read, not 50, and nothing here is GraphQL). Says `N of M checked` and `50+ unchecked` when the cap truncated the
+    read, and an unreadable source is its own not-OK row, never a silent zero; (3) when `.sdlc/acceptance` is
+    gitignored in this checkout, the append-only guard has no committed baseline (`baseline: unavailable`), so say so.
+    Never raises."""
+    rows = []
+    try:
+        ib = _load_loop_script("issue_body")
+        try:
+            mode = ib.readiness_mode(cfg)
+        except ValueError as exc:
+            return [_chk("goal_readiness setting is valid", False, "%s; fix .sdlc/config.json (never defaulted)" % exc)]
+        rows.append(_chk("goal readiness mode: %s" % mode, True, ""))
+        root = pathlib.Path(base).parent
+        # `-v` prints the matching ignore rule on a hit, so a runner that returns nothing (or fails) is "not ignored"
+        ignored = run(["git", "-C", str(root), "check-ignore", "-v", "--", ".sdlc/acceptance/probe.md"])
+        if not isinstance(ignored, _RawFailure) and str(ignored).strip():
+            rows.append(_chk("acceptance records are tracked (not gitignored)", False,
+                             ".sdlc/acceptance is gitignored here, so `acceptance.py check` has no committed baseline "
+                             "(`baseline: unavailable`) and only the stored criteria_sha256 protects the record; "
+                             "un-ignore .sdlc/acceptance/"))
+        if github and mode != "off":
+            sources = _load_loop_script("sources")
+            label = sources.GitHubSource(cfg, run=_raising_gh(run)).goal_label
+            issues = _list(run, gh_cfg, ["number", "title", "body"], [label], cap=_READINESS_BODY_CAP)
+            if issues is None:
+                rows.append(_chk("goal readiness: open goals checked for a Done when section", False,
+                                 "could not read the open goals (REST list failed); the count is UNKNOWN, not zero"))
+            else:
+                required = ib.readiness_required(cfg)
+                lacking = [i for i in issues if ib.check(i.get("body") or "", required)]
+                more = "; %d+ unchecked" % _READINESS_BODY_CAP if len(issues) >= _READINESS_BODY_CAP else ""
+                name = "goal readiness: %d of %d checked open goal(s) lack %s%s" % (
+                    len(lacking), len(issues), " / ".join("`## %s`" % r for r in required), more)
+                rows.append(_chk(name, True, ""))
+    except Exception:
+        return rows
+    return rows
+
+
 def _mis_kinded_hardstop_parks(cfg, gh_cfg, run, cap=20):
     """#1498: open parked issues whose title or body matches the filing deny-list (a hard stop) but whose
     declared kind is not a hard-stop kind. -> a list of issue numbers (empty = none), or None when the
@@ -2766,6 +2812,98 @@ def _orphan_in_progress_scan(gh_cfg, config, run):
         if not any(p in names for p in primary):
             flagged.append(i.get("number"))
     return flagged
+
+
+_RELEASE_LIST_CEILING = 100     # #2223: one REST page of blocked goals; the probe row makes the call 101
+
+
+def _released_blockers_scan(gh_cfg, config, run, sdlc_dir=None, now=None):
+    """#2223: open `sdlc:blocked` goals whose every dependency is already closed, i.e. what
+    `release_dependents.py` would release right now. -> None when the read could not be made (the row is
+    skipped, never false), else a dict: `eligible` [(number, since_epoch|None, ref, clock)] sorted
+    oldest-wait first, `read` rows read (<= 100), `ceiling_hit`, `checked` goals decided, `more` goals not
+    checked, `max_issues`. READ-ONLY: the source is built WITHOUT `sdlc_dir` (no breaker or log write), the
+    comment reader never persists, nothing is saved. It does NOT restate the verb's filter: it calls the
+    verb's own `release_candidates` and the sweep's own `compute_unpark_actions`, so the row cannot promise
+    a release the verb would not make. The listing is newest-first only, so past the ceiling the OLDEST
+    blocked goals are the ones not read, and of those read it checks the `max_issues` LEAST recently
+    updated (the likeliest to be stale) (`backlog_check.doctor_scan.max_issues`, default 10): hence "oldest of N read", never "oldest".
+    Cost: one list call, one strict comment read per checked goal, one state read per distinct ref, one
+    `closedAt` read per eligible goal's refs; unmeasured."""
+    try:
+        sources = _load_loop_script("sources")
+        rd = _load_loop_script("release_dependents")
+        au = rd.auto_unpark
+        src = sources.GitHubSource(config, run=_raising_gh(run))
+        if src.blocked_label == src.goal_blocked_label:
+            return None                             # the collision row says it; the verb refuses
+        rows = _list(run, gh_cfg, ["number", "title", "body", "labels", "updatedAt"],
+                     [src.goal_blocked_label], cap=_RELEASE_LIST_CEILING + 1, sort="updated")
+        if rows is None:
+            return None
+        ceiling_hit = len(rows) > _RELEASE_LIST_CEILING
+        rows = rows[:_RELEASE_LIST_CEILING]
+        cands = rd.release_candidates(src, rows)
+        max_issues = _int_cfg(_block(_block(config, "backlog_check"), "doctor_scan"), "max_issues",
+                              _DEFAULT_DOCTOR_MAX_ISSUES)
+        cands.sort(key=lambda r: str(r.get("updatedAt") or ""))      # stalest first: likeliest to be stale
+        checked, rest = cands[:max_issues], cands[max_issues:]
+        reads = rd._StrictComments(str(sdlc_dir or ""), src)
+        why = {}
+        # The map is READ (never written) so the row holds a goal the map holds on another open blocker, as the
+        # verb does; no `sdlc_dir` means no map, exactly the sweep's own fallback.
+        actions, resolved = au.compute_unpark_actions(
+            str(sdlc_dir or ""), config, src, checked, run=None, open_cache={}, reads=reads, why_out=why)
+        eligible = []
+        for a in actions:
+            n = str(a["issue"])
+            if a["action"] != "swap-label" or n in reads.failed:
+                continue
+            since, ref, clock = None, None, "updatedAt"
+            for r in resolved.get(n, []):
+                try:
+                    closed_at = src._read_issue(r, ["closedAt"]).get("closedAt")
+                    t = calendar.timegm(time.strptime(closed_at, "%Y-%m-%dT%H:%M:%SZ"))
+                except Exception:                   # noqa: BLE001 - fall back to the goal's own updatedAt
+                    continue
+                if since is None or t > since:      # the LAST dependency to close is what it waited on
+                    since, ref, clock = t, r, "closedAt"
+            if since is None:
+                upd = next((str(c.get("updatedAt")) for c in checked if str(c.get("number")) == n), None)
+                try:
+                    since = calendar.timegm(time.strptime(upd, "%Y-%m-%dT%H:%M:%SZ"))
+                except Exception:                   # noqa: BLE001
+                    since = None
+            eligible.append((n, since, ref, clock))
+        eligible.sort(key=lambda e: (e[1] is None, e[1] or 0))
+        return {"eligible": eligible, "read": len(rows), "ceiling_hit": ceiling_hit, "checked": len(checked),
+                "more": len(rest) + (1 if ceiling_hit else 0), "max_issues": max_issues,
+                "now": now if now is not None else time.time()}
+    except Exception:
+        return None
+
+
+def _release_duty_state(sdlc_dir, config, now=None):
+    """#2223: the watcher duty's own heartbeat as (ok, text), or None when nothing is worth saying. Age is
+    the tell: the duty writes its state file at start, per goal and on failure, so a dead pipeline reads as
+    an age (and `starved_ticks` when earlier duties spent the whole tick), never as zero errors."""
+    try:
+        sources = _load_loop_script("sources")
+        rd = _load_loop_script("release_dependents")
+        if sources._auto_unpark(config) == "off":
+            return True, "off (discovery.auto_unpark.mode is off; nothing is expected to run)"
+        st = rd.read_state(sdlc_dir)
+        now = now if now is not None else time.time()
+        if not st or not st.get("ran_at"):
+            return False, "never run (no watcher has recorded a release pass here)"
+        age = now - float(st["ran_at"])
+        interval = _load_loop_script("auto_unpark")._interval_minutes(config) * 60
+        text = "last ran %s ago, status %s, starved_ticks %s" % (
+            _age_words(age), st.get("status"), int(st.get("starved_ticks") or 0))
+        stale = age > 3 * max(interval, 600)
+        return (not stale and not st.get("starved_ticks") and st.get("status") not in ("error", "refused")), text
+    except Exception:
+        return None
 
 
 def _multi_state_label_scan(gh_cfg, config, run):
@@ -4377,6 +4515,8 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
     out.extend(_unit_record_rows(base, run, cheap_only))
     out.extend(_stale_record_rows(base, run))      # #1474
     out.extend(_chain_block_rows(base))            # #1593
+    out.extend(_goal_readiness_rows(cfg, base, _block(disc, "github"), run,        # #2222
+                                    disc.get("source") == "github" and not cheap_only))
     if disc.get("source") == "github":
         gh_disc = _block(disc, "github")
         if _block(gh_disc, "project").get("enabled"):
@@ -4635,6 +4775,36 @@ def check(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None, site_packages_di
                     "are ALREADY eligible, and the auto-unpark sweep will not resume what they block "
                     "until they CLOSE -- so this is a deadlock, not a delay. Run `/sigma-promote` to see "
                     "them in its `deadlocked` bucket and approve the ones that should be worked."))
+
+            # #2223: blocked goals the verb would release right now, with the oldest wait, and the watcher
+            # duty's own heartbeat. Advisory, read-only: the fix names the one command that clears it.
+            rel = _released_blockers_scan(gh_disc, cfg, run, sdlc_dir)
+            if rel is not None:
+                rname = ("no sdlc:blocked goal waits only on closed goals (checked the %d least recently "
+                         "updated of at most %d read; oldest of N read%s)" % (
+                             rel["max_issues"], _RELEASE_LIST_CEILING,
+                             "; %d not checked" % rel["more"] if rel["more"] else ""))
+                if rel["eligible"]:
+                    shown = ", ".join(f"#{e[0]}" for e in rel["eligible"][:10])
+                    first = rel["eligible"][0]
+                    waited = ("waiting %s since %s closed (%s)" % (
+                        _age_words(rel["now"] - first[1]), "#" + first[2] if first[2] else "its dependency",
+                        first[3])) if first[1] else "wait unknown"
+                    out.append(_chk(rname, False,
+                        f"{len(rel['eligible'])} goal(s) ({shown}) carry sdlc:blocked but every dependency they "
+                        f"name is closed; oldest of {rel['read']} read: #{first[0]} {waited}. "
+                        + (f"{rel['more']} more not checked. " if rel["more"] else "")
+                        + "Run `python3 skills/sigma-loop/scripts/release_dependents.py .sdlc --all --apply` "
+                        "(add `--cap N` when more than 100 goals are blocked). Advisory only -- nothing was changed."))
+                else:
+                    out.append(_chk(rname, True, ""))
+                duty = _release_duty_state(sdlc_dir, cfg) if (rel["read"] or pathlib.Path(sdlc_dir, "state").is_dir()) else None
+                if duty is not None and (rel["read"] or "never run" not in duty[1]):
+                    out.append(_chk("the release-dependents watcher duty has run recently (" + duty[1] + ")",
+                                    duty[0],
+                                    "start the ledger watcher (`/sigma-ledger`), or run `python3 "
+                                    "skills/sigma-loop/scripts/release_dependents.py .sdlc --all --apply` by hand; "
+                                    "a cloud fleet has no watcher, so its releases come from `record done` only."))
 
             # #1354: the single-primary-state-label invariant (design doc §5, corrected per §10 finding
             # 2 -- NOT "no issue has more than one sdlc:* label ever": sdlc:in-progress is an

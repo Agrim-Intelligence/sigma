@@ -100,6 +100,7 @@ LIBRARY_ONLY = {
     "commit_signing",
     "known_flakes",
     "followup_route",
+    "issue_body",
 }
 
 

@@ -471,6 +471,34 @@ def served_block(result, label):
     return _SERVED_HEADING + "\n" + "\n".join(lines) + "\n"
 
 
+#: #2222: a slice that serves fewer than three requirements still needs the three-to-seven criteria that
+#: `acceptance.criteria` demands, so its `## Done when` is padded with these two fixed, honest statements.
+_DONE_WHEN_PAD = ("A test written first fails without the change and passes with it.",
+                  "No existing test regresses.")
+
+
+def done_when_block(result, label):
+    """`## Done when` for slice ``label``, derived from its `## Requirements served` sentences (one criterion per
+    requirement, padded to three with `_DONE_WHEN_PAD`), rendered by `issue_body.render` so the slice's issue parses
+    with `acceptance.criteria`. Refuses a slice that serves more than seven requirements (split it) or none."""
+    ids = result["slices"].get(label)
+    if ids is None:
+        raise Refusal("slice %r is not in the Slice-count estimate (slices: %s)"
+                      % (label, ", ".join(result["slices"]) or "none"))
+    sent = {f["id"]: f["sentence"] for f in result["frs"]}
+    ib = _load_loop_script("issue_body")
+    criteria = ib.criteria_from_served(["- **FR-%d.** %s" % (i, sent[i]) for i in ids])
+    if not criteria:
+        raise Refusal("slice %r serves no requirement, so there is nothing to derive a Done when from" % label)
+    if len(criteria) > 7:
+        raise Refusal("slice %r serves %d requirements; at most 7 fit one Done when, split the slice"
+                      % (label, len(criteria)))
+    for pad in _DONE_WHEN_PAD:
+        if len(criteria) < 3:
+            criteria.append(pad)
+    return ib.render("", criteria)
+
+
 # ---------------------------------------------------------------------------------------------
 # The quality checklist: `nfr-bank` (the data) and `quality` (the checker). See the module docstring.
 # ---------------------------------------------------------------------------------------------
@@ -875,7 +903,7 @@ def check_quality(text, lane_override=None):
 
 _USAGE = ("usage: goal_design.py sweep-budget <sdlc_dir> --mode full|lane --lane small|medium|large\n"
           "       goal_design.py requirements <artifact.md> [--plan <plan.json>]\n"
-          "       goal_design.py served <artifact.md> --slice <n>\n"
+          "       goal_design.py served <artifact.md> --slice <n> [--done-when]\n"
           "       goal_design.py nfr-bank\n"
           "       goal_design.py quality <artifact.md> [--lane small|medium|large]")
 
@@ -929,6 +957,8 @@ def _served_main(path, tail):
             raise Refusal("the artifact has requirement violations; run `requirements` first:\n  "
                           + "\n  ".join(result["violations"]))
         block = served_block(result, label)
+        if "--done-when" in tail:               # #2222: the slice's `## Done when`, derived from the same sentences
+            block += "\n" + done_when_block(result, label)
     except Refusal as e:
         print("goal_design.py served: %s" % e, file=sys.stderr)
         return 2

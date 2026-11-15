@@ -2344,7 +2344,18 @@ def test_pr_never_invokes_a_graphql_routed_gh_subcommand(tmp_path):
     assert all(c.startswith("gh api repos/") for c in gh_calls)
 
 
-def test_pr_body_is_never_empty_for_the_default_bodyless_commit(tmp_path):
+class _NoCriteriaIssue:
+    """#2222 second review F6: `work.py pr` reads a GitHub goal's issue when it has no acceptance record (a valid
+    criteria section there refuses). These PR-body tests have no record and an issue without a criteria section."""
+    def fetch_title_body(self, goal):
+        return {"title": "Goal", "body": "No checklist here."}
+
+
+def _issue_without_criteria(monkeypatch):
+    monkeypatch.setattr(work, "_acceptance_source", lambda sdlc_dir, config: _NoCriteriaIssue())
+
+
+def test_pr_body_is_never_empty_for_the_default_bodyless_commit(tmp_path, monkeypatch):
     """#816: `gh pr create --fill` derives the body from commit messages, and `commit()`'s own
     default (`git commit -m f"sdlc: {stem(goal)}"`, no body) makes that come out EMPTY. Measured
     live: 85/380 sigma PRs (22%), and a comparable double-digit rate on another deployment of
@@ -2353,6 +2364,7 @@ def test_pr_body_is_never_empty_for_the_default_bodyless_commit(tmp_path):
     that just happened to carry no body). `pr()` must compose the body itself from the branch's own
     commits, so it can never be empty as long as a commit exists (already guaranteed by the
     no-commits refusal above)."""
+    _issue_without_criteria(monkeypatch)            # #2222 F6: `pr` reads the issue when no record exists
     d = _sdlc(tmp_path)
     goal = _started(d, goal="816", pr="")
     run = _runner(_default_branch("main") + [        # #1649: `_started`'s base IS `main` here
@@ -2427,11 +2439,12 @@ def _pr_run(extra=()):
         ("log --reverse", "sdlc: 816\n\n\n\x00"), ("pulls -f title=", "42")])
 
 
-def test_a_default_base_pr_still_writes_the_same_closing_keyword_it_always_did(tmp_path):
+def test_a_default_base_pr_still_writes_the_same_closing_keyword_it_always_did(tmp_path, monkeypatch):
     """THE UNCHANGED CASE, pinned byte-for-byte. A goal cut from the default branch is the common
     case today and it works: GitHub closes the issue when the PR merges, so the keyword is a true
     statement and must survive #1649 exactly as it was. Asserted as an equality, not a containment,
     so widening the honest-alternative text below can never quietly leak into this path."""
+    _issue_without_criteria(monkeypatch)            # #2222 F6: `pr` reads the issue when no record exists
     d = _sdlc(tmp_path)
     goal = _started(d, goal="816", pr="", base="main")
     run = _pr_run(_default_branch("main"))
@@ -2439,11 +2452,12 @@ def test_a_default_base_pr_still_writes_the_same_closing_keyword_it_always_did(t
     assert _created_body(run) == "Closes #816\n\nsdlc: 816"
 
 
-def test_a_feature_base_pr_never_claims_a_close_it_cannot_perform(tmp_path):
+def test_a_feature_base_pr_never_claims_a_close_it_cannot_perform(tmp_path, monkeypatch):
     """The defect itself. Base `feature/autowatch-dryrun`, default branch `main`: GitHub will not
     close #816 from this merge, so NO closing keyword may appear -- and the body has to say what
     will close it instead, because a body that simply goes quiet leaves the reader with the same
     wrong belief the false line gave them."""
+    _issue_without_criteria(monkeypatch)            # #2222 F6: `pr` reads the issue when no record exists
     d = _sdlc(tmp_path)
     goal = _started(d, goal="816", pr="", base="feature/autowatch-dryrun")
     run = _pr_run(_default_branch("main"))
@@ -2457,11 +2471,12 @@ def test_a_feature_base_pr_never_claims_a_close_it_cannot_perform(tmp_path):
     assert "sdlc: 816" in body                       # and still carries the commits
 
 
-def test_an_unreadable_default_branch_never_becomes_permission_to_claim_a_close(tmp_path):
+def test_an_unreadable_default_branch_never_becomes_permission_to_claim_a_close(tmp_path, monkeypatch):
     """The fail direction, and it is chosen rather than incidental. Being wrong toward "it IS the
     default branch" writes the false line and strands the issue open -- the whole defect. Being
     wrong the other way costs one cautious sentence. So an unreadable answer takes the honest
     branch, exactly like a confirmed non-default one."""
+    _issue_without_criteria(monkeypatch)            # #2222 F6: `pr` reads the issue when no record exists
     d = _sdlc(tmp_path)
     goal = _started(d, goal="816", pr="", base="main")
     run = _pr_run([("default_branch", RuntimeError("HTTP 502: Bad gateway"))])
@@ -2486,10 +2501,11 @@ def test_a_local_goal_gets_no_issue_line_at_all_and_no_read_on_its_behalf(tmp_pa
     assert not any("default_branch" in c for c in run.calls)
 
 
-def test_the_default_branch_is_read_over_rest_like_every_other_call_pr_makes(tmp_path):
+def test_the_default_branch_is_read_over_rest_like_every_other_call_pr_makes(tmp_path, monkeypatch):
     """#1209's separate-quota rule applies to the new read too: GitHub meters REST and GraphQL on
     different hourly budgets, and `gh repo view` -- the obvious way to ask this -- is GraphQL. An
     exhausted GraphQL quota must not be able to stop a PR body from telling the truth."""
+    _issue_without_criteria(monkeypatch)            # #2222 F6: `pr` reads the issue when no record exists
     d = _sdlc(tmp_path)
     goal = _started(d, goal="816", pr="", base="feature/x")
     run = _pr_run(_default_branch("main"))
@@ -6788,7 +6804,11 @@ def test_cli_commit_still_succeeds_when_the_loop_module_cannot_be_loaded(tmp_pat
     d = _sdlc(tmp_path); goal = _started(d)
     monkeypatch.setattr(work, "_run", lambda cwd, argv: "")
 
+    real_load = work._load
+
     def boom(name):
+        if name != "loop":      # #2222: the acceptance guard must load, or the commit refuses; only loop.py is the fault here
+            return real_load(name)
         raise RuntimeError("simulated: loop.py could not be loaded")
     monkeypatch.setattr(work, "_load", boom)
 

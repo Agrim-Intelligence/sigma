@@ -490,6 +490,10 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/issue_body.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/known_flakes.py",
       "role": "library"
     },
@@ -595,6 +599,10 @@
     },
     {
       "path": "skills/sigma-loop/scripts/red_green.py",
+      "role": "gesture"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/release_dependents.py",
       "role": "gesture"
     },
     {

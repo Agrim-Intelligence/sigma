@@ -224,8 +224,8 @@ nothing written.
 ## 7. Run
 
 Follow [run](references/run.md) every wake until step 9's stop condition. In short: refresh each goal's
-state from GitHub; merge what is approved ([run § merge](references/run.md#merge)); unpark dependents that
-were waiting only on a merged blocker; then `python3 "${CLAUDE_SKILL_DIR}/scripts/waves.py" ready "$T/goals.json" "$T/state.json"
+state from GitHub; merge what is approved ([run § merge](references/run.md#merge)); release the blocked dependents of every merged goal (`release_dependents.py`, [run § unblocking](references/run.md#unblocking); a parked dependent still goes through `/sigma-unpark`);
+then `python3 "${CLAUDE_SKILL_DIR}/scripts/waves.py" ready "$T/goals.json" "$T/state.json"
 [--seats N]` and launch what it lists ([launch](references/launch.md)); write the tracker; schedule the
 next check-in.
 

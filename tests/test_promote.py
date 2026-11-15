@@ -20,6 +20,11 @@ def _config(**gh):
     return {"discovery": {"source": "github", "github": {"repo": "acme/widget", **gh}}}
 
 
+def _off(config):
+    """#2222: `goal_readiness` off, so a promote detail is exactly the label swap (warn appends a readiness note)."""
+    return {**config, "goal_readiness": {"mode": "off"}}
+
+
 def _board_config(**gh):
     """A board-AUTHORITATIVE repo -- the only shape where "did the card move" is a real question.
     On a label-queue repo `_set_board_status` returns False because there is no board at all, which
@@ -400,7 +405,7 @@ def test_no_blocker_marker_costs_nothing_extra_and_behaves_exactly_as_before():
     """The zero-cost common case every other hold in this file already keeps."""
     p = _mod("promote")
     run = _runner(views={"5": _view("sdlc:needs-confirmation")})     # no body at all
-    result = p.promote(".sdlc", _config(), ["5"], run=run)
+    result = p.promote(".sdlc", _off(_config()), ["5"], run=run)       # #2222: readiness off, so the detail is exact
     assert result["results"][0]["outcome"] == "promoted"
     assert result["results"][0]["detail"] == "+sdlc:goal -sdlc:needs-confirmation"
     views = [c for c in run.calls if gqlfake.rest_issue_target(c)]
@@ -643,7 +648,7 @@ def test_a_label_queue_repo_is_never_warned_about_a_card_it_does_not_have():
     there. Warning on every promotion would be pure noise for every label-queue adopter."""
     p = _mod("promote")
     run = _runner(views={"5": _view("sdlc:needs-confirmation")})
-    result = p.promote(".sdlc", _config(), ["5"], run=run)          # no `project` block at all
+    result = p.promote(".sdlc", _off(_config()), ["5"], run=run)    # no `project` block at all; #2222 readiness off
     assert result["results"][0]["detail"] == "+sdlc:goal -sdlc:needs-confirmation"
 
 
@@ -717,7 +722,7 @@ def test_a_graphql_refusal_alone_promotes_over_rest():
 def test_dry_run_writes_nothing_but_names_the_exact_swap():
     p = _mod("promote")
     run = _runner(views={"5": _view("sdlc:needs-confirmation")})
-    result = p.promote(".sdlc", _config(), ["5"], run=run, apply=False)
+    result = p.promote(".sdlc", _off(_config()), ["5"], run=run, apply=False)   # #2222: readiness off
     assert result["results"][0]["outcome"] == "would"
     assert result["results"][0]["detail"] == "+sdlc:goal -sdlc:needs-confirmation"
     assert not any(str(a).startswith("query=mutation") for c in run.gql_calls for a in c)

@@ -128,6 +128,58 @@ DEFAULTS = {"worktree_dir": ".sdlc/work", "branch_prefix": "sdlc/", "base": "",
 #: Pure literals only (str/tuple/bool/None): the reader is `ast.literal_eval`, so it cannot follow a
 #: name or a call. Text fields carry no `|` and no newline -- they land in a Markdown table cell.
 ENFORCEMENT_GATES = (
+    {"control": "Goal readiness (Done when) at start", "function": "_readiness_refusal", "kind": "python-gate",
+     "hosts": "all", "enabled_by": ("work.enabled", "goal_readiness.mode"), "settings": ("goal_readiness.required_sections",),
+     "mechanism": "`goal_readiness.mode` `warn` (the default) prints the sections a goal body lacks (`## Done when`, "
+                  "and `## Verification command` where the repo has a verify command) and starts it anyway; "
+                  "`require` makes `work.py start` refuse (exit 4, `READINESS REFUSED:`, nothing started) and park "
+                  "the goal with the missing sections named (an invalid mode releases the claim instead); "
+                  "`off` checks nothing; an invalid mode refuses rather than defaulting",
+     "condition": "an unreadable issue fails open (the next start retries); a non-GitHub backlog is checked from the "
+                  "goal file; the same check also runs at `/sigma-promote` (GitHub goals) and at the pick "
+                  "pre-check, but the other writers of `sdlc:goal` (triage, auto_unpark, blockers, unpark, "
+                  "reconcile) do not run it, so `require` is enforced at start for them, not at the label write; "
+                  "it never reads or loosens the append-only acceptance guard"},
+    {"control": "Acceptance criteria are append-only", "function": "_acceptance_append_only_refusal",
+     "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
+     "mechanism": "refuses `work.py commit`, `work.py pr`, `merge()` and the `work.py rebase` force-push (exit 4 "
+                  "`ACCEPTANCE REFUSED:`, or a `PARK:` line at merge; nothing committed or pushed) when the goal's acceptance record was "
+                  "edited, reordered, shortened or deleted after it was first committed, when the record last "
+                  "committed on the goal branch (added criteria with their slice and reason included) is not an "
+                  "ordered prefix of it, when its stored "
+                  "`criteria_sha256` no longer matches its Done when block, or when an added criterion has no "
+                  "slice and reason; criteria grow only through `acceptance.py extend`; runs whether or not "
+                  "`verify.enforce` is on and has no flag, environment variable or config key that loosens it; at `commit` "
+                  "and `pr` the refusal parks the goal for a person (`needs_decision`, unless already parked; a "
+                  "guard that could not run does not park)",
+     "condition": "tamper-evident, not tamper-proof. Before the first `work.py commit` there is no committed "
+                  "baseline: a record with `criteria_sha256` is checked by that hash alone and a legacy record "
+                  "(no hash) is not checked at all by the local clauses, so a record rewritten before the first "
+                  "commit (hash recomputed, hash line deleted or `drafted` flipped) passes unless the issue "
+                  "divergence check sees it, and that check covers only a GitHub goal whose issue has a valid "
+                  "criteria section, is readable at `commit` and was not edited to match; a legacy record also "
+                  "accepts reasonless criteria appended inside its Done when block; the baseline is the first add "
+                  "on the remote goal branch (else the local branch, else the base) by ancestry, never by commit "
+                  "date, so a local rewrite before the first push replaces it and a force-push defeats it, and only "
+                  "host branch protection stops that; where `.sdlc/acceptance` is gitignored there is no "
+                  "committed baseline; a raw `git push` or a hand edit after the last `commit` is caught only at "
+                  "`pr` and `merge()`; only the criteria lists are compared, so wording outside them is left to review; "
+                  "the checkpoint push and a no-force `rebase` (its fast-forward push keeps the remote "
+                  "baseline) run no guard of their own; git being "
+                  "unreadable skips the baseline clause and prints it, and refuses nothing by itself"},
+    {"control": "Acceptance record matches the issue and its added criteria are in the open",
+     "function": "_acceptance_issue_refusal", "kind": "python-gate", "hosts": "all",
+     "enabled_by": ("work.enabled",), "settings": (),
+     "mechanism": "for a GitHub goal, `work.py commit`, `work.py pr` and `merge()` refuse when the issue's Done "
+                  "when differs from the record's original criteria (in order), whatever its `drafted` flag or hash "
+                  "line say (skipped, and says so, only when the issue has no valid criteria section); at commit "
+                  "and pr that refusal parks the goal for a person itself unless it is already parked, at merge it "
+                  "is merge's `PARK:` line; `work.py pr` also refuses an added criterion with no matching extend "
+                  "comment on the issue, and a goal with no record while its issue has a valid criteria section; "
+                  "an unreadable issue fails open at commit and closed at pr and merge, and never parks at pr",
+     "condition": "GitHub goals only; local-file goals are exempt and the output says so; an actor who can post "
+                  "issue comments can fabricate the extend comment, so it is an audit trail and not proof of "
+                  "authorship; never run against a live GitHub repository (fakes only)"},
     {"control": "Verify evidence before a merge", "function": "merge", "kind": "python-gate",
      "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
      "mechanism": "refuses the merge (PARK) without this run's passing `loop.py verify` evidence "
@@ -493,6 +545,7 @@ ENFORCEMENT_EXEMPT = (
     ("_sibling_gate", "body of `sibling_gate`, same"),
     ("_diff_without_pr_refusal", "the no-PR branch of `done_refusal`, which carries the gate row"),
     ("_cloud_arm_refusal", "the no-GraphQL arm predicate inside `merge()`; the `gate` row states it (#2083)"),
+    ("_acceptance_push_refusal", "the `rebase` force-push leg of the append-only guard, whose row states it (#2222)"),
 )
 UNKNOWN_ATTEMPTS = 4        # GitHub computes mergeability lazily — the first read is usually UNKNOWN
 UNKNOWN_BACKOFF = 3         # seconds before the first retry, doubled each time
@@ -3160,6 +3213,9 @@ def start(sdlc_dir, config, goal, run=None, session_pid=None, land=False):
     dirty_root = _dirty_root_refusal(base_root, s, run, sdlc_dir=sdlc_dir)
     if dirty_root:
         return dirty_root
+    not_ready = _readiness_refusal(sdlc_dir, config, goal)      # #2222: off|warn|require, in Python on every host
+    if not_ready:
+        return _readiness_unclaim(sdlc_dir, config, goal, not_ready)
     rec = _record(sdlc_dir, goal)
     if rec and pathlib.Path(rec["worktree"]).is_dir():
         blocker = _resume_blocked_by_a_live_sibling(sdlc_dir, config, goal, session_pid=session_pid)
@@ -4105,6 +4161,11 @@ def commit(sdlc_dir, config, goal, run=None, message=""):
         return "not started — run `work.py start` first (nothing committed)"
     path = rec["worktree"]
     _copy_acceptance_into_worktree(sdlc_dir, rec, goal, run)    # #1474
+    refusal = (_park_tamper(sdlc_dir, config, goal, _acceptance_append_only_refusal(
+                   sdlc_dir, rec, goal, run, "(nothing committed)", check_root=True))
+               or _acceptance_issue_refusal(sdlc_dir, config, rec, goal, "(nothing committed)", closed=False))
+    if refusal:                                                 # #2222: unconditional, before anything is staged
+        return refusal
     run(path, ["git", "add", "-A"])
     staged = run(path, ["git", "diff", "--cached", "--name-only"])
     if not staged:
@@ -4501,6 +4562,302 @@ def _acceptance_missing_from_branch(sdlc_dir, rec, goal, run):
     return _phase_doc_missing_from_branch(sdlc_dir, rec, goal, run, "acceptance", "acceptance record")
 
 
+def _acceptance_refs(rec):
+    """Refs that can hold the goal's first-added record: remote branch, local branch, remote base. A record missing a
+    field contributes fewer refs (the baseline is then unavailable, and says so), it never raises."""
+    remote, branch, base = rec.get("remote"), rec.get("branch"), rec.get("base")
+    refs = [(remote + "/" + branch) if remote and branch else None, branch, (remote + "/" + base) if remote and base else None]
+    return [r for i, r in enumerate(refs) if isinstance(r, str) and r and r not in refs[:i]]
+
+
+def _readiness_refusal(sdlc_dir, config, goal):
+    """#2222 M3: `goal_readiness` in Python at `work.py start`, so a host that skips the prose pick step is covered.
+    `warn` (default) prints and proceeds, `require` returns the refusal, `off` is silent. Returns a string or None."""
+    try:
+        ib = _load_issue_body()
+        mode = ib.readiness_mode(config)
+        if mode == "off":
+            return None
+        required = ib.readiness_required(config)
+    except ValueError as exc:
+        return f"READINESS REFUSED: invalid goal_readiness setting ({exc}) (nothing started)"
+    try:
+        if str(goal).endswith(".md"):
+            body = pathlib.Path(goal).read_text(encoding="utf-8")
+        else:
+            source = _acceptance_source(sdlc_dir, config)
+            if source is None:
+                return None
+            body = (source.fetch_title_body(goal) or {}).get("body", "")
+        if not isinstance(body, str) or not body.strip():
+            return None
+    except Exception as exc:                # noqa: BLE001 - fail open: the next start retries
+        print(f"readiness: check skipped, goal body unreadable ({exc})", file=sys.stderr)
+        return None
+    missing = ib.check(body, required)
+    if not missing:
+        return None
+    detail = "goal is not agent-ready: missing " + ", ".join(f"`## {m}`" for m in missing)
+    if mode == "warn":
+        print(f"readiness: warning, {detail}; proceeding (goal_readiness.mode is warn)", file=sys.stderr)
+        return None
+    return f"READINESS REFUSED: {detail}; add the section(s) to the goal, or set goal_readiness.mode to warn (nothing started)"
+
+
+def _readiness_unclaim(sdlc_dir, config, goal, refusal):
+    """#2222 review M2: `start` exits 4 on `READINESS REFUSED:`, and exit 4 from `start` means the goal has ALREADY
+    left the claimed state (running.md, SKILL.md step 3a: do not `record`). So the refusal makes that true: a goal
+    missing sections is PARKED with them named (AC-3, `needs_decision`, the same park `loop.py readiness-check`
+    writes); an invalid `goal_readiness` setting RELEASES the claim instead (a config fix, not a per-goal decision; the
+    pick-time check refuses until it is fixed). A transition that fails says STILL CLAIMED and names the command."""
+    invalid = "invalid goal_readiness setting" in refusal
+    loop = _load("loop")        # lazy: a top-level load cycles -- see `_blocked_by_a_live_foreign_agent`
+    try:
+        source = loop.sources.get_source(sdlc_dir, config)
+        if invalid:
+            loop._release(sdlc_dir, source, goal, refusal,
+                          note="Released by Sigma — the goal_readiness setting is invalid; fix it and the next "
+                               "pick retries this goal")
+            return f"{refusal}. Released the claim; fix the setting and the next pick retries it."
+        loop._record(sdlc_dir, source, goal, "parked", refusal.split(": ", 1)[-1], qkind="needs_decision")
+    except Exception as exc:    # noqa: BLE001 - never proceed, never misreport the claim
+        return (f"{refusal}. Moving it out of the claimed state ALSO FAILED ({exc}), so it is STILL CLAIMED: run "
+                f"`loop.py record {sdlc_dir} {goal} parked` by hand.")
+    return f"{refusal}. Parked it: a person adds the section(s), then `/sigma-unpark`."
+
+
+def _load_issue_body():
+    return _load("issue_body")
+
+
+def _acceptance_rel(sdlc_dir, goal):
+    return _load("acceptance").path(sdlc_dir, goal).resolve().relative_to(project_root(sdlc_dir)).as_posix()
+
+
+def _acceptance_branch_text(sdlc_dir, rec, goal):
+    """The acceptance record as committed at the goal branch tip, or None. Used only when neither the worktree nor
+    the root holds a copy (merge() after #1474's cleanup removed the byte-identical root copies)."""
+    try:
+        rel = _acceptance_rel(sdlc_dir, goal)
+        cwd = rec["worktree"] if pathlib.Path(rec["worktree"]).is_dir() else str(project_root(sdlc_dir))
+        for ref in _acceptance_refs(rec)[:2]:
+            done = subprocess.run(["git", "-C", cwd, "show", f"{ref}:{rel}"], capture_output=True, timeout=10)
+            if done.returncode == 0 and done.stdout:
+                return done.stdout.decode("utf-8")
+    except Exception:                       # noqa: BLE001 - absent is a fact the guard handles
+        pass
+    return None
+
+
+def _acceptance_is_extension(worktree_text, root_text, stem):
+    """True when the worktree copy differs from the root copy only by appended added criteria (or its
+    `verify_command` line): same original block, same hash, root's added list an ordered prefix of the worktree's."""
+    acc = _load("acceptance")
+    try:
+        wt, root = acc.parse(worktree_text, stem), acc.parse(root_text, stem)
+    except ValueError:
+        return False
+    return (wt["criteria"] == root["criteria"] and wt["criteria_sha256"] == root["criteria_sha256"]
+            and wt["drafted"] == root["drafted"] and wt["added"][:len(root["added"])] == root["added"])
+
+
+def _acceptance_append_only_refusal(sdlc_dir, rec, goal, run, where, check_root=False, absent_ok=False):
+    """#2222 D6/D13: the append-only guard at `commit` (check_root=True), `pr` and `merge()`. UNCONDITIONAL: it is
+    never inside an `enforce_enabled` branch and reads no config of its own (`acceptance.prefix_check` reads none
+    and takes no override). Returns the refusal string, or None.
+
+    The bytes judged are the ones about to be staged or pushed (the worktree copy), because
+    `_copy_acceptance_into_worktree` is create-only and would never overwrite an edited one; at `commit` the root
+    copy is judged too, and the two may differ only by a legitimate extension. With neither copy present the
+    committed branch tip is read ONLY when ``absent_ok`` (merge(), where the #1474 cleanup makes absence legitimate);
+    at `commit` and `pr` a missing copy IS the deletion about to be staged or pushed, so clause D judges it."""
+    try:
+        acc = _load("acceptance")
+        stem_ = acc.path(sdlc_dir, goal).stem
+        rel = _acceptance_rel(sdlc_dir, goal)
+        wt_file = pathlib.Path(rec["worktree"], rel)
+        wt_text = wt_file.read_text(encoding="utf-8") if wt_file.is_file() else None
+        root_text, _ = acc._record_text(sdlc_dir, goal)
+        refs = _acceptance_refs(rec)
+        git_root = rec["worktree"] if pathlib.Path(rec["worktree"]).is_dir() else None
+        why = None
+        if check_root and wt_text is not None and root_text is not None and wt_text != root_text:
+            if not _acceptance_is_extension(wt_text, root_text, stem_):
+                why = ("the worktree copy and the root copy of the acceptance record differ by more than "
+                       "appended criteria (worktree %s, root %s)" % (wt_file, acc.path(sdlc_dir, goal)))
+        if why is None:
+            current = wt_text if wt_text is not None else root_text
+            if current is None and absent_ok:
+                current = _acceptance_branch_text(sdlc_dir, rec, goal)
+            why = acc.prefix_refusal(sdlc_dir, goal, refs=refs, text=current, root=git_root)
+    except Exception as exc:                # noqa: BLE001 - a guard error is a refusal string, never a traceback
+        why = f"{_ACCEPTANCE_TRANSIENT[0]} ({exc})"
+    if not why:
+        return None
+    return f"ACCEPTANCE REFUSED: {why} {where}"
+
+
+#: Refusal reasons that are a READ failure, not a finding: they never park (the next tick retries).
+_ACCEPTANCE_TRANSIENT = ("the acceptance guard could not run", "could not read the issue")
+_TAMPER_FIX = (". Parked it for a person (do not `record`): criteria are append-only, so a person restores the "
+               "record to its committed criteria (add only with `acceptance.py extend`), or closes this goal and "
+               "files a new one; then `/sigma-unpark` returns it to the loop.")
+
+
+def _park_tamper(sdlc_dir, config, goal, refusal):
+    """#2222 third review S2: an append-only refusal (edit, removal, reorder, deletion, reasonless added criterion) is
+    a finding only a person resolves, so it parks the goal the way a divergence does (`_park_divergence`: dedupe on
+    the park label, `needs_decision`, STILL CLAIMED on a failed park) and exit 4 means the goal already left the
+    claimed state. A guard that could not RUN is transient and returns unparked. Returns the refusal (or None)."""
+    if not refusal or refusal.split(": ", 1)[-1].startswith(_ACCEPTANCE_TRANSIENT):
+        return refusal
+    try:                                    # a local-file backlog has no issue source, but it still has a park
+        source = _acceptance_source(sdlc_dir, config) or _load("loop").sources.get_source(sdlc_dir, config)
+    except Exception as exc:                # noqa: BLE001 - never proceed, never misreport the claim
+        return (f"{refusal}. Parking it ALSO FAILED ({exc}), so it is STILL CLAIMED: run "
+                f"`loop.py record {sdlc_dir} {goal} parked \"<this refusal>\" --qkind needs_decision` by hand, "
+                f"and never edit the record to get past it.")
+    return refusal + _park_divergence(sdlc_dir, source, goal, refusal.split(": ", 1)[-1], fix=_TAMPER_FIX)
+
+
+def _acceptance_push_refusal(sdlc_dir, rec, goal):
+    """#2222 second review F1: the append-only guard on the COMMITTED bytes a `rebase` force-push would publish, run
+    before that push while the remote baseline is still intact. Two texts are judged against the baseline: the
+    record at local HEAD (a tip edit or deletion) and the record in HEAD's own first add (a rewritten history whose
+    first add would become the next baseline once pushed). Returns the refusal string, or None."""
+    try:
+        acc, review = _load("acceptance"), _load("review_context")
+        rel, wt, refs = _acceptance_rel(sdlc_dir, goal), rec["worktree"], _acceptance_refs(rec)
+        tip = subprocess.run(["git", "-C", wt, "show", f"HEAD:{rel}"], capture_output=True, timeout=10)
+        # '' (not None) when HEAD has no record: None would make the guard read the root copy instead
+        why = acc.prefix_refusal(sdlc_dir, goal, refs=refs, root=wt,
+                                 text=tip.stdout.decode("utf-8") if tip.returncode == 0 else "")
+        first, _ = review.first_added_blob(wt, ["HEAD"], rel)
+        if not why and first is not None:
+            why = acc.prefix_refusal(sdlc_dir, goal, refs=refs, root=wt, text=first.decode("utf-8"),
+                                     tip=False)   # a first add is older than the tip by construction
+            why = why and f"the first add of the record in the local history would replace the baseline: {why}"
+    except Exception as exc:                # noqa: BLE001 - a guard error is a refusal string, never a traceback
+        why = f"the acceptance guard could not run ({exc})"
+    return f"ACCEPTANCE REFUSED: {why} (nothing pushed)" if why else None
+
+
+def _acceptance_source(sdlc_dir, config):
+    """The goal's GitHub issue source, or None for a local-file backlog (which has no issue to compare with). A seam
+    the tests replace with a fake."""
+    if ((config.get("discovery") or {}).get("source")) != "github":
+        return None
+    return _load("loop").sources.get_source(sdlc_dir, config)
+
+
+def _acceptance_issue_refusal(sdlc_dir, config, rec, goal, where, closed, comments=False, park=True, at_pr=False,
+                              at_merge=False):
+    """#2222 D4/D12: issue-vs-record divergence (commit, pr and merge()) and, with ``comments``, the extend-comment
+    check (pr only). GitHub goals only (a local-file goal prints that it is exempt). ``closed`` is True at `pr` and
+    `merge()`: an unreadable issue refuses (the next tick retries, no human needed); False at `commit`: it proceeds
+    with a printed message so offline local work stays possible. ``park`` False (merge()) leaves the park to the
+    caller, which records merge's `PARK:` line itself. ``at_merge`` reads the committed branch tip when neither copy
+    is on disk (#1474 cleanup). ``at_pr`` (second review F6): no record anywhere while the issue has a valid criteria
+    section refuses, since the goal had to be recorded at P1. Returns the refusal string, or None."""
+    acc = _load("acceptance")
+    skipped = "acceptance: divergence: skipped (local goal); extend comment: skipped (local goal)"
+    if str(goal).endswith(".md"):
+        if not at_merge:                    # merge() stays quiet for a local goal, as it always was
+            print(skipped, file=sys.stderr)
+        return None
+    try:
+        wt_file = pathlib.Path(rec["worktree"], _acceptance_rel(sdlc_dir, goal))
+        text = wt_file.read_text(encoding="utf-8") if wt_file.is_file() else acc._record_text(sdlc_dir, goal)[0]
+    except Exception as exc:                # noqa: BLE001 - a guard error is a refusal string, never a traceback
+        return f"ACCEPTANCE REFUSED: the acceptance record could not be read ({exc}) {where}"
+    if text is None and at_merge:
+        text = _acceptance_branch_text(sdlc_dir, rec, goal)
+    if text is None and not at_pr:
+        return None
+    try:
+        source = _acceptance_source(sdlc_dir, config)
+    except Exception as exc:                # noqa: BLE001 - no source is an unreadable issue: closed at pr, open at commit
+        if closed:
+            return f"ACCEPTANCE REFUSED: could not read the issue to check the acceptance record ({exc}); retry {where}"
+        print(f"acceptance: divergence check skipped, issue unreadable ({exc}); proceeding", file=sys.stderr)
+        return None
+    if source is None:
+        if not at_merge:
+            print(skipped, file=sys.stderr)
+        return None
+    try:
+        stem_ = acc.path(sdlc_dir, goal).stem
+        body = (source.fetch_title_body(goal) or {}).get("body", "")
+        if text is None:                    # F6: an empty body has no criteria section either
+            if _issue_criteria(acc, body if isinstance(body, str) else "") is None:
+                return None
+            return (f"ACCEPTANCE REFUSED: the issue has a `## Done when` section but this goal has no acceptance "
+                    f"record (worktree or root); it is recorded at P1 GOAL: run `acceptance.py record {sdlc_dir} "
+                    f"{goal}`, which reads the issue {where}")
+        if not isinstance(body, str) or not body.strip():
+            raise ValueError("issue body unavailable")
+        state_, detail = acc.issue_divergence(text, stem_, body)
+        if state_ == "skip":
+            print(f"acceptance: divergence: skipped ({detail})", file=sys.stderr)
+        elif state_ == "diverge":
+            return f"ACCEPTANCE REFUSED: {detail} {where}" + (_park_divergence(sdlc_dir, source, goal, detail)
+                                                              if park else "")
+        if comments:
+            why = acc.extend_comment_refusal(sdlc_dir, goal, source, text=text)
+            if why:                         # an unreadable history is transient (retry); a missing comment parks
+                return f"ACCEPTANCE REFUSED: {why} {where}" + (
+                    "" if why.startswith(_ACCEPTANCE_TRANSIENT) or not park
+                    else _park_divergence(sdlc_dir, source, goal, why, fix=_TAMPER_FIX))
+    except Exception as exc:                # noqa: BLE001 - a fetch failure: closed at pr, open at commit
+        if closed:
+            return f"ACCEPTANCE REFUSED: could not read the issue to check the acceptance record ({exc}); retry {where}"
+        print(f"acceptance: divergence check skipped, issue unreadable ({exc}); proceeding", file=sys.stderr)
+    return None
+
+
+def _park_goal(sdlc_dir, source, goal, detail):
+    """Park ``goal`` for a person through `loop.py`'s own `_record` (a seam the tests replace)."""
+    _load("loop")._record(sdlc_dir, source, goal, "parked", detail, qkind="needs_decision")
+
+
+def _issue_criteria(acc, body):
+    """The issue's criteria list, or None when it has no valid criteria section."""
+    try:
+        return acc.criteria(body)
+    except ValueError:
+        return None
+
+
+def _already_parked(source, goal):
+    """Second review F8: True when the issue already carries the park label (one REST read, only on a divergence),
+    so a repeated `commit`/`pr` does not park it again and post a fresh park comment each time (`loop._record` does
+    not dedupe). A source without the read, or a failed read, answers False: a duplicate comment beats a lost park."""
+    try:
+        labels = source.fetch_body_labels_rest(goal).get("labels") or []
+        names = {str((l.get("name") if isinstance(l, dict) else l) or "").lower() for l in labels}
+        return str(source.parked_label).lower() in names
+    except Exception:                       # noqa: BLE001 - see above
+        return False
+
+
+def _park_divergence(sdlc_dir, source, goal, detail, fix=None):
+    """#2222 D4 / review M1: an issue-vs-record divergence needs a person (the record wins and is never rewritten),
+    so the refusal records the park itself, the way a stale resume at `start` does, and exit 4 then means the goal
+    already left the claimed state. A fetch failure is transient (the next tick retries) and never parks; the
+    append-only refusals park through this too (`_park_tamper`, ``fix`` its own sentence). Returns the sentence
+    appended to the refusal."""
+    if _already_parked(source, goal):
+        return ". The goal is already parked for a person (do not `record`); not parked again."
+    try:
+        _park_goal(sdlc_dir, source, goal, detail)
+    except Exception as exc:                # noqa: BLE001 - never proceed, never misreport the claim
+        return (f". Parking it ALSO FAILED ({exc}), so it is STILL CLAIMED: run "
+                f"`loop.py record {sdlc_dir} {goal} parked \"<this refusal>\" --qkind needs_decision` by hand, "
+                f"and never edit the record to get past it.")
+    return fix or (". Parked it for a person (do not `record`): once the issue matches the record again, "
+                   "`/sigma-unpark` returns it to the loop.")
+
+
 def _copy_acceptance_into_worktree(sdlc_dir, rec, goal, run):
     """#1474: byte-copy the root `.sdlc/acceptance/<stem>.md` into the worktree so `git add -A` sees it.
 
@@ -4840,6 +5197,12 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None, land=False):
         acceptance_refusal = _load("acceptance").refusal(sdlc_dir, goal)
         if acceptance_refusal:
             return acceptance_refusal
+    refusal = (_park_tamper(sdlc_dir, config, goal,                                              # #2222: unconditional
+                            _acceptance_append_only_refusal(sdlc_dir, rec, goal, run, "(nothing pushed)"))
+               or _acceptance_issue_refusal(sdlc_dir, config, rec, goal, "(nothing pushed)", closed=True, comments=True,
+                                            at_pr=True))
+    if refusal:
+        return refusal
     path, remote, base = rec["worktree"], rec["remote"], rec["base"]
     refused = _push_refused(path, rec["branch"])    # #278: a lossy replay could not be put back
     if refused:
@@ -6514,6 +6877,9 @@ def rebase(sdlc_dir, config, goal, run=None, no_force=False, merge_fallback=True
     if not rec:
         return f"not started — run `work.py start {sdlc_dir} {goal}` first (nothing to rebase)"
     path, remote, base = rec["worktree"], rec["remote"], rec["base"]
+    tampered = None if no_force else _acceptance_push_refusal(sdlc_dir, rec, goal)   # #2222 F1: before any push
+    if tampered:
+        return tampered
     run(path, ["git", "fetch", remote, base])
     pre_rebase_head = run(path, ["git", "rev-parse", "HEAD"])
     push_argv = ["git", "push"] + ([] if no_force else ["--force-with-lease"]) + [remote, f"HEAD:{rec['branch']}"]
@@ -9138,6 +9504,11 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
     rec = _record(sdlc_dir, goal)
     if not rec or not rec.get("pr"):
         return "PARK: no PR for this goal — run `work.py pr` first"
+    tampered = (_acceptance_append_only_refusal(sdlc_dir, rec, goal, run, "(nothing merged)", absent_ok=True)  # #2222
+                or _acceptance_issue_refusal(sdlc_dir, config, rec, goal, "(nothing merged)", closed=True, park=False,
+                                             at_merge=True))
+    if tampered:
+        return "PARK: " + tampered
 
     # #1937: emitted HERE, before merge_rights and before every `return PARK` below, so a diff that
     # weakened a pre-existing test still reaches the change record when this merge parks for some
@@ -10820,7 +11191,7 @@ def main(argv):
         # commit could not be signed) is a stop too: exit 4 so a chained `commit` then `pr` cannot
         # carry on against a signer that will fail again. The agent records the park itself.
         if str(result).startswith((_STALE_RESUME_REFUSAL_PREFIX, "TEST-FIRST REFUSED:", "SEALED REFUSED:",
-                                   commit_signing.PARK_PREFIX)):
+                                   "ACCEPTANCE REFUSED:", "READINESS REFUSED:", commit_signing.PARK_PREFIX)):
             return 4
         return 0
     print("usage: work.py start|commit|pr|checkpoint|rebase|post-review|merge|finish <sdlc_dir> <goal>\n"

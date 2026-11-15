@@ -47,7 +47,9 @@ recorded waiver. Do not jump to any other implementation action from here.
 ### Record P1 acceptance before handing off
 
 Run `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/acceptance.py" record .sdlc "<goal>"`.
-For an absent `## Done when`, write a draft containing 3–7 checkable statements and add
+Write the goal body with a `## Done when` section (or the `## Acceptance criteria` alias; `acceptance.py record`
+reads either and stores one canonical `## Done when`); `skills/sigma-loop/scripts/issue_body.py` renders and checks
+that section. For an absent `## Done when`, write a draft containing 3–7 checkable statements and add
 `--draft <file>`; capture posts drafted GitHub criteria back as a comment. An optional
 `--verify-command '<command>'` records the focused check. Refusal means repair the
 source/draft and retry before code. Preserve the record and commit a copy in the goal worktree.

@@ -458,6 +458,14 @@
     },
     {
       "path": "skills/sigma-loop/scripts/acceptance.py",
+      "function": "extend",
+      "rule": "fs-write",
+      "count": 1,
+      "gate": "refuses unless the append-only guard passes, slice and reason are non-blank and at most 10 criteria are added; a GitHub goal's issue comment is posted first and a refused or failed post writes nothing; appends under `## Added criteria` of an existing .sdlc/acceptance/<goal>.md atomically (temp then replace), refuses a symlinked record, never edits the original block (#2222)",
+      "risk": "medium"
+    },
+    {
+      "path": "skills/sigma-loop/scripts/acceptance.py",
       "function": "record",
       "rule": "fs-remove",
       "count": 1,

@@ -47,6 +47,10 @@ sources = _mod("sources", LOOP)
 LOCAL_CONFIG = {"discovery": {"source": "local-goals"}, "ledger": {"enabled": False, "actor": "amy"}}
 
 
+#: #2222: every issue a plan opens carries acceptance criteria (compile_plan refuses one without).
+CRITERIA = ["It works.", "It refuses bad input.", "It recovers."]
+
+
 def _init_sdlc(tmp_path, config=None):
     sdlc = tmp_path / ".sdlc"
     (sdlc / "goals").mkdir(parents=True)
@@ -158,7 +162,7 @@ def test_single_issue_plan_grounded_in_a_resolved_target_becomes_a_real_local_go
         assert target["form"] == "text"
 
         plan = {"epic": None, "issues": [{
-            "key": "a", "title": "Config editor UI", "priority": "P2",
+            "key": "a", "criteria": CRITERIA, "title": "Config editor UI", "priority": "P2",
             "body": f"Resolved target: {target['text']}",
         }]}
         plan_path = pathlib.Path(d) / "plan.json"
@@ -191,8 +195,10 @@ def test_multi_issue_plan_with_epic_and_dependency_creates_real_linked_files():
         plan = {
             "epic": {"title": "Config editor", "body": "Tracking issue.", "priority": "P2"},
             "issues": [
-                {"key": "schema", "title": "Add a config schema", "priority": "P2", "body": "schema work"},
-                {"key": "ui", "title": "Build the editor UI", "priority": "P2", "body": "ui work",
+                {"key": "schema", "criteria": CRITERIA, "title": "Add a config schema", "priority": "P2",
+                 "body": "schema work"},
+                {"key": "ui", "criteria": CRITERIA, "title": "Build the editor UI", "priority": "P2",
+                 "body": "ui work",
                  "blocked_by": ["schema"]},
             ],
         }
@@ -227,8 +233,8 @@ def test_compiled_report_flows_into_resolve_assignment_and_file_and_stop():
     import tempfile
     with tempfile.TemporaryDirectory() as d:
         sdlc = _init_sdlc(pathlib.Path(d))
-        plan = {"epic": None, "issues": [{"key": "a", "title": "Config editor UI", "priority": "P2",
-                                          "body": "body"}]}
+        plan = {"epic": None, "issues": [{"key": "a", "criteria": CRITERIA, "title": "Config editor UI",
+                                          "priority": "P2", "body": "body"}]}
         report = scope.compile_and_report(str(sdlc), plan)
         assert report["failed"] == {} and report["skipped"] == {}
 
@@ -258,8 +264,8 @@ def test_compiled_report_flows_into_start_now_self_computes_the_real_wave_schedu
     with tempfile.TemporaryDirectory() as d:
         sdlc = _init_sdlc(pathlib.Path(d))
         plan = {"epic": None, "issues": [
-            {"key": "schema", "title": "Add a config schema", "priority": "P2", "body": "b"},
-            {"key": "ui", "title": "Build the editor UI", "priority": "P2", "body": "b",
+            {"key": "schema", "criteria": CRITERIA, "title": "Add a config schema", "priority": "P2", "body": "b"},
+            {"key": "ui", "criteria": CRITERIA, "title": "Build the editor UI", "priority": "P2", "body": "b",
              "blocked_by": ["schema"]},
         ]}
         report = scope.compile_and_report(str(sdlc), plan)
@@ -297,8 +303,8 @@ def test_compiled_report_flows_into_start_now_handoff_posts_a_real_comment_via_t
     with tempfile.TemporaryDirectory() as d:
         sdlc = _init_sdlc(pathlib.Path(d))
         plan = {"epic": {"title": "Config editor", "body": "b"}, "issues": [
-            {"key": "schema", "title": "Add a config schema", "priority": "P2", "body": "b"},
-            {"key": "ui", "title": "Build the editor UI", "priority": "P2", "body": "b",
+            {"key": "schema", "criteria": CRITERIA, "title": "Add a config schema", "priority": "P2", "body": "b"},
+            {"key": "ui", "criteria": CRITERIA, "title": "Build the editor UI", "priority": "P2", "body": "b",
              "blocked_by": ["schema"]},
         ]}
         report = scope.compile_and_report(str(sdlc), plan)
@@ -334,7 +340,7 @@ def test_structurally_invalid_plan_never_reaches_assign_at_all():
     import tempfile
     with tempfile.TemporaryDirectory() as d:
         sdlc = _init_sdlc(pathlib.Path(d))
-        plan = {"epic": None, "issues": [{"key": "a", "title": "x", "blocked_by": ["ghost"]}]}
+        plan = {"epic": None, "issues": [{"key": "a", "criteria": CRITERIA, "title": "x", "blocked_by": ["ghost"]}]}
         try:
             scope.compile_and_report(str(sdlc), plan)
             assert False, "expected ValueError before assign.py is ever reached"
@@ -367,8 +373,8 @@ def test_partial_failure_report_never_lets_a_skipped_issue_into_the_wave_schedul
     with tempfile.TemporaryDirectory() as d:
         sdlc = _init_sdlc(pathlib.Path(d))
         plan = {"epic": None, "issues": [
-            {"key": "schema", "title": "Add a config schema", "priority": "P2", "body": "b"},
-            {"key": "ui", "title": "Build the editor UI", "priority": "P2", "body": "b",
+            {"key": "schema", "criteria": CRITERIA, "title": "Add a config schema", "priority": "P2", "body": "b"},
+            {"key": "ui", "criteria": CRITERIA, "title": "Build the editor UI", "priority": "P2", "body": "b",
              "blocked_by": ["schema"]},
         ]}
         report = scope.compile_and_report(str(sdlc), plan, source=FailingSource())

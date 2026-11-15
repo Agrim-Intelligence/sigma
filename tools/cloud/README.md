@@ -160,16 +160,17 @@ upper bound, not a clean two-worker figure. CI's nightly runs the same suite on 
 been stopped at its 120-minute limit every day since 2026-10-19 (#2099), so it gives no baseline.
 On the fix branch the first full run was `1 failed, 25094 passed, 89 skipped, 9 xfailed in 3592.84s (0:59:52)`; the one failure was this file's own version numbers tripping the shipped-prose scan, fixed by five reasoned `VERSION_ALLOW` entries. The summary line of the final run is on the pull request, not here (a tree edited after a verify is not the tree that was verified).
 
-Each failure family, its cause in this container, and its fix (all in #2225, none in the image):
+Each failure family, its cause in this container, and its fix (first in #2225, none in the image; #2228 adds the pid-faking and zombie-poll rows):
 
 | Family | Cause | Fix |
 |---|---|---|
 | tests that expect a file to be unreadable | the session runs as root with every capability (`CAP_DAC_OVERRIDE`), so mode `000` denies nothing | `tests/unprivileged.py` does the denied read as an unprivileged user (`subprocess.run(user=, group=, extra_groups=[])`; `setpriv`/`runuser` also exist here), and fails loudly when it cannot drop |
-| tests that kill a timed-out process group | the group IS killed; `os.kill(pid, 0)` succeeds on a zombie, and PID 1 here reaps orphans on a ~2 s poll | `alive()`/`gone()` in `tests/unattended_support.py` read the process state (`/proc/<pid>/stat`, or `ps` without `/proc`) and treat a zombie as gone |
+| tests that kill a timed-out process group | the group IS killed; `os.kill(pid, 0)` succeeds on a zombie, and PID 1 here reaps orphans on a ~2 s poll | `alive()`/`gone()` in `tests/unattended_support.py` read the process state (`/proc/<pid>/stat`, or `ps` without `/proc`) and treat a zombie as gone; `test_run_with_timeout.py` and `test_watch.py` are the second and third sites fixed in #2228 |
 | "refuses without `flock`" tests | this Python builds `fcntl` in, so a `PYTHONPATH` `fcntl.py` shim is never imported | `without_module()` in `tests/unattended_support.py` runs the script with the module set to `None` in `sys.modules` |
 | a hung-credential-helper control that could not hang | the environment injects `credential.interactive=false` through `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>`, so git never runs askpass | `hermetic()` drops `GIT_CONFIG_COUNT`, `GIT_CONFIG_PARAMETERS` and every `GIT_CONFIG_KEY_*`/`GIT_CONFIG_VALUE_*` |
 | a signing park that quoted git, not the signer | git 2.56 prints `Could not apply <sha>... <subject>` after the signer's line | product fix: `commit_signing._detail_line` skips that narration |
 | a descriptor test failing inside pytest | it faked the process-wide `os.fstat`, and pytest 9.2's fd capture calls `os.fstat` while the fake is live | the fakes answer only for the fake descriptor |
+| tests that fake a pid against the real `/proc` | rewriting only the record's `pid` leaves `pid_start` from the real test process; a real, older process at that pid then reads as reuse and `note_peak` returns False (#2228; whether the failing container had such a process is inferred, not observed) | a test that fakes a pid rewrites `pid_start` with it (`_take_over` in `tests/test_resource_lease.py`); production is unchanged, a different process at a recorded pid is reuse |
 | the rest | merged drift (fixtures, inventories, prose budgets) and the collection memory guard, unrelated to the container | fixtures and inventories caught up; prose trimmed with no ceiling changed |
 
 **If a verify holds.** When the guard holds a verify, `loop.py verify` exits 5 with no evidence. Here that most
@@ -201,6 +202,9 @@ read, so the next person can read it again.
 | git config from the environment | `GIT_CONFIG_COUNT=3`: `credential.interactive=false` and two `url.https://github.com/.insteadOf` | `git config --show-origin --list \| grep '^command line'` |
 | checkout | a fresh container's checkout can be a detached HEAD (reported on #2225; not re-seen in this run). `git checkout -B main origin/main` puts `main` back on the remote's tip | `git status -sb` |
 | session limits | a background command is stopped at its timeout, 30 minutes unless the call asks for more (up to 2 hours), and the full verify takes about 61 minutes: give it the longer timeout or it is cut short | the host tool's documented timeout (not measured here beyond the lost 40-minute call) |
+| PID view | low PIDs can be held by long-lived processes (here PID 1 is `process_api`, about 80 processes, `pid_max` 32768); PID 100 may be occupied (whether the failing container's was is inferred, not observed) | `ls -d /proc/100` |
+| `ns_last_pid` | writable as root here (it needs the capability to restore PIDs, which root has): write 99 and the next spawn gets PID 100, which is how #2228's live control forces an occupant | `cat /proc/sys/kernel/ns_last_pid`; `ls -l /proc/sys/kernel/ns_last_pid` |
+| pid-reuse tolerance | `START_TOLERANCE = 2.0` s in `resource_lease.py`: a process at a recorded pid that started within it counts as the same one, so an occupant under 2.0 s old passes by luck | `grep -n START_TOLERANCE skills/sigma-loop/scripts/resource_lease.py` |
 
 ## How to diagnose a verify that fails only here
 

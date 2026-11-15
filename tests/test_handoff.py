@@ -162,7 +162,7 @@ def test_handoff_opens_assigns_records_and_links(tmp_path):
     assert src.created["assignee"] == "eng-owner"
     assert "sdlc:dependency" in src.created["labels"] and "priority:P0" in src.created["labels"]
     assert "engine" in src.created["title"]
-    assert "auto-restart" in src.created["body"] and "Done when:" in src.created["body"]
+    assert "auto-restart" in src.created["body"] and "## Done when" in src.created["body"]
 
     entry = ledger.read_all(sdlc)[0]
     assert entry["kind"] == "handoff" and entry["to"] == "eng-owner"

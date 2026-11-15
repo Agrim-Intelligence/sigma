@@ -191,3 +191,53 @@ def test_25_blocked_issues_before_and_after(tmp_path, monkeypatch):
     print("25 issues: before (mode off) fetches=%d state_reads=%d; after (mode on) fetches=%d "
           "state_reads=%d" % (before + after))
     assert before == (25, 25) and after == (0, 0)
+
+
+# ---- #2223: the release path bypasses the map's "still open" (`use_map=False`) ----------------------
+# Right after blocker N closes, the stored map still says N is open for up to `ttl_minutes`. The scoped
+# release (release_dependents.py) may use the map to NOMINATE candidates, never to say "still open".
+# Both fixtures below are a FRESH map (usable, change-checked within 600 s) that HOLDS the goal: the
+# free-map golden test above cannot prove this clause, because `_map_still_waiting` is False for a
+# free map either way.
+
+def test_use_map_false_releases_despite_stale_open_map(tmp_path, monkeypatch):
+    assert "use_map" in __import__("inspect").signature(au.compute_unpark_actions).parameters   # #2223 precondition
+    rig = Rig(monkeypatch, states={"7": "CLOSED"})
+    _waiting_map(tmp_path, 201, 7)                       # the map still stores 7 as open
+    issues = [base._blocked_issue(201, body="blocked by #7")]
+    held, _ = rig.compute(tmp_path, "on", issues)        # default: the map skips it (the sweep's posture)
+    assert held == []
+    acts, resolved = au.compute_unpark_actions(str(tmp_path), _cfg("on"), rig.source, issues, run=rig.run,
+                                               use_map=False)
+    assert [a["issue"] for a in acts if a["action"] == "swap-label"] == ["201"]
+    assert resolved == {"201": ["7"]}
+
+
+def test_use_map_default_matches_mode_off_golden(tmp_path, monkeypatch):
+    """The default (`use_map` True) keeps the sweep byte-identical: a held goal on a fresh map is skipped
+    with zero reads; `use_map=False` does the reads (and here still holds it: 7 is really open)."""
+    assert "use_map" in __import__("inspect").signature(au.compute_unpark_actions).parameters   # #2223 precondition
+    rig = Rig(monkeypatch)
+    _waiting_map(tmp_path, 201, 7)
+    issues = [base._blocked_issue(201, body="blocked by #7")]
+    assert rig.compute(tmp_path, "on", issues) == ([], {})
+    assert (rig.fetches, rig.state_reads) == (0, 0)
+    got = au.compute_unpark_actions(str(tmp_path), _cfg("on"), rig.source, issues, run=rig.run, use_map=False)
+    assert got == ([], {})
+    assert (rig.fetches, rig.state_reads) == (1, 1)
+
+
+def test_map_closed_treats_only_the_named_goal_as_closed(tmp_path, monkeypatch):
+    """#2223 finding 1: `map_closed={7}` ignores the map's open entry for 7 only; another open map
+    blocker (8) still holds the goal with zero reads, and the default (no `map_closed`) is the sweep's."""
+    assert "map_closed" in __import__("inspect").signature(au.compute_unpark_actions).parameters
+    rig = Rig(monkeypatch, states={"7": "CLOSED"})
+    _store(tmp_path, [_node(201), _node(7), _node(8)], [(7, 201), (8, 201)])
+    issues = [base._blocked_issue(201, body="blocked by #7")]
+    assert rig.compute(tmp_path, "on", issues) == ([], {})
+    got = au.compute_unpark_actions(str(tmp_path), _cfg("on"), rig.source, issues, run=rig.run, map_closed={7})
+    assert got == ([], {}) and (rig.fetches, rig.state_reads) == (0, 0)
+    _store(tmp_path, [_node(201), _node(7)], [(7, 201)])
+    acts, _ = au.compute_unpark_actions(str(tmp_path), _cfg("on"), rig.source, issues, run=rig.run,
+                                        map_closed={7})
+    assert [a["issue"] for a in acts if a["action"] == "swap-label"] == ["201"]

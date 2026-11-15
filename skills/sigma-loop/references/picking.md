@@ -267,6 +267,12 @@ acts — unlike `goal_decompose.mode`, there is no log-only rung here. `sdlc:des
 written only by `goal-review` (contract §7) confirming a design. Where `sigma-goal-review` is not
 installed, a human applies the label by hand once a filed design pass is confirmed.
 
+## Goal readiness (`goal_readiness`, #2222)
+
+After design-check run `loop.py readiness-check .sdlc "$goal"`: `OFF`/`PROCEED` go on, `WARN <missing>` says so and goes on,
+`PARKED <reason>` loops back to step 1, exit 2 `REFUSED` means fix `goal_readiness.mode`. `work.py start` and `/sigma-promote`
+run the same check ([configuration](../../../docs/configuration.md)).
+
 ## Dependencies in prose
 
 `deps.py report .sdlc "$goal"` lists every `#N` in the title, body and comments (`edge`, `comment-edge`,

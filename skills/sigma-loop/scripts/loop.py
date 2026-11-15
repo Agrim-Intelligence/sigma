@@ -1410,6 +1410,45 @@ def _auto_unpark_sweep(sdlc_dir, config, run=None, session_pid=None):
         return frozenset()
 
 
+def _release_dependents_after_done(sdlc_dir, source, goal, run=None, config=None, release_module=None):
+    """#2223: the goal just closed, so release the open `sdlc:blocked` goals that were waiting on it
+    (`release_dependents.py`: removes only `sdlc:blocked`, never resumes a park, any failed read releases
+    nothing). Called LAST in `_record`'s `done` tail, so it cannot cost any of the goal's own bookkeeping.
+
+    FAIL-OPEN like `_auto_unpark_sweep`: any exception is swallowed with one stderr line, and the watcher
+    duty (`reconcile_tick._release_blocked`) catches what this missed within `interval_minutes`. `_record`'s
+    `config` is None for its two in-process callers, so this LOADS the config itself: without it the mode
+    gate (`discovery.auto_unpark.mode`) and the REST reserve could not be honoured. Skips a goal ref that is
+    not an issue number, and any source that is not a `GitHubSource` (a local goal has no blocked-label
+    world). Bounded by a derived deadline (half of `SIGMA_WATCH_CALL_TIMEOUT`); what it does not reach is
+    reported `not checked` and left to the watcher. -> the result dict, or None when it did not run."""
+    try:
+        m = re.fullmatch(r"(?:GH-|#)?(\d+)", str(goal).strip(), re.IGNORECASE)
+        if not m or not isinstance(source, sources.GitHubSource):
+            return None
+        config = config if config is not None else ledger._config_for(sdlc_dir)
+        rel = release_module or _load("release_dependents")
+        deadline = time.time() + _load("dag_refresh").bounds()[1]
+        with gh_calls.component("release_dependents"):
+            res = rel.release(sdlc_dir, config, [m.group(1)], apply=True, run=run, source=source,
+                              unattended=True, deadline=deadline)
+        if res["status"] in ("refused", "deferred") or res["released"] or res["incomplete"] or res["not_checked"]:
+            print("loop.py: " + rel.render(res), file=sys.stderr)
+        return res
+    except Exception as exc:                        # noqa: BLE001 - a release must never cost a recorded done
+        print(f"loop.py: release-dependents failed non-fatally ({exc}) — the watcher will retry", file=sys.stderr)
+        return None
+
+
+def _release_source(sdlc_dir, config):
+    """#2223: the source the `reconcile-merges` CLI hands the release helper; None (so the helper skips)
+    when it cannot be built. Its own function so a test injects a fake and never reaches real `gh`."""
+    try:
+        return sources.get_source(sdlc_dir, config)
+    except Exception:                               # noqa: BLE001
+        return None
+
+
 def _reconcile_mode(config):
     """`discovery.reconcile.mode` -> 'off' (default) | 'on'. An unrecognised or missing value reads
     as off, because a typo must never switch on a mechanism that WRITES. (`sources._auto_unpark` is
@@ -5754,6 +5793,12 @@ def _record(sdlc_dir, source, goal, result, detail="", retro_grade=None, transit
             work.prune_terminal_review_generations(sdlc_dir, goal, goal_done=True)
         except Exception as exc:              # noqa: BLE001 - terminal bookkeeping is already durable
             print(f"loop.py record: review-evidence cleanup skipped for {goal!r} ({exc})", file=sys.stderr)
+        # #2223: LAST, for the reason the block comment above gives for the signal: a release that hangs or
+        # fails cannot cost the bookkeeping that already landed. Not under the merge-reconcile pass
+        # (`housekeeping=False`): that pass holds a lock and a time budget; the watcher tick releases the
+        # dependents of the goals it just merged instead.
+        if housekeeping:
+            _release_dependents_after_done(sdlc_dir, source, goal, config=config)
     # #1562: LAST, for the reason #1478 gives one block up -- every piece of this goal's own
     # bookkeeping has already landed, so a builder that hangs, fails or is missing is structurally
     # incapable of costing any of it.
@@ -6393,6 +6438,42 @@ def design_check(sdlc_dir, goal, config, source):
     except Exception as e:
         print(f"loop.py design-check: non-fatal ({e}) — proceeding", file=sys.stderr)
         return "PROCEED"
+
+
+def readiness_check(sdlc_dir, goal, config, source):
+    """Pre-work agent-readiness check (#2222, `goal_readiness`): does the picked goal's body carry the sections an
+    agent needs (`## Done when` and, where the repo has a verify command, `## Verification command`)?
+
+    Returns a one-line result the SKILL reads by its first word: 'OFF' (mode off) | 'PROCEED' (nothing missing, or
+    the body could not be fetched: fail-open, a retry costs nothing) | 'WARN <sections>' (mode warn, the default:
+    say what is missing and continue) | 'PARKED <reason>' (mode require: parked with the missing sections named).
+    An invalid `goal_readiness` block raises ValueError (the verb prints a refusal), never a silent default.
+    This is the pick-time half; `work.py start` runs the same check in Python so a host that skips this prose step
+    is still covered. Other writers of `sdlc:goal` (triage, auto_unpark, blockers, unpark, reconcile) do not run it:
+    `require` is advisory on them and enforced at `promote` and at `start`."""
+    ib = _load("issue_body")
+    mode = ib.readiness_mode(config)
+    if mode == "off":
+        return "OFF"
+    try:
+        body = (source.fetch_title_body(goal) or {}).get("body", "")
+    except Exception as e:                      # noqa: BLE001 - fail-open: the next pick retries
+        print(f"loop.py readiness-check: non-fatal ({e}) — proceeding", file=sys.stderr)
+        return "PROCEED"
+    if not isinstance(body, str) or not body.strip():
+        return "PROCEED"
+    missing = ib.readiness_missing(body, config)
+    if not missing:
+        return "PROCEED"
+    detail = "not agent-ready: missing " + ", ".join("`## %s`" % m for m in missing)
+    if mode == "warn":
+        return "WARN " + detail
+    try:
+        _record(sdlc_dir, source, goal, "parked", detail, qkind="needs_decision")
+    except Exception as e:                      # noqa: BLE001 - the park decision stands
+        print(f"loop.py readiness-check: park record failed after park — treating as PARKED anyway: {e}",
+              file=sys.stderr)
+    return "PARKED " + detail
 
 
 def _park_design(sdlc_dir, source, goal, detail):
@@ -7980,7 +8061,7 @@ USAGE = ("usage: loop.py start <dir> [--session-pid PID] | start-run <dir> [--se
          "agent-start <dir> <goal> --pid PID [--thread T] | agent-reclaim <dir> <goal> [--thread T] | "
          "phases <dir> <goal> | waive-phases <dir> <goal> research,retro --reason <why> | "
          "precheck <dir> <goal> | "
-         "qc <dir> <goal> | decompose-check <dir> <goal> | design-check <dir> <goal> | "
+         "qc <dir> <goal> | decompose-check <dir> <goal> | design-check <dir> <goal> | readiness-check <dir> <goal> | "
           "spend-approval <dir> <goal> --action \"<text>\" [--class <name>] | "
          "mark-designed <dir> <goal> | feature-frontier <dir> <unit> | "
          "note <dir> <goal> <text> | "
@@ -8701,9 +8782,12 @@ def _dispatch(argv):
         config = state.load_config(argv[2])
         # The explicit gesture re-reads every flagged PR (still at most MERGE_RECONCILE_MAX_PER_PASS);
         # only the automatic triggers (`next`, the watch tick) honour the re-check interval.
+        source_for_release = _release_source(argv[2], config)
         for goal, outcome, pr in _reconcile_awaiting_merges(argv[2], config, min_interval=0):
             what = "merged" if outcome == "done" else "closed without merging"
             print(f"{goal} {outcome} (PR #{pr} {what})")
+            if outcome == "done":                       # #2223: this pass skips the release (housekeeping=False)
+                _release_dependents_after_done(argv[2], source_for_release, goal, config=config)
         return 0
     if len(argv) >= 4 and argv[1] == "qc":          # board-only: move a goal to QC at the Review phase
         config = state.load_config(argv[2])
@@ -8720,6 +8804,14 @@ def _dispatch(argv):
     if len(argv) >= 4 and argv[1] == "design-check":   # opt-in undesigned-goal retrofit gate (fail-open)
         config = state.load_config(argv[2])
         print(design_check(argv[2], argv[3], config, sources.get_source(argv[2], config)))
+        return 0
+    if len(argv) >= 4 and argv[1] == "readiness-check":   # #2222: agent-readiness of the picked goal (off|warn|require)
+        config = state.load_config(argv[2])
+        try:
+            print(readiness_check(argv[2], argv[3], config, sources.get_source(argv[2], config)))
+        except ValueError as e:
+            print(f"loop.py readiness-check: REFUSED: {e}", file=sys.stderr)
+            return 2
         return 0
     if len(argv) >= 4 and argv[1] == "spend-approval":   # #722: exempt THIS goal's park-on-spend
         # Deliberately NOT in `_ARMS_CLAIM`: asking whether a step is approved is not "work has
