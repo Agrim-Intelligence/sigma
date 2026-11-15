@@ -50,7 +50,7 @@ GATED_CALLERS = (
     "skills/sigma-loop/scripts/feature_upkeep_prove.py:235",
     "skills/sigma-loop/scripts/feature_upkeep_prove.py:242",
     "skills/sigma-loop/scripts/goal_python.py:273",
-    "skills/sigma-loop/scripts/loop.py:7361",            # #2160 known-flake solo re-runs; gate in the comment above
+    "skills/sigma-loop/scripts/loop.py:7406",            # #2160 known-flake solo re-runs; gate in the comment above
     "skills/sigma-loop/scripts/red_green.py:49",
     "skills/sigma-loop/scripts/resource_verify.py:282",
 )

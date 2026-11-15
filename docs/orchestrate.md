@@ -5,6 +5,13 @@ waves, and merges what the post-PR review approves. It does not write product co
 reviewed and landed by its own session. It decides what runs when, starts the sessions, watches them through
 GitHub, merges, unblocks dependents and reports.
 
+Unblocking is a script, not prose: after merges land the orchestrator agent runs
+`release_dependents.py <sdlc dir> <merged goals...> --apply` once (a script invocation by the agent, not an
+automatic trigger; no orchestrate script calls it, so a missed run costs latency until the watcher's pass), which removes `sdlc:blocked` from every open
+dependent whose dependencies are all closed and relays one summary line. It never resumes a parked goal (that
+stays `/sigma-unpark`) and a failed read releases nothing for the goal it touched. Its cost per merged goal
+is arithmetic from the code, not a measurement, and it has not been run end to end in a real cloud container.
+
 ```
 /sigma-orchestrate [--max-seats N] [--name BATCH] [--where cloud|local] [--model auto|sonnet|opus]
                    [--max-opus N] [--no-merge] [--dry-run] [--yes] <issue numbers | GitHub search | description>

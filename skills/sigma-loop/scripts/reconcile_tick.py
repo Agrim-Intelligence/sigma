@@ -52,7 +52,12 @@ ledger = _load("ledger")
 loop = _load("loop")
 
 
-def tick(sdlc_dir, config=None, run=None, now=None):
+#: The share of the tick's call bound the release duty leaves unspent (#2223), a share of the DERIVED
+#: `SIGMA_WATCH_CALL_TIMEOUT`, like `loop.MERGE_PASS_BUDGET_SHARE`, never a seconds constant.
+SAFETY_SHARE = 0.1
+
+
+def tick(sdlc_dir, config=None, run=None, now=None, budget=None, source=None):
     """-> a one-line summary for watch_daemon.py's log, or "" when nothing needed anyone. Mirrors
     agent_watch.py/comment_watch.py's tick() shape exactly.
 
@@ -60,6 +65,7 @@ def tick(sdlc_dir, config=None, run=None, now=None):
     a config edit between two ticks is picked up on the very next one, matching every other
     watch-tick script in this kit."""
     config = config if config is not None else ledger._config(sdlc_dir)
+    tick_start = now if now is not None else time.time()      # #2223: the whole tick shares ONE deadline
     swept = loop._reconcile_sweep(sdlc_dir, config, run=run, now=now)
     # #232: the second, UNGATED duty of this tick -- close goals `record review` left waiting whose
     # PR has since merged. Not behind `discovery.reconcile.mode` (default off): done-means-merged is
@@ -71,6 +77,7 @@ def tick(sdlc_dir, config=None, run=None, now=None):
     backfilled = _board_backfill(sdlc_dir, config, run)
     repaired = _blocker_rank_repair(sdlc_dir, config, run, now)
     mapped = _dag_refresh(sdlc_dir, config, run, now)
+    released = _release_blocked(sdlc_dir, config, run, now, tick_start, merged, source=source, budget=budget)
     parts = []
     if swept:
         parts.append("%d issue(s) reconciled — %s" % (
@@ -84,6 +91,8 @@ def tick(sdlc_dir, config=None, run=None, now=None):
         parts.append(repaired)
     if mapped:
         parts.append(mapped)
+    if released:
+        parts.append(released)
     return "; ".join(parts)
 
 
@@ -99,6 +108,109 @@ def _dag_refresh(sdlc_dir, config, run=None, now=None):
         res = dr.refresh_if_due(sdlc_dir, config, run=run, now=now)
         return "dependency map refreshed" if res.get("status") == "saved" else ""
     except Exception:                       # noqa: BLE001 - a watcher tick is never fatal
+        return ""
+
+
+def _release_blocked(sdlc_dir, config, run=None, now=None, tick_start=None, merged=(), source=None,
+                     budget=None, clock=None):
+    """#2223: release the goals a closed goal was holding (`release_dependents.py`), the last duty of the
+    tick, so `TICK_CALLS` keeps its eight entries (this runs inside the `reconcile_tick.py` call, under
+    `run_with_timeout.py`'s process-group kill). Two passes: (a) the dependents of the goals the merge
+    pass just recorded `done`, unthrottled (they are fresh closes; `_reconcile_one` skips the in-pass
+    release on purpose); (b) every open blocked goal, throttled by `discovery.auto_unpark.interval_minutes`,
+    for closes Sigma never saw (a keyword close, a hand close).
+
+    SHARED DEADLINE: the tick is sequential inside ONE killed call, and the two duties before this one
+    may each spend half of it. The deadline is `tick_start + budget * (1 - SAFETY_SHARE)`, so what they
+    spent is already out of this duty's budget; at zero it starts nothing, records `deferred` and counts
+    `starved_ticks` (a named ceiling: the doctor row shows the count, not an age that looks healthy).
+    `budget` is `SIGMA_WATCH_CALL_TIMEOUT`, the conservative bound: the daemon may kill a long-interval tick
+    later (`watch_daemon.reconcile_call_timeout`), which is not plumbed here. State is written at KILL-SAFE
+    boundaries (at start, after every goal) and on failure too, so a dead pipeline shows as AGE.
+    Gated like the sweep: `discovery.auto_unpark.mode` off pays nothing; below the REST reserve defers.
+    Never raises. -> a summary part or ""."""
+    rel = None
+    try:
+        sources = _load("sources")
+        if (config.get("discovery") or {}).get("source") != "github" or sources._auto_unpark(config) == "off":
+            return ""
+        rel = _load("release_dependents")
+        clock = clock or time.time
+        tick_start = tick_start if tick_start is not None else clock()
+        budget = budget if budget is not None else _load("dag_refresh").call_timeout()
+        deadline = tick_start + budget * (1 - SAFETY_SHARE)
+        prior = rel.read_state(sdlc_dir)
+        starved = int(prior.get("starved_ticks") or 0)
+        record = {"ran_at": clock(), "mode": "on", "status": "started", "checked": 0, "released": 0,
+                  "not_checked": "", "incomplete": 0, "starved_ticks": starved, "error": None,
+                  "all_ran_at": prior.get("all_ran_at")}
+        if deadline - clock() <= 0:
+            rel.write_state(sdlc_dir, {**record, "status": "deferred", "starved_ticks": starved + 1,
+                                       "deferred": "tick budget spent"})
+            return "release-dependents deferred: tick budget spent"
+        rel.write_state(sdlc_dir, record)
+        if sources.gh_quota.rest_deferral(config):
+            # A quota deferral is not budget starvation: `starved_ticks` is neither raised nor reset by it.
+            rel.write_state(sdlc_dir, {**record, "status": "deferred", "deferred": "REST reserve"})
+            print("release-dependents: deferred (REST reserve)", file=sys.stderr)
+            return ""
+        # The duty got its budget and the quota: `starved_ticks` counts CONSECUTIVE starved ticks, so a pass that
+        # actually runs resets it (else one starved tick would hold the doctor row red forever).
+        record["starved_ticks"] = 0
+        src = source if source is not None else sources.GitHubSource(config, run=run, sdlc_dir=sdlc_dir)
+        totals = {"checked": 0, "released": [], "not_checked": [], "incomplete": [], "gated": [],
+                  "all_read": None}
+
+        def fold(res, final=False):
+            if final:
+                totals["checked"] += res["checked"]
+                totals["released"] += res["released"]
+                totals["incomplete"] += res["incomplete"]
+                if res["not_checked"]:
+                    totals["not_checked"].append(res["not_checked"])
+                if res["status"] in ("refused", "deferred", "skipped"):     # the verb did not run: say so
+                    totals["gated"].append((res["status"], res["reason"]))
+            live = {"checked": totals["checked"] + (0 if final else res["checked"]),
+                    "released": len(totals["released"]) + (0 if final else len(res["released"])),
+                    "incomplete": len(totals["incomplete"]) + (0 if final else len(res["incomplete"]))}
+            rel.write_state(sdlc_dir, {**record, **live, "status": "started",
+                                       "not_checked": "; ".join(totals["not_checked"])})
+
+        gh_calls = _load("gh_calls")
+        done_goals = [str(g) for g, outcome, _pr in (merged or ()) if outcome == "done" and str(g).isdigit()]
+        with gh_calls.component("release_dependents"):
+            if done_goals:
+                fold(rel.release(sdlc_dir, config, done_goals, apply=True, run=run, source=src, unattended=True,
+                                 deadline=deadline, clock=clock, progress=fold), final=True)
+            interval = _load("auto_unpark")._interval_minutes(config) * 60
+            due = clock() - float(prior.get("all_ran_at") or 0) >= interval
+            if due:
+                all_res = rel.release(sdlc_dir, config, (), apply=True, run=run, source=src, unattended=True,
+                                      deadline=deadline, clock=clock, all_blocked=True, progress=fold)
+                fold(all_res, final=True)
+                # An --all pass that never ran (refused, deferred) or read no goal because the shared budget was
+                # already spent has not looked at anything: it stays due rather than starting the throttle.
+                totals["all_read"] = (all_res["status"] not in ("refused", "deferred", "skipped")
+                                      and not (all_res["checked"] == 0 and all_res["unread"] > 0))
+        status = "incomplete" if totals["incomplete"] else "done"
+        if totals["gated"]:
+            status = totals["gated"][0][0]
+            print("release-dependents: %s (%s)" % totals["gated"][0], file=sys.stderr)
+        rel.write_state(sdlc_dir, {**record, "status": status, "checked": totals["checked"],
+                                   "released": len(totals["released"]), "incomplete": len(totals["incomplete"]),
+                                   "not_checked": "; ".join(totals["not_checked"]),
+                                   "all_ran_at": clock() if (due and totals["all_read"]) else prior.get("all_ran_at")})
+        if totals["released"]:
+            return "%d blocked goal(s) released — %s" % (len(totals["released"]), ", ".join(
+                "#%s" % n for n in sorted(totals["released"], key=int)))
+        return ""
+    except Exception as exc:                # noqa: BLE001 - a watcher tick is never fatal
+        try:
+            if rel is not None:
+                rel.write_state(sdlc_dir, {"ran_at": time.time(), "status": "error", "error": str(exc)[:200],
+                                           "starved_ticks": int(rel.read_state(sdlc_dir).get("starved_ticks") or 0)})
+        except Exception:                   # noqa: BLE001
+            pass
         return ""
 
 

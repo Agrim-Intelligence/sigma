@@ -556,7 +556,37 @@ Same reach as `blocker_promotion`, for the same reason: GitHub mode only. A loca
 by #N" reference is a file path, never a bare issue number the same regex can match, so there is
 nothing for local-goals mode to ever sweep.
 
-Config: `discovery.auto_unpark.mode` (`on` default | `off`) is the only key this feature reads.
+Config: `discovery.auto_unpark.mode` (`on` default | `off`) gates the sweep. #2223 adds the scoped release
+(`release_dependents.py <sdlc> <goal>... [--all] [--apply] [--cap N]`), run from the `record done` tail, from the
+watcher tick (`reconcile_tick`, last duty, two passes: the dependents of goals it just merged, then every blocked
+goal throttled by `interval_minutes`) and from the orchestrate wave end. It adds no new key; it reads existing ones:
+`discovery.auto_unpark.mode` (off disables every unattended path; the CLI stays available),
+`discovery.auto_unpark.interval_minutes`, `discovery.dag.mode` and `discovery.dag.ttl_minutes` (a fresh map nominates
+candidates with no list call; the verb ignores its stale `still open` entry for N itself, because right after N
+closes the map still stores N as open, while any other open blocker the map records still holds the goal, as in the
+sweep's own `dag.mode: on` rule), `backlog_check.doctor_scan.max_issues` (the doctor row)
+and `SIGMA_WATCH_CALL_TIMEOUT` (the derived deadline). It removes only `sdlc:blocked`, never resumes a park, reads
+comments through the strict reader (a failed read releases nothing for that goal, and it may see a `sigma:keep-parked`
+marker deeper in a long thread than the sweep's capped reader), and refuses when `blocked_label` equals
+`goal_blocked_label`. It defaults ON because the sweep it narrows is default-on and writes strictly more; it is
+bounded by the REST reserve, a derived deadline, a 100-row listing ceiling (newest first, so the OLDEST blocked
+goals are the ones not read: `1+ not checked`) and the interval throttle. Without a fresh map the scoped call finds
+a dependent by `#N` in its title or body only: a goal that names the finished goal only by URL, as `GH-N`, or only in
+a comment waits for the watcher's every-blocked-goal pass (latency of one `interval_minutes`). Per close the cost is arithmetic
+from the code (about 3D+4 REST calls for D dependents, more where a thread has many comments), not measured.
+The feature is inert where `blocked_label` equals `goal_blocked_label` (the verb refuses before reading anything and
+the `record done` hook skips with one stderr line, and the watcher duty records `refused` or `deferred` in its state
+file and prints one stderr line). The watcher duty's deadline is 90% of `SIGMA_WATCH_CALL_TIMEOUT`
+counted from the start of the tick, so what the merge pass and the map refresh spent is already out of its budget;
+the daemon may let a long-interval tick run longer (`watch_daemon.reconcile_call_timeout`), which is not plumbed,
+so this is the conservative bound. Past 100 blocked goals the operator's `--cap N` widens the listing, bounded by
+the same deadline; the doctor row names it. Limits, stated: the deadline is checked between goals, so a hung REST read
+inside one goal is unbounded; the `record done` hook has no per-call timeout of its own (the watcher call runs under
+`run_with_timeout.py`'s process-group kill, the hook does not). Scale: the every-blocked-goal pass re-reads each
+blocked goal's comments and its refs' states (the sweep avoids this with its persisted comment cache), so one pass
+over up to about 100 goals is on the order of 100+ REST calls every `interval_minutes` (default 10), more where a
+thread has many comments (the strict reader reads ALL of them); it is bounded by the REST reserve, the shared deadline
+and the interval, and is unmeasured on a real repository.
 
 ### Label reconciliation (optional, off by default)
 

@@ -126,7 +126,18 @@ of merges that conflict in meaning, and put it on the needs-you list.
 When a merge lands, look at batch goals that named it as a blocker:
 
 - waiting but not parked: nothing to do — `waves.py ready` offers it once the merge is in its base;
-- parked or blocked only on that blocker: release it through Sigma, never by editing labels:
+- blocked (`sdlc:blocked`) on that blocker: one run for every goal the wave merged releases each dependent whose
+  every dependency is now closed (it drops `sdlc:blocked`, adds one audit note, never touches a parked goal); relay its one summary line:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/release_dependents.py" "$S" <merged goals of the wave...> --apply
+```
+
+  This is a script invocation by the orchestrating agent, not an automatic trigger, and no orchestrate script calls it.
+  A line reading `1+ not checked` or `incomplete` means some blocked goals were not read: run it again with
+  `--all`, or leave them to the watcher; nothing was released for them.
+- parked on that blocker: a park is a person's, and the line above never touches it. Release it through Sigma,
+  never by editing labels:
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/unpark.py" brief "$S" <N> --json

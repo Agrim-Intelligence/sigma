@@ -590,6 +590,10 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/release_dependents.py",
+      "role": "gesture"
+    },
+    {
       "path": "skills/sigma-loop/scripts/release_manifest.py",
       "role": "gesture"
     },
