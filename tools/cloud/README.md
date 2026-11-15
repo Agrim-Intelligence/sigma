@@ -160,12 +160,12 @@ upper bound, not a clean two-worker figure. CI's nightly runs the same suite on 
 been stopped at its 120-minute limit every day since 2026-10-19 (#2099), so it gives no baseline.
 On the fix branch the first full run was `1 failed, 25094 passed, 89 skipped, 9 xfailed in 3592.84s (0:59:52)`; the one failure was this file's own version numbers tripping the shipped-prose scan, fixed by five reasoned `VERSION_ALLOW` entries. The summary line of the final run is on the pull request, not here (a tree edited after a verify is not the tree that was verified).
 
-Each failure family, its cause in this container, and its fix (all in #2225, none in the image):
+Each failure family, its cause in this container, and its fix (first in #2225, none in the image; #2228 adds the pid-faking and zombie-poll rows):
 
 | Family | Cause | Fix |
 |---|---|---|
 | tests that expect a file to be unreadable | the session runs as root with every capability (`CAP_DAC_OVERRIDE`), so mode `000` denies nothing | `tests/unprivileged.py` does the denied read as an unprivileged user (`subprocess.run(user=, group=, extra_groups=[])`; `setpriv`/`runuser` also exist here), and fails loudly when it cannot drop |
-| tests that kill a timed-out process group | the group IS killed; `os.kill(pid, 0)` succeeds on a zombie, and PID 1 here reaps orphans on a ~2 s poll | `alive()`/`gone()` in `tests/unattended_support.py` read the process state (`/proc/<pid>/stat`, or `ps` without `/proc`) and treat a zombie as gone |
+| tests that kill a timed-out process group | the group IS killed; `os.kill(pid, 0)` succeeds on a zombie, and PID 1 here reaps orphans on a ~2 s poll | `alive()`/`gone()` in `tests/unattended_support.py` read the process state (`/proc/<pid>/stat`, or `ps` without `/proc`) and treat a zombie as gone; `test_run_with_timeout.py` and `test_watch.py` are the second and third sites fixed in #2228 |
 | "refuses without `flock`" tests | this Python builds `fcntl` in, so a `PYTHONPATH` `fcntl.py` shim is never imported | `without_module()` in `tests/unattended_support.py` runs the script with the module set to `None` in `sys.modules` |
 | a hung-credential-helper control that could not hang | the environment injects `credential.interactive=false` through `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>`, so git never runs askpass | `hermetic()` drops `GIT_CONFIG_COUNT`, `GIT_CONFIG_PARAMETERS` and every `GIT_CONFIG_KEY_*`/`GIT_CONFIG_VALUE_*` |
 | a signing park that quoted git, not the signer | git 2.56 prints `Could not apply <sha>... <subject>` after the signer's line | product fix: `commit_signing._detail_line` skips that narration |

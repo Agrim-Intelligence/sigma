@@ -11,6 +11,8 @@ import sys
 import threading
 import time
 
+import unattended_support as support
+
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
 
@@ -1300,27 +1302,13 @@ def test_watch_daemon_kills_a_hung_call_inside_a_real_tick(tmp_path):
     log = (d / "state" / "watch.log").read_text()
     assert "agent_watch.py" in log and "1s" in log
 
-    # The grandchild `sleep 300` spawned above must actually be gone by now, not orphaned --
-    # polled for up to ~2s for the same reaping-timing reason as test_run_with_timeout.py's 1f
-    # (OS reparenting/reaping of an orphaned-and-killed grandchild by its new parent is not
-    # guaranteed instantaneous). This re-checks, at the full watch_daemon.py-tick layer, the same
-    # property 1f already proves in isolation -- it exists to prove the real call sites are wired
-    # through the fixed run_with_timeout.py, not just that the wrapper works alone.
-    # Checked by PID, not by `pgrep -f "sleep 300"`: a name match is machine-wide, so any
-    # unrelated `sleep 300` on the host (another session's retry loop, #2749) failed this test
-    # even though its own grandchild was long gone. The pid file proves the fake ran far enough
-    # to spawn one; os.kill(pid, 0) then asks about exactly that process and nothing else.
+    # The grandchild `sleep 300` spawned above must actually be gone by now, not orphaned: this
+    # re-checks at the watch_daemon.py-tick layer what test_run_with_timeout.py proves in isolation.
+    # Checked by PID, not `pgrep -f "sleep 300"`: a name match is machine-wide, so an unrelated
+    # `sleep 300` on the host (#2749) failed this test. `support.gone` counts a zombie as gone --
+    # see `unattended_support.alive()`.
     child_pid = int(pid_file.read_text())
-    deadline = time.time() + 2
-    gone = False
-    while time.time() < deadline:
-        try:
-            os.kill(child_pid, 0)
-        except ProcessLookupError:
-            gone = True
-            break
-        time.sleep(0.1)
-    assert gone, f"grandchild `sleep 300` pid {child_pid} was not terminated within 2s of the tick completing"
+    assert support.gone(child_pid, limit=2.0), f"grandchild `sleep 300` pid {child_pid} was not terminated within 2s of the tick completing"
 
 
 def test_watch_daemon_heartbeat_is_written_while_alive_and_removed_on_clean_exit(tmp_path):
