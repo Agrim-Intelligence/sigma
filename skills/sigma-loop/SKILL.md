@@ -80,13 +80,12 @@ Then repeat until the helper says stop:
    for a cited brief.
 
    **Match the model to the goal.** **Read the tier from the pick's own stderr** — a
-   line shaped `sigma: model tier for <goal> resolved to <tier> (signal=<signal>)` — rather
-   than recomputing it yourself, **especially in github mode**: `"$goal"` there is the bare issue
-   number, and a manual `predict.py resolve "$goal" .sdlc` classifies that literal digit string,
-   not the issue's real text. **You DO still need to log this same tier+signal to the LOCAL
-   action-log copy yourself**: `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" log .sdlc "$goal"
-   model_choice --model <tier> --signal <signal>`. **Use the SAME tier+signal as above — never a
-   fresh `why "$goal"` call.** Never run a step ABOVE the goal
+   line shaped `sigma: model tier for <goal> resolved to <tier> (signal=<signal>)` — never
+   recompute it, **especially in github mode**: `"$goal"` there is the bare issue number, and a
+   manual `predict.py resolve "$goal" .sdlc` classifies that digit string, not the issue.
+   **Still log this same tier+signal to the LOCAL action-log copy yourself**:
+   `python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" log .sdlc "$goal" model_choice --model <tier>
+   --signal <signal>`. **Never a fresh `why "$goal"` call.** Never run a step ABOVE the goal
    ceiling. The fallback when that stderr line is missing, and the per-step `resolve-step`
    downgrade: `references/running.md`.
 

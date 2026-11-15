@@ -90,7 +90,8 @@ class _Src:
 
 
 def test_compile_plan_label_set_is_pinned():
-    plan = {"issues": [{"key": "a", "title": "t", "body": "b", "priority": "P1"}]}
+    plan = {"issues": [{"key": "a", "title": "t", "body": "b", "priority": "P1",
+                         "criteria": ["It works.", "It refuses bad input.", "It recovers."]}]}  # #2222
     src = _Src()
     compile_plan.compile_plan("/x/.sdlc", {}, plan, source=src)
     # Slice 17/18: a compiled plan arms by default; the confirmation label is no longer written.

@@ -197,8 +197,13 @@ def _plan(*issues):
     return {"epic": None, "issues": list(issues)}
 
 
+#: #2222: every issue a plan opens carries acceptance criteria (compile_plan refuses one without).
+CRITERIA = ["It works.", "It refuses bad input.", "It recovers."]
+
+
 def _pi(key, title, blocked_by=()):
-    return {"key": key, "title": title, "body": "body text", "priority": "P2", "blocked_by": list(blocked_by)}
+    return {"key": key, "title": title, "body": "body text", "criteria": CRITERIA, "priority": "P2",
+            "blocked_by": list(blocked_by)}
 
 
 def test_compile_plan_inserts_every_issue_and_edge_in_one_pass(tmp_path):

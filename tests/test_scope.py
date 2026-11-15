@@ -42,6 +42,10 @@ def _init_sdlc(tmp_path, config=None):
     return sdlc
 
 
+#: #2222: every issue a plan opens carries acceptance criteria (compile_plan refuses one without).
+CRITERIA = ["It works.", "It refuses bad input.", "It recovers."]
+
+
 def _write_plan(tmp_path, plan):
     path = tmp_path / "plan.json"
     path.write_text(json.dumps(plan))
@@ -241,7 +245,8 @@ def test_main_report_write_creates_missing_parent_directories(tmp_path):
     the mkdir(parents=True, exist_ok=True) convention every sibling write in this skill uses
     (assign.py's own plan-file write does the same)."""
     sdlc = _init_sdlc(tmp_path, config={"discovery": {"source": "local-goals"}})
-    plan_path = _write_plan(tmp_path, {"issues": [{"key": "a", "title": "Do the thing"}]})
+    plan_path = _write_plan(tmp_path, {"issues": [{"key": "a", "title": "Do the thing",
+                                                    "criteria": CRITERIA}]})
     report_path = tmp_path / "nested" / "not-yet-created" / "report.json"
 
     rc = scope.main(["scope.py", str(sdlc), "--plan", str(plan_path), "--report", str(report_path)])
@@ -273,7 +278,7 @@ def test_main_end_to_end_through_the_real_local_goals_source(tmp_path, capsys):
     `test_main_success_creates_a_real_local_goal_file`."""
     sdlc = _init_sdlc(tmp_path, config={"discovery": {"source": "local-goals"}})
     plan_path = _write_plan(tmp_path, {"issues": [{"key": "a", "title": "Do the thing", "body": "b",
-                                                    "priority": "P2"}]})
+                                                    "priority": "P2", "criteria": CRITERIA}]})
     report_path = tmp_path / "report.json"
     rc = scope.main(["scope.py", str(sdlc), "--plan", str(plan_path), "--report", str(report_path)])
     assert rc == 0

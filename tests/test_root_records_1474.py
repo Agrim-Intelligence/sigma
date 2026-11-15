@@ -115,14 +115,30 @@ def test_commit_copies_the_root_acceptance_record_and_pr_then_passes(tmp_path):
     assert rec.read_text() == "# done when\n"
 
 
+def _acceptance_record(*added):
+    """A well-formed acceptance record for 0001-x, plus ``added`` rows in the `acceptance.py extend` line shape."""
+    acc = _load("acceptance")
+    items = ["It works.", "It refuses bad input.", "It recovers."]
+    meta = {"kind": "acceptance", "goal": "0001-x", "verify_command": None, "drafted": False,
+            "criteria_sha256": acc.criteria_hash(items)}
+    text = ("---\n" + "\n".join(k + ": " + json.dumps(v) for k, v in meta.items()) + "\n---\n## Done when\n"
+            + "".join("- [ ] " + i + "\n" for i in items))
+    if added:
+        text += "\n## Added criteria\n" + "".join(acc._extend_line(a, "0001-x", "review gap") + "\n" for a in added)
+    return text
+
+
 def test_commit_never_overwrites_a_worktree_copy_that_differs(tmp_path):
+    # #2222: the copies may now differ only by appended criteria (the append-only guard refuses any other
+    # difference at commit), so the differing worktree copy is the legitimate kind: the root record extended.
     _, _, sdlc, wt = _world(tmp_path)
-    _file(sdlc, "acceptance", "root\n")
+    root_text, wt_text = _acceptance_record(), _acceptance_record("It logs the refusal.")
+    _file(sdlc, "acceptance", root_text)
     mine = wt / ".sdlc" / "acceptance" / "0001-x.md"
     mine.parent.mkdir(parents=True)
-    mine.write_text("worktree\n")
+    mine.write_text(wt_text)
     work.commit(sdlc, ON, GOAL, run=_run)
-    assert _git(wt, "show", "HEAD:.sdlc/acceptance/0001-x.md") == "worktree\n"
+    assert _git(wt, "show", "HEAD:.sdlc/acceptance/0001-x.md") == wt_text
 
 
 def _land(tmp_path, remote):
