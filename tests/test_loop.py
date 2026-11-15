@@ -7996,7 +7996,9 @@ def test_agent_heartbeat_does_not_change_the_recorded_pid():
         # product's own reader rather than compared as raw text; the WHOLE record must survive.
         after = lp._agent_marker_record(base, "42")
         assert after["pid"] == 4242
-        assert after["boot"] is not None and after == before
+        # `boot` is the host's boot id: a string where the host has one (Linux), None where it does not (macOS CI);
+        # the key must be present either way, and the whole record unchanged by the heartbeat.
+        assert "boot" in after and after == before
 
 
 def test_codex_agent_marker_keeps_thread_identity_and_foreign_heartbeat_cannot_refresh_it(monkeypatch):
