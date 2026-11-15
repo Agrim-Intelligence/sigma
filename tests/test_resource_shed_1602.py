@@ -12,6 +12,7 @@ import time
 import pytest
 
 import test_resource_verify_1601 as base
+import unattended_support as support
 from test_resource_verify_1601 import GIB, SCRIPTS, _restore_guard_modules, env, unix_only  # noqa: F401  (fixtures)
 
 CHILD = ("import os,signal,sys,time\n"
@@ -39,14 +40,6 @@ def _critical_after_admission(env, seconds=0.0):
     env.lease.take_sample = sample
 
 
-def _alive(pid):
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    return True
-
-
 @unix_only
 def test_sustained_critical_stops_the_group_term_before_kill_and_no_worker_survives(env, tmp_path):
     _critical_after_admission(env, 0.3)
@@ -55,7 +48,7 @@ def test_sustained_critical_stops_the_group_term_before_kill_and_no_worker_survi
     assert (tmp_path / "term").read_text().startswith("term")        # TERM was delivered (and handled) first
     pid = int((tmp_path / "pid").read_text())
     time.sleep(0.3)
-    assert not _alive(pid)
+    assert not support.alive(pid)
 
 
 @unix_only

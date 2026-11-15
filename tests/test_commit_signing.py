@@ -199,6 +199,34 @@ def test_plain_detail_skips_git_hint_lines():
     assert "signer down" in out and "rebase --continue" not in out
 
 
+# Captured verbatim from git 2.56.1 (#2225): `git rebase` with a signer that prints `signer down` and exits 1.
+# git now ends with its own unlabelled `Could not apply <sha>... <subject>` narration, AFTER the signer's line.
+REBASE_256 = ("Rebasing (1/1)\rerror: signer down\n\nerror: failed to write commit object\n"
+              "Could not apply 057ee3c... # # ledger: dana\n")
+
+
+def test_plain_detail_skips_gits_could_not_apply_narration():
+    """The park reason must quote the signer, not git's narration of which commit it was replaying: before
+    the skip, git 2.56 turned this into `(signer said: Could not apply 057ee3c... # # ledger: dana)`."""
+    out = cs.plain(REBASE_256)
+    assert "signer down" in out and "Could not apply" not in out
+
+
+def test_plain_detail_skips_the_narration_in_either_order_and_with_a_label():
+    """The same narration printed FIRST, labelled `error:` and in lower case (the shape this plan names for
+    older gits; not re-measured on an older git here) still leaves the signer's own line as the detail.
+    A signer line that merely CONTAINS the words is the signer's and is kept."""
+    older = ("error: could not apply 057ee3c... # ledger: dana\nerror: signer down\n"
+             "error: failed to write commit object\nhint: Resolve all conflicts manually")
+    out = cs.plain(older)
+    assert "signer down" in out and "could not apply" not in out.lower()
+    labelled_last = "error: signer down\nerror: failed to write commit object\nerror: could not apply 057ee3c... x\n"
+    out = cs.plain(labelled_last)
+    assert "signer down" in out and "could not apply" not in out.lower()
+    kept =cs.plain("error: gpg: could not apply the key policy\nerror: failed to write commit object")
+    assert "gpg: could not apply the key policy" in kept
+
+
 def test_plain_clips_the_detail_to_200_characters():
     out = cs.plain("error: " + "x" * 500 + "\n" + FATAL)
     detail = out[len(cs.MESSAGE):]

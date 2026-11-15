@@ -15,6 +15,7 @@ S = ROOT / "skills" / "sigma-loop" / "scripts"
 BLOCK = "blocked" + " by"          # built, never written whole, so no file here reads as an edge
 NEEDS = "ne" + "eds"
 U = "/" + "Users"                   # built, so the public-text guard sees no workspace path
+H = "/" + "home"                    # built, for the same reason (#2225: the exposure scan read the literal)
 
 
 def _load(name):
@@ -55,7 +56,7 @@ def _note_for(detail, also_log=False):
 
 # --- #2151: redaction, one test per clause ------------------------------------------------------------------------
 
-@pytest.mark.parametrize("path", [U + "/someone/proj/.sdlc", "/home/runner/work/r/r/.sdlc/state",
+@pytest.mark.parametrize("path", [U + "/someone/proj/.sdlc", H + "/runner/work/r/r/.sdlc/state",
                                   "C:\\Us" + "ers\\someone\\proj", "D:/a/r/r/.sdlc", "~/proj/.sdlc"])
 def test_an_absolute_path_becomes_a_placeholder(path):
     note = _note_for(f"PR #7 clean, but stopped in {path} (read 403)")
@@ -69,9 +70,10 @@ def test_a_url_and_a_slash_word_are_not_paths():
 
 
 def test_a_mention_is_neutralised():
-    note = _note_for("ask @octo-cat and @some-org/some-team about it; mail a@b.example is not one")
+    addr = "a" + "@b.example"   # built, so the exposure scan does not read this placeholder as an address (#2225)
+    note = _note_for("ask @octo-cat and @some-org/some-team about it; mail " + addr + " is not one")
     assert "@octo-cat" not in note and "@some-org" not in note, note
-    assert note.count("[mention]") == 2 and "a@b.example" in note, note
+    assert note.count("[mention]") == 2 and addr in note, note
 
 
 def test_blocker_phrasing_cannot_make_an_edge():
@@ -159,7 +161,7 @@ def test_placeholders_render_in_github_markdown():
 
 def test_ordinary_prose_versions_fractions_and_repo_links_are_untouched():
     text = ("1/2 done, v1.0.30 and 3/4 of 2026/11, 5 tests/s, read [the doc](docs/a.md) or ./docs/b.md and "
-            "../c/d.md, use `loop.py`, email a@b.example, cost ~5%, $5, 100%, 50% of $PATHWAY")
+            "../c/d.md, use `loop.py`, email a" + "@b.example, cost ~5%, $5, 100%, 50% of $PATHWAY")   # split: #2225
     assert _why(text) == text
 
 

@@ -15,6 +15,7 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import fake_breaker_support as fake  # noqa: E402
+import unattended_support as support  # noqa: E402
 
 S = pathlib.Path(__file__).resolve().parents[1] / "skills/sigma-loop/scripts"
 
@@ -171,13 +172,7 @@ def test_timeout_kills_the_whole_process_group_including_the_grandchild(world, m
     # so the elapsed bound, not only the final liveness, is what detects it.
     assert info.value.clause == "timeout" and time.monotonic() - started < 8
     pid = int((world["tmp"] / "child.pid").read_text())
-    for _ in range(10):
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            break
-        time.sleep(0.1)
-    else:
+    if not support.gone(pid, 1.0):                  # zombie-aware: a killed orphan awaiting PID 1 is gone (#2225)
         os.kill(pid, signal.SIGKILL)
         pytest.fail("the grandchild %d survived the timeout" % pid)
 

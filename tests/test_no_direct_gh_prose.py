@@ -62,7 +62,6 @@ ALLOWED: dict[str, list[tuple[str, ...]]] = {
     "skills/sigma-loop/references/landing.md": [
         ("one `gh pr merge` fallback", "describes the REST path and its fallback"),
         ("There is no `gh pr view`", "describes the REST path"),
-        ("one `gh issue view` fallback", "describes the REST path and its fallback"),
     ],
     "skills/sigma-loop/SLACK_COMMANDS.md": [("run `/sigma-rebase` locally or", "human-run `gh pr merge`", "pr merge")],
     "skills/sigma-triage/SKILL.md": [

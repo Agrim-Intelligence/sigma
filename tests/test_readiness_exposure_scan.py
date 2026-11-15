@@ -356,6 +356,9 @@ def test_the_tracked_scan_of_this_tree_exits_0_with_no_stale_allowlist_entry(tmp
         target = repo / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes((ROOT / name).read_bytes())
+    # `-f`: a tracked file can sit under an ignore rule (the force-added `.sdlc/reviews/` records); the copied
+    # `.gitignore` must not drop it from the scratch commit, or the scan here misses what the gesture scans (#2225)
+    _git(repo, "add", "-A", "-f")
     _commit(repo, "tree")
     out = tmp_path / "tracked.json"
     result = _run("tracked", repo, "--json", out)

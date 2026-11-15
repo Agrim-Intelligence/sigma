@@ -425,6 +425,15 @@ def test_every_delete_shaped_call_site_in_the_kit_is_one_of_the_known_reviewed_o
     assert found == {
         ("skills/sigma-loop/scripts/work.py", "finish", "branch_dD"),
         ("skills/sigma-loop/scripts/work.py", "_delete_remote_branch", "rest_delete_ref"),
+        # #2161 resume fallback (reviewed in #2225): a LOCAL `git branch -D` of the goal branch that
+        # `_resume_or_cut`'s own `git worktree add -b <branch>` created seconds earlier -- `-b` refuses a
+        # branch that already exists, so this can never name a pre-existing `feature/<name>` branch, and
+        # it never touches the remote (the work stays on the remote checkpoint ref it was cut from)
+        ("skills/sigma-loop/scripts/work.py", "_drop_cut", "branch_dD"),
+        # #2161 checkpoint push (reviewed in #2225): a plain, unforced `HEAD:refs/heads/<goal ref>` push to
+        # the goal's own branch or its `work.checkpoint_prefix` name; the source side is the fixed literal
+        # `HEAD`, so it can never go empty and become a delete (proven below)
+        ("skills/sigma-loop/scripts/work.py", "checkpoint", "colon_refspec"),
         # a label delete, not a ref delete: pinned because the guard cannot see the endpoint
         ("skills/sigma-loop/scripts/gh_api.py", "remove_label", "rest_delete"),
         # an assignee delete, not a ref delete: `remove_assignees`' REST DELETE of issues/N/assignees, reached only
@@ -455,6 +464,18 @@ def test_the_feature_rebase_colon_refspec_source_side_is_the_fixed_literal_HEAD(
     assert hits is not None
     (line,) = [line for path, _lineno, kind, line in hits
                if kind == "colon_refspec" and path.name == "feature_rebase.py"]
+    assert '"HEAD:refs/heads/' in line, line
+
+
+def test_the_checkpoint_colon_refspec_source_side_is_the_fixed_literal_HEAD():
+    """#2161's `work.checkpoint` push is safe for the same reason `feature_rebase.py`'s site is: its
+    refspec's source side is the fixed literal `"HEAD"`, so it can never go empty and become a delete.
+    Its destination is the goal's own branch (or its checkpoint-prefixed name), never `rec["base"]`."""
+    hits = _delete_call_sites(ROOT)
+    assert hits is not None
+    (line,) = [line for path, lineno, kind, line in hits
+               if kind == "colon_refspec" and path.name == "work.py"
+               and _enclosing_function(path, lineno) == "checkpoint"]
     assert '"HEAD:refs/heads/' in line, line
 
 

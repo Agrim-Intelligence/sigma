@@ -181,3 +181,15 @@ fails `exit=127` on the first real per-goal run. Use an absolute interpreter pat
 `PATH`, or a wrapper script (`/sigma-doctor` flags a relative one for you). And `work.py commit` stages
 with `git add -A`, so **anything your `verify_command` leaves behind must be gitignored** or it rides
 along into the PR (`.coverage`, `.pytest_cache/`, build output).
+
+### Why two landing rules are hard rules
+
+These are the history behind two lines of the loop's landing reference
+(`skills/sigma-loop/references/landing.md`), kept here so the agent's own reading stays short.
+
+- **`work.py pr` after every post-block fix.** `work.py commit` is local; only `pr` pushes. Skipping the push
+  leaves the PR head at the pre-fix commit, which shipped defects to a protected `main` three times before
+  `gate()` grew its STALE HEAD refusal. The refusal is the backstop; the landing line is the intent.
+- **`record done` releases the checkout itself.** Running `work.py finish` used to be the agent's job, and that
+  was the bug: a turn that ended between `record done` and that command leaked the checkout permanently,
+  because nothing ever revisited a closed goal.
