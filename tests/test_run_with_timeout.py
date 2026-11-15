@@ -2,7 +2,11 @@ import importlib.util
 import os
 import pathlib
 import subprocess
-import time
+import sys
+
+import pytest
+
+import unattended_support as support
 
 S = pathlib.Path(__file__).resolve().parent.parent / "skills" / "sigma-loop" / "scripts"
 
@@ -120,21 +124,53 @@ def test_a_hung_commands_grandchild_process_is_also_terminated_not_orphaned(tmp_
     assert proc.returncode == 124
 
     child_pid = int(pid_file.read_text())
-    # Poll rather than a single immediate check: run_with_timeout.py signals the whole process
-    # group synchronously before returning, but the OS reparenting/reaping of an
-    # orphaned-and-killed grandchild by its new parent (init/launchd) is not guaranteed
-    # instantaneous -- bounding the wait this way avoids real, unrelated flakiness without
-    # weakening what is being proved.
-    deadline = time.time() + 2
-    gone = False
-    while time.time() < deadline:
-        try:
-            os.kill(child_pid, 0)
-        except ProcessLookupError:
-            gone = True
-            break
-        time.sleep(0.1)
-    assert gone, f"grandchild pid {child_pid} was not terminated within 2s of the wrapper returning"
+    # `support.gone` (not a bare os.kill poll): a killed orphan is a zombie until its reaper comes, and
+    # `os.kill(pid, 0)` succeeds on a zombie -- see `unattended_support.alive()` (#2225, #2228).
+    assert support.gone(child_pid, limit=2.0), f"grandchild pid {child_pid} was not terminated within 2s of the wrapper returning"
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"),
+                    reason="PR_SET_CHILD_SUBREAPER (prctl 36) exists only on Linux; no other platform has an equivalent")
+def test_a_killed_grandchild_that_stays_a_zombie_of_the_test_process_still_counts_as_terminated(tmp_path):
+    """Deterministic control for the test above (#2228). Linux-only: the platform-skip is for a platform
+    without `PR_SET_CHILD_SUBREAPER`, where this orphan-stays-a-zombie condition cannot be constructed.
+
+    The test above passes or fails on how fast PID 1 reaps the killed orphan, so a raw `os.kill(pid, 0)`
+    poll is green on a host with a quick init and red where init reaps on a ~2 s poll. Here this pytest
+    process is made the child subreaper, so the orphaned grandchild is re-parented to US and stays a
+    zombie until we `waitpid` it: `os.kill(pid, 0)` then succeeds for the whole 2 s, deterministically.
+    Only a zombie-aware check passes. The flag is cleared in `finally` and the zombie is reaped, so
+    nothing leaks into other tests."""
+    import ctypes
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(36, 1, 0, 0, 0) != 0:
+        pytest.skip("prctl(PR_SET_CHILD_SUBREAPER) refused on this host")
+    child_pid = None
+    try:
+        target = tmp_path / "target.py"
+        target.write_text(
+            "import subprocess, sys, time\n"
+            "child = subprocess.Popen(['sleep', '300'])\n"
+            "with open(sys.argv[1], 'w') as f:\n"
+            "    f.write(str(child.pid))\n"
+            "time.sleep(300)\n"
+        )
+        pid_file = tmp_path / "child.pid"
+        proc = subprocess.run(
+            ["python3", str(S / "run_with_timeout.py"), "1", str(target), str(pid_file)],
+            capture_output=True, text=True, timeout=_TEST_TIMEOUT,
+        )
+        assert proc.returncode == 124
+        child_pid = int(pid_file.read_text())
+        assert support.gone(child_pid, limit=2.0), f"grandchild pid {child_pid} was not terminated within 2s of the wrapper returning"
+    finally:
+        libc.prctl(36, 0, 0, 0, 0)
+        if child_pid is not None:
+            support.reap(child_pid)
+            try:
+                os.waitpid(child_pid, 0)
+            except ChildProcessError:
+                pass
 
 
 # --------------------------------------------------------------------------------------------
