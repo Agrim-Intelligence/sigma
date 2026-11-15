@@ -168,7 +168,8 @@ def _already_extended(acceptance, sdlc_dir, goal, slice_ref, reason):
         added = acceptance.parse(acceptance._text(file), file.stem)["added"]
     except (OSError, ValueError, AttributeError, KeyError):
         return False
-    return any(x["reason"] == reason for x in added)
+    norm = _load("followup_route").normalize_title
+    return any(norm(x["reason"] or "") == norm(reason) for x in added)
 
 
 def _heading_titles(text):

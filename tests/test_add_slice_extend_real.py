@@ -173,3 +173,15 @@ def test_a_reused_slice_number_with_a_different_title_is_still_extended(proj):
     assert r.returncode == 0, r.stderr
     added = _added(record)
     assert len(added) == 2 and "reason: Foo" in added[0] and "reason: Bar" in added[1], added
+
+
+def test_a_resume_after_the_plan_heading_was_respelled_does_not_append_again(proj):
+    record = _with_real_record(proj)
+    assert cli(proj, title="Foo").returncode == 0
+    once = _added(record)
+    for plan in (proj.main_plan, proj.branch_plan):                               # a hand edit of the heading's case
+        plan.write_text(plan.read_text().replace("## Added slice 1: Foo", "## Added slice 1: foo"))
+    (proj.sdlc / "state" / "followups" / "2224.json").unlink()                    # crash before the count
+    r = cli(proj, title="Foo")
+    assert r.returncode == 0, r.stderr
+    assert _added(record) == once and count(proj) == 1
