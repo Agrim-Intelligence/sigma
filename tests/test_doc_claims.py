@@ -189,7 +189,8 @@ def test_acceptance_docs_name_extend_and_check_gestures():
     # second review F3: the lever that exists (restore the issue, or a new goal), never a re-record through unpark
     assert "re-recording through" not in text and "`/sigma-unpark` has no acceptance path" in text
     assert "restores the issue's `## Done when` to match the record" in text and "file a new one" in text
-    unreleased = _doc("CHANGELOG.md").split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+    # the entry sits under "## Unreleased" until its release, then under that release's heading: read both
+    unreleased = "\n".join(_doc("CHANGELOG.md").split("## Unreleased", 1)[1].split("\n## ", 2)[:2])
     assert "re-recording through" not in unreleased and "files a new one" in unreleased
 
 
@@ -211,7 +212,7 @@ def test_acceptance_cloud_sessions_documents_exit_limits_and_pre_commit_residual
 
 
 def test_acceptance_changelog_unreleased_entry():
-    unreleased = _doc("CHANGELOG.md").split("## Unreleased", 1)[1].split("\n## ", 1)[0]
+    unreleased = "\n".join(_doc("CHANGELOG.md").split("## Unreleased", 1)[1].split("\n## ", 2)[:2])
     assert "#2222" in unreleased and "append-only" in unreleased and "goal_readiness" in unreleased
     assert "Residuals" in unreleased and "Not measured" in unreleased
 
