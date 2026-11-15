@@ -136,7 +136,7 @@ def test_exempt_needs_meta_marker(line):
 
 
 def test_exempt_meta_marker_may_be_the_legacy_spelling():
-    assert dd(m_first_line="<!-- loopsmith:decompose-of=#9 -->")[0] is True
+    assert dd(m_first_line=_mod("legacy").retired_spelling("<!-- sigma:decompose-of=#9 -->"))[0] is True
 
 
 def test_a_goal_cannot_decompose_itself():

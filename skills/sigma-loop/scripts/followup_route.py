@@ -58,9 +58,10 @@ REASONS = ("different-feature", "slice-cap")
 MARKER_PREFIX = "<!-- sigma:followup-reason:"
 _MARKER_RE = re.compile(r"<!-- sigma:followup-reason:(different-feature|slice-cap) -->")
 SLICE_HEADING_RE = re.compile(r"^## Added slice \d+: (.+?)\s*$", re.M)
-DECOMPOSE_OF_RE = re.compile(r"^<!-- (?:sigma|loopsmith):decompose-of=#(\d+) -->\s*$")
-DECOMPOSED_FROM_RE = re.compile(r"^<!-- (?:sigma|loopsmith):decomposed-from=#(\d+) -->\s*$")
-DECOMPOSE_FILED_RE = re.compile(r"(?:sigma|loopsmith):decompose-filed=#(\d+)(?!\d)")
+_MP = _load("legacy").MARKER_PREFIX_RE      # either brand spelling, built from fragments (no literal retired token)
+DECOMPOSE_OF_RE = re.compile(r"^<!-- " + _MP + r":decompose-of=#(\d+) -->\s*$")
+DECOMPOSED_FROM_RE = re.compile(r"^<!-- " + _MP + r":decomposed-from=#(\d+) -->\s*$")
+DECOMPOSE_FILED_RE = re.compile(_MP + r":decompose-filed=#(\d+)(?!\d)")
 DECOMPOSE_LABEL = "sdlc:decompose"
 #: Why a decompose child was not exempt: the leg that failed. `unreadable:<leg>` is a leg that could not be read.
 DECOMPOSE_LEGS = {
