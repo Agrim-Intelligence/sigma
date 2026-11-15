@@ -4,7 +4,7 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
-- **The full verify passes in the `sigma-cloud` container (#2225).** Its baseline at `524d533` failed 28 tests and
+- **The full verify in the `sigma-cloud` container: baseline measured, fixes measured per file, whole-run result recorded below once run (#2225).** Its baseline at `524d533` failed 28 tests and
   errored 5 for reasons a laptop never sees; each cause is now traced and fixed in the repository, none in the image.
   Permission-denial tests do the denied read as an unprivileged user when the suite runs as root (`tests/unprivileged.py`,
   loud when it cannot drop); process checks read a zombie as gone (`alive()`), since PID 1 there reaps orphans on a

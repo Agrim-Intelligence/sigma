@@ -8,7 +8,7 @@ verify command are this repository's.
 
 **Status: measured in a real container (2026-10-29, and again for #2225 in 2026-11).** A diagnostic session
 found setup's work in the session: the config below, the environment's verify approval, `python3` with pytest,
-xdist and PyYAML, and git 2.56. Its verify failed tests that pass on a laptop; #2225 traced every one to a fact of
+xdist and PyYAML, and git 2.56. Its verify failed tests that pass on a laptop; #2225 traced every one: 14 to a fact of this container and 19 to merged drift that fails on any machine (the table below). The container facts are
 this container (see [The container](#the-container) and [How long a verify takes](#how-long-a-verify-takes)).
 Everything else this page says the script does comes from its code and from `tests/test_cloud_setup_script.py`,
 which runs it offline with stubbed tools.
@@ -163,7 +163,7 @@ Each failure family, its cause in this container, and its fix (all in #2225, non
 
 | Family | Cause | Fix |
 |---|---|---|
-| tests that expect a file to be unreadable | the session runs as root with every capability (`CAP_DAC_OVERRIDE`), so mode `000` denies nothing | `tests/unprivileged.py` does the denied read as an unprivileged user (`setpriv`/`runuser`), and fails loudly when it cannot drop |
+| tests that expect a file to be unreadable | the session runs as root with every capability (`CAP_DAC_OVERRIDE`), so mode `000` denies nothing | `tests/unprivileged.py` does the denied read as an unprivileged user (`subprocess.run(user=, group=, extra_groups=[])`; `setpriv`/`runuser` also exist here), and fails loudly when it cannot drop |
 | tests that kill a timed-out process group | the group IS killed; `os.kill(pid, 0)` succeeds on a zombie, and PID 1 here reaps orphans on a ~2 s poll | `alive()`/`gone()` in `tests/unattended_support.py` read the process state (`/proc/<pid>/stat`, or `ps` without `/proc`) and treat a zombie as gone |
 | "refuses without `flock`" tests | this Python builds `fcntl` in, so a `PYTHONPATH` `fcntl.py` shim is never imported | `without_module()` in `tests/unattended_support.py` runs the script with the module set to `None` in `sys.modules` |
 | a hung-credential-helper control that could not hang | the environment injects `credential.interactive=false` through `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>`, so git never runs askpass | `hermetic()` drops `GIT_CONFIG_COUNT`, `GIT_CONFIG_PARAMETERS` and every `GIT_CONFIG_KEY_*`/`GIT_CONFIG_VALUE_*` |
@@ -199,7 +199,7 @@ read, so the next person can read it again.
 | git | 2.56.1; the global config signs every commit (`commit.gpgsign=true`, `gpg.format=ssh`, `gpg.ssh.program=/tmp/code-sign`) | `git --version`; `git config --global --list` |
 | git config from the environment | `GIT_CONFIG_COUNT=3`: `credential.interactive=false` and two `url.https://github.com/.insteadOf` | `git config --show-origin --list \| grep '^command line'` |
 | checkout | a fresh container's checkout can be a detached HEAD (reported on #2225; not re-seen in this run). `git checkout -B main origin/main` puts `main` back on the remote's tip | `git status -sb` |
-| session limits | a background command is stopped at its timeout, 30 minutes unless the call asks for more (up to 2 hours), and the full verify takes about 61 minutes: give it the longer timeout or it is cut short | the timing above |
+| session limits | a background command is stopped at its timeout, 30 minutes unless the call asks for more (up to 2 hours), and the full verify takes about 61 minutes: give it the longer timeout or it is cut short | the host tool's documented timeout (not measured here beyond the lost 40-minute call) |
 
 ## How to diagnose a verify that fails only here
 
