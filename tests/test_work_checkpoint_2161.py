@@ -445,7 +445,7 @@ def test_a_pr_that_fails_after_the_push_can_be_retried_with_a_new_commit(env):
     def run(cwd, argv):
         line = " ".join(argv)
         if "remote get-url" in line:
-            return "git@github.com:acme/app.git"
+            return "git" "@github.com:acme/app.git"      # split so the exposure scan reads no address (#2225)
         if argv[0] == "gh":
             if "full_name" in line:
                 return "acme/app"

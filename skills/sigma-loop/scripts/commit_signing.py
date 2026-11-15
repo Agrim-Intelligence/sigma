@@ -49,6 +49,9 @@ _PERMISSION_DENIED = "permission denied"
 _OBJECT_STORE_WORD = re.compile(r"\bobjects?\b")
 
 _LABELLED = re.compile(r"^(error|fatal|hint|warning):\s*(.*)$", re.IGNORECASE)
+# `git rebase` naming the commit it was replaying. git 2.56 prints it unlabelled AFTER the signer's line, so
+# "the last line that says something" became git's narration instead of the signer's words (#2225).
+_REPLAY_NARRATION = re.compile(r"^could not apply [0-9a-f]+\.\.\.", re.IGNORECASE)
 # Used only when the caller could not say what argv the runner put in front of git's stderr.
 _AFTER_ARGV = re.compile(r"^.*?: ((?:error|fatal):.*)$", re.IGNORECASE)
 
@@ -125,8 +128,8 @@ def _strip_argv(detail, prefix):
 
 def _detail_line(detail, prefix=""):
     """The last line of git's stderr that says something, without its `error:`/`fatal:` label, clipped.
-    Skipped: blank lines, a label with nothing after it, git's `hint:`/`warning:` advice, and the fatal
-    line itself. "" when nothing is left."""
+    Skipped: blank lines, a label with nothing after it, git's `hint:`/`warning:` advice, git's own
+    `Could not apply <sha>...` replay narration, and the fatal line itself. "" when nothing is left."""
     chosen = ""
     for raw in _lines(_strip_argv(detail, prefix)):
         line = raw.strip()
@@ -135,7 +138,7 @@ def _detail_line(detail, prefix=""):
             if labelled.group(1).lower() in ("hint", "warning"):
                 continue                        # git's advice, not the signer's words
             line = labelled.group(2).strip()
-        if not line or _FATAL in line.lower():
+        if not line or _FATAL in line.lower() or _REPLAY_NARRATION.match(line):
             continue
         chosen = line
     flat = " ".join(chosen.split())

@@ -6,11 +6,12 @@ Sigma never runs it. For your own repository, read it as a worked example of
 [cloud sessions](../../docs/cloud-sessions.md#cloud-environment-setup); its paths, repository and
 verify command are this repository's.
 
-**Status: measured once in a real container (2026-10-29); no goal has run here yet.** A diagnostic session
+**Status: measured in a real container (2026-10-29, and again for #2225 in 2026-11).** A diagnostic session
 found setup's work in the session: the config below, the environment's verify approval, `python3` with pytest,
-xdist and PyYAML, and git 2.56. Its one verify failed 18 tests (see
-[How long a verify takes](#how-long-a-verify-takes)). Everything else this page says the script does comes from
-its code and from `tests/test_cloud_setup_script.py`, which runs it offline with stubbed tools.
+xdist and PyYAML, and git 2.56. Its verify failed tests that pass on a laptop; #2225 traced every one: 14 to a fact of this container and 19 to merged drift that fails on any machine (the table below). The container facts are in
+this file (see [The container](#the-container) and [How long a verify takes](#how-long-a-verify-takes)).
+Everything else this page says the script does comes from its code and from `tests/test_cloud_setup_script.py`,
+which runs it offline with stubbed tools.
 
 A fresh clone of this repository cannot run the loop by itself: `.sdlc/config.json` is git-ignored
 (`.gitignore` ignores `.sdlc/*` and re-includes plans, research and acceptance records), and so is
@@ -133,8 +134,9 @@ already names one needs that line set to `null` first.
 
 ## What a run still needs a person for
 
-- A passing verify, today. The 2026-10-29 verify failed 18 tests at `6df8c2b` in this container (see
-  [How long a verify takes](#how-long-a-verify-takes)). Until they are fixed, every goal here stops at verify.
+- A passing verify. The 2026-11 baseline at `524d533` failed 28 tests and errored 5 here; #2225 fixes each
+  cause in the repository (see [How long a verify takes](#how-long-a-verify-takes)). Until that lands, every goal
+  here stops at verify.
 - The merge itself, unless `work.merge_bypass` is set and works (see [Merging today](#merging-today)).
 - A required check still pending after 450 s parks the merge (#2083). `test` took 3.2 to 5.5 minutes on
   the last twelve PRs, so a slow macOS runner queue can push it over.
@@ -151,13 +153,24 @@ The earlier command (`-n auto`, `-rs`) ran on one worker for 2h16m25s, and its r
 workers are not measured yet: at best about 70 minutes (half of 2h16m, assuming perfect scaling). Each
 `sigma:block` fix-up cycle adds another verify.
 
-That verify failed 18 tests. By name they fall into three groups:
-- tests that expect a file to be unreadable (the session runs as root, which can read any file);
-- `flock` tests;
-- tests that kill a timed-out process group.
+That verify failed 18 tests. **Measured again for #2225**, the configured command above (`-n 2`) on unmodified
+`main` at `524d533`, in this container: `28 failed, 25043 passed, 90 skipped, 9 xfailed, 107 warnings, 5 errors
+in 3662.33s (1:01:02)`. Some serial pytest runs shared the 4 vCPUs for its first ~25 minutes, so the time is an
+upper bound, not a clean two-worker figure. CI's nightly runs the same suite on a 3-core macOS runner, but it has
+been stopped at its 120-minute limit every day since 2026-10-19 (#2099), so it gives no baseline.
+On the fix branch the first full run was `1 failed, 25094 passed, 89 skipped, 9 xfailed in 3592.84s (0:59:52)`; the one failure was this file's own version numbers tripping the shipped-prose scan, fixed by five reasoned `VERSION_ALLOW` entries. The summary line of the final run is on the pull request, not here (a tree edited after a verify is not the tree that was verified).
 
-None is confirmed yet. CI's nightly runs the same suite on a 3-core macOS runner, but it has been stopped at its
-120-minute limit every day since 2026-10-19 (#2099), so it gives no baseline.
+Each failure family, its cause in this container, and its fix (all in #2225, none in the image):
+
+| Family | Cause | Fix |
+|---|---|---|
+| tests that expect a file to be unreadable | the session runs as root with every capability (`CAP_DAC_OVERRIDE`), so mode `000` denies nothing | `tests/unprivileged.py` does the denied read as an unprivileged user (`subprocess.run(user=, group=, extra_groups=[])`; `setpriv`/`runuser` also exist here), and fails loudly when it cannot drop |
+| tests that kill a timed-out process group | the group IS killed; `os.kill(pid, 0)` succeeds on a zombie, and PID 1 here reaps orphans on a ~2 s poll | `alive()`/`gone()` in `tests/unattended_support.py` read the process state (`/proc/<pid>/stat`, or `ps` without `/proc`) and treat a zombie as gone |
+| "refuses without `flock`" tests | this Python builds `fcntl` in, so a `PYTHONPATH` `fcntl.py` shim is never imported | `without_module()` in `tests/unattended_support.py` runs the script with the module set to `None` in `sys.modules` |
+| a hung-credential-helper control that could not hang | the environment injects `credential.interactive=false` through `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>`, so git never runs askpass | `hermetic()` drops `GIT_CONFIG_COUNT`, `GIT_CONFIG_PARAMETERS` and every `GIT_CONFIG_KEY_*`/`GIT_CONFIG_VALUE_*` |
+| a signing park that quoted git, not the signer | git 2.56 prints `Could not apply <sha>... <subject>` after the signer's line | product fix: `commit_signing._detail_line` skips that narration |
+| a descriptor test failing inside pytest | it faked the process-wide `os.fstat`, and pytest 9.2's fd capture calls `os.fstat` while the fake is live | the fakes answer only for the fake descriptor |
+| the rest | merged drift (fixtures, inventories, prose budgets) and the collection memory guard, unrelated to the container | fixtures and inventories caught up; prose trimmed with no ceiling changed |
 
 **If a verify holds.** When the guard holds a verify, `loop.py verify` exits 5 with no evidence. Here that most
 likely means one of two things:
@@ -170,3 +183,34 @@ about two of them the guard drops the real measurement as an outlier and admits 
 the shed is the only protection. That is a Sigma bug: a held literal-count verify should record nothing. What a
 `--land` run does after a verify holds is not specified; `docs/configuration.md` says to retry after the stated
 wait. Either way, post the peak on #2090 so the worker count can be revisited.
+
+## The container
+
+What `sigma-cloud`'s sessions run on, re-measured for #2225 on 2026-11-15 unless marked. Each fact names how it was
+read, so the next person can read it again.
+
+| Fact | Value | Read with |
+|---|---|---|
+| user | `uid=0(root)`, every capability (`CapEff 000001fffeffffff`), `NoNewPrivs 0` | `id`; `grep CapEff /proc/self/status` |
+| unprivileged users | `ubuntu` (uid 1000), `nobody` (65534); `setpriv` and `runuser` on PATH | `getent passwd ubuntu nobody`; `which setpriv runuser` |
+| OS, kernel | Ubuntu 24.04.5 LTS; `Linux 6.18.44-fc-v470` (a Firecracker microVM); cgroup v1; no Yama | `/etc/os-release`; `uname -srm`; `/proc/self/cgroup`; `ls /proc/sys/kernel/yama` |
+| PID 1 | `process_api`; it reaps orphans on a ~2 s poll, not on `SIGCHLD` (an orphan zombie lived 1.2 to 1.9 s, 5 samples; measured once, 2026-11) | `cat /proc/1/comm`; poll `/proc/<pid>/stat` of an orphaned `sleep` |
+| CPU, memory | 4 vCPUs; 16,087 MiB total; no swap; open files limit 20000 | `nproc`; `free -m`; `cat /proc/swaps`; `ulimit -n` |
+| Python | 3.13.18 (Clang 23), libpython linked into the executable, `fcntl` built in; pytest 9.2.0, xdist 3.8.0 | `python3 -c "import sys; print('fcntl' in sys.builtin_module_names)"`; `ldd "$(readlink -f "$(which python3)")"` |
+| git | 2.56.1; the global config signs every commit (`commit.gpgsign=true`, `gpg.format=ssh`, `gpg.ssh.program=/tmp/code-sign`) | `git --version`; `git config --global --list` |
+| git config from the environment | `GIT_CONFIG_COUNT=3`: `credential.interactive=false` and two `url.https://github.com/.insteadOf` | `git config --show-origin --list \| grep '^command line'` |
+| checkout | a fresh container's checkout can be a detached HEAD (reported on #2225; not re-seen in this run). `git checkout -B main origin/main` puts `main` back on the remote's tip | `git status -sb` |
+| session limits | a background command is stopped at its timeout, 30 minutes unless the call asks for more (up to 2 hours), and the full verify takes about 61 minutes: give it the longer timeout or it is cut short | the host tool's documented timeout (not measured here beyond the lost 40-minute call) |
+
+## How to diagnose a verify that fails only here
+
+1. Read the failing test's own assertion first, then ask which container fact above it touches. Root, PID 1's
+   reaping, a built-in module, and environment-injected git config each looked like a product bug before they were
+   traced.
+2. Run the one test serially (`python3 -m pytest -p no:cacheprovider -q --tb=long <id>`), never the whole suite
+   for a single cause.
+3. Before fixing, show the cause with the smallest reproduction you can (a ten-line script beats an argument), and
+   save its output beside the fix.
+4. Fix the test's hermeticity when the container makes the test's premise false; fix the product when the
+   container shows a real defect (the signing park above). Never skip, deselect or add to `verify.known_flakes`.
+5. Break the fix once and watch the test go red before trusting it green.

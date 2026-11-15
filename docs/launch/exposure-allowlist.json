@@ -46,6 +46,22 @@
     ]
   },
   {
+    "path": ".sdlc/reviews/security-review-2066-diff.md",
+    "rule": "absolute-home-path",
+    "reason": "historical review record (#2066 security review, finding S6): a made-up example path listed as one of five remote shapes that reduce to the same owner/repo; not a real home directory. Kept verbatim rather than rewritten so the audit record is unaltered (#2225)",
+    "lines": [
+      "1b1fff1cc25ee4504d3c6b5b8012ed5998443125604d5fb4a7790d1b18ac50e6"
+    ]
+  },
+  {
+    "path": ".sdlc/reviews/security-review-2066-diff.md",
+    "rule": "email-address",
+    "reason": "historical review record (#2066 security review, finding S6): an scp-style git remote (git user at a public host) listed as an example remote shape, not an email address. Kept verbatim rather than rewritten so the audit record is unaltered (#2225)",
+    "lines": [
+      "aa0115b506e863a6803b15204c39b0e3835392cbe9387db9e21b050c96ae038e"
+    ]
+  },
+  {
     "path": "CODE_OF_CONDUCT.md",
     "rule": "email-address",
     "reason": "the owner-approved shipped maintainer contact address (company domain) in the CODE_OF_CONDUCT.md contact line; intended, not a leak",

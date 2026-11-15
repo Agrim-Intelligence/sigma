@@ -6,6 +6,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -55,6 +56,23 @@ def _killed_caller_tree(tmp_path, module_file, command, grace):
             caller.kill()
 
 
+def _reads(path, text, limit):
+    """Does `path` come to read `text` within `limit` seconds? The polite tree's `sleep 60` dies at once on SIGTERM and
+    reads gone (a zombie) BEFORE bash has run its TERM trap, and `echo term > mark` truncates before it writes, so one
+    read straight after `gone` can see no file or an empty one (#2225: 2 of 30 runs under CPU load). Same 8 s budget
+    as `gone`; a lifeline that never sent SIGTERM still never writes it."""
+    end = time.monotonic() + limit
+    while True:
+        try:
+            if path.read_text().strip() == text:
+                return True
+        except OSError:
+            pass
+        if time.monotonic() >= end:
+            return False
+        time.sleep(0.05)
+
+
 def test_lifeline_asks_before_it_kills_and_then_kills_what_ignores_the_ask(tmp_path):
     """After a SIGKILLed caller the lifeline sends SIGTERM first, waits the grace, then SIGKILL."""
     real = support.SCRIPTS / "bounded_run.py"
@@ -63,7 +81,7 @@ def test_lifeline_asks_before_it_kills_and_then_kills_what_ignores_the_ask(tmp_p
     try:
         grand = _killed_caller_tree(tmp_path, real, polite, 5)
         assert support.gone(grand, 8.0)
-        assert (tmp_path / "mark").read_text().strip() == "term", "the lifeline never sent SIGTERM first"
+        assert _reads(tmp_path / "mark", "term", 8.0), "the lifeline never sent SIGTERM first"
     finally:
         support.reap(grand)
     (tmp_path / "tree.pid").unlink()

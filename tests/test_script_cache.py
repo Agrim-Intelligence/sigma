@@ -60,5 +60,25 @@ def test_collection_peak_rss_was_recorded_and_bounded(request):
     checks the recording it relies on and that a whole-suite run is inside the bound."""
     from _script_cache import rss_bound_mb
     peak, n = request.config._collect_rss_mb, request.config._collect_n
+    print(f"COLLECT_N={n} SELECTED={len(request.session.items)}")   # read by the -k test below
     assert peak > 0 and n > 0
     assert n <= 200 or peak <= rss_bound_mb(n)
+
+
+def test_a_k_selection_is_judged_on_every_collected_item():
+    """#2225 (BR-E1): `-k` deselects in `pytest_collection_modifyitems`, which runs BEFORE
+    `pytest_collection_finish`, so judging `len(session.items)` divided the RSS of collecting the whole
+    tree by the handful of tests `-k` kept: `pytest tests/ -k lock --collect-only` exited 3 on a
+    healthy tree. The guard's denominator is every collected item, before deselection."""
+    import re
+    import subprocess
+    import sys
+    base = [sys.executable, "-m", "pytest", "tests/test_script_cache.py", "-p", "no:cacheprovider", "-q"]
+    listed = subprocess.run(base + ["--collect-only"], cwd=ROOT, capture_output=True, text=True, timeout=300)
+    n_all = sum(1 for line in listed.stdout.splitlines() if "::" in line)
+    one = subprocess.run(base + ["-s", "-k", "test_collection_peak_rss_was_recorded_and_bounded"],
+                         cwd=ROOT, capture_output=True, text=True, timeout=300)
+    got = re.search(r"COLLECT_N=(\d+) SELECTED=(\d+)", one.stdout)
+    assert got, one.stdout + one.stderr
+    assert int(got.group(2)) == 1, one.stdout
+    assert int(got.group(1)) == n_all > 1, (got.group(0), n_all)

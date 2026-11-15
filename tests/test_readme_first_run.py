@@ -565,6 +565,11 @@ VERSION_ALLOW = {
                                                                   "run was measured with, not a Sigma release",
     ("docs/launch/evidence/resolver-cli-probe.md", "2.1.296"): "the version of the headless command-line tool the "
                                                                "probe ran against; it is not a Sigma release",
+    ("tools/cloud/README.md", "24.04.5"): "the Ubuntu point release, measured in the cloud container (#2225); not a Sigma release",
+    ("tools/cloud/README.md", "3.13.18"): "the Python interpreter version, measured in the cloud container (#2225); not a Sigma release",
+    ("tools/cloud/README.md", "9.2.0"): "the pytest version, measured in the cloud container (#2225); not a Sigma release",
+    ("tools/cloud/README.md", "3.8.0"): "the pytest-xdist version, measured in the cloud container (#2225); not a Sigma release",
+    ("tools/cloud/README.md", "2.56.1"): "the git version, measured in the cloud container (#2225); not a Sigma release",
 }
 
 

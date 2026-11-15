@@ -1544,7 +1544,8 @@ on by itself.
 **What was actually checked, not assumed.** The kit deletes exactly one kind of branch
 autonomously: the GOAL's own short-lived `sdlc/<goal>` branch (`work.branch_prefix` +
 the goal's stem, built once in `work.start()`), and only once its pull request is independently
-confirmed `MERGED` — never before, never speculatively. That happens in exactly two places, both in
+confirmed `MERGED` — never before, never speculatively (one local-only exception, below). After a merge it
+happens in exactly two places, both in
 `skills/sigma-loop/scripts/work.py`: `merge()`'s eager remote delete right after a direct landing,
 and `finish()`'s backstop (local `git branch -D` + a redundant remote delete) for a PR that armed
 and landed asynchronously instead. Both operate on the goal's own branch (`rec["branch"]`)
@@ -1552,6 +1553,12 @@ exclusively — neither deletes `rec["base"]`, the field that holds `feature/<na
 pass it to `_delete_remote_branch` only as a refusal guard (a branch equal to the base is refused). `feature_rebase.py`'s rebase upkeep (the other place
 a `feature/<name>` branch is touched at all) only ever **force-pushes** it — rewriting history to
 replay goal branches forward — which is never a delete.
+
+A third deletion is LOCAL only and needs no merge: `work.py`'s `_drop_cut` runs `git branch -D <branch>` on
+`_resume_or_cut`'s failure path, right after that same attempt's `git worktree add -b <branch>` created the branch.
+`-b` refuses a branch that already exists, so the deleted branch is seconds old and never a `feature/<name>` branch;
+the work stays on the remote checkpoint ref it was cut from. The invariant above is unchanged: no automatic path
+deletes a `feature/<name>` branch.
 
 Three further sites *build* a two-sided git push refspec (`<src>:<dst-ref>`) — the syntax git itself reads as a delete
 of that ref whenever `<src>` is empty, independent of any `-d`/`-D` flag or `--delete` verb: `skills/sigma-define/scripts/define.py`'s `_step_branch` (which is how a

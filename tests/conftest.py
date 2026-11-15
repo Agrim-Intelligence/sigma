@@ -95,16 +95,25 @@ def _rss_mb():
     return r / (1024 * 1024 if sys.platform == "darwin" else 1024)
 
 
+def pytest_itemcollected(item):
+    """Count every collected item on its own session (not a module global: an in-process `pytest.main`
+    is a second session). `-k`/`-m` deselect later, in `pytest_collection_modifyitems`, so this is the
+    size of the tree whose collection the RSS guard below judges (#2225)."""
+    item.session._sigma_collected = getattr(item.session, "_sigma_collected", 0) + 1
+
+
 def pytest_collection_finish(session):
     _script_cache.fresh = True   # collection is over: from here every load is a fresh module
-    peak, n = _rss_mb(), len(session.items)
+    # n = every item collected, BEFORE -k/-m deselection: the peak is the RSS of collecting all of them,
+    # so dividing it by the selected few failed `pytest tests/ -k lock` on a healthy tree (#2225).
+    peak, n = _rss_mb(), getattr(session, "_sigma_collected", 0)
     session.config._collect_rss_mb, session.config._collect_n = peak, n
     if n > 200:
         worst = _script_cache.worst_live_copies(pathlib.Path(__file__).resolve().parent.parent)
         if worst and worst[0][1] > _script_cache.MAX_COPIES:
             pytest.exit(f"{worst[0][1]} live copies of one script module after collection (max "
                         f"{_script_cache.MAX_COPIES}): {worst}; see tests/test_script_cache.py", returncode=3)
-    if n > 200 and peak > _script_cache.rss_bound_mb(n):   # a partial run (-k, one file) is too small to judge
+    if n > 200 and peak > _script_cache.rss_bound_mb(n):   # a collection of <= 200 items (one file) is too small to judge
         pytest.exit(f"collection peaked at {peak:.0f} MB for {n} tests (bound "
                     f"{_script_cache.rss_bound_mb(n):.0f}): a script is being loaded uncached; "
                     "see tests/test_script_cache.py", returncode=3)

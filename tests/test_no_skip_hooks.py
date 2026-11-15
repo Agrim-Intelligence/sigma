@@ -1,7 +1,7 @@
 """A static pin on the vectors that could quietly disarm the guards behind the public export's
 self-consistency (#1203). It is NOT a lock.
 
-Pinned: (1) no conftest defines a collection/run/report hook (the list is HOOKS), uses `add_marker`, or
+Pinned: (1) no conftest defines a collection/run/report hook (the list is HOOKS; the one allowed exception, `pytest_itemcollected` in tests/conftest.py, only counts items and neither deselects nor marks them), uses `add_marker`, or
 assigns `collect_ignore` / `collect_ignore_glob`; (2) the eight guard tests carry no skip/xfail decorator
 or `pytestmark`, call no `pytest.skip` / `importorskip` / `xfail`, and `return` nowhere before their first
 `assert`; (3) the only exemption is the explicit skip that the export-time transform of #1203 (the

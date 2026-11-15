@@ -10,6 +10,8 @@ import sys
 
 import pytest
 
+import unprivileged
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "tools" / "readiness" / "leftovers.py"
@@ -287,7 +289,8 @@ class _Flow:
     """A scratch repository, a fake profile and a runner for the guide's copy-out, cache-removal, final-check
     and cleanup blocks under a chosen shell. Nothing here touches a real repository or profile."""
 
-    def __init__(self, tmp_path, shell):
+    def __init__(self, tmp_path, shell, drop=False):
+        self.drop = drop            # run the blocks through `tests/unprivileged.py` (a denial must deny, #2225)
         self.exe = shutil.which(shell)
         if self.exe is None:
             pytest.skip(f"{shell} is not installed on this machine")
@@ -315,6 +318,9 @@ class _Flow:
         (directory / "leftovers.py").write_text(f"open({str(self.marker)!r}, 'w').write('x')\n", encoding="utf-8")
 
     def go(self, block):
+        if self.drop:
+            return unprivileged.run([self.exe, "-c", block], cwd=self.repo, env=self.env, reach=[self.repo],
+                                    text=True, capture_output=True, timeout=60)
         return subprocess.run([self.exe, "-c", block], cwd=self.repo, env=self.env, text=True,
                               capture_output=True, timeout=60)
 
@@ -343,20 +349,27 @@ def test_documented_copy_out_then_cache_removal_then_final_check_is_green(tmp_pa
 
 
 @pytest.mark.parametrize("shell", SHELLS)
-def test_copy_out_never_runs_planted_code_in_a_shared_or_predictable_place(tmp_path, shell):
+def test_copy_out_never_runs_planted_code_in_a_shared_or_predictable_place(shell):
     """Reviewer exploit: a predictable directory under the temporary directory, made read-only by someone
     else with a planted script, made `cp` fail and the final command ran the planted file. Plant at the
     old location, at the new one, read-only and as symlinks, and let the cached checker be unreadable
-    in one case: the planted code must never run and a failed copy must print the fallback line."""
-    flow = _Flow(tmp_path, shell)
-    flow.cache("1.0.0")
-    for where in (flow.tmp / "sigmaloop-check", flow.gitdir / "sigmaloop-check"):
-        flow.plant(where)
-        where.chmod(0o555)                                  # read-only planted directory
-        (where / "leftovers.py").chmod(0o444)
-    copy, final = flow.guide()
-    assert not flow.marker.exists(), "planted code ran"
-    assert final.returncode == 0 or "no usable copy" in final.stdout + copy.stdout, (copy.stdout, final.stdout)
+    in one case: the planted code must never run and a failed copy must print the fallback line.
+
+    The blocks run as an unprivileged uid when the suite is root (`tests/unprivileged.py`): root writes through
+    a read-only planted directory, so as root this test stayed green with the copy block's replace-and-ownership
+    guard removed (#2225, BR-A5)."""
+    with unprivileged.tree() as root:
+        flow = _Flow(root, shell, drop=True)
+        flow.cache("1.0.0")
+        for where in (flow.tmp / "sigmaloop-check", flow.gitdir / "sigmaloop-check"):
+            flow.plant(where)
+        unprivileged.hand_over(root)
+        for where in (flow.tmp / "sigmaloop-check", flow.gitdir / "sigmaloop-check"):
+            where.chmod(0o555)                              # read-only planted directory
+            (where / "leftovers.py").chmod(0o444)
+        copy, final = flow.guide()
+        assert not flow.marker.exists(), "planted code ran"
+        assert final.returncode == 0 or "no usable copy" in final.stdout + copy.stdout, (copy.stdout, final.stdout)
 
 
 @pytest.mark.parametrize("shell", SHELLS)
@@ -380,20 +393,20 @@ def test_copy_out_does_not_follow_a_symlinked_directory_or_file(tmp_path, shell)
 
 
 @pytest.mark.parametrize("shell", SHELLS)
-def test_failed_copy_prints_the_fallback_and_leaves_nothing_runnable(tmp_path, shell):
-    flow = _Flow(tmp_path, shell)
-    flow.cache("1.0.0")
-    cached = next((flow.profile / "plugins" / "cache").rglob("leftovers.py"))
-    cached.chmod(0o000)                                     # cp cannot read it
-    try:
+def test_failed_copy_prints_the_fallback_and_leaves_nothing_runnable(shell):
+    """The blocks run as an unprivileged uid when the suite is root (`tests/unprivileged.py`): root's `cp` reads a
+    mode-000 file, so without the drop the copy never fails (#2225)."""
+    with unprivileged.tree() as root:
+        flow = _Flow(root, shell, drop=True)
+        flow.cache("1.0.0")
+        cached = next((flow.profile / "plugins" / "cache").rglob("leftovers.py"))
+        unprivileged.hand_over(root)
+        cached.chmod(0o000)                                 # cp cannot read it
         copy, final = flow.guide()
-    finally:
-        if cached.exists():
-            cached.chmod(0o644)
-    assert "no usable copy" in copy.stdout, copy.stdout + copy.stderr
-    assert not (flow.gitdir / "sigmaloop-check" / "leftovers.py").exists(), "a stale file is left to run"
-    assert final.returncode != 0 and "no verified copy" in final.stdout, final.stdout + final.stderr
-    assert not flow.marker.exists()
+        assert "no usable copy" in copy.stdout, copy.stdout + copy.stderr
+        assert not (flow.gitdir / "sigmaloop-check" / "leftovers.py").exists(), "a stale file is left to run"
+        assert final.returncode != 0 and "no verified copy" in final.stdout, final.stdout + final.stderr
+        assert not flow.marker.exists()
 
 
 @pytest.mark.parametrize("shell", SHELLS)
