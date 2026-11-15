@@ -92,7 +92,9 @@ def test_acceptance_baseline_falls_back_to_remote_base_when_landed(tmp_path):
     assert blob == b'landed\n'
 
 
-def test_acceptance_baseline_earliest_added_across_refs_not_first_listed(tmp_path):
+def test_acceptance_baseline_first_listed_ref_with_an_add_wins_not_committer_time(tmp_path):
+    """Review fix B3: committer dates are forgeable, so refs are taken in the caller's order (remote first) and the
+    earlier-dated add on a later-listed ref does not win."""
     repo = make(tmp_path)
     git(repo, 'checkout', '-q', '-b', 'early')
     write_commit(repo, 'early\n', when='2020-01-01T00:00:00Z')
@@ -100,7 +102,33 @@ def test_acceptance_baseline_earliest_added_across_refs_not_first_listed(tmp_pat
     git(repo, 'checkout', '-q', '-b', 'late')
     write_commit(repo, 'late\n', when='2024-01-01T00:00:00Z')
     blob, _ = load('review_context').first_added_blob(repo, ['late', 'early'], REL)
-    assert blob == b'early\n'
+    assert blob == b'late\n'
+
+
+def test_acceptance_baseline_backdated_local_rewrite_does_not_replace_pushed_baseline(tmp_path):
+    """Review fix B3: a pushed first add survives a local history rewrite whose commit claims to be from 2001."""
+    repo = make(tmp_path)
+    git(repo, 'checkout', '-q', '-b', 'sdlc/9')
+    write_commit(repo, 'pushed original\n')
+    git(repo, 'update-ref', 'refs/remotes/origin/sdlc/9', 'HEAD')      # what a push leaves behind
+    git(repo, 'reset', '-q', '--hard', 'main')
+    write_commit(repo, 'forged\n', when='2001-01-01T00:00:00Z')
+    blob, _ = load('review_context').first_added_blob(repo, ['origin/sdlc/9', 'sdlc/9', 'origin/main'], REL)
+    assert blob == b'pushed original\n'
+
+
+def test_acceptance_baseline_follows_the_branch_line_not_a_merged_in_backdated_add(tmp_path):
+    """Review fix B3: within one ref the baseline is the first add on its first-parent line, so a side branch that
+    added a backdated copy and was merged in does not become the baseline."""
+    repo = make(tmp_path)
+    git(repo, 'checkout', '-q', '-b', 'side')
+    write_commit(repo, 'forged\n', when='2001-01-01T00:00:00Z')
+    git(repo, 'checkout', '-q', 'main')
+    git(repo, 'checkout', '-q', '-b', 'sdlc/9')
+    write_commit(repo, 'real\n', when='2024-01-01T00:00:00Z')
+    git(repo, 'merge', '-q', '-X', 'theirs', '--no-edit', 'side', when='2024-01-02T00:00:00Z')   # tip = forged
+    blob, _ = load('review_context').first_added_blob(repo, ['sdlc/9'], REL)
+    assert blob == b'real\n'
 
 
 def test_acceptance_baseline_branch_doc_unchanged():

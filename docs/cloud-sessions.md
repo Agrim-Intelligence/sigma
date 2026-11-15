@@ -99,29 +99,37 @@ is idempotent), and syncs the worktree copy. Because the record's bytes change, 
 `/sigma-unpark`; no verb edits or removes one.
 
 - **What is checked, clause by clause.** H: the stored `criteria_sha256` equals the hash of the current original block.
-  B: the first committed blob of the record (the earliest-added across the goal branch, its remote and the base) has
-  criteria that are an exact, ordered prefix of the current list, and equal hashes when both carry one. P: the record
-  parses (3 to 7 original items, added items only under `## Added criteria`). R: no added criterion lacks slice and
-  reason. D: when a committed baseline exists, a missing or unparseable record refuses. At `commit` the worktree copy
-  (the bytes about to be staged) and the root copy may differ only by appended criteria. At `merge()` with neither copy
-  on disk (the root copy removed after a merge, #1474) the committed branch tip is read, so absence of the root file is
-  not a refusal.
+  B: the record's first committed blob has criteria that are an exact, ordered prefix of the current list, equal
+  hashes when both carry one, a hash the baseline carried is still there, and `drafted` equals the baseline's. That
+  blob is the first add on the remote goal branch's first-parent line when the remote has one, else on the local
+  branch, else on the base, chosen by that order and by ancestry, never by commit date (dates are forgeable). P: the
+  record parses (3 to 7 original items, added items only under `## Added criteria`). R: no added criterion lacks slice
+  and reason. D: when a committed baseline exists, a missing or unparseable record refuses. At `commit` the worktree
+  copy (the bytes about to be staged) and the root copy may differ only by appended criteria, and with neither copy on
+  disk `commit` and `pr` refuse (that is the deletion about to be staged or pushed). Only at `merge()`, with neither
+  copy on disk (the root copy removed after a merge, #1474), is the committed branch tip read instead, so absence of
+  the root file is not a refusal there.
 - **Issue divergence (GitHub goals).** `commit` and `pr` compare the record's original criteria with the issue's
   `## Done when` (alias normalised, checkbox state and whitespace ignored) and refuse on a difference (the record wins and
-  is never rewritten; a person decides). It is skipped, and says so, for a drafted record, a legacy record without
-  `criteria_sha256`, an issue with no criteria section, and a local-file goal. An unreadable issue fails closed at `pr`
-  (the next tick retries) and open at `commit` (offline work stays possible). `pr` also requires, for every added
-  criterion, an issue comment carrying its extend marker for that exact text, slice and reason; unreadable comment
-  history refuses.
+  is never rewritten). The refusal records the park itself (`needs_decision`), so exit 4 means the goal already left
+  the claimed state: do not `record`, never edit the record; a person resolves it with `/sigma-unpark`. It runs
+  whatever the record's `drafted` flag or `criteria_sha256` line say (both are in the record's own bytes, so neither
+  can switch it off), and is skipped, and says so, only for an issue with no valid criteria section and a local-file
+  goal. An unreadable issue fails closed at `pr` (the next tick retries, no park) and open at `commit` (offline work
+  stays possible). `pr` also requires, for every added criterion, an issue comment carrying its extend marker for that
+  exact text, slice and reason; unreadable comment history refuses.
 - **Residuals, stated.** Tamper-evident, not tamper-proof. Before the first `work.py commit` there is no committed
-  baseline: a record with `criteria_sha256` is checked by that hash alone and a legacy record (no hash) not at all, so a
-  record rewritten together with its hash before the first commit passes (the divergence check narrows this for
-  non-drafted GitHub goals; drafted and local-file goals have no compensating check). A legacy record also accepts
-  reasonless criteria appended inside its `## Done when` block (up to 7). The baseline is the earliest-added blob, so a
-  tampered first commit is the baseline forever, and a force-push that rewrites the remote history defeats it: only host
-  branch protection stops that. Where `.sdlc/acceptance` is gitignored there is no committed baseline;
-  `/sigma-doctor` reports it. The extend comment can be fabricated by anyone who can comment: it is an audit trail, not
-  proof of authorship.
+  baseline: a record with `criteria_sha256` is checked by that hash alone and a legacy record (no hash) not at all by
+  the local clauses. The issue divergence check is then the only witness, and it covers only a GitHub goal whose issue
+  has a valid criteria section and is readable at `commit`. So a record rewritten before the first commit (its hash
+  recomputed, its hash line deleted, or `drafted` flipped) still passes for a local-file goal, for a GitHub goal whose
+  issue has no valid criteria section (the drafted case), when the issue is unreadable at `commit`, or when whoever
+  rewrites it also edits the issue to match; that tampered first commit is then the baseline forever. A legacy
+  baseline (no hash) also accepts reasonless criteria appended inside its `## Done when` block (up to 7). Before the
+  first push the local branch is the only witness, so rewriting local history before that push replaces the baseline;
+  after it, a force-push that rewrites the remote history defeats it, and only host branch protection stops that.
+  Where `.sdlc/acceptance` is gitignored there is no committed baseline; `/sigma-doctor` reports it. The extend
+  comment can be fabricated by anyone who can comment: it is an audit trail, not proof of authorship.
 - **Exits not guarded.** The checkpoint push and the `work.py rebase` force-push push bytes that `commit` already
   checked and run no guard of their own; a raw `git push` or a hand edit after the last `commit` and before `pr` is
   caught only at `pr` and `merge()`.

@@ -393,26 +393,30 @@ def _git_out(root, args):
 
 
 def first_added_blob(root, refs, path):
-    """``(bytes_or_None, reason)``: the bytes `path` had in the EARLIEST commit that added it, across ``refs``.
+    """``(bytes_or_None, reason)``: the bytes `path` had in the FIRST commit that added it, on the first of ``refs``
+    that has such a commit.
 
     #2222 D1/m1. This is the acceptance guard's committed baseline, and it is deliberately NOT `_branch_doc`
     (which serves the TIP): a tampered record committed first and changed again would make the tip look like its
-    own baseline. For each ref `git log <ref> --diff-filter=A --reverse` lists the commits that ADDED the path
-    (a delete and re-add lists both; the first line is the earliest). Across refs the earliest commit by committer
-    time wins, ties going to the earlier ref in ``refs`` (callers list the remote first, since a pushed copy
-    outlives a local amend). A local `commit --amend` or reset therefore cannot replace the baseline once it was
-    pushed; a FORCE-PUSH rewriting the remote still can, and only host branch protection stops that.
+    own baseline. For each ref `git log <ref> --first-parent --diff-filter=A --reverse` lists the commits on that
+    ref's own first-parent line that ADDED the path, oldest by ANCESTRY first (a delete and re-add lists both; the
+    first line wins). Refs are taken in the caller's ORDER, never by committer time (#2222 review B3): committer
+    dates are forgeable, so comparing them let a backdated local commit outrank a pushed one. Callers list the
+    remote branch first, so once the record was pushed, a local `commit --amend`, reset or backdated rewrite cannot
+    replace the baseline; before the first push the local branch is the only witness, and rewriting it before that
+    push does replace the baseline. `--first-parent` keeps a merged-in side branch's add out. A FORCE-PUSH rewriting
+    the remote still defeats it, and only host branch protection stops that.
 
     Every git failure returns ``(None, "<reason>")`` and never raises: the CALLER decides what an unavailable
     baseline means (acceptance.prefix_refusal skips clause B and prints it). The body is capped at the acceptance
-    record's MAX_BYTES before it is read. Cost: one `git log` per ref bounded to one path, then one `cat-file -s`
-    and one `git show`; none of them grows with the fleet."""
+    record's MAX_BYTES before it is read. Cost: at most one `git log` per ref bounded to one path, then one
+    `cat-file -s` and one `git show`; none of them grows with the fleet."""
     best, reasons = None, []
-    for order, ref in enumerate(refs):
+    for ref in refs:
         if not ref or str(ref).startswith("-"):
             reasons.append("unsafe ref %r" % (ref,))
             continue
-        out = _git_out(root, ["log", ref, "--diff-filter=A", "--reverse", "--format=%H %ct", "--", path])
+        out = _git_out(root, ["log", ref, "--first-parent", "--diff-filter=A", "--reverse", "--format=%H", "--", path])
         if out is None:
             reasons.append("%s unreadable" % ref)
             continue
@@ -420,9 +424,8 @@ def first_added_blob(root, refs, path):
         if not lines:
             reasons.append("%s never added %s" % (ref, path))
             continue
-        sha, ts = lines[0][0], int(lines[0][1])
-        if best is None or ts < best[1]:
-            best = (sha, ts, order)
+        best = (lines[0][0],)
+        break
     if best is None:
         return None, "; ".join(reasons) or "no refs"
     size = _git_out(root, ["cat-file", "-s", "%s:%s" % (best[0], path)])

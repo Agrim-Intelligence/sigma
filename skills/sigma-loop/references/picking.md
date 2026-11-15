@@ -276,13 +276,9 @@ installed, a human applies the label by hand once a filed design pass is confirm
 
 ## Goal readiness (`goal_readiness`, #2222)
 
-After design-check, run `result=$(python3 "${CLAUDE_SKILL_DIR}/scripts/loop.py" readiness-check .sdlc "$goal")`.
-The first word is `OFF`, `PROCEED`, `WARN <missing sections>` (the default mode `warn`: say what is missing and carry
-on) or `PARKED <reason>` (`require`: the goal is parked with the missing sections named, **loop back to step 1**). An
-invalid `goal_readiness.mode` exits 2 with `REFUSED` and prints nothing on stdout: fix the setting, do not treat it as
-`warn`. This prose step is not load-bearing: `work.py start` runs the same check in Python, and `/sigma-promote` runs it
-at the label write. The other writers of `sdlc:goal` do not, so `require` reaches those goals at `start`. Settings:
-`docs/configuration.md`.
+After design-check run `loop.py readiness-check .sdlc "$goal"`: `OFF`/`PROCEED` go on, `WARN <missing>` says so and goes on,
+`PARKED <reason>` loops back to step 1, exit 2 `REFUSED` means fix `goal_readiness.mode`. `work.py start` and `/sigma-promote`
+run the same check ([configuration](../../../docs/configuration.md)).
 
 ## Dependencies in prose
 

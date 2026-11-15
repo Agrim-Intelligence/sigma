@@ -62,6 +62,8 @@ def fx(tmp_path, monkeypatch):
     f = Fx()
     f.source = Source()
     monkeypatch.setattr(work, '_acceptance_source', lambda sdlc_dir, config: f.source)
+    f.parks = []
+    monkeypatch.setattr(work, '_park_goal', lambda sdlc_dir, source, goal, detail: f.parks.append((goal, detail)))
     origin = tmp_path / 'origin.git'
     subprocess.run(['git', 'init', '-q', '--bare', '-b', 'main', str(origin)], check=True)
     f.repo = tmp_path / 'repo'
@@ -262,22 +264,59 @@ def test_acceptance_rollout_set_verify_command_passes_at_commit_and_pr(fx):
 # ---- issue divergence ----------------------------------------------------------------------------------------
 
 def test_acceptance_pr_parks_when_issue_criteria_diverge_from_record(fx):
+    """Review fix M1: the divergence refusal records the park itself (D4), so exit 4 means the goal already left
+    the claimed state, and the text says not to `record`."""
     fx.source.body = BODY.replace('Third recovers.', 'Third explodes.')
     out = fx.pr()
     assert refused(out) and 'issue' in out and '(nothing pushed)' in out
+    assert 'Parked it' in out and 'do not `record`' in out
+    assert len(fx.parks) == 1 and fx.parks[0][0] == '42' and 'Done when' in fx.parks[0][1]
 
 
-def test_acceptance_divergence_skipped_for_drafted_record(fx):
+def test_acceptance_commit_parks_when_issue_criteria_diverge_from_record(fx):
+    fx.source.body = BODY.replace('Third recovers.', 'Third explodes.')
+    out = fx.commit()
+    assert refused(out) and 'Parked it' in out and staged(fx) == '' and len(fx.parks) == 1
+
+
+def test_acceptance_divergence_park_failure_says_still_claimed(fx, monkeypatch):
+    def boom(*a):
+        raise RuntimeError('ledger down')
+    monkeypatch.setattr(work, '_park_goal', boom)
+    fx.source.body = BODY.replace('Third recovers.', 'Third explodes.')
+    out = fx.pr()
+    assert refused(out) and 'STILL CLAIMED' in out and 'parked' in out
+
+
+def test_acceptance_transient_and_tamper_refusals_do_not_park(fx):
+    fx.source.fail = True
+    assert refused(fx.pr()) and fx.parks == []                  # transient: the next tick retries
+    fx.source.fail = False
+    first_commit(fx)
+    tamper(fx.wt_file, ORIG, added='- [ ] Naked line.\n')
+    assert refused(fx.pr()) and fx.parks == []
+
+
+def test_acceptance_divergence_runs_for_drafted_record_when_issue_has_a_section(fx):
+    """Review fix B2: `drafted: true` is no switch-off; a drafted record only legitimately arises with no section."""
     text = fx.root_file.read_text().replace('drafted: false', 'drafted: true')
     fx.root_file.write_text(text)
     fx.source.body = BODY.replace('Third recovers.', 'Third explodes.')
+    assert refused(fx.pr())
+
+
+def test_acceptance_divergence_skipped_for_drafted_record_when_issue_has_no_section(fx):
+    text = fx.root_file.read_text().replace('drafted: false', 'drafted: true')
+    fx.root_file.write_text(text)
+    fx.source.body = 'Prose only; the criteria were drafted.'
     assert not refused(fx.pr())
 
 
-def test_acceptance_divergence_skipped_for_legacy_record_without_hash(fx):
+def test_acceptance_divergence_runs_for_record_without_hash_when_issue_has_a_section(fx):
+    """Review fix B2: deleting the `criteria_sha256` line is no switch-off either."""
     legacy(fx.root_file)
     fx.source.body = BODY.replace('Third recovers.', 'Third explodes.')
-    assert not refused(fx.pr())
+    assert refused(fx.pr())
 
 
 def test_acceptance_divergence_skipped_when_issue_has_no_criteria_section(fx):
@@ -349,7 +388,6 @@ def test_acceptance_pr_refuses_when_comment_history_unreadable(fx):
 
 
 def test_acceptance_pr_local_goal_exempt_from_extend_comment_check_and_says_so(fx, capsys):
-    text = (BODY + '\n## Added criteria\n' + GOOD_ADDED)
     out = work._acceptance_issue_refusal(fx.sdlc, {}, fx.rec, 'g.md', '(x)', closed=True, comments=True)
     assert out is None and 'extend comment: skipped (local goal)' in capsys.readouterr().err
 
@@ -359,3 +397,113 @@ def test_acceptance_source_is_none_unless_the_backlog_is_github(tmp_path):
     fresh = load('work')
     assert fresh._acceptance_source(tmp_path / '.sdlc', {}) is None
     assert fresh._acceptance_source(tmp_path / '.sdlc', {'discovery': {'source': 'local-goals'}}) is None
+
+
+# ---- review fix B1: a deletion about to be staged is judged, not the committed tip ---------------------------
+
+def test_acceptance_commit_refuses_deleting_both_copies_after_baseline(fx):
+    """Clause D at `commit`: with a committed baseline, neither copy on disk is the deletion about to be staged."""
+    first_commit(fx)
+    fx.root_file.unlink()
+    fx.wt_file.unlink()
+    out = fx.commit()
+    assert refused(out) and 'missing' in out and '(nothing committed)' in out
+    assert staged(fx) == ''
+    assert '.sdlc/acceptance/42.md' in git(fx.wt, 'ls-tree', '-r', '--name-only', 'HEAD')
+
+
+def test_acceptance_pr_refuses_deleting_both_copies_after_baseline_pushed(fx):
+    """Clause D at `pr`: the tip on origin still holds the record, but what `pr` pushes is the local deletion."""
+    first_commit(fx)
+    git(fx.wt, 'push', '-q', 'origin', 'sdlc/42')
+    fx.root_file.unlink()
+    fx.wt_file.unlink()
+    git(fx.wt, 'add', '-A')
+    git(fx.wt, 'commit', '-qm', 'drop the record')     # a raw commit past the guarded `work.py commit`
+    out = fx.pr()
+    assert refused(out) and 'missing' in out and '(nothing pushed)' in out
+
+
+# ---- review fix B2: hash deletion and a drafted flip are not switch-offs -------------------------------------
+
+def test_acceptance_commit_refuses_hash_deleted_and_criteria_edited_before_first_commit(fx):
+    """No baseline yet: the issue's Done when is the only witness, and it runs although the hash line is gone."""
+    tamper(fx.root_file, EDITED)
+    legacy(fx.root_file)
+    out = fx.commit()
+    assert refused(out) and 'issue' in out and staged(fx) == ''
+
+
+def test_acceptance_commit_refuses_drafted_flip_and_criteria_edited_before_first_commit(fx):
+    tamper(fx.root_file, EDITED)                    # hash re-computed, so clause H is silent
+    fx.root_file.write_text(fx.root_file.read_text().replace('drafted: false', 'drafted: true'))
+    out = fx.commit()
+    assert refused(out) and 'issue' in out and staged(fx) == ''
+
+
+def test_acceptance_commit_refuses_hash_line_dropped_after_baseline(fx):
+    """Clause B: the criteria are unchanged (so the issue witness is silent) but the hash the baseline had is gone."""
+    first_commit(fx)
+    legacy(fx.root_file)
+    legacy(fx.wt_file)
+    out = fx.commit()
+    assert refused(out) and 'criteria_sha256' in out and staged(fx) == ''
+
+
+def test_acceptance_commit_refuses_drafted_flip_after_baseline(fx):
+    first_commit(fx)
+    for f in (fx.root_file, fx.wt_file):
+        f.write_text(f.read_text().replace('drafted: false', 'drafted: true'))
+    out = fx.commit()
+    assert refused(out) and 'drafted' in out and staged(fx) == ''
+
+
+def test_acceptance_commit_refuses_worktree_only_drafted_flip(fx):
+    """m1: the `drafted` equality in `_acceptance_is_extension` is what sees a worktree-only flip at commit, before
+    clause B (which judges the worktree copy against the baseline) gets a turn."""
+    first_commit(fx)
+    tamper(fx.wt_file, ORIG, added=GOOD_ADDED)
+    fx.wt_file.write_text(fx.wt_file.read_text().replace('drafted: false', 'drafted: true'))
+    out = fx.commit()
+    assert refused(out) and 'worktree copy and the root copy' in out and staged(fx) == ''
+
+
+# ---- review fix B3: a backdated local rewrite cannot replace the pushed baseline ------------------------------
+
+def test_acceptance_commit_refuses_backdated_local_rewrite_after_baseline_pushed(fx):
+    first_commit(fx)
+    git(fx.wt, 'push', '-q', 'origin', 'sdlc/42')                      # the pushed original is the baseline
+    git(fx.wt, 'reset', '-q', '--hard', 'main')                         # rewrite the local branch from scratch
+    fx.source.body = BODY_EDITED
+    tamper(fx.root_file, EDITED)
+    fx.wt_file.parent.mkdir(parents=True, exist_ok=True)
+    tamper_text = fx.root_file.read_text()
+    fx.wt_file.write_text(tamper_text)
+    env = {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+    env.update(GIT_AUTHOR_NAME='t', GIT_AUTHOR_EMAIL='t@t', GIT_COMMITTER_NAME='t', GIT_COMMITTER_EMAIL='t@t',
+               GIT_AUTHOR_DATE='2001-01-01T00:00:00Z', GIT_COMMITTER_DATE='2001-01-01T00:00:00Z')
+    subprocess.run(['git', '-C', str(fx.wt), 'add', '-A'], check=True, env=env)
+    subprocess.run(['git', '-C', str(fx.wt), 'commit', '-qm', 'forged first add'], check=True, env=env)
+    (fx.wt / 'more.txt').write_text('x')                                # something for `commit` to stage
+    out = fx.commit()
+    assert refused(out) and 'ordered prefix' in out and staged(fx) == ''
+    out = fx.pr()
+    assert refused(out) and 'ordered prefix' in out
+
+
+# ---- m4: a source that cannot be built is an unreadable issue, not a traceback -------------------------------
+
+def _no_source(sdlc_dir, config):
+    raise RuntimeError('gh missing')
+
+
+def test_acceptance_pr_refuses_when_the_issue_source_cannot_be_built(fx, monkeypatch):
+    monkeypatch.setattr(work, '_acceptance_source', _no_source)
+    out = fx.pr()
+    assert refused(out) and 'could not read the issue' in out and 'gh missing' in out
+
+
+def test_acceptance_commit_proceeds_when_the_issue_source_cannot_be_built(fx, monkeypatch, capsys):
+    monkeypatch.setattr(work, '_acceptance_source', _no_source)
+    out = fx.commit()
+    assert not refused(out or '') and 'issue unreadable' in capsys.readouterr().err

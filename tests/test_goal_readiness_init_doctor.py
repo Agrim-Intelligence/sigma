@@ -56,7 +56,8 @@ def test_goal_readiness_init_never_overwrites_existing_template(tmp_path):
 def test_goal_readiness_init_template_has_agent_ready_sections():
     text = (ROOT / 'skills/sigma-init/github-templates/ISSUE_TEMPLATE/goal.md.tmpl').read_text()
     assert re.search(r'(?m)^## Done when$', text) and re.search(r'(?m)^## Verification command$', text)
-    assert text.startswith('---\n') and 'labels: ["sdlc:goal"]' in text
+    assert text.startswith('---\n') and 'labels: ["goal"]' in text
+    assert 'sdlc:' not in text.split('\n---\n', 1)[0]    # m7: a template never writes loop membership (label model)
     acceptance = mod(ROOT / 'skills/sigma-loop/scripts/acceptance.py', 'acc_gr')
     with pytest.raises(ValueError):                       # an unfilled template is refused, not recorded as criteria
         acceptance.criteria(text)

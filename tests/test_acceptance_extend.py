@@ -254,3 +254,17 @@ def test_acceptance_review_brief_names_original_criteria_unchanged_check(rec, tm
     assert 'Original criteria unchanged since the first record (`acceptance.py check`): yes' in brief(sdlc, tmp_path)
     file.write_text(file.read_text().replace('Second refuses bad input.', 'Second refuses nothing.'))
     assert 'unchanged since the first record (`acceptance.py check`): NO, ' in brief(sdlc, tmp_path)
+
+
+def test_acceptance_extend_refuses_when_the_comment_is_refused_not_raised(rec):
+    """m8: a GitHub source's `note` returns False when it declines to write (a foreign issue under hard stops).
+    Nothing reached the issue, so nothing is written either: `pr` would refuse the hand-made-looking line anyway."""
+    sdlc, file = rec
+
+    class Declines(Source):
+        def note(self, goal, text):
+            return False
+    before = file.read_bytes()
+    with pytest.raises(ValueError, match='comment'):
+        extend(sdlc, source=Declines())
+    assert file.read_bytes() == before

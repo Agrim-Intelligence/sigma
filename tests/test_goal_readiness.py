@@ -147,9 +147,90 @@ def test_goal_readiness_start_calls_the_readiness_check_before_cutting_anything(
     work = load('work')
     monkeypatch.setattr(work, '_dirty_root_refusal', lambda *a, **k: None)
     monkeypatch.setattr(work, '_readiness_refusal', lambda sdlc, cfg, goal: 'READINESS REFUSED: marker (nothing started)')
+    real_load = work._load
+    monkeypatch.setattr(work, '_load', lambda name: _FakeLoop() if name == 'loop' else real_load(name))
     calls = []
     out = work.start(tmp_path / '.sdlc', {}, '42', run=lambda cwd, argv: calls.append(argv) or '')
     assert out.startswith('READINESS REFUSED: marker') and calls == []
+
+
+class _FakeLoop:
+    """Stands in for `loop.py` inside `work.start`: records the transition `start` makes, touches nothing real."""
+    def __init__(self, fail=False):
+        self.calls, self.fail = [], fail
+        self.sources = self
+
+    def get_source(self, sdlc_dir, config):
+        return 'SRC'
+
+    def _record(self, sdlc_dir, source, goal, result, detail='', **kw):
+        if self.fail:
+            raise RuntimeError('ledger down')
+        self.calls.append(('record', goal, result, detail, kw.get('qkind')))
+
+    def _release(self, sdlc_dir, source, goal, reason='', **kw):
+        self.calls.append(('release', goal, reason))
+        return True
+
+
+def _start_with(monkeypatch, tmp_path, config, fake, body=BAD):
+    work = load('work')
+    real_load = work._load
+    monkeypatch.setattr(work, '_load', lambda name: fake if name == 'loop' else real_load(name))
+    monkeypatch.setattr(work, '_dirty_root_refusal', lambda *a, **k: None)
+    monkeypatch.setattr(work, '_acceptance_source', lambda sdlc, cfg: Src(body))
+    calls = []
+    out = work.start(tmp_path / '.sdlc', config, '42', run=lambda cwd, argv: calls.append(argv) or '')
+    return out, calls
+
+
+def test_goal_readiness_start_require_parks_the_goal_it_refuses(tmp_path, monkeypatch):
+    """Review fix M2 (AC-3 on the Python path): exit 4 from `start` means the goal already left the claimed state,
+    so a `require` refusal at start records the park with the missing sections named, and nothing is cut."""
+    fake = _FakeLoop()
+    out, calls = _start_with(monkeypatch, tmp_path, {'goal_readiness': {'mode': 'require'}}, fake)
+    assert out.startswith('READINESS REFUSED:') and 'Parked it' in out and calls == []
+    assert fake.calls and fake.calls[0][:3] == ('record', '42', 'parked')
+    assert '## Done when' in fake.calls[0][3] and fake.calls[0][4] == 'needs_decision'
+
+
+def test_goal_readiness_start_invalid_mode_releases_the_claim(tmp_path, monkeypatch):
+    fake = _FakeLoop()
+    out, _ = _start_with(monkeypatch, tmp_path, {'goal_readiness': {'mode': 'nope'}}, fake)
+    assert out.startswith('READINESS REFUSED:') and fake.calls and fake.calls[0][:2] == ('release', '42')
+
+
+def test_goal_readiness_start_says_still_claimed_when_the_park_fails(tmp_path, monkeypatch):
+    out, _ = _start_with(monkeypatch, tmp_path, {'goal_readiness': {'mode': 'require'}}, _FakeLoop(fail=True))
+    assert out.startswith('READINESS REFUSED:') and 'STILL CLAIMED' in out and 'parked' in out
+
+
+def test_goal_readiness_start_warn_records_nothing(tmp_path, monkeypatch):
+    fake = _FakeLoop()
+    _start_with(monkeypatch, tmp_path, {}, fake, body=GOOD)
+    _start_with(monkeypatch, tmp_path, {}, fake)
+    assert fake.calls == []
+
+
+def test_goal_readiness_and_acceptance_refusals_exit_4_through_main(monkeypatch, capsys):
+    """m3: the exit-4 mapping of both new prefixes, through `work.main` (the documented gesture's entry point)."""
+    work = load('work')
+
+    class _Quiet:
+        def __getattr__(self, name):
+            return lambda *a, **k: None
+    real_load = work._load
+    monkeypatch.setattr(work, '_load', lambda name: _Quiet() if name == 'loop' else real_load(name))
+    monkeypatch.setattr(work.state, 'load_config', lambda sdlc: {'work': {'enabled': True}})
+    monkeypatch.setattr(work, '_record', lambda sdlc, goal: {'worktree': '/nonexistent'})
+    for verb, prefix in (('start', 'READINESS REFUSED: x'), ('commit', 'ACCEPTANCE REFUSED: x'),
+                         ('pr', 'ACCEPTANCE REFUSED: x')):
+        monkeypatch.setitem(work._COMMANDS, verb, lambda *a, _p=prefix, **k: _p)
+        argv = ['work.py', verb, '.sdlc', '42'] + (['--message', 'm'] if verb == 'commit' else [])
+        assert work.main(argv) == 4, verb
+        monkeypatch.setitem(work._COMMANDS, verb, lambda *a, **k: 'fine')
+        assert work.main(argv) == 0, verb
+    capsys.readouterr()
 
 
 # ---- T8: the promote seam ---------------------------------------------------------------------------------------

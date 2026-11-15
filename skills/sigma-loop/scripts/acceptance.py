@@ -240,7 +240,8 @@ def prefix_check(sdlc_dir, goal, refs=None, text=None, root=None):
     Clauses, each independently refusing:
       H  the record's stored `criteria_sha256` equals the hash of its current original block;
       B  the first-added committed blob's criteria are an exact ORDERED prefix of the current combined list
-         (original then added), and when both carry a hash the hashes are equal;
+         (original then added), when both carry a hash the hashes are equal, a hash the baseline carried is
+         still present, and `drafted` equals the baseline's;
       P  the record parses: original block 3 to 7 items, added items only in `## Added criteria`;
       R  no added criterion lacks its slice and reason;
       D  when a first-added baseline exists, a missing or unparseable current record refuses.
@@ -286,6 +287,11 @@ def prefix_check(sdlc_dir, goal, refs=None, text=None, root=None):
         if baseline['criteria_sha256'] and current['criteria_sha256'] and \
                 baseline['criteria_sha256'] != current['criteria_sha256']:
             return 'criteria_sha256 differs from the first committed record; it is fixed at first record', notes
+        if baseline['criteria_sha256'] and not current['criteria_sha256']:
+            return ('criteria_sha256 was removed after the first committed record; it is fixed at first record',
+                    notes)
+        if baseline['drafted'] != current['drafted']:
+            return 'drafted differs from the first committed record; it is fixed at first record', notes
     lacking = [x['text'] for x in current['added'] if x['reason'] is None]                           # clause R
     if lacking:
         return ('added criterion without slice and reason: %s; add with `acceptance.py extend --slice <ref> '
@@ -303,17 +309,15 @@ def _norm_statement(item):
 def issue_divergence(text, goal_stem, issue_body):
     """``(state, detail)`` for the issue-vs-record check (D4): ``state`` is `skip`, `ok` or `diverge`.
 
-    Runs only when the record is not drafted, carries `criteria_sha256` (a legacy record never gets the new
-    park) and the issue body has a criteria section (canonical or alias); otherwise `skip` with the reason.
-    Compares text only, alias-normalised, checkbox-blind. It reads no config and no environment."""
+    Runs whenever the issue body has a valid criteria section (canonical or alias), whatever the record's
+    `drafted` flag or `criteria_sha256` presence say: both live in the record's own bytes, so neither may switch the
+    witness off (#2222 review B2; a drafted record legitimately arises only when the issue has no valid section).
+    Otherwise `skip` with the reason. Compares text only, alias-normalised, checkbox-blind. It reads no config and
+    no environment."""
     try:
         record_ = parse(text, goal_stem)
     except ValueError as exc:
         return 'skip', 'record unparseable: %s' % exc
-    if record_['drafted']:
-        return 'skip', 'drafted'
-    if record_['criteria_sha256'] is None:
-        return 'skip', 'legacy record'
     try:
         issue = criteria(issue_body or '')
     except ValueError:
@@ -322,8 +326,7 @@ def issue_divergence(text, goal_stem, issue_body):
         return 'skip', 'no criteria section in issue'
     if [_norm_statement(x) for x in issue] != [_norm_statement(x) for x in record_['criteria']]:
         return 'diverge', ('the issue\'s Done when no longer matches the recorded original criteria; the record '
-                           'wins and is never rewritten: a person decides (`/sigma-unpark`), or adds with '
-                           '`acceptance.py extend`')
+                           'wins and is never rewritten: a person decides whether the goal changes')
     return 'ok', ''
 
 
@@ -691,8 +694,10 @@ def extend(sdlc_dir, goal, slice_ref, reason, criteria_list, config=None, source
         for text in texts:
             marker = extend_marker(text, slice_ref, reason)
             if not any(marker in body_ for body_ in bodies):
-                source.note(goal, '%s\nAcceptance criterion added (slice %s): %s\nReason: %s'
-                            % (marker, slice_ref, text, reason))
+                posted = source.note(goal, '%s\nAcceptance criterion added (slice %s): %s\nReason: %s'
+                                     % (marker, slice_ref, text, reason))
+                if posted is False:              # a declined write (hard stops) is not a post: write nothing
+                    raise ValueError('the issue declined the extend comment for %r; nothing was written' % text)
     state.atomic_write_text(file, new_text)
     _sync_worktree_copy(sdlc_dir, stem, file, old_text, new_text, state)
     _tracked_root_notice(sdlc_dir, file)

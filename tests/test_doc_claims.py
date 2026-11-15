@@ -190,8 +190,9 @@ def test_acceptance_docs_name_extend_and_check_gestures():
 
 def test_acceptance_cloud_sessions_documents_append_only_rewrite_rules():
     text = _doc("docs/cloud-sessions.md")
-    for clause in ("criteria_sha256", "ordered prefix", "Issue divergence", "a drafted record", "a legacy record",
-                   "an issue with no criteria section", "fails closed at `pr`", "extend marker"):
+    for clause in ("criteria_sha256", "ordered prefix", "Issue divergence", "`drafted` flag", "a legacy record",
+                   "an issue with no valid criteria section", "fails closed at `pr`", "extend marker",
+                   "records the park itself", "never by commit date"):
         assert clause in text, clause
 
 
@@ -215,7 +216,7 @@ def test_acceptance_work_py_control_table_names_guard_exits():
                  if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "ENFORCEMENT_GATES")
     row = next(g for g in gates if g["function"] == "_acceptance_append_only_refusal")
     text = row["mechanism"] + " " + row["condition"]
-    for phrase in ("checkpoint push", "rebase force-push", "raw `git push`", "baseline is the earliest-added blob",
+    for phrase in ("checkpoint push", "rebase force-push", "raw `git push`", "baseline is the first add",
                    "legacy record", "Before the first `work.py commit`", "force-push defeats it"):
         assert phrase in text, phrase
     assert "_acceptance_append_only_refusal" in _doc("docs/enforcement.md")
