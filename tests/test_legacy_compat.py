@@ -1,4 +1,6 @@
-"""#239: a repository adopted under the plugin's PREVIOUS name keeps working under Sigma.
+"""Pure move from tests/test_legacy_compat.py at 4042e97 (#2224 amendment 2): the guard nodes (pass at base); test bodies byte-identical.
+
+#239: a repository adopted under the plugin's PREVIOUS name keeps working under Sigma.
 
 Read side only here (the one-shot `migrate.py` has its own file, `test_legacy_migrate.py`). Every
 legacy spelling below is built from fragments -- `RETIRED` -- because the previous name is a guarded
@@ -12,6 +14,7 @@ What is pinned:
   - each reader that used to compare against the Sigma spelling only now reads the legacy one too;
   - structural pins: no shipped Python reads an operator-facing `SIGMA_*` name directly, every
     `SIGMA_*` literal is a name the helper knows, and every marker literal is registered.
+
 """
 import importlib.util
 import json
@@ -38,9 +41,6 @@ def _load(directory, stem):
 @pytest.fixture(scope="module")
 def legacy():
     return _load(LOOP, "legacy")
-
-
-# --------------------------------------------------------------------------- env
 
 
 def test_sigma_name_wins_when_both_are_set(legacy):
@@ -92,9 +92,6 @@ def test_legacy_env_values_walks_every_env_key(legacy):
                                              ("b.pass_env", RETIRED_ENV + "SMTP_PASS")]
 
 
-# --------------------------------------------------------------------------- schema / markers / keys
-
-
 def test_schema_ids(legacy):
     assert legacy.schema_is(RETIRED + "/features@1", "sigma/features@1")
     assert legacy.schema_is("sigma/features@1", "sigma/features@1")
@@ -121,9 +118,6 @@ def test_channel_key_fallback(legacy):
     assert legacy.channel_value({"sigma": "C2", RETIRED: "C1"}, "sigma") == "C2"
     assert legacy.channel_value({"sigma": "", RETIRED: "C1"}, "sigma") == "C1"
     assert legacy.channel_value({RETIRED: "C1"}, "org") is None
-
-
-# --------------------------------------------------------------------------- readers
 
 
 def _legacy_registry(tmp_path):
@@ -321,8 +315,6 @@ def test_the_run_identity_never_adopts_a_legacy_run_id(monkeypatch):
     assert state.run_identity() is None
 
 
-# --------------------------------------------------------------------------- structural pins
-
 _SHIPPED = ([p for p in sorted((ROOT / "skills").rglob("*")) if p.suffix in (".py", ".sh", ".ts")
              and "node_modules" not in p.parts]
             + sorted((ROOT / "hooks").glob("*.py")) + sorted((ROOT / "hooks").glob("*.sh")))
@@ -401,16 +393,3 @@ _NOT_MARKERS = ("sigma-doctor", "sigma-doctor:", "sigma-init", "sigma-init:", "s
                 "sigma-breaker-",   # new with #853: a tempdir prefix for the breaker's empty working directory, not a marker
                 "sigma-reset-at:",   # new with #1563: a plain park-comment line, no legacy spelling
                 "sigma-extension")   # new with the quality checklist: the `origin` value of a category, data not a marker
-
-
-def test_every_marker_literal_is_registered_with_the_helper(legacy):
-    """A new marker must be added to `legacy.MARKERS` -- which is where a reviewer sees that its
-    readers need the legacy spelling too (plan-review finding 5)."""
-    found = set()
-    for p in _SHIPPED:
-        if p.suffix == ".py":
-            for m in _MARKER_LITERAL.finditer(p.read_text(encoding="utf-8")):
-                found.add(m.group()[1:])
-    missing = sorted(f for f in found if f not in _NOT_MARKERS
-                     and not any(f.startswith(k) or k.startswith(f) for k in legacy.MARKERS))
-    assert found and not missing, "unregistered marker literals: %s" % missing

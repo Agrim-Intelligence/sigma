@@ -1,14 +1,16 @@
-"""The code-owned follow-up record (#2224): `.sdlc/state/followups/<stem>.json`, written only by `add_slice.py`.
+"""Pure move from tests/test_followup_record.py at 4042e97 (#2224 amendment 2): the wholly assertion-red nodes; test bodies byte-identical.
 
-Run: python3 -m pytest tests/test_followup_record.py
-(generic form: python -m pytest tests/test_followup_record.py)
+The code-owned follow-up record (#2224): `.sdlc/state/followups/<stem>.json`, written only by `add_slice.py`.
+
+Run: python3 -m pytest tests/test_followup_record*.py
+(generic form: python -m pytest tests/test_followup_record*.py)
 
 CONTROLS: C5 test_two_appenders_both_land_deterministic (the system of record: a pause between read and write inside
 the lock; the threaded variant is a labeled SMOKE test, its sensitivity measured in .sdlc/evidence/2224-controls.md),
 C6 test_corrupt_record_refuses, C29 test_fcntl_absent_refuses.
+
 """
 import importlib.util
-import json
 import pathlib
 import threading
 
@@ -46,24 +48,6 @@ def test_missing_record_reads_empty(sdlc):
     assert fr.read_record(sdlc, "9") == {"first_routed_at": None, "added": []}
 
 
-def test_corrupt_record_refuses(sdlc):
-    path = fr.record_path(sdlc, "2224")
-    path.parent.mkdir(parents=True)
-    path.write_text("{not json")
-    with pytest.raises(fr.RecordError):
-        fr.read_record(sdlc, "2224")
-    with pytest.raises(fr.RecordError):
-        fr.added_count(sdlc, "2224")
-
-
-def test_wrong_shape_record_refuses(sdlc):
-    path = fr.record_path(sdlc, "2224")
-    path.parent.mkdir(parents=True)
-    path.write_text(json.dumps({"added": "nope"}))
-    with pytest.raises(fr.RecordError):
-        fr.read_record(sdlc, "2224")
-
-
 def test_record_lives_under_state_and_nothing_appears_at_the_repo_root(sdlc, tmp_path):
     fr.append_slice(sdlc, "2224", "aaa", "s")
     assert fr.record_path(sdlc, "2224").parent == sdlc / "state" / "followups"
@@ -98,18 +82,6 @@ def test_two_appenders_both_land_smoke(sdlc):
     [t.start() for t in threads]
     [t.join(10) for t in threads]
     assert len(fr.read_record(sdlc, "2224")["added"]) == 12
-
-
-def test_fcntl_absent_refuses(sdlc, monkeypatch):
-    monkeypatch.setattr(fr, "fcntl", None)
-    with pytest.raises(fr.LockUnavailable):
-        fr.append_slice(sdlc, "2224", "aaa", "s")
-    assert not fr.record_path(sdlc, "2224").exists()
-
-
-def test_unsafe_goal_refuses(sdlc):
-    with pytest.raises(ValueError):
-        fr.record_path(sdlc, "../x")
 
 
 def test_added_count_takes_max_of_record_and_plan_headings(sdlc):

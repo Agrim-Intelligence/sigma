@@ -1,7 +1,9 @@
-"""`work.py add-slice` (#2224): a follow-up joins its goal's plan as a slice, counted in a code-owned record.
+"""Pure move from tests/test_add_slice.py at 4042e97 (#2224 amendment 2): the wholly assertion-red nodes; test bodies byte-identical.
 
-Run: python3 -m pytest tests/test_add_slice.py
-(generic form: python -m pytest tests/test_add_slice.py)
+`work.py add-slice` (#2224): a follow-up joins its goal's plan as a slice, counted in a code-owned record.
+
+Run: python3 -m pytest tests/test_add_slice*.py
+(generic form: python -m pytest tests/test_add_slice*.py)
 
 The C7/C9/C10/C12 tests drive the REAL CLI by subprocess (`python3 skills/sigma-loop/scripts/work.py add-slice ...`).
 `acceptance.extend` does not exist until #2222 lands. Tests that need an acceptance record therefore never touch the
@@ -12,6 +14,7 @@ real `work.py add-slice` CLI. The e2e path through the real `extend` is UNPROVEN
 CONTROLS: C7a/C7b extend probe (two clauses), C8 probe before write, C9 both copies, C10 count last / idempotent /
 title identity, C11 cap via route, C12 plan-review hash gate, C30 unsafe stem, C31 selector ceiling, C33 lock held
 across check+write (deterministic in-process), C34 TypeError, C35 slices.json notice.
+
 """
 import importlib.util
 import json
@@ -145,12 +148,6 @@ def test_extend_typeerror_refuses(proj):
     r = cli(proj, mode="badsig")
     assert r.returncode == 4 and "not guessing" in r.stderr
     assert count(proj) == 0
-
-
-def test_unsafe_stem_refuses(proj):
-    r = cli(proj, goal="../x")
-    assert r.returncode == 2 and not (proj.sdlc.parent / "x.json").exists()
-    assert count(proj) == 0 and proj.main_plan.read_text() == PLAN
 
 
 def test_at_cap_refuses(proj):

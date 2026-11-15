@@ -1,17 +1,17 @@
-"""The one routing function for follow-ups (#2224): recorded facts in, `slice` or `separate(<reason>)` out.
+"""Pure move from tests/test_followup_route.py at 4042e97 (#2224 amendment 2): the wholly assertion-red nodes; test bodies byte-identical.
 
-Run: python3 -m pytest tests/test_followup_route.py
-(generic form: python -m pytest tests/test_followup_route.py)
+The one routing function for follow-ups (#2224): recorded facts in, `slice` or `separate(<reason>)` out.
+
+Run: python3 -m pytest tests/test_followup_route*.py
+(generic form: python -m pytest tests/test_followup_route*.py)
 
 CONTROLS (each clause broken alone and seen red; evidence in .sdlc/evidence/2224-controls.md):
   C1 test_undeclared_item_inherits   C2 test_different_feature   C3 test_slice_cap_at_exactly_cap
   C4 test_different_feature_wins_over_cap   C24 test_non_registered_unit_inherits   C28 test_body_wins_over_label
+
 """
 import importlib.util
-import inspect
 import itertools
-import json
-import os
 import pathlib
 
 import pytest
@@ -71,22 +71,6 @@ def test_reasons_are_a_closed_set_by_exhaustive_grid():
     assert seen == set(fr.REASONS) == {"different-feature", "slice-cap"}
 
 
-def test_signature_has_no_reason_input_and_no_kwargs():
-    params = inspect.signature(fr.route).parameters
-    assert list(params) == ["goal_unit", "item_unit", "added", "cap"]
-    assert all(p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD and p.default is p.empty for p in params.values())
-
-
-def test_the_result_does_not_read_the_environment(monkeypatch):
-    before = [fr.route(g, i, a, CAP) for g, i, a in itertools.product([None, "A"], [None, "A", "B"], [0, 10])]
-    for name in ("SIGMA_FOLLOWUP_REASON", "FOLLOWUP_REASON", "SIGMA_REASON", "SIGMA_FOLLOWUPS_MODE", "SIGMA_X"):
-        monkeypatch.setenv(name, "slice-cap")
-    after = [fr.route(g, i, a, CAP) for g, i, a in itertools.product([None, "A"], [None, "A", "B"], [0, 10])]
-    assert before == after
-
-
-# --- gather_facts: the item's declared unit must be an open registered unit (C24), body wins (C28) ---------
-
 def _registry(tmp_path, names, closed=()):
     entries = {n: {"title": "t", "owner": None, "open": n not in closed, "parent": None,
                    "tracking_issue": None, "repos": {}} for n in list(names)}
@@ -121,13 +105,6 @@ def test_item_with_nothing_declared_reads_none(tmp_path):
     sdlc = _registry(tmp_path, ["alpha"])
     assert fr.item_unit(sdlc, None, []) == (None, [])
 
-
-# --- #2224 amendment A2: the decompose-child exemption, a pure decision over already-read facts ------------------
-# Every clause is its own test and leaves the others true. CONTROLS (each broken alone, python -m pytest on this file):
-# C43 kind clause dropped, C44 meta-marker leg, C45 parent-comment leg (M equality weakened to membership of any marker),
-# C46 child-marker leg (equality of P weakened to "has a marker"), C47 plan-review leg, C47b plan-review route (R1),
-# C47c plan-present (R2), C47d meta label (R5), C47e P != M (R5), C48 unreadable fails closed, C49 child cap.
-# The M verdict is hash-bound to M's plan only, not to the child set (R3): the docstring of `decompose_decision` says so.
 
 GOOD_GATE = {"plan_present": True, "plan_ok": True, "plan_review_ok": True, "route": "subagent", "agent_id": "a1"}
 

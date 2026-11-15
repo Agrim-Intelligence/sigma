@@ -1,7 +1,9 @@
-"""A find after the first green verify is still a slice and forces a second verify, WHEN `verify.enforce` is on (#2224).
+"""Pure move from tests/test_followup_after_verify.py at 4042e97 (#2224 amendment 2): the wholly assertion-red nodes; test bodies byte-identical.
 
-Run: python3 -m pytest tests/test_followup_after_verify.py
-(generic form: python -m pytest tests/test_followup_after_verify.py)
+A find after the first green verify is still a slice and forces a second verify, WHEN `verify.enforce` is on (#2224).
+
+Run: python3 -m pytest tests/test_followup_after_verify*.py
+(generic form: python -m pytest tests/test_followup_after_verify*.py)
 
 No detector for "first green verify" exists and none is invented: every find routes through the same function at any
 time. The second verify is forced by machinery that already exists, ONLY while `verify.enforce` is on:
@@ -11,11 +13,12 @@ Honest limit: that is the test-first proof, not `done_refusal`'s freshness (a pl
 evidence file fresh); the slice's own code change stales the content fingerprint. Conditional on enforce, stated in
 docs/configuration.md.
 CONTROLS: C38 (run with enforce off: the enforce-ON test goes red).
+
 """
 import json
 
-from test_add_slice import proj, cli, work, _mod, fr           # noqa: F401  (fixtures and helpers)
-from test_followup_track_routing import make, track, CFG        # noqa: F401
+from test_add_slice_red import proj, cli, work, _mod, fr           # noqa: F401  (fixtures and helpers)
+from test_followup_track_routing_red import make, track, CFG        # noqa: F401
 
 rg = _mod("red_green")
 state = _mod("state")
@@ -64,11 +67,3 @@ def test_with_enforce_off_nothing_forces_a_reverify(proj):
     assert cli(proj).returncode == 0
     rec = work._record(str(proj.sdlc), "2224")
     assert work._test_first_refusal(str(proj.sdlc), cfg, rec, "2224", work._run) == ""
-
-
-def test_no_first_green_detector_exists_in_the_scripts():
-    import pathlib
-    root = pathlib.Path(__file__).resolve().parent.parent / "skills"
-    for path in root.rglob("*.py"):
-        text = path.read_text(encoding="utf-8").lower()
-        assert "first_green" not in text and "first green verify detector" not in text, path

@@ -1,7 +1,9 @@
-"""`handoff.py track` routes every filing through `followup_route.route` (#2224).
+"""Pure move from tests/test_followup_track_routing.py at 4042e97 (#2224 amendment 2): the wholly assertion-red nodes; test bodies byte-identical.
 
-Run: python3 -m pytest tests/test_followup_track_routing.py
-(generic form: python -m pytest tests/test_followup_track_routing.py)
+`handoff.py track` routes every filing through `followup_route.route` (#2224).
+
+Run: python3 -m pytest tests/test_followup_track_routing*.py
+(generic form: python -m pytest tests/test_followup_track_routing*.py)
 
 Driven through the documented gesture, `handoff.main(["handoff.py", "track", ...])`.
 CONTROLS: C13/C14 test_every_kind_and_blocks_route, C15 test_target_unit_does_not_buy_a_separate_goal, C16
@@ -12,6 +14,7 @@ test_goal_mismatch_refuses_exit_2, C32 test_item_ambiguous_refuses_exit_2, C37
 test_unproven_child_and_chain_prerequisite_refused_without_naming_a_lever (A5: no lever is named).
 RESIDUAL (not closable in code): an agent that writes a registered open unit's `Feature:` marker into its
 `--body-file` buys `different-feature`; the registry check and goal binding narrow it, they do not remove it.
+
 """
 import json
 import pathlib
@@ -82,15 +85,6 @@ def test_unproven_child_and_chain_prerequisite_refused_without_naming_a_lever(ma
     assert "mode: file" not in err and "work.py add-slice" in err and src.created is None
 
 
-def test_decompose_instructions_do_not_name_the_lever():
-    """C54: a decompose goal is never told to set `followups.mode: file` (it is a repo-wide switch for every goal)."""
-    dg = handoff._load_sibling("decompose_goal")
-    text = (pathlib.Path(handoff.__file__).parent / "decompose_goal.py").read_text(encoding="utf-8")
-    for body in (text, dg._META_BODY, dg.render_meta_body(9, 8)):
-        assert "followups.mode" not in body and "mode: file" not in body
-    assert "OPEN CONFLICT" not in text
-
-
 def test_local_source_goal_reads_no_unit_and_the_refusal_names_add_slice(make, capsys):
     sdlc, src = make(source=th.FakeSource(number="61"))
     assert track(sdlc) == 3 and "work.py add-slice" in capsys.readouterr().err
@@ -131,17 +125,6 @@ def test_at_cap_files_with_slice_cap(make):
     assert any("slice-cap" in text for _, text in src.notes)
 
 
-def test_under_cap_same_feature_is_refused(make):
-    sdlc, src = make(config=dict(th.ON, followups={"mode": "in-goal", "max_added_slices": 2}))
-    fr.append_slice(sdlc, "7", "a", "s")
-    assert track(sdlc) == 3
-
-
-def test_target_unit_does_not_buy_a_separate_goal(make):
-    sdlc, src = make()
-    assert track(sdlc, "--target-unit", "beta") == 3 and src.created is None
-
-
 def test_target_unit_on_a_separate_filing_still_stamps_it(make):
     sdlc, src = make()
     assert track(sdlc, "--target-unit", "beta", body="x\n\nFeature: beta\n") == 0
@@ -154,30 +137,10 @@ def test_undeclared_unit_name_inherits_with_warning(make, capsys):
     assert "nowhere" in capsys.readouterr().err
 
 
-def test_body_file_marker_must_be_open_registered(make):
-    sdlc, src = make(units=("alpha",))
-    assert track(sdlc, body="x\n\nFeature: beta\n") == 3
-
-
-def test_body_file_marker_naming_a_closed_unit_inherits(make):
-    sdlc, src = make(units=("alpha", "beta"), closed=("beta",))
-    assert track(sdlc, body="x\n\nFeature: beta\n") == 3
-
-
-def test_label_unit_must_be_open_registered(make):
-    sdlc, src = make(units=("alpha",))
-    assert track(sdlc, "--label", "feature:beta") == 3
-
-
 def test_label_naming_an_open_registered_unit_is_a_different_feature(make):
     sdlc, src = make(units=("alpha", "beta"))
     assert track(sdlc, "--label", "feature:beta") == 0
     assert fr.parse_reason(src.created["body"]) == "different-feature"
-
-
-def test_body_wins_over_label(make):
-    sdlc, src = make()
-    assert track(sdlc, "--label", "feature:beta", body="x\n\nFeature: alpha\n") == 3
 
 
 def test_item_ambiguous_refuses_exit_2(make):
@@ -200,11 +163,6 @@ def test_goal_with_no_unit_and_a_declaring_item_is_a_different_feature(make):
     assert track(sdlc, body="x\n\nFeature: beta\n") == 0
 
 
-def test_item_with_no_declared_feature_is_a_slice(make):
-    sdlc, src = make()
-    assert track(sdlc) == 3
-
-
 def test_goal_mismatch_refuses_exit_2(make, tmp_path, monkeypatch):
     sdlc, src = make()
     tree = tmp_path / "trees" / "B"
@@ -215,42 +173,6 @@ def test_goal_mismatch_refuses_exit_2(make, tmp_path, monkeypatch):
     monkeypatch.chdir(tree)
     assert track(sdlc, goal="A") == 2 and src.created is None
     assert track(sdlc, goal="B") == 3                      # naming the bound goal routes normally
-
-
-def test_a_nogoal_filing_from_inside_a_goal_worktree_is_refused(make, tmp_path, monkeypatch):
-    sdlc, src = make()
-    tree = tmp_path / "trees" / "B"
-    tree.mkdir(parents=True)
-    rec = sdlc / "state" / "work" / "B.json"
-    rec.parent.mkdir(parents=True, exist_ok=True)
-    rec.write_text(json.dumps({"worktree": str(tree)}))
-    monkeypatch.chdir(tree)
-    with pytest.raises(fr.RouteRefused) as refused:
-        handoff.create_tracked_issue(sdlc, CFG, None, "engine", "why", same_area=True, immediately_actionable=False,
-                                     blocks_goal=False, source=src, title="t")
-    assert refused.value.code == 2 and src.created is None
-    monkeypatch.chdir(tmp_path)                            # the root checkout: residual, files as before
-    handoff.create_tracked_issue(sdlc, CFG, None, "engine", "why", same_area=True, immediately_actionable=False,
-                                 blocks_goal=False, source=src, title="t")
-    assert src.created is not None
-
-
-def test_a_nogoal_filing_is_untouched_under_file_mode(make, tmp_path, monkeypatch):
-    sdlc, src = make(config=dict(th.ON, followups={"mode": "file"}))
-    tree = tmp_path / "trees" / "B"
-    tree.mkdir(parents=True)
-    rec = sdlc / "state" / "work" / "B.json"
-    rec.parent.mkdir(parents=True, exist_ok=True)
-    rec.write_text(json.dumps({"worktree": str(tree)}))
-    monkeypatch.chdir(tree)
-    handoff.create_tracked_issue(sdlc, dict(th.ON, followups={"mode": "file"}), None, "engine", "why", same_area=True,
-                                 immediately_actionable=False, blocks_goal=False, source=src, title="t")
-    assert src.created is not None
-
-
-def test_file_mode_files_as_before_with_no_marker(make):
-    sdlc, src = make(config=dict(th.ON, followups={"mode": "file"}))
-    assert track(sdlc) == 0 and "followup-reason" not in src.created["body"]
 
 
 # --- #2224 amendment A2-A4: a PROVEN decompose child is exempt from routing; nothing else is ----------------------
@@ -487,13 +409,6 @@ def test_exempt_still_binds_the_goal_to_the_worktree(dmake, tmp_path, monkeypatc
     assert src.comment_reads == []                          # refused before any read of the goal's facts
 
 
-@pytest.mark.parametrize("spelling", ["21", "#21", "21.md"])
-def test_exempt_goal_spellings(dmake, spelling):
-    """R6: one digits-only parse for every spelling of the goal; the comment marker is compared by equality."""
-    sdlc, src = dmake()
-    assert child(sdlc, goal=spelling) == 0 and src.created is not None
-
-
 def test_exempt_goal_spelling_of_another_goal_is_refused(dmake, capsys):
     sdlc, src = dmake()
     assert child(sdlc, goal="#22") == 3 and "[parent-comment]" in capsys.readouterr().err
@@ -517,14 +432,6 @@ def test_track_has_no_exemption_bypass(dmake, monkeypatch, capsys):
     capsys.readouterr()
 
 
-def test_exempt_does_not_depend_on_the_phase_record_gate_flag(dmake):
-    """R7: `gates.phase_record` is not read by `status()`; the action log being on is what makes the facts readable."""
-    sdlc, src = dmake(config=dict(DCFG, gates={"phase_record": {"enabled": False}}))
-    assert child(sdlc) == 0
-
-
-# --- A4: an unknown or mistyped `followups.mode` reads in-goal and says so once, from `track` only -----------------
-
 def warn_lines(err):
     return [l for l in err.splitlines() if "followups.mode" in l and "ignor" in l]
 
@@ -537,28 +444,11 @@ def test_unknown_mode_warns_once_naming_the_value(make, capsys, value):
     assert len(lines) == 1 and repr(value) in lines[0] and "in-goal" in lines[0], lines
 
 
-@pytest.mark.parametrize("followups", [None, {}, {"max_added_slices": 3}, {"mode": None}, {"mode": "in-goal"},
-                                       {"mode": "file"}])
-def test_absent_or_valid_mode_is_silent(make, capsys, followups):
-    cfg = dict(th.ON) if followups is None else dict(th.ON, followups=followups)
-    sdlc, src = make(config=cfg)
-    track(sdlc)
-    assert warn_lines(capsys.readouterr().err) == []
-    assert handoff.followup_mode_warning(cfg) is None
-
-
 def test_warning_is_printed_once_from_track(make, capsys):
     """C52: a filing that routes then files (different feature) still prints one line, not one per code path."""
     sdlc, src = make(config=dict(th.ON, followups={"mode": "File"}))
     assert track(sdlc, body="x\n\nFeature: beta\n") == 0 and src.created is not None
     assert len(warn_lines(capsys.readouterr().err)) == 1
-
-
-def test_create_tracked_issue_does_not_warn(make, capsys):
-    sdlc, src = make(config=dict(th.ON, followups={"mode": "File"}))
-    handoff.create_tracked_issue(sdlc, dict(th.ON, followups={"mode": "File"}), "7", "engine", "why", same_area=True,
-                                 immediately_actionable=False, blocks_goal=False, source=src, title="t")
-    assert warn_lines(capsys.readouterr().err) == []
 
 
 def test_followup_mode_verb_is_silent_and_unchanged(make, capsys):
