@@ -194,8 +194,8 @@ def _critical(sdlc_dir, goal, config, title, criteria, opts, cap, sid, fr, work)
     has_record = pathlib.Path(criteria_file).exists()
     if has_record and not hasattr(acceptance, "extend"):
         print("work.py add-slice: refused: %s has an acceptance record but `acceptance.py extend` (goal #2222) is "
-              "absent, so its criteria cannot be extended. Nothing was written. Update the plugin once #2222 ships, "
-              "or file this as a separate goal with `handoff.py track` under `followups.mode: file`." %
+              "absent, so its criteria cannot be extended. Nothing was written. Update the plugin once #2222 ships; "
+              "until then ask the operator how to proceed." %
               goal, file=sys.stderr)
         return 4
     number = len(_heading_titles(plan_text)) + 1
