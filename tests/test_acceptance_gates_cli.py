@@ -708,3 +708,79 @@ def test_acceptance_divergence_issue_reordering_criteria_is_a_divergence(fx):
     fx.source.body = SWAPPED
     out = fx.pr()
     assert refused(out) and 'no longer matches' in out and len(fx.parks) == 1, out
+
+
+# ---- third review BLOCKING-1: the branch-tip baseline (an added criterion, once committed, is append-only too) --
+
+def extend_and_commit(f, text='Fourth holds.', slice_='42b', reason='review found it'):
+    acc.extend(f.sdlc, '42', slice_, reason, [text], config={}, source=f.source)
+    out = f.commit()
+    assert not refused(out), out
+    return out
+
+
+def strip_added(file):
+    file.write_text(file.read_text().split('\n## Added criteria', 1)[0].rstrip('\n') + '\n')
+
+
+def test_acceptance_tip_commit_refuses_deleting_committed_added_section(fx):
+    first_commit(fx)
+    extend_and_commit(fx)
+    strip_added(fx.root_file)
+    strip_added(fx.wt_file)
+    out = fx.commit()
+    assert refused(out) and 'committed on the goal branch' in out and staged(fx) == ''
+
+
+def test_acceptance_tip_pr_refuses_deleting_committed_added_section(fx):
+    first_commit(fx)
+    extend_and_commit(fx)
+    strip_added(fx.wt_file)
+    out = fx.pr()
+    assert refused(out) and 'committed on the goal branch' in out
+
+
+def test_acceptance_tip_commit_refuses_rewriting_added_text_keeping_suffix(fx):
+    first_commit(fx)
+    extend_and_commit(fx)
+    for f in (fx.root_file, fx.wt_file):
+        f.write_text(f.read_text().replace('Fourth holds.', 'Fourth is optional.'))
+    out = fx.commit()
+    assert refused(out) and 'committed on the goal branch' in out and staged(fx) == ''
+
+
+def test_acceptance_tip_pr_refuses_rewrite_for_a_goal_with_no_issue(fx, monkeypatch):
+    """A local-file backlog (no issue source, so no extend-comment witness): only the tip baseline can see it."""
+    monkeypatch.setattr(work, '_acceptance_source', lambda sdlc_dir, config: None)
+    first_commit(fx)
+    acc.extend(fx.sdlc, '42', '42b', 'review found it', ['Fourth holds.'], config={}, source=None)
+    assert not refused(fx.commit())
+    fx.wt_file.write_text(fx.wt_file.read_text().replace('Fourth holds.', 'Fourth is optional.'))
+    out = fx.pr()
+    assert refused(out) and 'committed on the goal branch' in out
+
+
+def test_acceptance_tip_check_cli_refuses_deleted_added_section(fx):
+    first_commit(fx)
+    extend_and_commit(fx)
+    assert acc.main(['check', str(fx.sdlc), '42']) == 0
+    strip_added(fx.root_file)
+    assert acc.main(['check', str(fx.sdlc), '42']) == 2
+
+
+def test_acceptance_tip_remote_tip_is_read_when_the_local_branch_was_reset(fx):
+    first_commit(fx)
+    extend_and_commit(fx)
+    git(fx.wt, 'push', '-q', 'origin', 'sdlc/42')
+    git(fx.wt, 'reset', '-q', '--hard', 'HEAD~1')          # the local tip no longer holds the added criterion
+    strip_added(fx.root_file)
+    out = fx.commit()
+    assert refused(out) and 'committed on the goal branch' in out
+
+
+def test_acceptance_tip_second_extend_is_accepted_everywhere(fx):
+    first_commit(fx)
+    extend_and_commit(fx)
+    extend_and_commit(fx, text='Fifth holds.', slice_='42c', reason='a second finding')
+    assert not refused(fx.pr())
+    assert acc.main(['check', str(fx.sdlc), '42']) == 0
