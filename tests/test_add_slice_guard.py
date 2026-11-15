@@ -9,7 +9,7 @@ The C7/C9/C10/C12 tests drive the REAL CLI by subprocess (`python3 skills/sigma-
 `acceptance.extend` does not exist until #2222 lands. Tests that need an acceptance record therefore never touch the
 real acceptance.py: a DRIVER subprocess loads the real add_slice module and replaces its test-only `_acceptance` seam with a
 double that has `extend` present or absent, so nothing flips when #2222 merges. Tests with no acceptance record use the
-real `work.py add-slice` CLI. The e2e path through the real `extend` is UNPROVEN until then.
+real `work.py add-slice` CLI. The e2e path through the real `extend` is exercised by tests/test_add_slice_extend_real.py.
 
 CONTROLS: C7a/C7b extend probe (two clauses), C8 probe before write, C9 both copies, C10 count last / idempotent /
 title identity, C11 cap via route, C12 plan-review hash gate, C30 unsafe stem, C31 selector ceiling, C33 lock held
@@ -43,7 +43,7 @@ fr, add_slice, work = _mod("followup_route"), _mod("add_slice"), _mod("work")
 
 DOUBLE_PRESENT = ("import pathlib\n"
                   "def path(sdlc_dir, goal): return pathlib.Path(sdlc_dir) / 'acceptance' / (str(goal) + '.md')\n"
-                  "def extend(sdlc_dir, goal, lines):\n"
+                  "def extend(sdlc_dir, goal, slice_ref, reason, lines, config=None, source=None):\n"
                   "    with open(pathlib.Path(sdlc_dir) / 'extend.log', 'a') as h: h.write(repr(lines) + '\\n')\n")
 DOUBLE_ABSENT = DOUBLE_PRESENT.split("def extend")[0]
 DOUBLE_BADSIG = DOUBLE_ABSENT + "def extend(): pass\n"

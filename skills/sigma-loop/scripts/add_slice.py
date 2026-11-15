@@ -121,6 +121,23 @@ def transform(text, number, title, criteria, tests):
     return "%s\n\n## Added slice %d: %s\n\n%s\n" % (body, number, title, criteria.strip("\n")), None
 
 
+def _criteria_lines(criteria):
+    """The one-line acceptance statements `acceptance.extend` takes, from the slice's criteria file: the bullets under
+    its `Done when` heading, else every bullet. A bullet marker (`- `, `* `, `- [ ] `) is stripped; prose is never one."""
+    lines, in_done, found = [], False, False
+    for raw in criteria.splitlines():
+        head = re.match(r"^#{1,6}\s+(.*?)\s*$", raw)
+        if head:
+            in_done = bool(re.match(r"(?i)done when\b", head.group(1)))
+            found = found or in_done
+            continue
+        bullet = re.match(r"^\s*[-*]\s+(?:\[[ xX]\]\s+)?(.+?)\s*$", raw)
+        if bullet:
+            lines.append((in_done, bullet.group(1)))
+    chosen = [t for done, t in lines if done] if found else [t for _, t in lines]
+    return chosen
+
+
 def _heading_titles(text):
     return _load("followup_route").SLICE_HEADING_RE.findall(text)
 
@@ -198,6 +215,11 @@ def _critical(sdlc_dir, goal, config, title, criteria, opts, cap, sid, fr, work)
               "until then ask the operator how to proceed." %
               goal, file=sys.stderr)
         return 4
+    statements = _criteria_lines(criteria) if has_record else []
+    if has_record and not statements:
+        print("work.py add-slice: refused: %s has an acceptance record but --criteria-file holds no bullet to add as a "
+              "criterion (put them under `### Done when`). Nothing was written." % goal, file=sys.stderr)
+        return 2
     number = len(_heading_titles(plan_text)) + 1
     if not resume:
         edits = []
@@ -223,7 +245,12 @@ def _critical(sdlc_dir, goal, config, title, criteria, opts, cap, sid, fr, work)
                   "edited; `work.py commit` carries the main copy's bytes over it.")
     if has_record:
         try:
-            acceptance.extend(sdlc_dir, goal, criteria.strip("\n").splitlines())
+            acceptance.extend(sdlc_dir, goal, "slice %d" % number, title, statements)
+        except ValueError as exc:
+            print("work.py add-slice: refused: `acceptance.extend` declined (%s). The plan was %s; fix the cause and "
+                  "re-run (the same command resumes)." % (exc, "left as written" if not resume else "already written"),
+                  file=sys.stderr)
+            return 4
         except TypeError as exc:
             print("work.py add-slice: refused: `acceptance.extend` has a signature this verb does not know (%s): not "
                   "guessing. The plan was %s; re-run once the verb is updated (the same command resumes)." %

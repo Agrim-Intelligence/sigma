@@ -192,8 +192,8 @@ through one function, `followup_route.route`, which maps recorded facts to `slic
 reasons. A find in the goal's own feature is refused (exit 3, nothing filed) and belongs in the goal's plan: `work.py
 add-slice <sdlc_dir> <goal> --title T --criteria-file F` appends a slice, counts it in a code-owned record
 (`.sdlc/state/followups/<goal>.json`, machine-local, plus the plan's own `## Added slice` headings) and extends the
-acceptance criteria through `acceptance.py extend`, which the verb refuses to run without (#2222: the end-to-end
-path through the real `extend` is unproven until it lands). A find is filed as a separate goal only for `different-feature`
+acceptance criteria through `acceptance.py extend`, which the verb refuses to run without (measured through the real `extend` by `tests/test_add_slice_extend_real.py`: the criteria are the bullets under the
+file's `### Done when`, the slice ref is `slice <n>`, the reason is the title; no GitHub comment was exercised). A find is filed as a separate goal only for `different-feature`
 (the item declares another open, registered unit) or `slice-cap` (the goal holds `followups.max_added_slices`, default 10, a
 whole number of at least 1; anything else reads 10, never unlimited). The reason rides in the filed issue as
 `<!-- sigma:followup-reason:<reason> -->` and in a comment on the parent. No flag, environment variable or config key
