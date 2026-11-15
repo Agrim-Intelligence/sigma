@@ -139,7 +139,9 @@ def _criteria_lines(criteria):
 
 
 def _extend_preflight(acceptance, sdlc_dir, goal, slice_ref, reason, statements):
-    """A reason `acceptance.extend` is certain to decline, or None. Reads only; the verb still re-checks everything."""
+    """A reason `acceptance.extend` is certain to decline, or None. Reads only and checks only the cap and the line
+    length: a tampered original, an unsafe `## Added criteria` layout or unreadable issue comments are still declined by
+    `extend` itself after the plan is written, which is recoverable (the same command resumes)."""
     try:
         old = acceptance.parse(acceptance._text(acceptance.path(sdlc_dir, goal)), acceptance.path(sdlc_dir, goal).stem)
         if len(old["added"]) + len(statements) > acceptance.MAX_ADDED:
@@ -154,15 +156,16 @@ def _extend_preflight(acceptance, sdlc_dir, goal, slice_ref, reason, statements)
     return None
 
 
-def _already_extended(acceptance, sdlc_dir, goal, slice_ref, reason, statements):
-    """True when the record already holds every one of these criteria under this slice (a resume after a crash between
-    `extend` and the count must not append them twice)."""
+def _already_extended(acceptance, sdlc_dir, goal, slice_ref, reason):
+    """True when the record already holds criteria under this slice and reason: `extend` writes all of a slice's
+    criteria or none, so any row means a resume after a crash between `extend` and the count, and it must not append
+    again (an edited --criteria-file on that resume is not applied; the plan text wins)."""
     try:
         file = acceptance.path(sdlc_dir, goal)
-        have = {(x["text"], x["slice"], x["reason"]) for x in acceptance.parse(acceptance._text(file), file.stem)["added"]}
+        added = acceptance.parse(acceptance._text(file), file.stem)["added"]
     except (OSError, ValueError, AttributeError, KeyError):
         return False
-    return all((t, slice_ref, reason) in have for t in statements)
+    return any(x["slice"] == slice_ref and x["reason"] == reason for x in added)
 
 
 def _heading_titles(text):
@@ -270,14 +273,17 @@ def _critical(sdlc_dir, goal, config, title, criteria, opts, cap, sid, fr, work)
         _after_plan_write()
     else:
         before = _load("review_context").plan_sha256(targets[0])
-        number = [fr.slice_id(goal, t) for t in _heading_titles(plan_text)].index(sid) + 1
+        titles = _heading_titles(plan_text)
+        index = [fr.slice_id(goal, t) for t in titles].index(sid)
+        number, title = index + 1, titles[index]          # the plan's own spelling is the reason extend recorded
     if wrec and not branch:
         name = pathlib.Path(sdlc_dir).resolve().name
         if _load("review_context").phase_doc_file(pathlib.Path(wrec["worktree"]) / name, goal, "plans"):
             print("add-slice: the branch copy of the plan is modified or untracked, so only the main copy was "
                   "edited; `work.py commit` carries the main copy's bytes over it.")
-    if has_record and _already_extended(acceptance, sdlc_dir, goal, "slice %d" % number, title, statements):
-        print("add-slice: the acceptance criteria for slice %d are already in the record; not appended again." % number)
+    if has_record and _already_extended(acceptance, sdlc_dir, goal, "slice %d" % number, title):
+        print("add-slice: the acceptance criteria for slice %d are already in the record; not appended again (an "
+              "edited --criteria-file is not applied on a resume)." % number)
     elif has_record:
         try:
             acceptance.extend(sdlc_dir, goal, "slice %d" % number, title, statements)

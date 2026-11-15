@@ -128,3 +128,33 @@ def test_more_added_criteria_than_the_cap_are_refused_before_the_plan_is_written
     r = cli(proj)
     assert r.returncode == 4 and "would decline" in r.stderr, r.stderr
     assert "## Added slice" not in proj.main_plan.read_text() and _added(record) == []
+
+
+def test_a_resume_with_a_recased_title_does_not_append_the_criteria_again(proj):
+    record = _with_real_record(proj)
+    assert cli(proj).returncode == 0
+    once = _added(record)
+    (proj.sdlc / "state" / "followups" / "2224.json").unlink()                    # crash before the count
+    r = cli(proj, title="FIX THE THING")                                          # same slice id, other spelling
+    assert r.returncode == 0, r.stderr
+    assert _added(record) == once and count(proj) == 1
+
+
+def test_a_resume_with_an_edited_criteria_file_does_not_join_new_bullets_to_the_old_slice(proj):
+    record = _with_real_record(proj)
+    assert cli(proj).returncode == 0
+    once = _added(record)
+    (proj.sdlc / "state" / "followups" / "2224.json").unlink()
+    proj.crit.write_text("### Done when\n- something else entirely\n")
+    r = cli(proj)
+    assert r.returncode == 0 and "already in the record" in r.stdout, (r.stdout, r.stderr)
+    assert _added(record) == once
+
+
+def test_the_same_bullet_under_two_different_slices_is_extended_twice(proj):
+    record = _with_real_record(proj)
+    assert cli(proj, title="Slice A").returncode == 0
+    assert cli(proj, title="Slice B").returncode == 0
+    added = _added(record)
+    assert len(added) == 2 and "slice 1" in added[0] and "slice 2" in added[1], added
+    assert count(proj) == 2
