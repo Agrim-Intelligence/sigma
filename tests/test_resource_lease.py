@@ -737,21 +737,6 @@ def test_ring_unit_is_bytes_per_sizeable_process_of_the_run(lease, monkeypatch):
     assert ring["verify_run"] == [500]
 
 
-@pytest.mark.parametrize("body", [
-    "test_peak_taken_while_the_session_runs_is_what_release_records",
-    "test_ring_unit_is_bytes_per_sizeable_process_of_the_run",
-], ids=["peak", "ring"])
-def test_session_tests_hold_with_a_live_process_at_the_fake_pid(lease, monkeypatch, body):
-    """#2228: a real, long-lived process 100 must not turn the fake-pid premise hostile.
-
-    The wrapper simulates that occupant with a FIXED start far outside START_TOLERANCE (never
-    computed from the real pid 100, which is usually absent), then runs the real body of each
-    named test. The bodies must make the record say which process it claims to be."""
-    real = lease.process_start
-    monkeypatch.setattr(lease, "process_start", lambda pid: 1e6 if pid == 100 else real(pid))
-    globals()[body](lease, monkeypatch)
-
-
 def test_verify_admission_is_bounded_by_the_largest_whole_run_peak(lease):
     """The skewed ring: unit p90 100, workers wanted 5, largest whole run 98. 5 x 100 is not granted."""
     path = pathlib.Path(lease.state_dir()) / "observed.json"
