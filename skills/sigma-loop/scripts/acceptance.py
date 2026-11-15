@@ -19,6 +19,7 @@ import os
 import pathlib
 import re
 import shlex
+import subprocess
 import sys
 import tempfile
 
@@ -221,6 +222,48 @@ def baseline_refs(sdlc_dir, goal):
         return []
 
 
+def branch_tip_refs(sdlc_dir, goal):
+    """The goal BRANCH refs whose tip holds the record as last committed: remote branch, then local branch. Read from
+    the goal's work record like `baseline_refs`; ``[]`` without one (the tip baseline then says it is unavailable)."""
+    try:
+        work = json.loads((pathlib.Path(sdlc_dir) / 'state' / 'work' / (path(sdlc_dir, goal).stem + '.json'))
+                          .read_text(encoding='utf-8'))
+        return tip_refs(work.get('remote'), work.get('branch'))
+    except (OSError, ValueError, AttributeError, TypeError):
+        return []
+
+
+def tip_refs(remote, branch):
+    """``[<remote>/<branch>, <branch>]``, dropping what a missing field cannot name."""
+    out = []
+    for name in ((remote + '/' + branch) if isinstance(remote, str) and remote and isinstance(branch, str) and branch
+                 else None, branch):
+        if isinstance(name, str) and name and not name.startswith('-') and name not in out:
+            out.append(name)
+    return out
+
+
+def _ref_blob(root, ref, rel):
+    """``(bytes_or_None, reason)``: ``rel`` at ``ref``'s tip, capped at MAX_BYTES. Never raises: absent and
+    unreadable are both None, with the reason."""
+    try:
+        size = subprocess.run(['git', '-C', str(root), 'cat-file', '-s', '%s:%s' % (ref, rel)],
+                              capture_output=True, text=True, timeout=10)
+        if size.returncode != 0:
+            return None, '%s has no record' % ref
+        if not size.stdout.strip().isdigit() or int(size.stdout) > MAX_BYTES:
+            return None, '%s record size unreadable or over the limit' % ref
+        shown = subprocess.run(['git', '-C', str(root), 'show', '%s:%s' % (ref, rel)], capture_output=True, timeout=10)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return None, '%s unreadable: %s' % (ref, exc)
+    return (shown.stdout, 'tip of %s' % ref) if shown.returncode == 0 else (None, '%s unreadable' % ref)
+
+
+def _combined(rec):
+    """Original criteria then added rows; an added row carries its slice and reason, so a rewritten suffix differs."""
+    return rec['criteria'] + [(x['text'], x['slice'], x['reason']) for x in rec['added']]
+
+
 def reasonless_added(sdlc_dir, goal, text=None):
     """Texts of the added criteria that carry no `(added: <slice>; reason: <why>)` suffix. ``[]`` when the record
     is absent or unparseable (other clauses own that). Reads no config and no environment."""
@@ -233,7 +276,7 @@ def reasonless_added(sdlc_dir, goal, text=None):
         return []
 
 
-def prefix_check(sdlc_dir, goal, refs=None, text=None, root=None):
+def prefix_check(sdlc_dir, goal, refs=None, text=None, root=None, tip_refs_=None, tip=True):
     """``(refusal_or_None, notes)``: the append-only guard (#2222 D1, D6, D9). No override argument, no flag, no
     config key and no environment variable is read anywhere in this path.
 
@@ -244,9 +287,15 @@ def prefix_check(sdlc_dir, goal, refs=None, text=None, root=None):
          still present, and `drafted` equals the baseline's;
       P  the record parses: original block 3 to 7 items, added items only in `## Added criteria`;
       R  no added criterion lacks its slice and reason;
-      D  when a first-added baseline exists, a missing or unparseable current record refuses.
-    A baseline that cannot be read skips B (and D) and says so in ``notes``: the guard refuses on git being
-    unreadable never, only on a clear mismatch from H, P or R."""
+      D  when a first-added baseline exists, a missing or unparseable current record refuses;
+      T  (#2222 third review B1) the record as last COMMITTED on the goal branch -- the remote branch tip and the
+         local branch tip (``tip_refs_``, default from the work record), each that holds one -- has a combined list
+         (original, then added rows WITH slice and reason) that is an ordered prefix of the current one, and a
+         missing or unparseable current record refuses when such a tip exists. B alone compares only with the first
+         add, so a later-committed added criterion could otherwise be deleted or rewritten. ``tip=False`` skips T
+         (the rebase guard judging HEAD's first add, which is older than the tip by construction).
+    A baseline that cannot be read skips B, T (and D) and says so in ``notes``: the guard refuses on git being
+    unreadable never, only on a clear mismatch from H, P, R or T."""
     notes = []
     stem = path(sdlc_dir, goal).stem
     review = _load('review_context')
@@ -263,6 +312,17 @@ def prefix_check(sdlc_dir, goal, refs=None, text=None, root=None):
             notes.append('baseline: unavailable (first committed record unparseable: %s)' % exc)
     else:
         notes.append('baseline: unavailable (%s)' % why)
+    tips = []
+    for ref in ((branch_tip_refs(sdlc_dir, goal) if tip_refs_ is None else tip_refs_) if tip else []):
+        raw, why_tip = _ref_blob(base_root, ref, rel.as_posix())
+        if raw is None:
+            notes.append('tip baseline: unavailable (%s)' % why_tip)
+            continue
+        try:
+            tips.append((ref, parse(raw.decode('utf-8'), stem)))
+            notes.append('tip baseline: %s' % why_tip)
+        except (ValueError, UnicodeDecodeError) as exc:
+            notes.append('tip baseline: unavailable (%s record unparseable: %s)' % (ref, exc))
     current_text, how = _record_text(sdlc_dir, goal, text)
     current = None
     if current_text is not None:
@@ -271,7 +331,7 @@ def prefix_check(sdlc_dir, goal, refs=None, text=None, root=None):
         except ValueError as exc:
             how = 'unparseable: %s' % exc
     if current is None:
-        if baseline is not None:                                                                  # clause D
+        if baseline is not None or tips:                                                          # clauses D, T
             return ('the acceptance record is missing or unparseable (%s) but a committed baseline exists; '
                     'criteria are append-only and cannot be deleted or re-recorded' % how, notes)
         return None, notes
@@ -292,6 +352,12 @@ def prefix_check(sdlc_dir, goal, refs=None, text=None, root=None):
                     notes)
         if baseline['drafted'] != current['drafted']:
             return 'drafted differs from the first committed record; it is fixed at first record', notes
+    for ref, committed in tips:                                                                   # clause T
+        old_rows = _combined(committed)
+        if _combined(current)[:len(old_rows)] != old_rows:
+            return ('the record committed on the goal branch (%s) is not an ordered prefix of this record; committed '
+                    'criteria, added ones included with their slice and reason, are append-only (no edit, removal, '
+                    'weakening or reorder)' % ref, notes)
     lacking = [x['text'] for x in current['added'] if x['reason'] is None]                           # clause R
     if lacking:
         return ('added criterion without slice and reason: %s; add with `acceptance.py extend --slice <ref> '
@@ -360,9 +426,9 @@ def extend_comment_refusal(sdlc_dir, goal, source, text=None):
     return None
 
 
-def prefix_refusal(sdlc_dir, goal, refs=None, text=None, root=None):
+def prefix_refusal(sdlc_dir, goal, refs=None, text=None, root=None, tip_refs_=None, tip=True):
     """The refusal string of `prefix_check`, or None."""
-    return prefix_check(sdlc_dir, goal, refs=refs, text=text, root=root)[0]
+    return prefix_check(sdlc_dir, goal, refs=refs, text=text, root=root, tip_refs_=tip_refs_, tip=tip)[0]
 
 
 def _guard(sdlc_dir, goal):

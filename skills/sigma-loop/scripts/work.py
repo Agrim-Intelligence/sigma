@@ -144,10 +144,14 @@ ENFORCEMENT_GATES = (
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled",), "settings": (),
      "mechanism": "refuses `work.py commit`, `work.py pr`, `merge()` and the `work.py rebase` force-push (exit 4 "
                   "`ACCEPTANCE REFUSED:`, or a `PARK:` line at merge; nothing committed or pushed) when the goal's acceptance record was "
-                  "edited, reordered, shortened or deleted after it was first committed, when its stored "
+                  "edited, reordered, shortened or deleted after it was first committed, when the record last "
+                  "committed on the goal branch (added criteria with their slice and reason included) is not an "
+                  "ordered prefix of it, when its stored "
                   "`criteria_sha256` no longer matches its Done when block, or when an added criterion has no "
                   "slice and reason; criteria grow only through `acceptance.py extend`; runs whether or not "
-                  "`verify.enforce` is on and has no flag, environment variable or config key that loosens it",
+                  "`verify.enforce` is on and has no flag, environment variable or config key that loosens it; at `commit` "
+                  "and `pr` the refusal parks the goal for a person (`needs_decision`, unless already parked; a "
+                  "guard that could not run does not park)",
      "condition": "tamper-evident, not tamper-proof. Before the first `work.py commit` there is no committed "
                   "baseline: a record with `criteria_sha256` is checked by that hash alone and a legacy record "
                   "(no hash) is not checked at all by the local clauses, so a record rewritten before the first "
@@ -159,7 +163,8 @@ ENFORCEMENT_GATES = (
                   "date, so a local rewrite before the first push replaces it and a force-push defeats it, and only "
                   "host branch protection stops that; where `.sdlc/acceptance` is gitignored there is no "
                   "committed baseline; a raw `git push` or a hand edit after the last `commit` is caught only at "
-                  "`pr` and `merge()`; the checkpoint push and a no-force `rebase` (its fast-forward push keeps the remote "
+                  "`pr` and `merge()`; only the criteria lists are compared, so wording outside them is left to review; "
+                  "the checkpoint push and a no-force `rebase` (its fast-forward push keeps the remote "
                   "baseline) run no guard of their own; git being "
                   "unreadable skips the baseline clause and prints it, and refuses nothing by itself"},
     {"control": "Acceptance record matches the issue and its added criteria are in the open",
@@ -4156,7 +4161,8 @@ def commit(sdlc_dir, config, goal, run=None, message=""):
         return "not started — run `work.py start` first (nothing committed)"
     path = rec["worktree"]
     _copy_acceptance_into_worktree(sdlc_dir, rec, goal, run)    # #1474
-    refusal = (_acceptance_append_only_refusal(sdlc_dir, rec, goal, run, "(nothing committed)", check_root=True)
+    refusal = (_park_tamper(sdlc_dir, config, goal, _acceptance_append_only_refusal(
+                   sdlc_dir, rec, goal, run, "(nothing committed)", check_root=True))
                or _acceptance_issue_refusal(sdlc_dir, config, rec, goal, "(nothing committed)", closed=False))
     if refusal:                                                 # #2222: unconditional, before anything is staged
         return refusal
@@ -4685,10 +4691,33 @@ def _acceptance_append_only_refusal(sdlc_dir, rec, goal, run, where, check_root=
                 current = _acceptance_branch_text(sdlc_dir, rec, goal)
             why = acc.prefix_refusal(sdlc_dir, goal, refs=refs, text=current, root=git_root)
     except Exception as exc:                # noqa: BLE001 - a guard error is a refusal string, never a traceback
-        why = f"the acceptance guard could not run ({exc})"
+        why = f"{_ACCEPTANCE_TRANSIENT[0]} ({exc})"
     if not why:
         return None
     return f"ACCEPTANCE REFUSED: {why} {where}"
+
+
+#: Refusal reasons that are a READ failure, not a finding: they never park (the next tick retries).
+_ACCEPTANCE_TRANSIENT = ("the acceptance guard could not run", "could not read the issue")
+_TAMPER_FIX = (". Parked it for a person (do not `record`): criteria are append-only, so a person restores the "
+               "record to its committed criteria (add only with `acceptance.py extend`), or closes this goal and "
+               "files a new one; then `/sigma-unpark` returns it to the loop.")
+
+
+def _park_tamper(sdlc_dir, config, goal, refusal):
+    """#2222 third review S2: an append-only refusal (edit, removal, reorder, deletion, reasonless added criterion) is
+    a finding only a person resolves, so it parks the goal the way a divergence does (`_park_divergence`: dedupe on
+    the park label, `needs_decision`, STILL CLAIMED on a failed park) and exit 4 means the goal already left the
+    claimed state. A guard that could not RUN is transient and returns unparked. Returns the refusal (or None)."""
+    if not refusal or refusal.split(": ", 1)[-1].startswith(_ACCEPTANCE_TRANSIENT):
+        return refusal
+    try:                                    # a local-file backlog has no issue source, but it still has a park
+        source = _acceptance_source(sdlc_dir, config) or _load("loop").sources.get_source(sdlc_dir, config)
+    except Exception as exc:                # noqa: BLE001 - never proceed, never misreport the claim
+        return (f"{refusal}. Parking it ALSO FAILED ({exc}), so it is STILL CLAIMED: run "
+                f"`loop.py record {sdlc_dir} {goal} parked \"<this refusal>\" --qkind needs_decision` by hand, "
+                f"and never edit the record to get past it.")
+    return refusal + _park_divergence(sdlc_dir, source, goal, refusal.split(": ", 1)[-1], fix=_TAMPER_FIX)
 
 
 def _acceptance_push_refusal(sdlc_dir, rec, goal):
@@ -4705,7 +4734,8 @@ def _acceptance_push_refusal(sdlc_dir, rec, goal):
                                  text=tip.stdout.decode("utf-8") if tip.returncode == 0 else "")
         first, _ = review.first_added_blob(wt, ["HEAD"], rel)
         if not why and first is not None:
-            why = acc.prefix_refusal(sdlc_dir, goal, refs=refs, root=wt, text=first.decode("utf-8"))
+            why = acc.prefix_refusal(sdlc_dir, goal, refs=refs, root=wt, text=first.decode("utf-8"),
+                                     tip=False)   # a first add is older than the tip by construction
             why = why and f"the first add of the record in the local history would replace the baseline: {why}"
     except Exception as exc:                # noqa: BLE001 - a guard error is a refusal string, never a traceback
         why = f"the acceptance guard could not run ({exc})"
@@ -4774,8 +4804,10 @@ def _acceptance_issue_refusal(sdlc_dir, config, rec, goal, where, closed, commen
                                                               if park else "")
         if comments:
             why = acc.extend_comment_refusal(sdlc_dir, goal, source, text=text)
-            if why:
-                return f"ACCEPTANCE REFUSED: {why} {where}"
+            if why:                         # an unreadable history is transient (retry); a missing comment parks
+                return f"ACCEPTANCE REFUSED: {why} {where}" + (
+                    "" if why.startswith(_ACCEPTANCE_TRANSIENT) or not park
+                    else _park_divergence(sdlc_dir, source, goal, why, fix=_TAMPER_FIX))
     except Exception as exc:                # noqa: BLE001 - a fetch failure: closed at pr, open at commit
         if closed:
             return f"ACCEPTANCE REFUSED: could not read the issue to check the acceptance record ({exc}); retry {where}"
@@ -4808,11 +4840,12 @@ def _already_parked(source, goal):
         return False
 
 
-def _park_divergence(sdlc_dir, source, goal, detail):
+def _park_divergence(sdlc_dir, source, goal, detail, fix=None):
     """#2222 D4 / review M1: an issue-vs-record divergence needs a person (the record wins and is never rewritten),
     so the refusal records the park itself, the way a stale resume at `start` does, and exit 4 then means the goal
-    already left the claimed state. Only divergence parks: a fetch failure is transient (the next tick retries) and
-    the append-only refusals are fixed by restoring the record. Returns the sentence appended to the refusal."""
+    already left the claimed state. A fetch failure is transient (the next tick retries) and never parks; the
+    append-only refusals park through this too (`_park_tamper`, ``fix`` its own sentence). Returns the sentence
+    appended to the refusal."""
     if _already_parked(source, goal):
         return ". The goal is already parked for a person (do not `record`); not parked again."
     try:
@@ -4821,8 +4854,8 @@ def _park_divergence(sdlc_dir, source, goal, detail):
         return (f". Parking it ALSO FAILED ({exc}), so it is STILL CLAIMED: run "
                 f"`loop.py record {sdlc_dir} {goal} parked \"<this refusal>\" --qkind needs_decision` by hand, "
                 f"and never edit the record to get past it.")
-    return (". Parked it for a person (do not `record`): once the issue matches the record again, `/sigma-unpark` "
-            "returns it to the loop.")
+    return fix or (". Parked it for a person (do not `record`): once the issue matches the record again, "
+                   "`/sigma-unpark` returns it to the loop.")
 
 
 def _copy_acceptance_into_worktree(sdlc_dir, rec, goal, run):
@@ -5164,7 +5197,8 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None, land=False):
         acceptance_refusal = _load("acceptance").refusal(sdlc_dir, goal)
         if acceptance_refusal:
             return acceptance_refusal
-    refusal = (_acceptance_append_only_refusal(sdlc_dir, rec, goal, run, "(nothing pushed)")     # #2222: unconditional
+    refusal = (_park_tamper(sdlc_dir, config, goal,                                              # #2222: unconditional
+                            _acceptance_append_only_refusal(sdlc_dir, rec, goal, run, "(nothing pushed)"))
                or _acceptance_issue_refusal(sdlc_dir, config, rec, goal, "(nothing pushed)", closed=True, comments=True,
                                             at_pr=True))
     if refusal:

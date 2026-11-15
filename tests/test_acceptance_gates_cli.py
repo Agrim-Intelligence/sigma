@@ -288,13 +288,17 @@ def test_acceptance_divergence_park_failure_says_still_claimed(fx, monkeypatch):
     assert refused(out) and 'STILL CLAIMED' in out and 'parked' in out
 
 
-def test_acceptance_transient_and_tamper_refusals_do_not_park(fx):
+def test_acceptance_transient_refusals_do_not_park_and_tamper_refusals_do(fx):
+    """Third review S2: exit 4 from a finding means the goal already left the claimed state; a read failure is
+    transient (the next tick retries) and leaves it claimed."""
     fx.source.fail = True
     assert refused(fx.pr()) and fx.parks == []                  # transient: the next tick retries
     fx.source.fail = False
     first_commit(fx)
     tamper(fx.wt_file, ORIG, added='- [ ] Naked line.\n')
-    assert refused(fx.pr()) and fx.parks == []
+    out = fx.pr()
+    assert refused(out) and 'Parked it' in out and 'do not `record`' in out and 'append-only' in out
+    assert len(fx.parks) == 1 and fx.parks[0][0] == '42' and 'slice and reason' in fx.parks[0][1]
 
 
 def test_acceptance_divergence_runs_for_drafted_record_when_issue_has_a_section(fx):
@@ -784,3 +788,136 @@ def test_acceptance_tip_second_extend_is_accepted_everywhere(fx):
     extend_and_commit(fx, text='Fifth holds.', slice_='42c', reason='a second finding')
     assert not refused(fx.pr())
     assert acc.main(['check', str(fx.sdlc), '42']) == 0
+
+
+def test_acceptance_tip_commit_refuses_rewriting_added_reason_keeping_text(fx):
+    first_commit(fx)
+    extend_and_commit(fx)
+    for f in (fx.root_file, fx.wt_file):
+        f.write_text(f.read_text().replace('reason: review found it', 'reason: never mind'))
+    out = fx.commit()
+    assert refused(out) and 'committed on the goal branch' in out and staged(fx) == ''
+
+
+def test_acceptance_tip_deletion_refused_when_only_the_tip_is_readable(fx):
+    """Clause T's own deletion leg: the first add was unparseable (no first-add baseline, clause D silent), the
+    record committed since is valid, and deleting it is still refused."""
+    good = fx.root_file.read_text()
+    for f in (fx.root_file,):
+        f.write_text('not a record\n')
+    first_commit(fx)                                       # nothing to compare with: lands
+    fx.root_file.write_text(good)
+    fx.wt_file.write_text(good)
+    assert not refused(fx.commit())
+    fx.root_file.unlink()
+    fx.wt_file.unlink()
+    out = fx.commit()
+    assert refused(out) and 'missing' in out and staged(fx) == ''
+
+
+def test_acceptance_tip_commit_refuses_reordering_committed_added_criteria(fx):
+    first_commit(fx)
+    acc.extend(fx.sdlc, '42', '42b', 'review found it', ['Fourth holds.', 'Fifth holds.'], config={}, source=fx.source)
+    assert not refused(fx.commit())
+    for f in (fx.root_file, fx.wt_file):
+        head, rows = f.read_text().split('## Added criteria\n', 1)
+        lines = rows.splitlines(True)
+        f.write_text(head + '## Added criteria\n' + lines[1] + lines[0])
+    out = fx.commit()
+    assert refused(out) and 'committed on the goal branch' in out and staged(fx) == ''
+
+
+def test_acceptance_tip_rebase_pushes_a_branch_whose_added_criterion_was_committed_after_the_first_add(fx):
+    """The rebase guard's first-add leg judges HEAD's first add, which predates every extend: it must not be held
+    to the tip (``tip=False``), or every extended goal would refuse to rebase."""
+    first_commit(fx)
+    extend_and_commit(fx)
+    git(fx.wt, 'push', '-q', 'origin', 'sdlc/42')
+    out = fx_rebase(fx)
+    assert out.startswith('rebased'), out
+
+
+def test_acceptance_tip_rebase_refuses_a_raw_commit_dropping_a_pushed_added_criterion(fx):
+    first_commit(fx)
+    extend_and_commit(fx)
+    git(fx.wt, 'push', '-q', 'origin', 'sdlc/42')
+    before = _remote_tip(fx)
+    strip_added(fx.wt_file)
+    git(fx.wt, 'commit', '-qam', 'drop the added criterion')
+    out = fx_rebase(fx)
+    assert refused(out) and 'committed on the goal branch' in out, out
+    assert _remote_tip(fx) == before
+
+
+# ---- third review S2: an append-only refusal parks; a read failure does not ------------------------------------
+
+def test_acceptance_commit_tamper_refusal_parks(fx):
+    first_commit(fx)
+    fx.source.body = BODY_EDITED
+    tamper(fx.root_file, EDITED)
+    tamper(fx.wt_file, EDITED)
+    out = fx.commit()
+    assert refused(out) and 'Parked it' in out and staged(fx) == '' and len(fx.parks) == 1
+
+
+def test_acceptance_guard_that_could_not_run_does_not_park(fx, monkeypatch):
+    first_commit(fx)
+
+    def boom(*a):
+        raise OSError('disk gone')
+    monkeypatch.setattr(work, '_acceptance_rel', boom)
+    out = fx.pr()
+    assert refused(out) and 'could not run' in out and 'Parked' not in out and fx.parks == []
+
+
+def test_acceptance_missing_extend_comment_parks_but_unreadable_history_does_not(fx):
+    first_commit(fx)
+    append_both(fx)
+    out = fx.pr()                                    # well-formed suffix, no extend comment: a finding
+    assert refused(out) and 'extend comment' in out and 'Parked it' in out and len(fx.parks) == 1
+
+    def boom(goal):
+        raise RuntimeError('rate limited')
+    fx.source.fetch_comments_strict = boom
+    out = fx.pr()
+    assert refused(out) and 'could not read the issue comments' in out and 'Parked' not in out
+    assert len(fx.parks) == 1
+
+
+def test_acceptance_tamper_park_failure_says_still_claimed(fx, monkeypatch):
+    def boom(*a):
+        raise RuntimeError('ledger down')
+    monkeypatch.setattr(work, '_park_goal', boom)
+    first_commit(fx)
+    tamper(fx.wt_file, ORIG, added='- [ ] Naked line.\n')
+    out = fx.pr()
+    assert refused(out) and 'STILL CLAIMED' in out
+
+
+def test_acceptance_tamper_not_parked_again_when_already_parked(fx):
+    fx.source.fetch_body_labels_rest = lambda goal: {'labels': [{'name': 'sdlc:parked'}]}
+    fx.source.parked_label = 'sdlc:parked'
+    first_commit(fx)
+    tamper(fx.wt_file, ORIG, added='- [ ] Naked line.\n')
+    out = fx.pr()
+    assert refused(out) and 'already parked' in out and fx.parks == []
+
+
+def test_acceptance_tamper_parks_a_goal_with_no_issue_source(fx, monkeypatch):
+    """A local-file backlog has no issue, but it still has a park: the loop's own source records it."""
+    monkeypatch.setattr(work, '_acceptance_source', lambda sdlc_dir, config: None)
+    sources = []
+    monkeypatch.setattr(work, '_park_goal', lambda sdlc_dir, source, goal, detail: sources.append(source))
+    first_commit(fx)
+    tamper(fx.wt_file, ORIG, added='- [ ] Naked line.\n')
+    out = fx.pr()
+    assert refused(out) and 'Parked it' in out and len(sources) == 1 and sources[0] is not None
+
+
+def test_acceptance_commit_refuses_root_only_criteria_edit_with_hash_line_unchanged(fx):
+    """Third review m3: the root's criteria edited while its `criteria_sha256` line is left alone. The worktree copy
+    is the clean original, so only `_acceptance_is_extension`'s own criteria comparison can see the two differ."""
+    first_commit(fx)
+    tamper(fx.root_file, EDITED, fix_hash=False)
+    out = fx.commit()
+    assert refused(out) and 'differ' in out and staged(fx) == ''
