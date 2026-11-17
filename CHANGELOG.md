@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`/sigma-init --antigravity` writes the managed `AGENTS.md` block, and the Cursor hooks wording is corrected (#2239).** Opt-in, skip-if-exists, the same block `--codex` writes, `companions` pinned off, no `.agents/skills` link or copy. Cursor documents a hooks system; Sigma uses none and no hook is load-bearing. Never run in Antigravity or Cursor; hooks, MCP, workflows, headless `agy` and subagents there are unmeasured.
+
 ## 1.0.33 — 2026-11-15 — acceptance criteria are append-only, closing a goal releases its dependents, and follow-ups join their goal as slices
 
 - **Follow-ups join their goal as slices by default; a separate goal is filed only for another feature or past the slice limit (#2224, #2228).** `followups.mode` now defaults to `in-goal`; only the exact value `file` opts out, and an unknown or mistyped value reads `in-goal` with one stderr line naming it. Found work that belongs to the goal's own feature is added to its plan with `work.py add-slice`, which appends the slice's criteria through `acceptance.py extend`, in the open and never by editing existing ones. `handoff.py track` files a separate goal only for `different-feature` or `slice-cap` (`followups.max_added_slices`, default 10), and records which. A `--kind child` filing is exempt only when the parent has a code-recorded decomposition decision; no flag, environment variable or config key bypasses it. `prerequisite`, `cleanup` and `--blocks yes` stay routed. The decompose prose that told an agent to set `followups.mode: file` repo-wide is removed. #2228 fixes two `tests/test_resource_lease.py` tests that failed on a clean main in some containers (a fake pid beside a real `pid_start`).

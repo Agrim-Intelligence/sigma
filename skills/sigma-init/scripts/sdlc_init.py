@@ -109,7 +109,7 @@ def _verify_detect():
 
 def verify_report(target_dir):
     """Lines /sigma-init prints about the verify command, on every host: the detected candidate and
-    the exact gesture (Codex/Cursor have no interactive question, so this IS their prompt), or a
+    the exact gesture (Codex/Cursor/Antigravity have no verified interactive question, so this IS their prompt), or a
     loud warning when an existing config holds the permanent-refusal trap."""
     cfgp = pathlib.Path(target_dir) / ".sdlc" / "config.json"
     try:
@@ -730,7 +730,7 @@ def extras_refusal_lines(exc):
 
 
 def scaffold_extras(target, flags):
-    """The opt-in scaffolds (`--demo`, `--vision`, `--cursor`, `--codex`, `--architecture-doc`), each skip-if-exists and
+    """The opt-in scaffolds (`--demo`, `--vision`, `--cursor`, `--codex`, `--antigravity`, `--architecture-doc`), each skip-if-exists and
     each reporting one line. Shared by `main()` and `init_flow.py` (#236), so the one entry point
     and this low-level scaffolder never diverge on what a flag writes."""
     if "--demo" in flags:
@@ -778,6 +778,26 @@ def scaffold_extras(target, flags):
             print("\nsigma-init: Codex adapter written to `AGENTS.md` (other rules preserved).")
         else:
             print("\nsigma-init: Codex rule already present (kept).")
+    if "--antigravity" in flags:
+        # #2239: tier 1 only. The same managed AGENTS.md block `--codex` writes (one function, one
+        # text), pinned companions:off like --cursor (no review companion on this host). No
+        # `.agents/skills` link or copy: not measured, not asked.
+        wrote = scaffold_codex(target)
+        try:
+            cfgp = pathlib.Path(target) / ".sdlc" / "config.json"
+            cfg = json.loads(cfgp.read_text(encoding="utf-8"))
+            if cfg.get("companions") != "off":
+                cfg["companions"] = "off"
+                _verify_detect()._atomic_write_json(cfgp, cfg)
+        except Exception:
+            pass
+        print("\nsigma-init: Antigravity adapter " + ("written to `AGENTS.md` (other rules preserved)."
+              if wrote else "already present in `AGENTS.md` (kept).") + " companions pinned off.")
+        print("  Antigravity reads AGENTS.md / .agents/rules/*.md for rules and skills from .agents/skills/ "
+              "(its official docs: https://antigravity.google/docs/rules and /skills). Nothing was "
+              "linked or copied into .agents/skills/.")
+        print("  Sigma has never been run in Antigravity: this is experimental, and the block's Codex "
+              "wording is unadapted.")
     if "--architecture-doc" in flags:     # LAST: the opt-in scaffolds stop at the first failure
         created, rel = scaffold_architecture_doc(target)
         q = shlex.quote(rel)
@@ -792,7 +812,7 @@ def scaffold_extras(target, flags):
             print(f"  = {rel} (exists, kept)")
 
 
-USAGE = "usage: sdlc_init.py [target_dir] [--github] [--codex] [--cursor] [--vision] [--demo] [--architecture-doc]"
+USAGE = "usage: sdlc_init.py [target_dir] [--github] [--codex] [--cursor] [--antigravity] [--vision] [--demo] [--architecture-doc]"
 
 
 def missing_target_message(target):

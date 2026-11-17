@@ -45,8 +45,9 @@ data.
 
 **Host-agnostic or it does not ship.** `docs/output-contract.md` opens "Host-agnostic. Applies to
 Claude Code, Cursor, Codex, or any future agent host", and that governs mechanism, not just prose.
-Cursor has NO hooks — its `.mdc` is text the model reads — so a Claude Code hook may be an
-accelerator, never load-bearing. Triggers and lifecycles live in Sigma's own Python, or in git,
+Cursor documents a hooks system (`.cursor/hooks.json`, https://cursor.com/docs/hooks, read 17 Nov 2026);
+Sigma does not use it, and whether it fires in Cursor's command-line agent is unmeasured. Sigma's Cursor
+adapter is `.mdc` text the model reads, so a Claude Code hook may be an accelerator, never load-bearing. Triggers and lifecycles live in Sigma's own Python, or in git,
 which every host shares.
 
 **Run the control, or the check is decoration.** Every guard is deliberately broken once and seen to
