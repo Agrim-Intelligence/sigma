@@ -685,6 +685,35 @@ def test_find_claude_agent_transcript_found(tmp_path):
     assert found == target
 
 
+def _two_slug_session(home, sid="sess-2", agent="abc123"):
+    """The Claude Code cloud layout: one session id under two project slugs. The repo-cwd slug holds
+    only a tip file; the subagent transcripts live under the home-cwd slug."""
+    projects = home / ".claude" / "projects"
+    tip_only = projects / "-home-user-agrim-bos" / sid
+    tip_only.mkdir(parents=True)
+    (tip_only / "ccr-tip.json").write_text("{}")
+    subagents = projects / "-home-user" / sid / "subagents"
+    subagents.mkdir(parents=True)
+    target = subagents / f"agent-{agent}.jsonl"
+    target.write_text(json.dumps(_assistant_line()) + "\n")
+    return target
+
+
+def test_find_claude_agent_transcript_searches_every_slug_holding_the_session(tmp_path):
+    target = _two_slug_session(tmp_path)
+    assert pr.find_claude_agent_transcript("sess-2", "abc123", home=tmp_path) == target
+
+
+def test_find_claude_session_dir_prefers_the_slug_with_subagents(tmp_path):
+    target = _two_slug_session(tmp_path)
+    assert pr.find_claude_session_dir("sess-2", home=tmp_path) == target.parent.parent
+
+
+def test_find_claude_agent_transcript_still_none_for_an_unknown_agent(tmp_path):
+    _two_slug_session(tmp_path)
+    assert pr.find_claude_agent_transcript("sess-2", "nope99", home=tmp_path) is None
+
+
 def test_find_claude_agent_transcript_missing_session(tmp_path):
     assert pr.find_claude_agent_transcript("no-such-session", "abc123", home=tmp_path) is None
 
