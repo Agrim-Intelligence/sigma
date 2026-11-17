@@ -4,7 +4,7 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
-- **`/sigma-init --antigravity` writes the managed `AGENTS.md` block, and the Cursor hooks wording is corrected (#2239).** Opt-in, skip-if-exists, the same block `--codex` writes, `companions` pinned off, no `.agents/skills` link or copy. Cursor documents a hooks system; Sigma uses none and no hook is load-bearing. Never run in Antigravity or Cursor; hooks, MCP, workflows, headless `agy` and subagents there are unmeasured.
+- **`/sigma-init --antigravity` writes the managed `AGENTS.md` block, and the Cursor hooks wording is corrected (#2239).** Opt-in, skip-if-exists, the same block `--codex` writes, no config change, no `.agents/skills` link or copy. Cursor documents a hooks system; Sigma uses none and no hook is load-bearing. Never run in Antigravity or Cursor; hooks, MCP, workflows, headless `agy` and subagents there are unmeasured.
 
 ## 1.0.33 — 2026-11-15 — acceptance criteria are append-only, closing a goal releases its dependents, and follow-ups join their goal as slices
 

@@ -3,6 +3,7 @@
 Nothing here runs Antigravity or Cursor; these tests pin what Sigma WRITES and SAYS."""
 import importlib.util
 import json
+import re
 import pathlib
 import subprocess
 import sys
@@ -64,19 +65,21 @@ def test_absent_flag_writes_nothing():
         assert not (pathlib.Path(tmp) / ".agents").exists()
 
 
-def test_init_flow_accepts_the_flag_and_pins_companions_off():
+def test_init_flow_accepts_the_flag_and_changes_no_config_value():
+    with _repo() as base:
+        _init(base, "--no-verify")
+        before = json.loads((pathlib.Path(base) / ".sdlc" / "config.json").read_text())
     with _repo() as tmp:
         r = _init(tmp, "--antigravity", "--no-verify")
         # rc may be 1 from the host-access preflight step in a bare fixture; the scaffold is the claim
         assert "Antigravity adapter" in r.stdout and "REFUSED at" not in r.stdout, r.stdout
+        assert "companions" not in r.stdout
         assert START in (pathlib.Path(tmp) / "AGENTS.md").read_text()
         cfg = json.loads((pathlib.Path(tmp) / ".sdlc" / "config.json").read_text())
-        assert cfg.get("companions") == "off"
+        assert cfg == before                                  # the flag writes no config value
     with _repo() as tmp:
         _init(tmp, "--no-verify")
-        assert not (pathlib.Path(tmp) / "AGENTS.md").exists()
-        cfg = json.loads((pathlib.Path(tmp) / ".sdlc" / "config.json").read_text())
-        assert cfg.get("companions") == "auto"                # opt-in only: untouched default
+        assert not (pathlib.Path(tmp) / "AGENTS.md").exists()   # opt-in only
 
 
 def test_usage_and_help_list_the_flag():
@@ -103,23 +106,58 @@ def test_platform_support_has_an_honest_antigravity_section():
     assert "17 Nov 2026" in section
 
 
+_NEG = ("not", "never", "un", "no ")
+_CLAIM = re.compile(r"antigravity\b[^.!?\n]*?\b(works|working|runs|supported|compatible|validated)\b", re.I)
+
+
+def _overclaims(text):
+    """Sentences where Antigravity is followed by a positive claim word with no negation before it."""
+    found = []
+    for sentence in re.split(r"(?<=[.!?])\s+|\n", text):
+        m = _CLAIM.search(sentence)
+        if m and not any(n in sentence[:m.start(1)].lower() for n in _NEG):
+            found.append(sentence)
+    return found
+
+
+def _printed_text():
+    out = subprocess.run([sys.executable, str(INIT / "sdlc_init.py"), "--help"],
+                         capture_output=True, text=True, timeout=60).stdout
+    with _repo() as tmp:
+        out += _scaffold(tmp, "--antigravity").stdout
+    return out
+
+
 def test_no_doc_claims_antigravity_works_or_is_supported():
-    for rel in ("README.md", "docs/platform-support.md", "CHANGELOG.md"):
-        for line in _read(rel).splitlines():
-            low = line.lower()
-            if "antigravity" in low:
-                for bad in ("antigravity works", "antigravity is supported", "supports antigravity",
-                            "fully validated", "validated in antigravity"):
-                    assert bad not in low, (rel, line)
+    for name, text in (("README.md", _read("README.md")),
+                       ("docs/platform-support.md", _read("docs/platform-support.md")),
+                       ("printed", _printed_text())):
+        assert not _overclaims(text), (name, _overclaims(text))
+        assert "never been run" in text.lower() or "never run" in text.lower(), name
     assert "| Antigravity |" in _read("README.md")
-    assert "never run" in _read("README.md").lower()
+
+
+def test_the_overclaim_regex_catches_a_positive_claim():
+    assert _overclaims("Antigravity runs Sigma.")
+    assert _overclaims("Antigravity is supported.")
+    assert not _overclaims("Sigma has never been run in Antigravity, so nothing there works is claimed.")
+
+
+_NO_HOOKS = re.compile(r"cursor[,\s]+(which\s+)?(has|and codex have|and codex has)\s+no\s+hooks|no hooks \(cursor\)"
+                       r"|cursor[- ]style host has no hooks|cursor/codex have no hooks", re.I)
 
 
 def test_cursor_is_no_longer_said_to_have_no_hooks():
-    for rel in ("AGENTS.md", "docs/enforcement.md", "docs/platform-support.md",
-                "skills/sigma-doctor/scripts/enforcement_table.py"):
-        text = _read(rel)
-        assert "Cursor has NO hooks" not in text and "Cursor and Codex have no hooks" not in text, rel
+    files = subprocess.run(["git", "ls-files", "hooks", "docs", "skills", "README.md", "AGENTS.md"],
+                           cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
+    hits = []
+    for rel in files:
+        try:
+            text = (ROOT / rel).read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        hits += [f"{rel}: {m.group(0)}" for m in _NO_HOOKS.finditer(" ".join(text.split()))]
+    assert not hits, hits
     agents = _read("AGENTS.md")
     assert ".cursor/hooks.json" in agents and "https://cursor.com/docs/hooks" in agents
     assert "unmeasured" in agents and "never load-bearing" in " ".join(agents.split())

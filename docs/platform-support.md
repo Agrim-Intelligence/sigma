@@ -93,8 +93,9 @@ python3 <installed-sigma>/skills/sigma-init/scripts/init_flow.py . --antigravity
 ```
 
 `--antigravity` is opt-in. It writes the same managed block in **`AGENTS.md`** that `--codex` writes
-(skip-if-exists, refreshed when the plugin text changes, every other byte kept), pins `companions: off`
-as `--cursor` does, and prints where Antigravity looks. The block's wording is Codex's, unadapted for
+(skip-if-exists, refreshed when the plugin text changes, every other byte kept) and prints where
+Antigravity looks. The flag itself writes only `AGENTS.md`; it changes no config value (`/sigma-init`'s
+ordinary `.sdlc/` scaffolding still runs). The block's wording is Codex's, unadapted for
 Antigravity. It creates no `.agents/` directory and does not link or copy any skill.
 
 What Antigravity's official docs say (read 17 Nov 2026): rules come from `AGENTS.md`, `GEMINI.md` or

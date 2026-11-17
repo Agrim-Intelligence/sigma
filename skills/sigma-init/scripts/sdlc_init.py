@@ -780,19 +780,10 @@ def scaffold_extras(target, flags):
             print("\nsigma-init: Codex rule already present (kept).")
     if "--antigravity" in flags:
         # #2239: tier 1 only. The same managed AGENTS.md block `--codex` writes (one function, one
-        # text), pinned companions:off like --cursor (no review companion on this host). No
-        # `.agents/skills` link or copy: not measured, not asked.
+        # text). No config write, no `.agents/skills` link or copy: not measured, not asked.
         wrote = scaffold_codex(target)
-        try:
-            cfgp = pathlib.Path(target) / ".sdlc" / "config.json"
-            cfg = json.loads(cfgp.read_text(encoding="utf-8"))
-            if cfg.get("companions") != "off":
-                cfg["companions"] = "off"
-                _verify_detect()._atomic_write_json(cfgp, cfg)
-        except Exception:
-            pass
         print("\nsigma-init: Antigravity adapter " + ("written to `AGENTS.md` (other rules preserved)."
-              if wrote else "already present in `AGENTS.md` (kept).") + " companions pinned off.")
+              if wrote else "already present in `AGENTS.md` (kept)."))
         print("  Antigravity reads AGENTS.md / .agents/rules/*.md for rules and skills from .agents/skills/ "
               "(its official docs: https://antigravity.google/docs/rules and /skills). Nothing was "
               "linked or copied into .agents/skills/.")

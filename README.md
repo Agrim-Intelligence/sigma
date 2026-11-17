@@ -423,7 +423,7 @@ see which features are live for your config.
 | Claude Code | Run end to end, including PRs and merges, by the maintainers on one machine class (macOS) with no outside users; see [Measured results](docs/launch/evidence/measured-results.md). |
 | Codex | Partially validated: install and first loop command run in a real session; a full goal through to merge has not yet been measured. |
 | Cursor | Experimental: scaffolding is unit-tested but has not been run in Cursor. |
-| Antigravity | Experimental, never run in Antigravity: `--antigravity` writes the managed `AGENTS.md` block and nothing else; hooks, MCP, workflows, headless `agy` and subagents are unmeasured ([details](docs/platform-support.md#antigravity-experimental)). |
+| Antigravity | Experimental, never run in Antigravity: `--antigravity` itself writes only the managed `AGENTS.md` block (no config change, no `.agents/`); hooks, MCP, workflows, headless `agy` and subagents are unmeasured ([details](docs/platform-support.md#antigravity-experimental)). |
 
 CI runs the full suite on Linux with Python 3.10, 3.11, 3.12, and 3.13, and on macOS with Python 3.12. That full matrix runs weekly and on demand; a nightly run covers the suite minus its heaviest files on macOS Python 3.12; pull requests and merges to main run a short smoke set (`.github/smoke-tests.txt`) on one macOS Python 3.12 leg (results: [Measured results](docs/launch/evidence/measured-results.md)).
 Details, including what each host has been measured to do: [docs/platform-support.md](docs/platform-support.md).
