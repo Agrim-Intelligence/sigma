@@ -52,9 +52,16 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TOOL = ROOT / "tools" / "onboarding_control.py"
 
-pytestmark = pytest.mark.skipif(
-    os.name == "nt" or not shutil.which("make") or not shutil.which("git"),
-    reason="POSIX-only control (needs make + git; the fake gh is a #! script)")
+# timeout(1500): the full tier's per-test default is 300 s (#2255). Measured on the full tier's 2-core runners,
+# the controls here took up to 297 s and the two planted-gesture tests run the whole plain gesture through a
+# subprocess allowed 900 s, so under the default the worker was killed mid-test; 1500 s leaves the 900 s
+# subprocess limit as the binding one, so a real hang still fails fast with its name.
+pytestmark = [
+    pytest.mark.skipif(
+        os.name == "nt" or not shutil.which("make") or not shutil.which("git"),
+        reason="POSIX-only control (needs make + git; the fake gh is a #! script)"),
+    pytest.mark.timeout(1500),
+]
 
 
 def _tool():

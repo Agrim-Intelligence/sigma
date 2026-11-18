@@ -277,7 +277,7 @@ def _real_fixture(workdir: Path, sigma: Path, *, direct_merge=False):
     """
     control = _load_onboarding_control(sigma)
     root = workdir / "fixture"
-    base, bin_dir, remote, repo = root / "github", root / "github" / "bin", root / "github" / "remote.git", root / "github" / "repo"
+    base, bin_dir, remote, repo = root / "github", root / "github" / "bin", root / "github" / control.FAKE_REPO_DIR, root / "github" / "repo"
     state_path, log_path, unhandled = root / "github" / "gh_state.json", root / "github" / "gh_log.jsonl", root / "github" / "gh_unhandled.jsonl"
     bin_dir.mkdir(parents=True)
     gh = bin_dir / "gh"

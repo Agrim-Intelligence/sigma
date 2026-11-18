@@ -30,5 +30,5 @@ def test_every_readme_repository_url_names_the_public_repository():
 def test_the_check_goes_red_on_a_mismatched_url():
     """Control: the same scan, run on a README with one URL changed, must report the odd slug."""
     text = (ROOT / "README.md").read_text(encoding="utf-8")
-    broken = text.replace("github.com/Agrim-Intelligence/" + _public_name(), "github.com/Agrim-Intelligence/other", 1)
+    broken = text.replace("github.com/Agrim-Intelligence/" + _public_name(), "github.com/Agrim-Intelligence/other", 1)  # leak-scan: allow origin-owner-url a deliberately different repository name, the control's input (#2255)
     assert set(_slugs(broken)) != {_public_name()}

@@ -371,7 +371,7 @@ TEXT_PAIRS = (
 )
 
 # The only colours the site may contain: white, black, the greys and the single link hue pair.
-# Light and dark values of each token, as read from the portfolio's insights pages.
+# Light and dark values of each token, as read from the portfolio's published pages.
 ALLOWED_HEX = {
     "#ffffff", "#f4f6f7", "#d9dfe3", "#c9d2d7", "#10181c", "#56646e",   # light scheme
     "#0e171b", "#152127", "#25333a", "#34444c", "#e6ecef", "#c3ced4", "#a9b8c0",  # dark scheme

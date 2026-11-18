@@ -689,7 +689,7 @@ def _two_slug_session(home, sid="sess-2", agent="abc123"):
     """The Claude Code cloud layout: one session id under two project slugs. The repo-cwd slug holds
     only a tip file; the subagent transcripts live under the home-cwd slug."""
     projects = home / ".claude" / "projects"
-    tip_only = projects / "-home-repo-checkout" / sid
+    tip_only = projects / "-home-repo-checkout" / sid  # leak-scan: allow home-path a project-slug fixture, not a real path (#2255)
     tip_only.mkdir(parents=True)
     (tip_only / "ccr-tip.json").write_text("{}")
     subagents = projects / "-home-user" / sid / "subagents"
