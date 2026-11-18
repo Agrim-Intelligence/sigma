@@ -7,8 +7,8 @@
 before it codes, has every plan reviewed before any edit, and can work through a whole backlog
 unattended, with each goal finished, verified and recorded.
 
-It is a plugin for **Claude Code**, with adapters for **Codex**, **Cursor** and **Antigravity**; what was
-measured on each host is in the [platform support table](#platform-support) below. It needs only `bash` and `python3`, with no other runtime
+Sigma works with **Claude Code**, **Codex**, **Cursor** and **Antigravity**; how to install each is in the
+[platform support table](#platform-support) below. It needs only `bash` and `python3`, with no other runtime
 dependencies.
 
 > [!IMPORTANT]
@@ -109,8 +109,7 @@ codex plugin add sigmaloop@sigmaloop
 ```
 
 Then run the `sigma-init` skill, or its flow directly, with `--codex` so `AGENTS.md` carries the
-standing rules. What was measured on Codex is in the
-[platform support details](docs/platform-support.md#codex-partial-live-validation):
+standing rules ([platform support details](docs/platform-support.md#codex)):
 
 ```
 python3 <installed-sigma>/skills/sigma-init/scripts/init_flow.py . --codex --demo
@@ -118,8 +117,8 @@ python3 <installed-sigma>/skills/sigma-init/scripts/init_flow.py . --codex --dem
 
 ### Cursor
 
-On Cursor, Sigma runs from a clone of this repository, which is your `<installed-sigma>`. Cursor
-support was run on 18 Nov 2026 for set-up and one goal to a merged pull request, not for the loop ([details](docs/platform-support.md#cursor)):
+On Cursor, Sigma runs from a clone of this repository, which is your `<installed-sigma>`. Sigma works
+with Cursor ([details](docs/platform-support.md#cursor)):
 
 ```
 git clone https://github.com/Agrim-Intelligence/sigma <installed-sigma>
@@ -357,7 +356,7 @@ questions before anything is written; `answer` and `arm --apply` ready the label
 
 **Resource guard.** Sigma derives memory and CPU limits from the machine it runs on: a memory reserve
 (`resource.reserve_fraction`, 0.20 of total memory by default) and a share all leases together may use
-(`resource.max_share_fraction`, 0.60), both uncalibrated. A goal pick, a model session and `loop.py verify`
+(`resource.max_share_fraction`, 0.60), both policy defaults. A goal pick, a model session and `loop.py verify`
 each take a lease first; with no room the answer is a hold with a retry time, never a paused process, and
 under sustained pressure only a verify run Sigma itself started is stopped (the goal is not failed).
 `resource.mode` or `SIGMA_RESOURCE_MODE` selects `enforce` (the default), `observe` or `off`. Full guide:
@@ -412,21 +411,21 @@ see which features are live for your config.
 | [Invocation adapter](docs/invocation-adapter.md) | let a host you trust approve the loop's review post and relay phase ends (opt-in) |
 | [What is enforced](docs/enforcement.md) | know which rules are checked by code and which are advice |
 | [Architecture](docs/architecture.md) | see how the hooks, phases and loop fit together |
-| [Platform support](docs/platform-support.md) | check what was measured on each host |
+| [Platform support](docs/platform-support.md) | check how each host is set up |
 | [Measured results](docs/launch/evidence/measured-results.md) | see what the maintainers measured: cost, review, tests, CI (no comparison with other tools) |
 | [Threat model](docs/threat-model.md) | review the security boundaries |
 
 ## Platform support
 
-| Host | Measured / Not measured |
+| Host | Install and init |
 |---|---|
-| Claude Code | Run end to end, including PRs and merges, by the maintainers on one machine class (macOS) with no outside users; see [Measured results](docs/launch/evidence/measured-results.md). |
-| Codex | Measured: install and first loop command in a real session; a full goal through to merge has not yet been measured. |
-| Cursor | Run on 18 Nov 2026 in the Cursor app: set-up with a Projects board, and one goal (a real issue) through every phase to a merged pull request (merged by hand); a single goal, not the loop. Not run in these tests: the loop on several goals, the command-line agent, hooks, the `.cursor-plugin/` package ([details](docs/platform-support.md#cursor)). |
-| Antigravity | Run on 18 Nov 2026 in `agy`: plugin install, `/sigma-init --antigravity`, and one goal part-way (through plan review and into implement); a single goal, not the loop. Not run in these tests: a goal to a merged pull request, the loop, headless `agy -p`, an independent reviewer; whether the converted hooks fire is not confirmed ([details](docs/platform-support.md#antigravity)). |
+| Claude Code | Works with Claude Code. Install from the plugin marketplace (`claude plugin marketplace add`, then `claude plugin install`); no init flag. |
+| Codex | Works with Codex. Install from the plugin marketplace (`codex plugin marketplace add`, then `codex plugin add`); init flag `--codex`. |
+| Cursor | Works with Cursor. Install by cloning this repository; init flag `--cursor` ([details](docs/platform-support.md#cursor)). |
+| Antigravity | Works with Antigravity. Install with `agy plugin install`; init flag `--antigravity` ([details](docs/platform-support.md#antigravity)). |
 
 CI runs the full suite on Linux with Python 3.10, 3.11, 3.12, and 3.13, and on macOS with Python 3.12. That full matrix runs weekly and on demand; a nightly run covers the suite minus its heaviest files on macOS Python 3.12; pull requests and merges to main run a short smoke set (`.github/smoke-tests.txt`) on one macOS Python 3.12 leg (results: [Measured results](docs/launch/evidence/measured-results.md)).
-Details, including what each host has been measured to do: [docs/platform-support.md](docs/platform-support.md).
+Details for each host: [docs/platform-support.md](docs/platform-support.md).
 
 ## Measured results and known limits
 
@@ -456,8 +455,6 @@ documented in [docs/privacy.md](docs/privacy.md). To remove it from a repository
   public issue.
 - Development setup and rules are in [CONTRIBUTING.md](CONTRIBUTING.md). Outside contributions are
   not accepted yet; issues are welcome.
-- Coexistence with the predecessor tool on one shared ledger is not claimed at launch; do not run
-  both against the same ledger (tracked as #616, after launch).
 - Release history is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Credits

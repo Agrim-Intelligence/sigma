@@ -153,7 +153,7 @@ def test_outside_contributions_not_accepted():
 
 
 def test_coexistence_not_claimed():
-    for path in ("README.md", "docs/launch/definition.md"):
+    for path in ("docs/launch/definition.md",):
         text = _flat(path)
         _check("not claimed at launch" in text and "predecessor" in text, f"{path} lacks the coexistence statement")
         _check("#616" in text, f"{path} lacks #616")

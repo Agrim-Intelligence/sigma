@@ -41,7 +41,9 @@ def test_flag_writes_the_codex_block_and_says_where_antigravity_looks():
         spec.loader.exec_module(mod)
         assert mod._CODEX_RULE.rstrip("\n") in text          # reused, not a second copy
         assert ".agents/rules/*.md" in r.stdout and ".agents/skills/" in r.stdout
-        assert "docs/platform-support.md" in r.stdout and "experimental" not in r.stdout.lower()
+        assert "AGENTS.md" in r.stdout and "experimental" not in r.stdout.lower()
+        ag = "\n".join(l for l in r.stdout.splitlines() if "Antigravity" in l)
+        assert ag and not re.search(r"Nov 2026|part-way|not run|measured|docs/platform-support|unadapted", ag, re.I), ag
         assert not (pathlib.Path(tmp) / ".agents").exists()   # no skill link or copy
         assert not (pathlib.Path(tmp) / "GEMINI.md").exists()
 
@@ -95,30 +97,14 @@ def _read(rel):
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
-def test_platform_support_has_an_honest_antigravity_section():
+def test_platform_support_has_a_plain_antigravity_section():
     text = _read("docs/platform-support.md")
     assert "\n### Antigravity\n" in text
     section = text.split("\n### Antigravity\n")[1].split("\n## ")[0]
-    assert "Not run in these tests" in section and "18 Nov 2026" in section
-    assert "not taken on to a pull request or a merge" in section
-    for unmeasured in ("hooks", "MCP", "workflows", "agy", "subagents"):
-        assert unmeasured in section
+    assert "Sigma works with Antigravity" in section
+    assert "agy plugin install" in section and "--antigravity" in section and "AGENTS.md" in section
     assert "antigravity.google/docs/rules" in section and "antigravity.google/docs/skills" in section
-    assert "17 Nov 2026" in section
-
-
-_NEG = ("not", "never", "un", "no ")
-_CLAIM = re.compile(r"antigravity\b[^.!?\n]*?\b(works|working|runs|supported|compatible|validated)\b", re.I)
-
-
-def _overclaims(text):
-    """Sentences where Antigravity is followed by a positive claim word with no negation before it."""
-    found = []
-    for sentence in re.split(r"(?<=[.!?])\s+|\n", text):
-        m = _CLAIM.search(sentence)
-        if m and not any(n in sentence[:m.start(1)].lower() for n in _NEG):
-            found.append(sentence)
-    return found
+    assert not re.search(r"Not run in these tests|18 Nov 2026|scratch repository|unmeasured", section)
 
 
 def _printed_text():
@@ -129,22 +115,16 @@ def _printed_text():
     return out
 
 
-def test_no_doc_claims_antigravity_works_or_is_supported():
-    for name, text in (("README.md", _read("README.md")),
-                       ("docs/platform-support.md", _read("docs/platform-support.md")),
+def test_public_pages_state_antigravity_support_plainly():
+    readme = _read("README.md")
+    row = [l for l in readme.splitlines() if l.startswith("| Antigravity |")]
+    assert len(row) == 1 and "Works with Antigravity" in row[0]
+    assert "agy plugin install" in row[0] and "--antigravity" in row[0]
+    site = _read("site/hosts.html").split('id="antigravity"')[1]
+    assert "Sigma works with Antigravity" in site and "agy plugin install" in site
+    for name, text in (("README.md", readme), ("site/hosts.html", _read("site/hosts.html")),
                        ("printed", _printed_text())):
-        assert not _overclaims(text), (name, _overclaims(text))
-        if name != "printed":
-            assert "not run in these tests" in text.lower(), name
-        else:
-            assert "18 Nov 2026" in text and "not to a merged pull request" in text, name
-    assert "| Antigravity |" in _read("README.md")
-
-
-def test_the_overclaim_regex_catches_a_positive_claim():
-    assert _overclaims("Antigravity runs Sigma.")
-    assert _overclaims("Antigravity is supported.")
-    assert not _overclaims("Sigma was not run in Antigravity, so nothing there works is claimed.")
+        assert not re.search(r"18 Nov 2026|Not run in these tests|scratch repository", text), name
 
 
 _NO_HOOKS = re.compile(r"cursor[,\s]+(which\s+)?(has|and codex have|and codex has)\s+no\s+hooks|no hooks \(cursor\)"

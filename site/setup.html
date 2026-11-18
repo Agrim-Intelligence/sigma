@@ -109,7 +109,7 @@
 </div>
 
 <h2 id="install">1. Install</h2>
-<p>The commands differ per host (Claude Code and Codex use a plugin marketplace, Antigravity a plugin install command; Cursor runs from a clone). They are on <a href="get-started.html">Get started</a>, and what was measured on each host is on <a href="hosts.html">Hosts</a>.</p>
+<p>The commands differ per host (Claude Code and Codex use a plugin marketplace, Antigravity a plugin install command; Cursor runs from a clone). They are on <a href="get-started.html">Get started</a>, and the hosts are described on <a href="hosts.html">Hosts</a>.</p>
 <p>Needed on the machine: <code>git</code>, <code>bash</code> and <code>python3</code> (standard library only). The GitHub CLI <code>gh</code>, logged in, is optional: only GitHub issues as the backlog, a Projects board and a pull request per goal need it.</p>
 
 <h2 id="adopt">2. Adopt a repository with <code>/sigma-init</code></h2>
@@ -146,14 +146,10 @@
 <p>An update replaces skills, docs, hooks and scripts. It <strong>never rewrites your <code>.sdlc/config.json</code></strong>. A block added by a later release does not appear in a repository adopted earlier: copy it from the template in the installed plugin, with every <code>enabled</code> left <code>false</code>, and open one gate at a time. <a href="config.html">Configuration</a> says what each key does.</p>
 <p>If a watcher is running, stop it so the next trigger starts it on the new build: <code>touch .sdlc/state/watch.stop</code>. If you also run the Slack command listener or the supervisor, stop those the same way with <code>.sdlc/state/slack-commands.stop</code> and <code>.sdlc/state/supervisor.stop</code>; the uninstall steps (docs/uninstall.md) stop all three and wait for them to exit. What each release changes by default is on <a href="releases.html">Releases</a>.</p>
 
-<div class="callout callout-warn">
-<div class="callout-title">An install under the old plugin id stops updating</div>
-<p>Before launch the plugin and marketplace had another id. An install recorded under it keeps working and silently stops receiving updates. <code>/sigma-doctor</code> detects it and prints the commands to switch; it runs none of them. The sequence has not been run against a real pre-launch install.</p>
-</div>
 
 <div class="aud aud-tech">
 <div class="aud-label">Technical detail</div>
-<p>The init flow is safe to re-run and never changes a setting in <code>.sdlc/config.json</code> unless you pass the flag for it on that run. Verify trust is per checkout and is deliberately not committed: a fresh clone, and every cloud session, must grant it again (or the operator approves the command once in the environment's settings). Without it the verify command is refused and a goal never reaches a pull request. Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/upgrading.md">upgrading</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/cloud-sessions.md">cloud sessions</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/uninstall.md">uninstall</a>.</p>
+<p>The init flow is safe to re-run and never changes a setting in <code>.sdlc/config.json</code> unless you pass the flag for it on that run. Verify trust is per checkout and is deliberately not committed: a fresh clone, and every cloud session, must grant it again (or the operator approves the command once in the environment's settings). Without it the verify command is refused and a goal never reaches a pull request.</p>
 </div>
 
 <div class="pagenav">

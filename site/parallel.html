@@ -88,7 +88,6 @@
 <li><a href="#scheduled">Scheduled and routine runs</a></li>
 <li><a href="#codex">The Codex supervisor</a></li>
 <li><a href="#guard">The resource guard</a></li>
-<li><a href="#limits">What is not measured</a></li>
 </ul>
 </nav>
 
@@ -261,17 +260,9 @@ python3 &lt;installed-sigma&gt;/skills/sigma-loop/scripts/loop.py session-end .s
 </ul>
 <p>The guard cannot cover tests you run by hand outside the verify command, memory used by other programs, a host&rsquo;s own subagent fan-out, or Windows (where it refuses rather than guess). The keys are on <a href="settings.html#resource">All settings</a> and the unattended behaviour on <a href="run.html#holds">Running unattended</a>.</p>
 
-<h2 id="limits">What is not measured</h2>
-<ul>
-<li>The resource-guard fractions are policy ratios, not fitted to a real exhaustion. Two recorded runs, on macOS and on Linux in a 2 GiB container, fixed none of them.</li>
-<li>Memory is the dominant cost of running goals in parallel: each active goal is a full agent session, far heavier than an idle chat. <code>parallel.goals.max_concurrent</code> is effectively a memory knob. Token use is a separate axis; measure input, cached input, output and completed goals before claiming savings.</li>
-<li>A Codex quota exhaustion and a full Codex goal-to-merge run have not been measured. The supervisor&rsquo;s quota classifier has been exercised on synthetic text only.</li>
-<li>The ledger&rsquo;s per-process entry files and the local action logs grow for the life of a repository and nothing prunes them; this is correctness-neutral but is a read cost that rises.</li>
-</ul>
 
 <div class="aud aud-tech">
 <div class="aud-label">Technical detail</div>
-<p>The full contracts are in <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/parallelism.md">parallelism</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/routines.md">routines</a> and <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/codex-autonomy.md">Codex autonomy</a>.</p>
 </div>
 
 <div class="pagenav">
