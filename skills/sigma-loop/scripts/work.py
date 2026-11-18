@@ -6060,7 +6060,7 @@ def protection_requirements(sdlc_dir, config, goal, run=None):
         plan_refused = bool(refused) and all(refused)
         if plan_refused:
             flag, _ = _read_branch_flag(api, base)
-            plan_refused = flag is not True      # a branch GitHub reports protected is never relaxed
+            plan_refused = flag is False      # #2144's standard: only a read, boolean false relaxes; None/unreadable/True hold
         lever = (", set `work.protection_unreadable: \"allow\"` with `work.auto_merge: \"always\"` if you know this "
                  "repository has no protection (on a free-plan private repository GitHub refuses these reads by "
                  "plan, HTTP 403 'Upgrade to GitHub Pro or make this repository public to enable this feature', "

@@ -2,7 +2,7 @@
 protection was unreadable ONLY because every unreadable source was refused with a permission HTTP 403 (a private
 repository on a free GitHub plan: "Upgrade to GitHub Pro or make this repository public to enable this feature").
 
-Fakes only: these prove Sigma's decisions against canned GitHub replies, never a real free-plan repository.
+Fakes only (one test replays a read shape measured by hand): these prove Sigma's decisions against canned GitHub replies, never a real free-plan repository.
 
 Clauses, each broken once for the control (the result is recorded in the PR):
   1. default: the key absent reads "hold";
@@ -79,8 +79,52 @@ def test_allow_with_always_still_holds_on_any_other_failure(tmp_path, bad, where
     assert "protection could not be determined" in out and MERGE_PUT not in run.calls, out
 
 
-def test_allow_with_always_holds_when_the_branch_flag_says_protected(tmp_path):
-    out, run = _merge(tmp_path, ALLOW_ALWAYS, _plan_403(flag=json.dumps({"protected": True})))
+@pytest.mark.parametrize("flag", [
+    json.dumps({"protected": True}),
+    RuntimeError("HTTP 500: Server Error"),
+    RuntimeError("HTTP 403: Resource protected by organization SAML enforcement"),
+    "",
+    "not json",
+    json.dumps({"name": "main"}),
+    json.dumps({"protected": "false"}),
+    json.dumps({"protected": None}),
+    "[]",
+], ids=["true", "500", "saml-403", "empty", "not-json", "missing", "string", "null", "list"])
+def test_allow_with_always_holds_unless_the_branch_flag_reads_exactly_false(tmp_path, flag):
+    """The corroborating read must ANSWER false (#2144's standard): true, unreadable and malformed all hold."""
+    out, run = _merge(tmp_path, ALLOW_ALWAYS, _plan_403(flag=flag))
+    assert "protection could not be determined" in out and MERGE_PUT not in run.calls, out
+
+
+def test_allow_with_always_merges_when_the_branch_flag_reads_false(tmp_path):
+    out, run = _merge(tmp_path, ALLOW_ALWAYS, _plan_403(flag=UNPROTECTED_FLAG))
+    assert out.startswith("PR #7 merged") and MERGE_PUT in run.calls, out
+
+
+# The shape MEASURED by a manual read on 18 Nov 2026 (free-plan personal-account private repository, `main`, no
+# protection configured), replayed through the fake gh: three protection reads refused with the same plan message,
+# and the branch's own flag readable and false. A real merge through the new path is NOT measured.
+_BODY = ('{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.",'
+         '"documentation_url":"%s","status":"403"}')
+_MEASURED = [
+    (CLASSIC, RuntimeError("HTTP 403: " + _BODY % "https://docs.github.com/rest/branches/branch-protection#get-branch-protection")),
+    ("repos/{owner}/{repo}/rulesets", RuntimeError("HTTP 403: " + _BODY % "https://docs.github.com/rest/repos/rules#get-all-repository-rulesets")),
+    (RULES, RuntimeError("HTTP 403: " + _BODY % "https://docs.github.com/rest/repos/rules#get-rules-for-a-branch")),
+    (FLAG, json.dumps({"name": "main", "protected": False})),
+]
+
+
+def test_measured_free_plan_private_repo_replay_merges_under_allow_always_and_holds_by_default(tmp_path):
+    out, run = _merge(tmp_path / "a", ALLOW_ALWAYS, list(_MEASURED))
+    assert out.startswith("PR #7 merged") and MERGE_PUT in run.calls, out
+    held, run2 = _merge(tmp_path / "b", ALWAYS, list(_MEASURED))
+    assert "protection could not be determined" in held and MERGE_PUT not in run2.calls, held
+    assert "work.protection_unreadable" in held and "Upgrade to GitHub Pro" in held, held
+
+
+def test_classic_404_with_rules_403_is_not_relaxed_on_purpose(tmp_path):
+    handlers = _plan_403(classic=RuntimeError("HTTP 404: Not Found"))
+    out, run = _merge(tmp_path, ALLOW_ALWAYS, handlers)
     assert "protection could not be determined" in out and MERGE_PUT not in run.calls, out
 
 
