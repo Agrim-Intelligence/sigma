@@ -293,6 +293,15 @@ ENFORCEMENT_GATES = (
      "enabled_by": ("work.enabled",), "settings": (),
      "mechanism": "refuses `work.py pr` while the goal's research dossier exists on disk but is not "
                   "committed on the goal branch"},
+    {"control": "No absolute local path in a committed plan or research dossier", "function": "commit",
+     "kind": "python-gate", "hosts": "all", "enabled_by": (), "settings": (),
+     "mechanism": "`work.py commit` runs `artifact_paths.py` `scrub_goal` before `git add -A`: a home-directory "
+                  "path (`/home/<name>/...`, its macOS and Windows equivalents) in this goal's "
+                  "plan or research file becomes a repo-relative path, `<plugin>/skills/...` or `[path]`, and one "
+                  "line says how many were rewritten; a leak in the acceptance record (append-only), in a plan "
+                  "whose bytes a review or seal already records, or in a file it cannot read refuses the commit "
+                  "with the file and line",
+     "condition": "a raw `git commit` bypasses it, and history already published is not rewritten"},
     {"control": "Hard plan gate at PR push", "function": "_hard_plan_gate_refusal",
      "kind": "python-gate", "hosts": "all",
      "enabled_by": ("work.enabled", "gates.hard_plan_gate.enabled"), "settings": (),
@@ -4166,6 +4175,12 @@ def commit(sdlc_dir, config, goal, run=None, message=""):
                or _acceptance_issue_refusal(sdlc_dir, config, rec, goal, "(nothing committed)", closed=False))
     if refusal:                                                 # #2222: unconditional, before anything is staged
         return refusal
+    try:                                                        # #2243: no absolute local path in a committed artifact
+        scrub_note, refusal = _load("artifact_paths").scrub_goal(sdlc_dir, path, goal)
+    except Exception as exc:                                    # noqa: BLE001 - fail closed: a leak must not ship unchecked
+        scrub_note, refusal = "", f"REFUSED: could not check the artifacts for absolute local paths ({exc}) (nothing committed)"
+    if refusal:
+        return refusal
     run(path, ["git", "add", "-A"])
     staged = run(path, ["git", "diff", "--cached", "--name-only"])
     if not staged:
@@ -4198,7 +4213,7 @@ def commit(sdlc_dir, config, goal, run=None, message=""):
             raise
         return f"PARK: {plain} {commit_signing.PARK_TAIL}"
     _emit_risk_gates(sdlc_dir, config, goal, categories)
-    return f"committed on {rec['branch']}"
+    return f"committed on {rec['branch']}" + (f"; {scrub_note}" if scrub_note else "")
 
 
 #: `git check-ignore -v` prints `<source>:<line>:<pattern>\t<path>`. Under `--non-matching` a path

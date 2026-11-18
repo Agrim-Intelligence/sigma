@@ -18,6 +18,10 @@
       "role": "library"
     },
     {
+      "path": "skills/sigma-loop/scripts/artifact_paths.py",
+      "role": "library"
+    },
+    {
       "path": "skills/sigma-loop/scripts/agent_watch.py",
       "role": "gesture"
     },

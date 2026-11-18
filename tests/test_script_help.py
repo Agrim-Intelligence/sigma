@@ -101,6 +101,7 @@ LIBRARY_ONLY = {
     "known_flakes",
     "followup_route",
     "issue_body",
+    "artifact_paths",
 }
 
 

@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`work.py commit` rewrites absolute home-directory paths in a goal's plan and research files to repo-relative or `[path]`, and refuses on one in the acceptance record or a reviewed plan (#2243).** Stops new leaks only; published history is not rewritten, a raw `git commit` bypasses it, no live loop run after the change, Windows paths by fixture only.
+
 ## 1.0.34 — 2026-11-18 — `/sigma-init --antigravity` writes the managed AGENTS.md block, and the Cursor hooks wording is corrected
 
 - **`/sigma-init --antigravity` writes the managed `AGENTS.md` block, and the Cursor hooks wording is corrected (#2239).** Opt-in, skip-if-exists, the same block `--codex` writes, no config change, no `.agents/skills` link or copy. Cursor documents a hooks system; Sigma uses none and no hook is load-bearing. Never run in Antigravity or Cursor; hooks, MCP, workflows, headless `agy` and subagents there are unmeasured.
