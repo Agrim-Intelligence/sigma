@@ -27,6 +27,7 @@ subagent transcript, and the source of a public docs site.
    - **What you do:** if a command now refuses naming such a file, fix the path in it and commit again.
    - **Not covered:** a raw `git commit` pushed outside Sigma, history already published, a path with a space (it ends
      at the space), and `.slices.json`. This stops new leaks only.
+   The on-demand full run found a phase-context budget regression from this change and it was fixed before release (#2252).
 4. **Subagent transcript lookup (#2238).** `phase_report.py` finds a subagent's transcript under every Claude project
    slug that holds the session, not one. This matters for Claude Code cloud sessions. It came from a teammate's pull
    request, #2238.
