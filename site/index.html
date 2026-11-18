@@ -16,9 +16,11 @@
     <span class="brand-mark">&Sigma;</span>
     <span><span class="brand-name">Sigma Loop</span><span class="brand-tag">Guide</span></span>
   </a>
+  <details class="navbox" open>
+    <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
-    <a href="index.html" class="active"><span class="nav-num">01</span>Home</a>
+    <a href="index.html" class="active" aria-current="page"><span class="nav-num">01</span>Home</a>
     <a href="get-started.html"><span class="nav-num">02</span>Get started</a>
     <a href="flow.html"><span class="nav-num">03</span>How it works</a>
     <a href="entry-points.html"><span class="nav-num">04</span>Ways in</a>
@@ -31,27 +33,31 @@
     <a href="config.html"><span class="nav-num">08</span>Configuration</a>
     <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
     <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="observe.html"><span class="nav-num">11</span>Cost and time</a>
+    <a href="orchestrate.html"><span class="nav-num">11</span>Running many goals</a>
+    <a href="cloud.html"><span class="nav-num">12</span>Cloud sessions</a>
+    <a href="observe.html"><span class="nav-num">13</span>Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">12</span>On your own</a>
-    <a href="team.html"><span class="nav-num">13</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">14</span>From Slack</a>
+    <a href="solo.html"><span class="nav-num">14</span>On your own</a>
+    <a href="team.html"><span class="nav-num">15</span>As a team</a>
+    <a href="slack.html"><span class="nav-num">16</span>From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">15</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">16</span>Labels</a>
-    <a href="units.html"><span class="nav-num">17</span>Units of work</a>
-    <a href="safety.html"><span class="nav-num">18</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">19</span>Technical reference</a>
+    <a href="skills.html"><span class="nav-num">17</span>Skills and commands</a>
+    <a href="labels.html"><span class="nav-num">18</span>Labels</a>
+    <a href="units.html"><span class="nav-num">19</span>Units of work</a>
+    <a href="safety.html"><span class="nav-num">20</span>Trust and limits</a>
+    <a href="reference.html"><span class="nav-num">21</span>Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">20</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">21</span>Glossary</a>
+    <a href="releases.html"><span class="nav-num">22</span>Releases</a>
+    <a href="glossary.html"><span class="nav-num">23</span>Glossary</a>
   </div>
+  </details>
+  <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
 </nav>
 <!-- NAV:END -->
 
@@ -130,9 +136,9 @@
   <path class="darrow" d="M210,143 L246,143" marker-end="url(#ar)"/>
 
   <rect class="dbox-accent" x="220" y="200" width="240" height="64" rx="10"/>
-  <text class="dtext" x="340" y="224" text-anchor="middle" font-weight="700">The design gate</text>
-  <text class="dtext-dim" x="340" y="243" text-anchor="middle">does this goal carry a confirmed design?</text>
-  <text class="dtext-dim" x="340" y="257" text-anchor="middle">(only when the gate is switched on)</text>
+  <text class="dtext-inv" x="340" y="224" text-anchor="middle" font-weight="700">The design gate</text>
+  <text class="dtext-dim-inv" x="340" y="243" text-anchor="middle">does this goal carry a confirmed design?</text>
+  <text class="dtext-dim-inv" x="340" y="257" text-anchor="middle">(only when the gate is switched on)</text>
 
   <path class="darrow" d="M340,166 L340,196" marker-end="url(#ar)"/>
 
@@ -151,9 +157,9 @@
   <text class="dtext-dim" x="356" y="284" text-anchor="start">yes</text>
 
   <rect class="dbox-accent" x="60" y="296" width="560" height="84" rx="10"/>
-  <text class="dtext" x="340" y="322" text-anchor="middle" font-weight="700">The seven phases: every goal runs all of them</text>
-  <text class="dtext-mono" x="340" y="344" text-anchor="middle">Goal › Research › Plan › Plan-Review › Implement › Review › Retro</text>
-  <text class="dtext-dim" x="340" y="364" text-anchor="middle">Plan-Review and Review can send work back. Anything needing a person parks.</text>
+  <text class="dtext-inv" x="340" y="322" text-anchor="middle" font-weight="700">The seven phases: every goal runs all of them</text>
+  <text class="dtext-mono-inv" x="340" y="344" text-anchor="middle">Goal › Research › Plan › Plan-Review › Implement › Review › Retro</text>
+  <text class="dtext-dim-inv" x="340" y="364" text-anchor="middle">Plan-Review and Review can send work back. Anything needing a person parks.</text>
 
   <path class="darrow" d="M340,380 L340,410" marker-end="url(#ar)"/>
 

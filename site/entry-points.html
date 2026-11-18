@@ -16,12 +16,14 @@
     <span class="brand-mark">&Sigma;</span>
     <span><span class="brand-name">Sigma Loop</span><span class="brand-tag">Guide</span></span>
   </a>
+  <details class="navbox" open>
+    <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
     <a href="index.html"><span class="nav-num">01</span>Home</a>
     <a href="get-started.html"><span class="nav-num">02</span>Get started</a>
     <a href="flow.html"><span class="nav-num">03</span>How it works</a>
-    <a href="entry-points.html" class="active"><span class="nav-num">04</span>Ways in</a>
+    <a href="entry-points.html" class="active" aria-current="page"><span class="nav-num">04</span>Ways in</a>
     <a href="design-gate.html"><span class="nav-num">05</span>The design gate</a>
   </div>
   <div class="nav-group">
@@ -31,27 +33,31 @@
     <a href="config.html"><span class="nav-num">08</span>Configuration</a>
     <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
     <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="observe.html"><span class="nav-num">11</span>Cost and time</a>
+    <a href="orchestrate.html"><span class="nav-num">11</span>Running many goals</a>
+    <a href="cloud.html"><span class="nav-num">12</span>Cloud sessions</a>
+    <a href="observe.html"><span class="nav-num">13</span>Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">12</span>On your own</a>
-    <a href="team.html"><span class="nav-num">13</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">14</span>From Slack</a>
+    <a href="solo.html"><span class="nav-num">14</span>On your own</a>
+    <a href="team.html"><span class="nav-num">15</span>As a team</a>
+    <a href="slack.html"><span class="nav-num">16</span>From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">15</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">16</span>Labels</a>
-    <a href="units.html"><span class="nav-num">17</span>Units of work</a>
-    <a href="safety.html"><span class="nav-num">18</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">19</span>Technical reference</a>
+    <a href="skills.html"><span class="nav-num">17</span>Skills and commands</a>
+    <a href="labels.html"><span class="nav-num">18</span>Labels</a>
+    <a href="units.html"><span class="nav-num">19</span>Units of work</a>
+    <a href="safety.html"><span class="nav-num">20</span>Trust and limits</a>
+    <a href="reference.html"><span class="nav-num">21</span>Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">20</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">21</span>Glossary</a>
+    <a href="releases.html"><span class="nav-num">22</span>Releases</a>
+    <a href="glossary.html"><span class="nav-num">23</span>Glossary</a>
   </div>
+  </details>
+  <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
 </nav>
 <!-- NAV:END -->
 
@@ -114,8 +120,8 @@
   <text class="dtext" x="100" y="264" text-anchor="middle">already queued</text>
   <path class="darrow" d="M190,251 L286,251" marker-end="url(#ar)"/>
   <rect class="dbox-accent" x="290" y="228" width="190" height="46" rx="8"/>
-  <text class="dtext" x="385" y="248" text-anchor="middle" font-weight="700">The loop's pick</text>
-  <text class="dtext-dim" x="385" y="264" text-anchor="middle">checks, then the phases</text>
+  <text class="dtext-inv" x="385" y="248" text-anchor="middle" font-weight="700">The loop's pick</text>
+  <text class="dtext-dim-inv" x="385" y="264" text-anchor="middle">checks, then the phases</text>
   <path class="darrow" d="M385,274 L385,324" marker-end="url(#ar)"/>
 
   <rect class="dbox" x="10" y="324" width="180" height="46" rx="8"/>
@@ -123,13 +129,13 @@
   <text class="dtext" x="100" y="360" text-anchor="middle">no plan yet</text>
   <path class="darrow" d="M190,347 L286,347" marker-end="url(#ar)"/>
   <rect class="dbox-accent" x="290" y="324" width="190" height="46" rx="8"/>
-  <text class="dtext" x="385" y="344" text-anchor="middle" font-weight="700">Plan</text>
-  <text class="dtext-dim" x="385" y="360" text-anchor="middle">/sigma-plan</text>
+  <text class="dtext-inv" x="385" y="344" text-anchor="middle" font-weight="700">Plan</text>
+  <text class="dtext-dim-inv" x="385" y="360" text-anchor="middle">/sigma-plan</text>
   <path class="darrow" d="M385,370 L385,392" marker-end="url(#ar)"/>
 
   <rect class="dbox-accent" x="290" y="392" width="190" height="46" rx="8"/>
-  <text class="dtext" x="385" y="412" text-anchor="middle" font-weight="700">Plan-Review</text>
-  <text class="dtext-dim" x="385" y="428" text-anchor="middle">/sigma-plan-review</text>
+  <text class="dtext-inv" x="385" y="412" text-anchor="middle" font-weight="700">Plan-Review</text>
+  <text class="dtext-dim-inv" x="385" y="428" text-anchor="middle">/sigma-plan-review</text>
   <path class="darrow" d="M385,438 L385,460" marker-end="url(#ar)"/>
 
   <rect class="dbox" x="10" y="460" width="180" height="46" rx="8"/>
@@ -137,8 +143,8 @@
   <text class="dtext" x="100" y="496" text-anchor="middle">plan</text>
   <path class="darrow" d="M190,483 L286,483" marker-end="url(#ar)"/>
   <rect class="dbox-accent" x="290" y="460" width="190" height="46" rx="8"/>
-  <text class="dtext" x="385" y="480" text-anchor="middle" font-weight="700">Implement</text>
-  <text class="dtext-dim" x="385" y="496" text-anchor="middle">/sigma-implement</text>
+  <text class="dtext-inv" x="385" y="480" text-anchor="middle" font-weight="700">Implement</text>
+  <text class="dtext-dim-inv" x="385" y="496" text-anchor="middle">/sigma-implement</text>
   <path class="darrow" d="M385,506 L385,528" marker-end="url(#ar)"/>
 
   <rect class="dbox" x="10" y="528" width="180" height="46" rx="8"/>
@@ -146,8 +152,8 @@
   <text class="dtext" x="100" y="564" text-anchor="middle">the change</text>
   <path class="darrow" d="M190,551 L286,551" marker-end="url(#ar)"/>
   <rect class="dbox-accent" x="290" y="528" width="190" height="46" rx="8"/>
-  <text class="dtext" x="385" y="548" text-anchor="middle" font-weight="700">Review</text>
-  <text class="dtext-dim" x="385" y="564" text-anchor="middle">/sigma-review</text>
+  <text class="dtext-inv" x="385" y="548" text-anchor="middle" font-weight="700">Review</text>
+  <text class="dtext-dim-inv" x="385" y="564" text-anchor="middle">/sigma-review</text>
   <path class="darrow" d="M385,574 L385,596" marker-end="url(#ar)"/>
 
   <rect class="dbox-core" x="290" y="596" width="190" height="34" rx="8"/>

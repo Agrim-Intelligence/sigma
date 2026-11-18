@@ -16,11 +16,13 @@
     <span class="brand-mark">&Sigma;</span>
     <span><span class="brand-name">Sigma Loop</span><span class="brand-tag">Guide</span></span>
   </a>
+  <details class="navbox" open>
+    <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
     <a href="index.html"><span class="nav-num">01</span>Home</a>
     <a href="get-started.html"><span class="nav-num">02</span>Get started</a>
-    <a href="flow.html" class="active"><span class="nav-num">03</span>How it works</a>
+    <a href="flow.html" class="active" aria-current="page"><span class="nav-num">03</span>How it works</a>
     <a href="entry-points.html"><span class="nav-num">04</span>Ways in</a>
     <a href="design-gate.html"><span class="nav-num">05</span>The design gate</a>
   </div>
@@ -31,27 +33,31 @@
     <a href="config.html"><span class="nav-num">08</span>Configuration</a>
     <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
     <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="observe.html"><span class="nav-num">11</span>Cost and time</a>
+    <a href="orchestrate.html"><span class="nav-num">11</span>Running many goals</a>
+    <a href="cloud.html"><span class="nav-num">12</span>Cloud sessions</a>
+    <a href="observe.html"><span class="nav-num">13</span>Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">12</span>On your own</a>
-    <a href="team.html"><span class="nav-num">13</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">14</span>From Slack</a>
+    <a href="solo.html"><span class="nav-num">14</span>On your own</a>
+    <a href="team.html"><span class="nav-num">15</span>As a team</a>
+    <a href="slack.html"><span class="nav-num">16</span>From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">15</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">16</span>Labels</a>
-    <a href="units.html"><span class="nav-num">17</span>Units of work</a>
-    <a href="safety.html"><span class="nav-num">18</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">19</span>Technical reference</a>
+    <a href="skills.html"><span class="nav-num">17</span>Skills and commands</a>
+    <a href="labels.html"><span class="nav-num">18</span>Labels</a>
+    <a href="units.html"><span class="nav-num">19</span>Units of work</a>
+    <a href="safety.html"><span class="nav-num">20</span>Trust and limits</a>
+    <a href="reference.html"><span class="nav-num">21</span>Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">20</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">21</span>Glossary</a>
+    <a href="releases.html"><span class="nav-num">22</span>Releases</a>
+    <a href="glossary.html"><span class="nav-num">23</span>Glossary</a>
   </div>
+  </details>
+  <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
 </nav>
 <!-- NAV:END -->
 
@@ -126,7 +132,7 @@
   <text class="dtext-dim" x="56" y="391">1  Duplicate of other work? (opt-in)</text>
   <text class="dtext-dim" x="56" y="409">2  Too big for one goal? (opt-in)</text>
   <rect class="dbox-accent" x="48" y="415" width="244" height="24" rx="5"/>
-  <text class="dtext" x="56" y="431" font-weight="700">3  THE DESIGN GATE: designed? (opt-in)</text>
+  <text class="dtext-inv" x="56" y="431" font-size="11" font-weight="700">3  DESIGN GATE: designed? (opt-in)</text>
   <text class="dtext-dim" x="56" y="457">4  Has a Done-when section? (warns)</text>
   <text class="dtext-dim" x="56" y="474">Any check can set the goal aside</text>
 
@@ -137,8 +143,8 @@
   <path class="darrow" d="M300,420 L326,420" marker-end="url(#ar)"/>
 
   <path class="darrow-accent" d="M480,419 L486,419 L486,164 L304,164" stroke-dasharray="4 4" marker-end="url(#ar-a)"/>
-  <text class="dtext-dim" x="394" y="154" text-anchor="middle">gate parks it and files a</text>
-  <text class="dtext-dim" x="394" y="141" text-anchor="middle">design ticket, then design it</text>
+  <text class="dtext-dim" x="394" y="141" text-anchor="middle">gate parks it and files a</text>
+  <text class="dtext-dim" x="394" y="154" text-anchor="middle">design ticket, then design it</text>
 
   <path class="darrow" d="M170,484 L170,512" marker-end="url(#ar)"/>
   <text class="dtext-dim" x="180" y="504" text-anchor="start">all checks pass</text>
@@ -146,25 +152,25 @@
   <text class="dtext-dim" x="170" y="525" text-anchor="middle">The seven phases</text>
 
   <rect class="dbox-accent" x="40" y="532" width="240" height="32" rx="8"/>
-  <text class="dtext" x="160" y="553" text-anchor="middle">1  Goal: restate it, with Done-when</text>
+  <text class="dtext-inv" x="160" y="553" text-anchor="middle">1  Goal: restate it, with Done-when</text>
   <path class="darrow" d="M160,564 L160,578" marker-end="url(#ar)"/>
   <rect class="dbox-accent" x="40" y="578" width="240" height="32" rx="8"/>
-  <text class="dtext" x="160" y="599" text-anchor="middle">2  Research: blast radius, size</text>
+  <text class="dtext-inv" x="160" y="599" text-anchor="middle">2  Research: blast radius, size</text>
   <path class="darrow" d="M160,610 L160,624" marker-end="url(#ar)"/>
   <rect class="dbox-accent" x="40" y="624" width="240" height="32" rx="8"/>
-  <text class="dtext" x="160" y="645" text-anchor="middle">3  Plan: steps, files, tests</text>
+  <text class="dtext-inv" x="160" y="645" text-anchor="middle">3  Plan: steps, files, tests</text>
   <path class="darrow" d="M160,656 L160,670" marker-end="url(#ar)"/>
   <rect class="dbox-accent" x="40" y="670" width="240" height="32" rx="8"/>
-  <text class="dtext" x="160" y="691" text-anchor="middle">4  Plan-Review: before any edit</text>
+  <text class="dtext-inv" x="160" y="691" text-anchor="middle">4  Plan-Review: before any edit</text>
   <path class="darrow" d="M160,702 L160,716" marker-end="url(#ar)"/>
   <rect class="dbox-accent" x="40" y="716" width="240" height="32" rx="8"/>
-  <text class="dtext" x="160" y="737" text-anchor="middle">5  Implement: test first</text>
+  <text class="dtext-inv" x="160" y="737" text-anchor="middle">5  Implement: test first</text>
   <path class="darrow" d="M160,748 L160,762" marker-end="url(#ar)"/>
   <rect class="dbox-accent" x="40" y="762" width="240" height="32" rx="8"/>
-  <text class="dtext" x="160" y="783" text-anchor="middle">6  Review: evidence, not claims</text>
+  <text class="dtext-inv" x="160" y="783" text-anchor="middle">6  Review: evidence, not claims</text>
   <path class="darrow" d="M160,794 L160,808" marker-end="url(#ar)"/>
   <rect class="dbox-accent" x="40" y="808" width="240" height="32" rx="8"/>
-  <text class="dtext" x="160" y="829" text-anchor="middle">7  Retro: lessons, proposed only</text>
+  <text class="dtext-inv" x="160" y="829" text-anchor="middle">7  Retro: lessons, proposed only</text>
 
   <path class="darrow-accent" d="M280,686 L300,686 L300,640 L284,640" marker-end="url(#ar-a)"/>
   <text class="dtext-dim" x="308" y="668" text-anchor="start">send back</text>
@@ -181,9 +187,9 @@
   <path class="darrow" d="M160,840 L160,868" marker-end="url(#ar)"/>
 
   <rect class="dbox-accent" x="40" y="868" width="240" height="64" rx="9"/>
-  <text class="dtext" x="160" y="888" text-anchor="middle" font-weight="700">Land it</text>
-  <text class="dtext-dim" x="160" y="906" text-anchor="middle">verify, commit, pull request,</text>
-  <text class="dtext-dim" x="160" y="921" text-anchor="middle">second review, merge</text>
+  <text class="dtext-inv" x="160" y="888" text-anchor="middle" font-weight="700">Land it</text>
+  <text class="dtext-dim-inv" x="160" y="906" text-anchor="middle">verify, commit, pull request,</text>
+  <text class="dtext-dim-inv" x="160" y="921" text-anchor="middle">second review, merge</text>
 
   <rect class="dbox-optional" x="330" y="874" width="150" height="52" rx="9"/>
   <text class="dtext" x="405" y="894" text-anchor="middle" font-weight="700">Failed or parked</text>
@@ -196,7 +202,7 @@
   <text class="dtext-dim" x="160" y="998" text-anchor="middle">with the evidence behind it</text>
 </svg>
 </div>
-<p class="diagram-caption">Amber boxes are exits and optional steps. Dashed lines are ways back or out. The design gate (highlighted) is off by default; see <a href="design-gate.html">The design gate</a>.</p>
+<p class="diagram-caption">Dashed boxes are exits and optional steps. Dashed lines are ways back or out. The design gate (highlighted) is off by default; see <a href="design-gate.html">The design gate</a>.</p>
 
 <h2 id="stages">Stage by stage</h2>
 <div class="table-wrap">

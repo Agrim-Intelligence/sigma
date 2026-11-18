@@ -16,6 +16,8 @@
     <span class="brand-mark">&Sigma;</span>
     <span><span class="brand-name">Sigma Loop</span><span class="brand-tag">Guide</span></span>
   </a>
+  <details class="navbox" open>
+    <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
     <a href="index.html"><span class="nav-num">01</span>Home</a>
@@ -31,27 +33,31 @@
     <a href="config.html"><span class="nav-num">08</span>Configuration</a>
     <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
     <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="observe.html"><span class="nav-num">11</span>Cost and time</a>
+    <a href="orchestrate.html"><span class="nav-num">11</span>Running many goals</a>
+    <a href="cloud.html"><span class="nav-num">12</span>Cloud sessions</a>
+    <a href="observe.html"><span class="nav-num">13</span>Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">12</span>On your own</a>
-    <a href="team.html"><span class="nav-num">13</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">14</span>From Slack</a>
+    <a href="solo.html"><span class="nav-num">14</span>On your own</a>
+    <a href="team.html"><span class="nav-num">15</span>As a team</a>
+    <a href="slack.html"><span class="nav-num">16</span>From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">15</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">16</span>Labels</a>
-    <a href="units.html"><span class="nav-num">17</span>Units of work</a>
-    <a href="safety.html" class="active"><span class="nav-num">18</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">19</span>Technical reference</a>
+    <a href="skills.html"><span class="nav-num">17</span>Skills and commands</a>
+    <a href="labels.html"><span class="nav-num">18</span>Labels</a>
+    <a href="units.html"><span class="nav-num">19</span>Units of work</a>
+    <a href="safety.html" class="active" aria-current="page"><span class="nav-num">20</span>Trust and limits</a>
+    <a href="reference.html"><span class="nav-num">21</span>Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">20</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">21</span>Glossary</a>
+    <a href="releases.html"><span class="nav-num">22</span>Releases</a>
+    <a href="glossary.html"><span class="nav-num">23</span>Glossary</a>
   </div>
+  </details>
+  <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
 </nav>
 <!-- NAV:END -->
 
@@ -89,13 +95,13 @@
   </defs>
   <rect class="dbox" x="60.0" y="10" width="320" height="50" rx="9"/><text class="dtext" x="220.0" y="30" text-anchor="middle" font-weight="700">Pull request is open</text><text class="dtext-dim" x="220.0" y="46" text-anchor="middle">the goal is not done yet</text>
   <path class="darrow" d="M220.0,60 L220.0,81" marker-end="url(#sf-a)"/>
-  <rect class="dbox-accent" x="60.0" y="84" width="320" height="50" rx="9"/><text class="dtext" x="220.0" y="104" text-anchor="middle" font-weight="700">Fresh passing verify from this run?</text><text class="dtext-dim" x="220.0" y="120" text-anchor="middle">no evidence: park</text>
+  <rect class="dbox-accent" x="60.0" y="84" width="320" height="50" rx="9"/><text class="dtext-inv" x="220.0" y="104" text-anchor="middle" font-weight="700">Fresh passing verify from this run?</text><text class="dtext-dim-inv" x="220.0" y="120" text-anchor="middle">no evidence: park</text>
   <path class="darrow" d="M220.0,134 L220.0,155" marker-end="url(#sf-a)"/>
-  <rect class="dbox-accent" x="60.0" y="158" width="320" height="50" rx="9"/><text class="dtext" x="220.0" y="178" text-anchor="middle" font-weight="700">GitHub says clean and mergeable?</text><text class="dtext-dim" x="220.0" y="194" text-anchor="middle">unknown never reads as clean: park</text>
+  <rect class="dbox-accent" x="60.0" y="158" width="320" height="50" rx="9"/><text class="dtext-inv" x="220.0" y="178" text-anchor="middle" font-weight="700">GitHub says clean and mergeable?</text><text class="dtext-dim-inv" x="220.0" y="194" text-anchor="middle">unknown never reads as clean: park</text>
   <path class="darrow" d="M220.0,208 L220.0,229" marker-end="url(#sf-a)"/>
-  <rect class="dbox-accent" x="60.0" y="232" width="320" height="50" rx="9"/><text class="dtext" x="220.0" y="252" text-anchor="middle" font-weight="700">Branch protection readable?</text><text class="dtext-dim" x="220.0" y="268" text-anchor="middle">could not be determined: park</text>
+  <rect class="dbox-accent" x="60.0" y="232" width="320" height="50" rx="9"/><text class="dtext-inv" x="220.0" y="252" text-anchor="middle" font-weight="700">Branch protection readable?</text><text class="dtext-dim-inv" x="220.0" y="268" text-anchor="middle">could not be determined: park</text>
   <path class="darrow" d="M220.0,282 L220.0,303" marker-end="url(#sf-a)"/>
-  <rect class="dbox-accent" x="60.0" y="306" width="320" height="50" rx="9"/><text class="dtext" x="220.0" y="326" text-anchor="middle" font-weight="700">Review gate clear?</text><text class="dtext-dim" x="220.0" y="342" text-anchor="middle">unreadable comments or reviews: park</text>
+  <rect class="dbox-accent" x="60.0" y="306" width="320" height="50" rx="9"/><text class="dtext-inv" x="220.0" y="326" text-anchor="middle" font-weight="700">Review gate clear?</text><text class="dtext-dim-inv" x="220.0" y="342" text-anchor="middle">unreadable comments or reviews: park</text>
   <path class="darrow" d="M220.0,356 L220.0,377" marker-end="url(#sf-a)"/>
   <rect class="dbox-core" x="60.0" y="380" width="320" height="50" rx="9"/><text class="dtext" x="220.0" y="400" text-anchor="middle" font-weight="700">Merge, then confirm it landed</text><text class="dtext-dim" x="220.0" y="416" text-anchor="middle">only then is the goal done</text>
 </svg>
