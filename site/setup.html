@@ -144,7 +144,7 @@
 </table>
 </div>
 <p>An update replaces skills, docs, hooks and scripts. It <strong>never rewrites your <code>.sdlc/config.json</code></strong>. A block added by a later release does not appear in a repository adopted earlier: copy it from the template in the installed plugin, with every <code>enabled</code> left <code>false</code>, and open one gate at a time. <a href="config.html">Configuration</a> says what each key does.</p>
-<p>If a watcher is running, stop it so the next trigger starts it on the new build: <code>touch .sdlc/state/watch.stop</code>. What each release changes by default is on <a href="releases.html">Releases</a>.</p>
+<p>If a watcher is running, stop it so the next trigger starts it on the new build: <code>touch .sdlc/state/watch.stop</code>. If you also run the Slack command listener or the supervisor, stop those the same way with <code>.sdlc/state/slack-commands.stop</code> and <code>.sdlc/state/supervisor.stop</code>; the uninstall steps (docs/uninstall.md) stop all three and wait for them to exit. What each release changes by default is on <a href="releases.html">Releases</a>.</p>
 
 <div class="callout callout-warn">
 <div class="callout-title">An install under the old plugin id stops updating</div>

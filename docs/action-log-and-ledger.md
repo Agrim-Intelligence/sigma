@@ -96,7 +96,7 @@ nobody else ever sees it. Once more than one person runs the loop against a repo
 you need a **committed** record of what everyone's loop actually did, with a timestamp and a name on
 every line.
 
-`/sigma-init` creates `.sdlc/ledger/` empty apart from a README; the template leaves `ledger.enabled` undecided (null, off), and `/sigma-setup` turns it on the first time it adopts a github repo.
+`/sigma-init` creates `.sdlc/ledger/` empty apart from a README; the template leaves `ledger.enabled` undecided (null, off), and nothing turns it on by itself. In GitHub mode `/sigma-init` (and `/sigma-setup`, which runs the same flow) asks one question: `--ledger yes` writes `true`, `--ledger no` writes `false`, and `--yes` takes `false`. Local-files mode has no ledger question, so the key stays undecided.
 
 Turn it on:
 
