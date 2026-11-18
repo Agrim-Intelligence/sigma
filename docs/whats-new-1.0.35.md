@@ -5,7 +5,7 @@ This page lists every change in this release. The same entries are in the `1.0.3
 changes for you.
 
 One new opt-in setting, one safety fix that changes what a goal's pull request can contain, a fix for finding a
-subagent transcript, and the source of a public docs site that is not published yet.
+subagent transcript, and the source of a public docs site.
 
 ## Upgrading from 1.0.34
 
@@ -33,9 +33,9 @@ subagent transcript, and the source of a public docs site that is not published 
    - **What you do:** nothing.
    - **Not measured:** a real cloud session.
 5. **Public docs site source (#2244).** A static `site/` directory with a black-and-white design, an orchestrate page, a
-   cloud-sessions page, a phone menu, and a Pages workflow. It is site source only: GitHub Pages was not enabled when
-   this release was cut (the address answered 404), so nothing is published yet, and the workflow run on `main` fails
-   until Pages is enabled. The site was not rendered in a real browser by this release's author.
+   cloud-sessions page, a phone menu, and a Pages workflow. It is published at https://agrim-intelligence.github.io/sigma/ once
+   Pages is on; the address answered 200 when this release was cut, and its content was not checked. The site was not
+   rendered in a real browser by this release's author.
 
 ## Not measured
 
