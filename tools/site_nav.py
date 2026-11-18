@@ -27,30 +27,40 @@ GROUPS = [
     ("Start here", [
         ("index.html", "Home"),
         ("get-started.html", "Get started"),
+        ("first-goal.html", "Your first goal"),
         ("flow.html", "How it works"),
         ("entry-points.html", "Ways in"),
         ("design-gate.html", "The design gate"),
     ]),
     ("Set up & run", [
         ("setup.html", "Setup"),
+        ("upgrading.html", "Upgrading and uninstalling"),
         ("hosts.html", "Hosts"),
         ("config.html", "Configuration"),
+        ("settings.html", "All settings"),
         ("sdlc-folder.html", "The .sdlc folder"),
         ("run.html", "Running unattended"),
         ("orchestrate.html", "Running many goals"),
+        ("parallel.html", "Parallel and scheduled runs"),
         ("cloud.html", "Cloud sessions"),
         ("observe.html", "Cost and time"),
+        ("troubleshooting.html", "Troubleshooting and FAQ"),
     ]),
     ("Ways to work", [
         ("solo.html", "On your own"),
         ("team.html", "As a team"),
         ("slack.html", "From Slack"),
+        ("board.html", "The project board"),
+        ("dependencies.html", "Dependencies and chains"),
     ]),
     ("Deeper", [
         ("skills.html", "Skills and commands"),
         ("labels.html", "Labels"),
         ("units.html", "Units of work"),
         ("safety.html", "Trust and limits"),
+        ("policy.html", "Org policy and security"),
+        ("autonomy.html", "Autonomy and the rulebook"),
+        ("quality.html", "Quality and design aids"),
         ("reference.html", "Technical reference"),
     ]),
     ("Reference", [
@@ -111,6 +121,14 @@ def stub(f: str) -> str:
 
 <span class="eyebrow">{html.escape(GROUP_OF[f], quote=False)}</span>
 <h1>{html.escape(title, quote=False)}</h1>
+<nav class="toc" aria-label="On this page">
+<div class="toc-title">On this page</div>
+<ul>
+<li><a href="#overview">Overview</a></li>
+</ul>
+</nav>
+
+<h2 id="overview">Overview</h2>
 <p class="stub">Content in progress.</p>
 
 </main>
