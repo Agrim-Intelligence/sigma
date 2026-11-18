@@ -33,7 +33,7 @@ subagent transcript, and the source of a public docs site.
    - **What you do:** nothing.
    - **Not measured:** a real cloud session.
 5. **Public docs site source (#2244).** A static `site/` directory with a black-and-white design, an orchestrate page, a
-   cloud-sessions page, a phone menu, and a Pages workflow. It is published at https://agrim-intelligence.github.io/sigma/ once
+   cloud-sessions page, a phone menu, and a Pages workflow. It is published at the repository's GitHub Pages address once
    Pages is on; the address answered 200 when this release was cut, and its content was not checked. The site was not
    rendered in a real browser by this release's author.
 
