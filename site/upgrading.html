@@ -108,9 +108,9 @@
 <table>
 <thead><tr><th>Host</th><th>Update</th></tr></thead>
 <tbody>
-<tr><td>Claude Code</td><td><code>claude plugin update sigmaloop@sigmaloop</code>, then restart the session. Use the full <code>plugin@marketplace</code> id.</td></tr>
+<tr><td>Claude Code</td><td><code>claude plugin update sigmaloop@sigmaloop</code>, then restart the session. Use the full <code>plugin@marketplace</code> id. The "updated" answer was measured in a scratch profile with a directory marketplace; a marketplace fetched from GitHub was not tried.</td></tr>
 <tr><td>Codex</td><td>Refresh the Sigma marketplace and reinstall or update the plugin. The exact verb is not stated in the repository; check <code>codex plugin --help</code> on your host. <em>Not measured here.</em></td></tr>
-<tr><td>Cursor</td><td>There is no plugin: you cloned Sigma to a folder. Pull that clone, then start a fresh session. <em>Not measured as an upgrade path.</em></td></tr>
+<tr><td>Cursor</td><td>Sigma ships no Cursor plugin manifest and you cloned it to a folder, so there is no plugin update. How to refresh that clone was not documented or measured; <code>/sigma-doctor</code> shows the version in use.</td></tr>
 <tr><td>Antigravity</td><td>No update command is documented. Re-running the install command may work; this was not measured. <code>/sigma-doctor</code> shows the version in use.</td></tr>
 </tbody>
 </table>
