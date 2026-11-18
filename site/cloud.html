@@ -126,7 +126,7 @@
 <tbody>
 <tr><td>GitHub access</td><td>REST first. A proxy sits in front of GitHub and GraphQL is not available, so the <code>gh issue</code> and <code>gh pr</code> list and view commands do not work. Sigma reads and writes with REST instead.</td></tr>
 <tr><td>Projects board</td><td>Skipped, with one notice.</td></tr>
-<tr><td>Auto-merge</td><td>Not armed. Sigma waits for pending checks (<code>work.merge_pending_wait_s</code>, default 450 seconds) and parks if the base does not require them.</td></tr>
+<tr><td>Auto-merge</td><td>Not armed with <code>gh pr merge --auto</code>. Sigma waits for pending checks (<code>work.merge_pending_wait_s</code>, default 450 seconds) and parks if the base does not require them. Arming through the Claude Code cloud route is unconfirmed.</td></tr>
 <tr><td>Review approval</td><td><code>require_review: approval</code> is met by the post-PR review's <code>sigma:approve</code> comment, because the review decision cannot be read.</td></tr>
 <tr><td>Line comments</td><td>Any comment on the pull request parks it for a person: thread resolution cannot be read.</td></tr>
 <tr><td>Background helpers</td><td>No watcher runs. With the team ledger on, entries are published at the claim, the lease renewal and the outcome, and once as the process exits normally. A container torn down by a termination signal runs no exit hook.</td></tr>
@@ -180,8 +180,9 @@
 
 <h2 id="lifetime">When a session hits the container lifetime</h2>
 <ul>
-<li>Start the same <code>/sigma-goal N --land</code> in a new session. It resumes from the checkpoint or moves to <code>-2</code>, as above.</li>
-<li>The dead session's claim is released by the auto-reclaim sweep, with the checkpoint branch named in the audit comment. Failing that, the claim's lease runs out (12 hours, per the changelog).</li>
+<li>If the dead run left its claim (the issue still carries <code>sdlc:in-progress</code>), a new <code>/sigma-goal N --land</code> reports "not taken": <code>--land</code> never reclaims a claim. A person releases it first with the loop's release command (documented in the land reference); its audit comment names the checkpoint branch. If the pull request already merged, close the issue instead and do not re-run.</li>
+<li>Then start <code>/sigma-goal N --land</code> in a new session. It resumes from the checkpoint branch or moves to <code>-2</code>, as above.</li>
+<li>An unscoped <code>/sigma-loop</code> pick reclaims a claim whose lease (12 hours by default) has run out, but only where the team ledger is on and holds the dead run's claim.</li>
 <li>Code not yet pushed, and a plan that was git-ignored with no issue copy, are lost.</li>
 </ul>
 
