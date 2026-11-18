@@ -358,3 +358,65 @@ def test_control_leak_in_tooling(tmp_path):
     f = tmp_path / "x.py"
     f.write_text("# " + "Loop" + "Smith\n", encoding="utf-8")
     assert check_leak_files([f])
+
+
+# ------------------------------------------------------------------- contrast
+
+CSS = SITE / "assets" / "style.css"
+# (foreground variable, background variable) pairs the stylesheet actually draws as text.
+TEXT_PAIRS = (
+    [(fg, bg) for fg in ("--text", "--text-dim", "--text-faint", "--link", "--accent")
+     for bg in ("--bg", "--bg-raised", "--bg-sunken")]
+    + [("--accent-ink", "--accent"), ("--accent", "--accent-soft"), ("--code-text", "--code-bg")]
+    + [(k, k + "-soft") for k in ("--core", "--optional", "--experimental", "--gap", "--fallback")]
+    + [("--text", "--accent-soft"), ("--text-dim", "--accent-soft")]
+)
+
+
+def _vars(block):
+    return dict(re.findall(r"(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{6})\b", block))
+
+
+def _blocks(css):
+    """(light, dark-from-media-query, dark-from-data-theme) variable maps."""
+    light = _vars(re.search(r"^:root\s*\{(.*?)^\}", css, re.S | re.M).group(1))
+    media = re.search(r":root:not\(\[data-theme=\"light\"\]\)\s*\{(.*?)\n  \}", css, re.S).group(1)
+    forced = re.search(r":root\[data-theme=\"dark\"\]\s*\{(.*?)^\}", css, re.S | re.M).group(1)
+    return light, {**light, **_vars(media)}, {**light, **_vars(forced)}
+
+
+def _lum(hexcolor):
+    def ch(v):
+        v /= 255
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = (int(hexcolor[i:i + 2], 16) for i in (1, 3, 5))
+    return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b)
+
+
+def ratio(a, b):
+    la, lb = sorted((_lum(a), _lum(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+def contrast_problems(css_text, floor=4.5):
+    light, dark_media, dark_forced = _blocks(css_text)
+    out = []
+    if dark_media != dark_forced:
+        out.append("dark palette differs between the media query and [data-theme=dark]")
+    for name, scheme in (("light", light), ("dark", dark_media)):
+        for fg, bg in TEXT_PAIRS:
+            r = ratio(scheme[fg], scheme[bg])
+            if r < floor:
+                out.append(f"{name}: {fg} on {bg} is {r:.2f}:1 (< {floor})")
+    return out
+
+
+def test_text_contrast_is_at_least_4_5_to_1_in_both_schemes():
+    assert contrast_problems(CSS.read_text(encoding="utf-8")) == []
+
+
+def test_control_lowered_colour_turns_contrast_red():
+    css = CSS.read_text(encoding="utf-8")
+    light = _blocks(css)[0]
+    assert contrast_problems(css.replace(light["--text-faint"], "#bbbbbb", 1))
+    assert contrast_problems(css.replace(light["--core"], "#86efac", 1))

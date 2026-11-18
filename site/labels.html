@@ -96,6 +96,46 @@
 </table>
 </div>
 
+<div class="diagram">
+<svg viewBox="0 0 700 330" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Overlay lifecycle. A goal carries sdlc:goal, which is membership. Overlays sit on top of it and the issue keeps sdlc:goal throughout. sdlc:in-progress is added when the loop picks the goal and removed when it finishes or is released. sdlc:blocked is added while the goal waits on another issue and clears when that issue closes. sdlc:blocking is derived and sits on the issue that others wait on, and goes when the references go. sdlc:parked stands alone: it replaces sdlc:goal, and only a person brings the goal back with sigma-unpark.">
+  <defs>
+    <marker id="lo-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="dmark"/>
+    </marker>
+  </defs>
+  <rect class="dbox-core" x="20" y="20" width="660" height="56" rx="10"/>
+  <text class="dtext" x="350" y="44" text-anchor="middle" font-weight="700">sdlc:goal: membership. The issue keeps it under every overlay below.</text>
+  <text class="dtext-dim" x="350" y="63" text-anchor="middle">Eligible to be picked while no overlay is on it.</text>
+
+  <rect class="dbox-accent" x="20" y="110" width="200" height="64" rx="9"/>
+  <text class="dtext" x="120" y="136" text-anchor="middle" font-weight="700">sdlc:in-progress</text>
+  <text class="dtext-dim" x="120" y="154" text-anchor="middle">added on pick, removed</text>
+  <text class="dtext-dim" x="120" y="167" text-anchor="middle">on finish or release</text>
+
+  <rect class="dbox-optional" x="250" y="110" width="200" height="64" rx="9"/>
+  <text class="dtext" x="350" y="136" text-anchor="middle" font-weight="700">sdlc:blocked</text>
+  <text class="dtext-dim" x="350" y="154" text-anchor="middle">waits on another issue;</text>
+  <text class="dtext-dim" x="350" y="167" text-anchor="middle">clears when it closes</text>
+
+  <rect class="dbox-optional" x="480" y="110" width="200" height="64" rx="9"/>
+  <text class="dtext" x="580" y="136" text-anchor="middle" font-weight="700">sdlc:blocking</text>
+  <text class="dtext-dim" x="580" y="154" text-anchor="middle">on the issue others wait on;</text>
+  <text class="dtext-dim" x="580" y="167" text-anchor="middle">derived, goes with the references</text>
+
+  <path class="darrow" d="M120,76 L120,106" marker-end="url(#lo-ar)"/>
+  <path class="darrow" d="M350,76 L350,106" marker-end="url(#lo-ar)"/>
+  <path class="darrow" d="M580,76 L580,106" marker-end="url(#lo-ar)"/>
+
+  <text class="dtext-dim" x="350" y="205" text-anchor="middle">Overlays are on top of membership. Parked is not an overlay: it stands alone.</text>
+
+  <rect class="dbox" x="150" y="230" width="400" height="70" rx="9"/>
+  <text class="dtext" x="350" y="256" text-anchor="middle" font-weight="700">sdlc:parked</text>
+  <text class="dtext-dim" x="350" y="275" text-anchor="middle">replaces sdlc:goal; a person's hold.</text>
+  <text class="dtext-dim" x="350" y="289" text-anchor="middle">Only /sigma-unpark brings the goal back.</text>
+</svg>
+</div>
+<p class="diagram-caption">The overlay lifecycle. <code>sdlc:blocking</code> is called an overlay in the label model, like the other two.</p>
+
 <h2 id="annotations">Annotations: provenance only</h2>
 <p>These never change what gets picked.</p>
 <div class="table-wrap">

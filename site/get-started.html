@@ -94,23 +94,29 @@ claude plugin install sigmaloop@sigmaloop</code></pre>
 codex plugin add sigmaloop@sigmaloop</code></pre>
 <p>Then run the init skill with the <code>--codex</code> flag, so <code>AGENTS.md</code> carries the standing rules:</p>
 <pre><code>/sigma-init --codex --demo</code></pre>
-<p>Or run its flow directly from the root of your repository, with <code>&lt;installed-sigma&gt;</code> the installed plugin directory:</p>
+<p><strong>Fallback, only if the slash command is not available.</strong> Run the init flow directly from the root of your repository. This is a path you type, with <code>&lt;installed-sigma&gt;</code> the installed plugin directory:</p>
 <pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/init_flow.py . --codex --demo</code></pre>
 <p><strong>Measured:</strong> the install and the first loop command ran in a real Codex session. <strong>Not measured:</strong> a complete Codex goal through to a merged pull request. See <a href="hosts.html#codex">Hosts</a>.</p>
 
 <h2 id="cursor">Cursor</h2>
 <div class="tag-row"><span class="tag tag-experimental">Experimental</span></div>
-<p>Cursor has no plugin install. Sigma runs from a clone of the repository, which is your <code>&lt;installed-sigma&gt;</code>. From the root of your own repository:</p>
-<pre><code>git clone https://github.com/Agrim-Intelligence/sigma &lt;installed-sigma&gt;
-python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/init_flow.py . --cursor --demo</code></pre>
+<p>Cursor has no plugin install. Sigma runs from a clone of the repository, which is your <code>&lt;installed-sigma&gt;</code>. Clone it to a folder <strong>outside</strong> the project you are adopting; do not put the clone inside your own repository.</p>
+<pre><code>git clone https://github.com/Agrim-Intelligence/sigma ~/sigma</code></pre>
+<p>Then, from the root of your own repository, run the init skill with the <code>--cursor</code> flag:</p>
+<pre><code>/sigma-init --cursor --demo</code></pre>
+<p><strong>Fallback, only if the slash command is not available.</strong> This is a path you type, with <code>&lt;installed-sigma&gt;</code> the folder you cloned to:</p>
+<pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/init_flow.py . --cursor --demo</code></pre>
 <p>The <code>--cursor</code> flag writes the Cursor rule files that carry the seven-phase discipline.</p>
 <p><strong>Measured:</strong> the scaffolding is unit-tested. <strong>Not measured:</strong> a run inside a live Cursor session. See <a href="hosts.html#cursor">Hosts</a>.</p>
 
 <h2 id="antigravity">Antigravity</h2>
 <div class="tag-row"><span class="tag tag-experimental">Experimental, never run</span></div>
-<p>As with Cursor, Sigma runs from a clone of the repository, which is your <code>&lt;installed-sigma&gt;</code>. From the root of your own repository:</p>
-<pre><code>git clone https://github.com/Agrim-Intelligence/sigma &lt;installed-sigma&gt;
-python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/init_flow.py . --antigravity</code></pre>
+<p>As with Cursor, Sigma runs from a clone of the repository, which is your <code>&lt;installed-sigma&gt;</code>. Clone it to a folder <strong>outside</strong> the project you are adopting; do not put the clone inside your own repository.</p>
+<pre><code>git clone https://github.com/Agrim-Intelligence/sigma ~/sigma</code></pre>
+<p>Then, from the root of your own repository, run the init skill with the <code>--antigravity</code> flag:</p>
+<pre><code>/sigma-init --antigravity</code></pre>
+<p><strong>Fallback, only if the slash command is not available.</strong> This is a path you type, with <code>&lt;installed-sigma&gt;</code> the folder you cloned to:</p>
+<pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/init_flow.py . --antigravity</code></pre>
 <p>The <code>--antigravity</code> flag writes the same managed block in <code>AGENTS.md</code> that <code>--codex</code> writes, and nothing else. It is opt-in.</p>
 <p><strong>Measured:</strong> the scaffold is unit-tested. <strong>Not measured:</strong> that Antigravity loads or follows it, hooks, MCP, workflows, subagents, or a goal run end to end. See <a href="hosts.html#antigravity">Hosts</a>.</p>
 

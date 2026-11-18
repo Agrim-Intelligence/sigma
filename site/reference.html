@@ -95,7 +95,7 @@
 <tr><td><code>budget.*</code></td><td>20 goals, 480 minutes per session</td><td>Ceilings on iterations, minutes and tokens for one run.</td></tr>
 <tr><td><code>followups.mode</code></td><td><code>in-goal</code></td><td>Whether a follow-up joins its goal as a slice or becomes a new goal.</td></tr>
 <tr><td><code>ledger.enabled</code></td><td>off until setup writes it</td><td>The committed team ledger.</td></tr>
-<tr><td><code>model_selection</code></td><td>off</td><td>Per-goal model tier selection.</td></tr>
+<tr><td><code>model_selection</code></td><td>off in code; the scaffold writes <code>"auto"</code></td><td>Per-goal model tier selection. A config without the key stays off; a new <code>/sigma-init</code> writes <code>"auto"</code>.</td></tr>
 <tr><td><code>knowledge_graph.enabled</code></td><td>off</td><td>The optional knowledge graph.</td></tr>
 <tr><td><code>resource.*</code></td><td>derived from the machine</td><td>Memory and CPU limits for verify and sessions.</td></tr>
 </tbody>

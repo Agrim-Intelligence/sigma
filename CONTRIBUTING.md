@@ -41,7 +41,7 @@ title, run `python3 tools/site_nav.py write` (it rewrites each page's nav and cr
 missing page), and `python3 tools/site_nav.py check` to verify.
 
 Rules for page content: version numbers appear only on the Releases page; every `/sigma-*` command
-named must be a skill under `skills/`; no private names, home paths or other emails. The checks are
+named must be a skill under `skills/`; no private names, home paths or other emails; no path to an internal script, except a line clearly labelled as the command or fallback path the reader types (as on Get started). The checks are
 `tests/test_site_checks.py` (leak scan, commands and skill count, links and anchors, SVG well-formedness,
 versions, external URLs, nav, host flags), each with a control that breaks one thing and expects red.
 The Pages workflow publishes `site/` from `main`; it does not enable Pages, which is a repository setting.
