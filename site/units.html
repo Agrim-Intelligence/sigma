@@ -22,6 +22,7 @@
     <div class="nav-group-title">Start here</div>
     <a href="index.html">Home</a>
     <a href="get-started.html">Get started</a>
+    <a href="first-goal.html">Your first goal</a>
     <a href="flow.html">How it works</a>
     <a href="entry-points.html">Ways in</a>
     <a href="design-gate.html">The design gate</a>
@@ -29,19 +30,25 @@
   <div class="nav-group">
     <div class="nav-group-title">Set up &amp; run</div>
     <a href="setup.html">Setup</a>
+    <a href="upgrading.html">Upgrading and uninstalling</a>
     <a href="hosts.html">Hosts</a>
     <a href="config.html">Configuration</a>
+    <a href="settings.html">All settings</a>
     <a href="sdlc-folder.html">The .sdlc folder</a>
     <a href="run.html">Running unattended</a>
     <a href="orchestrate.html">Running many goals</a>
+    <a href="parallel.html">Parallel and scheduled runs</a>
     <a href="cloud.html">Cloud sessions</a>
     <a href="observe.html">Cost and time</a>
+    <a href="troubleshooting.html">Troubleshooting and FAQ</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
     <a href="solo.html">On your own</a>
     <a href="team.html">As a team</a>
     <a href="slack.html">From Slack</a>
+    <a href="board.html">The project board</a>
+    <a href="dependencies.html">Dependencies and chains</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
@@ -49,6 +56,9 @@
     <a href="labels.html">Labels</a>
     <a href="units.html" class="active" aria-current="page">Units of work</a>
     <a href="safety.html">Trust and limits</a>
+    <a href="policy.html">Org policy and security</a>
+    <a href="autonomy.html">Autonomy and the rulebook</a>
+    <a href="quality.html">Quality and design aids</a>
     <a href="reference.html">Technical reference</a>
   </div>
   <div class="nav-group">
@@ -77,6 +87,19 @@
 <li><a href="#registry">The registry</a></li>
 <li><a href="#order">Pick order</a></li>
 <li><a href="#done">Landing a unit</a></li>
+<li><a href="#upkeep">Keeping unit branches current: upkeep and rebase</a>
+<ul>
+<li><a href="#upkeep-what">What upkeep does and does not do</a></li>
+<li><a href="#upkeep-ways">Two ways a unit is brought forward</a></li>
+<li><a href="#upkeep-on">Turning the schedule on</a></li>
+<li><a href="#upkeep-window">The window</a></li>
+<li><a href="#upkeep-backup">Backups and the lease</a></li>
+<li><a href="#upkeep-direct">Nobody commits directly to a unit branch</a></li>
+<li><a href="#upkeep-conflicts">Conflicts</a></li>
+<li><a href="#upkeep-rebase">When a person uses /sigma-rebase</a></li>
+<li><a href="#upkeep-recover">When something goes wrong</a></li>
+</ul>
+</li>
 </ul>
 </nav>
 
@@ -174,6 +197,124 @@
 
 <h2 id="done">Landing a unit</h2>
 <p>Merging a goal into the unit branch is not the merge that ships the work. Getting <code>feature/&lt;name&gt;</code> onto the main branch is a separate step, by default a person's. Sigma closes the goal's issue itself after the merge; a <code>Closes #N</code> line does not do it. A stale unit branch is caught up with <a href="skills.html#sigma-rebase"><code>/sigma-rebase</code></a>.</p>
+
+<h2 id="upkeep">Keeping unit branches current: upkeep and rebase</h2>
+<p>A unit branch lives for as long as its work does, and its base keeps moving. If nobody brings the unit forward, the gap grows and the final merge becomes one large conflict. Upkeep replays a unit branch onto the current base, pushes the result with a lease, and keeps the tip it replaced as a backup. It is opt-in, and with it off nothing on this page happens.</p>
+
+<h3 id="upkeep-what">What upkeep does and does not do</h3>
+<ul>
+<li>It replays an existing unit branch onto its base and pushes with a lease. Every push is a force-push on the exact tip it read, so if the remote moved meanwhile the push is refused and tried again on the next pass.</li>
+<li>It never deletes a unit branch. The only deletion it makes is pruning old backups.</li>
+<li>It never commits to a unit branch itself; it only replays commits that already exist.</li>
+<li>It does not land a unit. Landing is a separate, guarded step that a person asks for.</li>
+<li>It does not run a language model to resolve a conflict unless you set the conflict level to <code>agent</code>. With no spend key set, that level has no spend limit.</li>
+</ul>
+
+<h3 id="upkeep-ways">Two ways a unit is brought forward</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Way</th><th>When it runs</th><th>Controlled by</th></tr></thead>
+<tbody>
+<tr><td>At pick time</td><td>When a goal that declares a unit is picked, the unit branch and the goal&rsquo;s branch are brought up to date first. If another pass holds the unit&rsquo;s rebase lock, the pick does not wait; it cuts the goal, re-checks the unit tip right after, and moves the still-empty goal branch if the tip changed.</td><td><code>work.rebase_upkeep</code>, on by default; <code>off</code> turns it off.</td></tr>
+<tr><td>On a window</td><td>One bounded sweep brings every unit that is behind its base up to date, at most once per window.</td><td>The three opt-ins below.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Both use the same per-unit engine, so backups, the lease, the direct-commit refusal and conflict handling behave the same in either.</p>
+
+<h3 id="upkeep-on">Turning the schedule on</h3>
+<p>All three of these must be present. Any other spelling of a value (the text &ldquo;true&rdquo;, the number 1) leaves it closed.</p>
+<ol class="steps">
+<li><h4><code>upkeep.enabled</code></h4><p>Set it to the JSON boolean <code>true</code> in <code>.sdlc/config.json</code>. The scaffold writes the block with it off; a repository adopted earlier copies the block in from the template.</p></li>
+<li><h4><code>ledger.enabled</code></h4><p>Set it to exactly <code>true</code>. The watcher that runs the schedule is the ledger watcher. Remove a leftover stop file for the watcher first, or it exits at once.</p></li>
+<li><h4><code>SIGMA_UPKEEP_JOB=1</code></h4><p>Set this environment variable to exactly <code>1</code> in the environment of the process that starts the sweep, on <strong>one</strong> machine. Two opted-in machines would both start passes; the lease makes the second push refuse, but each wastes a fetch and a replay. To split units between machines on purpose, use <code>upkeep.units.include</code> and <code>upkeep.units.exclude</code>.</p></li>
+</ol>
+<p>Then set <code>work.base</code> to your default branch. With it empty, every pass ends with no base and does nothing; the doctor says so. Upkeep also refuses a unit branch as the base unless you name it in <code>work.integration_base</code>. Before relying on it, look at what it would do and run one pass by hand on a unit you can afford to rewrite. The commands, which you type:</p>
+<pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-loop/scripts/feature_rebase.py preview .sdlc
+python3 &lt;installed-sigma&gt;/skills/sigma-loop/scripts/feature_rebase.py show .sdlc &lt;unit&gt;
+python3 &lt;installed-sigma&gt;/skills/sigma-loop/scripts/feature_rebase.py upkeep .sdlc &lt;unit&gt;</code></pre>
+<p><code>preview</code> lists every unit the sweep would take with a predicted outcome and moves nothing (a predicted conflict is a probe, and a real rebase may differ). <code>show</code> reports on one unit and moves nothing. <code>upkeep</code> runs one pass.</p>
+
+<h3 id="upkeep-window">The window</h3>
+<p>The schedule does not poll each unit. It works on a window, <code>upkeep.window_hours</code> (default 12).</p>
+<ul>
+<li><strong>When it opens.</strong> When this machine has no completed sweep on record, or <code>window_hours</code> have passed since the last completed one ended.</li>
+<li><strong>Who starts the sweep,</strong> whichever comes first once it opens: the first session start on the machine (which starts a detached sweep and returns at once), the ledger watcher&rsquo;s next tick, or a merge made through Sigma on the machine that merged.</li>
+<li><strong>What a closed window costs.</strong> One small file read and some arithmetic. No git call, no GitHub call.</li>
+<li><strong>What a sweep does.</strong> It takes a job lock, lists the units the include and exclude lists admit (exclude always wins), and runs the per-unit pass for each, one at a time. A unit already at its base costs one bounded read. The units come from the registry alone; a remote unit branch with no registry record is not maintained, and the doctor names it.</li>
+<li><strong>Failures do not spread.</strong> A unit that is refused, parked or failed does not stop the others. One sweep at a time: another sweep holding the lock makes the new one back off, which is a refusal, not a failure.</li>
+<li><strong>The time cap.</strong> All units share one wall-clock cap: <code>upkeep.verify.timeout_minutes</code> (default 60) plus a fixed 15-minute margin. A unit the cap prevented from starting is listed as unreached and waits for the next window.</li>
+<li><strong>Where it runs.</strong> Detached, with only an allowlisted environment. Windows is refused, and the status file says so once.</li>
+</ul>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Stamp</th><th>Written when</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>Completed</td><td>A sweep ran to the end, even if some units were refused, parked or unreached.</td><td>Closes the window for <code>window_hours</code>.</td></tr>
+<tr><td>Attempted</td><td>A sweep started, or was cut short before useful work: killed, found busy, failed to spawn, or every unit failed.</td><td>Holds off a re-trigger for <code>upkeep.retry_minutes</code> (default 60) only; never closes the window.</td></tr>
+</tbody>
+</table>
+</div>
+<p>So a sweep that dies does not cost you a day: the next session start or watcher tick after the retry time starts it again. A missing or unreadable stamp reads as an open window, and a completed time dated in the future counts as no completed sweep, so a clock set far ahead cannot silence upkeep.</p>
+
+<h3 id="upkeep-backup">Backups and the lease</h3>
+<p>Each time a pass rewrites a unit branch it keeps the old tip as a backup ref under a Sigma namespace, in the same atomic push as the update, so both land or neither does. A pure fast-forward replaces nothing and writes no backup. Two commands manage them, and both do nothing while upkeep is off:</p>
+<pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-loop/scripts/feature_rebase.py restore .sdlc &lt;unit&gt; --list
+python3 &lt;installed-sigma&gt;/skills/sigma-loop/scripts/feature_rebase.py restore .sdlc &lt;unit&gt; &lt;stamp&gt; --expect &lt;tip&gt;
+python3 &lt;installed-sigma&gt;/skills/sigma-loop/scripts/feature_rebase.py prune .sdlc --dry-run</code></pre>
+<ul>
+<li><strong>Restore</strong> puts the branch back at a named backup. You state the tip the branch has now, and the push is leased on it: if the branch moved, nothing changes. The tip being replaced is kept as a new backup. A restore is not sticky; the next pick or sweep brings the branch forward again, so set <code>work.rebase_upkeep</code> to <code>off</code> first if you want it to stay.</li>
+<li><strong>Prune</strong> removes backups older than <code>upkeep.backup.keep_days</code> (default 14) while always keeping the newest <code>upkeep.backup.keep_last</code> (default 5) of each unit. The sweep prunes by itself once per sweep.</li>
+</ul>
+
+<h3 id="upkeep-direct">Nobody commits directly to a unit branch</h3>
+<p>Every change reaches <code>feature/&lt;name&gt;</code> as a pull request from a goal branch. Before it force-pushes, a pass asks of every commit on the branch whether a pull request accounts for it. If one is not accounted for, the pass refuses with <code>direct-commits</code>, leaves the branch exactly as it was, and files the finding as tracked work. A later pass that finds none closes the finding.</p>
+<p>If a commit did arrive through a pull request but its subject carries no trace of it, you acknowledge it with the <code>ack</code> verb of the same script (<code>ack .sdlc &lt;unit&gt; &lt;sha&gt;</code>, or <code>--all</code> for the commits the filed issue listed). The acknowledgement survives the rewrite it unblocks and travels by pull request to every teammate.</p>
+<div class="callout callout-warn">
+<div class="callout-title">Sigma detects; only your host can prevent</div>
+<p>Sigma notices some direct commits before it force-pushes; it cannot stop one. Only host branch protection can. Ordinary protection on unit branches blocks upkeep&rsquo;s own force-push, so grant upkeep&rsquo;s account a bypass.</p>
+</div>
+
+<h3 id="upkeep-conflicts">Conflicts</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th><code>upkeep.conflicts.resolve</code></th><th>What happens to a conflicted unit</th></tr></thead>
+<tbody>
+<tr><td><code>off</code> (default)</td><td>The unit branch is left untouched, nothing is pushed, and one issue records why.</td></tr>
+<tr><td><code>mechanical</code></td><td>A conflict confined to the changelog is resolved by a heading-aware union, proved, and pushed once. Anything else is parked. Needs a verify command unless <code>mechanical_without_verify</code> is <code>true</code>.</td></tr>
+<tr><td><code>agent</code></td><td>A capped headless resolver plus an independent reviewer. Set <code>max_budget_usd_per_unit</code>, and optionally a daily ceiling, to cap it.</td></tr>
+</tbody>
+</table>
+</div>
+<p>A parked conflict is one finding. Before filing, the pass looks for an open issue with the same conflict id and comments on it at most once a day. A replay that would delete content the branch has is a blocked pass, not a clean one.</p>
+
+<h3 id="upkeep-rebase">When a person uses /sigma-rebase</h3>
+<p><a href="skills.html#sigma-rebase"><code>/sigma-rebase</code></a> is the attended counterpart of upkeep. Upkeep runs on its own, once per pick or window, and stops cold at a conflict. <code>/sigma-rebase</code> runs whenever you ask, explains itself, and walks you through a real conflict instead of leaving a bare git error. Reach for it when:</p>
+<ul>
+<li>a unit branch is stale and you want it current now, without waiting for a window;</li>
+<li>upkeep parked a conflict and you want to resolve it with context;</li>
+<li>you want to see what the base changed before you move anything.</li>
+</ul>
+<p>It always shows a brief first: what each commit the base picked up says, in its changelog entry, pull request or design write-up, or an honest note that no written reason exists, plus the files both sides touched, so conflicts are named before the rebase runs. Then it asks you to confirm. On confirmation it rebases only the branch you are on, never one you are not sitting in, autostashes a dirty tree, and pushes with a lease.</p>
+<p>On a conflict it shows, per file, the base-side commits that touched it (or the one that deleted it, and why) and offers named options: keep this branch&rsquo;s version, follow a move if the code went elsewhere, accept the base&rsquo;s decision, or resolve by hand. It refuses to continue if a resolution would silently drop a commit as empty, and you can abort at any point to leave the tree as it was. Once clean it runs your verify command and only then asks whether to merge; answering no leaves everything rebased but unmerged. Anyone may run it on any branch; it has no authorisation layer.</p>
+
+<h3 id="upkeep-recover">When something goes wrong</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>What happened</th><th>Recovery</th></tr></thead>
+<tbody>
+<tr><td>The sweep was killed or the machine rebooted</td><td>Automatic: re-triggered after the retry time.</td></tr>
+<tr><td>The sweep hit its time cap</td><td>Automatic: unreached units wait for the next window.</td></tr>
+<tr><td>The remote moved during a push</td><td>Automatic: the next pass tries again.</td></tr>
+<tr><td>Direct commits on the branch</td><td>Review, then acknowledge, or move the work onto a goal branch.</td></tr>
+<tr><td>A conflict</td><td>Resolve it with <code>/sigma-rebase</code>, or set the conflict level to <code>mechanical</code> for changelog conflicts.</td></tr>
+<tr><td>A bad rewrite</td><td>Restore from the backup.</td></tr>
+<tr><td>A job hangs</td><td>Create the upkeep stop file in <code>.sdlc/state/</code>; Sigma never deletes it for you.</td></tr>
+</tbody>
+</table>
+</div>
+<p>To stop upkeep entirely, set <code>upkeep.enabled</code> to <code>false</code>. Landing a whole unit onto its base is a separate, guarded gesture that is never automatic; it rehearses by default and merges only the exact head it verified.</p>
+<p><strong>Not measured:</strong> upkeep has been run end to end on a local remote and on one private throwaway repository. It has not been measured at tens of units, against branch rulesets with bypass actors, or with a real model resolving conflicts. One sweep per window per machine means at most two a day at the default. The keys are on <a href="settings.html#upkeep">All settings</a>.</p>
 
 <div class="aud aud-tech">
 <div class="aud-label">Technical detail</div>

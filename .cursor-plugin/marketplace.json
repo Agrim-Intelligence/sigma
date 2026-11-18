@@ -1,0 +1,16 @@
+{
+  "name": "sigmaloop",
+  "owner": {
+    "name": "Agrim Intelligence Private Limited"
+  },
+  "metadata": {
+    "description": "Sigma Loop: guardrails + an overnight autopilot for AI coding agents"
+  },
+  "plugins": [
+    {
+      "name": "sigmaloop",
+      "source": "./",
+      "description": "Sigma Loop: guardrails + an overnight autopilot for your AI coding agent, an SDLC loop that will not finish a goal without a recorded plan, plan review and review, on a GitHub Projects board."
+    }
+  ]
+}

@@ -6,8 +6,8 @@ release. Those are owner actions after the listed checks are green.
 
 ## Versioning
 
-Sigma uses semantic versioning. `.claude-plugin/plugin.json` and
-`.claude-plugin/marketplace.json` carry the identical version. A release is a
+Sigma uses semantic versioning. `.claude-plugin/plugin.json`,
+`.claude-plugin/marketplace.json` and `.cursor-plugin/plugin.json` carry the identical version. A release is a
 git tag named `v<version>` on the merge commit and a GitHub release whose notes
 are the matching dated CHANGELOG section. The consistency controls reject
 manifest drift and an undated published CHANGELOG heading.
@@ -19,7 +19,8 @@ manifest drift and an undated published CHANGELOG heading.
    `DATE-PENDING` only as the newest heading, and `tools/release_notes.py` (step 7) refuses it. Review the
    curated summary above the `<!-- release-notes:end -->` line: that is the release notes (GitHub rejects a body over
    125,000 characters, so the tool refuses one over 120,000); the detailed log below the marker is not sent.
-2. Bump both plugin manifests to the same `X.Y.Z` version.
+2. Bump the three plugin manifests (`.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`,
+   `.cursor-plugin/plugin.json`) to the same `X.Y.Z` version.
 3. Run the full suite successfully on every supported CI cell.
 4. For the first public release, require `GO` from the decision-rule checker, which ships in this tree:
    `python3 tools/readiness/decide.py .`, from the root of a checkout whose `origin` is fetched (it reads
