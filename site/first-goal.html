@@ -75,15 +75,164 @@
 
 <span class="eyebrow">Start here</span>
 <h1>Your first goal</h1>
+<p class="subtitle">From a repository that has never heard of Sigma to one goal merged by you, with a look at what was left behind.</p>
+
 <nav class="toc" aria-label="On this page">
 <div class="toc-title">On this page</div>
 <ul>
-<li><a href="#overview">Overview</a></li>
+<li><a href="#path">The path</a></li>
+<li><a href="#init">1. Initialise</a></li>
+<li><a href="#add">2. Add one goal</a></li>
+<li><a href="#run">3. Run it</a></li>
+<li><a href="#pr">4. The pull request and its review state</a></li>
+<li><a href="#merge">5. Merge it</a></li>
+<li><a href="#look">6. What to look at in .sdlc</a></li>
+<li><a href="#drop-in">Drop-in or vision-first</a></li>
 </ul>
 </nav>
 
-<h2 id="overview">Overview</h2>
-<p class="stub">Content in progress.</p>
+<div class="most">
+<p class="most-title">Most people only need</p>
+<ul>
+<li>Run <code>/sigma-init</code> once, and confirm the test command it detects.</li>
+<li>Write one small goal with a checkable <em>done when</em> line.</li>
+<li>Run <code>/sigma-loop</code>. On the shipped defaults it opens a pull request and stops; it never merges.</li>
+<li>You merge the pull request. The goal is recorded done after that, not before.</li>
+</ul>
+</div>
+
+<p>A <strong>goal</strong> is one piece of work with a line that says how you will know it is finished. Sigma takes it through research, plan, an adversarial review of the plan, implementation, review and a short retrospective, proves it with your test command, and hands you a pull request. This page follows one goal from a fresh repository to the merge. You need <code>git</code>, <code>bash</code> and <code>python3</code>, and the plugin installed for your host (<a href="get-started.html">Get started</a>). A GitHub remote and a logged-in <code>gh</code> are needed for the pull request; without them, see <a href="solo.html">On your own</a>.</p>
+
+<h2 id="path">The path</h2>
+<div class="diagram">
+<svg viewBox="0 0 440 462" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Six steps from a fresh repository to a merged goal. Run sigma-init once. Add one goal as a file or a labelled issue. Run sigma-loop, which works the goal in its own worktree through the seven phases and proves it with your verify command. Sigma opens a pull request and records the goal as awaiting merge. You merge the pull request, which is the gate. The next pass records the goal done and closes the issue.">
+  <defs>
+    <marker id="fg-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="dmark"/></marker>
+  </defs>
+  <rect class="dbox" x="60" y="10" width="320" height="52" rx="9"/><text class="dtext" x="220" y="30" text-anchor="middle" font-weight="700">1. /sigma-init</text><text class="dtext-dim" x="220" y="46" text-anchor="middle">once per repository; confirm your test command</text>
+  <path class="darrow" d="M220,62 L220,85" marker-end="url(#fg-a)"/>
+  <rect class="dbox" x="60" y="88" width="320" height="52" rx="9"/><text class="dtext" x="220" y="108" text-anchor="middle" font-weight="700">2. Add one goal</text><text class="dtext-dim" x="220" y="124" text-anchor="middle">a file in .sdlc/goals/, or an issue labelled sdlc:goal</text>
+  <path class="darrow" d="M220,140 L220,163" marker-end="url(#fg-a)"/>
+  <rect class="dbox" x="60" y="166" width="320" height="52" rx="9"/><text class="dtext" x="220" y="186" text-anchor="middle" font-weight="700">3. /sigma-loop</text><text class="dtext-dim" x="220" y="202" text-anchor="middle">seven phases in a worktree, then verify</text>
+  <path class="darrow" d="M220,218 L220,241" marker-end="url(#fg-a)"/>
+  <rect class="dbox" x="60" y="244" width="320" height="52" rx="9"/><text class="dtext" x="220" y="264" text-anchor="middle" font-weight="700">4. Pull request opened</text><text class="dtext-dim" x="220" y="280" text-anchor="middle">goal recorded as awaiting merge (review)</text>
+  <path class="darrow" d="M220,296 L220,319" marker-end="url(#fg-a)"/>
+  <rect class="dbox-accent" x="60" y="322" width="320" height="52" rx="9"/><text class="dtext-inv" x="220" y="342" text-anchor="middle" font-weight="700">5. You merge it</text><text class="dtext-dim-inv" x="220" y="358" text-anchor="middle">the one gate Sigma does not cross for you</text>
+  <path class="darrow" d="M220,374 L220,397" marker-end="url(#fg-a)"/>
+  <rect class="dbox-core" x="60" y="400" width="320" height="52" rx="9"/><text class="dtext" x="220" y="420" text-anchor="middle" font-weight="700">6. Recorded done</text><text class="dtext-dim" x="220" y="436" text-anchor="middle">the next pass closes the issue</text>
+</svg>
+</div>
+
+<h2 id="init">1. Initialise</h2>
+<p>From the root of the repository:</p>
+<pre><code>/sigma-init</code></pre>
+<p>It checks git and <code>gh</code>, asks where the backlog lives, and detects your test command. It lists the candidates with a number and an id each; you confirm one by re-running with the pair it printed, for example <code>/sigma-init --verify 1:&lt;id&gt;</code>. Confirming is what lets a goal be proved: the verify command is what Sigma runs before it will call anything done. Add <code>--demo</code> to queue a throwaway goal that writes one note file, if you want to see the flow before writing a real goal.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Question</th><th>Pick</th><th>When</th></tr></thead>
+<tbody>
+<tr><td>Where do goals live?</td><td><code>github</code> (issues) or <code>local-goals</code> (files)</td><td>GitHub is the default when <code>origin</code> is a GitHub repository. Local files need no account.</td></tr>
+<tr><td>Which command proves it?</td><td>Confirm a detected one, give your own, or decline</td><td>Declining leaves <code>verify.enforce</code> off, so a goal can be marked done without proof. Confirm one for a real goal.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Afterwards <code>git status</code> shows <code>.gitignore</code> and <code>.sdlc/</code> as untracked. That is expected: commit <code>.gitignore</code>, <code>.sdlc/goals/</code>, <code>.sdlc/project.md</code> and <code>.sdlc/config.json</code>, and never ignore <code>.sdlc</code> as a whole (<a href="sdlc-folder.html#commit">The .sdlc folder</a>). The full list of what init does is on <a href="setup.html#adopt">Setup</a>. Run <code>/sigma-doctor</code> once to see anything missing.</p>
+
+<h2 id="add">2. Add one goal</h2>
+<p>Keep the first one small and checkable. A good goal names an outcome and one line that a command can confirm.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Backlog</th><th>How to add a goal</th></tr></thead>
+<tbody>
+<tr><td>Local files</td><td>Copy the example file in <code>.sdlc/goals/</code> to the next number, set <code>status: pending</code> (the example ships as <code>proposed</code>, which the loop never picks), and fill <code>done_when</code> with a checkable condition. The body is the goal, written as you would to a teammate.</td></tr>
+<tr><td>GitHub issues</td><td>Open an issue labelled <code>sdlc:goal</code> and <strong>assign it to yourself</strong>: by default the loop works only issues assigned to the person running it. Put a <code>## Done when</code> section in the body with three to seven checkable statements. A goal without one is allowed on the defaults; it prints a warning and proceeds.</td></tr>
+</tbody>
+</table>
+</div>
+<pre><code>---
+id: 0002
+title: "Add a --version flag"
+lane: auto
+done_when: "running the tool with --version prints its version, and the tests pass"
+auto_ok: false
+status: pending
+---
+
+Add a --version flag to the command line tool. Print the version
+from the package metadata and exit 0.</code></pre>
+<p>The example above uses the keys the shipped example file has; keep the keys your copy has and change only their values.</p>
+
+<h2 id="run">3. Run it</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Command</th><th>Use it to</th></tr></thead>
+<tbody>
+<tr><td><code>/sigma-loop</code></td><td>Pull the next goal from the backlog and run it unattended through every phase, then the commit, the pull request and the post-pull-request review. This is the path that ends in a pull request. Anything needing a human is parked, not forced.</td></tr>
+<tr><td><code>/sigma-goal</code></td><td>Run one goal with you at every gate. It never proceeds past a checkpoint without your approval. Use it to watch the phases once. Its own steps record the outcome; the pull-request path is documented under <code>/sigma-loop</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Each goal gets its own git worktree and branch (under <code>.sdlc/work/</code>, on an <code>sdlc/</code> branch cut from your base branch), so your checkout never moves while it works. Each phase prints a banner and a cost line as it ends. A run stops at the budgets in <code>.sdlc/config.json</code>; the shipped values are on <a href="config.html#limits">Configuration</a>. Check progress at any time with <code>/sigma-status</code>, or <code>/sigma-log</code> for the live trace of the goal in flight.</p>
+
+<h2 id="pr">4. The pull request and its review state</h2>
+<p>Two shipped defaults decide what you see: <code>work.auto_merge: off</code> and <code>work.require_review: changes</code>.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Setting</th><th>On the defaults it means</th></tr></thead>
+<tbody>
+<tr><td><code>work.auto_merge: off</code></td><td>Sigma never merges. It opens the pull request and leaves it. The goal is recorded as <strong>review</strong>, meaning awaiting merge: the issue stays open, the card (if you use a board) sits in <strong>QC</strong>, and <code>/sigma-status</code> and <code>/sigma-doctor</code> show how long it has waited.</td></tr>
+<tr><td><code>work.require_review: changes</code></td><td>After the pull request opens, a fresh reviewer that did not write the code reviews the real diff. A blocking verdict sends it back for a fix, a re-verify and another review, up to <code>work.max_review_cycles</code> times (3), then parks it for you. The gate also parks on a "Request changes" review or an unresolved review thread.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The loop posts its verdict as a comment on the pull request: <code>sigma:approve</code> to clear, <code>sigma:block</code> to stop. You can leave the same markers yourself, but they count only from the repository's owner, members and collaborators. A comment marker is not a human review: the loop's own account wrote the code and posts the approval, which GitHub cannot tell apart from an independent one. Treat the approval as one signal and read the diff yourself.</p>
+<p>A goal can end somewhere other than a pull request. <strong>Parked</strong> means it needs a decision from you (see <a href="troubleshooting.html">Troubleshooting</a>); <strong>failed</strong> means it needs a fix. Without a usable remote, or with <code>--local-only</code>, there is no worktree, branch or pull request: the loop edits your checkout directly and records the outcome.</p>
+
+<h2 id="merge">5. Merge it</h2>
+<p>Review and merge the pull request on GitHub as you would any other. The next time the loop looks (any pick, or the watcher's tick), it sees the merge, records the goal done and closes the issue. A goal is <code>done</code> only once its pull request has merged; recording it done earlier is refused.</p>
+<div class="callout callout-warn">
+<div class="callout-title">Leave auto-merge off for the first goals</div>
+<p><code>work.auto_merge</code> has two other values, <code>protected</code> and <code>always</code>. Set them only once your base branch has branch protection that requires checks or an approval from a second person. Without that, nothing independent stands between an unattended merge and your base branch. See <a href="config.html#land">Landing: pull requests and merging</a>.</p>
+</div>
+
+<h2 id="look">6. What to look at in .sdlc</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Where</th><th>What it tells you</th></tr></thead>
+<tbody>
+<tr><td><code>.sdlc/goals/</code></td><td>Local backlog. Each file's <code>status</code> moves <code>pending</code>, <code>in_progress</code>, <code>done</code> or <code>parked</code>.</td></tr>
+<tr><td><code>.sdlc/state/review-queue.md</code></td><td>Your "needs a human" list: what was parked and why.</td></tr>
+<tr><td><code>.sdlc/plans/</code>, <code>research/</code>, <code>acceptance/</code></td><td>The written record of the goal: what it found, what it planned, and the done criteria it was held to. They travel on the goal's branch with the pull request.</td></tr>
+<tr><td><code>.sdlc/journey/</code></td><td>Local mode only: the audit trail of each phase. With GitHub issues the same notes are on the issue timeline.</td></tr>
+<tr><td><code>.sdlc/state/log/</code></td><td>The local action log, one file per goal, never committed. Read it with <code>/sigma-log</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The rest of the folder is explained on <a href="sdlc-folder.html">The .sdlc folder</a>; cost and timing per phase are on <a href="observe.html">Cost and time</a>.</p>
+
+<h2 id="drop-in">Drop-in or vision-first</h2>
+<p>Both start the same way and share one spine, so you can move between them later.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Drop-in (default)</th><th>Vision-first (opt-in)</th></tr></thead>
+<tbody>
+<tr><td>Start</td><td><code>/sigma-init</code>, then goals against your existing code</td><td><code>/sigma-vision</code>, or <code>/sigma-init --vision</code></td></tr>
+<tr><td>Up-front work</td><td>A thin <code>.sdlc/project.md</code>: stack and verify command</td><td>A tiered north-star in <code>.sdlc/context/north-star.md</code>: vision, strategy with non-goals, design, architecture</td></tr>
+<tr><td>Effect on goals</td><td>None beyond the loop itself</td><td>Plan review sends back a plan that contradicts your strategy or advances a stated non-goal. That is a review instruction, not a code check.</td></tr>
+</tbody>
+</table>
+</div>
+<p>A drop-in project can add a north-star later. With none written, the alignment check does nothing.</p>
+
+<div class="aud aud-tech">
+<div class="aud-label">Technical detail</div>
+<p><strong>Not measured here.</strong> This page rests on the documentation and the code, not on a fresh run of this exact walk-through. A complete goal through to a merged pull request was measured in the Cursor app (merged by hand); on Codex and Antigravity it was not (<a href="hosts.html">Hosts</a>). Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/getting-started.md">getting started</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/running-the-loop.md">running the loop</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/worktrees-and-merging.md">worktrees and merging</a>.</p>
+</div>
+
+<div class="pagenav">
+  <a href="get-started.html"><span class="dir">Back</span>&larr; Get started</a>
+  <a class="next" href="flow.html"><span class="dir">Next</span>How it works &rarr;</a>
+</div>
 
 </main>
 </div>

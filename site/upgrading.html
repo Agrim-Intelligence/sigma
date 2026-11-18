@@ -75,15 +75,147 @@
 
 <span class="eyebrow">Set up &amp; run</span>
 <h1>Upgrading and uninstalling</h1>
+<p class="subtitle">Keep the plugin current without losing your settings, switch over from an older install, and remove Sigma from a repository without leaving anything behind.</p>
+
 <nav class="toc" aria-label="On this page">
 <div class="toc-title">On this page</div>
 <ul>
-<li><a href="#overview">Overview</a></li>
+<li><a href="#update">Updating the plugin</a></li>
+<li><a href="#never">What an update never touches</a></li>
+<li><a href="#trust">A new clone needs trust again</a></li>
+<li><a href="#old-id">An install under the old id</a></li>
+<li><a href="#switch">Switching over from the previous plugin</a></li>
+<li><a href="#rollback">Rolling back</a></li>
+<li><a href="#uninstall">Uninstalling</a></li>
 </ul>
 </nav>
 
-<h2 id="overview">Overview</h2>
-<p class="stub">Content in progress.</p>
+<div class="most">
+<p class="most-title">Most people only need</p>
+<ul>
+<li>Claude Code: <code>claude plugin update sigmaloop@sigmaloop</code>, then restart the session.</li>
+<li>An update never rewrites <code>.sdlc/config.json</code>. A setting added by a later release has to be copied in by you.</li>
+<li>Stop a running watcher after updating, so it restarts on the new build.</li>
+<li>To remove Sigma, stop the watchers first, remove worktrees before deleting <code>.sdlc</code>, and read the branch list before you delete any branch.</li>
+</ul>
+</div>
+
+<p>An update replaces the skills, docs, hooks and scripts that the plugin ships. Your repository's own state is separate and stays as it is: goals, plans, the config file, labels and the board. Removing Sigma is the other direction, and it has an order, because a background watcher can still be writing while you delete the folder it writes to.</p>
+
+<h2 id="update">Updating the plugin</h2>
+<p>Run <code>/sigma-doctor</code> first. It reports the installed version against the marketplace's current one. Do not start the loop on an installed plugin that is below the floor the doctor names: mixed versions writing <code>sdlc:*</code> labels on one board is the setup to avoid.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Host</th><th>Update</th></tr></thead>
+<tbody>
+<tr><td>Claude Code</td><td><code>claude plugin update sigmaloop@sigmaloop</code>, then restart the session. Use the full <code>plugin@marketplace</code> id.</td></tr>
+<tr><td>Codex</td><td>Refresh the Sigma marketplace and reinstall or update the plugin. The exact verb is not stated in the repository; check <code>codex plugin --help</code> on your host. <em>Not measured here.</em></td></tr>
+<tr><td>Cursor</td><td>There is no plugin: you cloned Sigma to a folder. Pull that clone, then start a fresh session. <em>Not measured as an upgrade path.</em></td></tr>
+<tr><td>Antigravity</td><td>No update command is documented. Re-running the install command may work; this was not measured. <code>/sigma-doctor</code> shows the version in use.</td></tr>
+</tbody>
+</table>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Claude Code command</th><th>Does it upgrade?</th></tr></thead>
+<tbody>
+<tr><td><code>claude plugin update sigmaloop@sigmaloop</code></td><td><strong>Yes.</strong> It answers "updated" or "already at the latest version".</td></tr>
+<tr><td><code>claude plugin marketplace update</code></td><td>No. It only refreshes the marketplace's listing.</td></tr>
+<tr><td><code>claude plugin install</code> on an installed plugin</td><td>No. It answers "already installed" and changes nothing.</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Scopes.</strong> A Claude Code install is recorded once per scope. A project-scope entry shadows the user-scope one for that directory alone, so a user-scope update can succeed while one project sits on an old version. <code>/sigma-doctor</code> lists every scope it finds and says which it can fix from where you are; for a project entry, run the update from that project with <code>--scope project</code>.</p>
+<p><strong>After updating.</strong> Restart the session, then stop any running watcher so its next trigger starts it on the new build:</p>
+<pre><code>touch .sdlc/state/watch.stop</code></pre>
+<p>The watcher checks that file once per tick (every 900 seconds unless you changed it), so it can take that long to exit. If <code>/sigma-doctor</code> later reports a leftover stop file with no watcher running, remove it with <code>rm .sdlc/state/watch.stop</code>, because a watcher started now would exit at once. What each release changes by default is on <a href="releases.html">Releases</a>.</p>
+
+<h2 id="never">What an update never touches</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Item</th><th>On update</th></tr></thead>
+<tbody>
+<tr><td><code>.sdlc/config.json</code></td><td><strong>Never rewritten.</strong> A block added by a later release does not appear in a repository adopted earlier. Copy it from the config template in the installed plugin, with every <code>enabled</code> left <code>false</code>, and open one gate at a time. Check the result with <code>/sigma-doctor</code>.</td></tr>
+<tr><td>Goals, plans, research, acceptance records, state, action log</td><td>Kept as they are.</td></tr>
+<tr><td>Labels and the project board</td><td>Not touched by an update.</td></tr>
+<tr><td>Cursor rules and the Codex block in <code>AGENTS.md</code></td><td>Carry the text they had when scaffolded. Re-run <code>/sigma-init</code> with <code>--cursor</code> or <code>--codex</code> to refresh the managed text; for Cursor, delete the two Sigma rule files first.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Because a missing key can read differently from a template value, a repository adopted long ago may behave unlike a fresh one. <a href="config.html">Configuration</a> lists the scaffolded values; <code>/sigma-doctor</code> prints what is on in yours.</p>
+
+<h2 id="trust">A new clone needs trust again</h2>
+<p>The verify command comes from a file in the repository and runs through a shell, so Sigma refuses it until the person at that checkout allows it. The decision is stored in the checkout's own git configuration, which is not committed and not copied by <code>git clone</code>. Every new clone, and every fresh cloud session, grants it once. Without it, the first verify is refused and no goal reaches a pull request.</p>
+<p>Inspect <code>verify.command</code> in <code>.sdlc/config.json</code>; if you trust it, run once in that checkout (replace <code>&lt;project&gt;</code> with its path):</p>
+<pre><code>git -C &lt;project&gt; config --local sigma.allowRepositoryShellCommands true</code></pre>
+<p>Re-running <code>/sigma-init</code> prints a <code>[trust] verify</code> line with this gesture while it is missing, and <code>/sigma-doctor</code> shows a <code>verify command trusted in this checkout</code> row. Neither sets it for you, and no init flag does.</p>
+
+<h2 id="old-id">An install under the old id</h2>
+<p>Before launch the plugin and its marketplace were both named <code>sigma</code>, so the install id was <code>sigma@sigma</code>. The current id is <code>sigmaloop@sigmaloop</code>, and updates are keyed on it, so an install recorded under the old id keeps working and <strong>silently stops receiving updates</strong>. Nothing removes it for you: <code>/sigma-doctor</code> prints the commands, with your recorded source filled in, and runs none of them.</p>
+<pre><code>claude plugin uninstall sigma@sigma
+claude plugin marketplace remove sigma
+claude plugin marketplace add &lt;the repository your old install came from&gt;
+claude plugin install sigmaloop@sigmaloop</code></pre>
+<p>Add <code>--scope project</code> or <code>--scope local</code> to the uninstall for an install recorded under that scope. If <code>sigmaloop@sigmaloop</code> is already installed too, run only the uninstall: adding the old source again would repoint the working install at it. Restart the session afterwards. Your <code>.sdlc</code> data is not touched by any of these steps.</p>
+<div class="callout callout-warn">
+<div class="callout-title">Read before removing a marketplace</div>
+<p><code>claude plugin marketplace remove</code> also uninstalls every other plugin installed from that marketplace and deletes their saved options, secrets and data; the command's own help does not say so. Skip that line if any other plugin you use comes from it. The sequence was measured only in a scratch profile with a stand-in two-plugin marketplace, not against a real pre-launch install.</p>
+</div>
+<p>On Codex the equivalent is <code>codex plugin remove sigma@sigma</code>, <code>codex plugin marketplace add &lt;source&gt;</code> and <code>codex plugin add sigmaloop@sigmaloop</code>; confirm the verbs with <code>codex plugin --help</code> first. An install under the old id cannot warn you itself, because it runs the old doctor, which finds no plugin by the old name and shows no row.</p>
+
+<h2 id="switch">Switching over from the previous plugin</h2>
+<p>Sigma was published under another name before it was released. A repository adopted by that plugin carries its name in its state, and Sigma reads that state as it is, so nothing needs migrating before you can work. Sigma runs next to the old plugin and replaces it; its being installed is a notice, never a refusal. Do the cut-over in this order, on every machine:</p>
+<ol class="steps">
+<li><h3>Install Sigma next to it</h3><p>Nothing needs disabling first.</p></li>
+<li><h3>Run it</h3><p>Each run prints one notice naming the uninstall command. In a repository the old plugin adopted, <code>/sigma-init</code> also prints a takeover line with the exact migration dry-run command.</p></li>
+<li><h3>Stop the old plugin on this repository</h3><p>On Claude Code, run <code>claude plugin disable &lt;old-id&gt; --scope local</code> in the repository; it writes a per-repository override and leaves other repositories alone. Codex has no per-repository switch: set <code>enabled = false</code> in that plugin's table in <code>config.toml</code>, which stops it on every repository on the machine. <code>/sigma-doctor</code> prints the exact lines in a <code>coexistence</code> row.</p></li>
+<li><h3>Migrate</h3><p>The migration is a dry run by default, and it is safe to re-run. The paths below are ones you type; <code>&lt;installed-sigma&gt;</code> is the installed plugin directory.</p><pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-doctor/scripts/migrate.py .sdlc
+python3 &lt;installed-sigma&gt;/skills/sigma-doctor/scripts/migrate.py .sdlc --apply</code></pre></li>
+<li><h3>Uninstall the old plugin</h3><p>Use the command the notice printed. Remove its marketplace only if nothing else you use comes from it.</p></li>
+</ol>
+<div class="table-wrap">
+<table>
+<thead><tr><th>The migration</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td>Rewrites</td><td>Schema ids, the feature-document markers, the Codex block in <code>AGENTS.md</code>, and two kinds of value in <code>config.json</code>: environment-variable names and one watcher channel key. Each result is read back and checked.</td></tr>
+<tr><td>Leaves, and lists</td><td>History (ledger entries and timing sessions), schema ids it does not know, a file carrying both spellings that a teammate on the old plugin still owns.</td></tr>
+<tr><td>Refuses (exit 2)</td><td>Anything it cannot rewrite with certainty; any run while the old plugin can still run here; any run while a watcher is live for this <code>.sdlc</code>.</td></tr>
+<tr><td>Environment variables</td><td>Listed by name only, never by value. Rename them where you set them. The new names win when both are set.</td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Why the order matters.</strong> The old plugin cannot read Sigma's unit registry, so while it can still run it may write records from nothing over state Sigma owns. Switch every machine and migrate together, or keep the old plugin off the branches Sigma writes to until you do. If the cut-over cannot wait, <code>--replace-old-plugin</code> converts anyway after saving a copy of the registry under <code>.sdlc/state/backup/</code>. Never run the old plugin's own registry fold by hand on a converted repository. If a record the old plugin wrote after the conversion is refused, the message names the repair command to run.</p>
+
+<h2 id="rollback">Rolling back</h2>
+<p>There is no supported way to pin an older release today. Pinning from a tag was probed once, before the public repository existed, and did not install; it has not been re-run, so the documentation asks nobody to rely on it. Recovery is a forward fix: the default branch is never rewritten, and an update is taken through the marketplace only after a fixed release is published. Watch <a href="releases.html">Releases</a>.</p>
+
+<h2 id="uninstall">Uninstalling</h2>
+<p>Run these from the repository you are removing Sigma from. They are in order, and the order is the point. The full commands, including the guarded branch-delete loops and the cache copy, are in the <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/uninstall.md">uninstall guide</a>.</p>
+<ol class="steps">
+<li><h3>Stop the daemons and wait for them</h3><p>Create the stop files, then confirm no recorded process is still alive. Do not kill them to hurry it; the watcher can take up to its tick interval to notice.</p><pre><code>touch .sdlc/state/watch.stop .sdlc/state/slack-commands.stop .sdlc/state/supervisor.stop</code></pre></li>
+<li><h3>Uninstall the plugin</h3><p>Claude Code: <code>claude plugin uninstall sigmaloop@sigmaloop</code>, with <code>--scope project</code> for a project install. Codex: check <code>codex plugin --help</code> for the removal verb. Cursor: delete the folder you cloned. Antigravity: no uninstall command is documented. A leftover marketplace declaration is a separate step with the warning above.</p></li>
+<li><h3>Remove worktrees, then <code>.sdlc</code></h3><p><code>git worktree remove .sdlc/ledger</code> and <code>git worktree remove .sdlc/work/&lt;goal&gt;</code> for each goal in flight, then <code>rm -rf .sdlc</code>. Git refuses to delete a branch that is checked out in a worktree, so worktrees come first.</p></li>
+<li><h3>Delete the local branches Sigma made</h3><p><code>sdlc/*</code>, <code>feature/*</code> and <code>sdlc-ledger</code>. List them first and read the list: the delete discards commits that were never merged or pushed, and a <code>feature/*</code> branch may be yours.</p></li>
+<li><h3>Remove the plugin cache and the scaffolded text</h3><p>The cache under your Claude profile is shared by every repository on the machine that uses the plugin; skip it while another needs it. In <code>.gitignore</code> and <code>.git/info/exclude</code>, delete the Sigma runtime-directory comment and the lines under it. In <code>AGENTS.md</code>, delete the managed Sigma block. Delete <code>.cursor/rules/sdlc.mdc</code> and <code>.cursor/rules/output-contract.mdc</code> if present.</p></li>
+<li><h3>Check the git hook setting</h3><p>Releases before one fix set a local <code>core.hooksPath</code> naming a directory nothing creates. If <code>git config --local --get core.hooksPath</code> prints that value and the directory does not exist, unset it. Leave any other value; it is yours.</p></li>
+<li><h3>Optionally, remote branches, labels and the board</h3><p>Deleting remote <code>sdlc/*</code>, <code>feature/*</code> and <code>sdlc-ledger</code> branches is irreversible, and the patterns match your own <code>feature/*</code> branches too. Do not run it while other people or machines still use them.</p></li>
+</ol>
+<p><strong>The residue checker.</strong> The guide ends with a read-only check that lists whatever is left (worktrees, branches, cache directories, ignore lines, hooks setting, the managed text) and exits non-zero until nothing remains. It exits 0 only when the checked <em>local</em> residue is gone. It also looks under your Claude and Codex profile directories, can print JSON, and with a repository argument also lists the repository's <code>sdlc:*</code> labels and linked boards. It needs a copy taken from the plugin before the cache is removed, which is why the guide copies it first.</p>
+
+<div class="callout callout-warn">
+<div class="callout-title">Not measured</div>
+<p>The uninstall steps and the checker were checked in a scratch profile for Claude Code only. The Codex removal verb, an Antigravity uninstall and a Cursor clean-up were not run here.</p>
+</div>
+
+<div class="aud aud-tech">
+<div class="aud-label">Technical detail</div>
+<p>The migration reads the old spellings through one reader and never edits history. A unit record the old plugin wrote after the conversion is merged as a delta onto the registry entry (the entry wins every field it has) and is rewritten, never silently, by a repair command that lists each value it discards and refuses when the record is newer. The doctor shows a <code>legacy delta records</code> row when any exist. Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/upgrading.md">upgrading</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/uninstall.md">uninstall</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/release.md">release</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/platform-support.md">platform support</a>.</p>
+</div>
+
+<div class="pagenav">
+  <a href="setup.html"><span class="dir">Back</span>&larr; Setup</a>
+  <a class="next" href="hosts.html"><span class="dir">Next</span>Hosts &rarr;</a>
+</div>
 
 </main>
 </div>

@@ -80,13 +80,28 @@
 <nav class="toc" aria-label="On this page">
 <div class="toc-title">On this page</div>
 <ul>
+<li><a href="#turn-on">Does setup turn the ledger on?</a></li>
 <li><a href="#ledger">The ledger</a></li>
 <li><a href="#claims">Claims and leases</a></li>
+<li><a href="#inbox">The inbox</a></li>
+<li><a href="#roster">Who owns an area</a></li>
 <li><a href="#handoff">Assignment and hand-offs</a></li>
 <li><a href="#optional-team">Optional watchers</a></li>
+<li><a href="#growth">Growth and retention</a></li>
+<li><a href="#limits">Limits</a></li>
 </ul>
 </nav>
 
+<div class="most">
+<p class="most-title">Most people only need</p>
+<ul>
+<li>Setup turns the ledger on only if you answer yes (GitHub mode). Otherwise turn it on by hand.</li>
+<li>Each teammate runs <code>/sigma-ledger</code> once in their own clone to join.</li>
+<li>A claim is a lease that expires after 12 hours, so a crashed session cannot block the team.</li>
+<li>Blocked on someone else's area? Hand it off instead of parking it.</li>
+<li>Everything else on this page is optional and off by default.</li>
+</ul>
+</div>
 
 <p>When more than one person runs the loop, each loop needs to know what the others are doing, or two people will build the same goal. The <strong>ledger</strong> is a shared log on its own git branch: who claimed which goal, how it ended, notes, and hand-offs. A <strong>hand-off</strong> is how a loop says "this is blocked on something in your area" without parking into silence: it opens an issue assigned to the right person.</p>
 
@@ -108,53 +123,123 @@
 </svg>
 </div>
 
+<h2 id="turn-on">Does setup turn the ledger on?</h2>
+<p><strong>Not unless you say yes.</strong> The shipped config leaves <code>ledger.enabled</code> undecided (<code>null</code>), and undecided reads as off. What each way of setting up does:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>You run</th><th>Result for <code>ledger.enabled</code></th></tr></thead>
+<tbody>
+<tr><td><code>/sigma-init</code> in GitHub mode</td><td>Asks one question (an <code>[ask]</code> line). <code>--ledger yes</code> writes <code>true</code>, <code>--ledger no</code> writes <code>false</code>. Unanswered, it stays undecided and the question is asked again on the next run.</td></tr>
+<tr><td><code>/sigma-init --yes</code></td><td>Takes the safe default for an open question: <code>false</code>. It changes nothing on a repository whose config already answers it.</td></tr>
+<tr><td><code>/sigma-init</code> in local-files mode</td><td>No ledger question. The key stays undecided, so off.</td></tr>
+<tr><td><code>/sigma-setup</code></td><td>An alias that runs the same flow with the same questions, so the same results. It does not turn the ledger on by itself.</td></tr>
+<tr><td>Re-running with an answer already in config</td><td>Kept. A value in config is never re-applied over; only a flag on the current run changes it.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Answering yes writes the setting only. The flow then prints the command that creates and pushes the ledger branch and does not run it, because it pushes a branch. To turn it on by hand, put this in <code>.sdlc/config.json</code>, then ask <code>/sigma-ledger</code> to set it up:</p>
+<pre><code>"ledger": { "enabled": true }</code></pre>
+<p><code>/sigma-init</code> also creates an empty <code>.sdlc/ledger/</code> folder holding only a README, whatever you answer. Each teammate runs the setup once in their own clone. <code>/sigma-doctor</code> sets it up if the ledger is enabled but missing.</p>
+
 <h2 id="ledger">The ledger</h2>
 <div class="table-wrap">
 <table>
 <thead><tr><th>Question</th><th>Answer</th></tr></thead>
 <tbody>
-<tr><td>Turn it on</td><td><code>&quot;ledger&quot;: { &quot;enabled&quot;: true }</code> in <code>.sdlc/config.json</code>, then ask <code>/sigma-ledger</code> to set it up. Each teammate does the setup once in their own clone. <code>/sigma-doctor</code> sets it up if it is enabled but missing.</td></tr>
-<tr><td>Where it lives</td><td>A branch named <code>sdlc-ledger</code>, checked out as a worktree at <code>.sdlc/ledger/</code>. Pulling it never touches your working tree. The worktree must stay git-ignored so it never lands in a code pull request.</td></tr>
+<tr><td>Where it lives</td><td>A branch named <code>sdlc-ledger</code>, checked out as a worktree at <code>.sdlc/ledger/</code>. Pulling it never touches your working tree. The worktree must stay git-ignored so it never lands in a code pull request, and the branch is never merged into your integration branch, so it needs no review.</td></tr>
 <tr><td>Why many files</td><td>Each writing process writes only its own entry file, so concurrent writers cannot conflict. The team view is their union, computed on read. Expect hundreds of files per person; that is the healthy state, and exactly one file for an actor means that actor's writes stopped.</td></tr>
-<tr><td>Reading it</td><td><code>/sigma-ledger</code> shows what is addressed to you, a one-line team summary, and a regenerated <code>TEAM.md</code> rollup.</td></tr>
-<tr><td>Writing it</td><td>Claims and outcomes are written for you. You write by hand only for a note or a hand-off. A write you type publishes itself and says on stderr whether the team can see it yet.</td></tr>
-<tr><td>Freshness</td><td>A background watcher pulls and publishes every 900 seconds by default and drops anything addressed to you into an inbox file.</td></tr>
+<tr><td>Reading it</td><td><code>/sigma-ledger</code> shows what is addressed to you, a one-line team summary, and a regenerated <code>TEAM.md</code> rollup. Never edit <code>TEAM.md</code> by hand.</td></tr>
+<tr><td>Writing it</td><td>Claims and outcomes are written for you. You write by hand only for a note or a hand-off. A write you type publishes itself and says on stderr whether the team can see it yet; <code>ledger.publish_on_write: false</code> keeps it local for the watcher to carry.</td></tr>
+<tr><td>Your name on it</td><td><code>ledger.actor</code>, else your authenticated GitHub account, else your shell user. File names carry a short hash of the machine, never the machine name. Two optional keys change it: <code>ledger.host_alias</code> (a label of letters and digits, at most 12) and <code>ledger.salt_host_token</code> (a different token per repository). Changing either re-roots the machine once, so choose once.</td></tr>
+<tr><td>Fail-open</td><td>A ledger problem never stops a run.</td></tr>
 </tbody>
 </table>
 </div>
 
 <h2 id="claims">Claims and leases</h2>
-<ul>
-<li>With the ledger on, a pick skips any goal another actor, or another live process of your own, already holds.</li>
-<li>A claim with no later outcome is an <strong>open lease</strong>. It expires after 12 hours by default, so a crashed session cannot block the team forever.</li>
-<li>A lease is <strong>advisory</strong>: it sees only claims already synced to the ledger branch. It is not a hard lock.</li>
-<li>A session that ends or dies holding goals it never started has them released on the next pick, after a 15-minute grace; a started goal is never released.</li>
-</ul>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Rule</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>A pick skips what is held</td><td>With the ledger on, a pick skips any goal another actor, or another live process of your own, already holds.</td></tr>
+<tr><td>A claim is a lease</td><td>It expires <code>ledger.lease.ttl_hours</code> after the claim (default <strong>12</strong>) unless renewed.</td></tr>
+<tr><td>Renewal</td><td>A run that holds a claim writes a renewal at goal boundaries, at most once per a third of the TTL. Only a renewal by the holder (same actor, same machine, compatible run) extends it, and one dated more than 15 minutes ahead of the reader's clock is ignored.</td></tr>
+<tr><td>Reclaiming a stale claim</td><td>A claim written on this machine is released when expired. A claim written on another machine is released only after a fresh read-only fetch of the ledger branch still shows it open and expired. A failed fetch releases nothing and says why.</td></tr>
+<tr><td>A session that dies without starting</td><td>Goals it claimed but never started are released on the next pick, after <code>session_release.grace_minutes</code> (default 15). A live session that sits on a claimed, unstarted goal longer than <code>session_release.hold_minutes</code> (default 30; <code>0</code> turns it off) has it released too. A started goal is never released.</td></tr>
+<tr><td>Advisory, not a lock</td><td>A lease sees only claims already synced to the ledger branch.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="inbox">The inbox</h2>
+<p>Anything addressed to you (a hand-off, a note, a new comment on a goal you hold) is written to <code>.sdlc/state/inbox.md</code> by the watcher. The loop prints that inbox on stderr before it hands over the next goal. That boundary is deliberate: nothing can inject a message into a running session, and interrupting a goal mid-flight loses work. The worst-case delay is one goal, so a top-priority item is taken next, not now. Two suppressions keep it quiet: a per-author cursor so history is not re-read, and a signature on the kind, issue and state so a colleague's rebase cannot replay old mentions. A change of state on the same issue does fire.</p>
+
+<h2 id="roster">Who owns an area</h2>
+<p>A hand-off is addressed to the owner of an <em>area</em>. Sigma looks the name up in this order, and the first match wins.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Order</th><th>Source</th><th>Use it for</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>ledger.owners</code> in <code>.sdlc/config.json</code>: a map from area to login</td><td>An area name that is not a directory. For example <code>web-ui</code> is the label for work inside <code>frontend/</code>, which the lookup cannot guess.</td></tr>
+<tr><td>2</td><td><code>.github/CODEOWNERS</code> (also <code>CODEOWNERS</code> or <code>docs/CODEOWNERS</code>); the area is tried as a directory</td><td>Everything it can resolve on its own. Leave those areas out of the map so there is one roster to change.</td></tr>
+<tr><td>3</td><td>The <code>*</code> catch-all, only if nothing more specific matched</td><td>A repository with one owner needs nothing else.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The roster is <strong>advisory</strong>, on purpose. CODEOWNERS auto-assigns reviewers but no branch rule requires their approval, because a binding rule with several owners lets each block the other, and Sigma's own merge handler can stall on a pull request it opened. To make it binding, enable <em>Require review from Code Owners</em> on the branch <strong>and grant Sigma's account a bypass first</strong>, or every automated merge waits on a person. Unit ownership (who owns a unit of work) is a different thing; see <a href="units.html">Units of work</a>.</p>
 
 <h2 id="handoff">Assignment and hand-offs</h2>
 <ul>
 <li>In GitHub mode the loop works only issues assigned to the person running it. Reassign by editing the issue.</li>
-<li>When a goal is blocked on someone else's area, open a hand-off instead of parking: it creates an issue in their area, assigned to them, so their own loop picks it up.</li>
-<li>They answer with one of <code>accepted</code>, <code>deferred</code>, <code>declined</code> or <code>resolved</code>. <code>deferred</code> does not settle it; the hand-off stays outstanding until <code>resolved</code> or <code>declined</code>.</li>
-<li>Who a hand-off is addressed to comes from an ownership roster. It is advisory, and that is a choice; see the ownership guide.</li>
+<li>When a goal is blocked on someone else's area, ask <code>/sigma-ledger</code> to hand it off instead of parking. It finds the owner (above), opens an issue in their area assigned to them and carrying the goal label, records a hand-off addressed to them, and links it from the blocked issue. Their own loop picks it up through the assignee filter.</li>
+<li>They answer with one of <code>accepted</code>, <code>deferred</code>, <code>declined</code> or <code>resolved</code>. <code>deferred</code> does not settle it; the hand-off stays outstanding until <code>resolved</code> or <code>declined</code>. A goal blocked on two areas is two independent hand-offs.</li>
+<li>Every step degrades honestly: with no owner found, no <code>gh</code>, or a local backlog, the ledger entry is still written.</li>
+<li>Not every finding is a block. A same-area follow-up found mid-goal is filed through the same machinery without parking anything. On an autonomous run it is queued at a low priority for triage rather than made immediately pickable.</li>
 </ul>
 
 <h2 id="optional-team">Optional watchers</h2>
+<p>The loop starts a background watcher when you run it; it pulls and publishes the ledger every <code>ledger.watch.interval_seconds</code> (default 900) and refreshes the inbox. Stop it with <code>touch .sdlc/state/watch.stop</code>. The three below are separate switches on top of it.</p>
 <div class="table-wrap">
 <table>
 <thead><tr><th>Setting</th><th>Does</th><th>Needs</th></tr></thead>
 <tbody>
-<tr><td><code>agent_watch.enabled</code></td><td>Notifies when a claimed goal's process is confirmed dead (email if configured, else a ledger note).</td><td>ledger on</td></tr>
-<tr><td><code>comment_watch.enabled</code></td><td>Notifies the claimant of a new comment on a claimed issue.</td><td>ledger on, GitHub source</td></tr>
-<tr><td><code>ledger.autowatch.enabled</code></td><td>Drives the loop on one flagged issue when a new item addressed to you arrives, after its preconditions pass.</td><td>ledger on</td></tr>
+<tr><td><code>agent_watch.enabled</code></td><td>Notifies when a claimed goal's registered process is confirmed dead: an email if <code>agent_watch.notify.email</code> is configured, always a ledger note otherwise. Exactly once per dead process.</td><td>ledger on</td></tr>
+<tr><td><code>comment_watch.enabled</code></td><td>Notifies the claimant of a new comment on a claimed issue, as a ledger note. Your own comments are suppressed.</td><td>ledger on, GitHub source</td></tr>
+<tr><td><code>ledger.autowatch.enabled</code></td><td>When a new item addressed to you arrives, drives the loop on that one flagged issue, never an open-ended pick, after its preconditions pass (a logged-in <code>gh</code>, no concurrent session, an optional load ceiling, an optional weekly spend ceiling). <code>hop_limit</code> caps chained runs.</td><td>ledger on</td></tr>
 </tbody>
 </table>
 </div>
-<p>All three are off by default. Each is opt-in and none starts without you turning it on.</p>
+<p>All three are off by default. Each is opt-in and none starts without you turning it on. Email never accepts a literal password: <code>pass_env</code> names an environment variable, and SMTP settings that come from the repository are refused unless you export <code>SIGMA_ALLOW_REPO_SMTP=1</code> in your own shell. A failed send falls back to a ledger note. The autowatch webhook accepts only loopback hosts unless you set <code>allow_remote_webhook</code>.</p>
+
+<h2 id="growth">Growth and retention</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Item</th><th>Behaviour</th></tr></thead>
+<tbody>
+<tr><td>Ledger entry files</td><td>Never compacted and never pruned. Every run adds a file. One adopter machine was measured at 175 files for one actor after two and a half weeks. Nothing is read back by file name, so the count costs correctness nothing; read cost grows with use. Compaction is recorded as later work.</td></tr>
+<tr><td>Local action log</td><td>A separate, local, git-ignored trace, not the ledger. It is pruned: <code>action_log.retention_days</code> defaults to 90 with a floor of 30.</td></tr>
+<tr><td>Dependency-map history</td><td>With the ledger on and the dependency map not off, it is mirrored to the ledger branch and rolled up in a <code>DAG.md</code> that lists ticket numbers only.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="limits">Limits</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Limit</th><th>What it means</th></tr></thead>
+<tbody>
+<tr><td>Two picks at the same instant</td><td>Covered only on one machine, by a POSIX file lock. Across machines, a lease sees only claims already synced.</td></tr>
+<tr><td>Windows</td><td>That lock is unavailable. The ledger's publish commands refuse and defer unless you set <code>SIGMA_LEDGER_ALLOW_UNSERIALISED</code> to <code>1</code>, accepting that two publishers in one checkout can then collide.</td></tr>
+<tr><td>A diverged ledger</td><td>A clone whose ledger branch shares no history with the remote's (a branch deleted and recreated, say) cannot publish. <code>/sigma-doctor</code> shows <code>DIVERGED</code>. Re-running the setup re-roots it onto the remote's branch, keeps your own entry files and saves the old tip under a recovery ref. It never runs on its own.</td></tr>
+<tr><td>Mixed versions</td><td>An older Sigma ignores lease renewals and per-area answers, so upgrade every machine before relying on either.</td></tr>
+<tr><td>Single-branch or shallow clones</td><td>Work with no extra step: every ledger fetch names the branch.</td></tr>
+</tbody>
+</table>
+</div>
 
 <div class="aud aud-tech">
 <div class="aud-label">Technical detail</div>
-<p><strong>Limits stated plainly.</strong> Two picks landing at the same instant with nothing yet claimed are covered only on one machine, by a POSIX file lock. That lock is unavailable on Windows, where the ledger's publish verbs refuse and defer unless you set an explicit override, accepting that two publishers in one checkout can then collide. Entry files are never compacted, so read cost grows with use; compaction is recorded as later work. A ledger problem never stops a run (every call fails open). Not measured beyond one adopter machine: behaviour with many active people. Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/action-log-and-ledger.md">action log and ledger</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/ownership.md">area ownership</a>.</p>
+<p><strong>Not measured.</strong> Behaviour with many active people was not measured beyond one adopter machine, and the cloud-container ledger path is documented separately on <a href="cloud.html">Cloud sessions</a>. Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/action-log-and-ledger.md">action log and ledger</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/ownership.md">area ownership</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/configuration.md">configuration</a>.</p>
 </div>
 
 <div class="pagenav">

@@ -75,15 +75,162 @@
 
 <span class="eyebrow">Set up &amp; run</span>
 <h1>Troubleshooting and FAQ</h1>
+<p class="subtitle">Start with <code>/sigma-doctor</code>. If it does not name the problem, find the symptom below.</p>
+
 <nav class="toc" aria-label="On this page">
 <div class="toc-title">On this page</div>
 <ul>
-<li><a href="#overview">Overview</a></li>
+<li><a href="#doctor">Read the doctor first</a></li>
+<li><a href="#symptoms">Symptom, cause, fix</a></li>
+<li><a href="#not-picked">Why was my goal not picked</a></li>
+<li><a href="#holds">Reading a resource hold</a></li>
+<li><a href="#hosts">Install differences on Cursor and Antigravity</a></li>
+<li><a href="#faq">FAQ</a></li>
 </ul>
 </nav>
 
-<h2 id="overview">Overview</h2>
-<p class="stub">Content in progress.</p>
+<div class="most">
+<p class="most-title">Most people only need</p>
+<ul>
+<li>Run <code>/sigma-doctor</code>. Every <strong>MISSING</strong> row carries its own fix command.</li>
+<li>A refused verify is almost always the per-checkout trust, granted once with a git config line.</li>
+<li>A merge held on a private repository usually means GitHub refused to show the branch protection.</li>
+<li>Nothing merges by itself on the defaults, so a pull request left open is normal.</li>
+</ul>
+</div>
+
+<p>Most failures in Sigma stop and say why rather than guess: a refused command, a hold with a reason, a goal parked with a question. This page maps what you see to what caused it and what to run. Every command here was read from the documentation and the code; where something was not run, it says so.</p>
+
+<h2 id="doctor">Read the doctor first</h2>
+<p><code>/sigma-doctor</code> checks only what your <code>.sdlc/config.json</code> makes relevant, so a local-files project sees few rows and a GitHub project with a board and a ledger sees many. <strong>OK</strong> means ready. <strong>MISSING</strong> means run the printed one-liner. A row ending <em>(cannot verify)</em> is not a pass. It never runs an interactive login or a package install for you.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Row</th><th>What it means</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td><code>project layer</code></td><td>No <code>.sdlc</code> here, or it is incomplete.</td><td><code>/sigma-init</code></td></tr>
+<tr><td><code>config.json is valid JSON</code></td><td>A stray comma or quote.</td><td>Fix the syntax; keep the file valid after each edit.</td></tr>
+<tr><td><code>git repository</code>, <code>git remote</code>, <code>base branch</code></td><td>Not a repository, no usable <code>origin</code>, or the base branch was never pushed.</td><td>Add the remote and push, or go local-only (<code>--local-only</code>). Nothing flips this silently.</td></tr>
+<tr><td><code>gh installed</code>, <code>gh auth</code>, <code>gh token scopes</code>, <code>gh project scope</code></td><td><code>gh</code> is absent, logged out, or short of a scope.</td><td>The printed <code>gh auth refresh -s &lt;scope&gt;</code> line. Run it yourself.</td></tr>
+<tr><td><code>verify command trusted in this checkout</code></td><td>The checkout has not granted the verify command.</td><td><a href="#symptoms">The trust line below.</a></td></tr>
+<tr><td><code>verify.command resolves in the goal worktree</code></td><td>The command uses a path that exists only in your checkout.</td><td>Use an absolute interpreter path, an activated environment on <code>PATH</code>, or a wrapper script.</td></tr>
+<tr><td><code>secret-shaped files are ignored</code></td><td>A file named like a secret (<code>.env</code>, a key, a credentials file) is not ignored and could be staged. It matches names only and never reads a file.</td><td>Add the paths to <code>.gitignore</code>. Only a real fixture belongs in <code>work.allow_secret_paths</code>.</td></tr>
+<tr><td><code>team ledger initialized</code></td><td>The ledger is on in config but its branch is not set up in this clone.</td><td><code>/sigma-ledger</code>. It is safe to re-run and each teammate runs it once.</td></tr>
+<tr><td><code>no leftover watcher stop file</code></td><td>A stop file exists with no watcher running, so a new watcher exits at once.</td><td><code>rm .sdlc/state/watch.stop</code></td></tr>
+<tr><td><code>running watcher matches installed build</code></td><td>The watcher started before you updated.</td><td><code>touch .sdlc/state/watch.stop</code>; the next trigger restarts it.</td></tr>
+<tr><td><code>goals awaiting merge</code></td><td>A pull request is open and waiting for you, with its age.</td><td>Merge or close it.</td></tr>
+<tr><td><code>resource admission</code>, <code>resource stale leases</code></td><td>The memory guard is holding work, or dead processes still hold leases.</td><td>See <a href="#holds">Reading a resource hold</a>.</td></tr>
+<tr><td><code>sigma install scopes</code>, <code>sigma up to date</code></td><td>One scope is below the version floor, or you are behind the marketplace.</td><td><a href="upgrading.html#update">Updating the plugin</a></td></tr>
+<tr><td><code>coexistence</code></td><td>The previous plugin is also active. A warning, never a failure.</td><td><a href="upgrading.html#switch">Switching over</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="symptoms">Symptom, cause, fix</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>Verify exits with <code>REFUSED: repository-configured shell command requires explicit operator trust</code>; no goal reaches done</td><td>The verify command comes from a file in the repository. Trust is stored in this checkout's own git config and is not cloned, so every new clone must grant it. Until it does, the command is refused.</td><td>Inspect <code>verify.command</code>, then run once: <code>git -C &lt;project&gt; config --local sigma.allowRepositoryShellCommands true</code>. Re-running <code>/sigma-init</code> prints a <code>[trust] verify</code> line with this gesture.</td></tr>
+<tr><td>The loop opens a pull request but will not merge it, saying protection <em>could not be determined</em></td><td>On a private repository on a GitHub free plan, the branch-protection and rules reads are refused with HTTP 403. Sigma then holds the merge rather than claim that nothing is enforced. Measured once, by hand, on a free-plan private repository on 18 Nov 2026.</td><td>Merge by hand. Or, if you know the repository has no protection and use <code>work.auto_merge: always</code>, set <code>work.protection_unreadable</code> to <code>"allow"</code> (that exact string). It relaxes only the 403 case; any other read failure still holds, and GitHub still enforces any protection at merge time.</td></tr>
+<tr><td><code>/sigma-goal &lt;N&gt; --land</code> refuses up front</td><td>It needs <code>work.enabled: true</code> and <code>work.auto_merge</code> of <code>protected</code> or <code>always</code>. The default <code>off</code> never merges, so a run that exists to land one goal refuses.</td><td>Set <code>work.auto_merge</code> once your base branch has protection that requires checks or a second person's approval. Otherwise use <code>/sigma-loop</code>, which leaves the pull request for you.</td></tr>
+<tr><td><code>git status</code> shows <code>.sdlc</code> and <code>.gitignore</code> as untracked after init</td><td>Expected. Init scaffolds files you have not committed yet.</td><td>Commit <code>.gitignore</code>, <code>.sdlc/goals/</code>, <code>.sdlc/project.md</code> and <code>.sdlc/config.json</code>. The runtime folders are already ignored. Never ignore <code>.sdlc</code> as a whole (<a href="sdlc-folder.html#commit">The .sdlc folder</a>).</td></tr>
+<tr><td><code>git pull</code> in the root checkout refuses over untracked <code>.sdlc</code> plan, research or acceptance files</td><td>Records written in the root checkout and not yet committed. A known open problem, not fully solved.</td><td>Commit them on a branch or move them aside, then pull.</td></tr>
+<tr><td>A goal sits at <code>sdlc:in-progress</code> and nothing is working it</td><td>That label marks that a session is on it. A session that crashed or slept can leave it. A claim expires after 12 hours by default; a goal a dead session claimed but never started is released on the next pick after a 15-minute grace. A started goal is never released automatically.</td><td>Look first: <code>/sigma-log</code> and <code>/sigma-status</code>. If you know the process is dead, remove <code>sdlc:in-progress</code> and leave <code>sdlc:goal</code>: that puts it back in the queue (<a href="labels.html#overlays">Labels</a>).</td></tr>
+<tr><td>A goal is <em>parked</em></td><td>It needs a decision only you can make, or it hit an irreversible or expensive action. Parked goals are collected, not forced.</td><td>GitHub: <code>/sigma-unpark</code>, which asks why before it re-queues. Local files: edit the goal file, <code>status: parked</code> to <code>status: pending</code>, and delete its entry from <code>.sdlc/state/review-queue.md</code> by hand.</td></tr>
+<tr><td>The loop stopped by itself</td><td>A budget was reached (<code>max_iterations</code>, <code>max_minutes</code>, <code>max_tokens</code>), the backlog is empty, or the session handed off after 20 goals.</td><td>Re-run <code>/sigma-loop</code>; a stopped run resumes where it left off. Budgets are on <a href="config.html#limits">Configuration</a>.</td></tr>
+<tr><td>Goals finish but there is no branch or pull request</td><td><code>work.enabled</code> is off, or you chose local-only. The changes land only in your working tree, while the issue still closes and the record still says done, so nothing looks wrong.</td><td>Set <code>work.enabled</code> to <code>true</code> (<code>/sigma-init</code> does) if you want a pull request per goal.</td></tr>
+<tr><td>The first verify in a goal fails with <code>exit=127</code></td><td>A goal's worktree has no installed dependencies, so a relative <code>.venv/bin/python3</code> or <code>node_modules/.bin/...</code> does not resolve.</td><td>Absolute interpreter path, an activated environment, or a wrapper script. Anything the command leaves behind (<code>.coverage</code>, build output) must be git-ignored or it rides into the pull request.</td></tr>
+<tr><td>A commit is refused naming a file</td><td>A secret-shaped file is not ignored. The refusal is the safe outcome.</td><td>Ignore it. See the doctor row above.</td></tr>
+<tr><td>Marking a goal done is refused</td><td>No fresh verify result, or its pull request is not merged yet.</td><td>Run the verify step; merge the pull request. The loop records done itself after the merge.</td></tr>
+<tr><td><code>/sigma-init</code> exits 2: not a git repository, or github mode needs a repository</td><td>The directory is not a repository, or <code>origin</code> is not a GitHub repository.</td><td><code>git init</code>; or pass <code>--repo OWNER/NAME</code>, or choose <code>--mode local-goals</code>.</td></tr>
+<tr><td>A repository hook denies Sigma's edits</td><td>Sigma's implement edits go through the same tool calls a person's would, so your own pre-edit hook applies. It may expect a plan file where Sigma does not write one.</td><td>Satisfy what the hook expects, or allow Sigma's path. Sigma gets no signal that a host hook was the cause.</td></tr>
+<tr><td>In Claude Code's cloud, the setup wizard is silent or the verify command is refused</td><td>Cloud sessions start from a fresh clone, so trust must be granted again, and they have their own limits.</td><td>Read <a href="cloud.html">Cloud sessions</a> first.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="not-picked">Why was my goal not picked</h2>
+<p>The loop takes a goal only when every condition below holds. Check them in order.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Check</th><th>If it fails</th></tr></thead>
+<tbody>
+<tr><td>Open and labelled <code>sdlc:goal</code> (GitHub) or <code>status: pending</code> (local file)</td><td>The example file ships as <code>proposed</code> and is never picked.</td></tr>
+<tr><td>Assigned to you</td><td>By default the loop works only issues assigned to the person running it (<code>discovery.github.assignee</code>).</td></tr>
+<tr><td>Not <code>sdlc:parked</code>, <code>sdlc:blocked</code>, in progress, or awaiting merge</td><td>Each of those holds it out of the queue.</td></tr>
+<tr><td>No open prerequisite</td><td>A body line <code>**Blocked by:** #N</code> holds it until <code>#N</code> is done (<a href="dependencies.html">Dependencies and chains</a>).</td></tr>
+<tr><td>No live claim by someone else</td><td>With the ledger on, another actor, or another live process of yours, already holds it.</td></tr>
+<tr><td>Not outranked</td><td>Order is by <code>priority:P0</code> to <code>P4</code>, oldest first within a tier; a goal with no priority sorts last.</td></tr>
+<tr><td>Ready enough</td><td>With <code>goal_readiness.mode: require</code>, a goal missing its <code>## Done when</code> section is parked.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="holds">Reading a resource hold</h2>
+<p>When the machine is short of memory, Sigma holds work instead of failing it: goals stay unclaimed and a verify exits without running. A hold is not an error and lifts by itself once the machine is healthy again. <code>/sigma-doctor</code> shows it as a <code>resource admission</code> row.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>You see</th><th>It means</th><th>Do</th></tr></thead>
+<tbody>
+<tr><td><code>open, headroom N MiB, reserve M MiB</code></td><td>Nothing is held.</td><td>Nothing.</td></tr>
+<tr><td><code>HELD Nm (reason)</code> with <em>held with N Sigma leases</em></td><td>Sigma's own running work is using the memory.</td><td>Wait. Releasing a lease frees its memory.</td></tr>
+<tr><td><code>HELD</code> with <em>0 leases: memory is used by other software</em></td><td>Something else on the machine holds the memory and Sigma cannot release it.</td><td>Close other applications; the hold lifts on its own.</td></tr>
+<tr><td>The row fails after a hold lasts past the alert time</td><td>The hold has been in place longer than <code>hold_alert_minutes</code>.</td><td>As above; the row names the tip.</td></tr>
+<tr><td><code>resource stale leases: N</code></td><td>Leases belong to dead or expired processes and still count against headroom.</td><td>Run the sample command the row prints.</td></tr>
+<tr><td><code>resource platform: unsupported</code></td><td>The guard cannot read this machine, so it refuses rather than guess.</td><td>Set <code>resource.mode</code> to <code>"off"</code> and cap parallel goals by hand.</td></tr>
+</tbody>
+</table>
+</div>
+<p><code>resource.mode: observe</code> logs the hold it would make and admits; <code>SIGMA_RESOURCE_MODE</code> overrides the key. The ratios are policy defaults, not calibrated to a real exhaustion. Details: <a href="run.html#holds">Running unattended</a> and <a href="config.html#resource">Configuration</a>.</p>
+
+<h2 id="hosts">Install differences on Cursor and Antigravity</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Host</th><th>Differs how</th><th>Measured</th></tr></thead>
+<tbody>
+<tr><td>Cursor</td><td>No plugin install: clone Sigma to a folder <strong>outside</strong> the project, then run <code>/sigma-init --cursor</code> in your own repository. Init writes two always-applied rule files that carry the discipline, because Cursor has no hook that Sigma relies on. If the slash command is missing, run the init flow directly from the clone (<a href="get-started.html#cursor">Get started</a>).</td><td>Set-up with a board, and one goal to a merged pull request (merged by hand). Not the loop on several goals, hooks, or the command-line agent.</td></tr>
+<tr><td>Antigravity</td><td><code>agy plugin install</code> converts the Claude Code plugin and skips two hooks (the prompt hook and the skill hook) because Antigravity has no such events. Converted skills still contain a Claude-only folder placeholder, and each carries a note telling the model to use its own folder. <code>/sigma-init --antigravity</code> writes the managed block into <code>AGENTS.md</code>; its wording is Codex's, unadapted.</td><td>Install and set-up with a board. Not a goal run, the loop, or whether the converted hooks fire.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="faq">FAQ</h2>
+<h3>Do I need GitHub?</h3>
+<p>No. A local-files backlog needs only <code>git</code>, <code>bash</code> and <code>python3</code>. You give up issues, the board, a pull request per goal, its review and the shared ledger sync. See <a href="solo.html">On your own</a>.</p>
+<h3>Does it work offline?</h3>
+<p>Sigma is plain scripts that run on your machine and has no server of its own. The agent host it runs inside talks to its model provider, so the host needs its connection. A run with no network at all was not measured.</p>
+<h3>What does it cost?</h3>
+<p>The documentation describes no separate Sigma charge; the spend Sigma measures is the model usage your host account bills. Each phase prints its measured cost as it ends, and budgets stop a run. The post-pull-request review is an extra pass per goal, and its cost was measured only once. See <a href="observe.html">Cost and time</a>.</p>
+<h3>Does it send data anywhere?</h3>
+<p>Sigma does not report usage data. Your host talks to its model provider under that host's own policy. Anything that leaves the machine through Sigma is opt-in: Slack, a webhook, email, a model call you start. The table is in the <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/privacy.md">privacy note</a> and <a href="safety.html#privacy">Trust and limits</a>.</p>
+<h3>Can I use it on a private repository?</h3>
+<p>Yes. On a free GitHub plan the protection reads fail with a 403 and merges are held; see the second row of the table above.</p>
+<h3>Will it merge by itself?</h3>
+<p>Not on the defaults. <code>work.auto_merge</code> ships <code>off</code>: it opens the pull request and you merge it.</p>
+<h3>Does it touch my main checkout or my branch?</h3>
+<p>With <code>work.enabled</code> on, each goal runs in its own git worktree on its own branch cut from your base branch, so your checkout does not move. With it off, or local-only, the loop edits your checkout directly.</p>
+<h3>How do I stop it?</h3>
+<p>End the session, or stop a run at its budget. For a background watcher, <code>touch .sdlc/state/watch.stop</code>; the unattended supervisor and the Slack listener have <code>supervisor.stop</code> and <code>slack-commands.stop</code>. They check once per tick, so they can take that long to exit. To stop it writing git at all, set <code>work.enabled</code> to <code>false</code>.</p>
+<h3>How do I see what it did?</h3>
+<p><code>/sigma-status</code> for counts and the review queue, <code>/sigma-log</code> for the live trace, the pull request and the issue timeline for the written record, and <code>.sdlc/plans</code>, <code>research</code> and <code>acceptance</code> for the goal's own files. See <a href="observe.html">Cost and time</a>.</p>
+<h3>Can two people run it on one repository?</h3>
+<p>Yes. Turn on the ledger so each loop sees what the others hold, and each person's loop works the issues assigned to them. See <a href="team.html">As a team</a>.</p>
+<h3>My tests need installed dependencies. Will they run?</h3>
+<p>A goal's fresh worktree has no <code>node_modules</code> or virtual environment, so a heavy verify command pays that cost per goal and a relative interpreter path fails. Use an absolute path or a wrapper script.</p>
+<h3>Why did it not pick my issue?</h3>
+<p>See <a href="#not-picked">the checklist above</a>. The usual causes are no <code>sdlc:goal</code> label, an issue not assigned to you, and an open prerequisite.</p>
+<h3>Where do I ask for help?</h3>
+<p>Run <code>/sigma-doctor</code> and keep its output, then open an issue in the <a href="https://github.com/Agrim-Intelligence/sigma">repository</a>. Leave out anything private.</p>
+
+<div class="aud aud-tech">
+<div class="aud-label">Technical detail</div>
+<p>The doctor's rows and fixes were read from its code and skill text; the symptoms above were read from the documentation, not reproduced one by one in a fresh run. Measured by a manual read: the 403 on the protection read of a free-plan private repository. Not measured: a run with no network, and the uninstall and update paths on Codex, Cursor and Antigravity. Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/cloud-sessions.md">cloud sessions</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/enforcement.md">enforcement</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/platform-support.md">platform support</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/label-model.md">label model</a>.</p>
+</div>
+
+<div class="pagenav">
+  <a href="observe.html"><span class="dir">Back</span>&larr; Cost and time</a>
+  <a class="next" href="solo.html"><span class="dir">Next</span>On your own &rarr;</a>
+</div>
 
 </main>
 </div>
