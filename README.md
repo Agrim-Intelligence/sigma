@@ -1,6 +1,6 @@
 # Sigma Loop
 
-[![CI](https://github.com/Agrim-Intelligence/sigmaloop/actions/workflows/ci.yml/badge.svg)](https://github.com/Agrim-Intelligence/sigmaloop/actions/workflows/ci.yml)
+[![CI](https://github.com/Agrim-Intelligence/sigma/actions/workflows/ci.yml/badge.svg)](https://github.com/Agrim-Intelligence/sigma/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Guardrails and an overnight autopilot for your AI coding agent.** Sigma Loop makes the agent plan
@@ -83,14 +83,14 @@ Install the plugin for your host, then run `/sigma-init` in the repository you w
 Inside a Claude Code / Claude Desktop session:
 
 ```
-/plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop
+/plugin marketplace add https://github.com/Agrim-Intelligence/sigma
 /plugin install sigmaloop@sigmaloop
 ```
 
 Or from a terminal (the same two commands in CLI form, useful for a setup script):
 
 ```
-claude plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop
+claude plugin marketplace add https://github.com/Agrim-Intelligence/sigma
 claude plugin install sigmaloop@sigmaloop
 ```
 
@@ -104,7 +104,7 @@ Restart the session, then, from the root of the repository you want Sigma to wor
 ### Codex
 
 ```
-codex plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop
+codex plugin marketplace add https://github.com/Agrim-Intelligence/sigma
 codex plugin add sigmaloop@sigmaloop
 ```
 
@@ -122,7 +122,7 @@ On Cursor, Sigma runs from a clone of this repository, which is your `<installed
 support is measured for set-up and one goal, not yet for the loop ([details](docs/platform-support.md#cursor)):
 
 ```
-git clone https://github.com/Agrim-Intelligence/sigmaloop <installed-sigma>
+git clone https://github.com/Agrim-Intelligence/sigma <installed-sigma>
 python3 <installed-sigma>/skills/sigma-init/scripts/init_flow.py . --cursor --demo
 ```
 

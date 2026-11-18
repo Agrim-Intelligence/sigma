@@ -1,5 +1,5 @@
 {
-  "discovery": {"source": "local-goals", "github": {"repo": "Agrim-Intelligence/sigmaloop"}},
+  "discovery": {"source": "local-goals", "github": {"repo": "Agrim-Intelligence/sigma"}},
   "journal": {"enabled": true},
   "ledger": {"enabled": true, "actor": "dana"},
   "work": {"branch_prefix": "sdlc/", "worktree_dir": ".sdlc/work"}

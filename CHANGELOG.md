@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- The README, the issue template, the onboarding docs and the launch definition name the public repository `Agrim-Intelligence/sigma` instead of `Agrim-Intelligence/sigmaloop`, which does not exist, and a test holds every README repository URL to `public_repo` (#2248).
+
 ## 1.0.35 — 2026-11-18 — an opt-in merge when branch protection is unreadable, absolute local paths kept out of goal PRs, a subagent-transcript lookup fix, and the public docs site source
 
 - **Public docs site source: a static `site/` with a black-and-white design, shared nav and a phone menu, landing, Get started, Hosts, orchestrate and cloud-sessions pages, a Pages workflow and site checks (#2244).** One stylesheet, no external assets. The site is live at the repository's GitHub Pages address (23 pages answered 200 when checked; it was not rendered in a real browser by this release's author). Site wording was also trimmed in #2253.

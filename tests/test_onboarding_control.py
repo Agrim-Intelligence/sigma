@@ -126,10 +126,10 @@ def test_readme_quickstart_parses_into_the_gestures_the_control_runs():
     assert qs["init_script"] == "skills/sigma-init/scripts/init_flow.py"
     assert "--demo" in qs["init_flags"]
     assert "confirm .sdlc <n> <id>" in qs["verify_confirm"]
-    assert qs["claude_install"] == ["claude plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop",
+    assert qs["claude_install"] == ["claude plugin marketplace add https://github.com/Agrim-Intelligence/sigma",
                                     "claude plugin install sigmaloop@sigmaloop"]
-    assert qs["codex_install"] == ["codex plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop", "codex plugin add sigmaloop@sigmaloop"]
-    assert qs["session_install"] == ["/plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop", "/plugin install sigmaloop@sigmaloop"]
+    assert qs["codex_install"] == ["codex plugin marketplace add https://github.com/Agrim-Intelligence/sigma", "codex plugin add sigmaloop@sigmaloop"]
+    assert qs["session_install"] == ["/plugin marketplace add https://github.com/Agrim-Intelligence/sigma", "/plugin install sigmaloop@sigmaloop"]
     assert {"--mode", "--verify", "--board", "--ledger", "--local-only"} <= set(qs["init_readme_flags"])
     assert set(qs["init_readme_flags"]) <= oc.init_flow_flags(ROOT)
     # #277: the init subsections' gestures, every one copyable from the user's repository root
@@ -443,7 +443,7 @@ def test_control_readme_drift_in_the_confirm_verb_goes_red_at_that_gesture(tmp_p
     ("/sigma-init --demo     #", "/sigma-start --demo    #", "no `/sigma-init` line"),
     ("claude plugin install sigmaloop@sigmaloop", "claude plugin add sigmaloop@sigmaloop", "`claude plugin` lines"),
     ("codex plugin add sigmaloop@sigmaloop", "codex plugin install sigmaloop@sigmaloop", "`codex plugin` lines"),
-    ("codex plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop", "codex marketplace add https://github.com/Agrim-Intelligence/sigmaloop",
+    ("codex plugin marketplace add https://github.com/Agrim-Intelligence/sigma", "codex marketplace add https://github.com/Agrim-Intelligence/sigma",
      "`codex plugin` lines"),
     ("/plugin install sigmaloop@sigmaloop", "/plugin install sigmaloop@sigmaloop-market", "`/plugin` lines"),
     ("(`--mode`, `--verify`, `--board`, `--ledger`, `--local-only`)",

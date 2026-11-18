@@ -83,13 +83,14 @@ def test_placeholder_is_accepted_only_as_the_newest_exact_heading():
     assert heading_problems(["## 1.0.0 — TBD — the first public release"]) != []
 
 
-def test_public_tree_names_the_public_repo_not_the_working_repo():
-    """Public-facing references to the PUBLIC repository carry its slug (Agrim-Intelligence/sigmaloop)."""
-    old = "Agrim-Intelligence/" + "sigma"
+def test_public_tree_names_the_public_repo_not_a_missing_one():
+    """Public-facing references to the PUBLIC repository carry its slug (Agrim-Intelligence/sigma, the
+    repository that answers anonymously; the older planned name `sigmaloop` returns 404, #2248)."""
+    missing = "Agrim-Intelligence/" + "sigmaloop"
     for rel in ("README.md", ".github/ISSUE_TEMPLATE/config.yml", "contract/golden/config.json", "docs/board.md"):
         text = (ROOT / rel).read_text(encoding="utf-8")
-        assert not re.search(re.escape(old) + r"(?![\w-])", text), rel + " still names the working repository slug"
-    assert "Agrim-Intelligence/sigmaloop/security/advisories/new" in (
+        assert missing not in text, rel + " names a repository that does not exist"
+    assert "Agrim-Intelligence/sigma/security/advisories/new" in (
         ROOT / ".github/ISSUE_TEMPLATE/config.yml").read_text(encoding="utf-8")
 
 
@@ -98,7 +99,7 @@ def test_release_docs_describe_the_new_repository_model():
     assert "is not present in this snapshot" not in release and "currently parked" not in release
     assert "tools/readiness/decide.py" in release
     assert "Pre-rename" not in release and "is renamed" not in release
-    assert "NOT renamed" in release and "Agrim-Intelligence/sigmaloop" in release
+    assert "NOT renamed" in release and "Agrim-Intelligence/sigma`" in release
     assert "release_notes.py" in release and "DATE-PENDING" in release
     runbook = " ".join((ROOT / "docs" / "publish-runbook.md").read_text(encoding="utf-8").split())
     assert "visibility flip" not in runbook
