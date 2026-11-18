@@ -59,7 +59,77 @@
 
 <span class="eyebrow">Deeper</span>
 <h1>Labels</h1>
-<p class="stub">Content in progress.</p>
+<p class="subtitle">Sigma decides what to work on by reading a small set of <code>sdlc:*</code> labels on GitHub issues, and writes them as work moves. This page says what each one means and who changes it.</p>
+
+<div class="callout callout-note">
+<div class="callout-title">The short version</div>
+<p>One label says an issue is in Sigma's world (<code>sdlc:goal</code>). Another takes it out (<code>sdlc:parked</code>). Everything else is an overlay that rides alongside <code>sdlc:goal</code> and says <em>why it cannot be picked yet</em>. Two labels together, such as <code>sdlc:goal</code> plus <code>sdlc:in-progress</code>, is normal, not a mistake to clean up.</p>
+</div>
+
+<h2 id="membership">Membership: at most one</h2>
+<p>Membership decides whether an issue can be found and picked at all. An issue never carries two of these.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Label</th><th>Meaning</th><th>Who writes it</th></tr></thead>
+<tbody>
+<tr><td><code>sdlc:goal</code></td><td>The issue is in Sigma's world and eligible to be picked.</td><td>Sigma when it files or promotes an issue; a person by hand.</td></tr>
+<tr><td><code>sdlc:parked</code></td><td>A person's hold. The issue left Sigma's world and waits in a human review queue.</td><td>Sigma when a goal needs a decision. Only a person gets it back, with <a href="skills.html#sigma-unpark"><code>/sigma-unpark</code></a>; nothing automatic restores <code>sdlc:goal</code>.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="overlays">Overlays: why it is not pickable yet</h2>
+<p>An overlay never replaces <code>sdlc:goal</code>. The issue stays visible to every sweep and is picked by none while the overlay is on.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Label</th><th>Meaning</th><th>Who writes it, and how it clears</th></tr></thead>
+<tbody>
+<tr><td><code>sdlc:in-progress</code></td><td>Someone is working this goal right now.</td><td>Sigma on pick; removed when the goal finishes or is released.</td></tr>
+<tr><td><code>sdlc:blocked</code></td><td>Waiting on another issue.</td><td>Sigma. Clears by itself once every issue it names has closed.</td></tr>
+<tr><td><code>sdlc:blocking</code></td><td>Other work waits on this issue.</td><td>Derived by Sigma; comes and goes with live references.</td></tr>
+<tr><td><code>sdlc:needs-label</code></td><td>The issue declares a unit whose <code>feature:</code> label does not exist yet.</td><td>Sigma at pick. Clears by itself once a person creates the label. See <a href="units.html">Units of work</a>.</td></tr>
+<tr><td><code>sdlc:needs-unit</code></td><td>The issue declares no unit at all, on a repository that requires one. Off unless you opt in.</td><td>Sigma at pick. Clears when a unit is declared.</td></tr>
+<tr><td><code>sdlc:needs-triage</code></td><td>Every classification tier was tried and none matched. Expected to be rare.</td><td>Sigma. The one overlay with no self-heal: a person declares a unit and removes the label.</td></tr>
+<tr><td><code>sdlc:designed</code></td><td>A design write-up for the goal was confirmed by an independent review. Read only by the <a href="design-gate.html">design gate</a>.</td><td>Goal review, only on confirmation. Never written by the design step alone.</td></tr>
+<tr><td><code>sdlc:checkpoint</code></td><td>An issue that stands for a fact, such as a unit's code reaching the main branch. Never picked or worked.</td><td>A person adds it. It is met when the unit lands or a person closes it.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="annotations">Annotations: provenance only</h2>
+<p>These never change what gets picked.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Label</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>sdlc:followup</code></td><td>A machine found this, for example in a retrospective. Permanent. It is also how Sigma counts the issues it manages, so removing it hides an issue from that count.</td></tr>
+<tr><td><code>sdlc:dependency</code></td><td>The issue began as a hand-off between areas.</td></tr>
+</tbody>
+</table>
+</div>
+<p>A legacy label, <code>sdlc:needs-confirmation</code>, is written only when triage is switched off. A leftover is moved off by <a href="skills.html#sigma-promote"><code>/sigma-promote</code></a>.</p>
+
+<h2 id="priority">Labels Sigma reads but does not define</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Label</th><th>Does Sigma read it?</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>priority:P0</code> to <code>priority:P4</code></td><td>Yes</td><td>Pick order: a lower number is picked first, and an issue with no priority label ranks last. With several, the most urgent counts. Sigma creates the label only when asked to attach one you have not made.</td></tr>
+<tr><td><code>model:*</code></td><td>No</td><td>Nothing. A <code>model:opus</code> label does not run a goal on that model; the tier comes from the model predictor reading the goal text.</td></tr>
+<tr><td><code>feature:&lt;name&gt;</code></td><td>Yes</td><td>Declares the unit an issue belongs to. Sigma attaches one but never creates one, because a typo would mint a label that outlives the unit.</td></tr>
+<tr><td>anything else</td><td>No</td><td>Yours. A label that already exists is never recolored or edited.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="aud aud-tech">
+<div class="aud-label">Technical detail</div>
+<p>Sigma creates exactly ten labels itself: <code>sdlc:goal</code>, <code>sdlc:parked</code> and the eight overlays above. A board with a Status column maps onto these: Backlog and Ready carry <code>sdlc:goal</code>; In progress adds <code>sdlc:in-progress</code>; Blocked carries <code>sdlc:blocked</code> or <code>sdlc:needs-label</code>; Parked carries <code>sdlc:parked</code> alone; Done carries no <code>sdlc:*</code> label. The full model, including how drift between labels and the board is found and repaired, is in the <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/label-model.md">label model</a>.</p>
+</div>
+<div class="pagenav">
+  <a href="skills.html"><span class="dir">Back</span>&larr; Skills and commands</a>
+  <a class="next" href="units.html"><span class="dir">Next</span>Units of work &rarr;</a>
+</div>
 
 </main>
 </div>

@@ -59,7 +59,34 @@
 
 <span class="eyebrow">Reference</span>
 <h1>Releases</h1>
-<p class="stub">Content in progress.</p>
+<p class="subtitle">The most recent releases, newest first. This is the only page that names versions. Each version links to its GitHub release; the changelog in the repository has the full entry.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Version</th><th>Date</th><th>Headline</th></tr></thead>
+<tbody>
+<tr><td><a href="https://github.com/Agrim-Intelligence/sigma/releases/tag/v1.0.34">1.0.34</a></td><td>2026-11-18</td><td><code>/sigma-init --antigravity</code> writes the managed <code>AGENTS.md</code> block; the Cursor hooks wording is corrected.</td></tr>
+<tr><td><a href="https://github.com/Agrim-Intelligence/sigma/releases">1.0.33</a> (no release page of its own)</td><td>2026-11-15</td><td>Acceptance criteria are append-only, closing a goal releases the goals waiting on it, and follow-ups join their goal as slices.</td></tr>
+<tr><td><a href="https://github.com/Agrim-Intelligence/sigma/releases/tag/v1.0.32">1.0.32</a></td><td>2026-11-13</td><td>The in-goal follow-up limit is a setting, <code>followups.max_added_slices</code>, default 10.</td></tr>
+<tr><td><a href="https://github.com/Agrim-Intelligence/sigma/releases/tag/v1.0.31">1.0.31</a></td><td>2026-11-13</td><td>A goal run honours a project's recorded known-flake exception, and a <code>--land</code> run's work survives its container.</td></tr>
+<tr><td><a href="https://github.com/Agrim-Intelligence/sigma/releases/tag/v1.0.30">1.0.30</a></td><td>2026-11-13</td><td>The loop passes the merge stop line, a committed list cannot silence setup-critical checks, and follow-ups become a setting.</td></tr>
+<tr><td><a href="https://github.com/Agrim-Intelligence/sigma/releases/tag/v1.0.29">1.0.29</a></td><td>2026-11-13</td><td>Cloud sessions no longer get the setup wizard question, a branch-protection 403 falls back, and <code>/sigma-orchestrate</code> plans a batch in waves.</td></tr>
+<tr><td><a href="https://github.com/Agrim-Intelligence/sigma/releases/tag/v1.0.28">1.0.28</a></td><td>2026-11-05</td><td>A blocked goal is freed once its explicit blockers close, and a commit-signing outage is reported once in plain words.</td></tr>
+<tr><td><a href="https://github.com/Agrim-Intelligence/sigma/releases/tag/v1.0.27">1.0.27</a></td><td>2026-10-31</td><td>The first cloud <code>--land</code> wave's fixes, and a guide and readiness check for a cloud burst.</td></tr>
+<tr><td><a href="https://github.com/Agrim-Intelligence/sigma/releases/tag/v1.0.26">1.0.26</a></td><td>2026-10-29</td><td>The resource guard after the cloud-run release: a held verify keeps its measurement and a cold verify gets more than one worker.</td></tr>
+<tr><td><a href="https://github.com/Agrim-Intelligence/sigma/releases">1.0.0 to 1.0.25</a></td><td>2026-10-07 to 2026-10-29</td><td>The first public release, then the Decision Rulebook, branch upkeep, the stored dependency map and Sigma Chain, the resource guard, and the first cloud runs.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="aud aud-tech">
+<div class="aud-label">Technical detail</div>
+<p>Versions are patch bumps of the 1.0 line. The headlines above are short readings of the <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/CHANGELOG.md">changelog</a>, which also records what was measured and what was not for each change; the guides named <code>whats-new</code> in the <code>docs</code> folder cover upgrade effects. To check what you have installed, run <a href="skills.html#sigma-doctor"><code>/sigma-doctor</code></a>.</p>
+</div>
+<div class="pagenav">
+  <a href="reference.html"><span class="dir">Back</span>&larr; Technical reference</a>
+  <a class="next" href="glossary.html"><span class="dir">Next</span>Glossary &rarr;</a>
+</div>
 
 </main>
 </div>

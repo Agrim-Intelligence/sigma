@@ -59,7 +59,55 @@
 
 <span class="eyebrow">Reference</span>
 <h1>Glossary</h1>
-<p class="stub">Content in progress.</p>
+<p class="subtitle">The terms this guide uses, in alphabetical order.</p>
+
+<dl class="def-list">
+<dt id="action-log">Action log</dt>
+<dd>The local, gitignored trace of what the loop did for each goal. <a href="observe.html">More</a>.</dd>
+<dt id="block">Block</dt>
+<dd>A goal waiting on another issue. Unlike a park, it clears by itself when the blocker closes. <a href="labels.html#overlays">More</a>.</dd>
+<dt id="chain">Chain</dt>
+<dd>One end goal plus every open prerequisite behind it, solved in order with every question asked up front. <a href="skills.html#run">More</a>.</dd>
+<dt id="claim">Claim</dt>
+<dd>A record that a session has taken a goal. A claim from a session that has died is reclaimed. <a href="team.html">More</a>.</dd>
+<dt id="design-gate">Design gate</dt>
+<dd>An opt-in check that stops a goal with no confirmed design from being worked, parks it and files a design ticket. Off by default. <a href="design-gate.html">More</a>.</dd>
+<dt id="dossier">Dossier</dt>
+<dd>A business idea captured through a fixed interview with no code exploration. The optional front end of the flow. <a href="skills.html#backlog">More</a>.</dd>
+<dt id="epic">Epic</dt>
+<dd>The Spec or Epic ticket created once a design is confirmed. It has the slices as children. Never picked by the loop; the slices are. <a href="design-gate.html">More</a>.</dd>
+<dt id="goal">Goal</dt>
+<dd>One issue (or goal file) that Sigma picks up and carries through the seven phases to a merged, verified pull request. It carries <code>sdlc:goal</code>. <a href="labels.html#membership">More</a>.</dd>
+<dt id="host">Host</dt>
+<dd>The agent environment Sigma runs in: Claude Code, Codex, Cursor or Antigravity. <a href="hosts.html">More</a>.</dd>
+<dt id="land">Land</dt>
+<dd>To carry a goal all the way through review and merge in one unattended run. <code>/sigma-goal --land</code> does it for one goal. <a href="run.html">More</a>.</dd>
+<dt id="ledger">Ledger</dt>
+<dd>The committed team record of claims and outcomes per author, so people and machines can see who is working on what. <a href="team.html">More</a>.</dd>
+<dt id="output-block">Output block</dt>
+<dd>One of the three fixed status formats the agent uses: Status, Event or Decision. <a href="reference.html#output">More</a>.</dd>
+<dt id="overlay">Overlay</dt>
+<dd>A label that rides beside <code>sdlc:goal</code> to say why a goal cannot be picked yet. <a href="labels.html#overlays">More</a>.</dd>
+<dt id="park">Park</dt>
+<dd>To set a goal aside, with a reason, because it needs a human. A parked goal leaves the loop's world until a person runs the unpark command. <a href="labels.html#membership">More</a>.</dd>
+<dt id="phase">Phase</dt>
+<dd>One of seven steps every non-trivial goal passes through: Goal, Research, Plan, Plan-Review, Implement, Review, Retrospective. <a href="flow.html">More</a>.</dd>
+<dt id="registry">Registry</dt>
+<dd>The committed record of units and the goals in each, kept in the project folder. <a href="units.html#registry">More</a>.</dd>
+<dt id="slice">Slice</dt>
+<dd>One of the smaller goals a bigger piece of work is split into. A follow-up found mid-goal joins its goal as a slice by default, up to a limit.</dd>
+<dt id="story">Story</dt>
+<dd>The ticket tier that holds a Dossier: pure business intent. Never picked by the loop.</dd>
+<dt id="unit">Unit</dt>
+<dd>A body of work several goals share a branch for. Short for unit of work. <a href="units.html">More</a>.</dd>
+<dt id="verify">Verify</dt>
+<dd>Running your test command and recording the evidence. With enforcement on, a goal cannot be marked done without fresh evidence. <a href="safety.html">More</a>.</dd>
+<dt id="wave">Wave</dt>
+<dd>A set of goals that can run at the same time because every goal they wait on sits in an earlier wave. <code>/sigma-orchestrate</code> plans them. <a href="skills.html#run">More</a>.</dd>
+</dl>
+<div class="pagenav">
+  <a href="releases.html"><span class="dir">Back</span>&larr; Releases</a>
+</div>
 
 </main>
 </div>
