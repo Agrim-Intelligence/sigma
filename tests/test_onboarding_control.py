@@ -155,7 +155,7 @@ def test_github_mode_is_done_only_after_the_pr_merged(github_run):
     obs = github_run["observations"]
     assert obs["early_done_rc"] == 4 and obs["issue_final"] == "closed"
     calls = github_run["gh_calls"]
-    for key in ("issue create", "pr merge", "pr comment", "api repos/{owner}/{repo}/pulls"):
+    for key in ("issue create", "pr merge", "pr comment", "api repos/acme/onboarding-demo/pulls"):
         assert key in calls, calls                         # the gh calls are recorded, by kind
     assert obs["unhandled"] == ""
 
@@ -351,8 +351,8 @@ def test_control_312_merge_gate_regression_goes_red_through_the_cli(tmp_path):
     approved merge parked on "no fresh verify evidence"; the confirm variant is unaffected."""
     sigma = _scratch_copy(tmp_path / "sigma")
     _mutate(sigma / "skills" / "sigma-loop" / "scripts" / "work.py",
-            "refusal = state.done_refusal(sdlc_dir, goal) if required else None",
-            "refusal = state.done_refusal(sdlc_dir, goal)")
+            "refusal = state.done_refusal(sdlc_dir, goal, base=rec.get(\"base\")) if required else None",
+            "refusal = state.done_refusal(sdlc_dir, goal, base=rec.get(\"base\"))")
     rc, lines, blob, proc = _cli("--mode", "github", "--sigma", str(sigma), workdir=tmp_path)
     assert rc == 1, proc.stdout[-3000:]
     # (the stdout line's name stops at " (", so the assertion name reads truncated here)

@@ -93,6 +93,10 @@ import time
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 FAKE_GH_SOURCE = pathlib.Path("tests") / "test_public_bootstrap_control.py"
 FAKE_REPO = "acme/onboarding-demo"
+# The bare repository's path ENDS in the fake repository's owner/name: `work.py pr` (#2165) refuses to push when the
+# `origin` URL names a different repository than the configured one, and for a local path that name is its last two
+# components -- a directory called `remote.git` read as `<run>/remote` and the control failed at `work pr` (#2260).
+FAKE_REPO_DIR = FAKE_REPO + ".git"
 SCHEMA = "sigma.onboarding-control/1"
 #: The one trivial goal the control files, and the file its "work" writes. The Makefile's test
 #: target checks existing output; the goal acceptance command requires that output to exist.
@@ -1094,7 +1098,7 @@ def run_github(sigma, readme_text, root, qs=None, variant="confirm"):
     state_path, log_path, unhandled = base / "gh_state.json", base / "gh_log.jsonl", base / "gh_unhandled.jsonl"
     try:
         qs = qs or run.timed("readme parse", lambda: parse_quickstart(readme_text, sigma))
-        bin_dir, remote, repo = base / "bin", base / "remote.git", base / "repo"
+        bin_dir, remote, repo = base / "bin", base / FAKE_REPO_DIR, base / "repo"
         bin_dir.mkdir(parents=True)
         gh = bin_dir / "gh"
         gh.write_text(f"#!{sys.executable}\n" + _fake_gh_body(sigma), encoding="utf-8")
@@ -1321,7 +1325,7 @@ def run_github_process(sigma, readme_text, root, qs=None):
     state_path, log_path, unhandled = base / "gh_state.json", base / "gh_log.jsonl", base / "gh_unhandled.jsonl"
     try:
         qs = qs or run.timed("readme parse", lambda: parse_quickstart(readme_text, sigma))
-        bin_dir, remote, repo = base / "bin", base / "remote.git", base / "repo"
+        bin_dir, remote, repo = base / "bin", base / FAKE_REPO_DIR, base / "repo"
         bin_dir.mkdir(parents=True)
         gh = bin_dir / "gh"
         gh.write_text(f"#!{sys.executable}\n" + _fake_gh_body(sigma), encoding="utf-8")

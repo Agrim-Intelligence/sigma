@@ -5,6 +5,7 @@ All notable changes to Sigma are recorded here, newest first.
 ## Unreleased
 
 - **Docs and template mismatches fixed (#2259).** `/sigma-setup` no longer documented as turning the ledger on (GitHub mode asks `--ledger yes|no`, `--yes` writes `false`); the config template now puts `chain.max_members` and `gh_quota.rest_reserve_percent` at the top level where the code reads them; managed settings lock a review level, not a branch; the decision store path, `project.enabled`, `archive_done`, priority-source notes, the `config.json` commit advice, the GitHub-only unpark note and the site update page's stop files now match the code.
+- The nightly `onboarding-control` job passes again: its fake `origin` is now a bare repository whose path ends in the configured `acme/onboarding-demo`, so the `work.py pr` repository check no longer refuses the control's own github legs (#2260).
 
 ## 1.0.36 — 2026-11-18 — a Cursor plugin package, the real public repository name in the install commands, and a larger public docs site
 
