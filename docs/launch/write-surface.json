@@ -4081,6 +4081,14 @@
       "risk": "medium"
     },
     {
+      "path": "skills/sigma-loop/scripts/artifact_paths.py",
+      "function": "scrub_goal",
+      "rule": "fs-write",
+      "count": 2,
+      "gate": "rewrites only this goal's plan and research files inside its own worktree (and the identical main copy), called by `work.py commit`; refuses the acceptance record and a reviewed plan instead of writing",
+      "risk": "medium"
+    },
+    {
       "path": "skills/sigma-loop/scripts/applier.py",
       "function": "_prune",
       "rule": "fs-remove",
