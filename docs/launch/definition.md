@@ -1,5 +1,7 @@
 # Launch definition
 
+> As of 18 Nov 2026 the public repository is `Agrim-Intelligence/sigma`; the name `sigmaloop` below and in the launch evidence is the planned name (#2248).
+
 What "launch" means for Sigma: what ships, to whom, and on which hosts. Every launch-readiness
 threshold points at this page. The same decisions, machine-readable, are in
 [`definition.json`](definition.json); `tests/test_launch_definition.py` keeps the two in sync.
@@ -18,7 +20,7 @@ change with this line.
 - **Artifact:** `public-snapshot` — a fresh public snapshot repository, built from a reviewed tree.
   The snapshot does not carry this repository's issue and pull-request history or its other
   branches.
-- **Public repository:** `Agrim-Intelligence/sigmaloop` is the value `definition.json` records (#524).
+- **Public repository:** `Agrim-Intelligence/sigma` is the value `definition.json` records (#524).
   The owner decided on 2026-10-05 that the public repository is a NEW repository, created fresh
   with a clean one-commit snapshot of this one; this repository is not renamed. The plugin and
   marketplace are named `sigmaloop` (install id `sigmaloop@sigmaloop`). Creating and pushing it is the owner's
@@ -64,7 +66,7 @@ places below, and a clone of it that is not repointed addresses THIS repository.
 - `docs/publish-runbook.md`'s `tools/leak_refs.py scan` and `rewrite` commands, which pass
   `--repo OWNER/NAME`;
 - `docs/board.md`'s milestone-assignment commands (`REPO=` at `docs/board.md:162`, `$Repo` at
-  `:183`, and the copy probe's config at `:201`), now `Agrim-Intelligence/sigmaloop`; they PATCH the milestone on
+  `:183`, and the copy probe's config at `:201`), now `Agrim-Intelligence/sigma`; they PATCH the milestone on
   issues in the named repository, so run them against the repository whose issues you mean;
 - `contract/golden/config.json:2` (`discovery.github.repo` in the golden config);
 - the README's CI badge (`README.md:7`);
@@ -86,7 +88,7 @@ address GitHub. `.claude-plugin/marketplace.json` names no repository (its sourc
 this repository is not renamed, and the loop is not repointed unless a clone of the new repository still names this
 one). The references in the list above that the public tree carries and that mean the PUBLIC repository (the CI
 badge, the issue-template advisory link, `contract/golden/config.json`, `docs/board.md`) name
-`Agrim-Intelligence/sigmaloop`; the references that are about this working repository stay as they are.
+`Agrim-Intelligence/sigma`; the references that are about this working repository stay as they are.
 
 ## To whom
 

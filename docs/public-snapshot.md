@@ -383,7 +383,7 @@ Owner-only, after the rehearsal above is satisfactory. Nothing here runs in a lo
 1. Build the export from the commit to publish (above) and read a `VERIFIED` report.
 2. The ORDER matters. `public_repo` in `docs/launch/definition.json` (and the doctor's
    `_MARKETPLACE_REPO` constant, which the builder's doctor-slug scan requires to equal it) both
-   already name the new repository (`Agrim-Intelligence/sigmaloop`; the rename change has landed), so this
+   already name the new repository (`Agrim-Intelligence/sigma`; the rename change has landed), so this
    ordering is satisfied and the exported tree carries the right name. The builder prints a NOTE in
    the report when `public_repo` still equals the `--repo` source repository (it does not today). Then, after the build,
    the owner creates the new repository, EMPTY (no README, licence or `.gitignore`: a pre-existing

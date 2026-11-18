@@ -43,7 +43,7 @@ did not produce an installed tagged plugin: the two marketplace source forms
 could not authenticate over SSH, and cloning the public HTTPS source at
 `v1.0.0` reported that the branch/tag does not exist.
 
-(The recorded probes ran against the source repository, before the public repository was named `Agrim-Intelligence/sigmaloop`; they are history, not a result for the new repository.)
+(The recorded probes ran against the source repository, before the public repository was named `Agrim-Intelligence/sigma`; they are history, not a result for the new repository.)
 
 Do not document or ask users to use a pin until an owner repeats the following
 in an isolated profile against the real public release and records an install
@@ -63,7 +63,7 @@ existing/predecessor installation.
 ## Safety for clones of the new repository
 
 This repository is NOT renamed: it keeps its name and history. The public repository is a NEW repository,
-`Agrim-Intelligence/sigmaloop`, created by the owner with one snapshot commit
+`Agrim-Intelligence/sigma`, created by the owner with one snapshot commit
 ([the public snapshot](public-snapshot.md)); nothing here creates it. So no existing checkout needs repointing
 for the release, and a surviving watcher in a checkout of this repository keeps addressing this repository.
 

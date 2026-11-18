@@ -3039,7 +3039,7 @@ def _version_tuple(v):
 # THEIR repo, a different one entirely, and must never be read here). A hardcoded slug went stale
 # once already, so this is the one place to update if the public repository moves -- and
 # `tools/leak_scan.py` reads it from here (by `ast`, never by import) as the public slug.
-_MARKETPLACE_REPO = "Agrim-Intelligence/sigmaloop"
+_MARKETPLACE_REPO = "Agrim-Intelligence/sigma"
 #: The plugin's own name (#524), the half of an installed id before `@`. Every match of "is this the
 #: Sigma Loop plugin" goes through this one constant, not a bare literal.
 _PLUGIN = "sigmaloop"

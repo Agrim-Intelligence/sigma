@@ -43,7 +43,7 @@ claude plugin install sigmaloop@sigmaloop
 
 `/sigma-doctor` prints these lines for your install, with the repository your install recorded filled in (a private
 copy of the repository carries the plugin under its new name too). A fresh install from the public repository uses
-`claude plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop` instead. Then restart the session, so
+`claude plugin marketplace add https://github.com/Agrim-Intelligence/sigma` instead. Then restart the session, so
 the version in use is resolved afresh. With a marketplace shared by other plugins, the uninstall and marketplace-removal steps were run
 on 2026-10-14 in a scratch profile against a two-plugin directory marketplace (a stand-in, not a real old release): uninstalling
 one plugin left the other installed. The marketplace removal is the step to skip: `claude plugin marketplace

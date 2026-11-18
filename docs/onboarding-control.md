@@ -41,9 +41,9 @@ scripts turns the control red:
 
 | From the README | What the control does with it |
 |---|---|
-| `claude plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop` / `claude plugin install sigmaloop@sigmaloop` | exactly these two lines, the id matching `.claude-plugin/marketplace.json`; `--install` runs them into the isolated profile with that URL replaced by the checkout path |
-| `codex plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop` / `codex plugin add sigmaloop@sigmaloop` | checked the same way; `--install`: run into an isolated `CODEX_HOME` |
-| `/plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop` / `/plugin install sigmaloop@sigmaloop` (in-session) | checked the same way (a model turn; not run) |
+| `claude plugin marketplace add https://github.com/Agrim-Intelligence/sigma` / `claude plugin install sigmaloop@sigmaloop` | exactly these two lines, the id matching `.claude-plugin/marketplace.json`; `--install` runs them into the isolated profile with that URL replaced by the checkout path |
+| `codex plugin marketplace add https://github.com/Agrim-Intelligence/sigma` / `codex plugin add sigmaloop@sigmaloop` | checked the same way; `--install`: run into an isolated `CODEX_HOME` |
+| `/plugin marketplace add https://github.com/Agrim-Intelligence/sigma` / `/plugin install sigmaloop@sigmaloop` (in-session) | checked the same way (a model turn; not run) |
 | every init flag the Quickstart shows (`/sigma-init ...` and `init_flow.py ...` lines, and the inline-code flags in its `/sigma-init` subsections, e.g. the `[ask]` list `--mode`, `--verify`, `--board`, `--ledger`, `--local-only`) | each must be in init_flow.py's own parser (`_VALUE`/`_BOOL`, read by `ast`) |
 | `/sigma-init --demo` (the `### Claude Code` block) | its flags |
 | `python3 <installed-sigma>/skills/sigma-init/scripts/init_flow.py . ...` | the script `/sigma-init` runs |
@@ -349,7 +349,7 @@ export T=$(mktemp -d) R=<org>/sigma-onboarding-$(date +%Y%m%d%H%M)
 gh repo create "$R" --private --clone --add-readme --description "sigma onboarding control (throwaway)" && cd "$(basename "$R")"
 printf 'test:\n\ttest -s hello.txt\n' > Makefile && git add Makefile && git commit -m "verify target" && git push
 # 2. the README Quickstart, literally (Claude Code session in this directory)
-#    /plugin marketplace add https://github.com/Agrim-Intelligence/sigmaloop   /plugin install sigmaloop@sigmaloop   (restart)
+#    /plugin marketplace add https://github.com/Agrim-Intelligence/sigma   /plugin install sigmaloop@sigmaloop   (restart)
 #    /sigma-init --demo      -> answer: github mode, board no, ledger no; confirm `make test`
 # 3. one goal
 gh issue create --label sdlc:goal --assignee @me --title "Add hello.txt" --body "Create hello.txt with one line."

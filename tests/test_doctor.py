@@ -666,7 +666,7 @@ def test_plugin_versions_falls_back_to_the_public_slug_without_a_marketplace_rec
     run, seen = _recording_runner()
     d._plugin_versions(run)
     assert _api_paths(seen) == [_contents_path(d._MARKETPLACE_REPO)], seen
-    assert d._MARKETPLACE_REPO == "Agrim-Intelligence/sigmaloop"
+    assert d._MARKETPLACE_REPO == "Agrim-Intelligence/sigma"
     assert " ".join(next(a for a in seen if a[:2] == ["gh", "api"])).startswith("gh api")
 
 
@@ -676,7 +676,7 @@ def test_plugin_versions_reads_the_marketplace_the_plugin_was_installed_from():
     The decoy `sigma` key sorts first and names the public repo; the match must be by the
     marketplace half of the installed id."""
     d = _doc()
-    _known_marketplaces({"sigmaloop": {"source": {"source": "github", "repo": "Agrim-Intelligence/sigmaloop"}},
+    _known_marketplaces({"sigmaloop": {"source": {"source": "github", "repo": "Agrim-Intelligence/sigma"}},
                          "acme-market": {"source": {"source": "github", "repo": "Acme/sigma-fork"}}})
     run, seen = _recording_runner(json.dumps([{"id": "sigmaloop@acme-market", "version": "0.9.7"}]))
     installed, latest = d._plugin_versions(run)
@@ -855,7 +855,7 @@ def _exploding_runner(*forbidden):
 # legitimate `gh api` call sites (branch protection, a GraphQL query) that a bare prefix would
 # wrongly also forbid if cheap_only ever reaches them; this names the marketplace-contents fetch
 # specifically.
-_MARKETPLACE_FETCH_PREFIX = ("gh", "api", "repos/Agrim-Intelligence/sigmaloop/contents/.claude-plugin/marketplace.json")
+_MARKETPLACE_FETCH_PREFIX = ("gh", "api", "repos/Agrim-Intelligence/sigma/contents/.claude-plugin/marketplace.json")
 
 
 def test_cheap_only_skips_the_plugin_version_subprocess_and_network_calls():

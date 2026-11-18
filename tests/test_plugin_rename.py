@@ -125,7 +125,7 @@ def test_doctor_stays_silent_for_a_fork_and_for_the_new_id(_isolated, tmp_path):
     assert row_for({OLD_ID: entry}, {OLD_NAME: _github("acme/fork")}) is None
     assert row_for({OLD_NAME + "@acme-fork": entry}, {"acme-fork": _github("acme/fork")}) is None
     # the new id is the destination, never a finding
-    assert row_for({NEW_ID: entry}, {"sigmaloop": _github("Agrim-Intelligence/sigmaloop")}) is None
+    assert row_for({NEW_ID: entry}, {"sigmaloop": _github("Agrim-Intelligence/sigma")}) is None
 
 
 def test_doctor_prints_codex_commands_for_an_old_codex_install(monkeypatch, tmp_path):
@@ -163,7 +163,7 @@ def test_doctor_sees_the_new_plugin_name_for_version_and_scope_rows(_isolated, t
 
 def test_readme_install_lines_use_the_new_id_and_public_url():
     text = (ROOT / "README.md").read_text(encoding="utf-8")
-    url = "https://github.com/Agrim-Intelligence/sigmaloop"
+    url = "https://github.com/Agrim-Intelligence/sigma"
     for line in ("/plugin marketplace add " + url, "/plugin install " + NEW_ID,
                  "claude plugin marketplace add " + url, "claude plugin install " + NEW_ID,
                  "codex plugin marketplace add " + url, "codex plugin add " + NEW_ID):
