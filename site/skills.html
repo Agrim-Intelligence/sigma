@@ -59,7 +59,158 @@
 
 <span class="eyebrow">Deeper</span>
 <h1>Skills and commands</h1>
-<p class="stub">Content in progress.</p>
+<p class="subtitle">Sigma ships 46 skills. Each one is also a command you type in your agent, written <code>/sigma-&lt;name&gt;</code>. Most people only ever need the first few in the "Running work" group.</p>
+
+<div class="callout callout-note">
+<div class="callout-title">Where to start</div>
+<p>Run <a href="#sigma-init"><code>/sigma-init</code></a> once per repository, then <a href="#sigma-loop"><code>/sigma-loop</code></a> to work the backlog, or <a href="#sigma-goal"><code>/sigma-goal</code></a> to run a single goal with approval gates. The phase skills are called by those two; you rarely type them yourself.</p>
+</div>
+
+<div class="picker">
+<a href="#setup"><b>Set up and health</b><span>Run once per repository, or when something looks wrong.</span></a>
+<a href="#observe"><b>Status and measurement</b><span>Read-only views of what the loop is doing and what it cost.</span></a>
+<a href="#run"><b>Running work</b><span>Take goals from the backlog to merged pull requests.</span></a>
+<a href="#phases"><b>The phases</b><span>One skill per step of the seven-phase flow, plus debugging.</span></a>
+<a href="#checks"><b>Specialist checks</b><span>Extra gates for changes that carry a particular kind of risk.</span></a>
+<a href="#backlog"><b>Shaping the backlog</b><span>From a business idea to confirmed, scoped goals; also direction and health of the whole repository.</span></a>
+<a href="#units"><b>Units of work</b><span>Several goals sharing one branch.</span></a>
+<a href="#team"><b>Team and chat</b><span>Coordination between people and from a chat tool.</span></a>
+</div>
+
+<h2 id="setup">Set up and health</h2>
+<p>Run once per repository, or when something looks wrong.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Command</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><a id="sigma-init"></a><code>/sigma-init</code></td><td>The one setup command: scaffolds the project folder, checks access, and asks for a mode and a test command.</td></tr>
+<tr><td><a id="sigma-setup"></a><code>/sigma-setup</code></td><td>An alias of the init command, for people who look for it under that name.</td></tr>
+<tr><td><a id="sigma-wizard"></a><code>/sigma-wizard</code></td><td>Guides first-run setup one unresolved check at a time; it starts by itself when setup is incomplete.</td></tr>
+<tr><td><a id="sigma-doctor"></a><code>/sigma-doctor</code></td><td>Checks setup, dependencies and host support, and prints the command that fixes each problem.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="observe">Status and measurement</h2>
+<p>Read-only views of what the loop is doing and what it cost.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Command</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><a id="sigma-status"></a><code>/sigma-status</code></td><td>Shows the backlog, the current iteration and the review queue.</td></tr>
+<tr><td><a id="sigma-log"></a><code>/sigma-log</code></td><td>Reads the local action log: the active goal, its thread and recent activity.</td></tr>
+<tr><td><a id="sigma-time"></a><code>/sigma-time</code></td><td>Reports observed active and background time by goal, unit, skill or session.</td></tr>
+<tr><td><a id="sigma-velocity"></a><code>/sigma-velocity</code></td><td>Estimates calendar time from measured commit and pull-request throughput.</td></tr>
+<tr><td><a id="sigma-model"></a><code>/sigma-model</code></td><td>Predicts the model tier a goal should run on, for phase dispatch.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="run">Running work</h2>
+<p>Take goals from the backlog to merged pull requests.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Command</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><a id="sigma-loop"></a><code>/sigma-loop</code></td><td>Works backlog goals through phase agents unattended, with verified pull requests, parking and continuing until stopped or out of budget.</td></tr>
+<tr><td><a id="sigma-goal"></a><code>/sigma-goal</code></td><td>Runs one goal through every phase, with approval gates; the supervised route.</td></tr>
+<tr><td><a id="sigma-chain"></a><code>/sigma-chain</code></td><td>Solves one end goal and every open prerequisite it waits on, in order, with all decisions asked up front.</td></tr>
+<tr><td><a id="sigma-orchestrate"></a><code>/sigma-orchestrate</code></td><td>Runs a batch of goals as parallel sessions in dependency waves, merging and reporting.</td></tr>
+<tr><td><a id="sigma-dag"></a><code>/sigma-dag</code></td><td>Reports the stored dependency map: state, stuck and active chains, cycles.</td></tr>
+<tr><td><a id="sigma-triage"></a><code>/sigma-triage</code></td><td>Prioritizes and dependency-sequences a multi-goal backlog drain.</td></tr>
+<tr><td><a id="sigma-promote"></a><code>/sigma-promote</code></td><td>Approves AI-filed issues for the loop and repairs stuck confirmation labels.</td></tr>
+<tr><td><a id="sigma-unpark"></a><code>/sigma-unpark</code></td><td>Resolves a goal that is waiting on a human and records the decision before it returns to the queue.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="phases">The phases</h2>
+<p>One skill per step of the seven-phase flow, plus debugging.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Command</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><a id="sigma-brainstorm"></a><code>/sigma-brainstorm</code></td><td>Shapes an idea into one approved, checkable goal before any code.</td></tr>
+<tr><td><a id="sigma-context"></a><code>/sigma-context</code></td><td>Recalls prior goals, graph findings and conventions as a cited brief.</td></tr>
+<tr><td><a id="sigma-research"></a><code>/sigma-research</code></td><td>Maps a goal's code blast radius, existing debt and size into a short dossier.</td></tr>
+<tr><td><a id="sigma-plan"></a><code>/sigma-plan</code></td><td>Writes a bite-sized plan with files, tests and done criteria before any edit.</td></tr>
+<tr><td><a id="sigma-plan-review"></a><code>/sigma-plan-review</code></td><td>Adversarially verifies the plan against the code and post-ship risks before implementation.</td></tr>
+<tr><td><a id="sigma-implement"></a><code>/sigma-implement</code></td><td>Implements the plan test-first and verifies each step.</td></tr>
+<tr><td><a id="sigma-review"></a><code>/sigma-review</code></td><td>A code-quality review: measured indicators first, then a scan across eight axes; also reviews pull requests and grades an external reviewer.</td></tr>
+<tr><td><a id="sigma-verify"></a><code>/sigma-verify</code></td><td>Runs the checks and shows evidence before a goal is called done.</td></tr>
+<tr><td><a id="sigma-retro"></a><code>/sigma-retro</code></td><td>After shipping, assesses residual debt and proposes lessons for approval.</td></tr>
+<tr><td><a id="sigma-debug"></a><code>/sigma-debug</code></td><td>Reproduces a bug in a tight loop and diagnoses it before fixing.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="checks">Specialist checks</h2>
+<p>Extra gates for changes that carry a particular kind of risk.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Command</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><a id="sigma-contract-check"></a><code>/sigma-contract-check</code></td><td>Checks public API, event, command-line, type or environment-variable changes for breaking consumers.</td></tr>
+<tr><td><a id="sigma-migration-check"></a><code>/sigma-migration-check</code></td><td>Checks forward migration, backfill, rollback and canary for schema or data changes.</td></tr>
+<tr><td><a id="sigma-security-review"></a><code>/sigma-security-review</code></td><td>Threat-models changes to authentication, user data, billing, external input or public endpoints.</td></tr>
+<tr><td><a id="sigma-release-check"></a><code>/sigma-release-check</code></td><td>Runs the final pre-production checklist after review.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="backlog">Shaping the backlog</h2>
+<p>From a business idea to confirmed, scoped goals; also direction and health of the whole repository.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Command</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><a id="sigma-dossier"></a><code>/sigma-dossier</code></td><td>Turns a high-level business idea into a Dossier through a fixed interview, without exploring code.</td></tr>
+<tr><td><a id="sigma-prd-intake"></a><code>/sigma-prd-intake</code></td><td>Turns a product requirements file into cited Dossiers plus one umbrella ticket.</td></tr>
+<tr><td><a id="sigma-goal-design"></a><code>/sigma-goal-design</code></td><td>Maps a Dossier or an existing goal to code, blockers and slices in a design write-up.</td></tr>
+<tr><td><a id="sigma-goal-review"></a><code>/sigma-goal-review</code></td><td>Independently confirms a design write-up before its epic and slices are created.</td></tr>
+<tr><td><a id="sigma-scope"></a><code>/sigma-scope</code></td><td>Turns an idea into prioritized, deduplicated, dependency-linked GitHub issues.</td></tr>
+<tr><td><a id="sigma-vision"></a><code>/sigma-vision</code></td><td>Writes a tiered product north star that grounds goals.</td></tr>
+<tr><td><a id="sigma-align"></a><code>/sigma-align</code></td><td>Audits shipped goals against the north star for cumulative drift.</td></tr>
+<tr><td><a id="sigma-audit"></a><code>/sigma-audit</code></td><td>A read-only whole-repository audit of conformance, erosion, debt and fitness.</td></tr>
+<tr><td><a id="sigma-radar"></a><code>/sigma-radar</code></td><td>Researches current developments against the backlog and writes a ranked digest; no external writes by default.</td></tr>
+<tr><td><a id="sigma-decide"></a><code>/sigma-decide</code></td><td>Turns an architectural decision into an enforced invariant.</td></tr>
+<tr><td><a id="sigma-kg"></a><code>/sigma-kg</code></td><td>Builds, refreshes or queries the optional project knowledge graph.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="units">Units of work</h2>
+<p>Several goals sharing one branch.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Command</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><a id="sigma-define"></a><code>/sigma-define</code></td><td>Opens a new unit of work: its branch, label, registry entry and issues.</td></tr>
+<tr><td><a id="sigma-rebase"></a><code>/sigma-rebase</code></td><td>A human-attended catch-up of a stale feature branch, with conflict resolution and verification.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="team">Team and chat</h2>
+<p>Coordination between people and from a chat tool.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Command</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><a id="sigma-ledger"></a><code>/sigma-ledger</code></td><td>Sets up, reads, notes and hands off through the team ledger.</td></tr>
+<tr><td><a id="sigma-slack"></a><code>/sigma-slack</code></td><td>Starts, checks or stops the inbound Slack command listener; the Slack app itself is set up by hand.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="aud aud-tech">
+<div class="aud-label">Technical detail</div>
+<p>Every skill is a folder with a <code>SKILL.md</code> whose description says when the agent should use it. On a host without slash commands (Cursor, Antigravity) the same skills are read as instructions. See <a href="hosts.html">Hosts</a> for what each host runs.</p>
+</div>
+<div class="pagenav">
+  <a href="slack.html"><span class="dir">Back</span>&larr; From Slack</a>
+  <a class="next" href="labels.html"><span class="dir">Next</span>Labels &rarr;</a>
+</div>
 
 </main>
 </div>
