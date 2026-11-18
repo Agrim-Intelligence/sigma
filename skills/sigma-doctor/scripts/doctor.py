@@ -6801,6 +6801,18 @@ def _automerge_state(wk):
     }.get(chosen, "off (a clean, safe PR is left for a human)")
 
 
+def _protection_unreadable_state(wk):
+    """The `work.protection_unreadable` row's state (#2242), mirroring work.protection_unreadable() without
+    importing it. The row exists ONLY when the key is exactly "allow" (the default hold needs no row), so it is
+    loud about what is relaxed, and honest when auto_merge is not "always" (then it does nothing)."""
+    auto = wk.get("auto_merge")
+    if auto is True or (isinstance(auto, str) and auto.strip().lower() == "always"):
+        return ("ALLOW -- a protection read refused with HTTP 403 (a plan limit, e.g. a private repository on a free "
+                "plan) no longer stops a merge under auto_merge \"always\"; any other failure still does, and "
+                "GitHub still enforces any protection at merge time")
+    return 'allow, but INACTIVE -- it acts only with work.auto_merge: "always"'
+
+
 #: #2083: work.py's PENDING_ATTEMPTS x PENDING_INTERVAL, PENDING_INTERVAL and MERGE_PENDING_WAIT_MAX, duplicated
 #: rather than imported (doctor stays standalone). `test_ac3_doctor_mirror_matches_work_reader` loads both files by
 #: path and fails if this mirror drifts from `work.merge_pending_wait_seconds`.
@@ -7555,6 +7567,10 @@ def features(sdlc_dir=".sdlc", run=None, scheduled_tasks_dir=None):
         "run: python3 skills/sigma-doctor/scripts/migrate.py .sdlc (dry run), then --apply; "
         "and rename the environment variable it names to match",
     ))
+    if isinstance(wk.get("protection_unreadable"), str) and wk["protection_unreadable"] == "allow":   # #2242
+        rows.append(("merge when branch protection is unreadable (work.protection_unreadable)",
+                     _protection_unreadable_state(wk),
+                     'remove it (or set "hold") to stop merging past an unreadable protection read'))
     rows.append(("rulebook (OFF by default)", _rulebook_state(cfg, sdlc_dir, run),
                  'config: "rulebook": {"records": {"enabled": true, "repo_visibility": "private"}}'))
     rows.append(("autonomy levels (OFF by default)", _autonomy_state(cfg, sdlc_dir),

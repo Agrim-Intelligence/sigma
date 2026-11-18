@@ -5,6 +5,7 @@ All notable changes to Sigma are recorded here, newest first.
 ## Unreleased
 
 - **Absolute home-directory paths are kept out of a goal's plan, research and acceptance files at every Sigma choke point (#2243).** `work.py commit` rewrites them to repo-relative or `[path]` (refusing on the acceptance record or a reviewed plan); `work.py pr`, `work.py checkpoint` and the three pushes of `work.py rebase` refuse when the branch's committed artifacts hold one; the plan's durable copy on the issue is scrubbed first. Stops new leaks only. Not covered: a raw `git commit` followed by a push outside Sigma, published history, a path with a space (ends at the space), `.slices.json`; no live loop run after the change, Windows paths by fixture only.
+- **`work.protection_unreadable: "allow"` lets `auto_merge: "always"` merge when every protection read is refused with HTTP 403 and the branch's own `protected` flag reads false (#2242).** Opt-in, default `"hold"` (unchanged); never under `"protected"`; a timeout, 5xx, rate limit, 404 or malformed answer still holds; `/sigma-doctor` shows a row while it is on. The read shape was measured by hand on a free-plan private repository; a real merge through the new path is not measured.
 
 ## 1.0.34 — 2026-11-18 — `/sigma-init --antigravity` writes the managed AGENTS.md block, and the Cursor hooks wording is corrected
 
