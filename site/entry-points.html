@@ -59,7 +59,152 @@
 
 <span class="eyebrow">Start here</span>
 <h1>Ways in</h1>
-<p class="stub">Content in progress.</p>
+<p class="subtitle">You do not have to start at the beginning. Sigma has several doors onto the same chain, depending on how finished your starting point is.</p>
+
+<div class="aud">
+<div class="aud-label">In plain words</div>
+<ul>
+<li>If all you have is an idea, start with a Dossier: a short, fixed interview that writes the idea down as one ticket.</li>
+<li>If you already have a clear piece of work, file it as a goal and let the loop pick it up.</li>
+<li>If the backlog is already full, just start the loop.</li>
+<li>If you are part-way through, you can run a single phase on its own: plan, implement or review.</li>
+</ul>
+</div>
+
+<h2 id="diagram">The doors</h2>
+<div class="diagram">
+<svg viewBox="0 0 490 640" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Seven ways in, each pointing at the stage where it joins the chain. A raw idea or requirements file joins at Dossier. An existing goal that needs mapping joins at Goal Design and Review. A goal you scoped joins at the Backlog. The standing backlog joins at the loop's pick. A goal with no plan joins at Plan, a reviewed plan joins at Implement, and finished work joins at Review. The stages are connected top to bottom: Dossier, Goal Design and Review, Backlog, Pick, Plan, Plan-Review, Implement, Review, Land.">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="dmark"/>
+    </marker>
+  </defs>
+  <text class="dtext-dim" x="100" y="14" text-anchor="middle">Where you are</text>
+  <text class="dtext-dim" x="380" y="14" text-anchor="middle">Where you join</text>
+
+  <rect class="dbox" x="10" y="24" width="180" height="46" rx="8"/>
+  <text class="dtext" x="100" y="44" text-anchor="middle">1  A raw idea, or</text>
+  <text class="dtext" x="100" y="60" text-anchor="middle">a requirements file</text>
+  <path class="darrow" d="M190,47 L286,47" marker-end="url(#ar)"/>
+  <rect class="dbox-optional" x="290" y="24" width="190" height="46" rx="8"/>
+  <text class="dtext" x="385" y="44" text-anchor="middle" font-weight="700">Dossier</text>
+  <text class="dtext-dim" x="385" y="60" text-anchor="middle">one ticket of intent</text>
+  <path class="darrow" d="M385,70 L385,92" marker-end="url(#ar)"/>
+
+  <rect class="dbox" x="10" y="92" width="180" height="46" rx="8"/>
+  <text class="dtext" x="100" y="112" text-anchor="middle">2  A goal you filed that</text>
+  <text class="dtext" x="100" y="128" text-anchor="middle">needs mapping first</text>
+  <path class="darrow" d="M190,115 L286,115" marker-end="url(#ar)"/>
+  <rect class="dbox-optional" x="290" y="92" width="190" height="46" rx="8"/>
+  <text class="dtext" x="385" y="112" text-anchor="middle" font-weight="700">Goal Design + Review</text>
+  <text class="dtext-dim" x="385" y="128" text-anchor="middle">map, then confirm</text>
+  <path class="darrow" d="M385,138 L385,160" marker-end="url(#ar)"/>
+
+  <rect class="dbox" x="10" y="160" width="180" height="46" rx="8"/>
+  <text class="dtext" x="100" y="180" text-anchor="middle">3  A scoped goal: clear,</text>
+  <text class="dtext" x="100" y="196" text-anchor="middle">one finish line</text>
+  <path class="darrow" d="M190,183 L286,183" marker-end="url(#ar)"/>
+  <rect class="dbox" x="290" y="160" width="190" height="46" rx="8"/>
+  <text class="dtext" x="385" y="180" text-anchor="middle" font-weight="700">Backlog</text>
+  <text class="dtext-dim" x="385" y="196" text-anchor="middle">sdlc:goal, or a goal file</text>
+  <path class="darrow" d="M385,206 L385,228" marker-end="url(#ar)"/>
+
+  <rect class="dbox" x="10" y="228" width="180" height="46" rx="8"/>
+  <text class="dtext" x="100" y="248" text-anchor="middle">4  A backlog that is</text>
+  <text class="dtext" x="100" y="264" text-anchor="middle">already queued</text>
+  <path class="darrow" d="M190,251 L286,251" marker-end="url(#ar)"/>
+  <rect class="dbox-accent" x="290" y="228" width="190" height="46" rx="8"/>
+  <text class="dtext" x="385" y="248" text-anchor="middle" font-weight="700">The loop's pick</text>
+  <text class="dtext-dim" x="385" y="264" text-anchor="middle">checks, then the phases</text>
+  <path class="darrow" d="M385,274 L385,324" marker-end="url(#ar)"/>
+
+  <rect class="dbox" x="10" y="324" width="180" height="46" rx="8"/>
+  <text class="dtext" x="100" y="344" text-anchor="middle">5  You know the goal,</text>
+  <text class="dtext" x="100" y="360" text-anchor="middle">no plan yet</text>
+  <path class="darrow" d="M190,347 L286,347" marker-end="url(#ar)"/>
+  <rect class="dbox-accent" x="290" y="324" width="190" height="46" rx="8"/>
+  <text class="dtext" x="385" y="344" text-anchor="middle" font-weight="700">Plan</text>
+  <text class="dtext-dim" x="385" y="360" text-anchor="middle">/sigma-plan</text>
+  <path class="darrow" d="M385,370 L385,392" marker-end="url(#ar)"/>
+
+  <rect class="dbox-accent" x="290" y="392" width="190" height="46" rx="8"/>
+  <text class="dtext" x="385" y="412" text-anchor="middle" font-weight="700">Plan-Review</text>
+  <text class="dtext-dim" x="385" y="428" text-anchor="middle">/sigma-plan-review</text>
+  <path class="darrow" d="M385,438 L385,460" marker-end="url(#ar)"/>
+
+  <rect class="dbox" x="10" y="460" width="180" height="46" rx="8"/>
+  <text class="dtext" x="100" y="480" text-anchor="middle">6  You have a reviewed</text>
+  <text class="dtext" x="100" y="496" text-anchor="middle">plan</text>
+  <path class="darrow" d="M190,483 L286,483" marker-end="url(#ar)"/>
+  <rect class="dbox-accent" x="290" y="460" width="190" height="46" rx="8"/>
+  <text class="dtext" x="385" y="480" text-anchor="middle" font-weight="700">Implement</text>
+  <text class="dtext-dim" x="385" y="496" text-anchor="middle">/sigma-implement</text>
+  <path class="darrow" d="M385,506 L385,528" marker-end="url(#ar)"/>
+
+  <rect class="dbox" x="10" y="528" width="180" height="46" rx="8"/>
+  <text class="dtext" x="100" y="548" text-anchor="middle">7  You have written</text>
+  <text class="dtext" x="100" y="564" text-anchor="middle">the change</text>
+  <path class="darrow" d="M190,551 L286,551" marker-end="url(#ar)"/>
+  <rect class="dbox-accent" x="290" y="528" width="190" height="46" rx="8"/>
+  <text class="dtext" x="385" y="548" text-anchor="middle" font-weight="700">Review</text>
+  <text class="dtext-dim" x="385" y="564" text-anchor="middle">/sigma-review</text>
+  <path class="darrow" d="M385,574 L385,596" marker-end="url(#ar)"/>
+
+  <rect class="dbox-core" x="290" y="596" width="190" height="34" rx="8"/>
+  <text class="dtext" x="385" y="618" text-anchor="middle" font-weight="700">Verify, land, record</text>
+</svg>
+</div>
+<p class="diagram-caption">Left: where you are. Right: the stage you join. Joining part-way does not skip the record; see the caution below.</p>
+
+<h2 id="doors">Each door</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Door</th><th>Use it when</th><th>Start with</th><th>What you get</th></tr></thead>
+<tbody>
+<tr><td>1. Raw idea</td><td>You have a sentence, not a spec</td><td><code>/sigma-dossier</code>. For a requirements file of any shape, <code>/sigma-prd-intake</code></td><td>One ticket of intent, then a design, a confirmation and slices that enter the backlog</td></tr>
+<tr><td>2. A goal needing a map</td><td>A goal exists but nobody checked what it touches</td><td><code>/sigma-goal-design</code>, then <code>/sigma-goal-review</code>. With the <a href="design-gate.html">design gate</a> on, the loop files this for you</td><td>A design file, and on confirmation the <code>sdlc:designed</code> label</td></tr>
+<tr><td>3. A scoped goal</td><td>You know what you want and how you will know it is done</td><td>File an issue labelled <code>sdlc:goal</code>, or a file under <code>.sdlc/goals/</code>. <code>/sigma-brainstorm</code> shapes one; <code>/sigma-scope</code> turns a rough idea into filed, ordered issues</td><td>A goal the loop can pick</td></tr>
+<tr><td>4. The backlog</td><td>Goals are queued</td><td><code>/sigma-loop</code> unattended, or <code>/sigma-goal</code> for one goal with your approval at each gate</td><td>Every goal through all phases, or parked with a reason</td></tr>
+<tr><td>5 to 7. Mid-way</td><td>You already hold part of the work</td><td><code>/sigma-plan</code>, <code>/sigma-implement</code> or <code>/sigma-review</code></td><td>That phase, run on its own</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout callout-warn">
+<div class="callout-title">Joining part-way is not skipping</div>
+<p>You can run a phase by itself. But a goal is only recorded done when the record shows the earlier phases ran. Research and retro can be waived for a trivial goal, with the waiver recorded; plan, plan-review, implement and review never can. If you start at Implement, plan the work and have the plan reviewed first, or the run cannot finish cleanly.</p>
+</div>
+
+<div class="aud aud-tech">
+<div class="aud-label">Technical detail</div>
+
+<h3 id="front">The idea door</h3>
+<ul>
+<li><strong>Dossier.</strong> Eight questions, asked in order, one at a time. Up to three answered follow-ups may be added, and any doubt it cannot settle is recorded as an open question rather than guessed. The ticket is labelled <code>story</code> and is never <code>sdlc:goal</code>, so the loop cannot pick it.</li>
+<li><strong>Requirements file.</strong> Each answer must cite a quote from the file. A gap becomes an open question. A source file from the repository is refused as the input.</li>
+<li><strong>Design.</strong> Writes a design file under <code>.sdlc/design/</code> and a comment. It creates no ticket and no label.</li>
+<li><strong>Review.</strong> The independent confirmation. Only on confirmation does it add <code>sdlc:designed</code> and create the epic and its slices. A rejection writes one comment.</li>
+<li><strong>No resume.</strong> The Dossier ticket does not exist until it is filed, so an interrupted interview starts over.</li>
+</ul>
+
+<h3 id="existing">The existing-goal door</h3>
+<p>This is the same design pass reached from a different entrance. No Dossier is involved: the goal is the input. When the design concludes the goal is one coherent unit, no epic is created and the label alone is the output.</p>
+
+<h3 id="loop">The backlog door</h3>
+<p>The loop picks an open goal with no open prerequisite, runs the pick-time checks, then each phase as its own subagent. The three ways to run (<code>/sigma-goal</code>, <code>/sigma-goal &lt;N&gt; --land</code>, <code>/sigma-loop</code>) are compared in the running guide; see <a href="run.html">Running unattended</a>.</p>
+
+<h3 id="midway">The mid-way doors</h3>
+<ul>
+<li>Each phase command is a standalone skill. Running it records nothing about the phases before it.</li>
+<li>The phase-record gate ships on and is checked when a goal is recorded done and when a pull request is merged. It needs the action log enabled, and refuses rather than pass unverified without it.</li>
+<li><strong>Not measured:</strong> how often people join mid-way in practice. The behaviour above is read from the skills and the gate's documented rules, not from usage data.</li>
+</ul>
+</div>
+
+<div class="pagenav">
+  <a href="flow.html"><span class="dir">Back</span>&larr; How it works</a>
+  <a class="next" href="design-gate.html"><span class="dir">Next</span>The design gate &rarr;</a>
+</div>
 
 </main>
 </div>
