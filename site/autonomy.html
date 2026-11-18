@@ -75,15 +75,142 @@
 
 <span class="eyebrow">Deeper</span>
 <h1>Autonomy and the rulebook</h1>
+<p class="subtitle">An optional layer that remembers how you answer the questions the loop parks on, and lets it earn the right to answer the repeated ones itself, always with a window in which you can say no.</p>
+
 <nav class="toc" aria-label="On this page">
 <div class="toc-title">On this page</div>
 <ul>
-<li><a href="#overview">Overview</a></li>
+<li><a href="#what">What the rulebook is</a></li>
+<li><a href="#parts">The parts, and turning them on</a></li>
+<li><a href="#levels">Autonomy levels</a></li>
+<li><a href="#applier">The applier and the veto window</a></li>
+<li><a href="#parks">What always parks for a person</a></li>
+<li><a href="#record">Reading a decision record</a></li>
+<li><a href="#keys">Keys and defaults</a></li>
 </ul>
 </nav>
 
-<h2 id="overview">Overview</h2>
-<p class="stub">Content in progress.</p>
+<div class="most">
+<p class="most-title">Most people only need</p>
+<ul>
+<li>Everything here is off. A fresh repository does not use the rulebook.</li>
+<li>Below level 3 it only records your answers and recommends. It never decides.</li>
+<li>Dangerous actions (the <code>irreversible</code> kind) are never answered for you, at any level.</li>
+<li>Your answer always wins over an automatic one, and an owner's <code>no</code> after an apply puts the goal back.</li>
+</ul>
+</div>
+
+<p>When the loop parks a goal because it needs a decision, you answer through <code>/sigma-unpark</code>, or approve through <code>/sigma-promote</code>. With the rulebook on, that answer is stored as a <strong>decision record</strong> in the repository. When enough answers of one <strong>kind</strong> in one <strong>area</strong> agree, that pair earns a higher <strong>autonomy level</strong>. At low levels the loop only records and recommends. At the top two levels, and only if you open the applier, it may answer a question nobody answered in time, using a <strong>rule</strong> an owner approved, and tell you it did.</p>
+
+<h2 id="what">What the rulebook is</h2>
+<ul>
+<li><strong>Opt-in, in parts.</strong> The <code>rulebook</code> block in <code>.sdlc/config.json</code> has several parts, and each opens only when its own <code>enabled</code> is the JSON boolean <code>true</code>. The text <code>"true"</code>, <code>"yes"</code> and the number <code>1</code> all stay off. A wrong-typed block closes the whole rulebook, and <code>/sigma-doctor</code> names the key.</li>
+<li><strong>A kind</strong> is the class of a parked question, declared by the agent that parks it (for example <code>dependency</code>, <code>failing_check</code>, <code>irreversible</code>). Without a declared kind a park is not learnable.</li>
+<li><strong>An area</strong> is the first <code>area:&lt;x&gt;</code> label on the issue, else <code>repo</code> for the whole repository.</li>
+<li><strong>A rule</strong> says: for this kind in this area, recommend this option. It starts as <em>proposed</em>; only an owner's approval makes it count, and a rule edited by hand after approval stops counting.</li>
+<li>Records and rules describe the repository and its areas, never a person. A rule with a person field is invalid.</li>
+</ul>
+
+<h2 id="parts">The parts, and turning them on</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Part</th><th>Key</th><th>What it adds</th><th>Default</th></tr></thead>
+<tbody>
+<tr><td>Records</td><td><code>rulebook.records</code></td><td>Stores each answer as a record and counts them.</td><td>off</td></tr>
+<tr><td>Hard stops</td><td><code>rulebook.hard_stops</code></td><td>Classifies concrete actions and parks the dangerous ones.</td><td>off</td></tr>
+<tr><td>Autonomy</td><td><code>rulebook.autonomy</code></td><td>Derives levels from records.</td><td>off</td></tr>
+<tr><td>Rules</td><td><code>rulebook.rules</code></td><td>A committed file of approved rules, <code>.sdlc/rulebook.json</code>.</td><td>off</td></tr>
+<tr><td>Drift judge</td><td><code>rulebook.drift</code></td><td>Judges a parked question against reference documents, shadow only; it never changes a label or parks.</td><td>off</td></tr>
+<tr><td>Applier</td><td><code>rulebook.autonomy.applier</code></td><td>Levels 3 and 4: answers an unanswered question.</td><td>off</td></tr>
+</tbody>
+</table>
+</div>
+<p>Open them in order and stop wherever you are comfortable. A repository scaffolded earlier does not receive the block: copy it from the installed template with every <code>enabled</code> still <code>false</code>, then run <code>/sigma-doctor</code>. If the repository is public, set <code>rulebook.records.repo_visibility</code> to <code>"public"</code> before opening anything. Name the people who may approve rules in <code>rulebook.autonomy.owners</code>; if it is left out, <code>spend_approval.approvers</code> is used, and if both are empty, owner confirmation is refused. The applier is last, and it needs the ledger watcher running, because the watcher runs its tick.</p>
+
+<h2 id="levels">Autonomy levels</h2>
+<p>A level from 0 to 4 is derived for each kind and area. It is never stored.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Level</th><th>Answers needed</th><th>Agreement needed</th><th>What the loop may do</th></tr></thead>
+<tbody>
+<tr><td>0</td><td>fewer than 10</td><td>none</td><td>Ask every time.</td></tr>
+<tr><td>1</td><td>10</td><td>none</td><td>Ask; counting has started.</td></tr>
+<tr><td>2</td><td>30</td><td>0.90</td><td>Ask, with an approved rule offered as a recommendation.</td></tr>
+<tr><td>3</td><td>60</td><td>0.95</td><td>The applier may act, and says so in a comment every time.</td></tr>
+<tr><td>4</td><td>300</td><td>0.99</td><td>The applier may act silently, only for kinds you list in <code>allow_silent</code> on an owner-approved rule.</td></tr>
+</tbody>
+</table>
+</div>
+<ul>
+<li><strong>Agreement</strong> is how often the rulebook's pick matched the person's. When machines disagree the lowest level wins, so disagreement never raises trust.</li>
+<li><strong>Imported evidence</strong> from past work counts toward levels 1 and 2 and never above level 2.</li>
+<li><strong>A veto</strong> (an owner's <code>no</code> after an applied answer) drops the kind one level. Three vetoes in a row, or twenty in all, pause the kind at level 0.</li>
+<li><strong>Hard-stop kinds are capped at level 2</strong>, whatever the evidence.</li>
+</ul>
+
+<h2 id="applier">The applier and the veto window</h2>
+<p>The applier is the one part that answers for a person. It is a separate gate and runs as one more timed call in the ledger watcher's tick. Closed, it spawns nothing and writes nothing. It applies an answer only when all of these hold: nobody has answered, the window has passed (<code>window_minutes</code>, default 1440, one day), the kind is not a hard-stop kind, the derived level is at least 3, exactly one approved rule matches, and fewer than <code>max_auto_applied_per_day</code> (default 3) were applied in the last 24 hours.</p>
+<p>It then does one atomic gesture (an unpark, or a promote), writes the record, and posts a comment naming the rule. An owner's exact <code>no</code> inside the window puts the goal back and lowers the level. A person's own gesture on the same issue always wins.</p>
+<p>The tick writes a heartbeat. The doctor reads a tick as dead when the heartbeat is missing or older than <code>stale_after_intervals</code> watch intervals, which defaults to <strong>3</strong>. A dead tick is harmless: the goal simply stays parked. If another machine's evidence is ahead of your checkout, the tick acts on nothing and the doctor says <code>HELD</code> with the reason; pull the default branch to clear it.</p>
+
+<h2 id="parks">What always parks for a person</h2>
+<ul>
+<li>The <code>irreversible</code> kind: it is never applied for you, a rule never matches it, and its level stays at or below 2. That cap is fixed and not configurable.</li>
+<li>An undeclared kind: it opens no ask.</li>
+<li>Held goals from the scope and ownership gates (<code>scope_hold</code>, <code>owner_hold</code>): the automatic sweep never resumes them.</li>
+<li>In a chain, a paid step is always put to a person and never defaulted.</li>
+<li>With <code>rulebook.hard_stops</code> open: a concrete action classified as <code>spend</code>, <code>destroy</code>, <code>rewrite_history</code>, <code>production_change</code>, <code>send_outside</code> or <code>access_secrets</code>. An action it cannot classify counts as dangerous, not permitted. Without that part, the same five-way list (deploy, delete, overwrite, spend, migrate) is an instruction to the agent that no code checks.</li>
+</ul>
+<p>The rulebook also never acts silently unless the kind is on your <code>allow_silent</code> list; even then every fifth silent-eligible apply (<code>spot_check_one_in</code>) still comments.</p>
+
+<h2 id="record">Reading a decision record</h2>
+<p>A record is one small JSON file in <code>.sdlc/decisions</code>, about 1 KB, created exclusively so parallel worktrees add distinct files and never edit a shared one. Each gesture also posts one comment on the issue carrying the same record id.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>What it tells you</th></tr></thead>
+<tbody>
+<tr><td><code>id</code>, <code>time</code></td><td>Which record, and when.</td></tr>
+<tr><td><code>gesture</code></td><td>What was done: <code>unpark</code>, <code>keep-parked</code>, <code>promote</code>, <code>demote</code>, an acknowledgement, or an apply.</td></tr>
+<tr><td><code>qkind</code>, <code>area</code></td><td>The kind of question and the area it was answered in.</td></tr>
+<tr><td><code>choice</code>, <code>reason</code></td><td>The option taken and why. These are the only free-text fields.</td></tr>
+<tr><td><code>how</code></td><td><code>human</code> (a person's gesture), <code>autonomous</code> (the sweep or the applier) or <code>imported</code> (read back from past work).</td></tr>
+<tr><td><code>issue</code>, <code>rule_id</code></td><td>The issue, and the rule involved when there was one.</td></tr>
+</tbody>
+</table>
+</div>
+<p>To audit what the loop did on its own, look for <code>how: autonomous</code>. On a public repository, set the visibility key so choice text is not written where it would be exposed.</p>
+
+<h2 id="keys">Keys and defaults</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th></tr></thead>
+<tbody>
+<tr><td><code>rulebook.records.enabled</code>, <code>rulebook.autonomy.enabled</code>, <code>rulebook.rules.enabled</code>, <code>rulebook.hard_stops.enabled</code>, <code>rulebook.drift.enabled</code>, <code>rulebook.autonomy.applier.enabled</code></td><td><code>false</code></td></tr>
+<tr><td><code>rulebook.autonomy.levels.l1_min_answers</code> to <code>l4_min_answers</code></td><td>10, 30, 60, 300</td></tr>
+<tr><td><code>rulebook.autonomy.levels.l2_agreement</code> to <code>l4_agreement</code></td><td>0.9, 0.95, 0.99</td></tr>
+<tr><td><code>rulebook.autonomy.applier.window_minutes</code></td><td>1440</td></tr>
+<tr><td><code>rulebook.autonomy.applier.max_auto_applied_per_day</code></td><td>3</td></tr>
+<tr><td><code>rulebook.autonomy.applier.spot_check_one_in</code></td><td>5</td></tr>
+<tr><td><code>rulebook.autonomy.applier.allow_silent</code></td><td><code>[]</code></td></tr>
+<tr><td><code>rulebook.autonomy.applier.stale_after_intervals</code></td><td>3</td></tr>
+<tr><td><code>rulebook.autonomy.veto_pause_consecutive</code>, <code>veto_pause_total</code></td><td>3, 20</td></tr>
+<tr><td><code>rulebook.rules.reask_days</code></td><td>90</td></tr>
+<tr><td><code>rulebook.records.repo_visibility</code></td><td><code>"private"</code></td></tr>
+<tr><td><code>rulebook.hard_stops.classes.tamper_oversight</code>, <code>unvetted_execution</code></td><td><code>false</code></td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>Cost.</strong> Records, levels and rules are plain files and cost no model calls. The drift judge calls a model only with a model name and a positive daily ceiling set. The importer reads past work with a table classifier by default; a model classifier is a separate setting with its own per-call and per-run budget. Spend ceilings, weekly and monthly, default to unset. How much this saves in practice is not measured.</p>
+
+<div class="aud aud-tech">
+<div class="aud-label">Technical detail</div>
+<p>Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/decision-rulebook.md">the Decision Rulebook</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/features.md">features</a>, and the scaffolded config template. This page was written from those and not re-measured; a live applier run on a real repository is not measured here.</p>
+</div>
+
+<div class="pagenav">
+  <a href="policy.html"><span class="dir">Back</span>&larr; Org policy and security</a>
+  <a class="next" href="quality.html"><span class="dir">Next</span>Quality and design aids &rarr;</a>
+</div>
 
 </main>
 </div>

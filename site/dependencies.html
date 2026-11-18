@@ -75,15 +75,154 @@
 
 <span class="eyebrow">Ways to work</span>
 <h1>Dependencies and chains</h1>
+<p class="subtitle">How Sigma knows which goals wait on which, how to look at that, and how to hand it one end goal and have every open prerequisite solved in order.</p>
+
 <nav class="toc" aria-label="On this page">
 <div class="toc-title">On this page</div>
 <ul>
-<li><a href="#overview">Overview</a></li>
+<li><a href="#which">Which one to use</a></li>
+<li><a href="#declare">Declaring and reading a blocker</a></li>
+<li><a href="#map">The dependency map</a></li>
+<li><a href="#dag">Looking at the map</a></li>
+<li><a href="#chain">Solving a chain</a></li>
+<li><a href="#drain">Draining a run label</a></li>
+<li><a href="#unpark">Auto-unpark and cycles</a></li>
+<li><a href="#keys">Keys and defaults</a></li>
 </ul>
 </nav>
 
-<h2 id="overview">Overview</h2>
-<p class="stub">Content in progress.</p>
+<div class="most">
+<p class="most-title">Most people only need</p>
+<ul>
+<li>Write a dependency as one line in the issue body: <code>**Blocked by:** #N</code>.</li>
+<li><code>/sigma-dag</code> to look at what waits on what. It reads a stored file and changes nothing.</li>
+<li><code>/sigma-chain &lt;N&gt;</code> to solve goal N and everything open that it waits on.</li>
+<li>The map ships in <code>shadow</code> mode: it watches and compares but does not yet decide.</li>
+</ul>
+</div>
+
+<p>Sigma reads dependencies from the text of your issues. Three things are built on that one reading: the <strong>pick gate</strong>, which holds a goal while a blocker it names is open; the <strong>dependency map</strong>, one local file that stores the whole graph so commands can ask about it; and <strong>Sigma Chain</strong>, which plans every open prerequisite behind one goal, asks you every decision once, and then drives the chain to done. Chain starts nothing by itself: every step is a command a person, or an agent told to, runs.</p>
+
+<h2 id="which">Which one to use</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>You want to</th><th>Use</th><th>What it does to GitHub</th></tr></thead>
+<tbody>
+<tr><td>See what waits on what, what is stuck, where the cycles are</td><td><code>/sigma-dag</code></td><td>Nothing. It reads the stored map and writes nothing.</td></tr>
+<tr><td>See the chain behind one goal</td><td><code>/sigma-dag &lt;N&gt;</code>, or add <code>--html</code> for an offline page</td><td>Nothing.</td></tr>
+<tr><td>Solve one end goal and every open prerequisite it waits on</td><td><code>/sigma-chain &lt;N&gt;</code></td><td>Nothing until you approve; then it arms the members and runs them.</td></tr>
+<tr><td>Work through a hand-picked set of goals and stop</td><td><code>/sigma-loop --label &lt;name&gt;</code> (see <a href="#drain">Draining a run label</a>)</td><td>Only what you ask: arming the members.</td></tr>
+<tr><td>Plan a whole backlog campaign in waves</td><td><code>/sigma-triage</code></td><td>Assigns, labels and marks blockers, after a dry run you can read.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="declare">Declaring and reading a blocker</h2>
+<p>Write the dependency as a single line in the issue body:</p>
+<pre><code>**Blocked by:** #N</code></pre>
+<p>That is the one form every Sigma writer emits and every reader trusts. The gate reads it at pick time, the map reads it on every refresh, and Chain reads it from the map.</p>
+<ul>
+<li><strong>Explicit forms make an edge.</strong> <code>blocked by #N</code>, <code>depends on #N</code>, and the variants <code>blocked on</code> and <code>blocked until</code> are read as the same thing.</li>
+<li><strong>Weak words never do.</strong> <code>needs</code>, <code>after</code>, <code>requires</code> and <code>waiting on</code> are shown as advice and never park a goal alone. The reason is measured: over a whole issue body, ordinary prose about a past event produced a phantom edge, and a phantom edge parks a goal nothing will unpark.</li>
+<li><strong>Prose and comments.</strong> A wait written in loose wording, or in a comment by the issue's assignee or an owner, is read by Chain for that chain only. It is listed as an <em>unconfirmed wait</em> for you to confirm, which writes the <code>Blocked by</code> line, or to dismiss.</li>
+<li><strong>Never scanned.</strong> The block that <code>/sigma-unpark</code> writes when you answer a parked goal's questions is stripped before any scan, so a reasonable answer cannot plant a blocker.</li>
+</ul>
+
+<h2 id="map">The dependency map</h2>
+<p>The map is a graph of numbers: nodes (a goal or a pull request, open or resolved, its priority) and edges (blocker, blocked, and a code for where the edge was read). It is rebuilt from GitHub on a schedule and stored in one local file. It holds no titles, label text, authors or comments, and it writes no labels. When it is missing, stale or unreadable, every reader falls back to what it did before.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Mode</th><th>What happens</th></tr></thead>
+<tbody>
+<tr><td><code>off</code></td><td>Reads nothing, writes nothing, creates no file.</td></tr>
+<tr><td><code>shadow</code> (default)</td><td>The picker decides exactly as before. At every pick Sigma also asks the map and logs a numbers-only comparison. Writing <code>shadow</code> or <code>on</code> explicitly also starts the automatic refresh.</td></tr>
+<tr><td><code>on</code></td><td>The pick holds a goal whose open blocker the map knows about, when the map is fresh. Otherwise it says why and takes the old path.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Moving from <code>shadow</code> to <code>on</code> is your decision, never automatic. The doctor's <code>dag shadow</code> row counts compared picks and disagreements and says whether its flip criterion is met (at least 7 days, at least 200 distinct picks, no unexplained disagreement). The row measures; it does not flip anything.</p>
+
+<h2 id="dag">Looking at the map</h2>
+<p><code>/sigma-dag</code> prints the stored map's state, stuck chains (decision roots holding other work, most freeing first), active chains, cycles and what finished this month. With nothing to read it prints one line with the exact fix.</p>
+<ul>
+<li><code>/sigma-dag &lt;N&gt;</code> shows the chain behind goal N.</li>
+<li><code>/sigma-dag --html</code> writes one self-contained page per chain, readable offline, with the open work waiting on the goal drawn muted.</li>
+<li><code>/sigma-dag --feature &lt;unit&gt;</code> lists one unit's open members and their open blockers.</li>
+</ul>
+<p><strong>Outside blockers are never hidden by a filter.</strong> On a unit view, a blocker that lives outside the unit is marked <code>(outside unit)</code> and listed again under &ldquo;Outside blockers&rdquo;, so a member held from outside never reads as free. The unit page draws those blockers muted and puts them in its legend.</p>
+
+<h2 id="chain">Solving a chain</h2>
+<p>A chain is one end goal plus every open prerequisite behind it. The idea is to ask every decision once, before anything is written, then run the chain without stopping to ask again.</p>
+<div class="diagram">
+<svg viewBox="0 0 640 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A chain of four goals, blockers first. Goal D needs a person's decision and blocks goal B. Goal B and goal C both block the end goal A. Work flows left to right and the end goal comes last.">
+  <defs>
+    <marker id="dp-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="dmark"/></marker>
+  </defs>
+  <rect class="dbox-accent" x="10" y="30" width="150" height="56" rx="9"/><text class="dtext-inv" x="85" y="54" text-anchor="middle" font-weight="700">Goal D</text><text class="dtext-dim-inv" x="85" y="72" text-anchor="middle">needs a decision</text>
+  <rect class="dbox" x="245" y="30" width="150" height="56" rx="9"/><text class="dtext" x="320" y="54" text-anchor="middle" font-weight="700">Goal B</text><text class="dtext-dim" x="320" y="72" text-anchor="middle">waits on D</text>
+  <rect class="dbox" x="245" y="150" width="150" height="56" rx="9"/><text class="dtext" x="320" y="174" text-anchor="middle" font-weight="700">Goal C</text><text class="dtext-dim" x="320" y="192" text-anchor="middle">ready now</text>
+  <rect class="dbox-core" x="480" y="90" width="150" height="56" rx="9"/><text class="dtext" x="555" y="114" text-anchor="middle" font-weight="700">End goal A</text><text class="dtext-dim" x="555" y="132" text-anchor="middle">waits on B and C</text>
+  <path class="darrow" d="M160,58 L243,58" marker-end="url(#dp-a)"/>
+  <path class="darrow" d="M395,58 L440,58 L440,105 L478,105" marker-end="url(#dp-a)"/>
+  <path class="darrow" d="M395,178 L440,178 L440,131 L478,131" marker-end="url(#dp-a)"/>
+</svg>
+</div>
+<p class="diagram-caption">Blockers on the left, the end goal on the right. The chain stops before D until a person answers; C can already run.</p>
+
+<ol class="steps">
+<li><h3>Plan</h3><p><code>/sigma-chain &lt;N&gt;</code> reads the closure from the stored map and prints one forecast line: how many of the chain a run from your login can finish, and what it stops on. <code>--longest</code> offers the three longest end goals; <code>--as &lt;login&gt;</code> plans for another runner.</p></li>
+<li><h3>Ask</h3><p>The sheet lists every decision at once, in the order a person unblocks a run: ready and waiting, owner decisions, unconfirmed waits, checkpoints, paid gates. Parked members, goals assigned to someone else, a paid step, the goal cap and a wait that crosses units each get a question.</p></li>
+<li><h3>Approve and arm</h3><p>No GitHub write exists before you approve. <code>--dry-run</code> shows the writes that follow. Arming labels the members <code>chain:&lt;root&gt;</code> and posts one fixed comment.</p></li>
+<li><h3>Solve</h3><p>Each run is one cycle and is called again until it reports done. A stop names one reason (a decision, a held gate, a claimed goal, the cap, a rate limit) and is relayed, never worked around.</p></li>
+</ol>
+<p><code>--defaults</code> takes each recommended answer. It never decides the cap, a paid step, or a follow-up waiting for its owner: those are always asked. <code>stop</code> and <code>resume</code> change only the local record.</p>
+<div class="callout callout-warn">
+<div class="callout-title">What is not available yet</div>
+<p><code>status</code>, <code>--parallel</code>, <code>--no-grow</code> and <code>--cap-usd</code> as a flag are not available through <code>/sigma-chain</code>. Set <code>chain.max_usd</code> in config for a dollar cap. A run against a real repository is not measured; the chain reference says its replay is offline.</p>
+</div>
+
+<h2 id="drain">Draining a run label</h2>
+<p>A run label is a plain GitHub label you create on a set of goals so one loop run works through exactly that set and then stops. <code>/sigma-loop --label &lt;name&gt;</code> confines the run to it. The guarantee, quoted exactly:</p>
+<p><strong>While a <code>--label</code> run is active, no goal outside that label may be picked, and an open prerequisite of a member is never skipped silently.</strong></p>
+<p>Sigma never creates or removes the label. A name the repository does not have is refused before any query, because an unknown label lists as empty and would read as a drained backlog. It needs a GitHub-backed backlog.</p>
+
+<h2 id="unpark">Auto-unpark and cycles</h2>
+<p><strong>Auto-unpark.</strong> A goal that waits on a blocker carries the <code>sdlc:blocked</code> overlay. The auto-unpark sweep (on by default, at most once every 10 minutes) lifts it when the blocker named in the body has closed. It never resumes a goal parked with <code>sdlc:parked</code> from its text, with one exception: a dependency park that carries the waiting note a &ldquo;wait for it&rdquo; answer posts is resumed when its last named blocker closes. A <code>sigma:keep-parked</code> marker opts one goal out entirely.</p>
+<p><strong>Cycles.</strong> A cycle is a set of goals that wait on each other, so none can start. The map finds them on every refresh, reports them in the pick summary, status and the doctor, and holds the members. A <code>Blocked by</code> line that would close a cycle is refused when a goal is filed. To clear one, remove one <code>Blocked by</code> line in each cycle. With <code>discovery.dag.cycle_comment</code> on, a refresh posts one comment per distinct cycle on its lowest-numbered open member.</p>
+
+<h2 id="keys">Keys and defaults</h2>
+<p>All keys live in <code>.sdlc/config.json</code>. The <code>discovery</code> keys are in the scaffolded config. The <code>chain</code> block is not scaffolded: add it yourself, and a missing key reads as the default below.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>discovery.dag.mode</code></td><td><code>shadow</code></td><td><code>off</code>, <code>shadow</code> or <code>on</code>; anything else reads as <code>shadow</code>.</td></tr>
+<tr><td><code>discovery.dag.ttl_minutes</code></td><td><code>60</code></td><td>Refresh cadence. A map older than twice this is not used unless a change check ran in the last ten minutes.</td></tr>
+<tr><td><code>discovery.dag.order</code></td><td><code>chain</code></td><td><code>chain</code> puts the goal that unblocks the most work first; <code>off</code> keeps the old order.</td></tr>
+<tr><td><code>discovery.dag.cycle_comment</code></td><td><code>true</code></td><td>Post one comment per distinct cycle.</td></tr>
+<tr><td><code>discovery.auto_unpark.mode</code></td><td><code>on</code></td><td>The sweep that lifts <code>sdlc:blocked</code>. Its <code>interval_minutes</code> is <code>10</code>.</td></tr>
+<tr><td><code>chain.max_members</code></td><td><code>100</code></td><td>Largest closure a plan accepts.</td></tr>
+<tr><td><code>chain.max_added</code></td><td><code>5</code></td><td>Goals the chain may grow by when <code>chain.max_goals</code> is unset.</td></tr>
+<tr><td><code>chain.max_goals</code></td><td>members plus <code>chain.max_added</code></td><td>Most goals the chain may hold.</td></tr>
+<tr><td><code>chain.freeze</code></td><td><code>false</code></td><td>When <code>true</code>, nothing joins by itself; each new prerequisite is asked.</td></tr>
+<tr><td><code>chain.max_reasks</code></td><td><code>3</code></td><td>Pauses allowed for new questions before the run ends stuck.</td></tr>
+<tr><td><code>chain.max_active</code></td><td><code>1</code></td><td>Most chains running at once.</td></tr>
+<tr><td><code>chain.max_usd</code>, <code>chain.max_minutes</code></td><td>unset</td><td>Caps on spend and time since approval. An invalid cap value stops the run as capped and claims nothing.</td></tr>
+<tr><td><code>chain.stale_minutes</code></td><td><code>30</code></td><td>A running chain with no progress for this long reads as stale.</td></tr>
+<tr><td><code>chain.paid_labels</code></td><td><code>[]</code></td><td>Labels that mark a paid step, which then gets the spend question up front.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="aud aud-tech">
+<div class="aud-label">Technical detail</div>
+<p>Cost: the map's graph work was measured once, on one laptop-class machine, at about 0.05 seconds for 30,000 nodes of a simple chain shape. GitHub reads per refresh against a real repository are not measured. Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/dependency-map-and-chain.md">the dependency map and Sigma Chain</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/dag.md">the dependency map</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/chain.md">chain reference</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/label-drain.md">label drain</a>. This page was written from those documents and not re-measured.</p>
+</div>
+
+<div class="pagenav">
+  <a href="board.html"><span class="dir">Back</span>&larr; The project board</a>
+  <a class="next" href="skills.html"><span class="dir">Next</span>Skills and commands &rarr;</a>
+</div>
 
 </main>
 </div>
