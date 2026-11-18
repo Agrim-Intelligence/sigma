@@ -439,13 +439,57 @@ def test_checkpoint_pushes_a_clean_branch(tmp_path):
     assert _git(repo, "ls-remote", "origin").count("refs/heads/") >= 2
 
 
-def test_rebase_push_is_behind_the_same_check(tmp_path, monkeypatch):
+def _diverged(tmp_path, plan_text):
+    """A goal branch with one raw-git commit of the artifacts, behind an origin/main that moved on."""
     repo, wt, d = _pr_setup(tmp_path)
-    _raw_commit_artifacts(wt, "see /home/user/p/q\n")
+    _raw_commit_artifacts(wt, plan_text)
+    (repo / "c.txt").write_text("upstream\n")
+    _git(repo, "add", "c.txt")
+    _git(repo, "commit", "-q", "-m", "upstream moves")
+    _git(repo, "push", "-q", "origin", "main")
+    return repo, wt, d
+
+
+def _rebase_run(calls, fail_rebase):
+    """Real git; a push is recorded and stopped; with `fail_rebase` the replay itself fails, which sends the call
+    down the union-rescue / merge-fallback shapes."""
+    def run(cwd, argv):
+        line = " ".join(map(str, argv))
+        calls.append(line)
+        if argv[:2] == ["git", "push"]:
+            raise _Stop(line)
+        if fail_rebase and argv[:2] == ["git", "rebase"] and "--abort" not in argv:
+            raise RuntimeError("replay conflicted")
+        return work._run(cwd, argv)
+    return run
+
+
+#: The three pushes of `rebase()`: a clean replay, the CHANGELOG union rescue, and the merge fallback.
+_REBASE_SHAPES = ["plain", "union-rescue", "merge-fallback"]
+
+
+def _drive_rebase(shape, d, monkeypatch, calls):
+    if shape == "union-rescue":
+        monkeypatch.setattr(work, "_union_rescue", lambda *a, **k: True)
+    return work.rebase(d, ON, GOAL, run=_rebase_run(calls, fail_rebase=shape != "plain"))
+
+
+@pytest.mark.parametrize("shape", _REBASE_SHAPES)
+def test_each_rebase_push_refuses_a_committed_leak(tmp_path, monkeypatch, shape):
+    repo, wt, d = _diverged(tmp_path, "see /home/user/p/q\n")
     calls = []
-    out = work.rebase(d, ON, GOAL, run=_pr_run(calls))
-    assert "REFUSED: the committed .sdlc/plans/0001-x.md:1" in out, out
-    assert not any(c.startswith("git push") for c in calls)
+    out = _drive_rebase(shape, d, monkeypatch, calls)
+    assert "REFUSED: the committed .sdlc/plans/0001-x.md:1" in out, (shape, out)
+    assert not any(c.startswith("git push") for c in calls), (shape, calls)
+
+
+@pytest.mark.parametrize("shape", _REBASE_SHAPES)
+def test_each_rebase_push_proceeds_on_a_clean_branch(tmp_path, monkeypatch, shape):
+    repo, wt, d = _diverged(tmp_path, "clean\n")
+    calls = []
+    with pytest.raises(_Stop):
+        _drive_rebase(shape, d, monkeypatch, calls)
+    assert any(c.startswith("git push") for c in calls), (shape, calls)
 
 
 def test_the_plan_comment_on_the_issue_is_scrubbed(tmp_path):
