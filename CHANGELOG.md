@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`work.protection_unreadable: "allow"` lets `auto_merge: "always"` merge when every protection read is refused with HTTP 403 and the branch's own `protected` flag reads false (#2242).** Opt-in, default `"hold"` (unchanged); never under `"protected"`; a timeout, 5xx, rate limit, 404 or malformed answer still holds; `/sigma-doctor` shows a row while it is on. The read shape was measured by hand on a free-plan private repository; a real merge through the new path is not measured.
+
 ## 1.0.34 — 2026-11-18 — `/sigma-init --antigravity` writes the managed AGENTS.md block, and the Cursor hooks wording is corrected
 
 - **`/sigma-init --antigravity` writes the managed `AGENTS.md` block, and the Cursor hooks wording is corrected (#2239).** Opt-in, skip-if-exists, the same block `--codex` writes, no config change, no `.agents/skills` link or copy. Cursor documents a hooks system; Sigma uses none and no hook is load-bearing. Never run in Antigravity or Cursor; hooks, MCP, workflows, headless `agy` and subagents there are unmeasured.
