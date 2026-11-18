@@ -75,15 +75,207 @@
 
 <span class="eyebrow">Ways to work</span>
 <h1>The project board</h1>
+<p class="subtitle">Sigma can mirror every goal onto a GitHub Projects board, so you can see what the loop is doing without asking an agent. This page covers what the board shows, how the Ready column becomes the queue, how to set up or adopt a board, and what Sigma will never do to one it did not make.</p>
+
 <nav class="toc" aria-label="On this page">
 <div class="toc-title">On this page</div>
 <ul>
-<li><a href="#overview">Overview</a></li>
+<li><a href="#states">Card states</a></li>
+<li><a href="#fields">The fields on a card</a></li>
+<li><a href="#queue">The Ready column is the queue</a></li>
+<li><a href="#views">The six views</a></li>
+<li><a href="#setup">Setting up a board</a></li>
+<li><a href="#adopt">Adopting a board you already have</a></li>
+<li><a href="#closed">Item closed, and reopened issues</a></li>
+<li><a href="#backfill">Back-fill and cost</a></li>
+<li><a href="#never">What Sigma never does to your board</a></li>
 </ul>
 </nav>
 
-<h2 id="overview">Overview</h2>
-<p class="stub">Content in progress.</p>
+<div class="most">
+<p class="most-title">Most people only need</p>
+<ul>
+<li>Answer yes to the board offer in <a href="skills.html#sigma-init"><code>/sigma-init</code></a> (<code>--board yes</code>) and let Sigma create the board.</li>
+<li>If you already have a board, pin its number in <code>discovery.github.project.number</code> before anything else.</li>
+<li>Switch the board to the Board layout once in GitHub, and turn on the &ldquo;Item closed&rdquo; workflow by hand.</li>
+<li>Drag a card to Ready to queue it. The issue must also carry the goal label.</li>
+</ul>
+</div>
+
+<p>The board is optional and fail-open. If it cannot be written (a missing <code>project</code> scope on <code>gh</code>, a refused call, a rate limit), the loop carries on with issues and labels, and prints at most one line about it. The mirror needs the <code>gh</code> <code>project</code> scope and a GitHub repository; it does not apply in local-goals mode, and the Projects commands do not work from a Claude Code cloud session, so run them from your own machine.</p>
+
+<h2 id="states">Card states</h2>
+<p>A goal is one card, and its column is its state. Labels decide whether a goal is <em>eligible</em>; the board decides the <em>order</em>.</p>
+<div class="diagram">
+<svg viewBox="0 0 700 270" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Card states. A goal card moves left to right through Backlog, Ready, In Progress, QC and Done. A person drags a card from Backlog to Ready; the loop moves it to In Progress when it picks it, to QC when a pull request is open and review or verification runs, and to Done on merge. Below, two side states: Blocked, entered when a real dependency is found and left by the loop itself, back to Ready, the moment the blocker closes; and Parked, a human checkpoint left only by a person using the unpark command, which returns the card to Ready.">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="dmark"/>
+    </marker>
+  </defs>
+  <rect class="dbox" x="10" y="30" width="110" height="52" rx="9"/>
+  <text class="dtext" x="65" y="52" text-anchor="middle" font-weight="700">Backlog</text>
+  <text class="dtext-dim" x="65" y="69" text-anchor="middle">filed</text>
+  <path class="darrow" d="M120,56 L150,56" marker-end="url(#ar)"/>
+  <rect class="dbox-core" x="152" y="30" width="110" height="52" rx="9"/>
+  <text class="dtext" x="207" y="52" text-anchor="middle" font-weight="700">Ready</text>
+  <text class="dtext-dim" x="207" y="69" text-anchor="middle">the pick queue</text>
+  <path class="darrow" d="M262,56 L292,56" marker-end="url(#ar)"/>
+  <rect class="dbox" x="294" y="30" width="110" height="52" rx="9"/>
+  <text class="dtext" x="349" y="52" text-anchor="middle" font-weight="700">In Progress</text>
+  <text class="dtext-dim" x="349" y="69" text-anchor="middle">being worked</text>
+  <path class="darrow" d="M404,56 L434,56" marker-end="url(#ar)"/>
+  <rect class="dbox" x="436" y="30" width="110" height="52" rx="9"/>
+  <text class="dtext" x="491" y="52" text-anchor="middle" font-weight="700">QC</text>
+  <text class="dtext-dim" x="491" y="69" text-anchor="middle">PR open, review</text>
+  <path class="darrow" d="M546,56 L576,56" marker-end="url(#ar)"/>
+  <rect class="dbox-accent" x="578" y="30" width="110" height="52" rx="9"/>
+  <text class="dtext-inv" x="633" y="52" text-anchor="middle" font-weight="700">Done</text>
+  <text class="dtext-dim-inv" x="633" y="69" text-anchor="middle">merged, recorded</text>
+
+  <text class="dtext-dim" x="65" y="104" text-anchor="middle">a person drags</text>
+  <text class="dtext-dim" x="65" y="118" text-anchor="middle">to Ready</text>
+  <text class="dtext-dim" x="360" y="116" text-anchor="start">the loop picks</text>
+  <text class="dtext-dim" x="360" y="140" text-anchor="start">dependency found</text>
+
+  <rect class="dbox-optional" x="250" y="170" width="150" height="52" rx="9"/>
+  <text class="dtext" x="325" y="192" text-anchor="middle" font-weight="700">Blocked</text>
+  <text class="dtext-dim" x="325" y="209" text-anchor="middle">a real dependency</text>
+  <path class="darrow" d="M349,86 L349,168" marker-end="url(#ar)"/>
+  <path class="darrow" d="M250,196 L240,196 L240,86" marker-end="url(#ar)"/>
+  <text class="dtext-dim" x="246" y="134" text-anchor="start">loop clears it</text>
+  <text class="dtext-dim" x="246" y="148" text-anchor="start">on unblock</text>
+
+  <rect class="dbox-optional" x="10" y="170" width="130" height="52" rx="9"/>
+  <text class="dtext" x="75" y="192" text-anchor="middle" font-weight="700">Parked</text>
+  <text class="dtext-dim" x="75" y="209" text-anchor="middle">a human checkpoint</text>
+  <path class="darrow" d="M140,196 L170,196 L170,86" marker-end="url(#ar)"/>
+  <text class="dtext-dim" x="164" y="170" text-anchor="end">person unparks</text>
+</svg>
+<p class="diagram-caption">Blocked clears itself; Parked never does. A parked card returns to Ready once a person unparks it.</p>
+</div>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Column</th><th>Written when</th><th>Who moves it next</th></tr></thead>
+<tbody>
+<tr><td>Backlog</td><td>The goal is filed but not yet in the sprint.</td><td>A person, by dragging it to Ready.</td></tr>
+<tr><td>Ready</td><td>The goal is queued for the loop.</td><td>The loop, when it picks it.</td></tr>
+<tr><td>In Progress</td><td>The goal is being worked.</td><td>The loop.</td></tr>
+<tr><td>QC</td><td>A pull request is open and review or verification is running.</td><td>The loop, on merge.</td></tr>
+<tr><td>Done</td><td>Merged and recorded. The goal label is gone.</td><td>Nobody; it is terminal.</td></tr>
+<tr><td>Blocked</td><td>A real dependency was found, or a declared unit has no label yet.</td><td>The loop itself, as soon as the blocker closes or the label exists.</td></tr>
+<tr><td>Parked</td><td>A human checkpoint.</td><td>Only a person, with <a href="skills.html#sigma-unpark"><code>/sigma-unpark</code></a>.</td></tr>
+</tbody>
+</table>
+</div>
+<p>A park writes Parked and falls back to Blocked on a board that has no such lane, so a board that predates the lane behaves as before. The lane names come from <code>discovery.github.project.columns</code>; rename a key there to match your board and the views follow.</p>
+
+<h2 id="fields">The fields on a card</h2>
+<p>Three fields are mirrored onto each card. Together they answer which goal, which phase, what now.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Values</th><th>Written</th></tr></thead>
+<tbody>
+<tr><td>Status</td><td>The seven columns above.</td><td>On every status change: pick, QC, done, blocked, park.</td></tr>
+<tr><td>Priority</td><td><code>P0</code> to <code>P4</code></td><td>On every status change and every phase start, from the <code>priority:P0</code> to <code>priority:P4</code> label.</td></tr>
+<tr><td>Phase</td><td><code>P1 GOAL</code> to <code>P7 RETRO</code></td><td>At each phase start, with the phase being entered. A card that already reads that phase is not written again.</td></tr>
+</tbody>
+</table>
+</div>
+<ul>
+<li><strong>An unlabelled goal&rsquo;s Priority stays blank.</strong> It is not set to P3, because the queue ranks &ldquo;no priority&rdquo; after P4.</li>
+<li><strong>Priority has five options, not four,</strong> so a P4 goal does not show blank.</li>
+<li><strong>Status is not written at a phase start,</strong> and a goal with no card is not carded there.</li>
+<li><strong>Area and Model tier</strong> are text fields that the view tooling creates empty. Nothing writes them yet.</li>
+</ul>
+<h3>Who writes Priority</h3>
+<p>The label is the source of truth unless the board is Sigma&rsquo;s. On a board Sigma created, or any pinned board once you set <code>project.mirror_priority</code> to <code>true</code>, the field wins: set a card&rsquo;s Priority and the loop ranks by it, then corrects the label to match. A blank field is filled from the label. On any other board Sigma never creates a Priority field, fills only a <em>blank</em> one from the label, and never overwrites a value somebody set. To keep Sigma out of that column entirely, set <code>project.priority_field</code> to <code>false</code>; <code>project.phase_field</code> does the same for Phase.</p>
+
+<h2 id="queue">The Ready column is the queue</h2>
+<p>With the default <code>discovery.github.project.queue_source</code> of <code>status</code>, a card in Ready is in the current sprint and will be picked. Within Ready the order is priority first, then your drag order inside a tier, so dragging a card reorders the queue. Set <code>queue_source</code> to <code>label</code> to go back to the older rule where the goal label alone decides.</p>
+<ul>
+<li><strong>Dragging is not enough on its own.</strong> The issue must also carry the goal label. A card in Ready without it, or one that is parked or otherwise not eligible, is skipped and the skip is reported.</li>
+<li><strong>A board with no Ready lane cannot be a queue.</strong> The loop then picks by label, exactly as before. Sigma adds a Ready lane only to a board it created that has no cards yet.</li>
+<li><strong>A board with Ready but nothing in it,</strong> while goal cards sit in other lanes, produces one line on the screen naming the lanes, instead of a silent &ldquo;done&rdquo;.</li>
+<li><strong>Ready is matched by exact spelling,</strong> unlike the other lanes. A lane named <code>READY</code> or <code>ready</code> keeps the label queue, with one notice. Set <code>discovery.github.project.columns.ready</code> to its exact spelling to use it.</li>
+</ul>
+<p>To move an existing board onto the board queue, there is an explicit migration command that adds Ready and moves the queued cards into it; without its apply flag it is a dry run.</p>
+
+<h2 id="views">The six views</h2>
+<p>One Status column and a default table cannot answer every question, so Sigma defines six views.</p>
+<ol class="steps">
+<li><h4>Board, by Status</h4><p>The default, leftmost tab: a kanban with a column per lane, cards showing Priority, Phase, assignees and linked pull requests. No filter, so Done stays visible.</p></li>
+<li><h4>Priority table</h4><p>Open items grouped by Priority, P0 first. It answers &ldquo;what should we work on&rdquo;.</p></li>
+<li><h4>In flight</h4><p>Open items in In Progress, QC or Blocked, newest update first. The operator&rsquo;s live view.</p></li>
+<li><h4>Needs a human</h4><p>Open items labelled parked or blocked. The inbox for <a href="skills.html#sigma-unpark"><code>/sigma-unpark</code></a>.</p></li>
+<li><h4>Roadmap</h4><p>P0 and P1 items grouped by milestone, with the milestones&rsquo; due dates as markers. It shows only items that carry a milestone.</p></li>
+<li><h4>Epics</h4><p>Items labelled as epics, with how far through their sub-issues each is.</p></li>
+</ol>
+<p>The built-in fields (title, assignees, labels, linked pull requests, sub-issue progress, milestone, updated) are on every board and are not created by Sigma.</p>
+
+<h2 id="setup">Setting up a board</h2>
+<p><code>/sigma-init --board yes</code> makes exactly one board call: it creates the board, links the repository, pins <code>project.number</code> and <code>project.owner</code>, and sets the Status options and the Priority field. It then <em>prints</em> the field, view and verify commands as dry runs and runs none of them. <code>--board no</code> turns the mirror off and records the decline. Nothing is created without your say-so: until the offer is answered the mirror stays off, because otherwise the loop would create a board on its first GitHub pick.</p>
+<p>To build the fields and views yourself, these are the commands, each run from your Sigma checkout or the installed plugin (<code>&lt;installed-sigma&gt;</code>); the <code>--number</code> option names the board and <code>--yes</code> makes the change:</p>
+<pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/board_layout.py verify .sdlc --number N
+python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/board_layout.py fields .sdlc --number N --yes
+python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/board_layout.py views  .sdlc --number N --yes</code></pre>
+<ul>
+<li><strong>A dry run by default.</strong> Without <code>--yes</code> nothing is written; the run reads the board and prints plan lines. <code>verify</code> is read-only and checks the result.</li>
+<li><strong>Safe to repeat.</strong> It never deletes and never duplicates. An existing view is matched by name and only the properties that differ are updated; columns you added are kept.</li>
+<li><strong>What the GitHub API can set.</strong> A view&rsquo;s name, layout, visible columns and filter. It cannot set grouping, sort, the board&rsquo;s column field, the default tab, or workflows. Those are printed as exact steps for you to do in the GitHub page, and the command goes quiet once the board reads right: the Board view grouped by Status and sorted by Priority, the Priority table grouped by Priority, In flight sorted by newest update, the roadmap grouped by milestone with milestone markers, and the Board tab dragged to the far left.</li>
+<li><strong>Copying a template board</strong> is offered (<code>--template OWNER/N</code>), but what a copy keeps, such as views and workflows, has not been measured. The fields are set afterwards either way.</li>
+</ul>
+
+<h2 id="adopt">Adopting a board you already have</h2>
+<div class="callout callout-warn">
+<div class="callout-title">Pin the number first</div>
+<p>Sigma finds its board by <code>project.number</code>, then by exact <code>project.title</code>, then by its default title. If none matches it creates one. With no pin and a real board titled differently, that would be a silent duplicate that the loop then manages instead of yours. When the owner already has boards, Sigma refuses to create and warns; set <code>discovery.github.project.number</code> to avoid it. The pin also survives someone renaming the board.</p>
+</div>
+<p>Adoption changes how little it can:</p>
+<ul>
+<li>Nothing is renamed, recoloured, reordered or deleted. Missing Status or Priority options are <em>appended</em> after the existing ones, each existing option sent back with its own identity.</li>
+<li>Adoption does not change how the loop picks work. No Ready lane is added, so the loop keeps picking by label until you run the migration.</li>
+<li>If your lane is spelled <code>In progress</code> where Sigma expects <code>In Progress</code>, your spelling is recorded in <code>project.columns</code> and used as is; no second lane is made.</li>
+<li>It refuses, with no resume command, when a Status or Priority field exists but is not single-select, when a Priority option differs only by case, or when an option&rsquo;s colour or description could not be read.</li>
+<li>Several repositories can share one board by pointing at the same number. A card is matched by repository and issue number, never by number alone.</li>
+</ul>
+<p>The priority and custom-field mapping for issues Sigma itself files is the <code>custom_fields</code> key: field name to option name, single-select fields only, and a field or option the board lacks is skipped. The full key list is on <a href="settings.html#project">All settings</a>.</p>
+
+<h2 id="closed">Item closed, and reopened issues</h2>
+<p>GitHub&rsquo;s built-in &ldquo;Item closed&rdquo; workflow moves a card to Done when its issue closes. No API can turn a workflow on, so you do it once by hand: open the board&rsquo;s workflow page, choose Item closed, set Status to Done, and save and turn on the workflow. The verify command checks that it is on.</p>
+<p>The workflow only works in one direction. There is no &ldquo;Item reopened&rdquo;, so a reopened issue&rsquo;s card sits at Done until a person resets it. Sigma does not quietly keep such a card&rsquo;s Priority current; it says so on screen instead, and the doctor names any open issue whose card is stuck at Done. Neither can fix the card itself.</p>
+<p>When a goal completes, Sigma can archive its card so the board stays near one page. That is controlled by <code>project.archive_done</code>, and only the boolean <code>true</code> archives anything. Failing to archive never fails a goal.</p>
+
+<h2 id="backfill">Back-fill and cost</h2>
+<ul>
+<li><strong>Back-fill is capped.</strong> A single-issue command touches only its own card. The watcher tick cards up to <code>project.backfill_cap</code> open goal issues missing from the board (default 20; <code>0</code> turns it off). It writes nothing when fewer than <code>project.backfill_min_graphql</code> GraphQL calls remain (default 1000), stays away after the project API refuses a call, and retries on a later tick. Both defaults are provisional.</li>
+<li><strong>A phase boundary is cheap.</strong> It reads one GraphQL query for the issue and writes at most one Phase and one Priority value. Measured read-only on a board of 246 cards, the read took 0.66 to 0.72 seconds, and it does not depend on how many cards the board holds. The writes were not timed against live GitHub.</li>
+<li><strong>Time-bounded.</strong> Each call is limited to 20 seconds and a whole write to 45. A call that overruns is killed with everything it started and is never retried in that run; a board write never fails a pick or a phase.</li>
+<li><strong>Limits.</strong> The read sees the first 50 boards an issue is on, 50 fields and 100 labels. Two fields that differ only in case, with no exact match, are skipped with one warning.</li>
+</ul>
+
+<h2 id="never">What Sigma never does to your board</h2>
+<p>For any board it did not create, which means one you made, copied from elsewhere or pinned by hand, Sigma stays inside a short list of writes.</p>
+<ul>
+<li>It never creates a Priority field, unless you set <code>project.mirror_priority</code> to <code>true</code>. It creates the Phase field on the pinned board when it is missing.</li>
+<li>It never adds a Ready lane, so it never changes how work is queued behind your back.</li>
+<li>It never renames, recolours, reorders or deletes a field, an option or a view, and never rewrites an option list. A missing option is a warning and a step for you.</li>
+<li>It never overwrites a Priority value somebody set, and never rewrites a label from a field there.</li>
+<li>It never turns a workflow on or off, and never writes a card into a lane whose spelling it could not match exactly.</li>
+<li>It never guesses between lanes. Several options that differ only in case or spacing, and no exact one, match nothing and the card is not moved, with one warning.</li>
+<li>It does not write a card for a different repository. A board of another owner that reuses your board&rsquo;s number is not treated as yours.</li>
+</ul>
+<p>The board layout command acts on the pinned board only if Sigma created it; for any other board you pass <code>--number</code> to say so.</p>
+
+<div class="aud aud-tech">
+<div class="aud-label">Technical detail</div>
+<p>The design, the full runbook and the evidence are in <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/board.md">the board guide</a> and <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/board-fields.md">board fields</a>; the meaning of each label is in the <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/label-model.md">label model</a>. Not yet measured: what a copied board keeps, whether GitHub rejects two views with one name, and whether every built-in field is accepted on every layout. A first real run on a live board reads the result back and names anything that did not take.</p>
+</div>
+
+<div class="pagenav">
+  <a href="slack.html"><span class="dir">Back</span>&larr; From Slack</a>
+  <a class="next" href="dependencies.html"><span class="dir">Next</span>Dependencies and chains &rarr;</a>
+</div>
 
 </main>
 </div>
