@@ -5856,7 +5856,13 @@ class ProtectionUndetermined(Exception):
     `protection could not be determined`. A RAISE and not a falsy return, on purpose: `merge()` is the one
     caller, and a `(False, ...)` first element is what the `always` policy merges on with a WARNING, so a
     tri-state value would let a future `if not guarded` fail OPEN; an exception cannot be forgotten (the
-    shape `_viewer_permission` -> `merge_rights` already has)."""
+    shape `_viewer_permission` -> `merge_rights` already has).
+
+    `plan_refused` (#2242) is True only when EVERY source that could not be read was refused with a permission
+    HTTP 403 (not a rate limit, a 404, a 5xx, a timeout or a malformed answer), the only shape
+    `work.protection_unreadable: "allow"` may relax. Default False: a bare raise stays a hold."""
+
+    plan_refused = False
 
 
 #: The one classic 404 body that is an ANSWER -- "the branch exists and has no classic protection" -- as
@@ -6046,10 +6052,25 @@ def protection_requirements(sdlc_dir, config, goal, run=None):
         # a 5xx, a rate limit or a transport failure says nothing about admin rights, so there it would be noise.
         seen = (" (a 404 `Not Found` was the classic answer for every token without admin rights measured)"
                 if c_why == _CLASSIC_404_NOT_THE_ANSWER else "")
-        raise ProtectionUndetermined(
+        # #2242: every unreadable source refused by a permission 403 (a plan limit on a free-plan private
+        # repository, whose body reads "Upgrade to GitHub Pro or make this repository public to enable this
+        # feature."). Anything else unreadable (404, 5xx, rate limit, timeout, malformed) is never relaxable.
+        refused = ([c_why == _CLASSIC_FORBIDDEN] if c_state == "unreadable" else []) + \
+                  ([r_why == _CLASSIC_FORBIDDEN] if not r_ok else [])
+        plan_refused = bool(refused) and all(refused)
+        if plan_refused:
+            flag, _ = _read_branch_flag(api, base)
+            plan_refused = flag is not True      # a branch GitHub reports protected is never relaxed
+        lever = (", set `work.protection_unreadable: \"allow\"` with `work.auto_merge: \"always\"` if you know this "
+                 "repository has no protection (on a free-plan private repository GitHub refuses these reads by "
+                 "plan, HTTP 403 'Upgrade to GitHub Pro or make this repository public to enable this feature', "
+                 "not by token scope)") if plan_refused else ""
+        exc = ProtectionUndetermined(
             f"protection could not be determined for `{base}` ({said}); re-run `work.py merge {sdlc_dir} {goal}` "
             "(a retry merges nothing until protection can be read), give the token read access to branch "
-            f"protection and rulesets{seen}, or merge the PR by hand")
+            f"protection and rulesets{seen}{lever}, or merge the PR by hand")
+        exc.plan_refused = plan_refused
+        raise exc
     if c_state == "none":
         return False, f"`{base}` is not protected — nothing is enforced on merge", frozenset()
     return False, f"`{base}` is protected but requires no checks or reviews", frozenset()
@@ -6074,6 +6095,25 @@ def merge_bypass_enabled(config):
     wk = config.get("work") if isinstance(config, dict) else None
     value = wk.get("merge_bypass") if isinstance(wk, dict) else None
     return isinstance(value, str) and value == MERGE_BYPASS_RULESET
+
+
+PROTECTION_UNREADABLE_ALLOW = "allow"
+
+
+def protection_unreadable(config):
+    """(mode, note) for `work.protection_unreadable` (#2242): `"allow"` or `"hold"`. Default and every other value
+    (a different case or spacing, a bool, a list, a malformed `work` block) read `"hold"` -- today's fail-closed
+    behaviour -- and an unrecognised PRESENT value says so in `note`. `"allow"` only ever acts together with
+    `work.auto_merge: "always"` and a plan-refused (403) protection read; `merge()` enforces both."""
+    wk = config.get("work") if isinstance(config, dict) else None
+    if not isinstance(wk, dict) or "protection_unreadable" not in wk:
+        return "hold", ""
+    value = wk["protection_unreadable"]
+    if isinstance(value, str) and value == PROTECTION_UNREADABLE_ALLOW:
+        return "allow", ""
+    if isinstance(value, str) and value == "hold":
+        return "hold", ""
+    return "hold", 'work.protection_unreadable must be "hold" or "allow"; reading it as "hold"'
 
 
 def _withheld_only(verdict, data):
@@ -9653,8 +9693,18 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
         # #984: could not tell whether the base enforces anything -> stop under BOTH policies, before any
         # arm or merge below. `always` is opt-in to merge where NOTHING is enforced, not where nobody could
         # tell; the ending is the routed one (`record review`), the detail names the source and the lever.
-        return (f"PR #{rec['pr']} {verdict}, but {exc}{ratchet_skipped} — merging it is yours to make "
-                f'(auto_merge: "{chosen}")')
+        # #2242: the one opt-in way past this stop. Only under `always`, only when EVERY unreadable source was
+        # refused by a permission 403, and only with `work.protection_unreadable: "allow"`. This skips Sigma's
+        # pre-check only: the merge call below is GitHub's own, which still enforces any protection that exists.
+        mode, note = protection_unreadable(config)
+        if note:
+            print("work.py: " + note, file=sys.stderr)
+        if not (mode == PROTECTION_UNREADABLE_ALLOW and chosen == ALWAYS and exc.plan_refused):
+            return (f"PR #{rec['pr']} {verdict}, but {exc}{ratchet_skipped} — merging it is yours to make "
+                    f'(auto_merge: "{chosen}")')
+        guarded, required_checks = False, frozenset()
+        detail = (f"`{rec['base']}` protection was unreadable (HTTP 403, refused by plan or permission) and "
+                  'work.protection_unreadable: "allow" let this merge proceed')
     if chosen == PROTECTED and not guarded:
         return (f"PR #{rec['pr']} {verdict}, but {detail}{ratchet_skipped} — merging it is yours to make "
                 f'(auto_merge: "protected")')

@@ -46,6 +46,7 @@ Defaults below are what `/sigma-init` scaffolds (`config.json.tmpl`). Not everyt
 | `goal_decompose: {"enabled": true}` | off | pre-work oversized-goal classifier: a zero-LLM check flags (`mode: "log"`, default) or parks (`mode: "park"`) a picked goal whose body reads like an epic, before any token spend; `mode: "file"` additionally files one idempotency-guarded "Decompose #N" meta-issue before parking (`max_children` caps its own later split); thresholds are corpus-calibrated against this repo's own issue history (see `goal_size.py`); a decomposition child/meta-goal is exempt by construction |
 | `work: {"enabled": true}` | on (older configs may still hold unset/`null`, which reads as off) | one worktree + branch + PR per goal; your checkout never moves, and `verify_command` runs in the goal's own tree |
 | `work.auto_merge` | `"off"` | `"protected"` merges only where the base *requires* checks/reviews; `"always"` merges any clean+safe PR, except where protection could not be determined (a source could not be read). A fork or read-only repo never merges — it opens the PR and records `review`; the goal is `done` once the PR merges |
+| `work.protection_unreadable` | `"hold"` | `"allow"` (that exact string; any other value reads as `"hold"` with a stderr note) lets `work.py merge` proceed under `work.auto_merge: "always"` when branch protection could not be read **because every unreadable source was refused with HTTP 403** (a private repository on a free GitHub plan answers the classic protection and rulesets reads with 403 "Upgrade to GitHub Pro or make this repository public to enable this feature"). It never applies under `"protected"`, and a timeout, 5xx, rate limit, 404, malformed answer or a branch GitHub reports `protected: true` still holds. The merge line says protection was unreadable and the key allowed it, and `/sigma-doctor` shows a row while it is `"allow"`. The hold message names this key when the cause is a 403. **UNMEASURED:** a real free-plan private repository run through this path, and GitHub Enterprise behaviour. See [protection_unreadable](#workprotection_unreadable-2242) |
 | `work.ci_required` | `true` | `false` makes GitHub CI optional: the merge gate stops waiting on, and parking for, failing or pending **non-required** checks (`mergeStateStatus` UNSTABLE), for teams whose real CI runs on Jenkins or another system after the feature branch is built. It never overrides GitHub: a check the base branch **requires** (BLOCKED) still parks and is named, because GitHub refuses that merge itself. Only a real boolean `false` turns it off. Measured by unit tests against stubbed GitHub replies only, not yet against a live repository |
 | `work.merge_pending_wait_s` | `450` | seconds one `work.py merge` waits, re-reading every 45 s, on a check that has attached but not answered, before it arms or parks (`work.merge_pending_wait_s` raises to a whole number of 45 s rounds; under 45 is raised to 45, over 7200 is capped at 7200, a non-number, bool, NaN/inf or <= 0 is ignored). Also moves the merge receipt deadline. Each round is two REST reads, so one goal at the 7200 cap costs about 161 reads/h: about 30 goals waiting at once on one token reach a 5000/h REST limit (DERIVED, not measured). `/sigma-doctor` shows the live value |
 | `work.merge_bypass` | off (absent) | `"ruleset"` (that exact string; any other value, case or spacing is off) lets `work.py merge` land a pull request GitHub reports `BLOCKED` with nothing failing or pending, through the merging account's ruleset bypass, when four REST-read conditions hold: every required check passed on the exact head; every rule on the base comes from a ruleset whose `current_user_can_bypass` is `always` for this account and no classic branch protection applies; the review gate passed (and `work.require_review` is not `off` where a ruleset requires reviews); the PR is mergeable and not behind where a strict check rule needs the head to contain the base. Anything unreadable parks, naming the condition. The merge is the REST `PUT pulls/N/merge` carrying the vetted head sha, and a PR comment names the bypassed rules. Classic protection, a failing or missing required check and a ruleset the account cannot always bypass are never bypassed. **UNMEASURED:** whether GitHub's REST merge honours a bypass for any token, the cloud proxy's included; see [cloud sessions](cloud-sessions.md#merging-through-the-accounts-ruleset-bypass-2092) and the [threat model](threat-model.md#the-ruleset-bypass-at-workpy-merge-2092). Not set by `/sigma-init`, by the template or by `tools/cloud/setup.sh`: a person adds it |
@@ -64,6 +65,25 @@ Defaults below are what `/sigma-init` scaffolds (`config.json.tmpl`). Not everyt
 > For any zero-touch / unattended multi-issue run, turn `backlog_check.enabled: true` on — it is
 > what makes a human-authored, comment-only dependency marker (bypassing `hand_off()`) actually
 > honored, not just silently ignored.
+
+## `work.protection_unreadable` (#2242)
+
+With `work.auto_merge: "always"`, Sigma reads branch protection (classic protection and rulesets) before merging and
+stops when it cannot tell whether the base is protected. On a private repository owned by a free-plan personal
+account GitHub refuses both reads with HTTP 403 ("Upgrade to GitHub Pro or make this repository public to enable this
+feature"); a wider token scope does not help, because the refusal is by plan. The stop message says so and names this
+key.
+
+Setting `"protection_unreadable": "allow"` is the explicit way to say "I know this repository has no protection".
+What it does: when every source that could not be read was refused with a permission HTTP 403 and
+`auto_merge` is `"always"`, the merge proceeds, and its line reads `WARNING: ... protection was unreadable ... and
+work.protection_unreadable: "allow" let this merge proceed; local verify was the only gate`. What it does not do:
+it does nothing under `"protected"` (that mode exists to merge only where checks are required); a timeout, 5xx,
+rate limit, 404, malformed answer, or a branch GitHub reports as `protected: true` still holds; the fresh verify
+evidence, the review gate and the clean-and-safe PR check still apply. It skips only Sigma's own pre-check: the merge
+itself is GitHub's `PUT pulls/N/merge` carrying the verified head sha, and Sigma parks if GitHub refuses it, so any
+protection that exists at merge time is still enforced by GitHub (read from the code; not run against a real
+free-plan private repository). Any value other than `"hold"` or `"allow"` reads as `"hold"`, with a note on stderr.
 
 ## Resource limits
 
