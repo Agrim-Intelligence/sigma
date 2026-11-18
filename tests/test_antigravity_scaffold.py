@@ -99,7 +99,8 @@ def test_platform_support_has_an_honest_antigravity_section():
     text = _read("docs/platform-support.md")
     assert "\n### Antigravity\n" in text
     section = text.split("\n### Antigravity\n")[1].split("\n## ")[0]
-    assert "Not measured" in section and "never been run" in section
+    assert "Not run in these tests" in section and "18 Nov 2026" in section
+    assert "not taken on to a pull request or a merge" in section
     for unmeasured in ("hooks", "MCP", "workflows", "agy", "subagents"):
         assert unmeasured in section
     assert "antigravity.google/docs/rules" in section and "antigravity.google/docs/skills" in section
@@ -134,14 +135,16 @@ def test_no_doc_claims_antigravity_works_or_is_supported():
                        ("printed", _printed_text())):
         assert not _overclaims(text), (name, _overclaims(text))
         if name != "printed":
-            assert "never been run" in text.lower() or "never run" in text.lower(), name
+            assert "not run in these tests" in text.lower(), name
+        else:
+            assert "18 Nov 2026" in text and "not to a merged pull request" in text, name
     assert "| Antigravity |" in _read("README.md")
 
 
 def test_the_overclaim_regex_catches_a_positive_claim():
     assert _overclaims("Antigravity runs Sigma.")
     assert _overclaims("Antigravity is supported.")
-    assert not _overclaims("Sigma has never been run in Antigravity, so nothing there works is claimed.")
+    assert not _overclaims("Sigma was not run in Antigravity, so nothing there works is claimed.")
 
 
 _NO_HOOKS = re.compile(r"cursor[,\s]+(which\s+)?(has|and codex have|and codex has)\s+no\s+hooks|no hooks \(cursor\)"

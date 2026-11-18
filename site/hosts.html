@@ -130,8 +130,8 @@
 <tbody>
 <tr><td>How it is installed</td><td>From a clone of the Sigma repository.</td></tr>
 <tr><td>Init flag</td><td><code>--cursor</code></td></tr>
-<tr><td>Measured</td><td>In the Cursor app, on a private scratch repository (18 Nov 2026): <code>/sigma-init --cursor</code> with the GitHub-mode flags set the repository up with a Projects board, and <code>/sigma-doctor</code> reported all checks ready. <code>/sigma-goal 1 --land</code> first refused because <code>work.auto_merge</code> was <code>off</code>; with it set to <code>always</code>, it ran a real issue to a merged pull request with passing tests. The pull request was merged by hand: on a free-plan private repository GitHub refuses the branch-protection read with HTTP 403, and Sigma then holds a merge (see the opt-in <code>work.protection_unreadable</code> in the configuration reference).</td></tr>
-<tr><td>Not measured</td><td><code>/sigma-loop</code> on several goals, the Cursor command-line agent, hooks, and an auto-merge on a repository whose protection can be read.</td></tr>
+<tr><td>Run</td><td>On 18 Nov 2026, in the Cursor app, on a private scratch repository with a Projects board. Scope: a single goal, not the loop. <code>/sigma-init --cursor</code> with the GitHub-mode flags set the repository up with a Projects board, and <code>/sigma-doctor</code> reported all checks ready. One goal (<code>/sigma-goal 1 --land</code>, a real issue) was taken through every phase to a merged pull request with its tests passing, opened and merged within about 15 minutes. The pull request was merged by hand: on a free-plan private repository GitHub refuses the branch-protection read with HTTP 403, and Sigma then holds a merge (see the opt-in <code>work.protection_unreadable</code> in the configuration reference).</td></tr>
+<tr><td>Not run in these tests</td><td><code>/sigma-loop</code> on several goals, the Cursor command-line agent, hooks (Sigma uses none on Cursor), an auto-merge on a repository whose protection can be read, and the <code>.cursor-plugin/</code> package, which ships in the repository but was not installed or run in Cursor.</td></tr>
 <tr><td>Hooks</td><td>None used. Cursor documents a hooks system; Sigma does not use it and no behaviour depends on it.</td></tr>
 </tbody>
 </table>
@@ -144,10 +144,10 @@
 <tbody>
 <tr><td>How it is installed</td><td><code>agy plugin install https://github.com/Agrim-Intelligence/sigma</code>, from the public repository. Antigravity converts the Claude Code plugin: 46 skills and 4 hook groups.</td></tr>
 <tr><td>Init flag</td><td><code>--antigravity</code> (opt-in)</td></tr>
-<tr><td>Measured</td><td>In <code>agy</code> 1.5, on a private scratch repository (18 Nov 2026): the install above, which skips two hooks (the <code>UserPromptSubmit</code> hook and the <code>PreToolUse</code> hook on skills). <code>/sigma-init --antigravity</code> with the GitHub-mode flags ran inside <code>agy</code> and produced a GitHub-mode setup with a Projects board and an <code>AGENTS.md</code>.</td></tr>
+<tr><td>Run</td><td>On 18 Nov 2026, in <code>agy</code> 1.5, on a private scratch repository. Scope: one goal, part-way (through plan review and into implement), not the loop. The install above skipped two hooks (the <code>UserPromptSubmit</code> hook and the <code>PreToolUse</code> hook on skills). <code>/sigma-init --antigravity</code> with the GitHub-mode flags ran inside <code>agy</code> and produced a GitHub-mode setup with a Projects board, an <code>AGENTS.md</code> and the team-ledger branch. A goal (issue 1) was then run inside <code>agy</code> through the acceptance draft, research, plan and plan review (the verdict was recorded on the issue) and into the implement phase: the change and its test were written in the goal&#39;s worktree. That run was not taken on to a pull request or a merge.</td></tr>
 <tr><td>Read from the installed output, not exercised</td><td>The four hook groups are PostToolUse, PreToolUse, SessionStart and Stop. The install log gives Antigravity having no such event or tool as the reason for the two skips. The converted skills still contain the Claude-only <code>${CLAUDE_SKILL_DIR}</code> placeholder, and each skill carries a note telling the model to use its own folder.</td></tr>
-<tr><td>Not measured</td><td>A goal run (<code>/sigma-goal</code>), the loop, whether the converted hooks fire (their paths are relative), the headless <code>agy -p</code> command, and an independent reviewer.</td></tr>
-<tr><td>Hooks</td><td>Converted by the install, not measured</td></tr>
+<tr><td>Not run in these tests</td><td>A goal to a merged pull request, <code>/sigma-loop</code> on several goals, the headless <code>agy -p</code> command, and an independent reviewer.</td></tr>
+<tr><td>Hooks</td><td>Converted by the install. Whether they fire was not confirmed in the goal run: no hook-written state was found in the repository afterwards.</td></tr>
 </tbody>
 </table>
 </div>

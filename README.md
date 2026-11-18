@@ -119,7 +119,7 @@ python3 <installed-sigma>/skills/sigma-init/scripts/init_flow.py . --codex --dem
 ### Cursor
 
 On Cursor, Sigma runs from a clone of this repository, which is your `<installed-sigma>`. Cursor
-support is measured for set-up and one goal, not yet for the loop ([details](docs/platform-support.md#cursor)):
+support was run on 18 Nov 2026 for set-up and one goal to a merged pull request, not for the loop ([details](docs/platform-support.md#cursor)):
 
 ```
 git clone https://github.com/Agrim-Intelligence/sigma <installed-sigma>
@@ -422,8 +422,8 @@ see which features are live for your config.
 |---|---|
 | Claude Code | Run end to end, including PRs and merges, by the maintainers on one machine class (macOS) with no outside users; see [Measured results](docs/launch/evidence/measured-results.md). |
 | Codex | Measured: install and first loop command in a real session; a full goal through to merge has not yet been measured. |
-| Cursor | Measured in the Cursor app: set-up with a Projects board, and one real issue to a merged pull request (merged by hand). Not measured: the loop on several goals, the command-line agent, hooks ([details](docs/platform-support.md#cursor)). |
-| Antigravity | Measured in `agy`: plugin install and `/sigma-init --antigravity`. A goal run has never been run there; hooks, MCP, workflows, headless `agy` and subagents are unmeasured ([details](docs/platform-support.md#antigravity)). |
+| Cursor | Run on 18 Nov 2026 in the Cursor app: set-up with a Projects board, and one goal (a real issue) through every phase to a merged pull request (merged by hand); a single goal, not the loop. Not run in these tests: the loop on several goals, the command-line agent, hooks, the `.cursor-plugin/` package ([details](docs/platform-support.md#cursor)). |
+| Antigravity | Run on 18 Nov 2026 in `agy`: plugin install, `/sigma-init --antigravity`, and one goal part-way (through plan review and into implement); a single goal, not the loop. Not run in these tests: a goal to a merged pull request, the loop, headless `agy -p`, an independent reviewer; whether the converted hooks fire is not confirmed ([details](docs/platform-support.md#antigravity)). |
 
 CI runs the full suite on Linux with Python 3.10, 3.11, 3.12, and 3.13, and on macOS with Python 3.12. That full matrix runs weekly and on demand; a nightly run covers the suite minus its heaviest files on macOS Python 3.12; pull requests and merges to main run a short smoke set (`.github/smoke-tests.txt`) on one macOS Python 3.12 leg (results: [Measured results](docs/launch/evidence/measured-results.md)).
 Details, including what each host has been measured to do: [docs/platform-support.md](docs/platform-support.md).
