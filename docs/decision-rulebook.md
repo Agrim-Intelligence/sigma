@@ -84,7 +84,7 @@ Nothing below is needed for the rest of Sigma. Do the steps in order and stop wh
 2. **Set visibility.** If the repository is public, set `rulebook.records.repo_visibility` to `"public"`
    before you open anything (see [Privacy](#privacy-on-public-repositories)).
 3. **Open records.** Set `rulebook.records.enabled` to `true`. From now on `/sigma-unpark`, `/sigma-promote`
-   and the automatic sweep each write a record and one comment carrying its id. Commit the `decisions/` folder
+   and the automatic sweep each write a record and one comment carrying its id. Commit the `.sdlc/decisions/` folder
    (with `records.publish` on, a person-run gesture on a non-default branch commits it for you; on the default branch it commits nothing and prints the one command below; it never pushes).
 4. **Look at what you have.** Run `python3 skills/sigma-loop/scripts/decision_import.py plan .sdlc` to see what
    past decisions could be imported, then `apply` if you want them (see [Importing](#importing-past-decisions)).
@@ -571,7 +571,7 @@ flag, which closes the whole block.
 | `records.enabled` | `false` | open the records part |
 | `records.publish` | `true` | a person-run gesture commits (never pushes) records, autonomy files, rulebook |
 | `records.repo_visibility` | `"private"` | `"public"` keeps free text out of records and issue text |
-| `records.store_dir` | `"decisions"` | plain folder name under the state folder |
+| `records.store_dir` | `"decisions"` | plain folder name, resolved under `.sdlc/` (so the default is `.sdlc/decisions`, not `.sdlc/state/decisions`) |
 | `records.lock_timeout_s` | `20` | wait for the index lock before a rebuild is skipped |
 | `records.archive_after_days` | `180` | age at which archiving folds records into a yearly file |
 | `records.max_files_warn` | `5000` | doctor warns above this many record files |

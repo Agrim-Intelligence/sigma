@@ -171,7 +171,6 @@
 </table>
 </div>
 
-<div class="callout callout-warn"><div class="callout-title">Where two keys live</div><p>The scaffold writes <code>chain.max_members</code> and <code>gh_quota.rest_reserve_percent</code> inside the <code>discovery</code> block, but the code that reads them looks for them at the top level of the file (checked by search in the code). The configuration reference also names them at the top level. If you need to change either, put it at the top level.</p></div>
 
 <h2 id="project">discovery.github.project: the board mirror</h2>
 
@@ -409,7 +408,7 @@
 <table>
 <thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
 <tbody>
-<tr><td><code id="k-ledger-enabled">ledger.enabled</code></td><td>null (undecided; reads as off)</td><td>The committed team record of claims and outcomes. The setup command writes <code>true</code> only where the key is still unset.</td></tr>
+<tr><td><code id="k-ledger-enabled">ledger.enabled</code></td><td>null (undecided; reads as off)</td><td>The committed team record of claims and outcomes. In GitHub mode the setup flow asks: <code>--ledger yes</code> writes <code>true</code>, <code>--ledger no</code> or <code>--yes</code> writes <code>false</code>. Local-files mode has no question, so it stays unset.</td></tr>
 <tr><td><code id="k-ledger-actor">ledger.actor</code></td><td>empty</td><td>Your handle in the ledger. Empty means the authenticated account, else the shell user.</td></tr>
 <tr><td><code id="k-ledger-owners">ledger.owners</code></td><td>{}</td><td>Optional area-to-owner overrides. Empty means the repository&rsquo;s code-owners file.</td></tr>
 <tr><td><code id="k-ledger-branch-ledger-remote">ledger.branch / ledger.remote</code></td><td>sdlc-ledger / origin</td><td>The ops branch the ledger is shared on, and its remote.</td></tr>

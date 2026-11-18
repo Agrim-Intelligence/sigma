@@ -85,9 +85,11 @@ for area in ("doctor", "loop", "ledger", "web"):
 PY
 ```
 
-**`.sdlc/config.json` is gitignored**, so `ledger.owners` is per-checkout and does not travel with
-the repository; `.github/CODEOWNERS` does. A teammate cloning fresh gets the CODEOWNERS half and
-none of the override half — which is one more reason to keep the override as small as possible.
+**`.sdlc/config.json` is committed** (the scaffolder ignores only runtime data: `.sdlc/state/`,
+`.sdlc/ledger/`, `.sdlc/work/`, `.sdlc/knowledge/`, `.sdlc/events/` and `graphify-out/`), so
+`ledger.owners` travels with the repository once you commit it, as `.github/CODEOWNERS` does. A
+checkout that has not pulled it, or an uncommitted edit, sees only the CODEOWNERS half — which is
+one more reason to keep the override as small as possible.
 
 ## 5. What consumes this
 

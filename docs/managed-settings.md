@@ -7,8 +7,8 @@ Organisation-wide policy for Sigma. Back to the [README](../README.md).
 When installed in an organization with a device-management tool or another policy writer, the core
 can read org policy from `.sdlc/managed-settings.json`. A checkout declares that it is adopted with
 `managed_settings.project_id` in `.sdlc/config.json`, or simply by having that file.
-This file specifies which branch reviews are required
-(`work.require_review`), whether a plan is required before opening a PR (`gates.hard_plan_gate`),
+This file specifies the review level a merge needs
+(`work.require_review`: `changes`, `approval` or `off`), whether a plan is required before opening a PR (`gates.hard_plan_gate`),
 and whether the event journal is enabled (`journal.enabled`).
 
 If the file was never present, the core uses the repository's own config. If the file
