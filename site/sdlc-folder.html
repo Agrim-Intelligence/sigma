@@ -59,7 +59,73 @@
 
 <span class="eyebrow">Set up &amp; run</span>
 <h1>The .sdlc folder</h1>
-<p class="stub">Content in progress.</p>
+<p class="subtitle">Everything Sigma remembers about a repository lives in one folder at its root. Some of it belongs in git and some of it must never be.</p>
+
+<div class="aud">
+<div class="aud-label">In plain words</div>
+<p>Think of <code>.sdlc</code> as two piles. The <strong>durable pile</strong> is your goals, your settings and the written record of each goal (plan, research, acceptance criteria). It goes in git like code. The <strong>machine pile</strong> is scratch space the loop rewrites constantly: state, logs, worktrees. It stays out of git. Init sorts them for you; you only need to commit the first pile.</p>
+</div>
+
+<h2 id="layout">What lives there</h2>
+<pre><code>.sdlc/
+  config.json        machine config; this file wins over the prose in project.md
+  project.md         project notes the agents read
+  goals/             one markdown file per goal (the local backlog)
+  plans/  research/  acceptance/    records kept with the goal that wrote them
+  features/          the units-of-work registry, where you use units
+  state/             machine-written loop state, review queue, logs, timing
+  ledger/            a git worktree of the team ledger branch
+  work/              one worktree per goal in flight
+  knowledge/  events/               optional graph output and the event journal</code></pre>
+
+<h2 id="commit">Commit or ignore</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Path</th><th>Git</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><code>.sdlc/config.json</code></td><td><strong>Commit</strong></td><td>The settings the whole team and every clone share. Without it a clone reads as an unadopted repository and the hooks stay inert.</td></tr>
+<tr><td><code>.sdlc/project.md</code></td><td><strong>Commit</strong></td><td>Context the agents read at the start of a goal.</td></tr>
+<tr><td><code>.sdlc/goals/</code></td><td><strong>Commit</strong></td><td>In local-files mode this is the backlog itself.</td></tr>
+<tr><td><code>.sdlc/plans/</code>, <code>research/</code>, <code>acceptance/</code></td><td><strong>Commit</strong>, with the goal's branch</td><td>Durable evidence. The pull-request push is refused while a goal's plan exists on disk but is not committed on its branch.</td></tr>
+<tr><td><code>.sdlc/features/</code></td><td>Commit where you use units</td><td>The registry of units of work. See <a href='units.html'>Units of work</a>.</td></tr>
+<tr><td><code>.sdlc/state/</code></td><td><strong>Ignore</strong></td><td>Machine-written loop state, the review queue, the action log, the timing store, watcher files.</td></tr>
+<tr><td><code>.sdlc/ledger/</code></td><td><strong>Ignore</strong></td><td>A separate git worktree on its own branch. It must stay out of code pull requests.</td></tr>
+<tr><td><code>.sdlc/work/</code></td><td><strong>Ignore</strong></td><td>One worktree per goal in flight.</td></tr>
+<tr><td><code>.sdlc/knowledge/</code>, <code>.sdlc/events/</code></td><td><strong>Ignore</strong></td><td>Regenerable graph output and the event journal.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Init writes the ignore rules for the runtime folders. Review <code>git status</code>, then commit <code>.gitignore</code> and the durable files.</p>
+
+<div class="callout callout-danger">
+<div class="callout-title">Never ignore .sdlc as a whole</div>
+<p>Ignoring the whole folder hides the config, the goals and the written records from git. Each clone then has no settings and no backlog, the hooks treat the repository as unadopted, and a goal's plan and acceptance record never reach its branch, so the gates that look for them refuse. Ignore only the runtime folders above.</p>
+</div>
+
+<h2 id="manage">Managing it</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>You want to</th><th>Do this</th></tr></thead>
+<tbody>
+<tr><td>Add or change ignore rules</td><td>Run <code>/sigma-setup</code>; it adds the runtime rules and never narrows or overwrites an ignore rule you already set.</td></tr>
+<tr><td>Keep tracked files untouched</td><td>Use the local-only scope: the rules go in <code>.git/info/exclude</code> instead of <code>.gitignore</code>. Moving existing rules between the two is by hand; Sigma never relocates a rule.</td></tr>
+<tr><td>See what is on and what is not</td><td><code>/sigma-doctor</code> prints the feature dashboard from your config.</td></tr>
+<tr><td>Resume a parked local goal</td><td>Edit its file under <code>.sdlc/goals/</code>: change <code>status: parked</code> to <code>status: pending</code>. Then delete its entry from <code>.sdlc/state/review-queue.md</code> by hand.</td></tr>
+<tr><td>Stop a background watcher</td><td><code>touch .sdlc/state/watch.stop</code>. Other loops have their own stop files: <code>supervisor.stop</code>, <code>slack-commands.stop</code>.</td></tr>
+<tr><td>Remove Sigma</td><td>Follow the <a href='https://github.com/Agrim-Intelligence/sigma/blob/main/docs/uninstall.md'>uninstall guide</a>. It stops daemons first, removes worktrees before deleting <code>.sdlc</code>, and lists the branches to review before you delete any.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="aud aud-tech">
+<div class="aud-label">Technical detail</div>
+<p>The runtime ignore list is <code>.sdlc/state/</code>, <code>.sdlc/ledger/</code>, <code>.sdlc/work/</code>, <code>.sdlc/knowledge/</code>, <code>.sdlc/events/</code> and a knowledge-graph output folder. Growth worth knowing, with no pruning today: the ledger holds one entry file per writing process (175 were counted for a single actor on one machine after two and a half weeks, a measured audit, not a limit), and the per-goal action logs grow for the life of a goal. A hard plan gate can be bypassed locally by creating <code>.sdlc/.allow-direct-edits</code> unless an organisation has locked the key on in managed settings.</p>
+</div>
+
+<div class="pagenav">
+  <a href="config.html"><span class="dir">Back</span>&larr; Configuration</a>
+  <a class="next" href="run.html"><span class="dir">Next</span>Running unattended &rarr;</a>
+</div>
 
 </main>
 </div>
