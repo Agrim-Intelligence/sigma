@@ -365,12 +365,19 @@ def test_control_leak_in_tooling(tmp_path):
 CSS = SITE / "assets" / "style.css"
 # (foreground variable, background variable) pairs the stylesheet actually draws as text.
 TEXT_PAIRS = (
-    [(fg, bg) for fg in ("--text", "--text-dim", "--text-faint", "--link", "--accent")
+    [(fg, bg) for fg in ("--text", "--text-dim", "--text-faint", "--link", "--link-hover")
      for bg in ("--bg", "--bg-raised", "--bg-sunken")]
-    + [("--accent-ink", "--accent"), ("--accent", "--accent-soft"), ("--code-text", "--code-bg")]
-    + [(k, k + "-soft") for k in ("--core", "--optional", "--experimental", "--gap", "--fallback")]
-    + [("--text", "--accent-soft"), ("--text-dim", "--accent-soft")]
+    + [("--fill-ink", "--fill"), ("--code-text", "--code-bg"), ("--link", "--code-bg")]
 )
+
+# The only colours the site may contain: white, black, the greys and the single link hue pair.
+# Light and dark values of each token, as read from the portfolio's insights pages.
+ALLOWED_HEX = {
+    "#ffffff", "#f4f6f7", "#d9dfe3", "#c9d2d7", "#10181c", "#56646e",   # light scheme
+    "#0e171b", "#152127", "#25333a", "#34444c", "#e6ecef", "#c3ced4", "#a9b8c0",  # dark scheme
+    "#7d8a92", "#667982",                                                 # diagram line, light and dark
+    "#08769a", "#065a76", "#5cc3e6", "#8dd6ef",                         # link hue, both schemes
+}
 
 
 def _vars(block):
@@ -419,4 +426,89 @@ def test_control_lowered_colour_turns_contrast_red():
     css = CSS.read_text(encoding="utf-8")
     light = _blocks(css)[0]
     assert contrast_problems(css.replace(light["--text-faint"], "#bbbbbb", 1))
-    assert contrast_problems(css.replace(light["--core"], "#86efac", 1))
+    assert contrast_problems(css.replace(light["--link"], "#86d0e8", 1))
+
+
+def stray_colours(texts):
+    """Hex colours or rgb()/hsl() in site CSS and pages that are not on the allowlist."""
+    out = []
+    for name, text in texts:
+        text = re.sub(r"&#\d+;|&#x[0-9a-fA-F]+;", "", text)  # numeric character references
+        # Long forms anywhere; the 3-digit form only as a colour value (prose has "#123" issue refs).
+        found = re.findall(r"(?<![\w&])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6})\b(?![\w-])", text)
+        for h in re.findall(r"(?:fill|stroke|color|background|stop-color|border[\w-]*)\s*[:=]\s*[\"']?\s*(#[0-9a-fA-F]{3})\b", text):
+            found.append("#" + "".join(ch * 2 for ch in h[1:]))
+        for h in found:
+            if h.lower() not in ALLOWED_HEX:
+                out.append(f"{name}: {h}")
+        if re.search(r"\b(?:rgba?|hsla?)\(", text):
+            out.append(f"{name}: rgb()/hsl() colour")
+    return out
+
+
+def _site_texts():
+    files = [CSS, *sorted(SITE.glob("*.html"))]
+    return [(f.name, f.read_text(encoding="utf-8")) for f in files]
+
+
+def test_site_uses_only_black_white_greys_and_the_link_hue():
+    assert stray_colours(_site_texts()) == []
+
+
+def test_control_stray_colour_turns_palette_check_red():
+    texts = _site_texts()
+    assert stray_colours(texts + [("style.css", "a { color: #ff0000; }")])
+    assert stray_colours(texts + [("x.html", '<rect fill="#f00"/>')])
+    assert stray_colours(texts + [("x.css", "a { color: rgb(1,2,3); }")])
+
+
+def line_problems(css_text, floor=3.0):
+    """Diagram outlines are non-text graphics: WCAG asks 3:1 against what they sit on."""
+    light, dark_media, _ = _blocks(css_text)
+    out = []
+    for name, scheme in (("light", light), ("dark", dark_media)):
+        for bg in ("--bg", "--bg-sunken"):
+            r = ratio(scheme["--line"], scheme[bg])
+            if r < floor:
+                out.append(f"{name}: --line on {bg} is {r:.2f}:1 (< {floor})")
+    return out
+
+
+def test_diagram_lines_are_at_least_3_to_1_in_both_schemes():
+    assert line_problems(CSS.read_text(encoding="utf-8")) == []
+
+
+def test_control_pale_diagram_line_turns_red():
+    css = CSS.read_text(encoding="utf-8")
+    assert line_problems(css.replace(_blocks(css)[0]["--line"], "#c9d2d7", 1))
+
+
+def text_on_filled_box_problems(site):
+    """A label drawn inside a solid-filled (.dbox-accent) box must use an -inv text class, or it is
+    the box's own colour and invisible."""
+    out = []
+    for page in sorted(site.glob("*.html")):
+        src = page.read_text(encoding="utf-8")
+        for svg in re.findall(r"<svg\b.*?</svg>", src, re.S):
+            boxes = [tuple(float(v) for v in m) for m in re.findall(
+                r'<rect class="dbox-accent"[^>]*?x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"', svg)]
+            for m in re.finditer(r'<text class="([^"]+)" x="([\d.]+)" y="([\d.]+)"([^>]*)>', svg):
+                cls, x, y, rest = m.group(1), float(m.group(2)), float(m.group(3)), m.group(4)
+                for bx, by, bw, bh in boxes:
+                    inside_y = by <= y <= by + bh
+                    anchor_mid = "text-anchor=\"middle\"" in rest
+                    inside_x = bx <= x <= bx + bw if anchor_mid else bx <= x < bx + bw
+                    if inside_x and inside_y and "inv" not in cls:
+                        out.append(f"{page.name}: text class '{cls}' at ({x:g},{y:g}) sits on a filled box")
+    return out
+
+
+def test_no_label_is_drawn_in_its_own_boxes_colour():
+    assert text_on_filled_box_problems(SITE) == []
+
+
+def test_control_dark_label_on_filled_box_turns_red(tmp_path):
+    shutil.copytree(SITE, tmp_path / "site")
+    page = tmp_path / "site" / "index.html"
+    page.write_text(page.read_text(encoding="utf-8").replace("dtext-mono-inv", "dtext-mono", 1), encoding="utf-8")
+    assert text_on_filled_box_problems(tmp_path / "site")
