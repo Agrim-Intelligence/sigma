@@ -75,15 +75,500 @@
 
 <span class="eyebrow">Set up &amp; run</span>
 <h1>All settings</h1>
+
+<p class="subtitle">Every key you may set in <code>.sdlc/config.json</code>, grouped by block, with its scaffolded default and what it does. The short list a new adopter needs is on <a href="config.html">Configuration</a>; start there.</p>
+
 <nav class="toc" aria-label="On this page">
 <div class="toc-title">On this page</div>
 <ul>
-<li><a href="#overview">Overview</a></li>
+<li><a href="#how">How to read this page</a></li>
+<li><a href="#index">Index of settings</a></li>
+<li><a href="#discovery">discovery</a></li>
+<li><a href="#project">discovery.github.project</a></li>
+<li><a href="#verify">verify, tests and context</a></li>
+<li><a href="#work">work</a></li>
+<li><a href="#budget">budget, handoff and followups</a></li>
+<li><a href="#gates">gates, review and design</a></li>
+<li><a href="#model">Model selection and companions</a></li>
+<li><a href="#parallel">parallel</a></li>
+<li><a href="#resource">resource</a></li>
+<li><a href="#ledger">ledger, watchers and notifications</a></li>
+<li><a href="#logs">Local records</a></li>
+<li><a href="#upkeep">upkeep</a></li>
+<li><a href="#rulebook">rulebook</a></li>
+<li><a href="#other">Other keys</a></li>
+<li><a href="#env">Environment variables</a></li>
 </ul>
 </nav>
 
-<h2 id="overview">Overview</h2>
-<p class="stub">Content in progress.</p>
+<div class="most">
+<p class="most-title">Most people only need</p>
+<ul>
+<li>Nothing here: the scaffolded values are the safe ones, and <a href="config.html">Configuration</a> covers the handful you will touch first.</li>
+<li>Use this page to look a key up by name, or to see what a block does before you turn it on.</li>
+<li>Anything marked <em>opt-in</em> is off until you turn it on. Turn on one at a time, then run <a href="skills.html#sigma-doctor"><code>/sigma-doctor</code></a>.</li>
+</ul>
+</div>
+
+<h2 id="how">How to read this page</h2>
+<ul>
+<li><strong>Default</strong> is what the scaffold writes (from the template the setup command copies), not always what the code assumes when a key is absent. Where the two differ the row says so.</li>
+<li><strong>Opt-in</strong> means the feature is off until you set it to the JSON boolean <code>true</code> (or the value the row names). The text &ldquo;true&rdquo; or the number 1 leaves it off.</li>
+<li>Keys that start with an underscore are notes written by the scaffold; they are not settings and are not listed.</li>
+<li>A key marked &ldquo;not in the scaffold&rdquo; is read when present but is not written by init; an update never rewrites the file, so copy a new block in from the template in the installed plugin.</li>
+<li>A value of the wrong type is usually read as the default, with a note. Check the result with <a href="skills.html#sigma-doctor"><code>/sigma-doctor</code></a>.</li>
+<li>Defaults that are provisional, or limits that have not been measured, are said so in the row.</li>
+</ul>
+
+<h2 id="index">Index of settings</h2>
+<p>Blocks, alphabetically:</p>
+<p><a href="#logs"><code>action_log</code></a> &middot; <a href="#ledger"><code>agent_watch</code></a> &middot; <a href="#budget"><code>ai_filed</code></a> &middot; <a href="#gates"><code>architecture</code></a> &middot; <a href="#gates"><code>backlog_check</code></a> &middot; <a href="#budget"><code>budget</code></a> &middot; <a href="#discovery"><code>chain</code></a> &middot; <a href="#ledger"><code>comment_watch</code></a> &middot; <a href="#model"><code>companions</code></a> &middot; <a href="#verify"><code>context</code></a> &middot; <a href="#gates"><code>decision_tier</code></a> &middot; <a href="#gates"><code>design</code></a> &middot; <a href="#discovery"><code>discovery</code></a> &middot; <a href="#ledger"><code>drift_watch</code></a> &middot; <a href="#budget"><code>followups</code></a> &middot; <a href="#gates"><code>gates</code></a> &middot; <a href="#discovery"><code>gh_quota</code></a> &middot; <a href="#gates"><code>goal_decompose</code></a> &middot; <a href="#gates"><code>goal_design</code></a> &middot; <a href="#gates"><code>goal_readiness</code></a> &middot; <a href="#budget"><code>handoff</code></a> &middot; <a href="#model"><code>invocation</code></a> &middot; <a href="#logs"><code>journal</code></a> &middot; <a href="#model"><code>knowledge_graph</code></a> &middot; <a href="#discovery"><code>label_drain</code></a> &middot; <a href="#ledger"><code>ledger</code></a> &middot; <a href="#other"><code>mode</code></a> &middot; <a href="#model"><code>model_host_overrides</code></a> &middot; <a href="#model"><code>model_selection</code></a> &middot; <a href="#model"><code>model_selection_max_tier</code></a> &middot; <a href="#model"><code>model_selection_reviewer_floor</code></a> &middot; <a href="#model"><code>model_selection_signal_excludes</code></a> &middot; <a href="#parallel"><code>parallel</code></a> &middot; <a href="#verify"><code>quality</code></a> &middot; <a href="#resource"><code>resource</code></a> &middot; <a href="#verify"><code>review</code></a> &middot; <a href="#rulebook"><code>rulebook</code></a> &middot; <a href="#work"><code>session_release</code></a> &middot; <a href="#work"><code>session_start</code></a> &middot; <a href="#verify"><code>setup_wizard</code></a> &middot; <a href="#ledger"><code>slack_commands</code></a> &middot; <a href="#gates"><code>spend_approval</code></a> &middot; <a href="#verify"><code>tests</code></a> &middot; <a href="#upkeep"><code>upkeep</code></a> &middot; <a href="#verify"><code>verify</code></a> &middot; <a href="#work"><code>work</code></a></p>
+<details><summary>Every key, alphabetically</summary>
+<p><a href="#k-action-log-enabled"><code>action_log.enabled</code></a> &middot; <a href="#k-agent-watch-enabled"><code>agent_watch.enabled</code></a> &middot; <a href="#k-agent-watch-notify-email"><code>agent_watch.notify.email.*</code></a> &middot; <a href="#k-ai-filed-buckets-urgent-routine-unclear"><code>ai_filed.buckets.urgent / routine / unclear</code></a> &middot; <a href="#k-ai-filed-cap-bypass-priority"><code>ai_filed.cap_bypass_priority</code></a> &middot; <a href="#k-ai-filed-counter-path"><code>ai_filed.counter_path</code></a> &middot; <a href="#k-ai-filed-counter-retention-days"><code>ai_filed.counter_retention_days</code></a> &middot; <a href="#k-ai-filed-max-depth"><code>ai_filed.max_depth</code></a> &middot; <a href="#k-ai-filed-max-per-goal"><code>ai_filed.max_per_goal</code></a> &middot; <a href="#k-ai-filed-max-per-run"><code>ai_filed.max_per_run</code></a> &middot; <a href="#k-ai-filed-migration"><code>ai_filed.migration.*</code></a> &middot; <a href="#k-ai-filed-on-cap"><code>ai_filed.on_cap</code></a> &middot; <a href="#k-ai-filed-triage-enabled"><code>ai_filed.triage.enabled</code></a> &middot; <a href="#k-architecture-system-root"><code>architecture.system_root</code></a> &middot; <a href="#k-backlog-check-action"><code>backlog_check.action</code></a> &middot; <a href="#k-backlog-check-closed-window-days"><code>backlog_check.closed_window_days</code></a> &middot; <a href="#k-backlog-check-dup-threshold-obsolete-threshold-park-threshold"><code>backlog_check.dup_threshold / obsolete_threshold / park_threshold</code></a> &middot; <a href="#k-backlog-check-embed-enabled-command-weight"><code>backlog_check.embed.enabled / command / weight</code></a> &middot; <a href="#k-backlog-check-enabled"><code>backlog_check.enabled</code></a> &middot; <a href="#k-backlog-check-mirror-ttl-minutes-closed-limit"><code>backlog_check.mirror.ttl_minutes / closed_limit</code></a> &middot; <a href="#k-backlog-check-similarity"><code>backlog_check.similarity</code></a> &middot; <a href="#k-backlog-check-top-k"><code>backlog_check.top_k</code></a> &middot; <a href="#k-budget-max-codex-raw-tokens"><code>budget.max_codex_raw_tokens</code></a> &middot; <a href="#k-budget-max-iterations"><code>budget.max_iterations</code></a> &middot; <a href="#k-budget-max-minutes"><code>budget.max_minutes</code></a> &middot; <a href="#k-budget-max-tokens"><code>budget.max_tokens</code></a> &middot; <a href="#k-chain-max-members"><code>chain.max_members</code></a> &middot; <a href="#k-comment-watch-enabled"><code>comment_watch.enabled</code></a> &middot; <a href="#k-companions"><code>companions</code></a> &middot; <a href="#k-context-documents"><code>context.documents</code></a> &middot; <a href="#k-context-inline-max-bytes"><code>context.inline_max_bytes</code></a> &middot; <a href="#k-decision-tier"><code>decision_tier</code></a> &middot; <a href="#k-design-restructure-lines"><code>design.restructure_lines</code></a> &middot; <a href="#k-design-zones"><code>design.zones</code></a> &middot; <a href="#k-discovery-auto-unpark-interval-minutes"><code>discovery.auto_unpark.interval_minutes</code></a> &middot; <a href="#k-discovery-auto-unpark-mode"><code>discovery.auto_unpark.mode</code></a> &middot; <a href="#k-discovery-blocker-promotion-mode"><code>discovery.blocker_promotion.mode</code></a> &middot; <a href="#k-discovery-blocking-priority-override"><code>discovery.blocking_priority_override</code></a> &middot; <a href="#k-discovery-dag-cycle-comment"><code>discovery.dag.cycle_comment</code></a> &middot; <a href="#k-discovery-dag-mode"><code>discovery.dag.mode</code></a> &middot; <a href="#k-discovery-dag-order"><code>discovery.dag.order</code></a> &middot; <a href="#k-discovery-dag-ttl-minutes"><code>discovery.dag.ttl_minutes</code></a> &middot; <a href="#k-discovery-dependency-gate-mode"><code>discovery.dependency_gate.mode</code></a> &middot; <a href="#k-discovery-github-assignee"><code>discovery.github.assignee</code></a> &middot; <a href="#k-discovery-github-blocked-label"><code>discovery.github.blocked_label</code></a> &middot; <a href="#k-discovery-github-blocking-label"><code>discovery.github.blocking_label</code></a> &middot; <a href="#k-discovery-github-goal-blocked-label"><code>discovery.github.goal_blocked_label</code></a> &middot; <a href="#k-discovery-github-goal-label"><code>discovery.github.goal_label</code></a> &middot; <a href="#k-discovery-github-in-progress-label"><code>discovery.github.in_progress_label</code></a> &middot; <a href="#k-discovery-github-needs-label-label"><code>discovery.github.needs_label_label</code></a> &middot; <a href="#k-discovery-github-needs-unit-label"><code>discovery.github.needs_unit_label</code></a> &middot; <a href="#k-discovery-github-parked-label"><code>discovery.github.parked_label</code></a> &middot; <a href="#k-discovery-github-priority-label-prefix"><code>discovery.github.priority_label_prefix</code></a> &middot; <a href="#k-discovery-github-project-archive-done"><code>discovery.github.project.archive_done</code></a> &middot; <a href="#k-discovery-github-project-backfill-cap"><code>discovery.github.project.backfill_cap</code></a> &middot; <a href="#k-discovery-github-project-backfill-min-graphql"><code>discovery.github.project.backfill_min_graphql</code></a> &middot; <a href="#k-discovery-github-project-columns"><code>discovery.github.project.columns.*</code></a> &middot; <a href="#k-discovery-github-project-custom-fields"><code>discovery.github.project.custom_fields</code></a> &middot; <a href="#k-discovery-github-project-enabled"><code>discovery.github.project.enabled</code></a> &middot; <a href="#k-discovery-github-project-mirror-priority"><code>discovery.github.project.mirror_priority</code></a> &middot; <a href="#k-discovery-github-project-number"><code>discovery.github.project.number</code></a> &middot; <a href="#k-discovery-github-project-owner"><code>discovery.github.project.owner</code></a> &middot; <a href="#k-discovery-github-project-phase-field"><code>discovery.github.project.phase_field</code></a> &middot; <a href="#k-discovery-github-project-priority-field"><code>discovery.github.project.priority_field</code></a> &middot; <a href="#k-discovery-github-project-queue-source"><code>discovery.github.project.queue_source</code></a> &middot; <a href="#k-discovery-github-project-status-field"><code>discovery.github.project.status_field</code></a> &middot; <a href="#k-discovery-github-project-title"><code>discovery.github.project.title</code></a> &middot; <a href="#k-discovery-github-repo"><code>discovery.github.repo</code></a> &middot; <a href="#k-discovery-no-dangling-goal-core"><code>discovery.no_dangling_goal.core</code></a> &middot; <a href="#k-discovery-no-dangling-goal-enabled"><code>discovery.no_dangling_goal.enabled</code></a> &middot; <a href="#k-discovery-order"><code>discovery.order</code></a> &middot; <a href="#k-discovery-reconcile-mode"><code>discovery.reconcile.mode</code></a> &middot; <a href="#k-discovery-reconcile-open-issue-mode"><code>discovery.reconcile.open_issue_mode</code></a> &middot; <a href="#k-discovery-reconcile-ttl-minutes"><code>discovery.reconcile.ttl_minutes</code></a> &middot; <a href="#k-discovery-source"><code>discovery.source</code></a> &middot; <a href="#k-drift-watch-channels-sigma-org"><code>drift_watch.channels.sigma / org</code></a> &middot; <a href="#k-drift-watch-enabled"><code>drift_watch.enabled</code></a> &middot; <a href="#k-drift-watch-slack-bot-token-env"><code>drift_watch.slack_bot_token_env</code></a> &middot; <a href="#k-drift-watch-ttl-minutes"><code>drift_watch.ttl_minutes</code></a> &middot; <a href="#k-followups-max-added-slices"><code>followups.max_added_slices</code></a> &middot; <a href="#k-followups-mode"><code>followups.mode</code></a> &middot; <a href="#k-gates-hard-plan-gate-enabled"><code>gates.hard_plan_gate.enabled</code></a> &middot; <a href="#k-gates-hard-plan-gate-plan-freshness-hours"><code>gates.hard_plan_gate.plan_freshness_hours</code></a> &middot; <a href="#k-gates-irreversible-actions"><code>gates.irreversible_actions</code></a> &middot; <a href="#k-gates-on-block"><code>gates.on_block</code></a> &middot; <a href="#k-gates-phase-record-enabled"><code>gates.phase_record.enabled</code></a> &middot; <a href="#k-gates-plan-review-enabled"><code>gates.plan_review.enabled</code></a> &middot; <a href="#k-gates-quality-ratchet-enabled"><code>gates.quality_ratchet.enabled</code></a> &middot; <a href="#k-gates-sealed-acceptance-enabled"><code>gates.sealed_acceptance.enabled</code></a> &middot; <a href="#k-gates-stop-gate-enabled"><code>gates.stop_gate.enabled</code></a> &middot; <a href="#k-gates-stop-gate-plan-freshness-hours"><code>gates.stop_gate.plan_freshness_hours</code></a> &middot; <a href="#k-gh-quota-rest-reserve-percent"><code>gh_quota.rest_reserve_percent</code></a> &middot; <a href="#k-goal-decompose-enabled"><code>goal_decompose.enabled</code></a> &middot; <a href="#k-goal-decompose-max-children"><code>goal_decompose.max_children</code></a> &middot; <a href="#k-goal-decompose-mode"><code>goal_decompose.mode</code></a> &middot; <a href="#k-goal-design-enabled"><code>goal_design.enabled</code></a> &middot; <a href="#k-goal-design-mode"><code>goal_design.mode</code></a> &middot; <a href="#k-goal-readiness-mode"><code>goal_readiness.mode</code></a> &middot; <a href="#k-handoff-after-context-tokens"><code>handoff.after_context_tokens</code></a> &middot; <a href="#k-handoff-after-goals"><code>handoff.after_goals</code></a> &middot; <a href="#k-handoff-enabled"><code>handoff.enabled</code></a> &middot; <a href="#k-invocation-adapter"><code>invocation.adapter</code></a> &middot; <a href="#k-invocation-ttl-seconds-timeout-seconds"><code>invocation.ttl_seconds / timeout_seconds</code></a> &middot; <a href="#k-journal-enabled"><code>journal.enabled</code></a> &middot; <a href="#k-knowledge-graph-auto-refresh"><code>knowledge_graph.auto_refresh</code></a> &middot; <a href="#k-knowledge-graph-builder"><code>knowledge_graph.builder</code></a> &middot; <a href="#k-knowledge-graph-enabled"><code>knowledge_graph.enabled</code></a> &middot; <a href="#k-knowledge-graph-scope"><code>knowledge_graph.scope</code></a> &middot; <a href="#k-knowledge-graph-sync-enabled-branch-remote"><code>knowledge_graph.sync.enabled / branch / remote</code></a> &middot; <a href="#k-knowledge-graph-web-retention-enabled-days-disk-share"><code>knowledge_graph.web_retention_enabled / _days / _disk_share</code></a> &middot; <a href="#k-label-drain-arm-pulled-blockers"><code>label_drain.arm_pulled_blockers</code></a> &middot; <a href="#k-label-drain-default-priority"><code>label_drain.default_priority</code></a> &middot; <a href="#k-label-drain-kinds"><code>label_drain.kinds</code></a> &middot; <a href="#k-ledger-actor"><code>ledger.actor</code></a> &middot; <a href="#k-ledger-autowatch-channel-webhook-url-allow-remote-webhook"><code>ledger.autowatch.channel_webhook_url / allow_remote_webhook</code></a> &middot; <a href="#k-ledger-autowatch-enabled"><code>ledger.autowatch.enabled</code></a> &middot; <a href="#k-ledger-autowatch-hop-limit"><code>ledger.autowatch.hop_limit</code></a> &middot; <a href="#k-ledger-autowatch-poll-interval-minutes"><code>ledger.autowatch.poll_interval_minutes</code></a> &middot; <a href="#k-ledger-autowatch-preconditions"><code>ledger.autowatch.preconditions.*</code></a> &middot; <a href="#k-ledger-autowatch-scope"><code>ledger.autowatch.scope</code></a> &middot; <a href="#k-ledger-autowatch-surface"><code>ledger.autowatch.surface</code></a> &middot; <a href="#k-ledger-autowatch-target-issue-only"><code>ledger.autowatch.target_issue_only</code></a> &middot; <a href="#k-ledger-branch-ledger-remote"><code>ledger.branch / ledger.remote</code></a> &middot; <a href="#k-ledger-enabled"><code>ledger.enabled</code></a> &middot; <a href="#k-ledger-handoff-label"><code>ledger.handoff.label</code></a> &middot; <a href="#k-ledger-host-alias"><code>ledger.host_alias</code></a> &middot; <a href="#k-ledger-lease-ttl-hours"><code>ledger.lease.ttl_hours</code></a> &middot; <a href="#k-ledger-owners"><code>ledger.owners</code></a> &middot; <a href="#k-ledger-publish-on-write"><code>ledger.publish_on_write</code></a> &middot; <a href="#k-ledger-receipt-authority-trusted-signers"><code>ledger.receipt_authority.trusted_signers</code></a> &middot; <a href="#k-ledger-receipt-sharing"><code>ledger.receipt_sharing</code></a> &middot; <a href="#k-ledger-salt-host-token"><code>ledger.salt_host_token</code></a> &middot; <a href="#k-ledger-watch-interval-seconds"><code>ledger.watch.interval_seconds</code></a> &middot; <a href="#k-ledger-watch-log-max-bytes"><code>ledger.watch.log_max_bytes</code></a> &middot; <a href="#k-mode-default"><code>mode.default</code></a> &middot; <a href="#k-model-host-overrides"><code>model_host_overrides</code></a> &middot; <a href="#k-model-selection"><code>model_selection</code></a> &middot; <a href="#k-model-selection-max-tier"><code>model_selection_max_tier</code></a> &middot; <a href="#k-model-selection-reviewer-floor"><code>model_selection_reviewer_floor</code></a> &middot; <a href="#k-model-selection-signal-excludes"><code>model_selection_signal_excludes</code></a> &middot; <a href="#k-parallel-enabled"><code>parallel.enabled</code></a> &middot; <a href="#k-parallel-goals-enabled"><code>parallel.goals.enabled</code></a> &middot; <a href="#k-parallel-goals-max-concurrent"><code>parallel.goals.max_concurrent</code></a> &middot; <a href="#k-parallel-max-concurrent"><code>parallel.max_concurrent</code></a> &middot; <a href="#k-quality-metrics"><code>quality.metrics</code></a> &middot; <a href="#k-resource-cpu-reserve-cores"><code>resource.cpu_reserve_cores</code></a> &middot; <a href="#k-resource-hold-alert-minutes"><code>resource.hold_alert_minutes</code></a> &middot; <a href="#k-resource-load-hold-ratio"><code>resource.load_hold_ratio</code></a> &middot; <a href="#k-resource-max-goals"><code>resource.max_goals</code></a> &middot; <a href="#k-resource-max-share-fraction"><code>resource.max_share_fraction</code></a> &middot; <a href="#k-resource-max-verify-workers"><code>resource.max_verify_workers</code></a> &middot; <a href="#k-resource-mode"><code>resource.mode</code></a> &middot; <a href="#k-resource-reserve-fraction"><code>resource.reserve_fraction</code></a> &middot; <a href="#k-resource-shed"><code>resource.shed</code></a> &middot; <a href="#k-resource-shed-after"><code>resource.shed_after</code></a> &middot; <a href="#k-resource-swapout-hold-mb-per-s"><code>resource.swapout_hold_mb_per_s</code></a> &middot; <a href="#k-resource-verify-cold-mb"><code>resource.verify_cold_mb</code></a> &middot; <a href="#k-review-command"><code>review.command</code></a> &middot; <a href="#k-review-host"><code>review.host</code></a> &middot; <a href="#k-review-host-overrides-model-selection-host-overrides"><code>review.host_overrides / model_selection_host_overrides</code></a> &middot; <a href="#k-review-independent"><code>review.independent</code></a> &middot; <a href="#k-review-test-review"><code>review.test_review</code></a> &middot; <a href="#k-review-timeout-seconds"><code>review.timeout_seconds</code></a> &middot; <a href="#k-rulebook-autonomy-applier-allow-silent"><code>rulebook.autonomy.applier.allow_silent</code></a> &middot; <a href="#k-rulebook-autonomy-applier-enabled"><code>rulebook.autonomy.applier.enabled</code></a> &middot; <a href="#k-rulebook-autonomy-applier-spot-check-one-in-stale-after-intervals-prune-after-days"><code>rulebook.autonomy.applier.spot_check_one_in / stale_after_intervals / prune_after_days</code></a> &middot; <a href="#k-rulebook-autonomy-applier-window-minutes-max-auto-applied-per-day"><code>rulebook.autonomy.applier.window_minutes / max_auto_applied_per_day</code></a> &middot; <a href="#k-rulebook-autonomy-enabled"><code>rulebook.autonomy.enabled</code></a> &middot; <a href="#k-rulebook-autonomy-levels-l1-min-answers-to-l4-min-answers"><code>rulebook.autonomy.levels.l1_min_answers to l4_min_answers</code></a> &middot; <a href="#k-rulebook-autonomy-levels-l2-agreement-to-l4-agreement"><code>rulebook.autonomy.levels.l2_agreement to l4_agreement</code></a> &middot; <a href="#k-rulebook-autonomy-veto-pause-consecutive-veto-pause-total-veto-recover-after"><code>rulebook.autonomy.veto_pause_consecutive / veto_pause_total / veto_recover_after</code></a> &middot; <a href="#k-rulebook-autonomy-watch-retention-days"><code>rulebook.autonomy.watch.retention_days</code></a> &middot; <a href="#k-rulebook-drift-documents-max-total-chars-model-rounds"><code>rulebook.drift.documents / max_total_chars / model / rounds</code></a> &middot; <a href="#k-rulebook-drift-enabled"><code>rulebook.drift.enabled</code></a> &middot; <a href="#k-rulebook-drift-max-budget-usd-per-call-spend-ceiling-usd-per-day"><code>rulebook.drift.max_budget_usd_per_call / spend_ceiling_usd_per_day</code></a> &middot; <a href="#k-rulebook-hard-stops-classes-tamper-oversight-unvetted-execution"><code>rulebook.hard_stops.classes.tamper_oversight / unvetted_execution</code></a> &middot; <a href="#k-rulebook-hard-stops-enabled"><code>rulebook.hard_stops.enabled</code></a> &middot; <a href="#k-rulebook-hard-stops-own-branch-prefixes-own-registered-units"><code>rulebook.hard_stops.own_branch_prefixes / own_registered_units</code></a> &middot; <a href="#k-rulebook-import-classifier-model"><code>rulebook.import.classifier / model</code></a> &middot; <a href="#k-rulebook-import-comments-max-issues"><code>rulebook.import.comments / max_issues</code></a> &middot; <a href="#k-rulebook-import-max-budget-usd-per-call-max-budget-usd-per-run-timeout-s"><code>rulebook.import.max_budget_usd_per_call / max_budget_usd_per_run / timeout_s</code></a> &middot; <a href="#k-rulebook-import-max-file-bytes-time-budget-s-max-candidates"><code>rulebook.import.max_file_bytes / time_budget_s / max_candidates</code></a> &middot; <a href="#k-rulebook-import-profile-dirs-project-dirs"><code>rulebook.import.profile_dirs / project_dirs</code></a> &middot; <a href="#k-rulebook-import-require-repo-cwd"><code>rulebook.import.require_repo_cwd</code></a> &middot; <a href="#k-rulebook-records-enabled"><code>rulebook.records.enabled</code></a> &middot; <a href="#k-rulebook-records-lock-timeout-s-archive-after-days-max-files-warn"><code>rulebook.records.lock_timeout_s / archive_after_days / max_files_warn</code></a> &middot; <a href="#k-rulebook-records-pointer"><code>rulebook.records.pointer.*</code></a> &middot; <a href="#k-rulebook-records-publish"><code>rulebook.records.publish</code></a> &middot; <a href="#k-rulebook-records-repo-visibility"><code>rulebook.records.repo_visibility</code></a> &middot; <a href="#k-rulebook-records-store-dir"><code>rulebook.records.store_dir</code></a> &middot; <a href="#k-rulebook-rules-auto-approve"><code>rulebook.rules.auto_approve</code></a> &middot; <a href="#k-rulebook-rules-draft-min-agreement-min-held-out"><code>rulebook.rules.draft.min_agreement / min_held_out</code></a> &middot; <a href="#k-rulebook-rules-enabled"><code>rulebook.rules.enabled</code></a> &middot; <a href="#k-rulebook-rules-path-reask-days"><code>rulebook.rules.path / reask_days</code></a> &middot; <a href="#k-rulebook-spend-weekly-usd-monthly-usd"><code>rulebook.spend.weekly_usd / monthly_usd</code></a> &middot; <a href="#k-session-release-grace-minutes"><code>session_release.grace_minutes</code></a> &middot; <a href="#k-session-release-hold-minutes"><code>session_release.hold_minutes</code></a> &middot; <a href="#k-session-start-enabled"><code>session_start.enabled</code></a> &middot; <a href="#k-setup-wizard-dismissed"><code>setup_wizard.dismissed</code></a> &middot; <a href="#k-slack-commands-app-token-env-bot-token-env"><code>slack_commands.app_token_env / bot_token_env</code></a> &middot; <a href="#k-slack-commands-channel-id"><code>slack_commands.channel_id</code></a> &middot; <a href="#k-slack-commands-enabled"><code>slack_commands.enabled</code></a> &middot; <a href="#k-spend-approval-approvers"><code>spend_approval.approvers</code></a> &middot; <a href="#k-spend-approval-classes"><code>spend_approval.classes</code></a> &middot; <a href="#k-spend-approval-enabled"><code>spend_approval.enabled</code></a> &middot; <a href="#k-tests-runners"><code>tests.runners</code></a> &middot; <a href="#k-upkeep-backup-former-prefixes"><code>upkeep.backup.former_prefixes</code></a> &middot; <a href="#k-upkeep-backup-keep-days-keep-last"><code>upkeep.backup.keep_days / keep_last</code></a> &middot; <a href="#k-upkeep-conflicts-agent-credential-var-login"><code>upkeep.conflicts.agent.credential_var / login</code></a> &middot; <a href="#k-upkeep-conflicts-agent-max-budget-usd-per-unit-spend-ceiling-usd-per-day"><code>upkeep.conflicts.agent.max_budget_usd_per_unit / spend_ceiling_usd_per_day</code></a> &middot; <a href="#k-upkeep-conflicts-agent-model"><code>upkeep.conflicts.agent.model</code></a> &middot; <a href="#k-upkeep-conflicts-agent-reviewer-enabled-model"><code>upkeep.conflicts.agent.reviewer.enabled / model</code></a> &middot; <a href="#k-upkeep-conflicts-agent-timeout-minutes-max-units-per-sweep"><code>upkeep.conflicts.agent.timeout_minutes / max_units_per_sweep</code></a> &middot; <a href="#k-upkeep-conflicts-mechanical-without-verify"><code>upkeep.conflicts.mechanical_without_verify</code></a> &middot; <a href="#k-upkeep-conflicts-resolve"><code>upkeep.conflicts.resolve</code></a> &middot; <a href="#k-upkeep-conflicts-union-paths"><code>upkeep.conflicts.union_paths</code></a> &middot; <a href="#k-upkeep-enabled"><code>upkeep.enabled</code></a> &middot; <a href="#k-upkeep-retry-minutes"><code>upkeep.retry_minutes</code></a> &middot; <a href="#k-upkeep-triggers-upkeep-auto"><code>upkeep.triggers.*, upkeep.auto.*</code></a> &middot; <a href="#k-upkeep-units-include-exclude"><code>upkeep.units.include / exclude</code></a> &middot; <a href="#k-upkeep-verify-clean-rebase"><code>upkeep.verify.clean_rebase</code></a> &middot; <a href="#k-upkeep-verify-timeout-minutes"><code>upkeep.verify.timeout_minutes</code></a> &middot; <a href="#k-upkeep-window-hours"><code>upkeep.window_hours</code></a> &middot; <a href="#k-verify-command"><code>verify.command</code></a> &middot; <a href="#k-verify-enforce"><code>verify.enforce</code></a> &middot; <a href="#k-verify-known-flakes"><code>verify.known_flakes</code></a> &middot; <a href="#k-verify-timeout-minutes"><code>verify.timeout_minutes</code></a> &middot; <a href="#k-work-allow-secret-content"><code>work.allow_secret_content</code></a> &middot; <a href="#k-work-allow-secret-paths"><code>work.allow_secret_paths</code></a> &middot; <a href="#k-work-auto-merge"><code>work.auto_merge</code></a> &middot; <a href="#k-work-base"><code>work.base</code></a> &middot; <a href="#k-work-branch-prefix"><code>work.branch_prefix</code></a> &middot; <a href="#k-work-checkpoint-prefix"><code>work.checkpoint_prefix</code></a> &middot; <a href="#k-work-ci-required"><code>work.ci_required</code></a> &middot; <a href="#k-work-enabled"><code>work.enabled</code></a> &middot; <a href="#k-work-integration-base"><code>work.integration_base</code></a> &middot; <a href="#k-work-max-review-cycles"><code>work.max_review_cycles</code></a> &middot; <a href="#k-work-merge-bypass"><code>work.merge_bypass</code></a> &middot; <a href="#k-work-merge-method"><code>work.merge_method</code></a> &middot; <a href="#k-work-merge-pending-wait-s"><code>work.merge_pending_wait_s</code></a> &middot; <a href="#k-work-protection-unreadable"><code>work.protection_unreadable</code></a> &middot; <a href="#k-work-rebase-upkeep"><code>work.rebase_upkeep</code></a> &middot; <a href="#k-work-reclaim-merged-worktrees"><code>work.reclaim_merged_worktrees</code></a> &middot; <a href="#k-work-remote"><code>work.remote</code></a> &middot; <a href="#k-work-require-review"><code>work.require_review</code></a> &middot; <a href="#k-work-unit-completion"><code>work.unit_completion</code></a> &middot; <a href="#k-work-worktree-dir"><code>work.worktree_dir</code></a></p>
+</details>
+
+<h2 id="discovery">discovery: where goals come from and in what order</h2>
+
+<p>Goal intake, ordering and the label names the loop reads and writes. Label meanings are on <a href="labels.html">Labels</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code id="k-discovery-source">discovery.source</code></td><td>local-goals</td><td>Where goals live: <code>local-goals</code> (files in <code>.sdlc/goals/</code>) or <code>github</code> (issues labelled with the goal label; needs <code>gh</code>). Init chooses it.</td></tr>
+<tr><td><code id="k-discovery-order">discovery.order</code></td><td>priority</td><td><code>priority</code> sorts by the priority label, oldest first within a tier; <code>created</code> is strict oldest-first. A goal with no priority sorts last.</td></tr>
+<tr><td><code id="k-discovery-github-repo">discovery.github.repo</code></td><td>empty</td><td>The <code>owner/name</code> of the repository whose issues are goals.</td></tr>
+<tr><td><code id="k-discovery-github-goal-label">discovery.github.goal_label</code></td><td>sdlc:goal</td><td>The label that marks an issue as a goal.</td></tr>
+<tr><td><code id="k-discovery-github-in-progress-label">discovery.github.in_progress_label</code></td><td>sdlc:in-progress</td><td>Overlay written while a goal is claimed.</td></tr>
+<tr><td><code id="k-discovery-github-parked-label">discovery.github.parked_label</code></td><td>sdlc:parked</td><td>Label for a goal waiting on a person.</td></tr>
+<tr><td><code id="k-discovery-github-goal-blocked-label">discovery.github.goal_blocked_label</code></td><td>sdlc:blocked</td><td>Code-managed label for a goal that found a blocking dependency. Clears itself when the blocker closes.</td></tr>
+<tr><td><code id="k-discovery-github-blocked-label">discovery.github.blocked_label</code></td><td>empty</td><td>Optional label you set yourself to say &ldquo;do not auto-pick&rdquo; (a spend gate, a legal review). The loop never writes it. Empty changes nothing.</td></tr>
+<tr><td><code id="k-discovery-github-blocking-label">discovery.github.blocking_label</code></td><td>sdlc:blocking</td><td>Derived label put on a blocker while any open issue still names it. Removed by itself.</td></tr>
+<tr><td><code id="k-discovery-github-needs-label-label">discovery.github.needs_label_label</code></td><td>sdlc:needs-label</td><td>Overlay for a goal whose declared unit has no matching label yet. Clears when a person creates the label.</td></tr>
+<tr><td><code id="k-discovery-github-needs-unit-label">discovery.github.needs_unit_label</code></td><td>sdlc:needs-unit</td><td>Overlay for a goal that declares no unit at all, used only with <code>discovery.no_dangling_goal</code>.</td></tr>
+<tr><td><code id="k-discovery-github-priority-label-prefix">discovery.github.priority_label_prefix</code></td><td>priority:</td><td>The prefix the priority labels use. Change it if your repository already has its own scheme, or every such issue ranks as unprioritised.</td></tr>
+<tr><td><code id="k-discovery-github-assignee">discovery.github.assignee</code></td><td>null (not yet decided)</td><td><code>@me</code> or a login: pick only issues assigned to that user, so several people can share a board. <code>null</code> is &ldquo;not decided&rdquo;; the setup command fills in <code>@me</code> the first time it adopts a GitHub repository. An empty string is a deliberate &ldquo;no filter&rdquo;.</td></tr>
+<tr><td><code id="k-discovery-reconcile-mode">discovery.reconcile.mode</code></td><td>off</td><td><code>on</code> runs one throttled sweep per batch that corrects one class only: a closed issue still carrying an in-progress or not-eligible label. Anything else goes to a proposal a person approves.</td></tr>
+<tr><td><code id="k-discovery-reconcile-ttl-minutes">discovery.reconcile.ttl_minutes</code></td><td>60</td><td>Minutes between two surveys (a survey costs about 13 GitHub calls).</td></tr>
+<tr><td><code id="k-discovery-reconcile-open-issue-mode">discovery.reconcile.open_issue_mode</code></td><td>off</td><td>Separate opt-in that lets decisive corrections on <em>open</em> issues apply on their own instead of waiting for approval.</td></tr>
+<tr><td><code id="k-discovery-dag-mode">discovery.dag.mode</code></td><td>shadow</td><td>The stored dependency map: <code>shadow</code> compares it with the board mirror and never changes a pick; <code>on</code> holds goals from the map; <code>off</code> reads and writes nothing. Anything unrecognised reads as <code>shadow</code>.</td></tr>
+<tr><td><code id="k-discovery-dag-ttl-minutes">discovery.dag.ttl_minutes</code></td><td>60</td><td>A map older than twice this is not used unless a change check ran in the last ten minutes.</td></tr>
+<tr><td><code id="k-discovery-dag-order">discovery.dag.order</code></td><td>chain</td><td><code>chain</code> puts the goal that unblocks the most work first inside a priority tier; <code>off</code> does not. It never crosses a priority tier.</td></tr>
+<tr><td><code id="k-discovery-dag-cycle-comment">discovery.dag.cycle_comment</code></td><td>true</td><td>Whether a refresh posts one comment per distinct dependency cycle.</td></tr>
+<tr><td><code id="k-chain-max-members">chain.max_members</code></td><td>100</td><td>Largest closure the chain planner will plan from the stored map; a larger one is refused with its count, never truncated. See the note below on where this key lives.</td></tr>
+<tr><td><code id="k-gh-quota-rest-reserve-percent">gh_quota.rest_reserve_percent</code></td><td>10</td><td>Percentage of GitHub&rsquo;s reported REST limit kept in reserve. Below it, the unblock sweep and the reconcile sweep defer. Provisional default. See the note below on where this key lives.</td></tr>
+<tr><td><code id="k-discovery-dependency-gate-mode">discovery.dependency_gate.mode</code></td><td>on</td><td>Before a goal is claimed, a goal whose declared prerequisite is still open is left untouched and the pick moves on. <code>off</code> turns it off.</td></tr>
+<tr><td><code id="k-discovery-auto-unpark-mode">discovery.auto_unpark.mode</code></td><td>on</td><td>Each pick re-checks blocked goals; when every recorded blocker has closed, the block is lifted and the goal returns to the queue. A parked goal is never resumed this way. <code>off</code> opts out.</td></tr>
+<tr><td><code id="k-discovery-auto-unpark-interval-minutes">discovery.auto_unpark.interval_minutes</code></td><td>10</td><td>The sweep runs at most once per this many minutes. Provisional.</td></tr>
+<tr><td><code id="k-discovery-blocking-priority-override">discovery.blocking_priority_override</code></td><td>true</td><td>A goal that is also labelled as blocking sorts ahead of others in its own priority tier, never above a higher tier.</td></tr>
+<tr><td><code id="k-discovery-blocker-promotion-mode">discovery.blocker_promotion.mode</code></td><td>always</td><td>A blocker&rsquo;s priority is raised to match what it blocks; nothing is ever lowered. <code>off</code> disables it.</td></tr>
+<tr><td><code id="k-discovery-no-dangling-goal-enabled">discovery.no_dangling_goal.enabled</code></td><td>off (opt-in)</td><td>Sets aside a goal that declares no unit (it gains the needs-unit label and resumes once a unit is declared). Needs the <code>.sdlc/features/</code> folder as well.</td></tr>
+<tr><td><code id="k-discovery-no-dangling-goal-core">discovery.no_dangling_goal.core</code></td><td>empty</td><td>Name of a registered unit. When set, an undeclared goal is classified into units by an AI judgment instead of being set aside.</td></tr>
+<tr><td><code id="k-label-drain-default-priority">label_drain.default_priority</code></td><td>P2</td><td>Priority label given to an armed issue that has none; an existing priority is kept.</td></tr>
+<tr><td><code id="k-label-drain-arm-pulled-blockers">label_drain.arm_pulled_blockers</code></td><td>true</td><td>When arming a run label, also arm open blockers outside the label.</td></tr>
+<tr><td><code id="k-label-drain-kinds">label_drain.kinds</code></td><td>{}</td><td>Maps exact run-label names to kinds. Otherwise a label&rsquo;s kind is its name up to the first <code>:</code> or <code>/</code>.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout callout-warn"><div class="callout-title">Where two keys live</div><p>The scaffold writes <code>chain.max_members</code> and <code>gh_quota.rest_reserve_percent</code> inside the <code>discovery</code> block, but the code that reads them looks for them at the top level of the file (checked by search in the code). The configuration reference also names them at the top level. If you need to change either, put it at the top level.</p></div>
+
+<h2 id="project">discovery.github.project: the board mirror</h2>
+
+<p>Mirrors each goal&rsquo;s state onto a GitHub Projects board. It needs the <code>project</code> scope on <code>gh</code> and is fail-open: if the board cannot be written, the loop still runs on issues and labels. The behaviour is on <a href="board.html">The project board</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code id="k-discovery-github-project-enabled">discovery.github.project.enabled</code></td><td>true in the template; init keeps it off until the board offer is answered</td><td>Turns the board mirror on. With no board pinned or reachable nothing is written.</td></tr>
+<tr><td><code id="k-discovery-github-project-number">discovery.github.project.number</code></td><td>null</td><td>Pin your board&rsquo;s number if one already exists. Without a pin Sigma looks up the title and, finding none, may create a board.</td></tr>
+<tr><td><code id="k-discovery-github-project-owner">discovery.github.project.owner</code></td><td>empty</td><td>The organisation or user that owns the board. <code>@me</code> means the token&rsquo;s own login.</td></tr>
+<tr><td><code id="k-discovery-github-project-title">discovery.github.project.title</code></td><td>empty</td><td>Look the board up by exact title when no number is pinned.</td></tr>
+<tr><td><code id="k-discovery-github-project-status-field">discovery.github.project.status_field</code></td><td>Status</td><td>Name of the status column.</td></tr>
+<tr><td><code id="k-discovery-github-project-priority-field">discovery.github.project.priority_field</code></td><td>Priority</td><td>Name of the P0 to P4 column. <code>false</code> writes nothing.</td></tr>
+<tr><td><code id="k-discovery-github-project-queue-source">discovery.github.project.queue_source</code></td><td>status</td><td><code>status</code>: the Ready column is the pick queue. <code>label</code>: the goal label alone decides.</td></tr>
+<tr><td><code id="k-discovery-github-project-archive-done">discovery.github.project.archive_done</code></td><td>true in the scaffold</td><td>Archive a card once its goal completes. Only the boolean <code>true</code> archives; an absent key archives nothing.</td></tr>
+<tr><td><code id="k-discovery-github-project-columns">discovery.github.project.columns.*</code></td><td>Backlog, Ready, In Progress, QC, Done, Blocked, Parked</td><td>The seven lane names (<code>backlog</code>, <code>ready</code>, <code>in_progress</code>, <code>qc</code>, <code>done</code>, <code>blocked</code>, <code>parked</code>). Rename one to match your board.</td></tr>
+<tr><td><code id="k-discovery-github-project-custom-fields">discovery.github.project.custom_fields</code></td><td>{}</td><td>Maps a custom single-select field name to an option name; stamped on issues Sigma itself files. A field or option the board lacks is skipped.</td></tr>
+<tr><td><code id="k-discovery-github-project-phase-field">discovery.github.project.phase_field</code></td><td>Phase</td><td>Name of the Phase column; <code>false</code> disables Phase. Not in the scaffold; read when present.</td></tr>
+<tr><td><code id="k-discovery-github-project-mirror-priority">discovery.github.project.mirror_priority</code></td><td>off</td><td><code>true</code> makes the pinned board&rsquo;s Priority column Sigma&rsquo;s. Not in the scaffold; read when present.</td></tr>
+<tr><td><code id="k-discovery-github-project-backfill-cap">discovery.github.project.backfill_cap</code></td><td>20</td><td>Open goals carded per watcher tick (0 turns it off). Provisional. Not in the scaffold.</td></tr>
+<tr><td><code id="k-discovery-github-project-backfill-min-graphql">discovery.github.project.backfill_min_graphql</code></td><td>1000</td><td>The back-fill skips a tick when fewer GraphQL calls than this remain. Provisional. Not in the scaffold.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="verify">verify, tests and context: proof of done</h2>
+
+<p>The command that proves a goal works, and the settings around what counts as proof. <a href="config.html#verify">Configuration</a> has the short version.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code id="k-verify-command">verify.command</code></td><td>empty</td><td>The command that proves a goal&rsquo;s change works.</td></tr>
+<tr><td><code id="k-verify-enforce">verify.enforce</code></td><td>false; on once a command is confirmed</td><td>On: <code>record done</code> and a merge are refused without fresh passing evidence from this run.</td></tr>
+<tr><td><code id="k-verify-timeout-minutes">verify.timeout_minutes</code></td><td>60 (not in the scaffold)</td><td>Budget for one verify run; read when present.</td></tr>
+<tr><td><code id="k-verify-known-flakes">verify.known_flakes</code></td><td>absent</td><td>A person-approved, time-limited list of tests allowed to fail a full verify. Nothing adds an entry automatically. Each entry has a test id, a tracking issue, an approver, a record link, an expiry date and the bases it covers.</td></tr>
+<tr><td><code id="k-tests-runners">tests.runners</code></td><td>{}</td><td>Names a non-default test runner a plan&rsquo;s test list may use: a command template with <code>{file}</code> and <code>{name}</code> placeholders, optionally with a pattern that marks a red run.</td></tr>
+<tr><td><code id="k-review-test-review">review.test_review</code></td><td>false</td><td>Independent test review can block an approval: each acceptance criterion needs a real test.</td></tr>
+<tr><td><code id="k-context-documents">context.documents</code></td><td>[]</td><td>Extra repository-relative documents added to the reviewer&rsquo;s brief. Leave the key out for the built-in set.</td></tr>
+<tr><td><code id="k-context-inline-max-bytes">context.inline_max_bytes</code></td><td>16384</td><td>A document larger than this is given to the reviewer as a pointer, not inlined.</td></tr>
+<tr><td><code id="k-quality-metrics">quality.metrics</code></td><td>absent</td><td>Optional list of metric commands compared at the merge-base and the head. Nothing runs while it is absent.</td></tr>
+<tr><td><code id="k-setup-wizard-dismissed">setup_wizard.dismissed</code></td><td>[]</td><td>Setup checks the repository has deliberately declined. Not in the scaffold.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="work">work: worktrees, pull requests and merging</h2>
+
+<p>One worktree, branch and pull request per goal. The risky switches ship off. <a href="config.html#land">Configuration</a> has the short version.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code id="k-work-enabled">work.enabled</code></td><td>true</td><td>One worktree, branch and pull request per goal. Off means the loop edits the checkout directly.</td></tr>
+<tr><td><code id="k-work-base">work.base</code></td><td>empty</td><td>The integration branch to cut from and target. Empty means the branch the loop started on. A goal that declares a unit is cut from the unit&rsquo;s branch instead.</td></tr>
+<tr><td><code id="k-work-integration-base">work.integration_base</code></td><td>empty</td><td>Name a unit branch that is also your integration branch, so branch upkeep accepts it.</td></tr>
+<tr><td><code id="k-work-remote">work.remote</code></td><td>origin</td><td>The remote to push to.</td></tr>
+<tr><td><code id="k-work-branch-prefix">work.branch_prefix</code></td><td>sdlc/</td><td>Prefix of a goal&rsquo;s branch.</td></tr>
+<tr><td><code id="k-work-worktree-dir">work.worktree_dir</code></td><td>.sdlc/work</td><td>Where goal worktrees are cut.</td></tr>
+<tr><td><code id="k-work-auto-merge">work.auto_merge</code></td><td>off</td><td><code>off</code> never merges. <code>protected</code> merges only where the base branch requires checks or reviews. <code>always</code> merges any clean and safe pull request but still stops where protection could not be read.</td></tr>
+<tr><td><code id="k-work-protection-unreadable">work.protection_unreadable</code></td><td>hold</td><td><code>allow</code> lets an <code>always</code> merge proceed when every unreadable protection source was refused with a permission error (a private repository on a free plan). Anything else reads as <code>hold</code>.</td></tr>
+<tr><td><code id="k-work-merge-method">work.merge_method</code></td><td>squash</td><td>How a merge lands, as written by the scaffold.</td></tr>
+<tr><td><code id="k-work-require-review">work.require_review</code></td><td>changes</td><td><code>changes</code> parks on a request-changes review or unresolved thread; <code>approval</code> also needs an approval; <code>off</code> relies on branch protection.</td></tr>
+<tr><td><code id="k-work-max-review-cycles">work.max_review_cycles</code></td><td>3</td><td>Review-to-fix rounds before the goal is parked.</td></tr>
+<tr><td><code id="k-work-ci-required">work.ci_required</code></td><td>true</td><td><code>false</code> stops waiting on checks the base branch does not require.</td></tr>
+<tr><td><code id="k-work-merge-pending-wait-s">work.merge_pending_wait_s</code></td><td>450</td><td>Seconds one merge waits, re-reading every 45, on a check that has attached but not answered. Under 45 is raised to 45; over 7200 is capped.</td></tr>
+<tr><td><code id="k-work-merge-bypass">work.merge_bypass</code></td><td>off (not in the scaffold)</td><td><code>ruleset</code> lets a merge land through the account&rsquo;s ruleset bypass when a set of read-only conditions hold; anything unreadable parks.</td></tr>
+<tr><td><code id="k-work-checkpoint-prefix">work.checkpoint_prefix</code></td><td>empty (not in the scaffold)</td><td>Where a pre-pull-request checkpoint is pushed. Empty means the goal branch itself; <code>wip/</code> pushes to <code>wip/&lt;N&gt;</code>.</td></tr>
+<tr><td><code id="k-work-rebase-upkeep">work.rebase_upkeep</code></td><td>on</td><td>On every pick of a goal that declares a unit, the unit branch is rebased onto the base. <code>off</code> turns that off. See <a href="units.html#upkeep">Units of work</a>.</td></tr>
+<tr><td><code id="k-work-unit-completion">work.unit_completion</code></td><td>surface</td><td>What happens when a unit has no open issues left. <code>surface</code> prints a line and leaves a ledger note; <code>draft-pr</code> also opens the landing pull request as a draft.</td></tr>
+<tr><td><code id="k-work-reclaim-merged-worktrees">work.reclaim_merged_worktrees</code></td><td>false</td><td>Lets a bounded sweep remove the checkout of a goal worktree whose pull request has positively merged.</td></tr>
+<tr><td><code id="k-work-allow-secret-paths">work.allow_secret_paths</code></td><td>[]</td><td>File names allowed through the commit-time check for secret-shaped names.</td></tr>
+<tr><td><code id="k-work-allow-secret-content">work.allow_secret_content</code></td><td>[]</td><td>Content patterns allowed through the commit-time check for credential-shaped lines.</td></tr>
+<tr><td><code id="k-session-release-grace-minutes">session_release.grace_minutes</code></td><td>15</td><td>A dead session&rsquo;s claimed-but-never-started goals are released once its entry has been quiet this long.</td></tr>
+<tr><td><code id="k-session-release-hold-minutes">session_release.hold_minutes</code></td><td>30</td><td>A pick also releases a goal a live session has held this long with no work. <code>0</code> turns it off.</td></tr>
+<tr><td><code id="k-session-start-enabled">session_start.enabled</code></td><td>off (opt-in)</td><td>Injects a short policy brief and an install check at the start of every session. Advisory only.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="budget">budget, handoff and followups: limits</h2>
+
+<p>A budget enforces only when set to a positive number. Each belongs to the session that started it, so several sessions can together spend several times one ceiling.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code id="k-budget-max-iterations">budget.max_iterations</code></td><td>20</td><td>Goals per session.</td></tr>
+<tr><td><code id="k-budget-max-minutes">budget.max_minutes</code></td><td>480</td><td>Wall-clock minutes from the session&rsquo;s own start.</td></tr>
+<tr><td><code id="k-budget-max-tokens">budget.max_tokens</code></td><td>100000000</td><td>Priced Claude-equivalent tokens, counted from phases with a full price.</td></tr>
+<tr><td><code id="k-budget-max-codex-raw-tokens">budget.max_codex_raw_tokens</code></td><td>0 (off)</td><td>Measured Codex input plus output tokens. A phase-boundary admission stop, not a quota or a bill.</td></tr>
+<tr><td><code id="k-handoff-enabled">handoff.enabled</code></td><td>true</td><td>The orchestrating session stops claiming and hands off to a fresh one.</td></tr>
+<tr><td><code id="k-handoff-after-goals">handoff.after_goals</code></td><td>20</td><td>Hand off after this many goals.</td></tr>
+<tr><td><code id="k-handoff-after-context-tokens">handoff.after_context_tokens</code></td><td>null (derived)</td><td>Hand off once the session&rsquo;s own measured context reaches this. When null it is derived from the context at the first pick and the host window; provisional. <code>0</code> turns either trigger off.</td></tr>
+<tr><td><code id="k-followups-mode">followups.mode</code></td><td>in-goal</td><td>A follow-up in the goal&rsquo;s own feature joins that goal as a slice. <code>file</code> (exactly that string) opts back out to one goal per follow-up.</td></tr>
+<tr><td><code id="k-followups-max-added-slices">followups.max_added_slices</code></td><td>10</td><td>Cap on slices added to one goal; a whole number of at least 1, otherwise 10, never unlimited.</td></tr>
+<tr><td><code id="k-ai-filed-triage-enabled">ai_filed.triage.enabled</code></td><td>true</td><td>Triage of issues the AI files: a deny-list can only park, then a bucket sets the priority. <code>false</code> restores plain queueing.</td></tr>
+<tr><td><code id="k-ai-filed-buckets-urgent-routine-unclear">ai_filed.buckets.urgent / routine / unclear</code></td><td>P2 / P3 / P4</td><td>Priority given to each bucket. Each must rank below the human default priority, or every filing parks.</td></tr>
+<tr><td><code id="k-ai-filed-max-per-goal">ai_filed.max_per_goal</code></td><td>5</td><td>AI-filed issues armed per goal.</td></tr>
+<tr><td><code id="k-ai-filed-max-per-run">ai_filed.max_per_run</code></td><td>20</td><td>AI-filed issues armed per run.</td></tr>
+<tr><td><code id="k-ai-filed-max-depth">ai_filed.max_depth</code></td><td>3</td><td>Deepest chain of AI-filed issues filed from AI-filed issues.</td></tr>
+<tr><td><code id="k-ai-filed-cap-bypass-priority">ai_filed.cap_bypass_priority</code></td><td>P1</td><td>Priority at or above which the caps do not apply.</td></tr>
+<tr><td><code id="k-ai-filed-on-cap">ai_filed.on_cap</code></td><td>park</td><td><code>park</code> waits for a person; <code>defer</code> lets the unblock sweep re-arm it, highest priority first, once the counter has room.</td></tr>
+<tr><td><code id="k-ai-filed-counter-path">ai_filed.counter_path</code></td><td>state/ai_filed_counter.json</td><td>Where the filing counter is kept.</td></tr>
+<tr><td><code id="k-ai-filed-counter-retention-days">ai_filed.counter_retention_days</code></td><td>14</td><td>Days of counter history kept.</td></tr>
+<tr><td><code id="k-ai-filed-migration">ai_filed.migration.*</code></td><td>10000; 30; 60; 3</td><td><code>max_issues</code>, <code>max_writes_per_minute</code>, <code>rate_limit_pause_s</code>, <code>rate_limit_max_pauses</code>: bounds for the one-off label migration.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="gates">gates, review and design: what must be true before a step</h2>
+
+<p>The gates are checks that refuse a step rather than advise. <a href="config.html#gates">Configuration</a> has the short version.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code id="k-gates-phase-record-enabled">gates.phase_record.enabled</code></td><td>true</td><td><code>record done</code> and a merge are refused unless every phase is on record, including an approved plan-review.</td></tr>
+<tr><td><code id="k-gates-plan-review-enabled">gates.plan_review.enabled</code></td><td>off (opt-in)</td><td>Also refuses the pull-request push without an approving plan-review for the exact plan.</td></tr>
+<tr><td><code id="k-gates-hard-plan-gate-enabled">gates.hard_plan_gate.enabled</code></td><td>off (opt-in)</td><td>Refuses the pull-request push for a goal with no plan, and on Claude Code the edit itself.</td></tr>
+<tr><td><code id="k-gates-hard-plan-gate-plan-freshness-hours">gates.hard_plan_gate.plan_freshness_hours</code></td><td>24</td><td>How recent a plan must be.</td></tr>
+<tr><td><code id="k-gates-stop-gate-enabled">gates.stop_gate.enabled</code></td><td>off (opt-in)</td><td>Refuses to let the agent stop with unplanned source changes in the working tree.</td></tr>
+<tr><td><code id="k-gates-stop-gate-plan-freshness-hours">gates.stop_gate.plan_freshness_hours</code></td><td>24</td><td>How recent a plan must be.</td></tr>
+<tr><td><code id="k-gates-quality-ratchet-enabled">gates.quality_ratchet.enabled</code></td><td>off (opt-in)</td><td>A merge is refused when a required quality metric got worse beyond its tolerance.</td></tr>
+<tr><td><code id="k-gates-sealed-acceptance-enabled">gates.sealed_acceptance.enabled</code></td><td>off (opt-in)</td><td>An author-blind breaker writes the goal&rsquo;s acceptance tests, which are sealed red on the base.</td></tr>
+<tr><td><code id="k-gates-irreversible-actions">gates.irreversible_actions</code></td><td>deploy, delete, overwrite, spend, migrate</td><td>Action classes the loop parks on rather than takes.</td></tr>
+<tr><td><code id="k-gates-on-block">gates.on_block</code></td><td>park</td><td>What the loop does when a gate blocks.</td></tr>
+<tr><td><code id="k-decision-tier">decision_tier</code></td><td>off</td><td><code>auto</code> classifies a judgment-call park into an escalation tier and shows it; advisory only.</td></tr>
+<tr><td><code id="k-review-independent">review.independent</code></td><td>true</td><td>Asks for a fresh, author-blind reviewer. An instruction to the agent; no code proves the maker did not influence the reviewer.</td></tr>
+<tr><td><code id="k-review-host">review.host</code></td><td>auto</td><td>Which mechanism gives this host an independent reviewer: <code>auto</code>, <code>claude</code>, <code>cursor</code>, <code>codex</code>, <code>command</code> or <code>inline</code>.</td></tr>
+<tr><td><code id="k-review-command">review.command</code></td><td>empty</td><td>A command that reads the review brief on stdin and prints a review; used with <code>command</code>. It is your command, trusted like <code>verify.command</code>.</td></tr>
+<tr><td><code id="k-review-timeout-seconds">review.timeout_seconds</code></td><td>900</td><td>Time limit for a review or sealed-test process.</td></tr>
+<tr><td><code id="k-goal-readiness-mode">goal_readiness.mode</code></td><td>warn</td><td><code>warn</code> prints missing sections and proceeds; <code>require</code> parks the goal; <code>off</code> checks nothing.</td></tr>
+<tr><td><code id="k-goal-decompose-enabled">goal_decompose.enabled</code></td><td>off (opt-in)</td><td>Flags an oversized goal before any tokens are spent.</td></tr>
+<tr><td><code id="k-goal-decompose-mode">goal_decompose.mode</code></td><td>log</td><td><code>log</code> annotates, <code>park</code> parks, <code>file</code> also files one meta-issue before parking.</td></tr>
+<tr><td><code id="k-goal-decompose-max-children">goal_decompose.max_children</code></td><td>8</td><td>Cap on children one decomposition may file.</td></tr>
+<tr><td><code id="k-goal-design-enabled">goal_design.enabled</code></td><td>off (opt-in)</td><td>Retrofit gate: a goal without the designed label is parked and a design ticket filed before work.</td></tr>
+<tr><td><code id="k-goal-design-mode">goal_design.mode</code></td><td>full</td><td>Mode of the design pass; scaffolded as <code>full</code>.</td></tr>
+<tr><td><code id="k-backlog-check-enabled">backlog_check.enabled</code></td><td>off (opt-in)</td><td>Parks a picked goal that duplicates, is obsoleted by, or is blocked by other backlog items, before any tokens are spent.</td></tr>
+<tr><td><code id="k-backlog-check-action">backlog_check.action</code></td><td>park</td><td><code>park</code> parks a confident hit; <code>flag</code> only annotates.</td></tr>
+<tr><td><code id="k-backlog-check-similarity">backlog_check.similarity</code></td><td>tfidf</td><td><code>tfidf</code> or <code>bm25</code>.</td></tr>
+<tr><td><code id="k-backlog-check-dup-threshold-obsolete-threshold-park-threshold">backlog_check.dup_threshold / obsolete_threshold / park_threshold</code></td><td>0.72 / 0.72 / 0.8</td><td>Similarity scores for a duplicate, an obsolete hit and a park.</td></tr>
+<tr><td><code id="k-backlog-check-top-k">backlog_check.top_k</code></td><td>8</td><td>Candidates compared.</td></tr>
+<tr><td><code id="k-backlog-check-closed-window-days">backlog_check.closed_window_days</code></td><td>auto</td><td>How far back closed work is compared.</td></tr>
+<tr><td><code id="k-backlog-check-embed-enabled-command-weight">backlog_check.embed.enabled / command / weight</code></td><td>false / empty / 0.5</td><td>Optional embedding command blended into the similarity.</td></tr>
+<tr><td><code id="k-backlog-check-mirror-ttl-minutes-closed-limit">backlog_check.mirror.ttl_minutes / closed_limit</code></td><td>60 / 200</td><td>Cache age and closed-issue read limit of the board mirror.</td></tr>
+<tr><td><code id="k-spend-approval-enabled">spend_approval.enabled</code></td><td>off (opt-in)</td><td>Per-goal, single-use exemption from the park-on-expensive-action rule. Needs a marker as the first line of the issue body, written by an approver.</td></tr>
+<tr><td><code id="k-spend-approval-approvers">spend_approval.approvers</code></td><td>[]</td><td>Logins allowed to authorise. An empty or malformed list means nobody can.</td></tr>
+<tr><td><code id="k-spend-approval-classes">spend_approval.classes</code></td><td>spend</td><td>Action classes the exemption can cover.</td></tr>
+<tr><td><code id="k-design-zones">design.zones</code></td><td>absent</td><td>Owner-declared legacy and modern change zones, by glob.</td></tr>
+<tr><td><code id="k-design-restructure-lines">design.restructure_lines</code></td><td>40 (absent)</td><td>Changed-line threshold above which a legacy file reads as a restructure.</td></tr>
+<tr><td><code id="k-architecture-system-root">architecture.system_root</code></td><td>docs/architecture</td><td>Where the architecture document lives.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="model">Model selection and companions</h2>
+
+<p>Model tiers are chosen per goal, not per session. See <a href="skills.html#sigma-model"><code>/sigma-model</code></a> for the command.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code id="k-model-selection">model_selection</code></td><td>auto in the scaffold (off in code if absent)</td><td><code>auto</code> predicts a tier per goal and runs its phases at it; <code>off</code> uses the session model.</td></tr>
+<tr><td><code id="k-model-selection-reviewer-floor">model_selection_reviewer_floor</code></td><td>sonnet</td><td>Reviewer phases never run below this tier. An unknown value reads as <code>sonnet</code>.</td></tr>
+<tr><td><code id="k-model-selection-max-tier">model_selection_max_tier</code></td><td>opus</td><td>Price ceiling on the tier the router may resolve; the default keeps goal text from reaching the most expensive tier.</td></tr>
+<tr><td><code id="k-model-selection-signal-excludes">model_selection_signal_excludes</code></td><td>[]</td><td>Keyword signals the router should ignore on this repository.</td></tr>
+<tr><td><code id="k-model-host-overrides">model_host_overrides</code></td><td>{}</td><td>Host-specific substitutions for the tier resolver, limited to this plugin release&rsquo;s approved Codex identifiers. A malformed mapping refuses before dispatch.</td></tr>
+<tr><td><code id="k-review-host-overrides-model-selection-host-overrides">review.host_overrides / model_selection_host_overrides</code></td><td>absent</td><td>Per-host overrides, e.g. letting only Codex use a fresh Codex reviewer. See <a href="parallel.html#codex">Parallel and scheduled runs</a>.</td></tr>
+<tr><td><code id="k-companions">companions</code></td><td>auto</td><td>Probe for the optional <code>code-review</code> companion plugin. <code>off</code> skips the probe.</td></tr>
+<tr><td><code id="k-invocation-adapter">invocation.adapter</code></td><td>null</td><td>Optional trusted invocation adapter (<code>claude</code>, <code>codex</code> or <code>cursor</code>). The trust root is pinned in local git config, not in this file.</td></tr>
+<tr><td><code id="k-invocation-ttl-seconds-timeout-seconds">invocation.ttl_seconds / timeout_seconds</code></td><td>300 / 30</td><td>Receipt lifetime and worst-case added time per phase end.</td></tr>
+<tr><td><code id="k-knowledge-graph-enabled">knowledge_graph.enabled</code></td><td>off (opt-in)</td><td>Research capture and the optional knowledge graph.</td></tr>
+<tr><td><code id="k-knowledge-graph-scope">knowledge_graph.scope</code></td><td>full</td><td><code>full</code> or <code>research</code>.</td></tr>
+<tr><td><code id="k-knowledge-graph-builder">knowledge_graph.builder</code></td><td>graphify</td><td>The graph builder.</td></tr>
+<tr><td><code id="k-knowledge-graph-auto-refresh">knowledge_graph.auto_refresh</code></td><td>false</td><td>Refresh the graph as goals are recorded.</td></tr>
+<tr><td><code id="k-knowledge-graph-web-retention-enabled-days-disk-share">knowledge_graph.web_retention_enabled / _days / _disk_share</code></td><td>false / 90 / 0.0001</td><td>Bound on local web captures: age and a share of disk.</td></tr>
+<tr><td><code id="k-knowledge-graph-sync-enabled-branch-remote">knowledge_graph.sync.enabled / branch / remote</code></td><td>false / sdlc-knowledge / origin</td><td>Share analysis notes across machines on an ops branch.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="parallel">parallel: concurrent work</h2>
+
+<p>Two separate controls. The first is about one goal&rsquo;s slices, the second about several goals. The difference is explained on <a href="parallel.html">Parallel and scheduled runs</a>.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code id="k-parallel-enabled">parallel.enabled</code></td><td>off (opt-in)</td><td>Run one goal&rsquo;s independent slices concurrently, in waves, from a slice manifest.</td></tr>
+<tr><td><code id="k-parallel-max-concurrent">parallel.max_concurrent</code></td><td>3</td><td>Widest wave of slices.</td></tr>
+<tr><td><code id="k-parallel-goals-enabled">parallel.goals.enabled</code></td><td>off (opt-in)</td><td>Return several backlog goals at once, one worktree and pull request each. Needs <code>work.enabled</code>.</td></tr>
+<tr><td><code id="k-parallel-goals-max-concurrent">parallel.goals.max_concurrent</code></td><td>3</td><td>Most goals at once. Size it to memory, not to the number of open issues.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="resource">resource: the resource guard</h2>
+
+<p>Every key is scaffolded as <code>null</code>, which means <em>derived from this machine</em>. A bad value reads as derived with a note. The fractions are policy ratios, not fitted to a real exhaustion: two recorded runs (macOS, and Linux in a 2 GiB container) fixed none of them.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code id="k-resource-mode">resource.mode</code></td><td>derived: enforce</td><td><code>observe</code> logs the hold it would make and admits; <code>off</code> skips the check. The environment variable <code>SIGMA_RESOURCE_MODE</code> overrides it.</td></tr>
+<tr><td><code id="k-resource-reserve-fraction">resource.reserve_fraction</code></td><td>0.20 of memory</td><td>Memory kept free for the machine.</td></tr>
+<tr><td><code id="k-resource-max-share-fraction">resource.max_share_fraction</code></td><td>0.60 of memory</td><td>Most memory all sessions together may lease.</td></tr>
+<tr><td><code id="k-resource-cpu-reserve-cores">resource.cpu_reserve_cores</code></td><td>one eighth of cores, at least 1</td><td>Cores kept free.</td></tr>
+<tr><td><code id="k-resource-load-hold-ratio">resource.load_hold_ratio</code></td><td>1.0 per core</td><td>One-minute load per core above which load is reported high.</td></tr>
+<tr><td><code id="k-resource-swapout-hold-mb-per-s">resource.swapout_hold_mb_per_s</code></td><td>shown, never holds</td><td>When set, a swap-out rate above it holds.</td></tr>
+<tr><td><code id="k-resource-shed">resource.shed</code></td><td>verify</td><td>What is stopped first under pressure: <code>verify</code> or <code>off</code>.</td></tr>
+<tr><td><code id="k-resource-shed-after">resource.shed_after</code></td><td>3</td><td>Consecutive critical samples (two seconds apart) before the shed stops the verify group.</td></tr>
+<tr><td><code id="k-resource-max-goals">resource.max_goals</code></td><td>no extra cap</td><td>Hard cap on concurrent goals.</td></tr>
+<tr><td><code id="k-resource-max-verify-workers">resource.max_verify_workers</code></td><td>no extra cap</td><td>Hard cap on concurrent verify workers.</td></tr>
+<tr><td><code id="k-resource-verify-cold-mb">resource.verify_cold_mb</code></td><td>one eighth of memory per worker</td><td>Megabytes one verify worker is assumed to need before any run has been measured. Unmeasured on any real machine.</td></tr>
+<tr><td><code id="k-resource-hold-alert-minutes">resource.hold_alert_minutes</code></td><td>no alert</td><td>Minutes a hold may last before it is reported.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="ledger">ledger, watchers and notifications</h2>
+
+<p>The team ledger and the background watchers that ride on it. <a href="team.html">As a team</a> explains when to turn it on.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code id="k-ledger-enabled">ledger.enabled</code></td><td>null (undecided; reads as off)</td><td>The committed team record of claims and outcomes. The setup command writes <code>true</code> only where the key is still unset.</td></tr>
+<tr><td><code id="k-ledger-actor">ledger.actor</code></td><td>empty</td><td>Your handle in the ledger. Empty means the authenticated account, else the shell user.</td></tr>
+<tr><td><code id="k-ledger-owners">ledger.owners</code></td><td>{}</td><td>Optional area-to-owner overrides. Empty means the repository&rsquo;s code-owners file.</td></tr>
+<tr><td><code id="k-ledger-branch-ledger-remote">ledger.branch / ledger.remote</code></td><td>sdlc-ledger / origin</td><td>The ops branch the ledger is shared on, and its remote.</td></tr>
+<tr><td><code id="k-ledger-handoff-label">ledger.handoff.label</code></td><td>sdlc:dependency</td><td>Label on a cross-area hand-off issue.</td></tr>
+<tr><td><code id="k-ledger-publish-on-write">ledger.publish_on_write</code></td><td>on (not in the scaffold)</td><td>A ledger write you type publishes itself. <code>false</code> keeps it local for the watcher.</td></tr>
+<tr><td><code id="k-ledger-watch-interval-seconds">ledger.watch.interval_seconds</code></td><td>900</td><td>How often the watcher pulls the ops branch and refreshes the inbox.</td></tr>
+<tr><td><code id="k-ledger-watch-log-max-bytes">ledger.watch.log_max_bytes</code></td><td>1048576</td><td>Cap on the watcher log.</td></tr>
+<tr><td><code id="k-ledger-lease-ttl-hours">ledger.lease.ttl_hours</code></td><td>12</td><td>A claim by a crashed session expires after this. <code>0</code> never expires. Advisory.</td></tr>
+<tr><td><code id="k-ledger-host-alias">ledger.host_alias</code></td><td>null</td><td>A label (letters and digits, at most 12) used in entry file names instead of the host-name hash.</td></tr>
+<tr><td><code id="k-ledger-salt-host-token">ledger.salt_host_token</code></td><td>false</td><td>Salts the host-name hash with the repository name.</td></tr>
+<tr><td><code id="k-ledger-receipt-sharing">ledger.receipt_sharing</code></td><td>false</td><td>Not yet supported: <code>true</code> is refused with a warning and runs as <code>false</code>.</td></tr>
+<tr><td><code id="k-ledger-receipt-authority-trusted-signers">ledger.receipt_authority.trusted_signers</code></td><td>[]</td><td>Signing fingerprints for receipt objects; empty is unusable when sharing is on.</td></tr>
+<tr><td><code id="k-ledger-autowatch-enabled">ledger.autowatch.enabled</code></td><td>off (opt-in)</td><td>On a new unacknowledged ledger hit addressed to you, drives the loop scoped to that one flagged issue. Needs the ledger.</td></tr>
+<tr><td><code id="k-ledger-autowatch-scope">ledger.autowatch.scope</code></td><td>mentions, assignments, blockers</td><td>Which hits trigger a run.</td></tr>
+<tr><td><code id="k-ledger-autowatch-target-issue-only">ledger.autowatch.target_issue_only</code></td><td>true</td><td>Never an open-ended pick.</td></tr>
+<tr><td><code id="k-ledger-autowatch-surface">ledger.autowatch.surface</code></td><td>desktop</td><td><code>desktop</code> or <code>cli</code>.</td></tr>
+<tr><td><code id="k-ledger-autowatch-poll-interval-minutes">ledger.autowatch.poll_interval_minutes</code></td><td>10</td><td>How often it looks.</td></tr>
+<tr><td><code id="k-ledger-autowatch-hop-limit">ledger.autowatch.hop_limit</code></td><td>1</td><td>Caps chained autowatch-triggered runs.</td></tr>
+<tr><td><code id="k-ledger-autowatch-preconditions">ledger.autowatch.preconditions.*</code></td><td>no_concurrent_session true; require_gh_auth true; load_average_ceiling null; spend_ceiling_tokens_per_week null</td><td>Checks that must pass first. The weekly spend estimate is a local heuristic that cannot see other surfaces.</td></tr>
+<tr><td><code id="k-ledger-autowatch-channel-webhook-url-allow-remote-webhook">ledger.autowatch.channel_webhook_url / allow_remote_webhook</code></td><td>null / false</td><td>A loopback-only notification URL unless remote is allowed.</td></tr>
+<tr><td><code id="k-agent-watch-enabled">agent_watch.enabled</code></td><td>off (opt-in)</td><td>Notice when a claimed goal&rsquo;s process has died. Needs the ledger.</td></tr>
+<tr><td><code id="k-agent-watch-notify-email">agent_watch.notify.email.*</code></td><td>disabled; port 587; password from <code>SIGMA_SMTP_PASS</code></td><td>Optional email: <code>enabled</code>, <code>host</code>, <code>port</code>, <code>to</code>, <code>user</code>, <code>pass_env</code>. A literal password is never accepted.</td></tr>
+<tr><td><code id="k-comment-watch-enabled">comment_watch.enabled</code></td><td>off (opt-in)</td><td>A new comment on a claimed issue notifies the claimant through a ledger note. Needs the ledger and GitHub discovery.</td></tr>
+<tr><td><code id="k-drift-watch-enabled">drift_watch.enabled</code></td><td>off (opt-in)</td><td>Watches each open unit for drift from the base and posts to Slack. Needs the ledger.</td></tr>
+<tr><td><code id="k-drift-watch-ttl-minutes">drift_watch.ttl_minutes</code></td><td>90</td><td>Minimum minutes between checks.</td></tr>
+<tr><td><code id="k-drift-watch-channels-sigma-org">drift_watch.channels.sigma / org</code></td><td>null / null</td><td>Slack channels to post to.</td></tr>
+<tr><td><code id="k-drift-watch-slack-bot-token-env">drift_watch.slack_bot_token_env</code></td><td>SIGMA_SLACK_BOT_TOKEN</td><td>Name of the environment variable holding the token.</td></tr>
+<tr><td><code id="k-slack-commands-enabled">slack_commands.enabled</code></td><td>off (opt-in)</td><td>Inbound Slack commands from one curated channel. Started by hand; see <a href="slack.html">From Slack</a>.</td></tr>
+<tr><td><code id="k-slack-commands-channel-id">slack_commands.channel_id</code></td><td>null</td><td>The one channel commands are accepted from.</td></tr>
+<tr><td><code id="k-slack-commands-app-token-env-bot-token-env">slack_commands.app_token_env / bot_token_env</code></td><td>SIGMA_SLACK_BOT_SOCKET_TOKEN / SIGMA_SLACK_BOT_TOKEN</td><td>Names of the environment variables holding the tokens. Secrets stay in the environment.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="logs">Local records: action log and journal</h2>
+
+<p>Both are local to your machine and never published.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code id="k-action-log-enabled">action_log.enabled</code></td><td>true</td><td>The local trace of loop activity that <a href="skills.html#sigma-log"><code>/sigma-log</code></a> reads. Keep on. If the key is absent the code treats it as off.</td></tr>
+<tr><td><code id="k-journal-enabled">journal.enabled</code></td><td>off (opt-in)</td><td>A local activity journal: phase timings, gate verdicts and counts, never code or prose.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="upkeep">upkeep: keeping unit branches current</h2>
+
+<p>All of it ships off. Turning it on needs three things together; they are listed on <a href="units.html#upkeep">Units of work</a>. An unknown key, a wrong type or a contradictory pair in this block closes the whole block, and the doctor names the key.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code id="k-upkeep-enabled">upkeep.enabled</code></td><td>false</td><td>Project opt-in; only the JSON boolean <code>true</code> opens it.</td></tr>
+<tr><td><code id="k-upkeep-window-hours">upkeep.window_hours</code></td><td>12</td><td>Hours since the last completed sweep before the next may start (1 to 8760).</td></tr>
+<tr><td><code id="k-upkeep-retry-minutes">upkeep.retry_minutes</code></td><td>60</td><td>Hold-off after an attempt that did not complete; never closes the window.</td></tr>
+<tr><td><code id="k-upkeep-units-include-exclude">upkeep.units.include / exclude</code></td><td>[&quot;*&quot;] / []</td><td>Case-folded globs for units the sweep may pick; exclude always wins.</td></tr>
+<tr><td><code id="k-upkeep-verify-timeout-minutes">upkeep.verify.timeout_minutes</code></td><td>60</td><td>With a 15-minute margin, the sweep&rsquo;s total time cap.</td></tr>
+<tr><td><code id="k-upkeep-verify-clean-rebase">upkeep.verify.clean_rebase</code></td><td>false</td><td>Read and checked; not acted on.</td></tr>
+<tr><td><code id="k-upkeep-backup-keep-days-keep-last">upkeep.backup.keep_days / keep_last</code></td><td>14 / 5</td><td>Prune removes backups older than keep_days but always keeps the newest keep_last of each unit.</td></tr>
+<tr><td><code id="k-upkeep-backup-former-prefixes">upkeep.backup.former_prefixes</code></td><td>[]</td><td>Backup namespaces an earlier product wrote, pruned the same way.</td></tr>
+<tr><td><code id="k-upkeep-conflicts-resolve">upkeep.conflicts.resolve</code></td><td>off</td><td><code>off</code> parks a conflict; <code>mechanical</code> resolves changelog-only conflicts; <code>agent</code> runs a capped resolver plus a reviewer. With no spend key set the agent level has no spend limit.</td></tr>
+<tr><td><code id="k-upkeep-conflicts-mechanical-without-verify">upkeep.conflicts.mechanical_without_verify</code></td><td>false</td><td>Lets the mechanical level run with no verify command.</td></tr>
+<tr><td><code id="k-upkeep-conflicts-union-paths">upkeep.conflicts.union_paths</code></td><td>[]</td><td>Files whose two-sided pure additions the mechanical level unions.</td></tr>
+<tr><td><code id="k-upkeep-conflicts-agent-model">upkeep.conflicts.agent.model</code></td><td>sonnet</td><td>Model for the resolver.</td></tr>
+<tr><td><code id="k-upkeep-conflicts-agent-max-budget-usd-per-unit-spend-ceiling-usd-per-day">upkeep.conflicts.agent.max_budget_usd_per_unit / spend_ceiling_usd_per_day</code></td><td>null / null</td><td>Spend caps for the agent level. Set at least the first.</td></tr>
+<tr><td><code id="k-upkeep-conflicts-agent-timeout-minutes-max-units-per-sweep">upkeep.conflicts.agent.timeout_minutes / max_units_per_sweep</code></td><td>30 / 5</td><td>Time per unit and units per sweep.</td></tr>
+<tr><td><code id="k-upkeep-conflicts-agent-reviewer-enabled-model">upkeep.conflicts.agent.reviewer.enabled / model</code></td><td>true / sonnet</td><td>The independent reviewer of a resolution.</td></tr>
+<tr><td><code id="k-upkeep-conflicts-agent-credential-var-login">upkeep.conflicts.agent.credential_var / login</code></td><td>null / scrubbed</td><td>Which credential the resolver uses; <code>host</code> runs on the watcher&rsquo;s own login.</td></tr>
+<tr><td><code id="k-upkeep-triggers-upkeep-auto">upkeep.triggers.*, upkeep.auto.*</code></td><td>see the branching contract</td><td>Still read and checked for one release; they no longer schedule anything.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="rulebook">rulebook: recorded decisions and earned trust</h2>
+
+<p>Every part is off by default and opens only on the JSON boolean <code>true</code> (the text &ldquo;true&rdquo; or the number 1 stay off). A wrong-typed value reads as its default unless it is an <code>enabled</code> flag, which closes the block.</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code id="k-rulebook-records-enabled">rulebook.records.enabled</code></td><td>off (opt-in)</td><td>Opens the decision records part.</td></tr>
+<tr><td><code id="k-rulebook-records-publish">rulebook.records.publish</code></td><td>true</td><td>A person-run gesture commits records (never pushes).</td></tr>
+<tr><td><code id="k-rulebook-records-repo-visibility">rulebook.records.repo_visibility</code></td><td>private</td><td><code>public</code> keeps free text out of records and issue text.</td></tr>
+<tr><td><code id="k-rulebook-records-store-dir">rulebook.records.store_dir</code></td><td>decisions</td><td>Folder under the state folder.</td></tr>
+<tr><td><code id="k-rulebook-records-lock-timeout-s-archive-after-days-max-files-warn">rulebook.records.lock_timeout_s / archive_after_days / max_files_warn</code></td><td>20 / 180 / 5000</td><td>Index lock wait, archive age, and the file count above which the doctor warns.</td></tr>
+<tr><td><code id="k-rulebook-records-pointer">rulebook.records.pointer.*</code></td><td>enabled false; 1 per day; compact after 14 days</td><td>Ledger pointers to records (<code>enabled</code>, <code>max_writes_per_day</code>, <code>compact_after_days</code>). Needs the ledger.</td></tr>
+<tr><td><code id="k-rulebook-hard-stops-enabled">rulebook.hard_stops.enabled</code></td><td>off (opt-in)</td><td>Opens the hard-stop net.</td></tr>
+<tr><td><code id="k-rulebook-hard-stops-own-branch-prefixes-own-registered-units">rulebook.hard_stops.own_branch_prefixes / own_registered_units</code></td><td>[&quot;sdlc/&quot;] / true</td><td>Which branch pushes count as Sigma&rsquo;s own.</td></tr>
+<tr><td><code id="k-rulebook-hard-stops-classes-tamper-oversight-unvetted-execution">rulebook.hard_stops.classes.tamper_oversight / unvetted_execution</code></td><td>false / false</td><td>Default-off classes.</td></tr>
+<tr><td><code id="k-rulebook-autonomy-enabled">rulebook.autonomy.enabled</code></td><td>off (opt-in)</td><td>Derives an earned level per question kind and area.</td></tr>
+<tr><td><code id="k-rulebook-autonomy-levels-l1-min-answers-to-l4-min-answers">rulebook.autonomy.levels.l1_min_answers to l4_min_answers</code></td><td>10, 30, 60, 300</td><td>Answers needed per level.</td></tr>
+<tr><td><code id="k-rulebook-autonomy-levels-l2-agreement-to-l4-agreement">rulebook.autonomy.levels.l2_agreement to l4_agreement</code></td><td>0.90, 0.95, 0.99</td><td>Agreement needed per level.</td></tr>
+<tr><td><code id="k-rulebook-autonomy-veto-pause-consecutive-veto-pause-total-veto-recover-after">rulebook.autonomy.veto_pause_consecutive / veto_pause_total / veto_recover_after</code></td><td>3 / 20 / 10</td><td>Vetoes that pause a kind, and agreeing comparisons that lift a veto&rsquo;s drop.</td></tr>
+<tr><td><code id="k-rulebook-autonomy-watch-retention-days">rulebook.autonomy.watch.retention_days</code></td><td>30</td><td>Age after which watch records are pruned.</td></tr>
+<tr><td><code id="k-rulebook-autonomy-applier-enabled">rulebook.autonomy.applier.enabled</code></td><td>off (opt-in)</td><td>Opens levels 3 and 4: act and tell.</td></tr>
+<tr><td><code id="k-rulebook-autonomy-applier-window-minutes-max-auto-applied-per-day">rulebook.autonomy.applier.window_minutes / max_auto_applied_per_day</code></td><td>1440 / 3</td><td>Time a person has to answer or veto; rolling daily cap (<code>0</code> stops it).</td></tr>
+<tr><td><code id="k-rulebook-autonomy-applier-allow-silent">rulebook.autonomy.applier.allow_silent</code></td><td>[]</td><td>Kinds that may be applied silently at level 4.</td></tr>
+<tr><td><code id="k-rulebook-autonomy-applier-spot-check-one-in-stale-after-intervals-prune-after-days">rulebook.autonomy.applier.spot_check_one_in / stale_after_intervals / prune_after_days</code></td><td>5 / 3 / 30</td><td>Every Nth silent-eligible apply still comments; intervals before the doctor reads the applier as dead; age at which an applied ask is deleted.</td></tr>
+<tr><td><code id="k-rulebook-rules-enabled">rulebook.rules.enabled</code></td><td>off (opt-in)</td><td>Opens the committed rulebook of repository rules.</td></tr>
+<tr><td><code id="k-rulebook-rules-auto-approve">rulebook.rules.auto_approve</code></td><td>false</td><td>Lets the watcher approve learned rules as the first owner.</td></tr>
+<tr><td><code id="k-rulebook-rules-path-reask-days">rulebook.rules.path / reask_days</code></td><td>.sdlc/rulebook.json / 90</td><td>Where the rule file lives; age at which a rule is due for confirmation.</td></tr>
+<tr><td><code id="k-rulebook-rules-draft-min-agreement-min-held-out">rulebook.rules.draft.min_agreement / min_held_out</code></td><td>0.9 / 5</td><td>Agreement and smallest held-out set needed to draft a rule.</td></tr>
+<tr><td><code id="k-rulebook-drift-enabled">rulebook.drift.enabled</code></td><td>off (opt-in)</td><td>Opens the drift judge, in shadow only.</td></tr>
+<tr><td><code id="k-rulebook-drift-documents-max-total-chars-model-rounds">rulebook.drift.documents / max_total_chars / model / rounds</code></td><td>[] / 40000 / null / 1</td><td>Reference documents, their clip, the model (nothing is called without it), and calls per park (at most 3).</td></tr>
+<tr><td><code id="k-rulebook-drift-max-budget-usd-per-call-spend-ceiling-usd-per-day">rulebook.drift.max_budget_usd_per_call / spend_ceiling_usd_per_day</code></td><td>0.10 / null</td><td>Per-call ceiling; without the daily ceiling nothing is called.</td></tr>
+<tr><td><code id="k-rulebook-spend-weekly-usd-monthly-usd">rulebook.spend.weekly_usd / monthly_usd</code></td><td>null / null</td><td>Optional shared cap on the real cost of the import classifier and the drift judge over 7 and 30 days.</td></tr>
+<tr><td><code id="k-rulebook-import-classifier-model">rulebook.import.classifier / model</code></td><td>table / haiku</td><td><code>table</code> or <code>model</code>, and the model used.</td></tr>
+<tr><td><code id="k-rulebook-import-max-file-bytes-time-budget-s-max-candidates">rulebook.import.max_file_bytes / time_budget_s / max_candidates</code></td><td>500000000 / 60 / 500</td><td>Bounds on a past-decision scan.</td></tr>
+<tr><td><code id="k-rulebook-import-comments-max-issues">rulebook.import.comments / max_issues</code></td><td>false / 50</td><td>Also read issue comments, and how many issues.</td></tr>
+<tr><td><code id="k-rulebook-import-profile-dirs-project-dirs">rulebook.import.profile_dirs / project_dirs</code></td><td>[] / []</td><td>Where to look for transcripts.</td></tr>
+<tr><td><code id="k-rulebook-import-max-budget-usd-per-call-max-budget-usd-per-run-timeout-s">rulebook.import.max_budget_usd_per_call / max_budget_usd_per_run / timeout_s</code></td><td>0.50 / 1.0 / 60</td><td>Classifier ceilings. There is no cross-run daily cap, so repeated runs add up.</td></tr>
+<tr><td><code id="k-rulebook-import-require-repo-cwd">rulebook.import.require_repo_cwd</code></td><td>false</td><td>Keep only answers whose working directory is inside this repository.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="other">Other keys</h2>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code id="k-mode-default">mode.default</code></td><td>goal</td><td>Written by init. Leave as scaffolded.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="env">Environment variables</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Variable</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>SIGMA_RESOURCE_MODE</code></td><td><code>off</code>, <code>observe</code> or <code>enforce</code>; overrides <code>resource.mode</code> everywhere.</td></tr>
+<tr><td><code>SIGMA_UPKEEP_JOB</code></td><td>Exactly <code>1</code> on one machine opts that machine in to the branch-upkeep sweep. See <a href="units.html#upkeep">Units of work</a>.</td></tr>
+<tr><td><code>SIGMA_SLACK_BOT_TOKEN</code>, <code>SIGMA_SLACK_BOT_SOCKET_TOKEN</code></td><td>Slack tokens. Secrets stay in the environment, never in the file.</td></tr>
+<tr><td><code>SIGMA_SMTP_PASS</code></td><td>The default name of the variable holding the email password for the agent watch.</td></tr>
+<tr><td><code>SIGMA_TRUSTED_VERIFY_SHA256</code></td><td>An operator&rsquo;s approval of the verify command for one repository in a cloud environment. Only the operator sets it.</td></tr>
+<tr><td><code>SIGMA_LEDGER_ALLOW_UNSERIALISED</code></td><td>Lets ledger publishing proceed unserialised where the publish lock cannot be made; unset means refuse.</td></tr>
+<tr><td><code>SIGMA_CODEX_BIN</code>, <code>SIGMA_CODEX_CMD</code></td><td>Choose the Codex binary, and the launch command, for a Codex supervisor. See <a href="parallel.html#codex">Parallel and scheduled runs</a>.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="aud aud-tech">
+<div class="aud-label">Technical detail</div>
+<p>This page is written from the scaffold template and the configuration reference in the repository: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/configuration.md">configuration</a>. The rulebook keys are described further in <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/decision-rulebook.md">the decision rulebook guide</a>, the dependency keys in <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/dependency-map-and-chain.md">the dependency map guide</a>. What enforces each setting, and on which host, is in <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/enforcement.md">enforcement</a>.</p>
+</div>
+
+<div class="pagenav">
+  <a href="config.html"><span class="dir">Back</span>&larr; Configuration</a>
+  <a class="next" href="sdlc-folder.html"><span class="dir">Next</span>The .sdlc folder &rarr;</a>
+</div>
+
+
 
 </main>
 </div>

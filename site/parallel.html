@@ -75,15 +75,209 @@
 
 <span class="eyebrow">Set up &amp; run</span>
 <h1>Parallel and scheduled runs</h1>
+<p class="subtitle">Sigma can run several things at once, and a timer can start it while another run is still going. This page explains how overlapping runs are kept from colliding, which settings widen the work, and how to start Sigma from a scheduler or from Codex.</p>
+
 <nav class="toc" aria-label="On this page">
 <div class="toc-title">On this page</div>
 <ul>
-<li><a href="#overview">Overview</a></li>
+<li><a href="#overlap">When triggers overlap</a></li>
+<li><a href="#two-kinds">Two kinds of parallel work</a></li>
+<li><a href="#keys">The settings</a></li>
+<li><a href="#slices">Slices of one goal</a></li>
+<li><a href="#goals">Several goals at once</a></li>
+<li><a href="#scheduled">Scheduled and routine runs</a></li>
+<li><a href="#codex">The Codex supervisor</a></li>
+<li><a href="#guard">The resource guard</a></li>
+<li><a href="#limits">What is not measured</a></li>
 </ul>
 </nav>
 
-<h2 id="overview">Overview</h2>
-<p class="stub">Content in progress.</p>
+<div class="most">
+<p class="most-title">Most people only need</p>
+<ul>
+<li>Leave both parallel switches off to start. Each ships off, and every goal then runs as one unit.</li>
+<li>If you turn on goal-level parallelism, size <code>parallel.goals.max_concurrent</code> to your machine&rsquo;s memory, not to how many issues are open.</li>
+<li>For a scheduler, make the first step a check for a running session; if one is live, stop.</li>
+<li>Pass the invoking shell&rsquo;s own process id to every call a routine makes.</li>
+</ul>
+</div>
+
+<h2 id="overlap">When triggers overlap</h2>
+<p>Sigma does not schedule itself. Whatever fires an agent on a timer (a desktop routine, a cron job, a hosted scheduler) does that. What Sigma provides is a safe answer to &ldquo;is a session already running?&rdquo;, so a routine can be set once and left alone without launching a second session on top of the first.</p>
+<p>The answer comes from the <strong>session registry</strong>. When a run starts it records the process id of its long-lived caller, not of any one short-lived Sigma command, which exits within moments. A routine firing asks the registry first.</p>
+<div class="diagram">
+<svg viewBox="0 0 700 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Overlapping triggers. A timer fires a routine. The routine asks the session registry whether a session is active. If the answer is ACTIVE, at least one registered process is alive with a fresh lease, so the firing exits at once and nothing starts. If the answer is FREE, every entry is absent, dead or expired, so the firing starts a session, picks goals from the backlog, and when it stops it ends its own registry entry so the next firing sees FREE.">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" class="dmark"/>
+    </marker>
+  </defs>
+  <rect class="dbox" x="20" y="30" width="150" height="50" rx="9"/>
+  <text class="dtext" x="95" y="52" text-anchor="middle" font-weight="700">Timer fires</text>
+  <text class="dtext-dim" x="95" y="68" text-anchor="middle">a routine or cron job</text>
+  <path class="darrow" d="M170,55 L214,55" marker-end="url(#ar)"/>
+
+  <rect class="dbox-core" x="216" y="22" width="190" height="66" rx="9"/>
+  <text class="dtext" x="311" y="48" text-anchor="middle" font-weight="700">Ask the registry</text>
+  <text class="dtext-dim" x="311" y="66" text-anchor="middle">is a live session registered?</text>
+  <text class="dtext-dim" x="311" y="80" text-anchor="middle">(session-active)</text>
+
+  <path class="darrow" d="M406,44 L470,44 L470,36 L496,36" marker-end="url(#ar)"/>
+  <text class="dtext-dim" x="440" y="30" text-anchor="middle">ACTIVE</text>
+  <rect class="dbox-optional" x="498" y="14" width="184" height="46" rx="9"/>
+  <text class="dtext" x="590" y="34" text-anchor="middle">Exit at once</text>
+  <text class="dtext-dim" x="590" y="50" text-anchor="middle">nothing is started</text>
+
+  <path class="darrow" d="M311,88 L311,140" marker-end="url(#ar)"/>
+  <text class="dtext-dim" x="322" y="118">FREE</text>
+
+  <rect class="dbox" x="196" y="140" width="230" height="50" rx="9"/>
+  <text class="dtext" x="311" y="162" text-anchor="middle" font-weight="700">Start a session</text>
+  <text class="dtext-dim" x="311" y="178" text-anchor="middle">registers this firing's process id</text>
+  <path class="darrow" d="M311,190 L311,222" marker-end="url(#ar)"/>
+
+  <rect class="dbox" x="196" y="222" width="230" height="50" rx="9"/>
+  <text class="dtext" x="311" y="244" text-anchor="middle" font-weight="700">Pick goals from the backlog</text>
+  <text class="dtext-dim" x="311" y="260" text-anchor="middle">until empty or a budget stops it</text>
+
+  <path class="darrow" d="M426,247 L520,247" marker-end="url(#ar)"/>
+  <rect class="dbox" x="522" y="222" width="160" height="50" rx="9"/>
+  <text class="dtext" x="602" y="244" text-anchor="middle" font-weight="700">End the entry</text>
+  <text class="dtext-dim" x="602" y="260" text-anchor="middle">the next firing sees FREE</text>
+</svg>
+<p class="diagram-caption">One firing, two outcomes. Several sessions register independently, and one ending never erases another&rsquo;s entry.</p>
+</div>
+<ul>
+<li><strong>ACTIVE</strong> means at least one registered process is alive and its lease is fresh.</li>
+<li><strong>FREE</strong> means every entry is absent, has a dead process, or has an expired lease.</li>
+<li>A pick skips goals another live session has claimed, and each session keeps its own budgets and its own verify evidence, so one session starting never voids another&rsquo;s passing verify.</li>
+<li>In Codex Desktop, separate tasks can share a parent process id, so their entries are also keyed by the task&rsquo;s thread id. If one task dies while the shared process lives, its entry expires after the lease time (12 hours by default); a clean exit clears it sooner. An unreadable marker also fails closed until its lease expires.</li>
+</ul>
+
+<h2 id="two-kinds">Two kinds of parallel work</h2>
+<p>There are two separate switches, and they do different things. Neither depends on the other.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th></th><th>Slices of one goal</th><th>Several goals</th></tr></thead>
+<tbody>
+<tr><td>What runs at once</td><td>Independent slices of a single goal&rsquo;s plan.</td><td>Separate backlog goals, each from research to pull request.</td></tr>
+<tr><td>Switch</td><td><code>parallel.enabled</code></td><td><code>parallel.goals.enabled</code></td></tr>
+<tr><td>Width</td><td><code>parallel.max_concurrent</code></td><td><code>parallel.goals.max_concurrent</code></td></tr>
+<tr><td>Isolation</td><td>Each slice that declares files gets its own worktree.</td><td>Each goal gets its own worktree, branch and pull request. Needs <code>work.enabled</code>.</td></tr>
+<tr><td>Conflicts</td><td>Slices whose file lists can overlap never run together.</td><td>No conflict check; overlap shows up later as an ordinary pull-request rebase.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="keys">The settings</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Key</th><th>Default</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>parallel.enabled</code></td><td>off (opt-in)</td><td>Run one goal&rsquo;s independent slices concurrently, in waves.</td></tr>
+<tr><td><code>parallel.max_concurrent</code></td><td><code>3</code></td><td>The widest wave of slices. It never affects how many goals run.</td></tr>
+<tr><td><code>parallel.goals.enabled</code></td><td>off (opt-in)</td><td>Let a batch pick return several goals at once. With it off, or with only one goal available, a batch is the same as a single pick.</td></tr>
+<tr><td><code>parallel.goals.max_concurrent</code></td><td><code>3</code></td><td>The most goals returned in one batch. A whole number of at least 1; a value that is not a number reads as 3.</td></tr>
+<tr><td><code>handoff.after_goals</code></td><td><code>20</code></td><td>The orchestrating session stops claiming after this many goals, counting goals already done and goals still running.</td></tr>
+<tr><td><code>budget.max_iterations</code></td><td><code>20</code></td><td>Goals per session; the free slots in a batch are also bounded by what is left of this.</td></tr>
+<tr><td><code>resource.max_goals</code></td><td>no extra cap</td><td>Hard cap on concurrent goals from the resource guard.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Only the JSON boolean <code>true</code> turns a switch on; a stray string or the number 1 does not. The rest of the settings are on <a href="settings.html#parallel">All settings</a>.</p>
+
+<h2 id="slices">Slices of one goal</h2>
+<p>A goal is planned as slices, and by default they run one after another. With <code>parallel.enabled</code> on, you describe the slices in a file beside the plan, and Sigma groups the ones that cannot collide into waves.</p>
+<pre><code>[
+  {"id": "s0", "title": "extract the config reader", "files": ["config/**"]},
+  {"id": "s1", "title": "rewrite the loader", "needs": ["s0"], "files": ["engine/loader.py"]},
+  {"id": "s2", "title": "new CLI flag", "needs": ["s0"], "files": ["cli/**"]}
+]</code></pre>
+<p>This goes in <code>.sdlc/plans/&lt;goal-stem&gt;.slices.json</code>. <code>needs</code>, <code>files</code>, <code>size</code> and <code>status</code> are optional.</p>
+<ul>
+<li><strong>Waves, not a thread pool.</strong> Each wave packs slices that are runnable and do not conflict, up to <code>parallel.max_concurrent</code>. The order is deterministic, so you can read the plan before anything runs.</li>
+<li><strong>The conflict rule is cautious.</strong> Two slices conflict when their file patterns could overlap. A slice that declares no files conflicts with everything and runs alone. Every slice that declares files runs in its own worktree.</li>
+<li><strong>Slices run as subagents.</strong> A slice marked <code>"size": "large"</code>, too big for one subagent&rsquo;s context, is not run for you. The plan prints the exact command for you to start in a session of its own, and the loop never starts it. It also never starts an unattended second worker on the same <code>.sdlc</code> folder.</li>
+</ul>
+
+<h2 id="goals">Several goals at once</h2>
+<p>With <code>parallel.goals.enabled</code> on, a batch pick returns up to <code>parallel.goals.max_concurrent</code> goals, and each is dispatched to its own subagent. The target is one person on one machine working through a stack of their own assigned issues. It is not a team coordination mechanism; the <a href="team.html#ledger">team ledger</a> does that.</p>
+<ul>
+<li>When a goal finishes, its slot is refilled with a new pick that names the goals still running. That naming is required: without it two subagents could take the same goal.</li>
+<li>With <code>work.enabled</code> off, a batch is clamped to one goal, because concurrent goals are isolated only by their own worktrees.</li>
+<li>A goal that a batch claimed but never dispatched keeps its in-progress mark. <code>loop.py release</code> removes the mark and leaves an audit comment without touching the goal label or spending any of the iteration budget.</li>
+<li>On a host without subagents, goals run one at a time, inline.</li>
+</ul>
+<p>The loop that drives these is described on <a href="orchestrate.html">Running many goals</a>.</p>
+
+<h2 id="scheduled">Scheduled and routine runs</h2>
+<p>A routine is any recurring trigger your host provides. The prompt it fires should do four things, in order:</p>
+<ol class="steps">
+<li><h4>Check for a live session</h4><p>Run the session check. If it prints <code>ACTIVE</code>, stop. Nothing else happens in this firing.</p></li>
+<li><h4>Start a session</h4><p>If it prints <code>FREE</code>, start one, passing the invoking shell&rsquo;s own parent process id. Read that id fresh on every call.</p></li>
+<li><h4>Drain by picking, never by remembering</h4><p>Ask for the next goal each time. Do not phrase the prompt as &ldquo;continue where you left off&rdquo;: a fresh firing has no transcript of the one before, and memory must never stand in for a real backlog pick.</p></li>
+<li><h4>End the session</h4><p>When it stops, end the session with the same process id, so the next firing sees <code>FREE</code>.</p></li>
+</ol>
+<p>The commands a routine prompt contains, with <code>&lt;installed-sigma&gt;</code> standing for the folder the plugin is installed in:</p>
+<pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-loop/scripts/loop.py session-active .sdlc
+g=$(python3 &lt;installed-sigma&gt;/skills/sigma-loop/scripts/loop.py start .sdlc --session-pid "$PPID")
+python3 &lt;installed-sigma&gt;/skills/sigma-loop/scripts/loop.py session-end .sdlc --session-pid "$PPID" --session-generation "$g"</code></pre>
+<p>The process id appears on every call on purpose. Sigma cannot compute, from inside a short-lived command, a value that is both stable across your routine&rsquo;s separate commands and unique to this firing. By default the fallback is the immediate parent, which is correct only for one continuous caller; a routine that runs each command separately gets a fresh parent every time. &ldquo;Zero-touch&rdquo; describes the scheduling and the fact that the prompt needs no per-firing edits, not the absence of the flag.</p>
+<div class="callout callout-warn">
+<div class="callout-title">What to set first</div>
+<p>For an unattended drain, turn on <code>backlog_check.enabled</code>. It is what makes a dependency marker written only as a comment, by a person, actually honoured instead of silently ignored. Keep the budgets in place; each belongs to the session that started it, so overlapping sessions can together spend several times one ceiling. The longer unattended walk-through is <a href="run.html#overnight">Running unattended</a>.</p>
+</div>
+
+<h2 id="codex">The Codex supervisor</h2>
+<p>A Codex supervisor is a separate, opt-in path. It changes Codex behaviour only: it does not install, update or restart Claude Code, and the Claude supervisor and its review and model defaults are untouched. Sigma refuses to start it rather than guess.</p>
+<h3>What it refuses on</h3>
+<ul>
+<li>Sigma is not enabled in the <strong>current</strong> Codex home, or its version or installed source cannot be verified. It never borrows a checkout or a Claude plugin path.</li>
+<li>A git-based marketplace install whose checkout or cached plugin is not clean, or is not at the same commit. On Windows this preflight currently refuses; it has been exercised on macOS only.</li>
+<li>The Codex-enabled Sigma and the running Sigma differ in version. The supervisor refuses (&ldquo;update the older host&rdquo;); the doctor only warns.</li>
+<li>The Codex command is ambiguous or invalid: an invalid <code>SIGMA_CODEX_BIN</code> refuses and never falls through, and two copies with different real paths refuse as ambiguous until you choose one.</li>
+<li>A worker that exits with no final message, or with a message the supervisor cannot trust. A zero exit alone is not accepted as a finished goal.</li>
+<li>A non-numeric <code>SIGMA_SUPERVISE_MAX_RUNS</code> or <code>SIGMA_SUPERVISE_SLEEP_SCALE</code>.</li>
+<li>A second Codex supervisor for the same <code>.sdlc</code> folder: a kernel lock keeps it to one. A newly launched Claude worker does not take that lock, so do not run both supervisors for one checkout.</li>
+</ul>
+<h3>Starting it</h3>
+<ol class="steps">
+<li><h4>Check what is running</h4><p>Look at your config, current workers and the Codex plugin list. If a supervisor is already running for this checkout, stop it through its stop file and let it exit. Keep a backup of your config.</p></li>
+<li><h4>Install in Codex only</h4><p>Add Sigma to Codex through its marketplace and confirm there is one enabled Sigma entry in the plugin list.</p></li>
+<li><h4>Refresh the standing rules</h4><p>Refresh the Codex standing rules with the setup script&rsquo;s Codex option (the Codex autonomy guide names it), then read the managed block it writes. This does not edit Claude&rsquo;s files.</p></li>
+<li><h4>Run one bounded smoke</h4><p>Run the supervisor once in a disposable repository or a small backlog with the run limit set to 1, then read the supervisor log, the exit code, the issue and pull-request trail and the final report before raising the limit.</p></li>
+<li><h4>Opt in to a longer run</h4><p>On a laptop that sleeps, keep it awake. Stop it politely by creating <code>.sdlc/state/supervisor.stop</code>, and remove that file before a later restart.</p></li>
+</ol>
+<p>The Codex supervisor uses an approval mode rather than an unrestricted sandbox bypass. Where a fresh Codex reviewer and automatic model tier are wanted for Codex only, the per-host override keys on <a href="settings.html#model">All settings</a> do that without changing the values Claude uses.</p>
+
+<h2 id="guard">The resource guard</h2>
+<p>Parallel work is limited by the machine, not only by the settings above. Sigma reads memory, load and cores and derives its own limits; nothing is a constant copied from a laptop, and nothing here pauses a running process.</p>
+<ul>
+<li><strong>Admission, not interruption.</strong> A goal pick, a model session and a verify each take a lease first. With no room, the answer is a hold with a reason and a retry time. The picker leaves goals unclaimed; a verify exits with code 5 and the prefix <code>RESOURCE-HOLD</code> without running or writing evidence. The goal is not failed.</li>
+<li><strong>It narrows a batch.</strong> The number of goals a batch returns is the smallest of your configured width, what the machine has room for, and what is left under the hand-off and iteration ceilings.</li>
+<li><strong>A hold is a wait.</strong> A run that hits one waits and verifies again; it never edits code for it and never counts it as a review cycle. After six holds in a row the goal is parked. That bound is provisional, not derived from a measured hold.</li>
+<li><strong>Shed.</strong> Under sustained critical pressure the verify processes Sigma started are stopped. A model session is never signalled.</li>
+<li><strong>Modes.</strong> <code>resource.mode</code> is <code>enforce</code>, <code>observe</code> (log the would-be hold, admit) or <code>off</code>; the <code>SIGMA_RESOURCE_MODE</code> environment variable overrides it everywhere.</li>
+</ul>
+<p>The guard cannot cover tests you run by hand outside the verify command, memory used by other programs, a host&rsquo;s own subagent fan-out, or Windows (where it refuses rather than guess). The keys are on <a href="settings.html#resource">All settings</a> and the unattended behaviour on <a href="run.html#holds">Running unattended</a>.</p>
+
+<h2 id="limits">What is not measured</h2>
+<ul>
+<li>The resource-guard fractions are policy ratios, not fitted to a real exhaustion. Two recorded runs, on macOS and on Linux in a 2 GiB container, fixed none of them.</li>
+<li>Memory is the dominant cost of running goals in parallel: each active goal is a full agent session, far heavier than an idle chat. <code>parallel.goals.max_concurrent</code> is effectively a memory knob. Token use is a separate axis; measure input, cached input, output and completed goals before claiming savings.</li>
+<li>A Codex quota exhaustion and a full Codex goal-to-merge run have not been measured. The supervisor&rsquo;s quota classifier has been exercised on synthetic text only.</li>
+<li>The ledger&rsquo;s per-process entry files and the local action logs grow for the life of a repository and nothing prunes them; this is correctness-neutral but is a read cost that rises.</li>
+</ul>
+
+<div class="aud aud-tech">
+<div class="aud-label">Technical detail</div>
+<p>The full contracts are in <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/parallelism.md">parallelism</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/routines.md">routines</a> and <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/codex-autonomy.md">Codex autonomy</a>.</p>
+</div>
+
+<div class="pagenav">
+  <a href="orchestrate.html"><span class="dir">Back</span>&larr; Running many goals</a>
+  <a class="next" href="cloud.html"><span class="dir">Next</span>Cloud sessions &rarr;</a>
+</div>
 
 </main>
 </div>
