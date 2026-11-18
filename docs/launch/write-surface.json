@@ -4695,6 +4695,14 @@
       "count": 1,
       "gate": "work.enabled; run by the goal's own `--land` run after an implement commit and before a full verify (skill prose, not a hook); refuses on a rebase-would-drop marker, an uncommitted worktree, a path-shaped or content-shaped secret in anything the branch adds (an unreadable scan refuses too), or a hard-stop classifier hit; one plain `git push <remote> HEAD:refs/heads/<ref>`, never forced, so a remote branch that moved is rejected and reported, not overwritten; <ref> is the goal branch or `work.checkpoint_prefix` + its name; a failed push only warns (#2161)",
       "risk": "high"
+    },
+    {
+      "path": "tools/site_nav.py",
+      "function": "write",
+      "rule": "fs-write",
+      "count": 3,
+      "gate": "docs-site maintenance tool, run by hand with `write`; rewrites only the navigation block between the NAV markers of the pages under `site/`, and `check` is the read-only form CI runs",
+      "risk": "low"
     }
   ]
 }
