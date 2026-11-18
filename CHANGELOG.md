@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- The nightly `onboarding-control` job passes again: its fake `origin` is now a bare repository whose path ends in the configured `acme/onboarding-demo`, so the `work.py pr` repository check no longer refuses the control's own github legs (#2260).
+
 ## 1.0.36 — 2026-11-18 — a Cursor plugin package, the real public repository name in the install commands, and a larger public docs site
 
 - The README, the issue template, the onboarding docs and the launch definition name the public repository `Agrim-Intelligence/sigma` instead of `Agrim-Intelligence/sigmaloop`, which does not exist, and a test holds every README repository URL to `public_repo` (#2248).
