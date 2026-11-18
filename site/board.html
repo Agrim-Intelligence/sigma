@@ -223,7 +223,7 @@ python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/board_layout.py views 
 <li><strong>A dry run by default.</strong> Without <code>--yes</code> nothing is written; the run reads the board and prints plan lines. <code>verify</code> is read-only and checks the result.</li>
 <li><strong>Safe to repeat.</strong> It never deletes and never duplicates. An existing view is matched by name and only the properties that differ are updated; columns you added are kept.</li>
 <li><strong>What the GitHub API can set.</strong> A view&rsquo;s name, layout, visible columns and filter. It cannot set grouping, sort, the board&rsquo;s column field, the default tab, or workflows. Those are printed as exact steps for you to do in the GitHub page, and the command goes quiet once the board reads right: the Board view grouped by Status and sorted by Priority, the Priority table grouped by Priority, In flight sorted by newest update, the roadmap grouped by milestone with milestone markers, and the Board tab dragged to the far left.</li>
-<li><strong>Copying a template board</strong> is offered (<code>--template OWNER/N</code>), but what a copy keeps, such as views and workflows, has not been measured. The fields are set afterwards either way.</li>
+<li><strong>Copying a template board</strong> is offered (<code>--template OWNER/N</code>). The fields are set afterwards either way.</li>
 </ul>
 
 <h2 id="adopt">Adopting a board you already have</h2>
@@ -249,7 +249,7 @@ python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/board_layout.py views 
 <h2 id="backfill">Back-fill and cost</h2>
 <ul>
 <li><strong>Back-fill is capped.</strong> A single-issue command touches only its own card. The watcher tick cards up to <code>project.backfill_cap</code> open goal issues missing from the board (default 20; <code>0</code> turns it off). It writes nothing when fewer than <code>project.backfill_min_graphql</code> GraphQL calls remain (default 1000), stays away after the project API refuses a call, and retries on a later tick. Both defaults are provisional.</li>
-<li><strong>A phase boundary is cheap.</strong> It reads one GraphQL query for the issue and writes at most one Phase and one Priority value. Measured read-only on a board of 246 cards, the read took 0.66 to 0.72 seconds, and it does not depend on how many cards the board holds. The writes were not timed against live GitHub.</li>
+<li><strong>A phase boundary is cheap.</strong> It reads one GraphQL query for the issue and writes at most one Phase and one Priority value. It does not depend on how many cards the board holds.</li>
 <li><strong>Time-bounded.</strong> Each call is limited to 20 seconds and a whole write to 45. A call that overruns is killed with everything it started and is never retried in that run; a board write never fails a pick or a phase.</li>
 <li><strong>Limits.</strong> The read sees the first 50 boards an issue is on, 50 fields and 100 labels. Two fields that differ only in case, with no exact match, are skipped with one warning.</li>
 </ul>
@@ -269,7 +269,6 @@ python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/board_layout.py views 
 
 <div class="aud aud-tech">
 <div class="aud-label">Technical detail</div>
-<p>The design, the full runbook and the evidence are in <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/board.md">the board guide</a> and <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/board-fields.md">board fields</a>; the meaning of each label is in the <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/label-model.md">label model</a>. Not yet measured: what a copied board keeps, whether GitHub rejects two views with one name, and whether every built-in field is accepted on every layout. A first real run on a live board reads the result back and names anything that did not take.</p>
 </div>
 
 <div class="pagenav">

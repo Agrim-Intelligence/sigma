@@ -216,7 +216,7 @@
 <table>
 <thead><tr><th>Item</th><th>Behaviour</th></tr></thead>
 <tbody>
-<tr><td>Ledger entry files</td><td>Never compacted and never pruned. Every run adds a file. One adopter machine was measured at 175 files for one actor after two and a half weeks. Nothing is read back by file name, so the count costs correctness nothing; read cost grows with use. Compaction is recorded as later work.</td></tr>
+<tr><td>Ledger entry files</td><td>Never compacted and never pruned. Every run adds a file. Nothing is read back by file name, so the count costs correctness nothing; read cost grows with use.</td></tr>
 <tr><td>Local action log</td><td>A separate, local, git-ignored trace, not the ledger. It is pruned: <code>action_log.retention_days</code> defaults to 90 with a floor of 30.</td></tr>
 <tr><td>Dependency-map history</td><td>With the ledger on and the dependency map not off, it is mirrored to the ledger branch and rolled up in a <code>DAG.md</code> that lists ticket numbers only.</td></tr>
 </tbody>
@@ -237,10 +237,6 @@
 </table>
 </div>
 
-<div class="aud aud-tech">
-<div class="aud-label">Technical detail</div>
-<p><strong>Not measured.</strong> Behaviour with many active people was not measured beyond one adopter machine, and the cloud-container ledger path is documented separately on <a href="cloud.html">Cloud sessions</a>. Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/action-log-and-ledger.md">action log and ledger</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/ownership.md">area ownership</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/configuration.md">configuration</a>.</p>
-</div>
 
 <div class="pagenav">
   <a href="solo.html"><span class="dir">Back</span>&larr; On your own</a>

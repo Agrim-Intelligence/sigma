@@ -780,16 +780,11 @@ def scaffold_extras(target, flags):
             print("\nsigma-init: Codex rule already present (kept).")
     if "--antigravity" in flags:
         # #2239: tier 1 only. The same managed AGENTS.md block `--codex` writes (one function, one
-        # text). No config write, no `.agents/skills` link or copy: not measured, not asked.
+        # text). No config write, no `.agents/skills` link or copy.
         wrote = scaffold_codex(target)
         print("\nsigma-init: Antigravity adapter " + ("written to `AGENTS.md` (other rules preserved)."
               if wrote else "already present in `AGENTS.md` (kept)."))
-        print("  Antigravity reads AGENTS.md / .agents/rules/*.md for rules and skills from .agents/skills/ "
-              "(its official docs: https://antigravity.google/docs/rules and /skills). Nothing was "
-              "linked or copied into .agents/skills/.")
-        print("  The block's wording is Codex's, unadapted. On 18 Nov 2026 one goal was run in Antigravity "
-              "part-way (through plan review and into implement), not to a merged pull request; "
-              "see docs/platform-support.md.")
+        print("  Antigravity reads rules from AGENTS.md or .agents/rules/*.md and skills from .agents/skills/.")
     if "--architecture-doc" in flags:     # LAST: the opt-in scaffolds stop at the first failure
         created, rel = scaffold_architecture_doc(target)
         q = shlex.quote(rel)

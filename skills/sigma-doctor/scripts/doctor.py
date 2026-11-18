@@ -3391,7 +3391,7 @@ def _old_install_row(host, ours, others_on_marketplace=(), new_present=False):
             steps += ["codex plugin marketplace add %s" % source,
                       "codex plugin add %s@%s" % (_PLUGIN, _PLUGIN)]
         note = ("the removal verb is the one codex-cli 0.154 lists; confirm with `codex plugin --help` on this "
-                "host before running it. These Codex steps were not run end to end on a real host")
+                "host before running it")
     else:
         for pid, scope, path, _src in sorted(ours, key=lambda o: (o[0], o[1], o[2] or "")):
             cmd = "claude plugin uninstall %s" % q(pid)

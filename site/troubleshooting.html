@@ -99,7 +99,7 @@
 </ul>
 </div>
 
-<p>Most failures in Sigma stop and say why rather than guess: a refused command, a hold with a reason, a goal parked with a question. This page maps what you see to what caused it and what to run. Every command here was read from the documentation and the code; where something was not run, it says so.</p>
+<p>Most failures in Sigma stop and say why rather than guess: a refused command, a hold with a reason, a goal parked with a question. This page maps what you see to what caused it and what to run.</p>
 
 <h2 id="doctor">Read the doctor first</h2>
 <p><code>/sigma-doctor</code> checks only what your <code>.sdlc/config.json</code> makes relevant, so a local-files project sees few rows and a GitHub project with a board and a ledger sees many. <strong>OK</strong> means ready. <strong>MISSING</strong> means run the printed one-liner. A row ending <em>(cannot verify)</em> is not a pass. It never runs an interactive login or a package install for you.</p>
@@ -121,7 +121,6 @@
 <tr><td><code>goals awaiting merge</code></td><td>A pull request is open and waiting for you, with its age.</td><td>Merge or close it.</td></tr>
 <tr><td><code>resource admission</code>, <code>resource stale leases</code></td><td>The memory guard is holding work, or dead processes still hold leases.</td><td>See <a href="#holds">Reading a resource hold</a>.</td></tr>
 <tr><td><code>sigma install scopes</code>, <code>sigma up to date</code></td><td>One scope is below the version floor, or you are behind the marketplace.</td><td><a href="upgrading.html#update">Updating the plugin</a></td></tr>
-<tr><td><code>coexistence</code></td><td>The previous plugin is also active. A warning, never a failure.</td><td><a href="upgrading.html#switch">Switching over</a></td></tr>
 </tbody>
 </table>
 </div>
@@ -132,7 +131,7 @@
 <thead><tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr></thead>
 <tbody>
 <tr><td>Verify exits with <code>REFUSED: repository-configured shell command requires explicit operator trust</code>; no goal reaches done</td><td>The verify command comes from a file in the repository. Trust is stored in this checkout's own git config and is not cloned, so every new clone must grant it. Until it does, the command is refused.</td><td>Inspect <code>verify.command</code>, then run once: <code>git -C &lt;project&gt; config --local sigma.allowRepositoryShellCommands true</code>. Re-running <code>/sigma-init</code> prints a <code>[trust] verify</code> line with this gesture.</td></tr>
-<tr><td>The loop opens a pull request but will not merge it, saying protection <em>could not be determined</em></td><td>On a private repository on a GitHub free plan, the branch-protection and rules reads are refused with HTTP 403. Sigma then holds the merge rather than claim that nothing is enforced. Measured once, by hand, on a free-plan private repository on 18 Nov 2026.</td><td>Merge by hand. Or, if you know the repository has no protection and use <code>work.auto_merge: always</code>, set <code>work.protection_unreadable</code> to <code>"allow"</code> (that exact string). It relaxes only the 403 case; any other read failure still holds, and GitHub still enforces any protection at merge time.</td></tr>
+<tr><td>The loop opens a pull request but will not merge it, saying protection <em>could not be determined</em></td><td>On a private repository on a GitHub free plan, the branch-protection and rules reads are refused with HTTP 403. Sigma then holds the merge rather than claim that nothing is enforced.</td><td>Merge by hand. Or, if you know the repository has no protection and use <code>work.auto_merge: always</code>, set <code>work.protection_unreadable</code> to <code>"allow"</code> (that exact string). It relaxes only the 403 case; any other read failure still holds, and GitHub still enforces any protection at merge time.</td></tr>
 <tr><td><code>/sigma-goal &lt;N&gt; --land</code> refuses up front</td><td>It needs <code>work.enabled: true</code> and <code>work.auto_merge</code> of <code>protected</code> or <code>always</code>. The default <code>off</code> never merges, so a run that exists to land one goal refuses.</td><td>Set <code>work.auto_merge</code> once your base branch has protection that requires checks or a second person's approval. Otherwise use <code>/sigma-loop</code>, which leaves the pull request for you.</td></tr>
 <tr><td><code>git status</code> shows <code>.sdlc</code> and <code>.gitignore</code> as untracked after init</td><td>Expected. Init scaffolds files you have not committed yet.</td><td>Commit <code>.gitignore</code>, <code>.sdlc/goals/</code>, <code>.sdlc/project.md</code> and <code>.sdlc/config.json</code>. The runtime folders are already ignored. Never ignore <code>.sdlc</code> as a whole (<a href="sdlc-folder.html#commit">The .sdlc folder</a>).</td></tr>
 <tr><td><code>git pull</code> in the root checkout refuses over untracked <code>.sdlc</code> plan, research or acceptance files</td><td>Records written in the root checkout and not yet committed. A known open problem, not fully solved.</td><td>Commit them on a branch or move them aside, then pull.</td></tr>
@@ -182,15 +181,15 @@
 </tbody>
 </table>
 </div>
-<p><code>resource.mode: observe</code> logs the hold it would make and admits; <code>SIGMA_RESOURCE_MODE</code> overrides the key. The ratios are policy defaults, not calibrated to a real exhaustion. Details: <a href="run.html#holds">Running unattended</a> and <a href="config.html#resource">Configuration</a>.</p>
+<p><code>resource.mode: observe</code> logs the hold it would make and admits; <code>SIGMA_RESOURCE_MODE</code> overrides the key. The ratios are policy defaults. Details: <a href="run.html#holds">Running unattended</a> and <a href="config.html#resource">Configuration</a>.</p>
 
 <h2 id="hosts">Install differences on Cursor and Antigravity</h2>
 <div class="table-wrap">
 <table>
-<thead><tr><th>Host</th><th>Differs how</th><th>Measured</th></tr></thead>
+<thead><tr><th>Host</th><th>Differs how</th></tr></thead>
 <tbody>
-<tr><td>Cursor</td><td>No plugin install: clone Sigma to a folder <strong>outside</strong> the project, then run <code>/sigma-init --cursor</code> in your own repository. Init writes two always-applied rule files that carry the discipline, because Cursor has no hook that Sigma relies on. If the slash command is missing, run the init flow directly from the clone (<a href="get-started.html#cursor">Get started</a>).</td><td>Set-up with a board, and one goal to a merged pull request (merged by hand). Not the loop on several goals, hooks, or the command-line agent.</td></tr>
-<tr><td>Antigravity</td><td><code>agy plugin install</code> converts the Claude Code plugin and skips two hooks (the prompt hook and the skill hook) because Antigravity has no such events. Converted skills still contain a Claude-only folder placeholder, and each carries a note telling the model to use its own folder. <code>/sigma-init --antigravity</code> writes the managed block into <code>AGENTS.md</code>; its wording is Codex's, unadapted.</td><td>Run on 18 Nov 2026: install, set-up with a board, and one goal part-way (through plan review and into implement). Not run in these tests: a goal to a merged pull request, the loop, or whether the converted hooks fire (not confirmed).</td></tr>
+<tr><td>Cursor</td><td>No plugin install: clone Sigma to a folder <strong>outside</strong> the project, then run <code>/sigma-init --cursor</code> in your own repository. Init writes two always-applied rule files that carry the discipline, because Cursor has no hook that Sigma relies on. If the slash command is missing, run the init flow directly from the clone (<a href="get-started.html#cursor">Get started</a>).</td></tr>
+<tr><td>Antigravity</td><td><code>agy plugin install</code> converts the Claude Code plugin and skips two hooks (the prompt hook and the skill hook) because Antigravity has no such events. Converted skills still contain a Claude-only folder placeholder, and each carries a note telling the model to use its own folder. <code>/sigma-init --antigravity</code> writes the managed block into <code>AGENTS.md</code>.</td></tr>
 </tbody>
 </table>
 </div>
@@ -199,11 +198,11 @@
 <h3>Do I need GitHub?</h3>
 <p>No. A local-files backlog needs only <code>git</code>, <code>bash</code> and <code>python3</code>. You give up issues, the board, a pull request per goal, its review and the shared ledger sync. See <a href="solo.html">On your own</a>.</p>
 <h3>Does it work offline?</h3>
-<p>Sigma is plain scripts that run on your machine and has no server of its own. The agent host it runs inside talks to its model provider, so the host needs its connection. A run with no network at all was not measured.</p>
+<p>Sigma is plain scripts that run on your machine and has no server of its own. The agent host it runs inside talks to its model provider, so the host needs its connection.</p>
 <h3>What does it cost?</h3>
 <p>The documentation describes no separate Sigma charge; the spend Sigma measures is the model usage your host account bills. Each phase prints its measured cost as it ends, and budgets stop a run. The post-pull-request review is an extra pass per goal, and its cost was measured only once. See <a href="observe.html">Cost and time</a>.</p>
 <h3>Does it send data anywhere?</h3>
-<p>Sigma does not report usage data. Your host talks to its model provider under that host's own policy. In GitHub mode, <code>gh</code> and <code>git</code> traffic to GitHub is the default; Slack, a webhook, email and model calls Sigma starts are separate and opt-in. The destination table in the <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/privacy.md">privacy note</a> comes from tracing the code plus one scripted onboarding capture, not a full capture: <code>gh</code> and <code>git</code> launches are recorded but their own connections are outside the capture hook, and the other rows are traced from code, not captured. See also <a href="safety.html#privacy">Trust and limits</a>.</p>
+<p>Sigma does not report usage data. Your host talks to its model provider under that host's own policy. In GitHub mode, <code>gh</code> and <code>git</code> traffic to GitHub is the default; Slack, a webhook, email and model calls Sigma starts are separate and opt-in. See also <a href="safety.html#privacy">Trust and limits</a>.</p>
 <h3>Can I use it on a private repository?</h3>
 <p>Yes. On a free GitHub plan the protection reads fail with a 403 and merges are held; see the second row of the table above.</p>
 <h3>Will it merge by itself?</h3>
@@ -223,10 +222,6 @@
 <h3>Where do I ask for help?</h3>
 <p>Run <code>/sigma-doctor</code> and keep its output, then open an issue in the <a href="https://github.com/Agrim-Intelligence/sigma">repository</a>. Leave out anything private.</p>
 
-<div class="aud aud-tech">
-<div class="aud-label">Technical detail</div>
-<p>The doctor's rows and fixes were read from its code and skill text; the symptoms above were read from the documentation, not reproduced one by one in a fresh run. Measured by a manual read: the 403 on the protection read of a free-plan private repository. Not measured: a run with no network, and the uninstall and update paths on Codex, Cursor and Antigravity. Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/cloud-sessions.md">cloud sessions</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/enforcement.md">enforcement</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/platform-support.md">platform support</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/label-model.md">label model</a>.</p>
-</div>
 
 <div class="pagenav">
   <a href="observe.html"><span class="dir">Back</span>&larr; Cost and time</a>

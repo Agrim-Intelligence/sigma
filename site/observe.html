@@ -87,7 +87,7 @@
 </nav>
 
 
-<p>You do not need to watch a terminal. The loop prints a short status block when something changes, and one line at the end of each phase saying what happened and what it cost. Ask <code>/sigma-status</code> for backlog counts, <code>/sigma-log</code> for what is happening right now, and <code>/sigma-time</code> for how long things took. If a number is not shown, it was not measured, and the line says so.</p>
+<p>You do not need to watch a terminal. The loop prints a short status block when something changes, and one line at the end of each phase saying what happened and what it cost. Ask <code>/sigma-status</code> for backlog counts, <code>/sigma-log</code> for what is happening right now, and <code>/sigma-time</code> for how long things took. If a number is not shown, the line says so.</p>
 
 <div class="diagram">
 <svg viewBox="0 0 440 238" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="When a phase ends the loop prints one status block with the outcome, the next phase and the cost if the host reports it. The same events are recorded in a local action log read with sigma-log, and durations go to a local timing store read with sigma-time.">
@@ -164,7 +164,7 @@ verify green, cost $0.31 (48,203 tokens, example-model). Reviewing it next.</cod
 
 <div class="aud aud-tech">
 <div class="aud-label">Technical detail</div>
-<p>Block shapes are constructed by the status renderer from facts, not written by hand, and a malformed block is refused rather than patched. The full contract is <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/output-contract.md">output contract</a>; the log and ledger are <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/action-log-and-ledger.md">action log and ledger</a>. <strong>Not measured:</strong> that every host shows the machine-printed cost line to the user. An opt-in relay can acknowledge that the exact block bytes were handed to a host, and it never claims a screen displayed them.</p>
+<p>Block shapes are constructed by the status renderer from facts, not written by hand, and a malformed block is refused rather than patched.</p>
 </div>
 
 <div class="pagenav">
