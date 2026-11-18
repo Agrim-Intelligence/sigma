@@ -53,7 +53,7 @@ command -v python3 >/dev/null 2>&1 || allow
 # --- The plugin under the previous name also active here (issues #240, #314) -----------------
 # An ACCELERATOR only: it tells the session up front. The behaviour lives in Sigma's own Python on
 # every write surface (init, loop start, claim/record, the watcher and its spawn, migrate) via
-# skills/sigma-loop/scripts/coexist.py -- Cursor has no hooks, so nothing here decides anything.
+# skills/sigma-loop/scripts/coexist.py -- Cursor documents hooks but Sigma does not use them (CLI behaviour unmeasured), so nothing here decides anything.
 # Since #314 that is a NOTICE, never a refusal: Sigma is handling this repository. So this is ONE
 # line (coexist.notice_line), READ-ONLY (it writes no mark: running it twice says the same thing,
 # idempotent), and silent under SIGMA_ALLOW_COEXIST=1. Both plugins' session hooks may fire; this
@@ -83,7 +83,7 @@ PY
 fi
 # --- This plugin install has no resource guard (#1913) -----------------------------------------------
 # ACCELERATOR only: the load-bearing check is /sigma-doctor's "resource guard present" row (Python,
-# every host; Cursor has no hooks). One line, only when resource_guard.py is absent from THIS plugin
+# every host; Sigma uses no Cursor hooks, their CLI behaviour is unmeasured). One line, only when resource_guard.py is absent from THIS plugin
 # root (a pre-1.0.16 install); it rides the same notice channel as the coexist line above.
 if [ ! -f "$PLUGIN_ROOT/skills/sigma-loop/scripts/resource_guard.py" ]; then
     HOOK_COEXIST_NOTICE="${HOOK_COEXIST_NOTICE:+$HOOK_COEXIST_NOTICE
@@ -438,7 +438,7 @@ then
 fi
 # --- Knowledge graph never built / stale under auto_refresh (issue #2704) ------------------------
 # Same tier idiom as the two above, and the same ACCELERATOR status: the load-bearing surface is
-# `kg.py warn` itself, which `loop.py next`/`next-batch` print on every host (Cursor has no hooks).
+# `kg.py warn` itself, which `loop.py next`/`next-batch` print on every host (Sigma uses no Cursor hooks).
 # Unlike the watcher tier this one does not duplicate the math: it runs the sibling skill's own CLI
 # (skills/sigma-kg/scripts/kg.py, resolved from PLUGIN_ROOT like setup_wizard.py above), which owns
 # the once-a-day stamp too, so the hook and the loop share ONE daily budget per repo. `warn` prints

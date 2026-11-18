@@ -2677,7 +2677,7 @@ def _ensure_claimed(sdlc_dir, goal):
     SKILL.md instruction is prose an agent may forget, and this repo has already corrected exactly
     that failure mode once -- see `_predict_model_choice_at_pick`, moved into the code because a
     real `model_choice` event was "depending on a calling skill's SKILL.md remembering a second
-    instruction". Cursor has no hooks either, so the trigger has to live here.
+    instruction". Sigma uses no Cursor hooks either, so the trigger has to live here.
 
     TWO-STAGE CHECK, and the order is a measured cost decision. `ledger.read_all` is O(the whole
     ledger): measured 31 ms mean / 224 ms cold over 1,591 entries across 1,193 files on this repo,
@@ -5064,7 +5064,7 @@ def _release_checkout(sdlc_dir, goal, merged=False):
 def _warn_knowledge_graph(sdlc_dir):
     """#2704: on every pick, say -- once a day, on stderr -- when `auto_refresh` is on and the graph
     was never built or has fallen behind the corpus. THE HOST-AGNOSTIC TIER: `hooks/session_start.sh`
-    prints the same line as additionalContext on Claude Code, but Cursor has no hooks and every host
+    prints the same line as additionalContext on Claude Code, but Sigma uses no Cursor hooks and every host
     reaches `loop.py next`, so this is the surface the warning is allowed to depend on. `kg.py warn`
     owns the rule, the text and the once-a-day stamp (shared with the hook, so a repo gets one
     warning a day, not one per surface); this is only the Rule-3 subprocess hop -- the same shape as

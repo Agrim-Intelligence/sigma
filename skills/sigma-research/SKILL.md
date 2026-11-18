@@ -131,7 +131,9 @@ write here decides how much ceremony the remaining phases apply; it is not a lab
 one phase that runs in full at every lane.
 
 ## Output
-Write `.sdlc/research/<goal-slug>.md` (create the directory on first use):
+Write `.sdlc/research/<goal-slug>.md` (create the directory on first use). **Paths in it are repo-relative**
+(`.sdlc/work/1`, `<plugin>/skills/...`), never absolute: the file is committed, and `work.py commit` rewrites
+a home-directory path it finds (#2243), so write it right the first time and paste no tool output with one:
 
 ```markdown
 # Research: <goal title>
