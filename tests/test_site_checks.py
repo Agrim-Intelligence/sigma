@@ -365,12 +365,18 @@ def test_control_leak_in_tooling(tmp_path):
 CSS = SITE / "assets" / "style.css"
 # (foreground variable, background variable) pairs the stylesheet actually draws as text.
 TEXT_PAIRS = (
-    [(fg, bg) for fg in ("--text", "--text-dim", "--text-faint", "--link", "--accent")
+    [(fg, bg) for fg in ("--text", "--text-dim", "--text-faint", "--link", "--link-hover")
      for bg in ("--bg", "--bg-raised", "--bg-sunken")]
-    + [("--accent-ink", "--accent"), ("--accent", "--accent-soft"), ("--code-text", "--code-bg")]
-    + [(k, k + "-soft") for k in ("--core", "--optional", "--experimental", "--gap", "--fallback")]
-    + [("--text", "--accent-soft"), ("--text-dim", "--accent-soft")]
+    + [("--fill-ink", "--fill"), ("--code-text", "--code-bg"), ("--link", "--code-bg")]
 )
+
+# The only colours the site may contain: white, black, the greys and the single link hue pair.
+# Light and dark values of each token, as read from the portfolio's insights pages.
+ALLOWED_HEX = {
+    "#ffffff", "#f4f6f7", "#d9dfe3", "#c9d2d7", "#10181c", "#56646e",   # light scheme
+    "#0e171b", "#152127", "#25333a", "#34444c", "#e6ecef", "#c3ced4", "#a9b8c0",  # dark scheme
+    "#08769a", "#065a76", "#5cc3e6", "#8dd6ef",                         # link hue, both schemes
+}
 
 
 def _vars(block):
@@ -419,4 +425,37 @@ def test_control_lowered_colour_turns_contrast_red():
     css = CSS.read_text(encoding="utf-8")
     light = _blocks(css)[0]
     assert contrast_problems(css.replace(light["--text-faint"], "#bbbbbb", 1))
-    assert contrast_problems(css.replace(light["--core"], "#86efac", 1))
+    assert contrast_problems(css.replace(light["--link"], "#86d0e8", 1))
+
+
+def stray_colours(texts):
+    """Hex colours or rgb()/hsl() in site CSS and pages that are not on the allowlist."""
+    out = []
+    for name, text in texts:
+        text = re.sub(r"&#\d+;|&#x[0-9a-fA-F]+;", "", text)  # numeric character references
+        # Long forms anywhere; the 3-digit form only as a colour value (prose has "#123" issue refs).
+        found = re.findall(r"(?<![\w&])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6})\b(?![\w-])", text)
+        for h in re.findall(r"(?:fill|stroke|color|background|stop-color|border[\w-]*)\s*[:=]\s*[\"']?\s*(#[0-9a-fA-F]{3})\b", text):
+            found.append("#" + "".join(ch * 2 for ch in h[1:]))
+        for h in found:
+            if h.lower() not in ALLOWED_HEX:
+                out.append(f"{name}: {h}")
+        if re.search(r"\b(?:rgba?|hsla?)\(", text):
+            out.append(f"{name}: rgb()/hsl() colour")
+    return out
+
+
+def _site_texts():
+    files = [CSS, *sorted(SITE.glob("*.html"))]
+    return [(f.name, f.read_text(encoding="utf-8")) for f in files]
+
+
+def test_site_uses_only_black_white_greys_and_the_link_hue():
+    assert stray_colours(_site_texts()) == []
+
+
+def test_control_stray_colour_turns_palette_check_red():
+    texts = _site_texts()
+    assert stray_colours(texts + [("style.css", "a { color: #ff0000; }")])
+    assert stray_colours(texts + [("x.html", '<rect fill="#f00"/>')])
+    assert stray_colours(texts + [("x.css", "a { color: rgb(1,2,3); }")])
