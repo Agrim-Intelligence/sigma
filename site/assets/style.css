@@ -111,6 +111,25 @@ body {
  
 }
 .brand-name { font-weight: 600; font-size: 17px; letter-spacing: -0.01em; }
+.navbox > summary { display: none; }
+@media (max-width: 900px) {
+  .sidebar { padding: 14px 16px; }
+  .navbox > summary {
+    display: flex; align-items: center; justify-content: space-between;
+    min-height: 44px; padding: 0 14px; margin-top: 12px; cursor: pointer;
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    background: var(--bg); color: var(--text); font-weight: 600; font-size: 15px;
+    list-style: none;
+  }
+  .navbox > summary::-webkit-details-marker { display: none; }
+  .navbox > summary::after { content: "+"; font-family: var(--mono); font-size: 20px; line-height: 1; }
+  .navbox[open] > summary::after { content: "\2212"; }
+  .navbox > summary:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+  .navbox[open] { max-height: 70vh; overflow-y: auto; }
+  .navbox[open] > summary { position: sticky; top: 0; z-index: 1; }
+  .nav-group { margin-top: 14px; }
+  .nav-group a { min-height: 40px; align-items: center; }
+}
 .brand-tag { display:block; font-size: 12px; color: var(--text-faint); font-weight: 400; margin-top: 1px; }
 
 .nav-group { margin-top: 26px; }

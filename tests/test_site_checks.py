@@ -459,3 +459,19 @@ def test_control_stray_colour_turns_palette_check_red():
     assert stray_colours(texts + [("style.css", "a { color: #ff0000; }")])
     assert stray_colours(texts + [("x.html", '<rect fill="#f00"/>')])
     assert stray_colours(texts + [("x.css", "a { color: rgb(1,2,3); }")])
+
+
+def _nav_module():
+    spec = importlib.util.spec_from_file_location("site_nav", ROOT / "tools" / "site_nav.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_canonical_nav_is_collapsible_and_has_no_external_script():
+    block = _nav_module().nav_block("run.html")
+    assert '<details class="navbox" open>' in block and "<summary>Menu</summary>" in block
+    assert block.index('class="brand"') < block.index("<details")
+    assert 'aria-current="page"' in block
+    assert not re.search(r"<script[^>]*\bsrc\s*=", block)
+

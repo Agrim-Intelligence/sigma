@@ -37,6 +37,8 @@ GROUPS = [
         ("config.html", "Configuration"),
         ("sdlc-folder.html", "The .sdlc folder"),
         ("run.html", "Running unattended"),
+        ("orchestrate.html", "Running many goals"),
+        ("cloud.html", "Cloud sessions"),
         ("observe.html", "Cost and time"),
     ]),
     ("Ways to work", [
@@ -71,7 +73,9 @@ def nav_block(active: str) -> str:
            '  <a class="brand" href="index.html">',
            '    <span class="brand-mark">&Sigma;</span>',
            '    <span><span class="brand-name">Sigma Loop</span><span class="brand-tag">Guide</span></span>',
-           '  </a>']
+           '  </a>',
+           '  <details class="navbox" open>',
+           '    <summary>Menu</summary>']
     n = 0
     for group, items in GROUPS:
         out.append('  <div class="nav-group">')
@@ -79,10 +83,14 @@ def nav_block(active: str) -> str:
         for f, t in items:
             n += 1
             cls = ' class="active"' if f == active else ""
-            out.append(f'    <a href="{f}"{cls}><span class="nav-num">{n:02d}</span>'
+            cur = ' aria-current="page"' if f == active else ""
+            out.append(f'    <a href="{f}"{cls}{cur}><span class="nav-num">{n:02d}</span>'
                        f'{html.escape(t, quote=False)}</a>')
         out.append("  </div>")
-    out += ["</nav>", END]
+    out += ["  </details>",
+            "  <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');"
+            "function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>",
+            "</nav>", END]
     return "\n".join(out)
 
 
