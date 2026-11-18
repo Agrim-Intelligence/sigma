@@ -19,7 +19,7 @@ WHAT. One flow, in this order, integrating the sibling goals rather than re-impl
   5. a one-screen summary and the next command
 
 QUESTIONS ARE FLAGS, SO EVERY HOST RUNS THE SAME FLOW. Claude Code asks the user and re-runs with the
-answers; Codex and Cursor relay the printed `[ask]` lines, each carrying the exact flag (the shape,
+answers; Codex and Cursor (and Antigravity, with no verified question tool) relay the printed `[ask]` lines, each carrying the exact flag (the shape,
 `[ask] <id>: <prose> -> --flag VALUE|VALUE ; --flag ...`, is `ask_line`'s).
 
 CONFIG.JSON IS THE ONE SOURCE OF TRUTH FOR CURRENT STATE (review of PR #286). `.sdlc/state/init.json`
@@ -89,7 +89,7 @@ USAGE = """usage: init_flow.py [target_dir] [options]
   --yes                          accept the safe defaults (mode = detected, ledger = no) for
                                  questions config.json does not already answer; never answers
                                  --board, --verify or a work flip, never changes a setting
-  --demo --vision --codex --cursor   the opt-in scaffolds (see sdlc_init.py)
+  --demo --vision --codex --cursor --antigravity   the opt-in scaffolds (see sdlc_init.py)
   --architecture-doc             scaffold the architecture document at architecture.system_root
   --github-templates             also copy the .github/ issue templates + workflows
   --github                       shorthand: --mode github --github-templates (the pre-#236 flag)
@@ -98,7 +98,7 @@ USAGE = """usage: init_flow.py [target_dir] [options]
 
 _VALUE = {"--mode", "--repo", "--work", "--verify", "--verify-command-file", "--board", "--ledger",
           "--ignore-scope"}
-_BOOL = {"--local-only", "--no-verify", "--yes", "--demo", "--vision", "--codex", "--cursor",
+_BOOL = {"--local-only", "--no-verify", "--yes", "--demo", "--vision", "--codex", "--cursor", "--antigravity",
          "--github-templates", "--github", "--architecture-doc"}
 
 #: The start of board_setup.py's success-path note that mirroring is off (`create`); dropped from
@@ -703,7 +703,7 @@ def main(argv):
     mode_lines = apply_config(sdlc, res, repo, repo_flag=bool(opts.get("repo")))
     cfg = _read_json(cfg_path)
     source = (cfg.get("discovery") or {}).get("source")
-    extras = {"--" + k for k in ("demo", "vision", "codex", "cursor", "architecture-doc")
+    extras = {"--" + k for k in ("demo", "vision", "codex", "cursor", "antigravity", "architecture-doc")
               if opts.get(k)}
     if source == "github":
         extras.add("--github")                           # only for the demo's gh-issue hint

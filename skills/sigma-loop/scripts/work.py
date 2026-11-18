@@ -293,6 +293,23 @@ ENFORCEMENT_GATES = (
      "enabled_by": ("work.enabled",), "settings": (),
      "mechanism": "refuses `work.py pr` while the goal's research dossier exists on disk but is not "
                   "committed on the goal branch"},
+    {"control": "No absolute local path in a committed plan or research dossier", "function": "commit",
+     "kind": "python-gate", "hosts": "all", "enabled_by": (), "settings": (),
+     "mechanism": "`work.py commit` runs `artifact_paths.py` `scrub_goal` before `git add -A`: a home-directory "
+                  "path (`/home/<name>/...`, its macOS and Windows equivalents) in this goal's "
+                  "plan or research file becomes a repo-relative path, `<plugin>/skills/...` or `[path]`, and one "
+                  "line says how many were rewritten; a leak in the acceptance record (append-only), in a plan "
+                  "whose bytes a review or seal already records, or in a file it cannot read refuses the commit "
+                  "with the file and line. Every other Sigma push of the goal branch reads the COMMITTED blobs of "
+                  "this goal's plan, research and acceptance files that the branch added, copied, modified or "
+                  "renamed against its base (a deleted file is not read) and refuses (file, line, count, nothing "
+                  "pushed) on a home path: `work.py pr`, `work.py checkpoint`, and the three pushes of `work.py "
+                  "rebase`; a non-UTF-8 artifact is refused with a hand-fix message. The plan's durable copy "
+                  "posted to the issue is scrubbed first. The clearing gesture is `work.py commit` (a follow-up "
+                  "commit; no history is rewritten)",
+     "condition": "not covered: a raw `git commit` followed by a push outside Sigma; a leak already pushed to the "
+                  "remote branch is already public and history is not rewritten; a path containing a space ends "
+                  "at the space (the login is gone, the rest is garbled); `.slices.json` manifests"},
     {"control": "Hard plan gate at PR push", "function": "_hard_plan_gate_refusal",
      "kind": "python-gate", "hosts": "all",
      "enabled_by": ("work.enabled", "gates.hard_plan_gate.enabled"), "settings": (),
@@ -4039,8 +4056,8 @@ def _risk_categories(path):
     goal, for every change, forever — a green light nothing measured. `commit()` is the one point in
     the loop where the change is both attributable to a goal and still visible to the scan.
 
-    It also makes the emitter DETERMINISTIC CODE rather than SKILL prose. Cursor has no hooks and
-    reads its `.mdc` as text, so a trigger that lives in an agent instruction is load-bearing on
+    It also makes the emitter DETERMINISTIC CODE rather than SKILL prose. Sigma uses no Cursor hooks and
+    Cursor reads its `.mdc` as text, so a trigger that lives in an agent instruction is load-bearing on
     exactly one host; this one runs wherever `work.py commit` runs, which is everywhere.
 
     FAIL-OPEN, and never `run`. `subprocess` directly, mirroring `pipeline.discover`'s own call to
@@ -4166,6 +4183,12 @@ def commit(sdlc_dir, config, goal, run=None, message=""):
                or _acceptance_issue_refusal(sdlc_dir, config, rec, goal, "(nothing committed)", closed=False))
     if refusal:                                                 # #2222: unconditional, before anything is staged
         return refusal
+    try:                                                        # #2243: no absolute local path in a committed artifact
+        scrub_note, refusal = _load("artifact_paths").scrub_goal(sdlc_dir, path, goal)
+    except Exception as exc:                                    # noqa: BLE001 - fail closed: a leak must not ship unchecked
+        scrub_note, refusal = "", f"REFUSED: could not check the artifacts for absolute local paths ({exc}) (nothing committed)"
+    if refusal:
+        return refusal
     run(path, ["git", "add", "-A"])
     staged = run(path, ["git", "diff", "--cached", "--name-only"])
     if not staged:
@@ -4198,7 +4221,7 @@ def commit(sdlc_dir, config, goal, run=None, message=""):
             raise
         return f"PARK: {plain} {commit_signing.PARK_TAIL}"
     _emit_risk_gates(sdlc_dir, config, goal, categories)
-    return f"committed on {rec['branch']}"
+    return f"committed on {rec['branch']}" + (f"; {scrub_note}" if scrub_note else "")
 
 
 #: `git check-ignore -v` prints `<source>:<line>:<pattern>\t<path>`. Under `--non-matching` a path
@@ -4935,7 +4958,10 @@ def _durable_plan_copy(sdlc_dir, config, goal, doc, run, root):
     try:
         ref = stem(goal)
         number, repo = int(ref), _issue_repo(config)
-        bodies = _plan_copy_bodies(ref, doc.read_bytes().decode("utf-8", errors="replace"))
+        # #2243: the plan is posted to a public issue, so a home path in it is scrubbed first, as `commit` does
+        plan_text = _load("artifact_paths").scrub_text(
+            doc.read_bytes().decode("utf-8", errors="replace"), (root, project_root(sdlc_dir)))[0]
+        bodies = _plan_copy_bodies(ref, plan_text)
         api = _pr_api_run(run, root)
         have = {}
         try:
@@ -5213,6 +5239,9 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None, land=False):
     if run(path, ["git", "rev-list", "--count", f"{remote}/{base}..HEAD"]) == "0":
         return (f"no commits on the branch — nothing to open a PR for; make the change in {path}, "
                 f"then run `work.py commit {sdlc_dir} {goal}` (nothing pushed)")
+    leak = _artifact_leak_stop(sdlc_dir, rec, goal, run)       # #2243: `commit()` can be skipped
+    if leak:
+        return leak
     missing_plan = _plan_missing_from_branch(sdlc_dir, rec, goal, run)
     if missing_plan:
         return missing_plan
@@ -5323,6 +5352,17 @@ def _remote_tip(run, cwd, remote, ref):
     return first[0] if first and _SHA40.match(first[0]) else ""
 
 
+def _artifact_leak_stop(sdlc_dir, rec, goal, run):
+    """#2243: "" when the committed plan, research and acceptance files this branch changed hold no absolute home path,
+    else the refusal (nothing is pushed). Shared by every Sigma push of the goal branch: `pr`, `checkpoint`, and the
+    rebase pushes. Fails CLOSED: a check that cannot run refuses."""
+    try:
+        return _load("artifact_paths").committed_leak_refusal(
+            sdlc_dir, rec["worktree"], goal, f"{rec['remote']}/{rec['base']}", run)
+    except Exception as exc:                            # noqa: BLE001 - nothing is pushed unchecked
+        return f"REFUSED: could not check the committed artifacts for absolute local paths ({exc}) (nothing pushed)"
+
+
 def _checkpoint_push_stop(sdlc_dir, config, rec, goal, run, ref):
     """#2161: the gates `pr`'s push is behind, applied to a checkpoint push. "" when the branch may go out, else the
     refusal (nothing is pushed). Beyond `pr`'s own: a path scan and a content scan of everything this branch adds,
@@ -5346,7 +5386,8 @@ def _checkpoint_push_stop(sdlc_dir, config, rec, goal, run, ref):
         shown = ", ".join(sorted({_diagnostic_path(n) for n in shaped} | {_diagnostic_path(n) for n in hits}))
         return (f"REFUSED — the branch adds {len(shaped) + len(hits)} secret-shaped path(s) or content match(es) "
                 f"({shown}); nothing was pushed. Remove them from the branch, then re-run `work.py checkpoint`.")
-    return (_hs_push_stop(sdlc_dir, config, rec, f"git push {remote} HEAD:{ref}", prefix="REFUSED")
+    return (_artifact_leak_stop(sdlc_dir, rec, goal, run)                      # #2243: a checkpoint is public too
+            or _hs_push_stop(sdlc_dir, config, rec, f"git push {remote} HEAD:{ref}", prefix="REFUSED")
             or _hs_diff_stop(config, run, path, ["git", "diff", rev], ("access_secrets", "tamper_oversight")))
 
 
@@ -5856,7 +5897,13 @@ class ProtectionUndetermined(Exception):
     `protection could not be determined`. A RAISE and not a falsy return, on purpose: `merge()` is the one
     caller, and a `(False, ...)` first element is what the `always` policy merges on with a WARNING, so a
     tri-state value would let a future `if not guarded` fail OPEN; an exception cannot be forgotten (the
-    shape `_viewer_permission` -> `merge_rights` already has)."""
+    shape `_viewer_permission` -> `merge_rights` already has).
+
+    `plan_refused` (#2242) is True only when EVERY source that could not be read was refused with a permission
+    HTTP 403 (not a rate limit, a 404, a 5xx, a timeout or a malformed answer), the only shape
+    `work.protection_unreadable: "allow"` may relax. Default False: a bare raise stays a hold."""
+
+    plan_refused = False
 
 
 #: The one classic 404 body that is an ANSWER -- "the branch exists and has no classic protection" -- as
@@ -6046,10 +6093,25 @@ def protection_requirements(sdlc_dir, config, goal, run=None):
         # a 5xx, a rate limit or a transport failure says nothing about admin rights, so there it would be noise.
         seen = (" (a 404 `Not Found` was the classic answer for every token without admin rights measured)"
                 if c_why == _CLASSIC_404_NOT_THE_ANSWER else "")
-        raise ProtectionUndetermined(
+        # #2242: every unreadable source refused by a permission 403 (a plan limit on a free-plan private
+        # repository, whose body reads "Upgrade to GitHub Pro or make this repository public to enable this
+        # feature."). Anything else unreadable (404, 5xx, rate limit, timeout, malformed) is never relaxable.
+        refused = ([c_why == _CLASSIC_FORBIDDEN] if c_state == "unreadable" else []) + \
+                  ([r_why == _CLASSIC_FORBIDDEN] if not r_ok else [])
+        plan_refused = bool(refused) and all(refused)
+        if plan_refused:
+            flag, _ = _read_branch_flag(api, base)
+            plan_refused = flag is False      # #2144's standard: only a read, boolean false relaxes; None/unreadable/True hold
+        lever = (", set `work.protection_unreadable: \"allow\"` with `work.auto_merge: \"always\"` if you know this "
+                 "repository has no protection (on a free-plan private repository GitHub refuses these reads by "
+                 "plan, HTTP 403 'Upgrade to GitHub Pro or make this repository public to enable this feature', "
+                 "not by token scope)") if plan_refused else ""
+        exc = ProtectionUndetermined(
             f"protection could not be determined for `{base}` ({said}); re-run `work.py merge {sdlc_dir} {goal}` "
             "(a retry merges nothing until protection can be read), give the token read access to branch "
-            f"protection and rulesets{seen}, or merge the PR by hand")
+            f"protection and rulesets{seen}{lever}, or merge the PR by hand")
+        exc.plan_refused = plan_refused
+        raise exc
     if c_state == "none":
         return False, f"`{base}` is not protected — nothing is enforced on merge", frozenset()
     return False, f"`{base}` is protected but requires no checks or reviews", frozenset()
@@ -6074,6 +6136,25 @@ def merge_bypass_enabled(config):
     wk = config.get("work") if isinstance(config, dict) else None
     value = wk.get("merge_bypass") if isinstance(wk, dict) else None
     return isinstance(value, str) and value == MERGE_BYPASS_RULESET
+
+
+PROTECTION_UNREADABLE_ALLOW = "allow"
+
+
+def protection_unreadable(config):
+    """(mode, note) for `work.protection_unreadable` (#2242): `"allow"` or `"hold"`. Default and every other value
+    (a different case or spacing, a bool, a list, a malformed `work` block) read `"hold"` -- today's fail-closed
+    behaviour -- and an unrecognised PRESENT value says so in `note`. `"allow"` only ever acts together with
+    `work.auto_merge: "always"` and a plan-refused (403) protection read; `merge()` enforces both."""
+    wk = config.get("work") if isinstance(config, dict) else None
+    if not isinstance(wk, dict) or "protection_unreadable" not in wk:
+        return "hold", ""
+    value = wk["protection_unreadable"]
+    if isinstance(value, str) and value == PROTECTION_UNREADABLE_ALLOW:
+        return "allow", ""
+    if isinstance(value, str) and value == "hold":
+        return "hold", ""
+    return "hold", 'work.protection_unreadable must be "hold" or "allow"; reading it as "hold"'
 
 
 def _withheld_only(verdict, data):
@@ -6907,7 +6988,8 @@ def rebase(sdlc_dir, config, goal, run=None, no_force=False, merge_fallback=True
             folded = _fold_onto_pushed(run, path, f"{remote}/{base}", pre_rebase_head) if fold else None
             if folded:
                 return folded
-            gated = _hs_push_stop(sdlc_dir, config, rec, " ".join(push_argv))
+            gated = (_hs_push_stop(sdlc_dir, config, rec, " ".join(push_argv))
+                     or _artifact_leak_stop(sdlc_dir, rec, goal, run))      # #2243
             if gated:
                 return gated
             run(path, push_argv)
@@ -6975,7 +7057,8 @@ def rebase(sdlc_dir, config, goal, run=None, no_force=False, merge_fallback=True
     folded = _fold_onto_pushed(run, path, f"{remote}/{base}", pre_rebase_head) if fold else None
     if folded:
         return folded
-    gated = _hs_push_stop(sdlc_dir, config, rec, " ".join(push_argv))
+    gated = (_hs_push_stop(sdlc_dir, config, rec, " ".join(push_argv))
+                     or _artifact_leak_stop(sdlc_dir, rec, goal, run))      # #2243
     if gated:
         return gated
     run(path, push_argv)
@@ -7071,7 +7154,8 @@ def _merge_from_base(sdlc_dir, config, goal, rec, run, path, push_argv, pre, why
     refused = _push_refused(path, rec["branch"])
     if refused:
         return refused
-    gated = _hs_push_stop(sdlc_dir, config, rec, " ".join(push_argv))
+    gated = (_hs_push_stop(sdlc_dir, config, rec, " ".join(push_argv))
+                     or _artifact_leak_stop(sdlc_dir, rec, goal, run))      # #2243
     if gated:
         return gated
     run(path, push_argv)
@@ -9653,8 +9737,18 @@ def merge(sdlc_dir, config, goal, run=None, sleep=time.sleep):
         # #984: could not tell whether the base enforces anything -> stop under BOTH policies, before any
         # arm or merge below. `always` is opt-in to merge where NOTHING is enforced, not where nobody could
         # tell; the ending is the routed one (`record review`), the detail names the source and the lever.
-        return (f"PR #{rec['pr']} {verdict}, but {exc}{ratchet_skipped} — merging it is yours to make "
-                f'(auto_merge: "{chosen}")')
+        # #2242: the one opt-in way past this stop. Only under `always`, only when EVERY unreadable source was
+        # refused by a permission 403, and only with `work.protection_unreadable: "allow"`. This skips Sigma's
+        # pre-check only: the merge call below is GitHub's own, which still enforces any protection that exists.
+        mode, note = protection_unreadable(config)
+        if note:
+            print("work.py: " + note, file=sys.stderr)
+        if not (mode == PROTECTION_UNREADABLE_ALLOW and chosen == ALWAYS and exc.plan_refused):
+            return (f"PR #{rec['pr']} {verdict}, but {exc}{ratchet_skipped} — merging it is yours to make "
+                    f'(auto_merge: "{chosen}")')
+        guarded, required_checks = False, frozenset()
+        detail = (f"`{rec['base']}` protection was unreadable (HTTP 403, refused by plan or permission) and "
+                  'work.protection_unreadable: "allow" let this merge proceed')
     if chosen == PROTECTED and not guarded:
         return (f"PR #{rec['pr']} {verdict}, but {detail}{ratchet_skipped} — merging it is yours to make "
                 f'(auto_merge: "protected")')

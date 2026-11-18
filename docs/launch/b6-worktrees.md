@@ -67,7 +67,7 @@ keeps the tree and reports the reason:
 3. the sweeping process is not inside it (`current`);
 4. no `awaiting_merge` flag: the merge-reconcile pass owns that goal (`awaiting-merge`);
 5. no alive or unknown agent marker and the goal in no live session's `in_flight` (`live-agent`,
-   `live-session`), the agent markers AND the session list re-read just before removal. A host with no hooks (Cursor) leaves neither, so
+   `live-session`), the agent markers AND the session list re-read just before removal. A host where Sigma uses no hook (Cursor documents hooks; Sigma does not use them, CLI behaviour unmeasured) leaves neither, so
    there liveness rests on checks 6 to 10, and a clean, merged tree with an editor open is removed: only
    its checkout is lost, never a commit;
 6. `git rev-parse --show-toplevel` is the path (a tree with no `.git` file resolves to the MAIN

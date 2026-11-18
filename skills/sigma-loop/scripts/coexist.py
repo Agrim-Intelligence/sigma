@@ -44,8 +44,8 @@ repository, and the exact uninstall command. Once per run: a start surface (init
 migrate) always says it; a per-verb surface (`once=True`) stays quiet while `state/coexist.notice`
 is younger than `NOTICE_TTL_SECONDS`, and every notice refreshes that mark. Read-only surfaces
 (`doctor.py check` -- a WARN row, never a failure -- and `status.py`) say the same. The
-session-start hook repeats the line, read-only, and carries on to its other tiers: Cursor has no
-hooks, so the hook is an accelerator and decides nothing.
+session-start hook repeats the line, read-only, and carries on to its other tiers: Sigma uses no
+Cursor hooks, so the hook is an accelerator and decides nothing.
 
 THE ONE STEP THAT WAITS (#314, review of PR #319): the old plugin reads a `sigma/features@1`
 registry as EMPTY, so once the registry is converted a goal it starts (or an owner claim, or

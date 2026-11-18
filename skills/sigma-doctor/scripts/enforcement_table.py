@@ -497,7 +497,7 @@ def render(root):
         "",
         "**Kinds.** *Python gate*: plain Python in the kit refuses, parks or holds; identical on every",
         "host. *git host*: your repository's own branch protection or CI refuses the merge. *Claude Code",
-        "hook*: a `hooks/hooks.json` hook denies the action; Cursor and Codex have no hooks, so it holds",
+        "hook*: a `hooks/hooks.json` hook denies the action; Sigma uses no Cursor or Codex hooks, so it holds",
         "nowhere else. *advice*: the skills ask the agent to do it and no code checks that it did.",
         "",
         "**Default (scaffolded)** is the value `/sigma-init` writes from `config.json.tmpl`, read from",

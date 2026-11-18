@@ -6,8 +6,8 @@ SILENTLY from the operator's point of view, then (for the watcher) is not restar
 exists. A forgotten one therefore looks exactly like a dead daemon with nothing to say. Age is the
 tell: a file touched a minute ago is a deliberate stop, one a week old is almost certainly forgotten.
 
-One home for the facts so `/sigma-doctor` and `hooks/session_start.sh` (an accelerator only; Cursor
-has no hooks) say the same thing. Read-only: it never removes a stop-file -- that is the operator's
+One home for the facts so `/sigma-doctor` and `hooks/session_start.sh` (an accelerator only; Sigma
+uses no Cursor hooks) say the same thing. Read-only: it never removes a stop-file -- that is the operator's
 lever. Never raises.
 
     stopfiles.py line <sdlc_dir>    # prints one line when any stop-file exists, nothing otherwise

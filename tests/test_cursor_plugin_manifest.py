@@ -54,6 +54,14 @@ def test_plugin_matches_the_claude_code_manifest():
         assert cursor[key] == claude[key], key
 
 
+def test_plugin_links_point_at_the_real_public_repository():
+    """`homepage` and `repository` once named a repository that does not exist (404). Pinned to the
+    public slug so a typo fails here rather than in a user's plugin pane."""
+    m = _load(".cursor-plugin/plugin.json")
+    for key in ("homepage", "repository"):
+        assert m[key] == "https://github.com/Agrim-Intelligence/sigma", key
+
+
 def test_skills_path_holds_every_shipped_skill():
     m = _load(".cursor-plugin/plugin.json")
     skills = _rel(m["skills"])

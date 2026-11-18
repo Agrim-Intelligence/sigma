@@ -16,7 +16,7 @@ block added in a later release (`rulebook`, `upkeep`) does not appear in a repos
 from `skills/sigma-init/templates/config.json.tmpl` in the installed plugin, with every `enabled` left `false`, and
 open one gate at a time. Restart the session after updating, and stop any running watcher so the next trigger starts it
 on the new build (`touch .sdlc/state/watch.stop`). What each release changes by default is listed in the
-[CHANGELOG](../CHANGELOG.md); for 1.0.33 see [what's new in 1.0.33](whats-new-1.0.33.md). The two optional features are
+[CHANGELOG](../CHANGELOG.md); for 1.0.34 see [what's new in 1.0.34](whats-new-1.0.34.md). The two optional features are
 documented in [the Decision Rulebook](decision-rulebook.md) and [Upkeep](upkeep.md).
 
 ## From the pre-launch name
@@ -368,7 +368,7 @@ found and the cut-over steps, and exits 0.
 | Registry reads, `feature_sync.py show` / `fold` | A unit record in the old plugin's schema next to a Sigma `index.json` entry is merged as a delta (the entry wins every field it has; goals added; never a grant). `fold` writes that and refuses any result that would lose something `index.json` records; `feature_sync.py repair` (and any Sigma write to that unit: a pick, a claim, `set-priority`, a classification reopen) rewrites such records in Sigma's schema, lists each record value it discards, and refuses when there is one and the record is at least as new as `index.json`; the doctor row and the status segment `legacy delta records` count them. `migrate.py --apply` converts `index.json` only once every unit record has converted (and puts it back if one appears during the run), and refuses to convert such a delta record, naming `repair`. |
 | `/sigma-doctor` | A `coexistence: WARN` row naming the uninstall command. Never a failure. |
 | `status.py` | The notice on stderr. The status line still prints. |
-| Session-start hook (Claude Code) | Adds the one notice line to the session, then runs its other checks as usual. Read-only, so it says the same thing every time. It is an accelerator only: every behaviour above is in Sigma's Python, on every host, including Cursor, which has no hooks. |
+| Session-start hook (Claude Code) | Adds the one notice line to the session, then runs its other checks as usual. Read-only, so it says the same thing every time. It is an accelerator only: every behaviour above is in Sigma's Python, on every host, including Cursor, whose documented hooks Sigma does not use (whether they fire in its command-line agent is unmeasured). |
 
 ### A fold by the old plugin (#514)
 

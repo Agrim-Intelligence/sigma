@@ -327,7 +327,7 @@ def file(sdlc_dir, config, answers, questions_asked=(), decision=None, source=No
                 "detail": ("decision=%r does not match the recorded next_step answer %r "
                           "(expected %r)") % (decision, recorded_next_step, expected)}
 
-    # #1916's tail, validated here so every host gets the same answer -- Cursor has no hooks, so a
+    # #1916's tail, validated here so every host gets the same answer -- Sigma uses no Cursor hooks, so a
     # bound stated only in SKILL.md would be a bound only on Claude Code.
     extras = _extras(answers)
     answered, unresolved, unrecognized = _split_extras(extras)
