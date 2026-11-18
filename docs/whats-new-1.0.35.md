@@ -34,12 +34,13 @@ subagent transcript, and the source of a public docs site.
    - **What you do:** nothing.
    - **Not measured:** a real cloud session.
 5. **Public docs site source (#2244).** A static `site/` directory with a black-and-white design, an orchestrate page, a
-   cloud-sessions page, a phone menu, and a Pages workflow. It is published at the repository's GitHub Pages address once
-   Pages is on; the address answered 200 when this release was cut, and its content was not checked. The site was not
-   rendered in a real browser by this release's author.
+   cloud-sessions page, a phone menu, and a Pages workflow. It is live at the repository's GitHub Pages address (23 pages
+   answered 200 when checked). The site was not rendered in a real browser by this release's author. Wording was
+   trimmed in #2253.
 
 ## Not measured
 
-The full test suite was not run by this release's author; see the release notes on GitHub for any full-tier result. A real merge through the `protection_unreadable` path was not run.
+The full test suite was not run by this release's author. An on-demand full-tier run on main was still in progress when
+this release was cut; its regression-control job failed only on the phase-context budget row, fixed in #2252. A real merge through the `protection_unreadable` path was not run.
 Nothing was run in Antigravity, and Cursor is unverified until a live test. The README install URLs are not claimed to
 work: they name a repository slug that does not exist yet (issue #2248 is open).
