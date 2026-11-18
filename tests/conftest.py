@@ -119,39 +119,6 @@ def pytest_collection_finish(session):
                     "see tests/test_script_cache.py", returncode=3)
 
 
-QUARANTINE = pathlib.Path(__file__).resolve().with_name("quarantine.txt")
-
-
-def read_quarantine(path=QUARANTINE):
-    """`tests/quarantine.txt` rows as (node-id prefix, date, issue, reason); `#` lines and blanks skipped (#2255).
-    A row with fewer than four ` | ` fields raises, so a quarantine can never be written without its reason."""
-    rows = []
-    if not path.is_file():
-        return rows
-    for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        parts = [p.strip() for p in line.split(" | ", 3)]
-        if len(parts) != 4 or not all(parts):
-            raise ValueError(f"{path.name}:{n}: want `<node id> | <YYYY-MM-DD> | <#issue> | <reason>`, got {line!r}")
-        rows.append((*parts,))
-    return rows
-
-
-def pytest_collection_modifyitems(config, items):
-    """Quarantined tests (tests/quarantine.txt, the ONE list, #2255) are marked xfail(strict=False): they still
-    run and still print (`-rx`), a fixed one shows as XPASS instead of staying hidden, and nothing is deleted."""
-    rows = read_quarantine()
-    if not rows:
-        return
-    for item in items:
-        for prefix, date, issue, reason in rows:
-            if item.nodeid == prefix or item.nodeid.startswith(prefix + "[") or item.nodeid.startswith(prefix + "::"):
-                item.add_marker(pytest.mark.xfail(
-                    reason=f"QUARANTINED {date} {issue}: {reason}", strict=False))
-                break
-
-
 def _ram_mb():
     try:
         with open("/proc/meminfo") as f:
