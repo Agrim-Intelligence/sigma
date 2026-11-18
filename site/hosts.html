@@ -20,41 +20,41 @@
     <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
-    <a href="index.html"><span class="nav-num">01</span>Home</a>
-    <a href="get-started.html"><span class="nav-num">02</span>Get started</a>
-    <a href="flow.html"><span class="nav-num">03</span>How it works</a>
-    <a href="entry-points.html"><span class="nav-num">04</span>Ways in</a>
-    <a href="design-gate.html"><span class="nav-num">05</span>The design gate</a>
+    <a href="index.html">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="flow.html">How it works</a>
+    <a href="entry-points.html">Ways in</a>
+    <a href="design-gate.html">The design gate</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Set up &amp; run</div>
-    <a href="setup.html"><span class="nav-num">06</span>Setup</a>
-    <a href="hosts.html" class="active" aria-current="page"><span class="nav-num">07</span>Hosts</a>
-    <a href="config.html"><span class="nav-num">08</span>Configuration</a>
-    <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
-    <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="orchestrate.html"><span class="nav-num">11</span>Running many goals</a>
-    <a href="cloud.html"><span class="nav-num">12</span>Cloud sessions</a>
-    <a href="observe.html"><span class="nav-num">13</span>Cost and time</a>
+    <a href="setup.html">Setup</a>
+    <a href="hosts.html" class="active" aria-current="page">Hosts</a>
+    <a href="config.html">Configuration</a>
+    <a href="sdlc-folder.html">The .sdlc folder</a>
+    <a href="run.html">Running unattended</a>
+    <a href="orchestrate.html">Running many goals</a>
+    <a href="cloud.html">Cloud sessions</a>
+    <a href="observe.html">Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">14</span>On your own</a>
-    <a href="team.html"><span class="nav-num">15</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">16</span>From Slack</a>
+    <a href="solo.html">On your own</a>
+    <a href="team.html">As a team</a>
+    <a href="slack.html">From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">17</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">18</span>Labels</a>
-    <a href="units.html"><span class="nav-num">19</span>Units of work</a>
-    <a href="safety.html"><span class="nav-num">20</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">21</span>Technical reference</a>
+    <a href="skills.html">Skills and commands</a>
+    <a href="labels.html">Labels</a>
+    <a href="units.html">Units of work</a>
+    <a href="safety.html">Trust and limits</a>
+    <a href="reference.html">Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">22</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">23</span>Glossary</a>
+    <a href="releases.html">Releases</a>
+    <a href="glossary.html">Glossary</a>
   </div>
   </details>
   <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
@@ -66,6 +66,17 @@
 <span class="eyebrow">Set up &amp; run</span>
 <h1>Hosts</h1>
 <p class="subtitle">Which agent hosts Sigma runs on, how each is installed, and what was measured on each. Where something was not measured, the table says so.</p>
+
+<nav class="toc" aria-label="On this page">
+<div class="toc-title">On this page</div>
+<ul>
+<li><a href="#claude-code">Claude Code</a></li>
+<li><a href="#codex">Codex</a></li>
+<li><a href="#cursor">Cursor</a></li>
+<li><a href="#antigravity">Antigravity</a></li>
+</ul>
+</nav>
+
 
 <div class="callout callout-note">
 <div class="callout-title">What holds on every host</div>
@@ -107,10 +118,10 @@
 <table>
 <thead><tr><th>Question</th><th>Answer</th></tr></thead>
 <tbody>
-<tr><td>How it is installed</td><td>From a clone of the Sigma repository. There is no Cursor plugin manifest.</td></tr>
+<tr><td>How it is installed</td><td>From a clone of the Sigma repository.</td></tr>
 <tr><td>Init flag</td><td><code>--cursor</code></td></tr>
-<tr><td>Measured</td><td>The scaffolding is unit-tested.</td></tr>
-<tr><td>Not measured</td><td>Sigma has not been run end to end inside Cursor. Whether Cursor's own plugin support could install Sigma is unverified.</td></tr>
+<tr><td>Measured</td><td>In the Cursor app, on a private scratch repository (18 Nov 2026): <code>/sigma-init --cursor</code> with the GitHub-mode flags set the repository up with a Projects board, and <code>/sigma-doctor</code> reported all checks ready. <code>/sigma-goal 1 --land</code> first refused because <code>work.auto_merge</code> was <code>off</code>; with it set to <code>always</code>, it ran a real issue to a merged pull request with passing tests. The pull request was merged by hand: on a free-plan private repository GitHub refuses the branch-protection read with HTTP 403, and Sigma then holds a merge (see the opt-in <code>work.protection_unreadable</code> in the configuration reference).</td></tr>
+<tr><td>Not measured</td><td><code>/sigma-loop</code> on several goals, the Cursor command-line agent, hooks, and an auto-merge on a repository whose protection can be read.</td></tr>
 <tr><td>Hooks</td><td>None used. Cursor documents a hooks system; Sigma does not use it and no behaviour depends on it.</td></tr>
 </tbody>
 </table>
@@ -121,11 +132,12 @@
 <table>
 <thead><tr><th>Question</th><th>Answer</th></tr></thead>
 <tbody>
-<tr><td>How it is installed</td><td>From a clone of the Sigma repository.</td></tr>
+<tr><td>How it is installed</td><td><code>agy plugin install https://github.com/Agrim-Intelligence/sigma</code>, from the public repository. Antigravity converts the Claude Code plugin: 46 skills and 4 hook groups.</td></tr>
 <tr><td>Init flag</td><td><code>--antigravity</code> (opt-in)</td></tr>
-<tr><td>Measured</td><td>The scaffold is unit-tested. The flag writes only the managed block in <code>AGENTS.md</code>, the same block <code>--codex</code> writes; it changes no config value and creates no <code>.agents</code> folder.</td></tr>
-<tr><td>Not measured</td><td>Sigma has never been run in Antigravity. Unmeasured: hooks, MCP, workflows, the headless <code>agy</code> command, subagents (and so an independent reviewer), and a goal run end to end.</td></tr>
-<tr><td>Hooks</td><td>None used</td></tr>
+<tr><td>Measured</td><td>In <code>agy</code> 1.5, on a private scratch repository (18 Nov 2026): the install above, which skips two hooks (the <code>UserPromptSubmit</code> hook and the <code>PreToolUse</code> hook on skills). <code>/sigma-init --antigravity</code> with the GitHub-mode flags ran inside <code>agy</code> and produced a GitHub-mode setup with a Projects board and an <code>AGENTS.md</code>.</td></tr>
+<tr><td>Read from the installed output, not exercised</td><td>The four hook groups are PostToolUse, PreToolUse, SessionStart and Stop. The install log gives Antigravity having no such event or tool as the reason for the two skips. The converted skills still contain the Claude-only <code>${CLAUDE_SKILL_DIR}</code> placeholder, and each skill carries a note telling the model to use its own folder.</td></tr>
+<tr><td>Not measured</td><td>A goal run (<code>/sigma-goal</code>), the loop, whether the converted hooks fire (their paths are relative), the headless <code>agy -p</code> command, and an independent reviewer.</td></tr>
+<tr><td>Hooks</td><td>Converted by the install, not measured</td></tr>
 </tbody>
 </table>
 </div>

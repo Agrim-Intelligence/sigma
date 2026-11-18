@@ -20,41 +20,41 @@
     <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
-    <a href="index.html"><span class="nav-num">01</span>Home</a>
-    <a href="get-started.html" class="active" aria-current="page"><span class="nav-num">02</span>Get started</a>
-    <a href="flow.html"><span class="nav-num">03</span>How it works</a>
-    <a href="entry-points.html"><span class="nav-num">04</span>Ways in</a>
-    <a href="design-gate.html"><span class="nav-num">05</span>The design gate</a>
+    <a href="index.html">Home</a>
+    <a href="get-started.html" class="active" aria-current="page">Get started</a>
+    <a href="flow.html">How it works</a>
+    <a href="entry-points.html">Ways in</a>
+    <a href="design-gate.html">The design gate</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Set up &amp; run</div>
-    <a href="setup.html"><span class="nav-num">06</span>Setup</a>
-    <a href="hosts.html"><span class="nav-num">07</span>Hosts</a>
-    <a href="config.html"><span class="nav-num">08</span>Configuration</a>
-    <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
-    <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="orchestrate.html"><span class="nav-num">11</span>Running many goals</a>
-    <a href="cloud.html"><span class="nav-num">12</span>Cloud sessions</a>
-    <a href="observe.html"><span class="nav-num">13</span>Cost and time</a>
+    <a href="setup.html">Setup</a>
+    <a href="hosts.html">Hosts</a>
+    <a href="config.html">Configuration</a>
+    <a href="sdlc-folder.html">The .sdlc folder</a>
+    <a href="run.html">Running unattended</a>
+    <a href="orchestrate.html">Running many goals</a>
+    <a href="cloud.html">Cloud sessions</a>
+    <a href="observe.html">Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">14</span>On your own</a>
-    <a href="team.html"><span class="nav-num">15</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">16</span>From Slack</a>
+    <a href="solo.html">On your own</a>
+    <a href="team.html">As a team</a>
+    <a href="slack.html">From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">17</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">18</span>Labels</a>
-    <a href="units.html"><span class="nav-num">19</span>Units of work</a>
-    <a href="safety.html"><span class="nav-num">20</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">21</span>Technical reference</a>
+    <a href="skills.html">Skills and commands</a>
+    <a href="labels.html">Labels</a>
+    <a href="units.html">Units of work</a>
+    <a href="safety.html">Trust and limits</a>
+    <a href="reference.html">Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">22</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">23</span>Glossary</a>
+    <a href="releases.html">Releases</a>
+    <a href="glossary.html">Glossary</a>
   </div>
   </details>
   <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
@@ -67,62 +67,72 @@
 <h1>Get started</h1>
 <p class="subtitle">Install Sigma Loop for your host, then run <code>/sigma-init</code> once in each repository you want it to work on.</p>
 
-<div class="aud">
-<div class="aud-label">Before you start</div>
+<nav class="toc" aria-label="On this page">
+<div class="toc-title">On this page</div>
+<ul>
+<li><a href="#hosts">Pick your host</a></li>
+<li><a href="#claude-code">Claude Code</a></li>
+<li><a href="#codex">Codex</a></li>
+<li><a href="#cursor">Cursor</a></li>
+<li><a href="#antigravity">Antigravity</a></li>
+<li><a href="#init">What /sigma-init does</a></li>
+</ul>
+</nav>
+
+
 <p>You need <code>git</code>, <code>bash</code> and <code>python3</code> (standard library only). The GitHub CLI <code>gh</code>, logged in, is optional: it is needed for GitHub issues as the backlog, a Projects board, or a pull request per goal. A local-files backlog needs none of it.</p>
+
+<h2 id="hosts">Pick your host</h2>
+<div class="host-wrap">
+<div class="host-pick" role="navigation" aria-label="Host">
+<a href="#claude-code">Claude Code</a>
+<a href="#codex">Codex</a>
+<a href="#cursor">Cursor</a>
+<a href="#antigravity">Antigravity</a>
 </div>
 
-<div class="table-wrap">
-<table>
-<thead><tr><th>Host</th><th>Install</th><th>Init flag</th></tr></thead>
-<tbody>
-<tr><td><a href="#claude-code">Claude Code</a></td><td>plugin marketplace</td><td>none</td></tr>
-<tr><td><a href="#codex">Codex</a></td><td>plugin marketplace</td><td><code>--codex</code></td></tr>
-<tr><td><a href="#cursor">Cursor</a></td><td>clone the repository</td><td><code>--cursor</code></td></tr>
-<tr><td><a href="#antigravity">Antigravity</a></td><td>clone the repository</td><td><code>--antigravity</code></td></tr>
-</tbody>
-</table>
+<section class="host" id="claude-code">
+<h2>Claude Code</h2>
+<ol class="steps">
+<li><h3>Install</h3><pre><code>claude plugin marketplace add https://github.com/Agrim-Intelligence/sigma
+claude plugin install sigmaloop@sigmaloop</code></pre></li>
+<li><h3>Initialise</h3><p>Restart the session, then run this from the root of the repository you want Sigma to work on.</p><pre><code>/sigma-init --demo
+/sigma-loop</code></pre></li>
+</ol>
+<p class="host-note"><code>--demo</code> queues a runnable demo goal; <code>/sigma-loop</code> then runs it through all the phases. To run in Claude Code's cloud, read <a href="cloud.html">Cloud sessions</a> first.</p>
+</section>
+
+<section class="host" id="codex">
+<h2>Codex</h2>
+<ol class="steps">
+<li><h3>Install</h3><pre><code>codex plugin marketplace add https://github.com/Agrim-Intelligence/sigma
+codex plugin add sigmaloop@sigmaloop</code></pre></li>
+<li><h3>Initialise</h3><p>Run this from the root of your repository. The flag makes <code>AGENTS.md</code> carry the standing rules.</p><pre><code>/sigma-init --codex --demo</code></pre></li>
+</ol>
+<p class="host-note"><strong>Measured:</strong> the install and the first loop command, in a real Codex session. <strong>Not measured:</strong> a complete goal through to a merged pull request. <a href="hosts.html#codex">Details on Hosts</a>.</p>
+<details><summary>If the slash command is not available</summary><p>Run the init flow directly from the root of your repository. This is a path you type; <code>&lt;installed-sigma&gt;</code> is the installed plugin directory.</p><pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/init_flow.py . --codex --demo</code></pre></details>
+</section>
+
+<section class="host" id="cursor">
+<h2>Cursor</h2>
+<ol class="steps">
+<li><h3>Install</h3><pre><code>git clone https://github.com/Agrim-Intelligence/sigma ~/sigma</code></pre></li>
+<li><h3>Initialise</h3><p>Cursor has no plugin install: clone to a folder <strong>outside</strong> the project you are adopting. Then, from the root of your own repository:</p><pre><code>/sigma-init --cursor --demo</code></pre></li>
+</ol>
+<p class="host-note"><strong>Measured</strong> in the Cursor app: set-up with a Projects board, and one real issue to a merged pull request (merged by hand). <strong>Not measured:</strong> the loop on several goals. <a href="hosts.html#cursor">Details on Hosts</a>.</p>
+<details><summary>If the slash command is not available</summary><p>Run the init flow directly from the root of your repository. This is a path you type; <code>&lt;installed-sigma&gt;</code> is the folder you cloned to.</p><pre><code>python3 ~/sigma/skills/sigma-init/scripts/init_flow.py . --cursor --demo</code></pre></details>
+</section>
+
+<section class="host" id="antigravity">
+<h2>Antigravity</h2>
+<ol class="steps">
+<li><h3>Install</h3><pre><code>agy plugin install https://github.com/Agrim-Intelligence/sigma</code></pre></li>
+<li><h3>Initialise</h3><p>Then, inside <code>agy</code>, from the root of your own repository:</p><pre><code>/sigma-init --antigravity</code></pre></li>
+</ol>
+<p class="host-note"><strong>Measured</strong> in <code>agy</code>: the install and set-up with a Projects board and an <code>AGENTS.md</code>. <strong>Not measured:</strong> a goal run or the loop. <a href="hosts.html#antigravity">Details on Hosts</a>.</p>
+<details><summary>If the slash command is not available</summary><p>Run the init flow directly from the root of your repository. This is a path you type; <code>&lt;installed-sigma&gt;</code> is the installed plugin directory.</p><pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/init_flow.py . --antigravity</code></pre></details>
+</section>
 </div>
-
-<h2 id="claude-code">Claude Code</h2>
-<p>From a terminal:</p>
-<pre><code>claude plugin marketplace add https://github.com/Agrim-Intelligence/sigma
-claude plugin install sigmaloop@sigmaloop</code></pre>
-<p>Restart the session. Then, from the root of the repository you want Sigma to work on:</p>
-<pre><code>/sigma-init --demo
-/sigma-loop</code></pre>
-<p><code>--demo</code> queues a runnable demo goal, and <code>/sigma-loop</code> runs it through all the phases. No host flag is needed on Claude Code.</p>
-
-<p>To run goals in Claude Code's cloud, read <a href="cloud.html">Cloud sessions</a> first.</p>
-
-<h2 id="codex">Codex</h2>
-<pre><code>codex plugin marketplace add https://github.com/Agrim-Intelligence/sigma
-codex plugin add sigmaloop@sigmaloop</code></pre>
-<p>Then run the init skill with the <code>--codex</code> flag, so <code>AGENTS.md</code> carries the standing rules:</p>
-<pre><code>/sigma-init --codex --demo</code></pre>
-<p><strong>Fallback, only if the slash command is not available.</strong> Run the init flow directly from the root of your repository. This is a path you type, with <code>&lt;installed-sigma&gt;</code> the installed plugin directory:</p>
-<pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/init_flow.py . --codex --demo</code></pre>
-<p><strong>Measured:</strong> the install and the first loop command ran in a real Codex session. <strong>Not measured:</strong> a complete Codex goal through to a merged pull request. See <a href="hosts.html#codex">Hosts</a>.</p>
-
-<h2 id="cursor">Cursor</h2>
-<p>Cursor has no plugin install. Sigma runs from a clone of the repository, which is your <code>&lt;installed-sigma&gt;</code>. Clone it to a folder <strong>outside</strong> the project you are adopting; do not put the clone inside your own repository.</p>
-<pre><code>git clone https://github.com/Agrim-Intelligence/sigma ~/sigma</code></pre>
-<p>Then, from the root of your own repository, run the init skill with the <code>--cursor</code> flag:</p>
-<pre><code>/sigma-init --cursor --demo</code></pre>
-<p><strong>Fallback, only if the slash command is not available.</strong> This is a path you type, with <code>&lt;installed-sigma&gt;</code> the folder you cloned to:</p>
-<pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/init_flow.py . --cursor --demo</code></pre>
-<p>The <code>--cursor</code> flag writes the Cursor rule files that carry the seven-phase discipline.</p>
-<p><strong>Measured:</strong> the scaffolding is unit-tested. <strong>Not measured:</strong> a run inside a live Cursor session. See <a href="hosts.html#cursor">Hosts</a>.</p>
-
-<h2 id="antigravity">Antigravity</h2>
-<p>As with Cursor, Sigma runs from a clone of the repository, which is your <code>&lt;installed-sigma&gt;</code>. Clone it to a folder <strong>outside</strong> the project you are adopting; do not put the clone inside your own repository.</p>
-<pre><code>git clone https://github.com/Agrim-Intelligence/sigma ~/sigma</code></pre>
-<p>Then, from the root of your own repository, run the init skill with the <code>--antigravity</code> flag:</p>
-<pre><code>/sigma-init --antigravity</code></pre>
-<p><strong>Fallback, only if the slash command is not available.</strong> This is a path you type, with <code>&lt;installed-sigma&gt;</code> the folder you cloned to:</p>
-<pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/init_flow.py . --antigravity</code></pre>
-<p>The <code>--antigravity</code> flag writes the same managed block in <code>AGENTS.md</code> that <code>--codex</code> writes, and nothing else. It is opt-in.</p>
-<p><strong>Measured:</strong> the scaffold is unit-tested. <strong>Not measured:</strong> that Antigravity loads or follows it, hooks, MCP, workflows, subagents, or a goal run end to end. See <a href="hosts.html#antigravity">Hosts</a>.</p>
 
 <h2 id="init">What <code>/sigma-init</code> does</h2>
 <p>Run it once in every repository, on every host. It is safe to re-run: it does not ask an answered question again.</p>
@@ -131,7 +141,7 @@ codex plugin add sigmaloop@sigmaloop</code></pre>
 <li>Asks where your backlog lives (local goal files or GitHub issues) and which command runs your tests.</li>
 <li>Scaffolds the <code>.sdlc</code> folder and ends by printing the next command to run.</li>
 </ul>
-<p>On Codex and Cursor there is no interactive question: the flow prints each open one as an <code>[ask]</code> line with the flag that answers it.</p>
+<p>On Codex, Cursor and Antigravity there is no interactive question: the flow prints each open one as an <code>[ask]</code> line with the flag that answers it.</p>
 
 <div class="pagenav">
   <a href="index.html"><span class="dir">Back</span>&larr; Home</a>
