@@ -135,7 +135,7 @@
 
   <text class="dtext-dim" x="65" y="104" text-anchor="middle">a person drags</text>
   <text class="dtext-dim" x="65" y="118" text-anchor="middle">to Ready</text>
-  <text class="dtext-dim" x="360" y="116" text-anchor="start">the loop picks</text>
+  <text class="dtext-dim" x="278" y="40" text-anchor="middle">the loop picks</text>
   <text class="dtext-dim" x="360" y="140" text-anchor="start">dependency found</text>
 
   <rect class="dbox-optional" x="250" y="170" width="150" height="52" rx="9"/>
@@ -150,7 +150,7 @@
   <text class="dtext" x="75" y="192" text-anchor="middle" font-weight="700">Parked</text>
   <text class="dtext-dim" x="75" y="209" text-anchor="middle">a human checkpoint</text>
   <path class="darrow" d="M140,196 L170,196 L170,86" marker-end="url(#ar)"/>
-  <text class="dtext-dim" x="164" y="170" text-anchor="end">person unparks</text>
+  <text class="dtext-dim" x="164" y="162" text-anchor="end">person unparks</text>
 </svg>
 <p class="diagram-caption">Blocked clears itself; Parked never does. A parked card returns to Ready once a person unparks it.</p>
 </div>
@@ -208,7 +208,7 @@
 <li><h4>Priority table</h4><p>Open items grouped by Priority, P0 first. It answers &ldquo;what should we work on&rdquo;.</p></li>
 <li><h4>In flight</h4><p>Open items in In Progress, QC or Blocked, newest update first. The operator&rsquo;s live view.</p></li>
 <li><h4>Needs a human</h4><p>Open items labelled parked or blocked. The inbox for <a href="skills.html#sigma-unpark"><code>/sigma-unpark</code></a>.</p></li>
-<li><h4>Roadmap</h4><p>P0 and P1 items grouped by milestone, with the milestones&rsquo; due dates as markers. It shows only items that carry a milestone.</p></li>
+<li><h4>Roadmap</h4><p>P0 and P1 items grouped by milestone, with the milestones&rsquo; due dates as markers. It shows only items that carry the roadmap milestone (the docs name <code>v1.0</code>).</p></li>
 <li><h4>Epics</h4><p>Items labelled as epics, with how far through their sub-issues each is.</p></li>
 </ol>
 <p>The built-in fields (title, assignees, labels, linked pull requests, sub-issue progress, milestone, updated) are on every board and are not created by Sigma.</p>
