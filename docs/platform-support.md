@@ -42,8 +42,9 @@ never been run there.
 > **Not measured:** `/sigma-loop` on several goals, the Cursor command-line agent, hooks, and an
 > auto-merge on a repository whose protection can be read.
 
-Sigma ships no Cursor plugin manifest (whether Cursor's plugin support could load one is unverified),
-and Sigma uses no Cursor hook and no `code-review` plugin there. Cursor documents a hooks system
+Sigma ships a Cursor plugin package (`.cursor-plugin/plugin.json` and `marketplace.json`) that carries its
+skills and, deliberately, no hooks; it is checked against Cursor's published manifest schema but has **not
+yet been installed or run in Cursor**. Sigma uses no Cursor hook and no `code-review` plugin there. Cursor documents a hooks system
 (`.cursor/hooks.json`, <https://cursor.com/docs/hooks>, read 17 Nov 2026); Sigma does not use it, and
 whether it fires in Cursor's command-line agent is unmeasured (forum reports say some events do not).
 No Sigma behavior depends on a hook. From the root of your
@@ -173,4 +174,5 @@ Claude Code and on Codex. The Claude Code install was measured in an isolated pr
 Sigma Loop ships no other manifest. On 2026-10-08 the marketplace URL and plugin id were tested in an
 isolated `CODEX_HOME` against the 1.0.3 feature branch; the enabled inventory and installed skill
 resolved to the same clean commit. A full Codex goal-to-merge run has not yet been measured. Sigma ships
-no Cursor plugin manifest; whether Cursor's own plugin support could install Sigma is unverified.
+a Cursor plugin package (`.cursor-plugin/`) under the same `sigmaloop` id; its shape is unit-tested
+against Cursor's published schemas, and no install in Cursor has been measured yet.

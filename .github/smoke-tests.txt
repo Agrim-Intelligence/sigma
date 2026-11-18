@@ -22,3 +22,4 @@ tests/test_cloud_setup_script.py
 tests/test_site_checks.py
 tests/test_artifact_paths_2243.py
 tests/test_protection_unreadable_2242.py
+tests/test_cursor_plugin_manifest.py
