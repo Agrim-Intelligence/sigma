@@ -300,8 +300,13 @@ ENFORCEMENT_GATES = (
                   "plan or research file becomes a repo-relative path, `<plugin>/skills/...` or `[path]`, and one "
                   "line says how many were rewritten; a leak in the acceptance record (append-only), in a plan "
                   "whose bytes a review or seal already records, or in a file it cannot read refuses the commit "
-                  "with the file and line",
-     "condition": "a raw `git commit` bypasses it, and history already published is not rewritten"},
+                  "with the file and line; `work.py pr` is the second choke point: before any push it reads the "
+                  "COMMITTED blobs of this goal's plan, research and acceptance files that the branch changed "
+                  "against its base and refuses (file, line, count, nothing pushed) on a home path, naming "
+                  "`work.py commit` as the clearing gesture (a follow-up commit; no history is rewritten)",
+     "condition": "a raw `git commit` followed by a push that does not go through `work.py pr` is not covered; a "
+                  "leak already pushed to the remote branch is already public and history is not rewritten; a "
+                  "path containing a space ends at the space (the login is gone, the rest is garbled)"},
     {"control": "Hard plan gate at PR push", "function": "_hard_plan_gate_refusal",
      "kind": "python-gate", "hosts": "all",
      "enabled_by": ("work.enabled", "gates.hard_plan_gate.enabled"), "settings": (),
@@ -5228,6 +5233,12 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None, land=False):
     if run(path, ["git", "rev-list", "--count", f"{remote}/{base}..HEAD"]) == "0":
         return (f"no commits on the branch — nothing to open a PR for; make the change in {path}, "
                 f"then run `work.py commit {sdlc_dir} {goal}` (nothing pushed)")
+    try:                                                # #2243: the second choke point; `commit()` can be skipped
+        leak = _load("artifact_paths").committed_leak_refusal(sdlc_dir, path, goal, f"{remote}/{base}", run)
+    except Exception as exc:                            # noqa: BLE001 - fail closed: nothing is pushed unchecked
+        leak = f"REFUSED: could not check the committed artifacts for absolute local paths ({exc}) (nothing pushed)"
+    if leak:
+        return leak
     missing_plan = _plan_missing_from_branch(sdlc_dir, rec, goal, run)
     if missing_plan:
         return missing_plan

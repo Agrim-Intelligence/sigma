@@ -30,6 +30,10 @@ WHERE IT REFUSES INSTEAD OF REWRITING (never a silent commit of a leak):
   * a file that cannot be read as UTF-8 or written.
 Each refusal names the file and line.
 
+KNOWN LIMITS (pinned by tests): a path with a space in it ends at the space, so the leaked login is gone but the
+rest reads garbled (`<home>/john doe/p` -> `[path] doe/p`); Sigma does not guess where a spaced path ends. A regex
+metacharacter in the name or tail ends the token, and a name that starts with one is not a path at all.
+
 NOT CLAIMED: a raw `git commit` bypasses `work.py commit`; history already published is not rewritten.
 """
 import hashlib
@@ -40,11 +44,16 @@ import re
 #: The three artifact directories under `.sdlc/`, and whether a leak in each is rewritten or refused.
 SUBDIRS = (("plans", True), ("research", True), ("acceptance", False))
 
-_TAIL = r"[^\s'\"`<>)\]|,;]*"
+#: Characters that end a path token. Regex metacharacters (`[ ] ( ) + *`) are in it so a pattern such as
+#: `<home>/[a-z]+/` in a plan is left whole instead of being cut in the middle (#2243 review); a backslash ends a
+#: POSIX path but is the separator of a Windows one.
+_STOP = r"\s'\"`<>)(\]\[|,;+*"
+_TAIL = r"[^" + _STOP + r"\\]*"
+_WTAIL = r"[^" + _STOP + r"]*"
 #: One clause per path shape so each can be broken, and seen red, on its own.
-_POSIX = r"(?<![\w.:/~-])/(?:" + "Us" + r"ers|home)/[^/\s'\"`<>)\]|,;]+" + r"(?:/" + _TAIL + r")?"
+_POSIX = r"(?<![\w.:/~-])/(?:" + "Us" + r"ers|home)/[^/" + _STOP + r"\\]+" + r"(?:/" + _TAIL + r")?"
 _ROOT = r"(?<![\w.:/~-])/root(?:/" + _TAIL + r")"
-_WINDOWS = r"(?<![\w])[A-Za-z]:[\\/]" + "Us" + r"ers[\\/][^\\/\s'\"`<>)\]|,;]+" + r"(?:[\\/]" + _TAIL + r")?"
+_WINDOWS = (r"(?<![\w])[A-Za-z]:[\\/]" + "Us" + r"ers[\\/][^\\/" + _STOP + r"]+" + r"(?:[\\/]" + _WTAIL + r")?")
 _LEAK_RE = re.compile("(?:" + "|".join((_POSIX, _ROOT, _WINDOWS)) + ")")
 _PLUGIN_RE = re.compile(r"[\\/]\.claude[\\/]plugins[\\/].*?[\\/]((?:skills|hooks)[\\/].*)$")
 _TRIM = ".:!?"
@@ -89,7 +98,7 @@ def _regex(rts):
     leaks wherever they live (`/srv/ci/repo`, a container's `/workspace`), not only under a home directory."""
     if not rts:
         return _LEAK_RE
-    own = "|".join(r"(?<![\w.:/~-])" + re.escape(r) + r"(?:/" + _TAIL + r")?(?![\w-])" for r in rts)
+    own = "|".join(r"(?<![\w.:/~-])" + re.escape(r) + r"(?:[\\/]" + _WTAIL + r")?(?![\w-])" for r in rts)
     return re.compile("(?:" + _LEAK_RE.pattern + "|" + own + ")")
 
 
@@ -176,3 +185,32 @@ def scrub_goal(sdlc_dir, worktree, goal):
     if not files:
         return "", ""
     return f"scrubbed {paths} absolute local path(s) from {files} artifact file(s) before commit", ""
+
+
+def committed_leak_refusal(sdlc_dir, worktree, goal, base_ref, run):
+    """The refusal line for `work.py pr`, or "" (#2243). Reads the COMMITTED blobs of this goal's plan, research
+    and acceptance files that the branch changed against `base_ref` (`git diff base...HEAD`), never the working
+    tree: `commit()` can be skipped, so the branch may carry artifacts a raw `git commit` or an earlier session
+    wrote. `run(cwd, argv)` is `work._run`. A leak refuses before anything is pushed; the clearing gesture is
+    `work.py commit` (it rewrites the worktree copy and adds a FOLLOW-UP commit: no history is rewritten, and a leak
+    already pushed to the remote branch is already public)."""
+    exact, pattern = _load("review_context")._artifact_names(goal)
+    name = pathlib.Path(sdlc_dir).name
+    found = []
+    for sub, _rewrite in SUBDIRS:
+        listing = run(worktree, ["git", "diff", "--name-only", f"{base_ref}...HEAD", "--", f"{name}/{sub}"])
+        for rel in (listing or "").splitlines():
+            base = pathlib.PurePosixPath(rel).name
+            if base in exact or (pattern and pathlib.PurePosixPath(base).match(pattern)):
+                found.append(rel)
+    for rel in found:
+        text = run(worktree, ["git", "show", f"HEAD:{rel}"]) or ""
+        leaks = find_leaks(text, (worktree, pathlib.Path(sdlc_dir).resolve().parent))
+        if leaks:
+            line, token = leaks[0]
+            return (f"REFUSED: the committed {rel}:{line} holds an absolute local path ({len(leaks)} in all, first "
+                    f"{token!r}) (nothing pushed). Run `work.py commit {sdlc_dir} {goal}`: it rewrites the "
+                    f"worktree copy and adds a follow-up commit (the acceptance record or a reviewed plan is "
+                    f"refused there and needs a hand edit), then re-run `work.py pr`. History is not rewritten, "
+                    f"and a leak already pushed to the remote branch is already public.")
+    return ""

@@ -4,7 +4,7 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
-- **`work.py commit` rewrites absolute home-directory paths in a goal's plan and research files to repo-relative or `[path]`, and refuses on one in the acceptance record or a reviewed plan (#2243).** Stops new leaks only; published history is not rewritten, a raw `git commit` bypasses it, no live loop run after the change, Windows paths by fixture only.
+- **`work.py commit` and `work.py pr` keep absolute home-directory paths out of a goal's plan and research files and the acceptance record (#2243).** `commit` rewrites them to repo-relative or `[path]` (refusing on the acceptance record or a reviewed plan); `pr` refuses before any push when the branch's committed artifacts hold one. Stops new leaks only: published history is not rewritten, a raw `git commit` pushed without `pr` is not covered, a path with a space ends at the space, no live loop run after the change, Windows paths by fixture only.
 
 ## 1.0.34 — 2026-11-18 — `/sigma-init --antigravity` writes the managed AGENTS.md block, and the Cursor hooks wording is corrected
 

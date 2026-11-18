@@ -264,3 +264,105 @@ def test_work_commit_fails_closed_when_the_check_cannot_run(tmp_path, monkeypatc
     before = _git(wt, "rev-parse", "HEAD")
     out = work.commit(d, ON, GOAL, message="feat: x")
     assert out.startswith("REFUSED: could not check") and _git(wt, "rev-parse", "HEAD") == before
+
+
+# ----------------------------------------------------------------------------- known limits and regex text
+
+
+def test_a_regex_in_a_plan_is_left_whole():
+    text = _f("r'{U}/[a-z]+/' and r'/home/[a-z]+/x'")
+    assert ap.scrub_text(text) == (text, 0)
+
+
+def test_a_path_with_a_space_ends_at_the_space_known_limit():
+    """The login is gone but the rest is garbled; Sigma does not guess where a spaced path ends."""
+    assert ap.scrub_text("/home/john doe/proj/f.md")[0] == "[path] doe/proj/f.md"
+
+
+# ----------------------------------------------------------------------------- the second choke point: pr()
+
+
+class _Stop(Exception):
+    pass
+
+
+def _pr_setup(tmp_path):
+    repo, wt, d = _repo_with_worktree(tmp_path)
+    bare = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
+    _git(repo, "remote", "add", "origin", str(bare))
+    _git(repo, "push", "-q", "origin", "main")
+    _git(repo, "fetch", "-q", "origin")
+    return repo, wt, d
+
+
+def _raw_commit_artifacts(wt, plan_text):
+    (wt / ".sdlc" / "plans").mkdir(parents=True, exist_ok=True)
+    (wt / ".sdlc" / "plans" / GOAL).write_text(plan_text)
+    (wt / "b.py").write_text("y = 2\n")
+    _git(wt, "add", "-A")
+    _git(wt, "commit", "-q", "-m", "raw")
+
+
+def _pr_run(calls):
+    def run(cwd, argv):
+        calls.append(" ".join(map(str, argv)))
+        if argv[:2] == ["git", "push"] or argv[0] == "gh":
+            raise _Stop(" ".join(map(str, argv)))
+        return work._run(cwd, argv)
+    return run
+
+
+def _passes_leak_check(d):
+    """pr() got past the artifact check: it either reaches the push (our stub raises) or is stopped by a LATER
+    gate (this scratch repo has no GitHub identity, so `_pr_repo` refuses first); never by ours."""
+    try:
+        out = work.pr(d, ON, GOAL, run=_pr_run([]))
+    except _Stop:
+        return True
+    return "default repository" in out and "committed" not in out.split("(")[0]
+
+
+def test_pr_refuses_a_leak_committed_with_raw_git_and_pushes_nothing(tmp_path):
+    repo, wt, d = _pr_setup(tmp_path)
+    _raw_commit_artifacts(wt, f"**Worktree**: {wt}\nsee /home/user/p/q\n")
+    calls = []
+    out = work.pr(d, ON, GOAL, run=_pr_run(calls))
+    assert out.startswith("REFUSED: the committed .sdlc/plans/0001-x.md:1") and "2 in all" in out, out
+    assert "nothing pushed" in out and f"work.py commit {d} {GOAL}" in out and "already public" in out
+    assert not any(c.startswith(("git push", "gh")) for c in calls)
+
+
+def test_pr_passes_a_clean_branch(tmp_path):
+    repo, wt, d = _pr_setup(tmp_path)
+    _raw_commit_artifacts(wt, "clean .sdlc/work/1\n")
+    assert _passes_leak_check(d)
+
+
+def test_the_printed_gesture_clears_a_committed_leak_with_a_followup_commit(tmp_path):
+    repo, wt, d = _pr_setup(tmp_path)
+    _raw_commit_artifacts(wt, f"**Worktree**: {wt}\n")
+    first = _git(wt, "rev-parse", "HEAD")
+    assert work.pr(d, ON, GOAL, run=_pr_run([])).startswith("REFUSED: the committed")
+    out = work.commit(d, ON, GOAL, message="fix: scrub")
+    assert out.startswith("committed on sdlc/0001-x; scrubbed 1 absolute"), out
+    assert _git(wt, "rev-parse", "HEAD~1") == first, "a follow-up commit, history untouched"
+    assert _passes_leak_check(d)
+
+
+def test_pr_ignores_another_goals_artifact_and_unchanged_files(tmp_path):
+    repo, wt, d = _pr_setup(tmp_path)
+    _raw_commit_artifacts(wt, "clean\n")
+    (wt / ".sdlc" / "plans" / "0002-other.md").write_text("see /home/user/p/q\n")
+    _git(wt, "add", "-A")
+    _git(wt, "commit", "-q", "-m", "other")
+    assert _passes_leak_check(d)
+
+
+def test_pr_fails_closed_when_the_check_cannot_run(tmp_path, monkeypatch):
+    repo, wt, d = _pr_setup(tmp_path)
+    _raw_commit_artifacts(wt, "clean\n")
+    orig = work._load
+    monkeypatch.setattr(work, "_load", lambda n: (_ for _ in ()).throw(RuntimeError("boom")) if n == "artifact_paths" else orig(n))
+    out = work.pr(d, ON, GOAL, run=_pr_run([]))
+    assert out.startswith("REFUSED: could not check the committed") and "nothing pushed" in out
