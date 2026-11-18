@@ -97,9 +97,9 @@ def _read(rel):
 
 def test_platform_support_has_an_honest_antigravity_section():
     text = _read("docs/platform-support.md")
-    assert "### Antigravity (experimental)" in text
-    section = text.split("### Antigravity (experimental)")[1].split("\n## ")[0]
-    assert "Never run in Antigravity" in section
+    assert "\n### Antigravity\n" in text
+    section = text.split("\n### Antigravity\n")[1].split("\n## ")[0]
+    assert "Not measured" in section and "never been run" in section
     for unmeasured in ("hooks", "MCP", "workflows", "agy", "subagents"):
         assert unmeasured in section
     assert "antigravity.google/docs/rules" in section and "antigravity.google/docs/skills" in section

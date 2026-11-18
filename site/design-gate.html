@@ -20,41 +20,41 @@
     <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
-    <a href="index.html"><span class="nav-num">01</span>Home</a>
-    <a href="get-started.html"><span class="nav-num">02</span>Get started</a>
-    <a href="flow.html"><span class="nav-num">03</span>How it works</a>
-    <a href="entry-points.html"><span class="nav-num">04</span>Ways in</a>
-    <a href="design-gate.html" class="active" aria-current="page"><span class="nav-num">05</span>The design gate</a>
+    <a href="index.html">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="flow.html">How it works</a>
+    <a href="entry-points.html">Ways in</a>
+    <a href="design-gate.html" class="active" aria-current="page">The design gate</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Set up &amp; run</div>
-    <a href="setup.html"><span class="nav-num">06</span>Setup</a>
-    <a href="hosts.html"><span class="nav-num">07</span>Hosts</a>
-    <a href="config.html"><span class="nav-num">08</span>Configuration</a>
-    <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
-    <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="orchestrate.html"><span class="nav-num">11</span>Running many goals</a>
-    <a href="cloud.html"><span class="nav-num">12</span>Cloud sessions</a>
-    <a href="observe.html"><span class="nav-num">13</span>Cost and time</a>
+    <a href="setup.html">Setup</a>
+    <a href="hosts.html">Hosts</a>
+    <a href="config.html">Configuration</a>
+    <a href="sdlc-folder.html">The .sdlc folder</a>
+    <a href="run.html">Running unattended</a>
+    <a href="orchestrate.html">Running many goals</a>
+    <a href="cloud.html">Cloud sessions</a>
+    <a href="observe.html">Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">14</span>On your own</a>
-    <a href="team.html"><span class="nav-num">15</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">16</span>From Slack</a>
+    <a href="solo.html">On your own</a>
+    <a href="team.html">As a team</a>
+    <a href="slack.html">From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">17</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">18</span>Labels</a>
-    <a href="units.html"><span class="nav-num">19</span>Units of work</a>
-    <a href="safety.html"><span class="nav-num">20</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">21</span>Technical reference</a>
+    <a href="skills.html">Skills and commands</a>
+    <a href="labels.html">Labels</a>
+    <a href="units.html">Units of work</a>
+    <a href="safety.html">Trust and limits</a>
+    <a href="reference.html">Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">22</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">23</span>Glossary</a>
+    <a href="releases.html">Releases</a>
+    <a href="glossary.html">Glossary</a>
   </div>
   </details>
   <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
@@ -67,8 +67,18 @@
 <h1>The design gate</h1>
 <p class="subtitle">An optional check on every pick: does this goal carry a confirmed design? When the gate is on, a goal without one is not worked. It is set aside and a design ticket is filed. The gate is off by default.</p>
 
-<div class="aud">
-<div class="aud-label">In plain words</div>
+<nav class="toc" aria-label="On this page">
+<div class="toc-title">On this page</div>
+<ul>
+<li><a href="#diagram">What the gate does</a></li>
+<li><a href="#label">The label</a></li>
+<li><a href="#without">A goal without the label</a></li>
+<li><a href="#onoff">On or off</a></li>
+<li><a href="#retrofit">How the retrofit works</a></li>
+</ul>
+</nav>
+
+
 <ul>
 <li>A design here means: someone mapped the goal onto the real code, listed what it touches and what is still unsure, and a second pass confirmed it.</li>
 <li>A confirmed design leaves a mark on the goal: the label <code>sdlc:designed</code>.</li>
@@ -76,7 +86,6 @@
 <li>The gate is for the second kind. With it on, a hand-filed goal is stopped, a design ticket is filed for it, and the loop moves on to the next goal.</li>
 <li>With the gate off, which is the default, nothing is stopped and goals run exactly as before.</li>
 </ul>
-</div>
 
 <div class="callout callout-warn">
 <div class="callout-title">Read before switching it on</div>

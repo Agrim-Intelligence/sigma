@@ -20,41 +20,41 @@
     <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
-    <a href="index.html"><span class="nav-num">01</span>Home</a>
-    <a href="get-started.html"><span class="nav-num">02</span>Get started</a>
-    <a href="flow.html"><span class="nav-num">03</span>How it works</a>
-    <a href="entry-points.html"><span class="nav-num">04</span>Ways in</a>
-    <a href="design-gate.html"><span class="nav-num">05</span>The design gate</a>
+    <a href="index.html">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="flow.html">How it works</a>
+    <a href="entry-points.html">Ways in</a>
+    <a href="design-gate.html">The design gate</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Set up &amp; run</div>
-    <a href="setup.html" class="active" aria-current="page"><span class="nav-num">06</span>Setup</a>
-    <a href="hosts.html"><span class="nav-num">07</span>Hosts</a>
-    <a href="config.html"><span class="nav-num">08</span>Configuration</a>
-    <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
-    <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="orchestrate.html"><span class="nav-num">11</span>Running many goals</a>
-    <a href="cloud.html"><span class="nav-num">12</span>Cloud sessions</a>
-    <a href="observe.html"><span class="nav-num">13</span>Cost and time</a>
+    <a href="setup.html" class="active" aria-current="page">Setup</a>
+    <a href="hosts.html">Hosts</a>
+    <a href="config.html">Configuration</a>
+    <a href="sdlc-folder.html">The .sdlc folder</a>
+    <a href="run.html">Running unattended</a>
+    <a href="orchestrate.html">Running many goals</a>
+    <a href="cloud.html">Cloud sessions</a>
+    <a href="observe.html">Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">14</span>On your own</a>
-    <a href="team.html"><span class="nav-num">15</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">16</span>From Slack</a>
+    <a href="solo.html">On your own</a>
+    <a href="team.html">As a team</a>
+    <a href="slack.html">From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">17</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">18</span>Labels</a>
-    <a href="units.html"><span class="nav-num">19</span>Units of work</a>
-    <a href="safety.html"><span class="nav-num">20</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">21</span>Technical reference</a>
+    <a href="skills.html">Skills and commands</a>
+    <a href="labels.html">Labels</a>
+    <a href="units.html">Units of work</a>
+    <a href="safety.html">Trust and limits</a>
+    <a href="reference.html">Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">22</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">23</span>Glossary</a>
+    <a href="releases.html">Releases</a>
+    <a href="glossary.html">Glossary</a>
   </div>
   </details>
   <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
@@ -67,10 +67,18 @@
 <h1>Setup</h1>
 <p class="subtitle">Install once per machine, adopt each repository once, and keep the plugin current. Per-host install commands and flags are on <a href="get-started.html">Get started</a>; this page does not repeat them.</p>
 
-<div class="aud">
-<div class="aud-label">In plain words</div>
+<nav class="toc" aria-label="On this page">
+<div class="toc-title">On this page</div>
+<ul>
+<li><a href="#install">1. Install</a></li>
+<li><a href="#adopt">2. Adopt a repository with /sigma-init</a></li>
+<li><a href="#doctor">3. Check with /sigma-doctor</a></li>
+<li><a href="#update">Updating</a></li>
+</ul>
+</nav>
+
+
 <p>Setup is two separate things. <strong>Installing</strong> puts Sigma on your computer, once. <strong>Adopting</strong> a repository tells Sigma to work there: it creates a small <code>.sdlc</code> folder and asks two questions (where your to-do list lives, and which command proves your tests pass). You can re-run adoption any time; it does not ask an answered question again.</p>
-</div>
 
 <div class="diagram">
 <svg viewBox="0 0 440 384" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Setup in five steps: install the plugin once per machine, run sigma-init in the repository, commit the durable files, run sigma-doctor, then run a goal.">
@@ -91,7 +99,7 @@
 </div>
 
 <h2 id="install">1. Install</h2>
-<p>The commands differ per host (Claude Code and Codex use a plugin marketplace; Cursor and Antigravity run from a clone). They are on <a href="get-started.html">Get started</a>, and what was measured on each host is on <a href="hosts.html">Hosts</a>.</p>
+<p>The commands differ per host (Claude Code and Codex use a plugin marketplace, Antigravity a plugin install command; Cursor runs from a clone). They are on <a href="get-started.html">Get started</a>, and what was measured on each host is on <a href="hosts.html">Hosts</a>.</p>
 <p>Needed on the machine: <code>git</code>, <code>bash</code> and <code>python3</code> (standard library only). The GitHub CLI <code>gh</code>, logged in, is optional: only GitHub issues as the backlog, a Projects board and a pull request per goal need it.</p>
 
 <h2 id="adopt">2. Adopt a repository with <code>/sigma-init</code></h2>

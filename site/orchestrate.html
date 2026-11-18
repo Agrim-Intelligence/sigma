@@ -20,41 +20,41 @@
     <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
-    <a href="index.html"><span class="nav-num">01</span>Home</a>
-    <a href="get-started.html"><span class="nav-num">02</span>Get started</a>
-    <a href="flow.html"><span class="nav-num">03</span>How it works</a>
-    <a href="entry-points.html"><span class="nav-num">04</span>Ways in</a>
-    <a href="design-gate.html"><span class="nav-num">05</span>The design gate</a>
+    <a href="index.html">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="flow.html">How it works</a>
+    <a href="entry-points.html">Ways in</a>
+    <a href="design-gate.html">The design gate</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Set up &amp; run</div>
-    <a href="setup.html"><span class="nav-num">06</span>Setup</a>
-    <a href="hosts.html"><span class="nav-num">07</span>Hosts</a>
-    <a href="config.html"><span class="nav-num">08</span>Configuration</a>
-    <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
-    <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="orchestrate.html" class="active" aria-current="page"><span class="nav-num">11</span>Running many goals</a>
-    <a href="cloud.html"><span class="nav-num">12</span>Cloud sessions</a>
-    <a href="observe.html"><span class="nav-num">13</span>Cost and time</a>
+    <a href="setup.html">Setup</a>
+    <a href="hosts.html">Hosts</a>
+    <a href="config.html">Configuration</a>
+    <a href="sdlc-folder.html">The .sdlc folder</a>
+    <a href="run.html">Running unattended</a>
+    <a href="orchestrate.html" class="active" aria-current="page">Running many goals</a>
+    <a href="cloud.html">Cloud sessions</a>
+    <a href="observe.html">Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">14</span>On your own</a>
-    <a href="team.html"><span class="nav-num">15</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">16</span>From Slack</a>
+    <a href="solo.html">On your own</a>
+    <a href="team.html">As a team</a>
+    <a href="slack.html">From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">17</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">18</span>Labels</a>
-    <a href="units.html"><span class="nav-num">19</span>Units of work</a>
-    <a href="safety.html"><span class="nav-num">20</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">21</span>Technical reference</a>
+    <a href="skills.html">Skills and commands</a>
+    <a href="labels.html">Labels</a>
+    <a href="units.html">Units of work</a>
+    <a href="safety.html">Trust and limits</a>
+    <a href="reference.html">Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">22</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">23</span>Glossary</a>
+    <a href="releases.html">Releases</a>
+    <a href="glossary.html">Glossary</a>
   </div>
   </details>
   <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
@@ -67,10 +67,22 @@
 <h1>Running many goals: orchestrate</h1>
 <p class="subtitle">Turn a batch of issues into a dependency graph and run it as parallel waves of goals, each in its own session.</p>
 
-<div class="aud">
-<div class="aud-label">In plain words</div>
+<nav class="toc" aria-label="On this page">
+<div class="toc-title">On this page</div>
+<ul>
+<li><a href="#start">Starting a batch</a></li>
+<li><a href="#dry-run">The dry run and the go-ahead</a></li>
+<li><a href="#how-many">How many goals run at once</a></li>
+<li><a href="#held">What is held</a></li>
+<li><a href="#follow-ups">Follow-ups</a></li>
+<li><a href="#fails">When something fails</a></li>
+<li><a href="#progress">Reading progress</a></li>
+<li><a href="#others">The other batch and planning skills</a></li>
+</ul>
+</nav>
+
+
 <p><code>/sigma-orchestrate</code> is for the day you have ten issues, not one. You give it a list, a GitHub search or a short description. It works out which goals must wait for which, groups the rest into <em>waves</em> that can run at the same time, and shows you one screen to approve. Then it starts one <code>--land</code> session per goal, watches them through GitHub, merges what the post-PR review approves and reports. It writes no product code itself.</p>
-</div>
 
 <div class="diagram">
 <svg viewBox="0 0 440 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three waves of goals. Wave 1 holds goals A, B and C, which can all start at once. Wave 2 holds D, which waits on A, and E, which waits on B and C. Wave 3 holds F, which waits on D and E. Goal G has an open outside blocker and is held.">

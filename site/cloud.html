@@ -20,41 +20,41 @@
     <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
-    <a href="index.html"><span class="nav-num">01</span>Home</a>
-    <a href="get-started.html"><span class="nav-num">02</span>Get started</a>
-    <a href="flow.html"><span class="nav-num">03</span>How it works</a>
-    <a href="entry-points.html"><span class="nav-num">04</span>Ways in</a>
-    <a href="design-gate.html"><span class="nav-num">05</span>The design gate</a>
+    <a href="index.html">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="flow.html">How it works</a>
+    <a href="entry-points.html">Ways in</a>
+    <a href="design-gate.html">The design gate</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Set up &amp; run</div>
-    <a href="setup.html"><span class="nav-num">06</span>Setup</a>
-    <a href="hosts.html"><span class="nav-num">07</span>Hosts</a>
-    <a href="config.html"><span class="nav-num">08</span>Configuration</a>
-    <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
-    <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="orchestrate.html"><span class="nav-num">11</span>Running many goals</a>
-    <a href="cloud.html" class="active" aria-current="page"><span class="nav-num">12</span>Cloud sessions</a>
-    <a href="observe.html"><span class="nav-num">13</span>Cost and time</a>
+    <a href="setup.html">Setup</a>
+    <a href="hosts.html">Hosts</a>
+    <a href="config.html">Configuration</a>
+    <a href="sdlc-folder.html">The .sdlc folder</a>
+    <a href="run.html">Running unattended</a>
+    <a href="orchestrate.html">Running many goals</a>
+    <a href="cloud.html" class="active" aria-current="page">Cloud sessions</a>
+    <a href="observe.html">Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">14</span>On your own</a>
-    <a href="team.html"><span class="nav-num">15</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">16</span>From Slack</a>
+    <a href="solo.html">On your own</a>
+    <a href="team.html">As a team</a>
+    <a href="slack.html">From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">17</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">18</span>Labels</a>
-    <a href="units.html"><span class="nav-num">19</span>Units of work</a>
-    <a href="safety.html"><span class="nav-num">20</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">21</span>Technical reference</a>
+    <a href="skills.html">Skills and commands</a>
+    <a href="labels.html">Labels</a>
+    <a href="units.html">Units of work</a>
+    <a href="safety.html">Trust and limits</a>
+    <a href="reference.html">Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">22</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">23</span>Glossary</a>
+    <a href="releases.html">Releases</a>
+    <a href="glossary.html">Glossary</a>
   </div>
   </details>
   <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
@@ -67,10 +67,33 @@
 <h1>Cloud sessions in Claude Code</h1>
 <p class="subtitle">How Sigma runs in a Claude Code web session: a container with a lifetime, a fresh clone, no local files, and what survives when it ends.</p>
 
-<div class="aud">
-<div class="aud-label">In plain words</div>
-<p>A cloud session is a temporary computer that clones your repository, does one job and is deleted. Sigma can take one named issue to a merged pull request inside it with <code>/sigma-goal N --land</code>. Because the machine disappears, anything that matters is pushed to GitHub early, and a new session picks up from there. Several things work differently from your laptop, and one thing is not yet proven: <strong>nobody has measured a full cloud batch with checkpoint and resume or known-flake handling in a real container</strong>.</p>
+<nav class="toc" aria-label="On this page">
+<div class="toc-title">On this page</div>
+<ul>
+<li><a href="#what-it-is">What a cloud session is, for Sigma</a></li>
+<li><a href="#different">What is different from a local session</a></li>
+<li><a href="#token">The token and the 403</a></li>
+<li><a href="#land">--land unattended</a></li>
+<li><a href="#checkpoint">Checkpoint and resume</a></li>
+<li><a href="#flakes">Known flakes</a></li>
+<li><a href="#start">Starting a cloud batch</a></li>
+<li><a href="#lifetime">When a session hits the container lifetime</a></li>
+</ul>
+</nav>
+
+<div class="most">
+<p class="most-title">Most people only need</p>
+<ul>
+<li>A cloud session is temporary: anything not pushed to GitHub is lost when it ends.</li>
+<li>One named issue goes to a merged pull request with <code>/sigma-goal N --land</code>.</li>
+<li>Read <a href="#token">The token and the 403</a> before the first run.</li>
+<li>GitHub access is REST only there: <code>gh issue</code> and <code>gh pr</code> list and view do not work.</li>
+<li>A full cloud batch with checkpoint and resume has not been measured in a real container.</li>
+</ul>
 </div>
+
+
+<p>A cloud session is a temporary computer that clones your repository, does one job and is deleted. Sigma can take one named issue to a merged pull request inside it with <code>/sigma-goal N --land</code>. Because the machine disappears, anything that matters is pushed to GitHub early, and a new session picks up from there. Several things work differently from your laptop, and one thing is not yet proven: <strong>nobody has measured a full cloud batch with checkpoint and resume or known-flake handling in a real container</strong>.</p>
 
 <div class="diagram">
 <svg viewBox="0 0 440 372" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A cloud goal's life and the resume path. In the first container: fresh clone, claim the issue, implement and commit, push a checkpoint branch, run the long full verify, open the pull request, review and merge. If the container dies during verify, a second container starts the same land command, finds the checkpoint branch and either resumes forward from it or, if it cannot account for the branch, leaves it untouched and works on the same name with 2 added.">
