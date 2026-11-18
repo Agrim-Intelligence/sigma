@@ -59,7 +59,83 @@
 
 <span class="eyebrow">Set up &amp; run</span>
 <h1>Setup</h1>
-<p class="stub">Content in progress.</p>
+<p class="subtitle">Install once per machine, adopt each repository once, and keep the plugin current. Per-host install commands and flags are on <a href="get-started.html">Get started</a>; this page does not repeat them.</p>
+
+<div class="aud">
+<div class="aud-label">In plain words</div>
+<p>Setup is two separate things. <strong>Installing</strong> puts Sigma on your computer, once. <strong>Adopting</strong> a repository tells Sigma to work there: it creates a small <code>.sdlc</code> folder and asks two questions (where your to-do list lives, and which command proves your tests pass). You can re-run adoption any time; it does not ask an answered question again.</p>
+</div>
+
+<div class="diagram">
+<svg viewBox="0 0 440 384" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Setup in five steps: install the plugin once per machine, run sigma-init in the repository, commit the durable files, run sigma-doctor, then run a goal.">
+  <defs>
+    <marker id="su-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="dmark"/></marker>
+    <marker id="su-aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="dmark-accent"/></marker>
+  </defs>
+  <rect class="dbox" x="60.0" y="10" width="320" height="52" rx="9"/><text class="dtext" x="220.0" y="30" text-anchor="middle" font-weight="700">1. Install the plugin</text><text class="dtext-dim" x="220.0" y="46" text-anchor="middle">once per machine; see Get started for your host</text>
+  <path class="darrow" d="M220.0,62 L220.0,85" marker-end="url(#su-a)"/>
+  <rect class="dbox-accent" x="60.0" y="88" width="320" height="52" rx="9"/><text class="dtext" x="220.0" y="108" text-anchor="middle" font-weight="700">2. /sigma-init in the repository</text><text class="dtext-dim" x="220.0" y="124" text-anchor="middle">access check, backlog, verify command, .sdlc</text>
+  <path class="darrow" d="M220.0,140 L220.0,163" marker-end="url(#su-a)"/>
+  <rect class="dbox" x="60.0" y="166" width="320" height="52" rx="9"/><text class="dtext" x="220.0" y="186" text-anchor="middle" font-weight="700">3. Commit the durable files</text><text class="dtext-dim" x="220.0" y="202" text-anchor="middle">.gitignore, goals, project.md, config.json</text>
+  <path class="darrow" d="M220.0,218 L220.0,241" marker-end="url(#su-a)"/>
+  <rect class="dbox" x="60.0" y="244" width="320" height="52" rx="9"/><text class="dtext" x="220.0" y="264" text-anchor="middle" font-weight="700">4. /sigma-doctor</text><text class="dtext-dim" x="220.0" y="280" text-anchor="middle">lists anything missing and the fix command</text>
+  <path class="darrow" d="M220.0,296 L220.0,319" marker-end="url(#su-a)"/>
+  <rect class="dbox-core" x="60.0" y="322" width="320" height="52" rx="9"/><text class="dtext" x="220.0" y="342" text-anchor="middle" font-weight="700">5. Run a goal</text><text class="dtext-dim" x="220.0" y="358" text-anchor="middle">/sigma-goal with you, or /sigma-loop alone</text>
+</svg>
+</div>
+
+<h2 id="install">1. Install</h2>
+<p>The commands differ per host (Claude Code and Codex use a plugin marketplace; Cursor and Antigravity run from a clone). They are on <a href="get-started.html">Get started</a>, and what was measured on each host is on <a href="hosts.html">Hosts</a>.</p>
+<p>Needed on the machine: <code>git</code>, <code>bash</code> and <code>python3</code> (standard library only). The GitHub CLI <code>gh</code>, logged in, is optional: only GitHub issues as the backlog, a Projects board and a pull request per goal need it.</p>
+
+<h2 id="adopt">2. Adopt a repository with <code>/sigma-init</code></h2>
+<p>Run it from the root of the repository, once, on every host. <code>/sigma-setup</code> is an alias of the same flow.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>It does</th><th>Detail</th></tr></thead>
+<tbody>
+<tr><td>Checks access</td><td>A git repository, an <code>origin</code> remote, the base branch pushed, <code>gh</code> installed and logged in, and the token's scopes. Each failure prints its own fix; Sigma never runs the interactive login for you.</td></tr>
+<tr><td>Asks where goals live</td><td><strong>Local files</strong> in <code>.sdlc/goals/</code>, or <strong>GitHub issues</strong> labelled <code>sdlc:goal</code>. GitHub is the default when <code>origin</code> is a GitHub repository.</td></tr>
+<tr><td>Asks for your verify command</td><td>It lists the test commands it detected, each with a number and an id. You confirm one, give your own, or decline. Confirming turns <code>verify.enforce</code> on; declining leaves it off and records why. A literal command typed into the flag is refused on purpose.</td></tr>
+<tr><td>Scaffolds <code>.sdlc</code></td><td>Writes the config, a project notes file and an example goal, and git-ignores the machine-written folders.</td></tr>
+<tr><td>Offers, never forces</td><td>A Projects board (<code>--board yes</code>), the team ledger, a product vision (<code>--vision</code>), a runnable demo goal (<code>--demo</code>). With no usable remote it prints a decision and flips nothing; <code>--local-only</code> goes on without a remote.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Right after init, <code>git status</code> shows <code>.gitignore</code> and <code>.sdlc/</code> as untracked. That is expected. Commit <code>.gitignore</code> and the durable files; what to commit and what to ignore is on <a href="sdlc-folder.html">The .sdlc folder</a>.</p>
+<p>On Codex, Cursor and Antigravity there is no interactive question. The flow prints each open question as an <code>[ask]</code> line with the flag that answers it, and <code>--yes</code> takes the safe defaults: the detected mode, ledger off, and never a board, a verify command or a work flip.</p>
+
+<h2 id="doctor">3. Check with <code>/sigma-doctor</code></h2>
+<p>Run it after install, after adoption, and whenever something behaves oddly. It checks the project setup, dependencies and host support and prints the fix command beside each problem. It also prints a live dashboard of which optional features are on. If the team ledger is enabled but not set up, it sets it up.</p>
+<p><code>/sigma-status</code> is the lighter check: backlog counts and whether the review queue needs you.</p>
+
+<h2 id="update">Updating</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Host</th><th>Update</th></tr></thead>
+<tbody>
+<tr><td>Claude Code</td><td><code>claude plugin update sigmaloop@sigmaloop</code>, then restart the session. Use the full <code>plugin@marketplace</code> id: older releases of Claude Code failed on the bare name.</td></tr>
+<tr><td>Codex, Cursor, Antigravity</td><td>Update the plugin or pull the clone you installed from, then start a fresh session.</td></tr>
+</tbody>
+</table>
+</div>
+<p>An update replaces skills, docs, hooks and scripts. It <strong>never rewrites your <code>.sdlc/config.json</code></strong>. A block added by a later release does not appear in a repository adopted earlier: copy it from the template in the installed plugin, with every <code>enabled</code> left <code>false</code>, and open one gate at a time. <a href="config.html">Configuration</a> says what each key does.</p>
+<p>If a watcher is running, stop it so the next trigger starts it on the new build: <code>touch .sdlc/state/watch.stop</code>. What each release changes by default is on <a href="releases.html">Releases</a>.</p>
+
+<div class="callout callout-warn">
+<div class="callout-title">An install under the old plugin id stops updating</div>
+<p>Before launch the plugin and marketplace had another id. An install recorded under it keeps working and silently stops receiving updates. <code>/sigma-doctor</code> detects it and prints the commands to switch; it runs none of them. The sequence has not been run against a real pre-launch install.</p>
+</div>
+
+<div class="aud aud-tech">
+<div class="aud-label">Technical detail</div>
+<p>The init flow is safe to re-run and never changes a setting in <code>.sdlc/config.json</code> unless you pass the flag for it on that run. Verify trust is per checkout and is deliberately not committed: a fresh clone, and every cloud session, must grant it again (or the operator approves the command once in the environment's settings). Without it the verify command is refused and a goal never reaches a pull request. Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/upgrading.md">upgrading</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/cloud-sessions.md">cloud sessions</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/uninstall.md">uninstall</a>.</p>
+</div>
+
+<div class="pagenav">
+  <a href="get-started.html"><span class="dir">Back</span>&larr; Get started</a>
+  <a class="next" href="hosts.html"><span class="dir">Next</span>Hosts &rarr;</a>
+</div>
 
 </main>
 </div>
