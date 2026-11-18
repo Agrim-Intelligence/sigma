@@ -637,31 +637,44 @@ def _unsafe_id_reason(value):
     return state.unsafe_goal_reason(value)
 
 
+def _claude_session_dirs(session_id, home=None):
+    """Every ~/.claude/projects/*/<session_id> directory, in a stable (sorted) order. A Claude Code
+    cloud session can sit under two project slugs at once (the repository cwd's slug holding only a
+    tip file, and the home cwd's slug holding `subagents/`), so callers must not stop at the first."""
+    if _unsafe_id_reason(session_id):
+        return []
+    found = []
+    for projects in claude_projects_roots(home):
+        if not projects.is_dir():
+            continue
+        for proj_dir in sorted(projects.iterdir()):
+            candidate = proj_dir / session_id
+            if candidate.is_dir():
+                found.append(candidate)
+    return found
+
+
 def find_claude_session_dir(session_id, home=None):
     """Search ~/.claude/projects/*/<session_id> — deliberately NOT re-deriving Claude Code's own
     cwd-to-slug transform (replace '/' and '.' with '-'): the session id is already a globally
     unique UUID, so searching for a directory named exactly that is simpler and cannot drift if
-    the slug algorithm ever changes."""
-    if _unsafe_id_reason(session_id):
-        return None
-    for projects in claude_projects_roots(home):
-        if not projects.is_dir():
-            continue
-        for proj_dir in projects.iterdir():
-            candidate = proj_dir / session_id
-            if candidate.is_dir():
-                return candidate
-    return None
+    the slug algorithm ever changes. When the id sits under more than one slug (Claude Code cloud
+    sessions), the one holding `subagents/` wins, else the first in sorted order."""
+    dirs = _claude_session_dirs(session_id, home=home)
+    for candidate in dirs:
+        if (candidate / "subagents").is_dir():
+            return candidate
+    return dirs[0] if dirs else None
 
 
 def find_claude_agent_transcript(session_id, agent_id, home=None):
     if _unsafe_id_reason(agent_id):
         return None
-    session_dir = find_claude_session_dir(session_id, home=home)   # re-validates session_id too
-    if session_dir is None:
-        return None
-    candidate = session_dir / "subagents" / f"agent-{agent_id}.jsonl"
-    return candidate if candidate.is_file() else None
+    for session_dir in _claude_session_dirs(session_id, home=home):   # re-validates session_id too
+        candidate = session_dir / "subagents" / f"agent-{agent_id}.jsonl"
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 def find_claude_main_transcript(session_id, home=None):

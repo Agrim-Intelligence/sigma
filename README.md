@@ -7,8 +7,8 @@
 before it codes, has every plan reviewed before any edit, and can work through a whole backlog
 unattended, with each goal finished, verified and recorded.
 
-It is a plugin for **Claude Code** (fully validated), with adapters for **Codex** (partially
-validated) and **Cursor** and **Antigravity** (both experimental, neither ever run). It needs only `bash` and `python3`, with no other runtime
+It is a plugin for **Claude Code**, with adapters for **Codex**, **Cursor** and **Antigravity**; what was
+measured on each host is in the [platform support table](#platform-support) below. It needs only `bash` and `python3`, with no other runtime
 dependencies.
 
 > [!IMPORTANT]
@@ -109,8 +109,8 @@ codex plugin add sigmaloop@sigmaloop
 ```
 
 Then run the `sigma-init` skill, or its flow directly, with `--codex` so `AGENTS.md` carries the
-standing rules. Codex support is partially validated
-([details](docs/platform-support.md#codex-partial-live-validation)):
+standing rules. What was measured on Codex is in the
+[platform support details](docs/platform-support.md#codex-partial-live-validation):
 
 ```
 python3 <installed-sigma>/skills/sigma-init/scripts/init_flow.py . --codex --demo
@@ -119,7 +119,7 @@ python3 <installed-sigma>/skills/sigma-init/scripts/init_flow.py . --codex --dem
 ### Cursor
 
 On Cursor, Sigma runs from a clone of this repository, which is your `<installed-sigma>`. Cursor
-support is experimental ([details](docs/platform-support.md#cursor-experimental)):
+support is measured for set-up and one goal, not yet for the loop ([details](docs/platform-support.md#cursor)):
 
 ```
 git clone https://github.com/Agrim-Intelligence/sigmaloop <installed-sigma>
@@ -404,7 +404,7 @@ see which features are live for your config.
 | [Companion plugins](docs/companions.md) | the optional `code-review` plugin |
 | [Managed settings](docs/managed-settings.md) | enforce settings across an organisation |
 | [Zero-touch routines](docs/routines.md) | trigger the loop on a schedule |
-| [What is new in 1.0.34](docs/whats-new-1.0.34.md) | see every change in this release and what changes by default when you upgrade |
+| [What is new in 1.0.35](docs/whats-new-1.0.35.md) | see every change in this release and what changes by default when you upgrade |
 | [Decision Rulebook](docs/decision-rulebook.md) | record decisions, earn autonomy levels, add hard stops, import past decisions |
 | [Upkeep](docs/upkeep.md) | keep unit branches rebased on a 12-hour window, with backups |
 | [Configuration reference](docs/configuration.md) | see every flag and default |
@@ -412,18 +412,18 @@ see which features are live for your config.
 | [Invocation adapter](docs/invocation-adapter.md) | let a host you trust approve the loop's review post and relay phase ends (opt-in) |
 | [What is enforced](docs/enforcement.md) | know which rules are checked by code and which are advice |
 | [Architecture](docs/architecture.md) | see how the hooks, phases and loop fit together |
-| [Platform support](docs/platform-support.md) | check what is validated on Claude Code, Codex and Cursor |
+| [Platform support](docs/platform-support.md) | check what was measured on each host |
 | [Measured results](docs/launch/evidence/measured-results.md) | see what the maintainers measured: cost, review, tests, CI (no comparison with other tools) |
 | [Threat model](docs/threat-model.md) | review the security boundaries |
 
 ## Platform support
 
-| Host | Status |
+| Host | Measured / Not measured |
 |---|---|
 | Claude Code | Run end to end, including PRs and merges, by the maintainers on one machine class (macOS) with no outside users; see [Measured results](docs/launch/evidence/measured-results.md). |
-| Codex | Partially validated: install and first loop command run in a real session; a full goal through to merge has not yet been measured. |
-| Cursor | Experimental: scaffolding is unit-tested but has not been run in Cursor. |
-| Antigravity | Experimental, never run in Antigravity: `--antigravity` itself writes only the managed `AGENTS.md` block (no config change, no `.agents/`); hooks, MCP, workflows, headless `agy` and subagents are unmeasured ([details](docs/platform-support.md#antigravity-experimental)). |
+| Codex | Measured: install and first loop command in a real session; a full goal through to merge has not yet been measured. |
+| Cursor | Measured in the Cursor app: set-up with a Projects board, and one real issue to a merged pull request (merged by hand). Not measured: the loop on several goals, the command-line agent, hooks ([details](docs/platform-support.md#cursor)). |
+| Antigravity | Measured in `agy`: plugin install and `/sigma-init --antigravity`. A goal run has never been run there; hooks, MCP, workflows, headless `agy` and subagents are unmeasured ([details](docs/platform-support.md#antigravity)). |
 
 CI runs the full suite on Linux with Python 3.10, 3.11, 3.12, and 3.13, and on macOS with Python 3.12. That full matrix runs weekly and on demand; a nightly run covers the suite minus its heaviest files on macOS Python 3.12; pull requests and merges to main run a short smoke set (`.github/smoke-tests.txt`) on one macOS Python 3.12 leg (results: [Measured results](docs/launch/evidence/measured-results.md)).
 Details, including what each host has been measured to do: [docs/platform-support.md](docs/platform-support.md).

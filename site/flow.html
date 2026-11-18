@@ -16,42 +16,48 @@
     <span class="brand-mark">&Sigma;</span>
     <span><span class="brand-name">Sigma Loop</span><span class="brand-tag">Guide</span></span>
   </a>
+  <details class="navbox" open>
+    <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
-    <a href="index.html"><span class="nav-num">01</span>Home</a>
-    <a href="get-started.html"><span class="nav-num">02</span>Get started</a>
-    <a href="flow.html" class="active"><span class="nav-num">03</span>How it works</a>
-    <a href="entry-points.html"><span class="nav-num">04</span>Ways in</a>
-    <a href="design-gate.html"><span class="nav-num">05</span>The design gate</a>
+    <a href="index.html">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="flow.html" class="active" aria-current="page">How it works</a>
+    <a href="entry-points.html">Ways in</a>
+    <a href="design-gate.html">The design gate</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Set up &amp; run</div>
-    <a href="setup.html"><span class="nav-num">06</span>Setup</a>
-    <a href="hosts.html"><span class="nav-num">07</span>Hosts</a>
-    <a href="config.html"><span class="nav-num">08</span>Configuration</a>
-    <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
-    <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="observe.html"><span class="nav-num">11</span>Cost and time</a>
+    <a href="setup.html">Setup</a>
+    <a href="hosts.html">Hosts</a>
+    <a href="config.html">Configuration</a>
+    <a href="sdlc-folder.html">The .sdlc folder</a>
+    <a href="run.html">Running unattended</a>
+    <a href="orchestrate.html">Running many goals</a>
+    <a href="cloud.html">Cloud sessions</a>
+    <a href="observe.html">Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">12</span>On your own</a>
-    <a href="team.html"><span class="nav-num">13</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">14</span>From Slack</a>
+    <a href="solo.html">On your own</a>
+    <a href="team.html">As a team</a>
+    <a href="slack.html">From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">15</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">16</span>Labels</a>
-    <a href="units.html"><span class="nav-num">17</span>Units of work</a>
-    <a href="safety.html"><span class="nav-num">18</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">19</span>Technical reference</a>
+    <a href="skills.html">Skills and commands</a>
+    <a href="labels.html">Labels</a>
+    <a href="units.html">Units of work</a>
+    <a href="safety.html">Trust and limits</a>
+    <a href="reference.html">Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">20</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">21</span>Glossary</a>
+    <a href="releases.html">Releases</a>
+    <a href="glossary.html">Glossary</a>
   </div>
+  </details>
+  <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
 </nav>
 <!-- NAV:END -->
 
@@ -61,16 +67,22 @@
 <h1>How it works</h1>
 <p class="subtitle">One chain from an idea to recorded, verified work, drawn once. Every stage, every gate, every way back and every place a goal is set aside is on the diagram below.</p>
 
-<div class="aud">
-<div class="aud-label">In plain words</div>
+<nav class="toc" aria-label="On this page">
+<div class="toc-title">On this page</div>
+<ul>
+<li><a href="#diagram">The whole flow</a></li>
+<li><a href="#stages">Stage by stage</a></li>
+</ul>
+</nav>
+
+
 <ul>
 <li>A goal is one piece of work with a clear finish line.</li>
-<li>Every goal goes through the same seven phases: restate it, look at the code, plan, have the plan reviewed, build it test-first, review it, then reflect on it.</li>
+<li>Every goal goes through the same seven phases: restate it, look at the code, plan, have the plan reviewed, build it, review it, then reflect on it.</li>
 <li>If a reviewer is not satisfied, the work goes back a step. If a decision needs a person, the goal is set aside with a reason and the run moves on.</li>
 <li>If you start from a raw idea, an optional front end turns it into goals first. An optional gate can refuse to work a goal that has not been mapped onto the code.</li>
 <li>Nothing is called done until the record shows the phases ran. Some of that is checked by code and some is an instruction to the agent; <a href="safety.html">Trust and limits</a> says which.</li>
 </ul>
-</div>
 
 <h2 id="diagram">The whole flow</h2>
 <div class="diagram">
@@ -158,7 +170,7 @@
   <text class="dtext-inv" x="160" y="691" text-anchor="middle">4  Plan-Review: before any edit</text>
   <path class="darrow" d="M160,702 L160,716" marker-end="url(#ar)"/>
   <rect class="dbox-accent" x="40" y="716" width="240" height="32" rx="8"/>
-  <text class="dtext-inv" x="160" y="737" text-anchor="middle">5  Implement: test first</text>
+  <text class="dtext-inv" x="160" y="737" text-anchor="middle">5  Implement</text>
   <path class="darrow" d="M160,748 L160,762" marker-end="url(#ar)"/>
   <rect class="dbox-accent" x="40" y="762" width="240" height="32" rx="8"/>
   <text class="dtext-inv" x="160" y="783" text-anchor="middle">6  Review: evidence, not claims</text>

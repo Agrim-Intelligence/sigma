@@ -16,42 +16,48 @@
     <span class="brand-mark">&Sigma;</span>
     <span><span class="brand-name">Sigma Loop</span><span class="brand-tag">Guide</span></span>
   </a>
+  <details class="navbox" open>
+    <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
-    <a href="index.html"><span class="nav-num">01</span>Home</a>
-    <a href="get-started.html"><span class="nav-num">02</span>Get started</a>
-    <a href="flow.html"><span class="nav-num">03</span>How it works</a>
-    <a href="entry-points.html"><span class="nav-num">04</span>Ways in</a>
-    <a href="design-gate.html"><span class="nav-num">05</span>The design gate</a>
+    <a href="index.html">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="flow.html">How it works</a>
+    <a href="entry-points.html">Ways in</a>
+    <a href="design-gate.html">The design gate</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Set up &amp; run</div>
-    <a href="setup.html"><span class="nav-num">06</span>Setup</a>
-    <a href="hosts.html"><span class="nav-num">07</span>Hosts</a>
-    <a href="config.html"><span class="nav-num">08</span>Configuration</a>
-    <a href="sdlc-folder.html" class="active"><span class="nav-num">09</span>The .sdlc folder</a>
-    <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="observe.html"><span class="nav-num">11</span>Cost and time</a>
+    <a href="setup.html">Setup</a>
+    <a href="hosts.html">Hosts</a>
+    <a href="config.html">Configuration</a>
+    <a href="sdlc-folder.html" class="active" aria-current="page">The .sdlc folder</a>
+    <a href="run.html">Running unattended</a>
+    <a href="orchestrate.html">Running many goals</a>
+    <a href="cloud.html">Cloud sessions</a>
+    <a href="observe.html">Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">12</span>On your own</a>
-    <a href="team.html"><span class="nav-num">13</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">14</span>From Slack</a>
+    <a href="solo.html">On your own</a>
+    <a href="team.html">As a team</a>
+    <a href="slack.html">From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">15</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">16</span>Labels</a>
-    <a href="units.html"><span class="nav-num">17</span>Units of work</a>
-    <a href="safety.html"><span class="nav-num">18</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">19</span>Technical reference</a>
+    <a href="skills.html">Skills and commands</a>
+    <a href="labels.html">Labels</a>
+    <a href="units.html">Units of work</a>
+    <a href="safety.html">Trust and limits</a>
+    <a href="reference.html">Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">20</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">21</span>Glossary</a>
+    <a href="releases.html">Releases</a>
+    <a href="glossary.html">Glossary</a>
   </div>
+  </details>
+  <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
 </nav>
 <!-- NAV:END -->
 
@@ -61,10 +67,17 @@
 <h1>The .sdlc folder</h1>
 <p class="subtitle">Everything Sigma remembers about a repository lives in one folder at its root. Some of it belongs in git and some of it must never be.</p>
 
-<div class="aud">
-<div class="aud-label">In plain words</div>
+<nav class="toc" aria-label="On this page">
+<div class="toc-title">On this page</div>
+<ul>
+<li><a href="#layout">What lives there</a></li>
+<li><a href="#commit">Commit or ignore</a></li>
+<li><a href="#manage">Managing it</a></li>
+</ul>
+</nav>
+
+
 <p>Think of <code>.sdlc</code> as two piles. The <strong>durable pile</strong> is your goals, your settings and the written record of each goal (plan, research, acceptance criteria). It goes in git like code. The <strong>machine pile</strong> is scratch space the loop rewrites constantly: state, logs, worktrees. It stays out of git. Init sorts them for you; you only need to commit the first pile.</p>
-</div>
 
 <h2 id="layout">What lives there</h2>
 <pre><code>.sdlc/

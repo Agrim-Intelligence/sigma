@@ -16,42 +16,48 @@
     <span class="brand-mark">&Sigma;</span>
     <span><span class="brand-name">Sigma Loop</span><span class="brand-tag">Guide</span></span>
   </a>
+  <details class="navbox" open>
+    <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
-    <a href="index.html"><span class="nav-num">01</span>Home</a>
-    <a href="get-started.html"><span class="nav-num">02</span>Get started</a>
-    <a href="flow.html"><span class="nav-num">03</span>How it works</a>
-    <a href="entry-points.html"><span class="nav-num">04</span>Ways in</a>
-    <a href="design-gate.html"><span class="nav-num">05</span>The design gate</a>
+    <a href="index.html">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="flow.html">How it works</a>
+    <a href="entry-points.html">Ways in</a>
+    <a href="design-gate.html">The design gate</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Set up &amp; run</div>
-    <a href="setup.html"><span class="nav-num">06</span>Setup</a>
-    <a href="hosts.html"><span class="nav-num">07</span>Hosts</a>
-    <a href="config.html" class="active"><span class="nav-num">08</span>Configuration</a>
-    <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
-    <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="observe.html"><span class="nav-num">11</span>Cost and time</a>
+    <a href="setup.html">Setup</a>
+    <a href="hosts.html">Hosts</a>
+    <a href="config.html" class="active" aria-current="page">Configuration</a>
+    <a href="sdlc-folder.html">The .sdlc folder</a>
+    <a href="run.html">Running unattended</a>
+    <a href="orchestrate.html">Running many goals</a>
+    <a href="cloud.html">Cloud sessions</a>
+    <a href="observe.html">Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">12</span>On your own</a>
-    <a href="team.html"><span class="nav-num">13</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">14</span>From Slack</a>
+    <a href="solo.html">On your own</a>
+    <a href="team.html">As a team</a>
+    <a href="slack.html">From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">15</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">16</span>Labels</a>
-    <a href="units.html"><span class="nav-num">17</span>Units of work</a>
-    <a href="safety.html"><span class="nav-num">18</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">19</span>Technical reference</a>
+    <a href="skills.html">Skills and commands</a>
+    <a href="labels.html">Labels</a>
+    <a href="units.html">Units of work</a>
+    <a href="safety.html">Trust and limits</a>
+    <a href="reference.html">Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">20</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">21</span>Glossary</a>
+    <a href="releases.html">Releases</a>
+    <a href="glossary.html">Glossary</a>
   </div>
+  </details>
+  <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
 </nav>
 <!-- NAV:END -->
 
@@ -61,10 +67,34 @@
 <h1>Configuration</h1>
 <p class="subtitle">Every setting lives in <code>.sdlc/config.json</code>. You can edit it by hand. This page covers the keys a new adopter needs; the full list is in the configuration reference linked at the bottom.</p>
 
-<div class="aud">
-<div class="aud-label">In plain words</div>
-<p>The config file is a plain text file of switches. Sigma ships with the risky ones <strong>off</strong>: it will not merge anything by itself, it spends within a ceiling, and it holds work when your machine is short of memory. You turn a switch on when you have a reason. Change one at a time, then run <code>/sigma-doctor</code> to see what is on.</p>
+<nav class="toc" aria-label="On this page">
+<div class="toc-title">On this page</div>
+<ul>
+<li><a href="#editing">Editing by hand</a></li>
+<li><a href="#source">Where goals come from</a></li>
+<li><a href="#verify">Proof: the verify command</a></li>
+<li><a href="#land">Landing: pull requests and merging</a></li>
+<li><a href="#gates">Gates and review</a></li>
+<li><a href="#limits">Budgets and hand-off</a></li>
+<li><a href="#batch-cloud">Batches and cloud sessions</a></li>
+<li><a href="#resource">The resource guard</a></li>
+<li><a href="#optional">Optional features</a></li>
+</ul>
+</nav>
+
+<div class="most">
+<p class="most-title">Most people only need</p>
+<ul>
+<li>Change nothing to start: the scaffolded values are the safe ones (no automatic merging, a spending ceiling, a memory hold).</li>
+<li><code>discovery.source</code> says where goals come from; <code>/sigma-init</code> chooses it.</li>
+<li><code>verify.command</code> is the command that proves a goal works; confirm it at init.</li>
+<li><code>work.auto_merge</code> stays <code>off</code> until you have set branch protection.</li>
+<li>Edit one key at a time, then run <code>/sigma-doctor</code> to see what is on.</li>
+</ul>
 </div>
+
+
+<p>The config file is a plain text file of switches. Sigma ships with the risky ones <strong>off</strong>: it will not merge anything by itself, it spends within a ceiling, and it holds work when your machine is short of memory. You turn a switch on when you have a reason. Change one at a time, then run <code>/sigma-doctor</code> to see what is on.</p>
 
 <h2 id="editing">Editing by hand</h2>
 <ul>
@@ -151,6 +181,9 @@
 </table>
 </div>
 <p>A budget enforces only when set to a positive number. Each belongs to the session that started it, so several sessions side by side can together spend several times one ceiling. Size the ceilings with that in mind.</p>
+
+<h2 id="batch-cloud">Batches and cloud sessions</h2>
+<p>The settings for these are in the tables above (<code>followups.*</code>, <code>verify.known_flakes</code>) and <code>work.checkpoint_prefix</code> (default empty: the goal branch itself). How they behave is on <a href="orchestrate.html#how-many">Running many goals</a> and <a href="cloud.html#checkpoint">Cloud sessions</a>.</p>
 
 <h2 id="resource">The resource guard</h2>
 <p>Every <code>resource.*</code> key is scaffolded as <code>null</code>, which means <em>derived from this machine</em>. Leave them null unless a hold is wrong for your machine.</p>

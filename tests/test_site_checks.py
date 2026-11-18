@@ -462,6 +462,20 @@ def test_control_stray_colour_turns_palette_check_red():
     assert stray_colours(texts + [("x.css", "a { color: rgb(1,2,3); }")])
 
 
+def _nav_module():
+    spec = importlib.util.spec_from_file_location("site_nav", ROOT / "tools" / "site_nav.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_canonical_nav_is_collapsible_and_has_no_external_script():
+    block = _nav_module().nav_block("run.html")
+    assert '<details class="navbox" open>' in block and "<summary>Menu</summary>" in block
+    assert block.index('class="brand"') < block.index("<details")
+    assert 'aria-current="page"' in block
+    assert not re.search(r"<script[^>]*\bsrc\s*=", block)
+
 def line_problems(css_text, floor=3.0):
     """Diagram outlines are non-text graphics: WCAG asks 3:1 against what they sit on."""
     light, dark_media, _ = _blocks(css_text)
@@ -512,3 +526,70 @@ def test_control_dark_label_on_filled_box_turns_red(tmp_path):
     page = tmp_path / "site" / "index.html"
     page.write_text(page.read_text(encoding="utf-8").replace("dtext-mono-inv", "dtext-mono", 1), encoding="utf-8")
     assert text_on_filled_box_problems(tmp_path / "site")
+
+
+# ------------------------------------------------- clean page template (#2244)
+
+def check_on_this_page(site):
+    """Every page has an 'On this page' list, and each of its links resolves to an id on the page."""
+    out = []
+    for f in _pages(site):
+        text = f.read_text(encoding="utf-8")
+        m = re.search(r'<nav class="toc"[^>]*>(.*?)</nav>', text, re.S)
+        if not m:
+            out.append(f"{f.name}: no 'On this page' list")
+            continue
+        ids = _parse(f).ids
+        links = re.findall(r'href="#([^"]+)"', m.group(1))
+        if not links:
+            out.append(f"{f.name}: 'On this page' list has no links")
+        out += [f"{f.name}: 'On this page' link #{x} has no target" for x in links if x not in ids]
+    return out
+
+
+def check_get_started_shows_every_host(site):
+    """With no host selected (or no CSS), every host's section is in the page, unhidden, with two steps."""
+    text = (site / "get-started.html").read_text(encoding="utf-8")
+    out = []
+    for h in ("claude-code", "codex", "cursor", "antigravity"):
+        m = re.search(rf'<section class="host" id="{h}">(.*?)</section>', text, re.S)
+        if not m:
+            out.append(f"get-started.html: no section for {h}")
+            continue
+        if len(re.findall(r"<li>", re.search(r"<ol.*?</ol>", m.group(1), re.S).group(0))) != 2:
+            out.append(f"get-started.html: {h} does not have exactly two steps")
+    if re.search(r"\bhidden\b|style=", text):
+        out.append("get-started.html: a host section is hidden in the markup")
+    css = (site / "assets" / "style.css").read_text(encoding="utf-8")
+    for rule in re.findall(r"([^{}]*\.host[^{}]*)\{[^}]*display:\s*none", css):
+        if ":has(" not in rule:
+            out.append(f"style.css: host-hiding rule not gated on :has(): {rule.strip()[:60]}")
+    return out
+
+
+def test_every_page_has_a_working_on_this_page_list():
+    assert check_on_this_page(SITE) == []
+
+
+def test_control_dead_toc_link(broken):
+    assert check_on_this_page(broken("flow.html", lambda t: t.replace('<a href="#', '<a href="#zz-', 1)))
+
+
+def test_control_missing_toc(broken):
+    assert check_on_this_page(broken("flow.html", lambda t: t.replace('class="toc"', 'class="nottoc"')))
+
+
+def test_get_started_shows_every_host_without_a_selection():
+    assert check_get_started_shows_every_host(SITE) == []
+
+
+def test_control_hidden_host_turns_red(broken):
+    assert check_get_started_shows_every_host(
+        broken("get-started.html", lambda t: t.replace('<section class="host" id="codex">', '<section class="host" id="codex" hidden>')))
+
+
+def test_control_ungated_host_rule_turns_red(broken):
+    site = broken("get-started.html", lambda t: t)
+    css = site / "assets" / "style.css"
+    css.write_text(css.read_text(encoding="utf-8") + "\n.host { display: none; }\n", encoding="utf-8")
+    assert check_get_started_shows_every_host(site)

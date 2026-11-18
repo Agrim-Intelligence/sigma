@@ -16,42 +16,48 @@
     <span class="brand-mark">&Sigma;</span>
     <span><span class="brand-name">Sigma Loop</span><span class="brand-tag">Guide</span></span>
   </a>
+  <details class="navbox" open>
+    <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
-    <a href="index.html"><span class="nav-num">01</span>Home</a>
-    <a href="get-started.html"><span class="nav-num">02</span>Get started</a>
-    <a href="flow.html"><span class="nav-num">03</span>How it works</a>
-    <a href="entry-points.html"><span class="nav-num">04</span>Ways in</a>
-    <a href="design-gate.html"><span class="nav-num">05</span>The design gate</a>
+    <a href="index.html">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="flow.html">How it works</a>
+    <a href="entry-points.html">Ways in</a>
+    <a href="design-gate.html">The design gate</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Set up &amp; run</div>
-    <a href="setup.html"><span class="nav-num">06</span>Setup</a>
-    <a href="hosts.html"><span class="nav-num">07</span>Hosts</a>
-    <a href="config.html"><span class="nav-num">08</span>Configuration</a>
-    <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
-    <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="observe.html"><span class="nav-num">11</span>Cost and time</a>
+    <a href="setup.html">Setup</a>
+    <a href="hosts.html">Hosts</a>
+    <a href="config.html">Configuration</a>
+    <a href="sdlc-folder.html">The .sdlc folder</a>
+    <a href="run.html">Running unattended</a>
+    <a href="orchestrate.html">Running many goals</a>
+    <a href="cloud.html">Cloud sessions</a>
+    <a href="observe.html">Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">12</span>On your own</a>
-    <a href="team.html"><span class="nav-num">13</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">14</span>From Slack</a>
+    <a href="solo.html">On your own</a>
+    <a href="team.html">As a team</a>
+    <a href="slack.html">From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html" class="active"><span class="nav-num">15</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">16</span>Labels</a>
-    <a href="units.html"><span class="nav-num">17</span>Units of work</a>
-    <a href="safety.html"><span class="nav-num">18</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">19</span>Technical reference</a>
+    <a href="skills.html" class="active" aria-current="page">Skills and commands</a>
+    <a href="labels.html">Labels</a>
+    <a href="units.html">Units of work</a>
+    <a href="safety.html">Trust and limits</a>
+    <a href="reference.html">Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">20</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">21</span>Glossary</a>
+    <a href="releases.html">Releases</a>
+    <a href="glossary.html">Glossary</a>
   </div>
+  </details>
+  <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
 </nav>
 <!-- NAV:END -->
 
@@ -60,6 +66,21 @@
 <span class="eyebrow">Deeper</span>
 <h1>Skills and commands</h1>
 <p class="subtitle">Sigma ships 46 skills. Each one is also a command you type in your agent, written <code>/sigma-&lt;name&gt;</code>. Most people only ever need the first few in the "Running work" group.</p>
+
+<nav class="toc" aria-label="On this page">
+<div class="toc-title">On this page</div>
+<ul>
+<li><a href="#setup">Set up and health</a></li>
+<li><a href="#observe">Status and measurement</a></li>
+<li><a href="#run">Running work</a></li>
+<li><a href="#phases">The phases</a></li>
+<li><a href="#checks">Specialist checks</a></li>
+<li><a href="#backlog">Shaping the backlog</a></li>
+<li><a href="#units">Units of work</a></li>
+<li><a href="#team">Team and chat</a></li>
+</ul>
+</nav>
+
 
 <div class="callout callout-note">
 <div class="callout-title">Where to start</div>
@@ -114,9 +135,9 @@
 <tbody>
 <tr><td><a id="sigma-loop"></a><code>/sigma-loop</code></td><td>Works backlog goals through phase agents unattended, with verified pull requests, parking and continuing until stopped or out of budget.</td></tr>
 <tr><td><a id="sigma-goal"></a><code>/sigma-goal</code></td><td>Runs one goal through every phase, with approval gates; the supervised route.</td></tr>
-<tr><td><a id="sigma-chain"></a><code>/sigma-chain</code></td><td>Solves one end goal and every open prerequisite it waits on, in order, with all decisions asked up front.</td></tr>
-<tr><td><a id="sigma-orchestrate"></a><code>/sigma-orchestrate</code></td><td>Runs a batch of goals as parallel sessions in dependency waves, merging and reporting.</td></tr>
-<tr><td><a id="sigma-dag"></a><code>/sigma-dag</code></td><td>Reports the stored dependency map: state, stuck and active chains, cycles.</td></tr>
+<tr><td><a id="sigma-chain"></a><code>/sigma-chain</code></td><td>Solves one end goal and every open prerequisite it waits on, in order, with all decisions asked up front. <a href="orchestrate.html#others">When to use which</a>.</td></tr>
+<tr><td><a id="sigma-orchestrate"></a><code>/sigma-orchestrate</code></td><td>Runs a batch of goals as parallel sessions in dependency waves, merging and reporting. <a href="orchestrate.html">Read more</a>.</td></tr>
+<tr><td><a id="sigma-dag"></a><code>/sigma-dag</code></td><td>Reports the stored dependency map: state, stuck and active chains, cycles. <a href="orchestrate.html#others">When to use which</a>.</td></tr>
 <tr><td><a id="sigma-triage"></a><code>/sigma-triage</code></td><td>Prioritizes and dependency-sequences a multi-goal backlog drain.</td></tr>
 <tr><td><a id="sigma-promote"></a><code>/sigma-promote</code></td><td>Approves AI-filed issues for the loop and repairs stuck confirmation labels.</td></tr>
 <tr><td><a id="sigma-unpark"></a><code>/sigma-unpark</code></td><td>Resolves a goal that is waiting on a human and records the decision before it returns to the queue.</td></tr>
@@ -135,7 +156,7 @@
 <tr><td><a id="sigma-research"></a><code>/sigma-research</code></td><td>Maps a goal's code blast radius, existing debt and size into a short dossier.</td></tr>
 <tr><td><a id="sigma-plan"></a><code>/sigma-plan</code></td><td>Writes a bite-sized plan with files, tests and done criteria before any edit.</td></tr>
 <tr><td><a id="sigma-plan-review"></a><code>/sigma-plan-review</code></td><td>Adversarially verifies the plan against the code and post-ship risks before implementation.</td></tr>
-<tr><td><a id="sigma-implement"></a><code>/sigma-implement</code></td><td>Implements the plan test-first and verifies each step.</td></tr>
+<tr><td><a id="sigma-implement"></a><code>/sigma-implement</code></td><td>Implements the plan and verifies each step.</td></tr>
 <tr><td><a id="sigma-review"></a><code>/sigma-review</code></td><td>A code-quality review: measured indicators first, then a scan across eight axes; also reviews pull requests and grades an external reviewer.</td></tr>
 <tr><td><a id="sigma-verify"></a><code>/sigma-verify</code></td><td>Runs the checks and shows evidence before a goal is called done.</td></tr>
 <tr><td><a id="sigma-retro"></a><code>/sigma-retro</code></td><td>After shipping, assesses residual debt and proposes lessons for approval.</td></tr>
@@ -205,7 +226,7 @@
 
 <div class="aud aud-tech">
 <div class="aud-label">Technical detail</div>
-<p>Every skill is a folder with a <code>SKILL.md</code> whose description says when the agent should use it. On a host without slash commands (Cursor, Antigravity) the same skills are read as instructions. See <a href="hosts.html">Hosts</a> for what each host runs.</p>
+<p>Every skill is a folder with a <code>SKILL.md</code> whose description says when the agent should use it. On a host without slash commands the same skills are read as instructions. See <a href="hosts.html">Hosts</a> for what each host runs.</p>
 </div>
 <div class="pagenav">
   <a href="slack.html"><span class="dir">Back</span>&larr; From Slack</a>

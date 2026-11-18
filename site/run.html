@@ -16,42 +16,48 @@
     <span class="brand-mark">&Sigma;</span>
     <span><span class="brand-name">Sigma Loop</span><span class="brand-tag">Guide</span></span>
   </a>
+  <details class="navbox" open>
+    <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
-    <a href="index.html"><span class="nav-num">01</span>Home</a>
-    <a href="get-started.html"><span class="nav-num">02</span>Get started</a>
-    <a href="flow.html"><span class="nav-num">03</span>How it works</a>
-    <a href="entry-points.html"><span class="nav-num">04</span>Ways in</a>
-    <a href="design-gate.html"><span class="nav-num">05</span>The design gate</a>
+    <a href="index.html">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="flow.html">How it works</a>
+    <a href="entry-points.html">Ways in</a>
+    <a href="design-gate.html">The design gate</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Set up &amp; run</div>
-    <a href="setup.html"><span class="nav-num">06</span>Setup</a>
-    <a href="hosts.html"><span class="nav-num">07</span>Hosts</a>
-    <a href="config.html"><span class="nav-num">08</span>Configuration</a>
-    <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
-    <a href="run.html" class="active"><span class="nav-num">10</span>Running unattended</a>
-    <a href="observe.html"><span class="nav-num">11</span>Cost and time</a>
+    <a href="setup.html">Setup</a>
+    <a href="hosts.html">Hosts</a>
+    <a href="config.html">Configuration</a>
+    <a href="sdlc-folder.html">The .sdlc folder</a>
+    <a href="run.html" class="active" aria-current="page">Running unattended</a>
+    <a href="orchestrate.html">Running many goals</a>
+    <a href="cloud.html">Cloud sessions</a>
+    <a href="observe.html">Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">12</span>On your own</a>
-    <a href="team.html"><span class="nav-num">13</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">14</span>From Slack</a>
+    <a href="solo.html">On your own</a>
+    <a href="team.html">As a team</a>
+    <a href="slack.html">From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">15</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">16</span>Labels</a>
-    <a href="units.html"><span class="nav-num">17</span>Units of work</a>
-    <a href="safety.html"><span class="nav-num">18</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">19</span>Technical reference</a>
+    <a href="skills.html">Skills and commands</a>
+    <a href="labels.html">Labels</a>
+    <a href="units.html">Units of work</a>
+    <a href="safety.html">Trust and limits</a>
+    <a href="reference.html">Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">20</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">21</span>Glossary</a>
+    <a href="releases.html">Releases</a>
+    <a href="glossary.html">Glossary</a>
   </div>
+  </details>
+  <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
 </nav>
 <!-- NAV:END -->
 
@@ -61,10 +67,31 @@
 <h1>Running unattended</h1>
 <p class="subtitle">Three ways to run goals, from you approving every gate to nobody watching, and the things that hold or stop a run.</p>
 
-<div class="aud">
-<div class="aud-label">In plain words</div>
-<p>Start supervised. <code>/sigma-goal</code> does one goal and waits for your approval at every gate. When you trust it, <code>/sigma-loop</code> works through the backlog by itself and <em>parks</em> whatever needs a decision, then carries on. Nothing merges on its own until you switch <code>work.auto_merge</code> on, and a run is held back if the machine is short of memory and stopped when it hits a budget you set.</p>
+<nav class="toc" aria-label="On this page">
+<div class="toc-title">On this page</div>
+<ul>
+<li><a href="#modes">Which command</a></li>
+<li><a href="#land">--land: one named goal, nobody in the loop</a></li>
+<li><a href="#orchestrate">/sigma-orchestrate: a batch in waves</a></li>
+<li><a href="#merge">Merging: work.auto_merge</a></li>
+<li><a href="#holds">What holds or stops a run</a></li>
+<li><a href="#overnight">Overnight</a></li>
+</ul>
+</nav>
+
+<div class="most">
+<p class="most-title">Most people only need</p>
+<ul>
+<li>Start with <code>/sigma-goal</code>: one goal, your approval at every gate.</li>
+<li>Move to <code>/sigma-loop</code> when you trust it: it parks what needs a decision and carries on.</li>
+<li>Nothing merges on its own until you switch <code>work.auto_merge</code> on.</li>
+<li>A run is held when the machine is short of memory and stopped at the budget you set.</li>
+<li><code>--land</code> and <code>/sigma-orchestrate</code> are for cloud containers and batches, not first runs.</li>
+</ul>
 </div>
+
+
+<p>Start supervised. <code>/sigma-goal</code> does one goal and waits for your approval at every gate. When you trust it, <code>/sigma-loop</code> works through the backlog by itself and <em>parks</em> whatever needs a decision, then carries on. Nothing merges on its own until you switch <code>work.auto_merge</code> on, and a run is held back if the machine is short of memory and stopped when it hits a budget you set.</p>
 
 <div class="diagram">
 <svg viewBox="0 0 440 292" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Three ways to run goals: sigma-goal with you approving each gate, sigma-loop on the whole backlog, and sigma-orchestrate on a batch. Each goal goes through the seven phases, a pull request, a post-PR review and the merge gate. Then a hold, a stop or a park decides whether the run continues.">
@@ -114,6 +141,7 @@
 <li>You get <strong>one go-ahead screen</strong>: waves, held goals, seats, where (<code>--where cloud</code> or <code>local</code>), model mix, merging on or off. <code>--dry-run</code> stops there and writes nothing.</li>
 <li>Useful flags: <code>--max-seats N</code>, <code>--no-merge</code>, <code>--model auto|sonnet|opus</code>, <code>--max-opus N</code>, <code>--yes</code>.</li>
 <li>Needs <code>discovery.source: github</code>, <code>work.enabled</code>, and <code>work.auto_merge</code> of <code>protected</code> or <code>always</code>.</li>
+<li>More: <a href="orchestrate.html">Running many goals</a> and <a href="cloud.html">Cloud sessions in Claude Code</a>.</li>
 <li><strong>Not measured:</strong> an end-to-end batch in a real cloud container. Its cost per merged goal is arithmetic from the code, not a measurement.</li>
 </ul>
 
@@ -170,7 +198,7 @@
 
 <div class="pagenav">
   <a href="sdlc-folder.html"><span class="dir">Back</span>&larr; The .sdlc folder</a>
-  <a class="next" href="observe.html"><span class="dir">Next</span>Cost and time &rarr;</a>
+  <a class="next" href="orchestrate.html"><span class="dir">Next</span>Running many goals &rarr;</a>
 </div>
 
 </main>

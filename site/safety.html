@@ -16,42 +16,48 @@
     <span class="brand-mark">&Sigma;</span>
     <span><span class="brand-name">Sigma Loop</span><span class="brand-tag">Guide</span></span>
   </a>
+  <details class="navbox" open>
+    <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
-    <a href="index.html"><span class="nav-num">01</span>Home</a>
-    <a href="get-started.html"><span class="nav-num">02</span>Get started</a>
-    <a href="flow.html"><span class="nav-num">03</span>How it works</a>
-    <a href="entry-points.html"><span class="nav-num">04</span>Ways in</a>
-    <a href="design-gate.html"><span class="nav-num">05</span>The design gate</a>
+    <a href="index.html">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="flow.html">How it works</a>
+    <a href="entry-points.html">Ways in</a>
+    <a href="design-gate.html">The design gate</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Set up &amp; run</div>
-    <a href="setup.html"><span class="nav-num">06</span>Setup</a>
-    <a href="hosts.html"><span class="nav-num">07</span>Hosts</a>
-    <a href="config.html"><span class="nav-num">08</span>Configuration</a>
-    <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
-    <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="observe.html"><span class="nav-num">11</span>Cost and time</a>
+    <a href="setup.html">Setup</a>
+    <a href="hosts.html">Hosts</a>
+    <a href="config.html">Configuration</a>
+    <a href="sdlc-folder.html">The .sdlc folder</a>
+    <a href="run.html">Running unattended</a>
+    <a href="orchestrate.html">Running many goals</a>
+    <a href="cloud.html">Cloud sessions</a>
+    <a href="observe.html">Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">12</span>On your own</a>
-    <a href="team.html"><span class="nav-num">13</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">14</span>From Slack</a>
+    <a href="solo.html">On your own</a>
+    <a href="team.html">As a team</a>
+    <a href="slack.html">From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">15</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">16</span>Labels</a>
-    <a href="units.html"><span class="nav-num">17</span>Units of work</a>
-    <a href="safety.html" class="active"><span class="nav-num">18</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">19</span>Technical reference</a>
+    <a href="skills.html">Skills and commands</a>
+    <a href="labels.html">Labels</a>
+    <a href="units.html">Units of work</a>
+    <a href="safety.html" class="active" aria-current="page">Trust and limits</a>
+    <a href="reference.html">Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">20</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">21</span>Glossary</a>
+    <a href="releases.html">Releases</a>
+    <a href="glossary.html">Glossary</a>
   </div>
+  </details>
+  <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
 </nav>
 <!-- NAV:END -->
 
@@ -61,17 +67,38 @@
 <h1>Trust and limits</h1>
 <p class="subtitle">Five properties every change is judged against, what each one promises, what Sigma refuses to do when it cannot be sure, and what has not been measured.</p>
 
-<div class="aud">
-<div class="aud-label">In plain words</div>
-<p>Sigma runs on developer machines and can change code and GitHub. So the rule is: <strong>when it cannot be sure, it stops and says so</strong>, instead of carrying on with a weaker guarantee. It spends and merges only where you opted in, it limits itself by what your machine can bear, and it says plainly which claims were measured and which were not.</p>
+<nav class="toc" aria-label="On this page">
+<div class="toc-title">On this page</div>
+<ul>
+<li><a href="#five">The five properties</a></li>
+<li><a href="#fail-closed">What it refuses when unsure</a></li>
+<li><a href="#open">What fails open, said plainly</a></li>
+<li><a href="#limits">What is advice, not enforcement</a></li>
+<li><a href="#threats">Known threats, from the threat model</a></li>
+<li><a href="#privacy">What leaves your machine</a></li>
+</ul>
+</nav>
+
+<div class="most">
+<p class="most-title">Most people only need</p>
+<ul>
+<li>When Sigma cannot be sure, it stops and says so instead of carrying on weaker.</li>
+<li>It merges and spends only where you opted in.</li>
+<li>Its limits are derived from your machine, not copied constants.</li>
+<li>Read <a href="#open">What fails open</a> before you trust an unattended run.</li>
+<li><a href="#privacy">What leaves your machine</a> is a short section.</li>
+</ul>
 </div>
+
+
+<p>Sigma runs on developer machines and can change code and GitHub. So the rule is: <strong>when it cannot be sure, it stops and says so</strong>, instead of carrying on with a weaker guarantee. It spends and merges only where you opted in, it limits itself by what your machine can bear, and it says plainly which claims were measured and which were not.</p>
 
 <h2 id="five">The five properties</h2>
 <div class="table-wrap">
 <table>
 <thead><tr><th>Property</th><th>The promise</th><th>What it looks like</th><th>Honest gap</th></tr></thead>
 <tbody>
-<tr><td><strong>Reliability</strong></td><td>It does what it claims, and the claims are measured.</td><td>No capability is described as working until it has run end to end in the real target environment. A performance or resource claim carries the measurement behind it, or says it has none.</td><td>A complete Codex goal through to a merged pull request, any run inside Cursor or Antigravity, a loop run in a real cloud container, and a real orchestrated batch are unmeasured.</td></tr>
+<tr><td><strong>Reliability</strong></td><td>It does what it claims, and the claims are measured.</td><td>No capability is described as working until it has run end to end in the real target environment. A performance or resource claim carries the measurement behind it, or says it has none.</td><td>A complete Codex goal through to a merged pull request, the loop on several goals in Cursor, a goal run in Antigravity, a loop run in a real cloud container, and a real orchestrated batch are unmeasured.</td></tr>
 <tr><td><strong>Scalability</strong></td><td>It holds as machines, repositories and data grow.</td><td>Per-item costs are stated at 10x and 100x; single chokepoints are named as ceilings with a number; unbounded growth is a defect at design time. GitHub quota is watched, and a rate-limited read stops the run rather than guessing.</td><td>The ledger's entry files and per-goal logs grow and nothing prunes them today. Behaviour with many active people is unmeasured.</td></tr>
 <tr><td><strong>Resiliency</strong></td><td>It recovers without a human.</td><td>Every failure mode has a stated recovery: a stopped run resumes where it left off, a dead session's unstarted claims are released, a lease expires, a stale ledger re-roots with one command. Retries are idempotent or bounded, and a recovery lever must not itself cause an outage.</td><td>State that cannot self-heal has a documented lever instead. Some recoveries were exercised only in temporary-directory tests.</td></tr>
 <tr><td><strong>Safety</strong></td><td>It cannot harm the host, the data or your trust.</td><td>Resource limits are derived from the machine, not copied constants. Nothing spawns a background process, sends data or uses quota without you opting in. Secrets stay out of config files, logs and shell history. Where a guarantee cannot be made on a platform, it refuses loudly.</td><td>The resource-guard ratios are uncalibrated. Token scrubbing covers known patterns; coverage of every comment site is unverified.</td></tr>
@@ -134,7 +161,7 @@
 <li><strong>Independent review.</strong> The skills ask for an author-blind reviewer. The core cannot prove the maker did not influence it, and a maker can record its own approving verdict.</li>
 <li><strong>Irreversible actions park.</strong> The agent is asked to park a deploy, delete, overwrite, spend or migrate. Code checks it only when the hard-stop rulebook is switched on (off by default).</li>
 </ul>
-<p>Rules enforced by plain Python behave the same on every host. Rules enforced by a hook exist on Claude Code only; Cursor has no hooks. A hook is an accelerator, never load-bearing. The per-rule table is <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/enforcement.md">enforcement</a>.</p>
+<p>Rules enforced by plain Python behave the same on every host. Rules enforced by a hook exist on Claude Code only; Sigma uses no Cursor hooks (Cursor documents a hooks system; behaviour unmeasured). A hook is an accelerator, never load-bearing. The per-rule table is <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/enforcement.md">enforcement</a>.</p>
 
 <h2 id="threats">Known threats, from the threat model</h2>
 <div class="table-wrap">

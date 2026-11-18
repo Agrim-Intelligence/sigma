@@ -16,42 +16,48 @@
     <span class="brand-mark">&Sigma;</span>
     <span><span class="brand-name">Sigma Loop</span><span class="brand-tag">Guide</span></span>
   </a>
+  <details class="navbox" open>
+    <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
-    <a href="index.html"><span class="nav-num">01</span>Home</a>
-    <a href="get-started.html"><span class="nav-num">02</span>Get started</a>
-    <a href="flow.html"><span class="nav-num">03</span>How it works</a>
-    <a href="entry-points.html"><span class="nav-num">04</span>Ways in</a>
-    <a href="design-gate.html"><span class="nav-num">05</span>The design gate</a>
+    <a href="index.html">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="flow.html">How it works</a>
+    <a href="entry-points.html">Ways in</a>
+    <a href="design-gate.html">The design gate</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Set up &amp; run</div>
-    <a href="setup.html"><span class="nav-num">06</span>Setup</a>
-    <a href="hosts.html"><span class="nav-num">07</span>Hosts</a>
-    <a href="config.html"><span class="nav-num">08</span>Configuration</a>
-    <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
-    <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="observe.html"><span class="nav-num">11</span>Cost and time</a>
+    <a href="setup.html">Setup</a>
+    <a href="hosts.html">Hosts</a>
+    <a href="config.html">Configuration</a>
+    <a href="sdlc-folder.html">The .sdlc folder</a>
+    <a href="run.html">Running unattended</a>
+    <a href="orchestrate.html">Running many goals</a>
+    <a href="cloud.html">Cloud sessions</a>
+    <a href="observe.html">Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">12</span>On your own</a>
-    <a href="team.html"><span class="nav-num">13</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">14</span>From Slack</a>
+    <a href="solo.html">On your own</a>
+    <a href="team.html">As a team</a>
+    <a href="slack.html">From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">15</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">16</span>Labels</a>
-    <a href="units.html"><span class="nav-num">17</span>Units of work</a>
-    <a href="safety.html"><span class="nav-num">18</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">19</span>Technical reference</a>
+    <a href="skills.html">Skills and commands</a>
+    <a href="labels.html">Labels</a>
+    <a href="units.html">Units of work</a>
+    <a href="safety.html">Trust and limits</a>
+    <a href="reference.html">Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html" class="active"><span class="nav-num">20</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">21</span>Glossary</a>
+    <a href="releases.html" class="active" aria-current="page">Releases</a>
+    <a href="glossary.html">Glossary</a>
   </div>
+  </details>
+  <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
 </nav>
 <!-- NAV:END -->
 
@@ -61,10 +67,20 @@
 <h1>Releases</h1>
 <p class="subtitle">The most recent releases, newest first. This is the only page that names versions. Each version links to its GitHub release; the changelog in the repository has the full entry.</p>
 
+<nav class="toc" aria-label="On this page">
+<div class="toc-title">On this page</div>
+<ul>
+<li><a href="#recent">Recent releases</a></li>
+</ul>
+</nav>
+
+
+<h2 id="recent">Recent releases</h2>
 <div class="table-wrap">
 <table>
 <thead><tr><th>Version</th><th>Date</th><th>Headline</th></tr></thead>
 <tbody>
+<tr><td><a href="https://github.com/Agrim-Intelligence/sigma/releases/tag/v1.0.35">1.0.35</a></td><td>2026-11-18</td><td>An opt-in merge when branch protection is unreadable; absolute local paths kept out of a goal's PR; a subagent-transcript lookup fix; the docs site source, now with a black-and-white design, orchestrate and cloud-sessions pages and a phone menu.</td></tr>
 <tr><td><a href="https://github.com/Agrim-Intelligence/sigma/releases/tag/v1.0.34">1.0.34</a></td><td>2026-11-18</td><td><code>/sigma-init --antigravity</code> writes the managed <code>AGENTS.md</code> block; the Cursor hooks wording is corrected.</td></tr>
 <tr><td><a href="https://github.com/Agrim-Intelligence/sigma/releases">1.0.33</a> (no release page of its own)</td><td>2026-11-15</td><td>Acceptance criteria are append-only, closing a goal releases the goals waiting on it, and follow-ups join their goal as slices.</td></tr>
 <tr><td><a href="https://github.com/Agrim-Intelligence/sigma/releases/tag/v1.0.32">1.0.32</a></td><td>2026-11-13</td><td>The in-goal follow-up limit is a setting, <code>followups.max_added_slices</code>, default 10.</td></tr>

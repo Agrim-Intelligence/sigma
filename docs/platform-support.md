@@ -7,8 +7,8 @@ What is validated on each host, and how quality is guarded. Back to the [README]
 Sigma's **full SDLC run remains validated on Claude Code**. The Codex adapter has been exercised
 in a real Codex session through its first loop command, and its plugin inventory and rollout usage
 were checked against the real Codex CLI/session store. A complete Codex goal through PR merge has
-not yet been measured. Cursor scaffolding remains experimental and has not been run in Cursor; the
-Antigravity scaffold is experimental and has never been run in Antigravity; see
+not yet been measured. On Cursor, set-up and one goal to a merged pull request were measured, but not
+the loop; on Antigravity, the plugin install and set-up were measured, but not a goal run; see
 [Other platforms supported](#other-platforms-supported).
 
 The **git half** of per-goal worktrees is verified end-to-end against a real repo (worktree cut from
@@ -24,15 +24,23 @@ gate fires reliably in production use on this very repo.
 ## Other platforms supported
 
 The full pipeline is validated on **Claude Code**. Codex now has a project adapter and measured
-component checks; a complete Codex goal through PR merge is still unverified. Cursor scaffolding is
-unit-tested but has not been run in Cursor. Antigravity has a tier-1 scaffold only and has never been
-run in Antigravity.
+component checks; a complete Codex goal through PR merge is still unverified. Cursor: set-up and one
+goal to a merged pull request were measured on 18 Nov 2026; the loop on several goals was not.
+Antigravity: the plugin install and set-up were measured on 18 Nov 2026; a goal run was not and has
+never been run there.
 
-### Cursor (experimental)
+### Cursor
 
-> **Not yet verified in a live Cursor session.** The scaffolding is built and unit-tested, but
-> Sigma has **not been run end-to-end inside Cursor.** Treat this as experimental — the `.mdc` rule
-> format follows Cursor's documented convention, but real-session behavior is unverified.
+> **Measured in the Cursor app on 18 Nov 2026, on a private scratch repository.**
+> `/sigma-init --cursor` with the GitHub-mode flags ran and set the repository up with a Projects
+> board, and `/sigma-doctor` reported all checks ready. `/sigma-goal 1 --land` first refused because
+> `work.auto_merge` was `off`; with it set to `always`, it ran a real issue to a merged pull request
+> with passing tests. The pull request was merged by hand: on a free-plan private repository GitHub
+> refuses the branch-protection read with HTTP 403, and Sigma then holds a merge (see the opt-in
+> `work.protection_unreadable` in [configuration](configuration.md)).
+>
+> **Not measured:** `/sigma-loop` on several goals, the Cursor command-line agent, hooks, and an
+> auto-merge on a repository whose protection can be read.
 
 Sigma ships a Cursor plugin package (`.cursor-plugin/plugin.json` and `marketplace.json`) that carries its
 skills and, deliberately, no hooks; it is checked against Cursor's published manifest schema but has **not
@@ -46,14 +54,14 @@ repository, with `<installed-sigma>` your Sigma checkout:
 python3 <installed-sigma>/skills/sigma-init/scripts/init_flow.py . --cursor --demo
 ```
 
-That writes **`.cursor/rules/sdlc.mdc`** — intended as an *always-applied* Cursor rule carrying the full
+That writes **`.cursor/rules/sdlc.mdc`** — an *always-applied* Cursor rule carrying the full
 7-phase discipline (Cursor's analog of the Claude hook) — and **`.cursor/rules/output-contract.mdc`**,
 which points status output at `render.py` instead of at prose to imitate, scaffolds the `.sdlc/` layer,
 and pins `companions: off` so each phase would run via the **portable `sigma-*` executors** instead of the
 Claude-only companions. The loop, model-selection, status and KG **helpers are plain zero-dep
 `python3`** — run them from Cursor's terminal (e.g.
-`python3 <installed-sigma>/skills/sigma-loop/scripts/loop.py next .sdlc`). Once verified in a live session, the
-goal is the same spine, executors, and audit trail without Claude — **help testing this is welcome.**
+`python3 <installed-sigma>/skills/sigma-loop/scripts/loop.py next .sdlc`). The goal is the same spine,
+executors, and audit trail without Claude.
 
 ### Codex (partial live validation)
 
@@ -82,12 +90,27 @@ path after the bounded smoke in [the migration guide](codex-autonomy.md);
 the Claude-specific unattended watcher still has no Codex budgeted backend.
 
 
-### Antigravity (experimental)
+### Antigravity
 
-> **Never run in Antigravity.** Sigma has not been run in Antigravity at all. The only thing built is a
-> tier-1 scaffold, unit-tested here; nothing below claims Antigravity loads, follows or obeys it.
+> **Measured in `agy` 1.5 on 18 Nov 2026, on a private scratch repository.**
+> `agy plugin install https://github.com/Agrim-Intelligence/sigma` installs from the public repository
+> and converts the Claude Code plugin: 46 skills and 4 hook groups, and skips two hooks (the
+> `UserPromptSubmit` hook and the `PreToolUse` hook on skills). `/sigma-init --antigravity` with the GitHub-mode flags ran inside `agy` and produced a
+> GitHub-mode setup with a Projects board and an `AGENTS.md`.
+>
+> **Read from the installed output, not exercised:** the four hook groups are PostToolUse,
+> PreToolUse, SessionStart and Stop; the install log gives Antigravity having no such event or tool
+> as the reason for the two skips; the converted skills still contain the Claude-only
+> `${CLAUDE_SKILL_DIR}` placeholder, and each skill carries a note telling the model to use its own
+> folder.
+>
+> **Not measured:** a goal run (`/sigma-goal`), the loop, whether the converted hooks fire (their
+> paths are relative), the headless `agy -p` command, and an independent reviewer. A goal run has
+> never been run in Antigravity.
 
-From the root of your repository, with `<installed-sigma>` your Sigma checkout:
+Install with the plugin command above, then run `/sigma-init --antigravity` from the root of your
+repository. If the slash command is not available, run the init flow directly, with
+`<installed-sigma>` the installed plugin directory:
 
 ```
 python3 <installed-sigma>/skills/sigma-init/scripts/init_flow.py . --antigravity
@@ -104,8 +127,8 @@ What Antigravity's official docs say (read 17 Nov 2026): rules come from `AGENTS
 `.agents/skills/` (<https://antigravity.google/docs/skills>). That is documentation read, not behavior
 observed.
 
-Unmeasured: hooks, MCP, workflows, the headless `agy` command, subagents and so an independent
-reviewer, and a goal run end to end. Tier 3 (a goal end to end) and tier 4 (the unattended loop with an
+Also unmeasured: MCP, workflows, subagents and so an independent reviewer, and a goal run end to
+end. Tier 3 (a goal end to end) and tier 4 (the unattended loop with an
 independent reviewer) are not attempted. No Sigma hook is load-bearing here, as on every host.
 
 ## Quality & drift (`evals/`)

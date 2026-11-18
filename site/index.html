@@ -16,42 +16,48 @@
     <span class="brand-mark">&Sigma;</span>
     <span><span class="brand-name">Sigma Loop</span><span class="brand-tag">Guide</span></span>
   </a>
+  <details class="navbox" open>
+    <summary>Menu</summary>
   <div class="nav-group">
     <div class="nav-group-title">Start here</div>
-    <a href="index.html" class="active"><span class="nav-num">01</span>Home</a>
-    <a href="get-started.html"><span class="nav-num">02</span>Get started</a>
-    <a href="flow.html"><span class="nav-num">03</span>How it works</a>
-    <a href="entry-points.html"><span class="nav-num">04</span>Ways in</a>
-    <a href="design-gate.html"><span class="nav-num">05</span>The design gate</a>
+    <a href="index.html" class="active" aria-current="page">Home</a>
+    <a href="get-started.html">Get started</a>
+    <a href="flow.html">How it works</a>
+    <a href="entry-points.html">Ways in</a>
+    <a href="design-gate.html">The design gate</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Set up &amp; run</div>
-    <a href="setup.html"><span class="nav-num">06</span>Setup</a>
-    <a href="hosts.html"><span class="nav-num">07</span>Hosts</a>
-    <a href="config.html"><span class="nav-num">08</span>Configuration</a>
-    <a href="sdlc-folder.html"><span class="nav-num">09</span>The .sdlc folder</a>
-    <a href="run.html"><span class="nav-num">10</span>Running unattended</a>
-    <a href="observe.html"><span class="nav-num">11</span>Cost and time</a>
+    <a href="setup.html">Setup</a>
+    <a href="hosts.html">Hosts</a>
+    <a href="config.html">Configuration</a>
+    <a href="sdlc-folder.html">The .sdlc folder</a>
+    <a href="run.html">Running unattended</a>
+    <a href="orchestrate.html">Running many goals</a>
+    <a href="cloud.html">Cloud sessions</a>
+    <a href="observe.html">Cost and time</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Ways to work</div>
-    <a href="solo.html"><span class="nav-num">12</span>On your own</a>
-    <a href="team.html"><span class="nav-num">13</span>As a team</a>
-    <a href="slack.html"><span class="nav-num">14</span>From Slack</a>
+    <a href="solo.html">On your own</a>
+    <a href="team.html">As a team</a>
+    <a href="slack.html">From Slack</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Deeper</div>
-    <a href="skills.html"><span class="nav-num">15</span>Skills and commands</a>
-    <a href="labels.html"><span class="nav-num">16</span>Labels</a>
-    <a href="units.html"><span class="nav-num">17</span>Units of work</a>
-    <a href="safety.html"><span class="nav-num">18</span>Trust and limits</a>
-    <a href="reference.html"><span class="nav-num">19</span>Technical reference</a>
+    <a href="skills.html">Skills and commands</a>
+    <a href="labels.html">Labels</a>
+    <a href="units.html">Units of work</a>
+    <a href="safety.html">Trust and limits</a>
+    <a href="reference.html">Technical reference</a>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Reference</div>
-    <a href="releases.html"><span class="nav-num">20</span>Releases</a>
-    <a href="glossary.html"><span class="nav-num">21</span>Glossary</a>
+    <a href="releases.html">Releases</a>
+    <a href="glossary.html">Glossary</a>
   </div>
+  </details>
+  <script>(function(){var d=document.querySelector('.navbox'),m=window.matchMedia('(min-width: 901px)');function s(){d.open=m.matches}s();m.addEventListener('change',s);d.addEventListener('toggle',function(){var a=d.querySelector('.active');if(d.open&&a&&!m.matches)a.scrollIntoView({block:'center'})})})()</script>
 </nav>
 <!-- NAV:END -->
 
@@ -59,36 +65,36 @@
 
 <span class="eyebrow">Start here</span>
 <h1>Sigma Loop</h1>
-<p class="subtitle">Guardrails and an overnight autopilot for your AI coding agent. It makes the agent plan before it codes, has every plan reviewed before any edit, and can work through a whole backlog unattended, with each goal finished, verified and recorded.</p>
+<p class="subtitle">Sigma Loop is guardrails and an overnight autopilot for your AI coding agent. It makes the agent plan before it codes and has every plan reviewed before any edit, then can work through a whole backlog unattended, each goal finished, verified and recorded.</p>
 
-<div class="status-line"><strong>Honest status.</strong> The full workflow is validated on Claude Code. Codex is partly validated, and Cursor and Antigravity are experimental. See <a href="hosts.html">Hosts</a> for what was measured on each and what was not.</div>
+<nav class="toc" aria-label="On this page">
+<div class="toc-title">On this page</div>
+<ul>
+<li><a href="#start">Start in three steps</a></li>
+<li><a href="#hosts">Your host</a></li>
+<li><a href="#loop">The loop</a></li>
+<li><a href="#what">What it does</a></li>
+<li><a href="#who">Who it is for</a></li>
+</ul>
+</nav>
 
-<h2 id="who">Who it is for</h2>
-<div class="table-wrap">
-<table>
-<thead><tr><th>You are</th><th>What you get</th></tr></thead>
-<tbody>
-<tr><td>A developer who prompts an AI agent every day</td><td>Every non-trivial change goes through the same steps, without you having to ask for them.</td></tr>
-<tr><td>A team lead with a backlog</td><td>Queue goals as GitHub issues or local files. The loop works through them and sets aside anything that needs a person.</td></tr>
-<tr><td>Someone who wants an audit trail</td><td>Each phase is recorded on the issue or in a local journal, so you can see what was decided and what was checked.</td></tr>
-</tbody>
-</table>
-</div>
+
+<p><a class="button-link" href="get-started.html">Get started</a></p>
 
 <h2 id="start">Start in three steps</h2>
 <ol class="steps">
-<li><h4>Install the plugin for your host</h4><p>One or two commands. Pick your host in the picker below.</p></li>
+<li><h4>Install the plugin for your host</h4><p>One or two commands, listed per host on <a href="get-started.html">Get started</a>.</p></li>
 <li><h4>Run <code>/sigma-init</code> in your repository</h4><p>It checks access, asks where your backlog lives and which command runs your tests, and scaffolds the <code>.sdlc</code> folder. Safe to re-run.</p></li>
 <li><h4>Run a goal</h4><p><code>/sigma-goal</code> works one goal with you approving each phase. <code>/sigma-loop</code> works the backlog on its own.</p></li>
 </ol>
 
-<h2 id="hosts">Pick your host</h2>
-<div class="picker">
-<a href="get-started.html#claude-code"><b>Claude Code</b><span>Fully validated</span></a>
-<a href="get-started.html#codex"><b>Codex</b><span>Partly validated</span></a>
-<a href="get-started.html#cursor"><b>Cursor</b><span>Experimental</span></a>
-<a href="get-started.html#antigravity"><b>Antigravity</b><span>Experimental, never run</span></a>
-</div>
+<h2 id="hosts">Your host</h2>
+<ul class="link-row">
+<li><a href="get-started.html#claude-code">Claude Code</a> <span>plugin marketplace</span></li>
+<li><a href="get-started.html#codex">Codex</a> <span>plugin marketplace, <code>--codex</code></span></li>
+<li><a href="get-started.html#cursor">Cursor</a> <span>clone, <code>--cursor</code></span></li>
+<li><a href="get-started.html#antigravity">Antigravity</a> <span>plugin install, <code>--antigravity</code></span></li>
+</ul>
 
 <h2 id="loop">The loop</h2>
 <p>Work moves along one chain. The front half is optional and turns a raw idea into scoped goals. Between the backlog and the build cycle sits a gate that, when switched on, stops a goal without a confirmed design from being worked at all.</p>
@@ -171,6 +177,18 @@
   <div class="card"><h4>It leaves an audit trail</h4><p>Every phase is recorded on the issue or in a local journal.</p></div>
 </div>
 <p>Some of these rules are checked by code and some are instructions to the agent. <a href="safety.html">Trust and limits</a> says which.</p>
+
+<h2 id="who">Who it is for</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>You are</th><th>What you get</th></tr></thead>
+<tbody>
+<tr><td>A developer who prompts an AI agent every day</td><td>Every non-trivial change goes through the same steps, without you having to ask for them.</td></tr>
+<tr><td>A team lead with a backlog</td><td>Queue goals as GitHub issues or local files. The loop works through them and sets aside anything that needs a person.</td></tr>
+<tr><td>Someone who wants an audit trail</td><td>Each phase is recorded on the issue or in a local journal, so you can see what was decided and what was checked.</td></tr>
+</tbody>
+</table>
+</div>
 
 <div class="pagenav">
   <a class="next" href="get-started.html"><span class="dir">Next</span>Get started &rarr;</a>
