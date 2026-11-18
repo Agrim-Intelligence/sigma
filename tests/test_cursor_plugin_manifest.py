@@ -54,12 +54,17 @@ def test_plugin_matches_the_claude_code_manifest():
         assert cursor[key] == claude[key], key
 
 
-def test_plugin_links_point_at_the_real_public_repository():
-    """`homepage` and `repository` once named a repository that does not exist (404). Pinned to the
-    public slug so a typo fails here rather than in a user's plugin pane."""
+def test_plugin_links_point_at_the_public_repository():
+    """`homepage` and `repository` name the repository the published plugin is installed from:
+    `public_repo` in docs/launch/definition.json, the one slug the public-tree builder, the doctor's
+    marketplace check and the README's install commands already share. It is created at the first
+    public release, so it can 404 before then; this source repository is private and must not be
+    what a public install links to. Read from the definition rather than restated, so a rename
+    there fails here instead of leaving the Cursor pane on the old name."""
+    public = _load("docs/launch/definition.json")["public_repo"]
     m = _load(".cursor-plugin/plugin.json")
     for key in ("homepage", "repository"):
-        assert m[key] == "https://github.com/Agrim-Intelligence/sigma", key
+        assert m[key] == "https://github.com/%s" % public, key
 
 
 def test_skills_path_holds_every_shipped_skill():
