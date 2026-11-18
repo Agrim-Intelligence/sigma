@@ -375,6 +375,7 @@ TEXT_PAIRS = (
 ALLOWED_HEX = {
     "#ffffff", "#f4f6f7", "#d9dfe3", "#c9d2d7", "#10181c", "#56646e",   # light scheme
     "#0e171b", "#152127", "#25333a", "#34444c", "#e6ecef", "#c3ced4", "#a9b8c0",  # dark scheme
+    "#7d8a92", "#667982",                                                 # diagram line, light and dark
     "#08769a", "#065a76", "#5cc3e6", "#8dd6ef",                         # link hue, both schemes
 }
 
@@ -459,3 +460,55 @@ def test_control_stray_colour_turns_palette_check_red():
     assert stray_colours(texts + [("style.css", "a { color: #ff0000; }")])
     assert stray_colours(texts + [("x.html", '<rect fill="#f00"/>')])
     assert stray_colours(texts + [("x.css", "a { color: rgb(1,2,3); }")])
+
+
+def line_problems(css_text, floor=3.0):
+    """Diagram outlines are non-text graphics: WCAG asks 3:1 against what they sit on."""
+    light, dark_media, _ = _blocks(css_text)
+    out = []
+    for name, scheme in (("light", light), ("dark", dark_media)):
+        for bg in ("--bg", "--bg-sunken"):
+            r = ratio(scheme["--line"], scheme[bg])
+            if r < floor:
+                out.append(f"{name}: --line on {bg} is {r:.2f}:1 (< {floor})")
+    return out
+
+
+def test_diagram_lines_are_at_least_3_to_1_in_both_schemes():
+    assert line_problems(CSS.read_text(encoding="utf-8")) == []
+
+
+def test_control_pale_diagram_line_turns_red():
+    css = CSS.read_text(encoding="utf-8")
+    assert line_problems(css.replace(_blocks(css)[0]["--line"], "#c9d2d7", 1))
+
+
+def text_on_filled_box_problems(site):
+    """A label drawn inside a solid-filled (.dbox-accent) box must use an -inv text class, or it is
+    the box's own colour and invisible."""
+    out = []
+    for page in sorted(site.glob("*.html")):
+        src = page.read_text(encoding="utf-8")
+        for svg in re.findall(r"<svg\b.*?</svg>", src, re.S):
+            boxes = [tuple(float(v) for v in m) for m in re.findall(
+                r'<rect class="dbox-accent"[^>]*?x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"', svg)]
+            for m in re.finditer(r'<text class="([^"]+)" x="([\d.]+)" y="([\d.]+)"([^>]*)>', svg):
+                cls, x, y, rest = m.group(1), float(m.group(2)), float(m.group(3)), m.group(4)
+                for bx, by, bw, bh in boxes:
+                    inside_y = by <= y <= by + bh
+                    anchor_mid = "text-anchor=\"middle\"" in rest
+                    inside_x = bx <= x <= bx + bw if anchor_mid else bx <= x < bx + bw
+                    if inside_x and inside_y and "inv" not in cls:
+                        out.append(f"{page.name}: text class '{cls}' at ({x:g},{y:g}) sits on a filled box")
+    return out
+
+
+def test_no_label_is_drawn_in_its_own_boxes_colour():
+    assert text_on_filled_box_problems(SITE) == []
+
+
+def test_control_dark_label_on_filled_box_turns_red(tmp_path):
+    shutil.copytree(SITE, tmp_path / "site")
+    page = tmp_path / "site" / "index.html"
+    page.write_text(page.read_text(encoding="utf-8").replace("dtext-mono-inv", "dtext-mono", 1), encoding="utf-8")
+    assert text_on_filled_box_problems(tmp_path / "site")
