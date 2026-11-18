@@ -32,6 +32,20 @@ python3 tools/rename_prefix.py
 It refuses (exit 2, nothing moved) if the new folder already exists; `git mv` the files your branch
 added under the old folder name into it by hand, then run it again.
 
+## Docs site
+
+The public docs site is plain HTML in `site/`, with one stylesheet and inline SVG: no build step, no
+external scripts, fonts or images. To edit a page, change its `site/*.html` file. The sidebar is
+generated into every page from the page list in `tools/site_nav.py`; after adding a page or changing a
+title, run `python3 tools/site_nav.py write` (it rewrites each page's nav and creates a stub for a
+missing page), and `python3 tools/site_nav.py check` to verify.
+
+Rules for page content: version numbers appear only on the Releases page; every `/sigma-*` command
+named must be a skill under `skills/`; no private names, home paths or other emails. The checks are
+`tests/test_site_checks.py` (leak scan, commands and skill count, links and anchors, SVG well-formedness,
+versions, external URLs, nav, host flags), each with a control that breaks one thing and expects red.
+The Pages workflow publishes `site/` from `main`; it does not enable Pages, which is a repository setting.
+
 ## Working rules
 
 Shipped code is stdlib-only. Every guard must be deliberately seen red once before its green run.

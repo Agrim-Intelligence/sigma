@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **Public docs site scaffold: a static `site/` with shared nav, landing, Get started and Hosts pages, a Pages workflow and site checks (#2244).** Content pages are stubs for follow-up work. Pages is not enabled; the site was not rendered in a real browser.
+
 ## 1.0.34 — 2026-11-18 — `/sigma-init --antigravity` writes the managed AGENTS.md block, and the Cursor hooks wording is corrected
 
 - **`/sigma-init --antigravity` writes the managed `AGENTS.md` block, and the Cursor hooks wording is corrected (#2239).** Opt-in, skip-if-exists, the same block `--codex` writes, no config change, no `.agents/skills` link or copy. Cursor documents a hooks system; Sigma uses none and no hook is load-bearing. Never run in Antigravity or Cursor; hooks, MCP, workflows, headless `agy` and subagents there are unmeasured.
