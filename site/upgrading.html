@@ -151,8 +151,8 @@
 <p>Re-running <code>/sigma-init</code> prints a <code>[trust] verify</code> line with this gesture while it is missing, and <code>/sigma-doctor</code> shows a <code>verify command trusted in this checkout</code> row. Neither sets it for you, and no init flag does.</p>
 
 <h2 id="old-id">An install under the old id</h2>
-<p>Before launch the plugin and its marketplace were both named <code>sigma</code>, so the install id was <code>sigma@sigma</code>. The current id is <code>sigmaloop@sigmaloop</code>, and updates are keyed on it, so an install recorded under the old id keeps working and <strong>silently stops receiving updates</strong>. Nothing removes it for you: <code>/sigma-doctor</code> prints the commands, with your recorded source filled in, and runs none of them.</p>
-<pre><code>claude plugin uninstall sigma@sigma
+<p>Before launch the plugin and its marketplace were both named <code>sigma</code>, so the install id was that name twice, joined by an at sign (the doctor prints it as <code>&lt;old-id&gt;</code> below). The current id is <code>sigmaloop@sigmaloop</code>, and updates are keyed on it, so an install recorded under the old id keeps working and <strong>silently stops receiving updates</strong>. Nothing removes it for you: <code>/sigma-doctor</code> prints the commands, with your recorded source filled in, and runs none of them.</p>
+<pre><code>claude plugin uninstall &lt;old-id&gt;
 claude plugin marketplace remove sigma
 claude plugin marketplace add &lt;the repository your old install came from&gt;
 claude plugin install sigmaloop@sigmaloop</code></pre>
@@ -161,7 +161,7 @@ claude plugin install sigmaloop@sigmaloop</code></pre>
 <div class="callout-title">Read before removing a marketplace</div>
 <p><code>claude plugin marketplace remove</code> also uninstalls every other plugin installed from that marketplace and deletes their saved options, secrets and data; the command's own help does not say so. Skip that line if any other plugin you use comes from it. The sequence was measured only in a scratch profile with a stand-in two-plugin marketplace, not against a real pre-launch install.</p>
 </div>
-<p>On Codex the equivalent is <code>codex plugin remove sigma@sigma</code>, <code>codex plugin marketplace add &lt;source&gt;</code> and <code>codex plugin add sigmaloop@sigmaloop</code>; confirm the verbs with <code>codex plugin --help</code> first. An install under the old id cannot warn you itself, because it runs the old doctor, which finds no plugin by the old name and shows no row.</p>
+<p>On Codex the equivalent is <code>codex plugin remove &lt;old-id&gt;</code>, <code>codex plugin marketplace add &lt;source&gt;</code> and <code>codex plugin add sigmaloop@sigmaloop</code>; confirm the verbs with <code>codex plugin --help</code> first. An install under the old id cannot warn you itself, because it runs the old doctor, which finds no plugin by the old name and shows no row.</p>
 
 <h2 id="switch">Switching over from the previous plugin</h2>
 <p>Sigma was published under another name before it was released. A repository adopted by that plugin carries its name in its state, and Sigma reads that state as it is, so nothing needs migrating before you can work. Sigma runs next to the old plugin and replaces it; its being installed is a notice, never a refusal. Do the cut-over in this order, on every machine:</p>
