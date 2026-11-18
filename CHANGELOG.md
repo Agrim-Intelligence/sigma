@@ -4,7 +4,13 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+## 1.0.36 — 2026-11-18 — a Cursor plugin package, the real public repository name in the install commands, and a larger public docs site
+
 - The README, the issue template, the onboarding docs and the launch definition name the public repository `Agrim-Intelligence/sigma` instead of `Agrim-Intelligence/sigmaloop`, which does not exist, and a test holds every README repository URL to `public_repo` (#2248).
+- **A Cursor plugin package, `.cursor-plugin/` (plugin.json, marketplace.json, an empty hooks file, manifest tests) (#2237).** Contributed by a teammate. Its version is pinned equal to the Claude manifest. Not measured: the package was never installed or run in Cursor by this release.
+- **The public docs site grew: a one-host-at-a-time Get started, an "On this page" list on every page, and ten new pages (#2244).** Your first goal; Upgrading and uninstalling; Troubleshooting and FAQ; All settings; Parallel and scheduled runs; The project board; Dependencies and chains; Org policy and security; Autonomy and the rulebook; Quality and design aids; the team and units pages are expanded. Cursor and Antigravity facts follow what was measured on 18 Nov 2026: Cursor setup, doctor and one real goal to a merged PR; Antigravity plugin install from the public URL (46 skills, 4 hook groups converted) and `/sigma-init --antigravity` inside `agy`. Not measured: an Antigravity goal, hooks firing, a headless run or the reviewer; the commands on the new pages were not run live.
+- **`/sigma-init --antigravity` no longer calls Antigravity experimental, and the research and plan skill text is back under its size ceilings (#2252).**
+- **Known: the on-demand full CI tier is cancelled at its 90-minute limit on every leg (#2255), so the whole suite has not passed in CI for this release.** Only the smoke tier and the required checks ran.
 
 ## 1.0.35 — 2026-11-18 — an opt-in merge when branch protection is unreadable, absolute local paths kept out of goal PRs, a subagent-transcript lookup fix, and the public docs site source
 

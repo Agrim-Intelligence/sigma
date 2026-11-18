@@ -532,6 +532,8 @@ VERSION_ALLOW = {
     ("docs/whats-new-1.0.30.md", "1.0.29"): "the previous release, named as the baseline this page describes changes from",
     ("docs/whats-new-1.0.31.md", "1.0.31"): "the release this page documents, named in its own title",
     ("docs/whats-new-1.0.31.md", "1.0.30"): "the previous release, named as the baseline this page describes changes from",
+    ("docs/whats-new-1.0.36.md", "1.0.36"): "the release this page documents, named in its own title",
+    ("docs/whats-new-1.0.36.md", "1.0.35"): "the previous release, named as the baseline this page describes changes from",
     ("docs/whats-new-1.0.35.md", "1.0.35"): "the release this page documents, named in its own title",
     ("docs/whats-new-1.0.35.md", "1.0.34"): "the previous release, named as the baseline this page describes changes from",
     ("docs/whats-new-1.0.34.md", "1.0.34"): "the release this page documents, named in its own title",
