@@ -4,8 +4,8 @@ This page lists every change in this release. The same entries are in the `1.0.3
 [CHANGELOG](../CHANGELOG.md). Start with [Upgrading from 1.0.34](#upgrading-from-1034) if you only want to know what
 changes for you.
 
-One new opt-in setting, one safety fix that changes what a goal's pull request can contain, and the source of a public
-docs site that is not published yet.
+One new opt-in setting, one safety fix that changes what a goal's pull request can contain, a fix for finding a
+subagent transcript, and the source of a public docs site that is not published yet.
 
 ## Upgrading from 1.0.34
 
@@ -27,12 +27,18 @@ docs site that is not published yet.
    - **What you do:** if a command now refuses naming such a file, fix the path in it and commit again.
    - **Not covered:** a raw `git commit` pushed outside Sigma, history already published, a path with a space (it ends
      at the space), and `.slices.json`. This stops new leaks only.
-4. **Public docs site source (#2244).** A static `site/` directory and a Pages workflow. GitHub Pages is not enabled, so
-   nothing is published, and the workflow run on `main` fails until the owner enables Pages. The site was not rendered
-   in a real browser, and a restyle is planned.
+4. **Subagent transcript lookup (#2238).** `phase_report.py` finds a subagent's transcript under every Claude project
+   slug that holds the session, not one. This matters for Claude Code cloud sessions. It came from a teammate's pull
+   request, #2238.
+   - **What you do:** nothing.
+   - **Not measured:** a real cloud session.
+5. **Public docs site source (#2244).** A static `site/` directory with a black-and-white design, an orchestrate page, a
+   cloud-sessions page, a phone menu, and a Pages workflow. It is site source only: GitHub Pages was not enabled when
+   this release was cut (the address answered 404), so nothing is published yet, and the workflow run on `main` fails
+   until Pages is enabled. The site was not rendered in a real browser by this release's author.
 
 ## Not measured
 
-The full test suite was not run for this release. A real merge through the `protection_unreadable` path was not run.
+The full test suite was not run by this release's author; see the release notes on GitHub for any full-tier result. A real merge through the `protection_unreadable` path was not run.
 Nothing was run in Antigravity, and Cursor is unverified until a live test. The README install URLs are not claimed to
 work: they name a repository slug that does not exist yet (issue #2248 is open).
