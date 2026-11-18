@@ -96,7 +96,7 @@
 <ul>
 <li>Run <code>/sigma-init</code> once, and confirm the test command it detects.</li>
 <li>Write one small goal with a checkable <em>done when</em> line.</li>
-<li>Run <code>/sigma-loop</code>. On the shipped defaults it opens a pull request and stops; it never merges.</li>
+<li>Run <code>/sigma-loop</code> to take the goal through to a pull request. On the shipped defaults it opens the pull request and stops; it never merges. (<code>/sigma-goal</code> alone does not open one.)</li>
 <li>You merge the pull request. The goal is recorded done after that, not before.</li>
 </ul>
 </div>
@@ -145,7 +145,7 @@
 <thead><tr><th>Backlog</th><th>How to add a goal</th></tr></thead>
 <tbody>
 <tr><td>Local files</td><td>Copy the example file in <code>.sdlc/goals/</code> to the next number, set <code>status: pending</code> (the example ships as <code>proposed</code>, which the loop never picks), and fill <code>done_when</code> with a checkable condition. The body is the goal, written as you would to a teammate.</td></tr>
-<tr><td>GitHub issues</td><td>Open an issue labelled <code>sdlc:goal</code> and <strong>assign it to yourself</strong>: by default the loop works only issues assigned to the person running it. Put a <code>## Done when</code> section in the body with three to seven checkable statements. A goal without one is allowed on the defaults; it prints a warning and proceeds.</td></tr>
+<tr><td>GitHub issues</td><td>Open an issue labelled <code>sdlc:goal</code> and <strong>assign it to yourself</strong>: the shipped config has no assignee filter, but <code>/sigma-init</code> in GitHub mode sets <code>discovery.github.assignee</code> to <code>@me</code> where it is unset, after which the loop works only issues assigned to you. Put a <code>## Done when</code> section in the body with three to seven checkable statements. A goal without one is allowed on the defaults; it prints a warning and proceeds.</td></tr>
 </tbody>
 </table>
 </div>
@@ -167,8 +167,9 @@ from the package metadata and exit 0.</code></pre>
 <table>
 <thead><tr><th>Command</th><th>Use it to</th></tr></thead>
 <tbody>
-<tr><td><code>/sigma-loop</code></td><td>Pull the next goal from the backlog and run it unattended through every phase, then the commit, the pull request and the post-pull-request review. This is the path that ends in a pull request. Anything needing a human is parked, not forced.</td></tr>
-<tr><td><code>/sigma-goal</code></td><td>Run one goal with you at every gate. It never proceeds past a checkpoint without your approval. Use it to watch the phases once. Its own steps record the outcome; the pull-request path is documented under <code>/sigma-loop</code>.</td></tr>
+<tr><td><code>/sigma-loop</code></td><td>Works the backlog: pulls the next goal and runs it unattended through every phase, then the commit, the pull request and the post-pull-request review. On the defaults it stops at the open pull request. Anything needing a human is parked, not forced.</td></tr>
+<tr><td><code>/sigma-goal</code></td><td>Interactive. Drives one goal through the phases with your approval at every gate and ends by recording the outcome (done, or parked with a reason). It does <strong>not</strong> open a pull request. Use it to watch the phases once.</td></tr>
+<tr><td><code>/sigma-goal &lt;N&gt; --land</code></td><td>Unattended, for one GitHub issue: takes it to a merged pull request with no gate pauses. It needs <code>work.enabled: true</code> and <code>work.auto_merge</code> of <code>protected</code> or <code>always</code>, and refuses on the default <code>off</code>. Not for a first goal; see <a href="run.html#land">Running unattended</a>.</td></tr>
 </tbody>
 </table>
 </div>

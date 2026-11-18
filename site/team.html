@@ -190,7 +190,7 @@
 
 <h2 id="handoff">Assignment and hand-offs</h2>
 <ul>
-<li>In GitHub mode the loop works only issues assigned to the person running it. Reassign by editing the issue.</li>
+<li>The shipped config has no assignee filter; <code>/sigma-init</code> in GitHub mode sets <code>discovery.github.assignee</code> to <code>@me</code> where it is unset. With that set, the loop works only issues assigned to the person running it. Reassign by editing the issue.</li>
 <li>When a goal is blocked on someone else's area, ask <code>/sigma-ledger</code> to hand it off instead of parking. It finds the owner (above), opens an issue in their area assigned to them and carrying the goal label, records a hand-off addressed to them, and links it from the blocked issue. Their own loop picks it up through the assignee filter.</li>
 <li>They answer with one of <code>accepted</code>, <code>deferred</code>, <code>declined</code> or <code>resolved</code>. <code>deferred</code> does not settle it; the hand-off stays outstanding until <code>resolved</code> or <code>declined</code>. A goal blocked on two areas is two independent hand-offs.</li>
 <li>Every step degrades honestly: with no owner found, no <code>gh</code>, or a local backlog, the ledger entry is still written.</li>
