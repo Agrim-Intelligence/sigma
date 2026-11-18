@@ -300,13 +300,16 @@ ENFORCEMENT_GATES = (
                   "plan or research file becomes a repo-relative path, `<plugin>/skills/...` or `[path]`, and one "
                   "line says how many were rewritten; a leak in the acceptance record (append-only), in a plan "
                   "whose bytes a review or seal already records, or in a file it cannot read refuses the commit "
-                  "with the file and line; `work.py pr` is the second choke point: before any push it reads the "
-                  "COMMITTED blobs of this goal's plan, research and acceptance files that the branch changed "
-                  "against its base and refuses (file, line, count, nothing pushed) on a home path, naming "
-                  "`work.py commit` as the clearing gesture (a follow-up commit; no history is rewritten)",
-     "condition": "a raw `git commit` followed by a push that does not go through `work.py pr` is not covered; a "
-                  "leak already pushed to the remote branch is already public and history is not rewritten; a "
-                  "path containing a space ends at the space (the login is gone, the rest is garbled)"},
+                  "with the file and line. Every other Sigma push of the goal branch reads the COMMITTED blobs of "
+                  "this goal's plan, research and acceptance files that the branch added, copied, modified or "
+                  "renamed against its base (a deleted file is not read) and refuses (file, line, count, nothing "
+                  "pushed) on a home path: `work.py pr`, `work.py checkpoint`, and the three pushes of `work.py "
+                  "rebase`; a non-UTF-8 artifact is refused with a hand-fix message. The plan's durable copy "
+                  "posted to the issue is scrubbed first. The clearing gesture is `work.py commit` (a follow-up "
+                  "commit; no history is rewritten)",
+     "condition": "not covered: a raw `git commit` followed by a push outside Sigma; a leak already pushed to the "
+                  "remote branch is already public and history is not rewritten; a path containing a space ends "
+                  "at the space (the login is gone, the rest is garbled); `.slices.json` manifests"},
     {"control": "Hard plan gate at PR push", "function": "_hard_plan_gate_refusal",
      "kind": "python-gate", "hosts": "all",
      "enabled_by": ("work.enabled", "gates.hard_plan_gate.enabled"), "settings": (),
@@ -4955,7 +4958,10 @@ def _durable_plan_copy(sdlc_dir, config, goal, doc, run, root):
     try:
         ref = stem(goal)
         number, repo = int(ref), _issue_repo(config)
-        bodies = _plan_copy_bodies(ref, doc.read_bytes().decode("utf-8", errors="replace"))
+        # #2243: the plan is posted to a public issue, so a home path in it is scrubbed first, as `commit` does
+        plan_text = _load("artifact_paths").scrub_text(
+            doc.read_bytes().decode("utf-8", errors="replace"), (root, project_root(sdlc_dir)))[0]
+        bodies = _plan_copy_bodies(ref, plan_text)
         api = _pr_api_run(run, root)
         have = {}
         try:
@@ -5233,10 +5239,7 @@ def pr(sdlc_dir, config, goal, run=None, no_tests=None, land=False):
     if run(path, ["git", "rev-list", "--count", f"{remote}/{base}..HEAD"]) == "0":
         return (f"no commits on the branch — nothing to open a PR for; make the change in {path}, "
                 f"then run `work.py commit {sdlc_dir} {goal}` (nothing pushed)")
-    try:                                                # #2243: the second choke point; `commit()` can be skipped
-        leak = _load("artifact_paths").committed_leak_refusal(sdlc_dir, path, goal, f"{remote}/{base}", run)
-    except Exception as exc:                            # noqa: BLE001 - fail closed: nothing is pushed unchecked
-        leak = f"REFUSED: could not check the committed artifacts for absolute local paths ({exc}) (nothing pushed)"
+    leak = _artifact_leak_stop(sdlc_dir, rec, goal, run)       # #2243: `commit()` can be skipped
     if leak:
         return leak
     missing_plan = _plan_missing_from_branch(sdlc_dir, rec, goal, run)
@@ -5349,6 +5352,17 @@ def _remote_tip(run, cwd, remote, ref):
     return first[0] if first and _SHA40.match(first[0]) else ""
 
 
+def _artifact_leak_stop(sdlc_dir, rec, goal, run):
+    """#2243: "" when the committed plan, research and acceptance files this branch changed hold no absolute home path,
+    else the refusal (nothing is pushed). Shared by every Sigma push of the goal branch: `pr`, `checkpoint`, and the
+    rebase pushes. Fails CLOSED: a check that cannot run refuses."""
+    try:
+        return _load("artifact_paths").committed_leak_refusal(
+            sdlc_dir, rec["worktree"], goal, f"{rec['remote']}/{rec['base']}", run)
+    except Exception as exc:                            # noqa: BLE001 - nothing is pushed unchecked
+        return f"REFUSED: could not check the committed artifacts for absolute local paths ({exc}) (nothing pushed)"
+
+
 def _checkpoint_push_stop(sdlc_dir, config, rec, goal, run, ref):
     """#2161: the gates `pr`'s push is behind, applied to a checkpoint push. "" when the branch may go out, else the
     refusal (nothing is pushed). Beyond `pr`'s own: a path scan and a content scan of everything this branch adds,
@@ -5372,7 +5386,8 @@ def _checkpoint_push_stop(sdlc_dir, config, rec, goal, run, ref):
         shown = ", ".join(sorted({_diagnostic_path(n) for n in shaped} | {_diagnostic_path(n) for n in hits}))
         return (f"REFUSED — the branch adds {len(shaped) + len(hits)} secret-shaped path(s) or content match(es) "
                 f"({shown}); nothing was pushed. Remove them from the branch, then re-run `work.py checkpoint`.")
-    return (_hs_push_stop(sdlc_dir, config, rec, f"git push {remote} HEAD:{ref}", prefix="REFUSED")
+    return (_artifact_leak_stop(sdlc_dir, rec, goal, run)                      # #2243: a checkpoint is public too
+            or _hs_push_stop(sdlc_dir, config, rec, f"git push {remote} HEAD:{ref}", prefix="REFUSED")
             or _hs_diff_stop(config, run, path, ["git", "diff", rev], ("access_secrets", "tamper_oversight")))
 
 
@@ -6933,7 +6948,8 @@ def rebase(sdlc_dir, config, goal, run=None, no_force=False, merge_fallback=True
             folded = _fold_onto_pushed(run, path, f"{remote}/{base}", pre_rebase_head) if fold else None
             if folded:
                 return folded
-            gated = _hs_push_stop(sdlc_dir, config, rec, " ".join(push_argv))
+            gated = (_hs_push_stop(sdlc_dir, config, rec, " ".join(push_argv))
+                     or _artifact_leak_stop(sdlc_dir, rec, goal, run))      # #2243
             if gated:
                 return gated
             run(path, push_argv)
@@ -7001,7 +7017,8 @@ def rebase(sdlc_dir, config, goal, run=None, no_force=False, merge_fallback=True
     folded = _fold_onto_pushed(run, path, f"{remote}/{base}", pre_rebase_head) if fold else None
     if folded:
         return folded
-    gated = _hs_push_stop(sdlc_dir, config, rec, " ".join(push_argv))
+    gated = (_hs_push_stop(sdlc_dir, config, rec, " ".join(push_argv))
+                     or _artifact_leak_stop(sdlc_dir, rec, goal, run))      # #2243
     if gated:
         return gated
     run(path, push_argv)
@@ -7097,7 +7114,8 @@ def _merge_from_base(sdlc_dir, config, goal, rec, run, path, push_argv, pre, why
     refused = _push_refused(path, rec["branch"])
     if refused:
         return refused
-    gated = _hs_push_stop(sdlc_dir, config, rec, " ".join(push_argv))
+    gated = (_hs_push_stop(sdlc_dir, config, rec, " ".join(push_argv))
+                     or _artifact_leak_stop(sdlc_dir, rec, goal, run))      # #2243
     if gated:
         return gated
     run(path, push_argv)

@@ -320,7 +320,7 @@ def _passes_leak_check(d):
         out = work.pr(d, ON, GOAL, run=_pr_run([]))
     except _Stop:
         return True
-    return "default repository" in out and "committed" not in out.split("(")[0]
+    return not out.startswith(("REFUSED: the committed", "REFUSED: could not check the committed"))
 
 
 def test_pr_refuses_a_leak_committed_with_raw_git_and_pushes_nothing(tmp_path):
@@ -366,3 +366,94 @@ def test_pr_fails_closed_when_the_check_cannot_run(tmp_path, monkeypatch):
     monkeypatch.setattr(work, "_load", lambda n: (_ for _ in ()).throw(RuntimeError("boom")) if n == "artifact_paths" else orig(n))
     out = work.pr(d, ON, GOAL, run=_pr_run([]))
     assert out.startswith("REFUSED: could not check the committed") and "nothing pushed" in out
+
+
+# ----------------------------------------------------------------------------- second review: deletes, bytes, every push
+
+
+def test_a_position_suffix_survives_the_rewrite():
+    out, _ = ap.scrub_text("at /home/user/a/b.py:12: and /home/user/a/b.py:12:3. also /r/p/c.py:7", ["/r/p"])
+    assert out.startswith("at [path]:12: and [path]:12:3. also ")
+    assert ap.scrub_text("/r/p/c.py:7", ["/r/p"])[0] == "c.py:7"
+
+
+def test_pr_passes_when_the_branch_deleted_the_artifact(tmp_path):
+    repo, wt, d = _pr_setup(tmp_path)
+    (repo / ".sdlc" / "plans").mkdir(parents=True)
+    (repo / ".sdlc" / "plans" / GOAL).write_text("plan\n")
+    _git(repo, "add", "-f", "-A")
+    _git(repo, "commit", "-q", "-m", "plan on base")
+    _git(repo, "push", "-q", "origin", "main")
+    _git(wt, "fetch", "-q", "origin")
+    _git(wt, "reset", "-q", "--hard", "origin/main")
+    _git(wt, "rm", "-q", f".sdlc/plans/{GOAL}")
+    (wt / "b.py").write_text("y = 2\n")
+    _git(wt, "add", "-A")
+    _git(wt, "commit", "-q", "-m", "delete the plan")
+    assert ap.committed_leak_refusal(d, str(wt), GOAL, "origin/main", work._run) == ""
+    assert _passes_leak_check(d)
+
+
+def test_pr_checks_a_renamed_artifact_at_its_new_name(tmp_path):
+    repo, wt, d = _pr_setup(tmp_path)
+    (wt / ".sdlc" / "plans").mkdir(parents=True)
+    (wt / ".sdlc" / "plans" / "old-name.md").write_text("see /home/user/p/q\n" * 3)
+    _git(wt, "add", "-A")
+    _git(wt, "commit", "-q", "-m", "x")
+    _git(wt, "mv", ".sdlc/plans/old-name.md", f".sdlc/plans/{GOAL}")
+    _git(wt, "commit", "-q", "-m", "rename")
+    out = ap.committed_leak_refusal(d, str(wt), GOAL, "origin/main", work._run)
+    assert out.startswith(f"REFUSED: the committed .sdlc/plans/{GOAL}:1") and "3 in all" in out
+
+
+def test_a_non_utf8_committed_artifact_is_refused_with_a_fix_that_clears_it(tmp_path):
+    repo, wt, d = _pr_setup(tmp_path)
+    (wt / ".sdlc" / "research").mkdir(parents=True)
+    f = wt / ".sdlc" / "research" / GOAL
+    f.write_bytes(b"\xff\xfe\x00bad")
+    _git(wt, "add", "-A")
+    _git(wt, "commit", "-q", "-m", "binary")
+    out = work.pr(d, ON, GOAL, run=_pr_run([]))
+    assert out.startswith(f"REFUSED: the committed .sdlc/research/{GOAL} is not UTF-8") and "nothing pushed" in out
+    assert f"work.py commit {d}" not in out, "commit refuses this file too, so it must not be the printed fix"
+    assert work.commit(d, ON, GOAL, message="x").startswith("REFUSED: cannot check")
+    f.write_text("plain text\n")                       # the printed fix: replace by hand, follow-up commit
+    assert work.commit(d, ON, GOAL, message="fix").startswith("committed")
+    assert _passes_leak_check(d)
+
+
+def test_checkpoint_refuses_a_committed_leak_and_pushes_nothing(tmp_path):
+    repo, wt, d = _pr_setup(tmp_path)
+    _raw_commit_artifacts(wt, "see /home/user/p/q\n")
+    calls = []
+    out = work.checkpoint(d, ON, GOAL, run=_pr_run(calls))
+    assert out.startswith("REFUSED: the committed .sdlc/plans/0001-x.md:1") and "nothing pushed" in out
+    assert not any(c.startswith("git push") for c in calls)
+
+
+def test_checkpoint_pushes_a_clean_branch(tmp_path):
+    repo, wt, d = _pr_setup(tmp_path)
+    _raw_commit_artifacts(wt, "clean\n")
+    out = work.checkpoint(d, ON, GOAL)
+    assert out.startswith("checkpoint origin/"), out
+    assert _git(repo, "ls-remote", "origin").count("refs/heads/") >= 2
+
+
+def test_rebase_push_is_behind_the_same_check(tmp_path, monkeypatch):
+    repo, wt, d = _pr_setup(tmp_path)
+    _raw_commit_artifacts(wt, "see /home/user/p/q\n")
+    calls = []
+    out = work.rebase(d, ON, GOAL, run=_pr_run(calls))
+    assert "REFUSED: the committed .sdlc/plans/0001-x.md:1" in out, out
+    assert not any(c.startswith("git push") for c in calls)
+
+
+def test_the_plan_comment_on_the_issue_is_scrubbed(tmp_path):
+    import test_plan_durable_copy_2087 as dc
+    root = tmp_path / "root"
+    root, sdlc, plan = dc._world(tmp_path, plan_text=f"**Worktree**: {root}/.sdlc/work/1\nsee /home/user/p/q\n")
+    gh = dc.FakeGh()
+    url, why = dc.work._durable_plan_copy(sdlc, dc.CFG, dc.GOAL, plan, gh, str(root))
+    assert url and not why
+    body = gh.comments[0]["body"]
+    assert "/home/user" not in body and str(root) not in body and "**Worktree**: .sdlc/work/1" in body

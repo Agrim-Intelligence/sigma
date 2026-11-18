@@ -57,6 +57,7 @@ _WINDOWS = (r"(?<![\w])[A-Za-z]:[\\/]" + "Us" + r"ers[\\/][^\\/" + _STOP + r"]+"
 _LEAK_RE = re.compile("(?:" + "|".join((_POSIX, _ROOT, _WINDOWS)) + ")")
 _PLUGIN_RE = re.compile(r"[\\/]\.claude[\\/]plugins[\\/].*?[\\/]((?:skills|hooks)[\\/].*)$")
 _TRIM = ".:!?"
+_LOC_RE = re.compile(r"(?::\d+){1,2}$")
 PLACEHOLDER = "[path]"
 
 
@@ -81,6 +82,10 @@ def _replacement(token, roots):
     while token and token[-1] in _TRIM:
         trail = token[-1] + trail
         token = token[:-1]
+    loc = _LOC_RE.search(token)                 # a `:12` or `:12:3` position suffix survives the rewrite
+    if loc:
+        trail = loc.group(0) + trail
+        token = token[:loc.start()]
     norm = _norm(token)
     for root in roots:
         if norm == root:
@@ -198,13 +203,21 @@ def committed_leak_refusal(sdlc_dir, worktree, goal, base_ref, run):
     name = pathlib.Path(sdlc_dir).name
     found = []
     for sub, _rewrite in SUBDIRS:
-        listing = run(worktree, ["git", "diff", "--name-only", f"{base_ref}...HEAD", "--", f"{name}/{sub}"])
+        # ACMR: a file the branch DELETED is in the plain name list but not at HEAD, and is not a leak.
+        listing = run(worktree, ["git", "diff", "--name-only", "--diff-filter=ACMR", f"{base_ref}...HEAD", "--",
+                                 f"{name}/{sub}"])
         for rel in (listing or "").splitlines():
             base = pathlib.PurePosixPath(rel).name
             if base in exact or (pattern and pathlib.PurePosixPath(base).match(pattern)):
                 found.append(rel)
     for rel in found:
-        text = run(worktree, ["git", "show", f"HEAD:{rel}"]) or ""
+        try:
+            text = run(worktree, ["git", "show", f"HEAD:{rel}"]) or ""
+        except UnicodeDecodeError:
+            return (f"REFUSED: the committed {rel} is not UTF-8 text, so it cannot be checked for absolute local "
+                    f"paths (nothing pushed). `work.py commit` refuses it too: replace the file with a UTF-8 text "
+                    f"artifact by hand, make a follow-up commit, then re-run. History is not rewritten, and "
+                    f"anything already pushed to the remote branch is already public.")
         leaks = find_leaks(text, (worktree, pathlib.Path(sdlc_dir).resolve().parent))
         if leaks:
             line, token = leaks[0]
