@@ -7,8 +7,8 @@
 before it codes, has every plan reviewed before any edit, and can work through a whole backlog
 unattended, with each goal finished, verified and recorded.
 
-It is a plugin for **Claude Code** (fully validated), with adapters for **Codex** (partially
-validated) and **Cursor** and **Antigravity** (set-up measured on both; a goal run measured on Cursor only, never run on Antigravity). It needs only `bash` and `python3`, with no other runtime
+It is a plugin for **Claude Code**, with adapters for **Codex**, **Cursor** and **Antigravity**; what was
+measured on each host is in the [platform support table](#platform-support) below. It needs only `bash` and `python3`, with no other runtime
 dependencies.
 
 > [!IMPORTANT]
@@ -109,8 +109,8 @@ codex plugin add sigmaloop@sigmaloop
 ```
 
 Then run the `sigma-init` skill, or its flow directly, with `--codex` so `AGENTS.md` carries the
-standing rules. Codex support is partially validated
-([details](docs/platform-support.md#codex-partial-live-validation)):
+standing rules. What was measured on Codex is in the
+[platform support details](docs/platform-support.md#codex-partial-live-validation):
 
 ```
 python3 <installed-sigma>/skills/sigma-init/scripts/init_flow.py . --codex --demo
@@ -412,16 +412,16 @@ see which features are live for your config.
 | [Invocation adapter](docs/invocation-adapter.md) | let a host you trust approve the loop's review post and relay phase ends (opt-in) |
 | [What is enforced](docs/enforcement.md) | know which rules are checked by code and which are advice |
 | [Architecture](docs/architecture.md) | see how the hooks, phases and loop fit together |
-| [Platform support](docs/platform-support.md) | check what is validated on Claude Code, Codex and Cursor |
+| [Platform support](docs/platform-support.md) | check what was measured on each host |
 | [Measured results](docs/launch/evidence/measured-results.md) | see what the maintainers measured: cost, review, tests, CI (no comparison with other tools) |
 | [Threat model](docs/threat-model.md) | review the security boundaries |
 
 ## Platform support
 
-| Host | Status |
+| Host | Measured / Not measured |
 |---|---|
 | Claude Code | Run end to end, including PRs and merges, by the maintainers on one machine class (macOS) with no outside users; see [Measured results](docs/launch/evidence/measured-results.md). |
-| Codex | Partially validated: install and first loop command run in a real session; a full goal through to merge has not yet been measured. |
+| Codex | Measured: install and first loop command in a real session; a full goal through to merge has not yet been measured. |
 | Cursor | Measured in the Cursor app: set-up with a Projects board, and one real issue to a merged pull request (merged by hand). Not measured: the loop on several goals, the command-line agent, hooks ([details](docs/platform-support.md#cursor)). |
 | Antigravity | Measured in `agy`: plugin install and `/sigma-init --antigravity`. A goal run has never been run there; hooks, MCP, workflows, headless `agy` and subagents are unmeasured ([details](docs/platform-support.md#antigravity)). |
 

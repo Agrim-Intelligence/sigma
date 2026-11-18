@@ -787,8 +787,8 @@ def scaffold_extras(target, flags):
         print("  Antigravity reads AGENTS.md / .agents/rules/*.md for rules and skills from .agents/skills/ "
               "(its official docs: https://antigravity.google/docs/rules and /skills). Nothing was "
               "linked or copied into .agents/skills/.")
-        print("  Sigma has never been run in Antigravity: this is experimental, and the block's Codex "
-              "wording is unadapted.")
+        print("  The block's wording is Codex's, unadapted; see docs/platform-support.md for what has "
+              "been run in Antigravity.")
     if "--architecture-doc" in flags:     # LAST: the opt-in scaffolds stop at the first failure
         created, rel = scaffold_architecture_doc(target)
         q = shlex.quote(rel)

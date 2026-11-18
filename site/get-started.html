@@ -92,42 +92,42 @@
 </div>
 
 <section class="host" id="claude-code">
-<h2 id="claude-code">Claude Code</h2>
+<h2>Claude Code</h2>
 <ol class="steps">
-<li><h4>Install</h4><pre><code>claude plugin marketplace add https://github.com/Agrim-Intelligence/sigma
+<li><h3>Install</h3><pre><code>claude plugin marketplace add https://github.com/Agrim-Intelligence/sigma
 claude plugin install sigmaloop@sigmaloop</code></pre></li>
-<li><h4>Initialise</h4><p>Restart the session, then run this from the root of the repository you want Sigma to work on.</p><pre><code>/sigma-init --demo
+<li><h3>Initialise</h3><p>Restart the session, then run this from the root of the repository you want Sigma to work on.</p><pre><code>/sigma-init --demo
 /sigma-loop</code></pre></li>
 </ol>
 <p class="host-note"><code>--demo</code> queues a runnable demo goal; <code>/sigma-loop</code> then runs it through all the phases. To run in Claude Code's cloud, read <a href="cloud.html">Cloud sessions</a> first.</p>
 </section>
 
 <section class="host" id="codex">
-<h2 id="codex">Codex</h2>
+<h2>Codex</h2>
 <ol class="steps">
-<li><h4>Install</h4><pre><code>codex plugin marketplace add https://github.com/Agrim-Intelligence/sigma
+<li><h3>Install</h3><pre><code>codex plugin marketplace add https://github.com/Agrim-Intelligence/sigma
 codex plugin add sigmaloop@sigmaloop</code></pre></li>
-<li><h4>Initialise</h4><p>Run this from the root of your repository. The flag makes <code>AGENTS.md</code> carry the standing rules.</p><pre><code>/sigma-init --codex --demo</code></pre></li>
+<li><h3>Initialise</h3><p>Run this from the root of your repository. The flag makes <code>AGENTS.md</code> carry the standing rules.</p><pre><code>/sigma-init --codex --demo</code></pre></li>
 </ol>
 <p class="host-note"><strong>Measured:</strong> the install and the first loop command, in a real Codex session. <strong>Not measured:</strong> a complete goal through to a merged pull request. <a href="hosts.html#codex">Details on Hosts</a>.</p>
 <details><summary>If the slash command is not available</summary><p>Run the init flow directly from the root of your repository. This is a path you type; <code>&lt;installed-sigma&gt;</code> is the installed plugin directory.</p><pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/init_flow.py . --codex --demo</code></pre></details>
 </section>
 
 <section class="host" id="cursor">
-<h2 id="cursor">Cursor</h2>
+<h2>Cursor</h2>
 <ol class="steps">
-<li><h4>Install</h4><pre><code>git clone https://github.com/Agrim-Intelligence/sigma ~/sigma</code></pre></li>
-<li><h4>Initialise</h4><p>Cursor has no plugin install: clone to a folder <strong>outside</strong> the project you are adopting. Then, from the root of your own repository:</p><pre><code>/sigma-init --cursor --demo</code></pre></li>
+<li><h3>Install</h3><pre><code>git clone https://github.com/Agrim-Intelligence/sigma ~/sigma</code></pre></li>
+<li><h3>Initialise</h3><p>Cursor has no plugin install: clone to a folder <strong>outside</strong> the project you are adopting. Then, from the root of your own repository:</p><pre><code>/sigma-init --cursor --demo</code></pre></li>
 </ol>
 <p class="host-note"><strong>Measured</strong> in the Cursor app: set-up with a Projects board, and one real issue to a merged pull request (merged by hand). <strong>Not measured:</strong> the loop on several goals. <a href="hosts.html#cursor">Details on Hosts</a>.</p>
 <details><summary>If the slash command is not available</summary><p>Run the init flow directly from the root of your repository. This is a path you type; <code>&lt;installed-sigma&gt;</code> is the folder you cloned to.</p><pre><code>python3 ~/sigma/skills/sigma-init/scripts/init_flow.py . --cursor --demo</code></pre></details>
 </section>
 
 <section class="host" id="antigravity">
-<h2 id="antigravity">Antigravity</h2>
+<h2>Antigravity</h2>
 <ol class="steps">
-<li><h4>Install</h4><pre><code>agy plugin install https://github.com/Agrim-Intelligence/sigma</code></pre></li>
-<li><h4>Initialise</h4><p>Then, inside <code>agy</code>, from the root of your own repository:</p><pre><code>/sigma-init --antigravity</code></pre></li>
+<li><h3>Install</h3><pre><code>agy plugin install https://github.com/Agrim-Intelligence/sigma</code></pre></li>
+<li><h3>Initialise</h3><p>Then, inside <code>agy</code>, from the root of your own repository:</p><pre><code>/sigma-init --antigravity</code></pre></li>
 </ol>
 <p class="host-note"><strong>Measured</strong> in <code>agy</code>: the install and set-up with a Projects board and an <code>AGENTS.md</code>. <strong>Not measured:</strong> a goal run or the loop. <a href="hosts.html#antigravity">Details on Hosts</a>.</p>
 <details><summary>If the slash command is not available</summary><p>Run the init flow directly from the root of your repository. This is a path you type; <code>&lt;installed-sigma&gt;</code> is the installed plugin directory.</p><pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-init/scripts/init_flow.py . --antigravity</code></pre></details>
@@ -141,7 +141,7 @@ codex plugin add sigmaloop@sigmaloop</code></pre></li>
 <li>Asks where your backlog lives (local goal files or GitHub issues) and which command runs your tests.</li>
 <li>Scaffolds the <code>.sdlc</code> folder and ends by printing the next command to run.</li>
 </ul>
-<p>On Codex and Cursor there is no interactive question: the flow prints each open one as an <code>[ask]</code> line with the flag that answers it.</p>
+<p>On Codex, Cursor and Antigravity there is no interactive question: the flow prints each open one as an <code>[ask]</code> line with the flag that answers it.</p>
 
 <div class="pagenav">
   <a href="index.html"><span class="dir">Back</span>&larr; Home</a>

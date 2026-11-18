@@ -93,12 +93,15 @@ the Claude-specific unattended watcher still has no Codex budgeted backend.
 
 > **Measured in `agy` 1.5 on 18 Nov 2026, on a private scratch repository.**
 > `agy plugin install https://github.com/Agrim-Intelligence/sigma` installs from the public repository
-> and converts the Claude Code plugin: 46 skills and 4 hook groups (PostToolUse, PreToolUse,
-> SessionStart, Stop). The `UserPromptSubmit` hook and the `PreToolUse` hook on skills are skipped,
-> because Antigravity has no such event or tool. The converted skills still contain the Claude-only
-> `${CLAUDE_SKILL_DIR}` placeholder, and each skill carries a note telling the model to use its own
-> folder. `/sigma-init --antigravity` with the GitHub-mode flags ran inside `agy` and produced a
+> and converts the Claude Code plugin: 46 skills and 4 hook groups, and skips two hooks (the
+> `UserPromptSubmit` hook and the `PreToolUse` hook on skills). `/sigma-init --antigravity` with the GitHub-mode flags ran inside `agy` and produced a
 > GitHub-mode setup with a Projects board and an `AGENTS.md`.
+>
+> **Read from the installed output, not exercised:** the four hook groups are PostToolUse,
+> PreToolUse, SessionStart and Stop; the install log gives Antigravity having no such event or tool
+> as the reason for the two skips; the converted skills still contain the Claude-only
+> `${CLAUDE_SKILL_DIR}` placeholder, and each skill carries a note telling the model to use its own
+> folder.
 >
 > **Not measured:** a goal run (`/sigma-goal`), the loop, whether the converted hooks fire (their
 > paths are relative), the headless `agy -p` command, and an independent reviewer. A goal run has

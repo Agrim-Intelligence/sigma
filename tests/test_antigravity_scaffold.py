@@ -41,7 +41,7 @@ def test_flag_writes_the_codex_block_and_says_where_antigravity_looks():
         spec.loader.exec_module(mod)
         assert mod._CODEX_RULE.rstrip("\n") in text          # reused, not a second copy
         assert ".agents/rules/*.md" in r.stdout and ".agents/skills/" in r.stdout
-        assert "never been run in Antigravity" in r.stdout
+        assert "docs/platform-support.md" in r.stdout and "experimental" not in r.stdout.lower()
         assert not (pathlib.Path(tmp) / ".agents").exists()   # no skill link or copy
         assert not (pathlib.Path(tmp) / "GEMINI.md").exists()
 
@@ -133,7 +133,8 @@ def test_no_doc_claims_antigravity_works_or_is_supported():
                        ("docs/platform-support.md", _read("docs/platform-support.md")),
                        ("printed", _printed_text())):
         assert not _overclaims(text), (name, _overclaims(text))
-        assert "never been run" in text.lower() or "never run" in text.lower(), name
+        if name != "printed":
+            assert "never been run" in text.lower() or "never run" in text.lower(), name
     assert "| Antigravity |" in _read("README.md")
 
 

@@ -286,7 +286,7 @@ td code { white-space: nowrap; }
   width: 27px; height: 27px; border-radius: var(--radius); background: var(--fill); color: var(--fill-ink);
   font-weight: 600; font-size: 13px; display: flex; align-items: center; justify-content: center;
 }
-.steps h4 { margin: 0 0 4px; font-size: 15px; }
+.steps h4, .steps h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
 .steps p { margin: 0; font-size: 14.5px; }
 
 /* ---- Misc ---- */

@@ -132,9 +132,10 @@
 <table>
 <thead><tr><th>Question</th><th>Answer</th></tr></thead>
 <tbody>
-<tr><td>How it is installed</td><td><code>agy plugin install https://github.com/Agrim-Intelligence/sigma</code>, from the public repository. Antigravity converts the Claude Code plugin: 46 skills and 4 hook groups (PostToolUse, PreToolUse, SessionStart, Stop).</td></tr>
+<tr><td>How it is installed</td><td><code>agy plugin install https://github.com/Agrim-Intelligence/sigma</code>, from the public repository. Antigravity converts the Claude Code plugin: 46 skills and 4 hook groups.</td></tr>
 <tr><td>Init flag</td><td><code>--antigravity</code> (opt-in)</td></tr>
-<tr><td>Measured</td><td>In <code>agy</code> 1.5, on a private scratch repository (18 Nov 2026): the install above. The <code>UserPromptSubmit</code> hook and the <code>PreToolUse</code> hook on skills are skipped, because Antigravity has no such event or tool. The converted skills still contain the Claude-only <code>${CLAUDE_SKILL_DIR}</code> placeholder, and each skill carries a note telling the model to use its own folder. <code>/sigma-init --antigravity</code> with the GitHub-mode flags ran inside <code>agy</code> and produced a GitHub-mode setup with a Projects board and an <code>AGENTS.md</code>.</td></tr>
+<tr><td>Measured</td><td>In <code>agy</code> 1.5, on a private scratch repository (18 Nov 2026): the install above, which skips two hooks (the <code>UserPromptSubmit</code> hook and the <code>PreToolUse</code> hook on skills). <code>/sigma-init --antigravity</code> with the GitHub-mode flags ran inside <code>agy</code> and produced a GitHub-mode setup with a Projects board and an <code>AGENTS.md</code>.</td></tr>
+<tr><td>Read from the installed output, not exercised</td><td>The four hook groups are PostToolUse, PreToolUse, SessionStart and Stop. The install log gives Antigravity having no such event or tool as the reason for the two skips. The converted skills still contain the Claude-only <code>${CLAUDE_SKILL_DIR}</code> placeholder, and each skill carries a note telling the model to use its own folder.</td></tr>
 <tr><td>Not measured</td><td>A goal run (<code>/sigma-goal</code>), the loop, whether the converted hooks fire (their paths are relative), the headless <code>agy -p</code> command, and an independent reviewer.</td></tr>
 <tr><td>Hooks</td><td>Converted by the install, not measured</td></tr>
 </tbody>
