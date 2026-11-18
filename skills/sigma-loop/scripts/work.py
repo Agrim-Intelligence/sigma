@@ -4039,8 +4039,8 @@ def _risk_categories(path):
     goal, for every change, forever — a green light nothing measured. `commit()` is the one point in
     the loop where the change is both attributable to a goal and still visible to the scan.
 
-    It also makes the emitter DETERMINISTIC CODE rather than SKILL prose. Cursor has no hooks and
-    reads its `.mdc` as text, so a trigger that lives in an agent instruction is load-bearing on
+    It also makes the emitter DETERMINISTIC CODE rather than SKILL prose. Sigma uses no Cursor hooks and
+    Cursor reads its `.mdc` as text, so a trigger that lives in an agent instruction is load-bearing on
     exactly one host; this one runs wherever `work.py commit` runs, which is everywhere.
 
     FAIL-OPEN, and never `run`. `subprocess` directly, mirroring `pipeline.discover`'s own call to

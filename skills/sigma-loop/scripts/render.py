@@ -43,7 +43,7 @@ WHERE THE LINE IS WRITTEN -- and the ceiling that comes with it (design D-5, the
 that design and unchallenged by three reviews). This module writes to STDOUT and nowhere else: no
 file, no issue comment, no network call. Raw tool output is the only surface Sigma controls
 on every host without a host-specific mechanism, and `docs/output-contract.md` is host-agnostic --
-Cursor has no hooks at all. So the guarantee is exact and it is narrow: **the constructed line is
+Sigma uses no Cursor hooks at all. So the guarantee is exact and it is narrow: **the constructed line is
 unforgeable in shape; it is not guaranteed to be what the user sees.** Anywhere the reply is read
 rather than the raw tool output -- a dispatched subagent, a headless run, Cursor's chat -- it can
 still be paraphrased or dropped. "No drift" is true of formatting and false of relay. Do not

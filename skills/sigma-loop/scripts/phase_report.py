@@ -76,7 +76,7 @@ THE BANNER IS THE MACHINE HALF OF `docs/output-contract.md` (#2100). That contra
 time, so learning that goal 1983 is "Resolve reviewer independence per host" meant going to look it
 up. The contract's legible half (the model-written status blocks) is prose a model may skip; THIS
 half fires on every host, from Sigma's own Python, which is why the legibility belongs here and
-not in a Claude Code hook (Cursor has no hooks at all — AGENTS.md, "Host-agnostic or it does not
+not in a Claude Code hook (Sigma uses no Cursor hooks at all — AGENTS.md, "Host-agnostic or it does not
 ship"). See `PHASE_TOKENS`, `resolve_title` and `end_lines` for the three parts:
 
   - the `P<n> NAME` phase token and the `next: <phase>` position come from `ledger.PHASE_KINDS`

@@ -7,7 +7,8 @@ What is validated on each host, and how quality is guarded. Back to the [README]
 Sigma's **full SDLC run remains validated on Claude Code**. The Codex adapter has been exercised
 in a real Codex session through its first loop command, and its plugin inventory and rollout usage
 were checked against the real Codex CLI/session store. A complete Codex goal through PR merge has
-not yet been measured. Cursor scaffolding remains experimental and has not been run in Cursor; see
+not yet been measured. Cursor scaffolding remains experimental and has not been run in Cursor; the
+Antigravity scaffold is experimental and has never been run in Antigravity; see
 [Other platforms supported](#other-platforms-supported).
 
 The **git half** of per-goal worktrees is verified end-to-end against a real repo (worktree cut from
@@ -24,7 +25,8 @@ gate fires reliably in production use on this very repo.
 
 The full pipeline is validated on **Claude Code**. Codex now has a project adapter and measured
 component checks; a complete Codex goal through PR merge is still unverified. Cursor scaffolding is
-unit-tested but has not been run in Cursor.
+unit-tested but has not been run in Cursor. Antigravity has a tier-1 scaffold only and has never been
+run in Antigravity.
 
 ### Cursor (experimental)
 
@@ -33,7 +35,10 @@ unit-tested but has not been run in Cursor.
 > format follows Cursor's documented convention, but real-session behavior is unverified.
 
 Sigma ships no Cursor plugin manifest (whether Cursor's plugin support could load one is unverified),
-and Cursor has no `UserPromptSubmit` hook or `code-review` plugin. From the root of your
+and Sigma uses no Cursor hook and no `code-review` plugin there. Cursor documents a hooks system
+(`.cursor/hooks.json`, <https://cursor.com/docs/hooks>, read 17 Nov 2026); Sigma does not use it, and
+whether it fires in Cursor's command-line agent is unmeasured (forum reports say some events do not).
+No Sigma behavior depends on a hook. From the root of your
 repository, with `<installed-sigma>` your Sigma checkout:
 
 ```
@@ -74,6 +79,33 @@ report usage as unavailable. **A complete Codex goal through PR merge has not
 yet been measured**. The separate Codex supervisor is available as an opt-in
 path after the bounded smoke in [the migration guide](codex-autonomy.md);
 the Claude-specific unattended watcher still has no Codex budgeted backend.
+
+
+### Antigravity (experimental)
+
+> **Never run in Antigravity.** Sigma has not been run in Antigravity at all. The only thing built is a
+> tier-1 scaffold, unit-tested here; nothing below claims Antigravity loads, follows or obeys it.
+
+From the root of your repository, with `<installed-sigma>` your Sigma checkout:
+
+```
+python3 <installed-sigma>/skills/sigma-init/scripts/init_flow.py . --antigravity
+```
+
+`--antigravity` is opt-in. It writes the same managed block in **`AGENTS.md`** that `--codex` writes
+(skip-if-exists, refreshed when the plugin text changes, every other byte kept) and prints where
+Antigravity looks. The flag itself writes only `AGENTS.md`; it changes no config value (`/sigma-init`'s
+ordinary `.sdlc/` scaffolding still runs). The block's wording is Codex's, unadapted for
+Antigravity. It creates no `.agents/` directory and does not link or copy any skill.
+
+What Antigravity's official docs say (read 17 Nov 2026): rules come from `AGENTS.md`, `GEMINI.md` or
+`.agents/rules/*.md` (<https://antigravity.google/docs/rules>), and skills are `SKILL.md` folders under
+`.agents/skills/` (<https://antigravity.google/docs/skills>). That is documentation read, not behavior
+observed.
+
+Unmeasured: hooks, MCP, workflows, the headless `agy` command, subagents and so an independent
+reviewer, and a goal run end to end. Tier 3 (a goal end to end) and tier 4 (the unattended loop with an
+independent reviewer) are not attempted. No Sigma hook is load-bearing here, as on every host.
 
 ## Quality & drift (`evals/`)
 
