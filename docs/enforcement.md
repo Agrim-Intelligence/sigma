@@ -21,7 +21,7 @@ flow; in GitHub mode it asks about the ledger (`--ledger yes` writes `true`, `--
 
 **Hosts** names where the mechanism holds *by construction* -- a Python gate runs wherever
 the kit runs; a hook exists only on Claude Code -- not where it has been run end to end. On
-Cursor, set-up and one goal to a merged pull request were measured (18 Nov 2026), not the loop, hooks or an
+Cursor, set-up and one goal to a merged pull request were run (18 Nov 2026), not the loop, hooks or an
 auto-merge with readable protection; Codex has partial live validation.
 
 ## Controls

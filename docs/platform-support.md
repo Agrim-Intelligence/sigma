@@ -7,8 +7,9 @@ What is validated on each host, and how quality is guarded. Back to the [README]
 Sigma's **full SDLC run remains validated on Claude Code**. The Codex adapter has been exercised
 in a real Codex session through its first loop command, and its plugin inventory and rollout usage
 were checked against the real Codex CLI/session store. A complete Codex goal through PR merge has
-not yet been measured. On Cursor, set-up and one goal to a merged pull request were measured, but not
-the loop; on Antigravity, the plugin install and set-up were measured, but not a goal run; see
+not yet been measured. On 18 Nov 2026, on Cursor, one goal was run to a merged pull request (a single goal,
+not the loop); on Antigravity, the plugin install, set-up and one goal part-way (through plan review and
+into implement) were run, not a goal to a merged pull request; see
 [Other platforms supported](#other-platforms-supported).
 
 The **git half** of per-goal worktrees is verified end-to-end against a real repo (worktree cut from
@@ -24,23 +25,24 @@ gate fires reliably in production use on this very repo.
 ## Other platforms supported
 
 The full pipeline is validated on **Claude Code**. Codex now has a project adapter and measured
-component checks; a complete Codex goal through PR merge is still unverified. Cursor: set-up and one
-goal to a merged pull request were measured on 18 Nov 2026; the loop on several goals was not.
-Antigravity: the plugin install and set-up were measured on 18 Nov 2026; a goal run was not and has
-never been run there.
+component checks; a complete Codex goal through PR merge is still unverified. Cursor: on 18 Nov 2026,
+set-up and one goal to a merged pull request were run (a single goal, not the loop). Antigravity: on
+18 Nov 2026, the plugin install, set-up and one goal part-way (through plan review and into implement)
+were run (a single goal, not taken on to a pull request or a merge, and not the loop).
 
 ### Cursor
 
-> **Measured in the Cursor app on 18 Nov 2026, on a private scratch repository.**
+> **Run in the Cursor app on 18 Nov 2026, on a private scratch repository with a Projects board. Scope: a single goal, not the loop.**
 > `/sigma-init --cursor` with the GitHub-mode flags ran and set the repository up with a Projects
-> board, and `/sigma-doctor` reported all checks ready. `/sigma-goal 1 --land` first refused because
-> `work.auto_merge` was `off`; with it set to `always`, it ran a real issue to a merged pull request
-> with passing tests. The pull request was merged by hand: on a free-plan private repository GitHub
+> board, and `/sigma-doctor` reported all checks ready. One goal (`/sigma-goal 1 --land`, a real
+> issue) was taken through every phase to a merged pull request with its tests passing, opened and
+> merged within about 15 minutes. The pull request was merged by hand: on a free-plan private repository GitHub
 > refuses the branch-protection read with HTTP 403, and Sigma then holds a merge (see the opt-in
 > `work.protection_unreadable` in [configuration](configuration.md)).
 >
-> **Not measured:** `/sigma-loop` on several goals, the Cursor command-line agent, hooks, and an
-> auto-merge on a repository whose protection can be read.
+> **Not run in these tests:** `/sigma-loop` on several goals, the Cursor command-line agent, hooks
+> (Sigma uses none on Cursor), an auto-merge on a repository whose protection can be read, and the
+> `.cursor-plugin/` package, which ships in the repository but was not installed or run in Cursor.
 
 Sigma ships a Cursor plugin package (`.cursor-plugin/plugin.json` and `marketplace.json`) that carries its
 skills and, deliberately, no hooks; it is checked against Cursor's published manifest schema but has **not
@@ -92,11 +94,14 @@ the Claude-specific unattended watcher still has no Codex budgeted backend.
 
 ### Antigravity
 
-> **Measured in `agy` 1.5 on 18 Nov 2026, on a private scratch repository.**
+> **Run in `agy` 1.5 on 18 Nov 2026, on a private scratch repository. Scope: a single goal, part-way (through plan review and into implement), not the loop.**
 > `agy plugin install https://github.com/Agrim-Intelligence/sigma` installs from the public repository
 > and converts the Claude Code plugin: 46 skills and 4 hook groups, and skips two hooks (the
 > `UserPromptSubmit` hook and the `PreToolUse` hook on skills). `/sigma-init --antigravity` with the GitHub-mode flags ran inside `agy` and produced a
-> GitHub-mode setup with a Projects board and an `AGENTS.md`.
+> GitHub-mode setup with a Projects board, an `AGENTS.md` and the team-ledger branch. A goal (issue 1)
+> was then run inside `agy` through the acceptance draft, research, plan and plan review (the verdict
+> was recorded on the issue) and into the implement phase: the change and its test were written in
+> the goal's worktree. That run was not taken on to a pull request or a merge.
 >
 > **Read from the installed output, not exercised:** the four hook groups are PostToolUse,
 > PreToolUse, SessionStart and Stop; the install log gives Antigravity having no such event or tool
@@ -104,9 +109,9 @@ the Claude-specific unattended watcher still has no Codex budgeted backend.
 > `${CLAUDE_SKILL_DIR}` placeholder, and each skill carries a note telling the model to use its own
 > folder.
 >
-> **Not measured:** a goal run (`/sigma-goal`), the loop, whether the converted hooks fire (their
-> paths are relative), the headless `agy -p` command, and an independent reviewer. A goal run has
-> never been run in Antigravity.
+> **Not run in these tests:** a goal to a merged pull request, `/sigma-loop` on several goals, the
+> headless `agy -p` command, and an independent reviewer. Whether the converted hooks fire is not
+> confirmed: no hook-written state was found in the repository after the goal run.
 
 Install with the plugin command above, then run `/sigma-init --antigravity` from the root of your
 repository. If the slash command is not available, run the init flow directly, with
@@ -175,4 +180,4 @@ Sigma Loop ships no other manifest. On 2026-10-08 the marketplace URL and plugin
 isolated `CODEX_HOME` against the 1.0.3 feature branch; the enabled inventory and installed skill
 resolved to the same clean commit. A full Codex goal-to-merge run has not yet been measured. Sigma ships
 a Cursor plugin package (`.cursor-plugin/`) under the same `sigmaloop` id; its shape is unit-tested
-against Cursor's published schemas, and no install in Cursor has been measured yet.
+against Cursor's published schemas; the package was not installed or run in Cursor in the 18 Nov 2026 run.
