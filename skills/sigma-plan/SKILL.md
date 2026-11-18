@@ -56,9 +56,7 @@ A file selector covers every collected test. Else `work.py pr --no-tests <reason
 After step 5, run `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/red_green.py" check-tests .sdlc "<goal>"`: exit 2 (`work.py pr`'s parser) fails Plan; fix `## Tests`.
 
 ## 5. Write it to disk — `.sdlc/plans/<goal-stem>.md`
-The plan is an **artifact**, not a message. Save it under `.sdlc/plans/`, named for the goal. It is
-committed: write every path repo-relative (`.sdlc/work/1`, `<plugin>/skills/...`), never an absolute
-home-directory path (#2243; `work.py commit` rewrites one it finds, and refuses once the plan is reviewed). Four things downstream read the file, not the
+The plan is an **artifact**, not a message. Save it under `.sdlc/plans/`, named for the goal. Four things downstream read the file, not the
 conversation:
 
 - **`sigma-plan-review` is asked to run author-blind** (`review.independent`) — a fresh reviewer that
