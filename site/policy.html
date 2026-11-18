@@ -75,15 +75,143 @@
 
 <span class="eyebrow">Deeper</span>
 <h1>Org policy and security</h1>
+<p class="subtitle">For the person who installs Sigma across a team: what an organisation can lock, everything that can leave a machine, the two guards that sit outside the repository, what the threat model says, and how to report a vulnerability.</p>
+
 <nav class="toc" aria-label="On this page">
 <div class="toc-title">On this page</div>
 <ul>
-<li><a href="#overview">Overview</a></li>
+<li><a href="#managed">Organisation policy</a></li>
+<li><a href="#egress">What leaves the machine</a></li>
+<li><a href="#adapter">The invocation adapter</a></li>
+<li><a href="#prepush">The pre-push guard</a></li>
+<li><a href="#threats">The threat model in plain terms</a></li>
+<li><a href="#report">Reporting a vulnerability</a></li>
 </ul>
 </nav>
 
-<h2 id="overview">Overview</h2>
-<p class="stub">Content in progress.</p>
+<div class="most">
+<p class="most-title">Most people only need</p>
+<ul>
+<li>Sigma reports no usage data. Every outbound destination is opt-in, listed <a href="#egress">below</a>.</li>
+<li>Org policy is optional and needs something that writes <code>.sdlc/managed-settings.json</code>. Without it nothing changes.</li>
+<li>The adapter pin and the pre-push patterns both live outside the repository, on purpose.</li>
+<li>To report a vulnerability, use GitHub's private <a href="#report">Report a vulnerability</a> action.</li>
+</ul>
+</div>
+
+<p>This page is for people who set Sigma up for others. It adds to <a href="safety.html">Trust and limits</a>, which covers what Sigma refuses to do when it cannot be sure. Everything here is opt-in: a repository with none of these files behaves like the public default.</p>
+
+<h2 id="managed">Organisation policy</h2>
+<p>An organisation can lock a few settings by putting a policy file at <code>.sdlc/managed-settings.json</code>. Sigma only <em>reads</em> it. The file is written by whatever manages the machine, such as a device-management tool or another policy writer; Sigma never writes it. A checkout declares it is adopted with <code>managed_settings.project_id</code> in <code>.sdlc/config.json</code>, or simply by having the file.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>version</code></td><td>The file format. Only <code>1</code> is read.</td></tr>
+<tr><td><code>status</code></td><td><code>ok</code>, or <code>access-revoked</code> to lock a member out.</td></tr>
+<tr><td><code>issued_at</code>, <code>refreshed_at</code></td><td>Times the policy was issued and last confirmed.</td></tr>
+<tr><td><code>locked</code></td><td>The values the organisation fixes. Only present when the status is <code>ok</code>.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Exactly three keys can be locked. A locked value overrides the local config.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Locked key</th><th>Value</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td><code>work.require_review</code></td><td>a string such as <code>changes</code> or <code>approval</code></td><td>Which review a merge needs.</td></tr>
+<tr><td><code>gates.hard_plan_gate</code></td><td>a boolean, or an object with <code>enabled</code></td><td>Whether a plan is required before a pull request opens.</td></tr>
+<tr><td><code>journal.enabled</code></td><td>a boolean</td><td>Whether the event journal is on.</td></tr>
+</tbody>
+</table>
+</div>
+<p>An unknown key inside <code>locked</code> is ignored. An unreadable or invalid file, an unknown version or status, or a revoked member makes the merge gate, the pull-request gate and the journal refuse. Everything else keeps working.</p>
+<p><strong>A deleted file does not switch policy off.</strong> The first time Sigma reads a valid file it records that the checkout is enrolled, in two places a one-file deletion does not reach, one of them inside the checkout's own git directory. If the file later disappears, the status reads <code>enrolled-policy-missing</code> and those gates refuse. Restore the file and the refusal clears by itself. If the checkout was deliberately removed from policy, the one local, network-free command that clears it is:</p>
+<pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-loop/scripts/managed_settings.py unenroll .sdlc</code></pre>
+<div class="callout callout-warn">
+<div class="callout-title">Detection, not a lock against the local user</div>
+<p>Anyone who can write the checkout can delete the file and both markers, or run <code>unenroll</code>, and the checkout then reads as never enrolled. What this defends against is a one-file deletion, a stray cleanup, or a script that clears <code>.sdlc/</code>. Enrolment is learned at the first read after a valid file arrives, so a file delivered and deleted before any gate runs leaves no memory. A fresh clone that never held the file is not refused, because refusing it would be an outage.</p>
+</div>
+
+<h2 id="egress">What leaves the machine</h2>
+<p>Sigma reports no usage data. These are the only destinations, and each is opt-in.</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Destination</th><th>What is sent</th><th>When</th><th>Switch</th></tr></thead>
+<tbody>
+<tr><td>GitHub, through <code>gh</code></td><td>the issue, pull request and label traffic you ask for</td><td>GitHub-backed backlogs, boards and pull requests</td><td>Choosing a GitHub backlog. The <code>gh</code> connection is outside Sigma's own recording.</td></tr>
+<tr><td>Slack API</td><td>the configured message payload</td><td>opt-in notification</td><td><code>SIGMA_SLACK_BOT_TOKEN</code></td></tr>
+<tr><td>A configured webhook</td><td>the notification payload</td><td>opt-in channel notification</td><td><code>ledger.autowatch.channel_webhook_url</code></td></tr>
+<tr><td>An SMTP server</td><td>the configured notification</td><td>opt-in agent-death notification</td><td><code>agent_watch.notify.email.enabled</code>; an SMTP setting that comes from the repository also needs <code>SIGMA_ALLOW_REPO_SMTP=1</code></td></tr>
+<tr><td>Your agent host's model process</td><td>the prompt the host supplies</td><td>a model session you invoke</td><td>host configuration</td></tr>
+<tr><td>Model process for headless judge calls</td><td>the call's own prompt only; nothing from the project is loaded</td><td>import classifier, drift judge, unit assigner and validator</td><td>the same gates as each caller</td></tr>
+<tr><td>Model process for the drift judge</td><td>the question and reference document text</td><td>shadow-mode judgment, off by default</td><td><code>rulebook.drift.enabled</code> plus a model name and a daily spend ceiling</td></tr>
+</tbody>
+</table>
+</div>
+<p>The action log, timing store, phase transcripts and everything under <code>.sdlc/</code> stay on the machine. Your agent host talks to its own model provider under that host's policy, which Sigma does not control. For a webhook, point it at a local adapter: one pointed at an Internet host is a listed high-risk case (see <a href="#threats">the threat model</a>).</p>
+<p>To check a command's destinations yourself, the repository has a capture tool that records destinations and whether a launch was intended, never request paths, bodies or field values. Its limits: it cannot see the inner connection of programs such as <code>gh</code> and <code>git</code>, only that they were launched, and Python started in isolated mode skips it.</p>
+
+<h2 id="adapter">The invocation adapter</h2>
+<p>Some hosts refuse the loop's own approval step as self-approval, and an environment marker cannot settle who is really approving, because the agent controls its own environment. So authority can be delegated to an <strong>adapter you install and pin outside the repository</strong>. It is off by default.</p>
+<ul>
+<li><strong>Where the pin lives.</strong> In your local git config for the checkout, never in a committed file. The repository's <code>config.json</code> can turn the adapter on but can never name the command or its hash.</li>
+<li><strong>What Sigma runs.</strong> Exactly the bytes you pinned, copied to a private file first, with no shell and a reduced environment. The file must be an executable you own, not group or world writable, and not a symlink.</li>
+<li><strong>Once, as the operator:</strong></li>
+</ul>
+<pre><code>git config --local sigma.invocation.adapter.claude.path /absolute/path/to/adapter
+git config --local sigma.invocation.adapter.claude.sha256 &lt;sha256 of that file&gt;
+python3 &lt;installed-sigma&gt;/skills/sigma-loop/scripts/invocation.py diagnose .sdlc claude</code></pre>
+<p>Use <code>claude</code>, <code>codex</code> or <code>cursor</code> as the id. <code>diagnose</code> prints <code>installed-and-conforming</code>, <code>defer</code> (no pin, the safe default) or <code>refused</code>. Then set <code>"invocation": {"adapter": "claude"}</code> in <code>.sdlc/config.json</code>.</p>
+<div class="callout callout-warn">
+<div class="callout-title">What it is not</div>
+<p>It is operator attestation, not isolation from the agent: a process running as you that can edit both your git config and the adapter file can pin an adapter of its own, so install and pin from a shell the agent does not control. It gates only Sigma's own approve-review verb; anything running as you can still post an approval comment with <code>gh</code>. No real Claude, Codex or Cursor adapter ships with Sigma, and host-visible relay is unproven on every host until an operator runs <code>diagnose</code> against a real one.</p>
+</div>
+
+<h2 id="prepush">The pre-push guard</h2>
+<p>A small tool refuses a push whose new commits carry a denied pattern in a commit message or an added line. It scans only commits not already on any remote-tracking branch. A hit is reported as commit, surface and pattern line number, never the matched text. If any git command fails, it refuses rather than passing.</p>
+<ul>
+<li><strong>The patterns file</strong> holds one case-insensitive regular expression per line; blank lines and <code>#</code> lines are skipped. <strong>Keep it outside every repository</strong>: its contents are yours and are never committed. A pattern that does not compile, matches the empty string, or an empty file is refused by line number.</li>
+<li><strong>Install</strong> by creating <code>.git/hooks/pre-push</code> (mode 755) in the repository to protect:</li>
+</ul>
+<pre><code>#!/bin/sh
+exec python3 /path/to/sigma/tools/prepush_scan.py --patterns /path/to/patterns.txt "$@"</code></pre>
+<p>Exit codes: 0 clean, 1 a hit (the push is refused), 2 a usage or patterns refusal (also refused). Fetch first: a stale remote-tracking branch widens the scan, never narrows it. It reads only git state, and <code>git push --no-verify</code> skips it, which is the operator's choice.</p>
+
+<h2 id="threats">The threat model in plain terms</h2>
+<p>Sigma runs hooks and scripts on developer machines, reads and writes GitHub, and can start background workers. The threat model lists what it protects: your source and history, your GitHub state, credentials (the <code>gh</code> token, the Slack and SMTP secrets, the host's model credentials), the machine, and your model spend. It is an inventory, not a claim that every risk is gone.</p>
+<p>Text from issues and comments is untrusted input. Repository content that reaches a command is untrusted too, so a shell command a repository supplies is refused by default; you grant it per checkout, after inspecting it, with <code>git config --local sigma.allowRepositoryShellCommands true</code>, which is local and never committed. The cases the model rates highest, as written there:</p>
+<div class="table-wrap">
+<table>
+<thead><tr><th>Risk</th><th>Residual</th><th>State</th></tr></thead>
+<tbody>
+<tr><td>Prompt injection: an issue or comment asks a phase agent to run a command or edit labels</td><td>high</td><td>no technical mitigation at that crossing; an open issue tracks it</td></tr>
+<tr><td>A confident blocker match writes an edge to a third issue</td><td>high</td><td>no technical mitigation; the reason weak wording is advisory only</td></tr>
+<tr><td>A notification webhook aimed at an Internet host instead of a local adapter</td><td>high</td><td>no technical mitigation; the webhook is opt-in</td></tr>
+<tr><td>A Slack <code>--unsafe-merge</code> from the authorised channel</td><td>medium</td><td>channel membership is the only authority</td></tr>
+<tr><td>A token-shaped value reaching a log or comment</td><td>medium</td><td>known patterns are scrubbed; coverage of every comment site is unverified</td></tr>
+<tr><td>Managed policy deleted from an enrolled checkout</td><td>medium</td><td>the checkout refuses; a writer who also removes the markers is not bound</td></tr>
+<tr><td>A risky agent-host configuration (everything allowed, an unpinned package, a literal credential)</td><td>medium</td><td>the doctor reports it by file and rule, never a value; it does not block</td></tr>
+<tr><td>A goal diff that deletes a hook, a CI step, the watcher or a ratchet baseline</td><td>medium</td><td>flagged as a warning, not a block</td></tr>
+</tbody>
+</table>
+</div>
+<p>Do not run an unattended loop on a repository you do not trust: it can carry its own <code>.sdlc/config.json</code>.</p>
+
+<h2 id="report">Reporting a vulnerability</h2>
+<p>Please report security vulnerabilities privately through GitHub's <strong>Report a vulnerability</strong> action on the repository's Security tab. This avoids exposing an exploitable issue in a public issue before maintainers can assess it.</p>
+<p>The repository owner must enable GitHub private vulnerability reporting. If that channel is not available, contact admin@agrim.ai. Do not include secrets, access tokens or unredacted customer data in a report.</p>
+<p>The stated aim is to acknowledge reports within 3 business days and to provide a fix or mitigation for a critical issue within 14 days. These are response targets, not a guarantee. Only the latest minor release is supported.</p>
+
+<div class="aud aud-tech">
+<div class="aud-label">Technical detail</div>
+<p>Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/managed-settings.md">managed settings</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/privacy.md">privacy</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/invocation-adapter.md">invocation adapter</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/prepush-guard.md">pre-push guard</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/threat-model.md">threat model</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/SECURITY.md">security policy</a>. This page was written from those documents and not re-measured.</p>
+</div>
+
+<div class="pagenav">
+  <a href="safety.html"><span class="dir">Back</span>&larr; Trust and limits</a>
+  <a class="next" href="autonomy.html"><span class="dir">Next</span>Autonomy and the rulebook &rarr;</a>
+</div>
 
 </main>
 </div>
