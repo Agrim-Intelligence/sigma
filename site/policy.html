@@ -108,7 +108,7 @@
 <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
 <tbody>
 <tr><td><code>version</code></td><td>The file format. Only <code>1</code> is read.</td></tr>
-<tr><td><code>status</code></td><td><code>ok</code>, or <code>access-revoked</code> to lock a member out.</td></tr>
+<tr><td><code>status</code></td><td>One of <code>ok</code>, <code>access-revoked</code> (locks a member out), <code>not-adopted</code> or <code>locked-key-unverifiable</code>.</td></tr>
 <tr><td><code>issued_at</code>, <code>refreshed_at</code></td><td>Times the policy was issued and last confirmed.</td></tr>
 <tr><td><code>locked</code></td><td>The values the organisation fixes. Only present when the status is <code>ok</code>.</td></tr>
 </tbody>
@@ -125,7 +125,7 @@
 </tbody>
 </table>
 </div>
-<p>An unknown key inside <code>locked</code> is ignored. An unreadable or invalid file, an unknown version or status, or a revoked member makes the merge gate, the pull-request gate and the journal refuse. Everything else keeps working.</p>
+<p>An unknown key inside <code>locked</code> is ignored. An unreadable or invalid file, an unknown version, a status outside those four, or a revoked member makes the merge gate, the pull-request gate and the journal refuse. Everything else keeps working.</p>
 <p><strong>A deleted file does not switch policy off.</strong> The first time Sigma reads a valid file it records that the checkout is enrolled, in two places a one-file deletion does not reach, one of them inside the checkout's own git directory. If the file later disappears, the status reads <code>enrolled-policy-missing</code> and those gates refuse. Restore the file and the refusal clears by itself. If the checkout was deliberately removed from policy, the one local, network-free command that clears it is:</p>
 <pre><code>python3 &lt;installed-sigma&gt;/skills/sigma-loop/scripts/managed_settings.py unenroll .sdlc</code></pre>
 <div class="callout callout-warn">
@@ -134,7 +134,7 @@
 </div>
 
 <h2 id="egress">What leaves the machine</h2>
-<p>Sigma reports no usage data. These are the only destinations, and each is opt-in.</p>
+<p>Sigma reports no usage data. This table comes from tracing the code plus one scripted onboarding capture, not from a full capture of every run. GitHub traffic through <code>gh</code> is the default in GitHub mode and is not opt-in; <code>gh</code> and <code>git</code> connections are outside the capture hook, so only their launch is recorded. Every other row is traced from the code and was not captured; those are opt-in.</p>
 <div class="table-wrap">
 <table>
 <thead><tr><th>Destination</th><th>What is sent</th><th>When</th><th>Switch</th></tr></thead>

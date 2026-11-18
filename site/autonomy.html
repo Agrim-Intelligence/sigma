@@ -106,8 +106,8 @@
 <ul>
 <li><strong>Opt-in, in parts.</strong> The <code>rulebook</code> block in <code>.sdlc/config.json</code> has several parts, and each opens only when its own <code>enabled</code> is the JSON boolean <code>true</code>. The text <code>"true"</code>, <code>"yes"</code> and the number <code>1</code> all stay off. A wrong-typed block closes the whole rulebook, and <code>/sigma-doctor</code> names the key.</li>
 <li><strong>A kind</strong> is the class of a parked question, declared by the agent that parks it (for example <code>dependency</code>, <code>failing_check</code>, <code>irreversible</code>). Without a declared kind a park is not learnable.</li>
-<li><strong>An area</strong> is the first <code>area:&lt;x&gt;</code> label on the issue, else <code>repo</code> for the whole repository.</li>
-<li><strong>A rule</strong> says: for this kind in this area, recommend this option. It starts as <em>proposed</em>; only an owner's approval makes it count, and a rule edited by hand after approval stops counting.</li>
+<li><strong>An area</strong> is the first <code>area:&lt;x&gt;</code> label on the issue in sorted order, else <code>repo</code> for the whole repository.</li>
+<li><strong>A rule</strong> says: for this kind in this area, recommend this option. It starts as <em>proposed</em>; an owner's approval makes it count (unless <code>rulebook.rules.auto_approve</code>, <code>false</code> by default, lets the watcher approve rules as the first configured owner), and a rule edited by hand after approval stops counting.</li>
 <li>Records and rules describe the repository and its areas, never a person. A rule with a person field is invalid.</li>
 </ul>
 
