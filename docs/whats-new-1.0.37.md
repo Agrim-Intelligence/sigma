@@ -18,5 +18,5 @@ The full CI tier passes, host pages say plainly that Sigma works with all four h
    - **What you do:** if you copied either key under another block from the old template, move it to the top level.
 4. **The full CI tier finishes (#2255, #2267).** The whole suite runs as 6 shards per leg with a 300 s limit per test
    and a failure summary, and every shard passes on Ubuntu (Python 3.10 to 3.13) and macOS (Python 3.12). The
-   quarantine list is empty.
+   quarantine list is empty, and the long readiness drill test has its own 900 s limit.
 5. **The nightly onboarding control passes again (#2260).** Nothing changes for you.

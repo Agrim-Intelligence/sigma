@@ -68,8 +68,8 @@ Claude's project configuration alone. Each skill explains how Codex resolves the
 directory in commands that use `CLAUDE_SKILL_DIR`. `/sigma-doctor` checks Codex's installed, enabled
 Sigma version; the review resolver recognizes a Codex session and offers
 `codex exec --sandbox read-only --ephemeral` as a fresh review process. Codex never receives the shared
-`haiku`/`sonnet`/`opus`/`fable` ledger tiers as model IDs: `predict.py host-model codex` resolves them,
-or the explicit `off` fallback, through the plugin's versioned map and `model_host_overrides.codex`.
+`haiku`/`sonnet`/`opus`/`fable` ledger tiers as model IDs: `predict.py host-model codex` resolves them, or the explicit `off` fallback,
+through the plugin's versioned map and `model_host_overrides.codex`.
 Slice sessions use the existing goal worktree and the main checkout's manifest; without both paths they
 refuse to print a runnable command. Codex slice planning requires `work.enabled` and a goal worktree;
 without them, run the goal as one unit. Slices sharing a checkout run sequentially. A separate Codex
@@ -116,6 +116,10 @@ catch drift (see [`evals/README.md`](../evals/README.md)):
   an LLM judge score the transcript against its rubric. The runner + injectable `agent`/`judge` seam are
   built and tested; the real LLM wiring is withheld until the API budget is greenlit, so `--live` prints
   a parked notice instead of spending.
+- **CI:** every push and pull request runs the smoke set and the safety check; the full suite runs in 6 shards per
+  leg on Linux (Python 3.10 to 3.13) and macOS (Python 3.12), on demand and nightly. CI neither measures nor
+  enforces code coverage. A local run of the suite under coverage.py (Python 3.12, macOS) gave last measured
+  line coverage of **90.9%** over `skills/` and `hooks/`; see [docs/launch/coverage.md](launch/coverage.md).
 
 ## Requirements
 
