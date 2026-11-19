@@ -147,7 +147,7 @@
   {
    "compatible": true,
    "pattern": ".sdlc/events",
-   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted #2040: auto_unpark.py::apply_filing_cap_rearms makes one fail-open ledger.safe_append (kind note, default stream) per filing_cap park it re-armed, and writes nothing else here.",
+   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted #2040: auto_unpark.py::apply_filing_cap_rearms makes one fail-open ledger.safe_append (kind note, default stream) per filing_cap park it re-armed, and writes nothing else here. Vetted #2267: loop.py::_record_awaiting_merge writes nothing itself; it calls the already vetted work.mark_awaiting_merge, state.advance_cursor, ledger.safe_append, actionlog.safe_append and the agent/phase/session markers, the same per-goal bookkeeping a terminal outcome in loop.py::main gets.",
    "verdict": "directory",
    "vetted_writers": [
     "skills/sigma-loop/scripts/auto_unpark.py::apply_filing_cap_rearms",
@@ -170,14 +170,15 @@
     "skills/sigma-loop/scripts/work.py::post_review",
     "skills/sigma-scope/scripts/assign.py::execute",
     "skills/sigma-loop/scripts/ledger.py::renew_lease",
-    "skills/sigma-loop/scripts/loop.py::_main_body"
+    "skills/sigma-loop/scripts/loop.py::_main_body",
+    "skills/sigma-loop/scripts/loop.py::_record_awaiting_merge"
    ]
   },
   {
    "compatible": false,
    "issue": "#515",
    "pattern": ".sdlc/events/*-*.*.jsonl",
-   "reason": "No sample reached this path and the writers differ; compatibility is unverified. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted #2040: auto_unpark.py::apply_filing_cap_rearms makes one fail-open ledger.safe_append (kind note, default stream) per filing_cap park it re-armed, and writes nothing else here.",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted #2040: auto_unpark.py::apply_filing_cap_rearms makes one fail-open ledger.safe_append (kind note, default stream) per filing_cap park it re-armed, and writes nothing else here. Vetted #2267: loop.py::_record_awaiting_merge writes nothing itself; it calls the already vetted work.mark_awaiting_merge, state.advance_cursor, ledger.safe_append, actionlog.safe_append and the agent/phase/session markers, the same per-goal bookkeeping a terminal outcome in loop.py::main gets.",
    "verdict": "unsampled",
    "vetted_writers": [
     "skills/sigma-loop/scripts/auto_unpark.py::apply_filing_cap_rearms",
@@ -200,7 +201,8 @@
     "skills/sigma-loop/scripts/work.py::post_review",
     "skills/sigma-scope/scripts/assign.py::execute",
     "skills/sigma-loop/scripts/ledger.py::renew_lease",
-    "skills/sigma-loop/scripts/loop.py::_main_body"
+    "skills/sigma-loop/scripts/loop.py::_main_body",
+    "skills/sigma-loop/scripts/loop.py::_record_awaiting_merge"
    ]
   },
   {
@@ -379,7 +381,7 @@
   {
    "compatible": true,
    "pattern": ".sdlc/ledger/*",
-   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted (dag release): dag_history.py::_mirror, append and record_save write the dag history mirror under dag/YYYY-MM/ on the ledger branch, one file per writer process, only when the ledger is enabled; a path the predecessor never writes. Vetted #2040: auto_unpark.py::apply_filing_cap_rearms makes one fail-open ledger.safe_append (kind note, default stream) per filing_cap park it re-armed, and writes nothing else here.",
+   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted (dag release): dag_history.py::_mirror, append and record_save write the dag history mirror under dag/YYYY-MM/ on the ledger branch, one file per writer process, only when the ledger is enabled; a path the predecessor never writes. Vetted #2040: auto_unpark.py::apply_filing_cap_rearms makes one fail-open ledger.safe_append (kind note, default stream) per filing_cap park it re-armed, and writes nothing else here. Vetted #2267: loop.py::_record_awaiting_merge writes nothing itself; it calls the already vetted work.mark_awaiting_merge, state.advance_cursor, ledger.safe_append, actionlog.safe_append and the agent/phase/session markers, the same per-goal bookkeeping a terminal outcome in loop.py::main gets.",
    "verdict": "directory",
    "vetted_writers": [
     "skills/sigma-loop/scripts/auto_unpark.py::apply_filing_cap_rearms",
@@ -405,14 +407,15 @@
     "skills/sigma-loop/scripts/sync.py::bootstrap",
     "skills/sigma-loop/scripts/work.py::_repair_review_post_effects",
     "skills/sigma-loop/scripts/work.py::post_review",
-    "skills/sigma-scope/scripts/assign.py::execute"
+    "skills/sigma-scope/scripts/assign.py::execute",
+    "skills/sigma-loop/scripts/loop.py::_record_awaiting_merge"
    ]
   },
   {
    "compatible": false,
    "issue": "#515",
    "pattern": ".sdlc/ledger/*/*-*.*.jsonl",
-   "reason": "No sample reached this path and the writers differ; compatibility is unverified. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted (dag release): dag_history.py::_mirror, append and record_save write the dag history mirror under dag/YYYY-MM/ on the ledger branch, one file per writer process, only when the ledger is enabled; a path the predecessor never writes. Vetted #2040: auto_unpark.py::apply_filing_cap_rearms makes one fail-open ledger.safe_append (kind note, default stream) per filing_cap park it re-armed, and writes nothing else here.",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted (dag release): dag_history.py::_mirror, append and record_save write the dag history mirror under dag/YYYY-MM/ on the ledger branch, one file per writer process, only when the ledger is enabled; a path the predecessor never writes. Vetted #2040: auto_unpark.py::apply_filing_cap_rearms makes one fail-open ledger.safe_append (kind note, default stream) per filing_cap park it re-armed, and writes nothing else here. Vetted #2267: loop.py::_record_awaiting_merge writes nothing itself; it calls the already vetted work.mark_awaiting_merge, state.advance_cursor, ledger.safe_append, actionlog.safe_append and the agent/phase/session markers, the same per-goal bookkeeping a terminal outcome in loop.py::main gets.",
    "verdict": "unsampled",
    "vetted_writers": [
     "skills/sigma-loop/scripts/auto_unpark.py::apply_filing_cap_rearms",
@@ -438,14 +441,15 @@
     "skills/sigma-loop/scripts/sync.py::bootstrap",
     "skills/sigma-loop/scripts/work.py::_repair_review_post_effects",
     "skills/sigma-loop/scripts/work.py::post_review",
-    "skills/sigma-scope/scripts/assign.py::execute"
+    "skills/sigma-scope/scripts/assign.py::execute",
+    "skills/sigma-loop/scripts/loop.py::_record_awaiting_merge"
    ]
   },
   {
    "compatible": false,
    "issue": "#515",
    "pattern": ".sdlc/ledger/TEAM.md",
-   "reason": "No sample reached this path and the writers differ; compatibility is unverified. Vetted #1152 (refs #1142): sync.py::_save_uncommitted names TEAM.md only to SKIP it (`rel != \"TEAM.md\"`); it copies other files aside under .sdlc/state/orphaned/, which the predecessor never writes, so it does not write TEAM.md and cannot clobber the predecessor's copy. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted #2040: auto_unpark.py::apply_filing_cap_rearms makes one fail-open ledger.safe_append (kind note, default stream) per filing_cap park it re-armed, and writes nothing else here.",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified. Vetted #1152 (refs #1142): sync.py::_save_uncommitted names TEAM.md only to SKIP it (`rel != \"TEAM.md\"`); it copies other files aside under .sdlc/state/orphaned/, which the predecessor never writes, so it does not write TEAM.md and cannot clobber the predecessor's copy. Vetted #1697: handoff.py::_park is the park step moved out of the already vetted handoff.py::_triage_finish into a nested function; it makes the same single ledger.safe_append (stream EVENTS) call, now also for the evicted lowest-priority filing. Vetted #2040: auto_unpark.py::apply_filing_cap_rearms makes one fail-open ledger.safe_append (kind note, default stream) per filing_cap park it re-armed, and writes nothing else here. Vetted #2267: loop.py::_record_awaiting_merge writes nothing itself; it calls the already vetted work.mark_awaiting_merge, state.advance_cursor, ledger.safe_append, actionlog.safe_append and the agent/phase/session markers, the same per-goal bookkeeping a terminal outcome in loop.py::main gets.",
    "verdict": "unsampled",
    "vetted_writers": [
     "skills/sigma-loop/scripts/auto_unpark.py::apply_filing_cap_rearms",
@@ -470,7 +474,8 @@
     "skills/sigma-loop/scripts/work.py::post_review",
     "skills/sigma-scope/scripts/assign.py::execute",
     "skills/sigma-loop/scripts/ledger.py::renew_lease",
-    "skills/sigma-loop/scripts/loop.py::_main_body"
+    "skills/sigma-loop/scripts/loop.py::_main_body",
+    "skills/sigma-loop/scripts/loop.py::_record_awaiting_merge"
    ]
   },
   {
@@ -497,7 +502,7 @@
   {
    "compatible": true,
    "pattern": ".sdlc/state",
-   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1152 (refs #1142): sync.py::_reroot_guarded takes the existing knowledge flock (the already vetted _knowledge_lock file) and sync.py::bootstrap makes directories and aside copies only under .sdlc/state/orphaned/<stamp>/, a subtree the predecessor does not write; neither writes a file the predecessor writes in .sdlc/state. Vetted #1229: drift_shadow.py::_save and ::shadow_for_park write only .sdlc/state/drift-shadow.json, a file the predecessor never writes (shadow-mode drift verdicts of this product). Vetted #1243: decision_import.py::classify_model and ::_cache_save write only .sdlc/state/decision-import-classes.json (the import classification cache), a file the predecessor never writes. Vetted #1410: reconcile_tick.py::_blocker_rank_repair and ::_write_repair_state write only .sdlc/state/blocker-repair.meta.json (the blocker-rank repair record), a file the predecessor never writes. Vetted #1612: dag_refresh.py::_write_meta and ::refresh_if_due write only .sdlc/state/dag-refresh.meta.json (the dependency map refresh record), a file the predecessor never writes. Vetted #1584: chain.py::plan writes only .sdlc/state/chains/c<N>.json (the local chain plan record, issue numbers and labels only), a file the predecessor never writes. Vetted (dag release): dag_insert.py::insert and dag_pick.py::_append and log_compare write their own dag files (store and compare log) under the state directory; paths the predecessor never writes. Vetted #1989: dag_insert.py::remove takes a wrong edge out of the stored map (the same dag store file dag_insert.py::insert writes); a file the predecessor never writes. Vetted #1987: dag_titles.py::run writes only .sdlc/state/dag-titles.json (issue numbers and capped titles of map nodes), one atomic replace after the whole listing succeeded; a file the predecessor never writes. Vetted #2081: sync.py::_ledger_lock (and ::_with_ledger_lock, which calls it) opens only .sdlc/state/ledger-sync.lock, the ledger worktree's publish lock (one kernel flock file, never deleted, holding one pid/verb/time line), a file the predecessor never writes.",
+   "reason": "Directory creation only; the files inside carry their own entries. Vetted #1152 (refs #1142): sync.py::_reroot_guarded takes the existing knowledge flock (the already vetted _knowledge_lock file) and sync.py::bootstrap makes directories and aside copies only under .sdlc/state/orphaned/<stamp>/, a subtree the predecessor does not write; neither writes a file the predecessor writes in .sdlc/state. Vetted #1229: drift_shadow.py::_save and ::shadow_for_park write only .sdlc/state/drift-shadow.json, a file the predecessor never writes (shadow-mode drift verdicts of this product). Vetted #1243: decision_import.py::classify_model and ::_cache_save write only .sdlc/state/decision-import-classes.json (the import classification cache), a file the predecessor never writes. Vetted #1410: reconcile_tick.py::_blocker_rank_repair and ::_write_repair_state write only .sdlc/state/blocker-repair.meta.json (the blocker-rank repair record), a file the predecessor never writes. Vetted #1612: dag_refresh.py::_write_meta and ::refresh_if_due write only .sdlc/state/dag-refresh.meta.json (the dependency map refresh record), a file the predecessor never writes. Vetted #1584: chain.py::plan writes only .sdlc/state/chains/c<N>.json (the local chain plan record, issue numbers and labels only), a file the predecessor never writes. Vetted (dag release): dag_insert.py::insert and dag_pick.py::_append and log_compare write their own dag files (store and compare log) under the state directory; paths the predecessor never writes. Vetted #1989: dag_insert.py::remove takes a wrong edge out of the stored map (the same dag store file dag_insert.py::insert writes); a file the predecessor never writes. Vetted #1987: dag_titles.py::run writes only .sdlc/state/dag-titles.json (issue numbers and capped titles of map nodes), one atomic replace after the whole listing succeeded; a file the predecessor never writes. Vetted #2081: sync.py::_ledger_lock (and ::_with_ledger_lock, which calls it) opens only .sdlc/state/ledger-sync.lock, the ledger worktree's publish lock (one kernel flock file, never deleted, holding one pid/verb/time line), a file the predecessor never writes. Vetted #2267: loop.py::_record_awaiting_merge writes nothing itself; it calls the already vetted work.mark_awaiting_merge, state.advance_cursor, ledger.safe_append, actionlog.safe_append and the agent/phase/session markers, the same per-goal bookkeeping a terminal outcome in loop.py::main gets. Vetted #2267: release_dependents.py::write_state writes only .sdlc/state/release-dependents.last.json through auto_unpark._write_json_atomic, a file the predecessor never writes. Vetted #2267: setup_wizard.py::_wizard_status is the body the already vetted wizard_status now wraps (#2152); its only write is the already vetted _write_cache.",
    "verdict": "directory",
    "vetted_writers": [
     "skills/sigma-init/scripts/init_flow.py::main",
@@ -597,13 +602,16 @@
     "skills/sigma-loop/scripts/loop.py::_auto_reclaim_stale_claims",
     "skills/sigma-loop/scripts/loop.py::_remote_expired_view",
     "skills/sigma-loop/scripts/sync.py::publish_entry",
-    "skills/sigma-loop/scripts/sync.py::_mark_self_created"
+    "skills/sigma-loop/scripts/sync.py::_mark_self_created",
+    "skills/sigma-loop/scripts/loop.py::_record_awaiting_merge",
+    "skills/sigma-loop/scripts/release_dependents.py::write_state",
+    "skills/sigma-init/scripts/setup_wizard.py::_wizard_status"
    ]
   },
   {
    "compatible": true,
    "pattern": ".sdlc/state/STATE.md",
-   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
+   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared). Vetted #2267: loop.py::_record_awaiting_merge writes nothing itself; it calls the already vetted work.mark_awaiting_merge, state.advance_cursor, ledger.safe_append, actionlog.safe_append and the agent/phase/session markers, the same per-goal bookkeeping a terminal outcome in loop.py::main gets.",
    "verdict": "same-format",
    "vetted_writers": [
     "skills/sigma-loop/scripts/loop.py::begin_run",
@@ -616,13 +624,14 @@
     "skills/sigma-loop/scripts/state.py::record_phase_end",
     "skills/sigma-loop/scripts/state.py::set_label_checked",
     "skills/sigma-loop/scripts/state.py::start_run",
-    "skills/sigma-scope/scripts/assign.py::_start_drain"
+    "skills/sigma-scope/scripts/assign.py::_start_drain",
+    "skills/sigma-loop/scripts/loop.py::_record_awaiting_merge"
    ]
   },
   {
    "compatible": true,
    "pattern": ".sdlc/state/STATE.md.lock",
-   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
+   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared). Vetted #2267: loop.py::_record_awaiting_merge writes nothing itself; it calls the already vetted work.mark_awaiting_merge, state.advance_cursor, ledger.safe_append, actionlog.safe_append and the agent/phase/session markers, the same per-goal bookkeeping a terminal outcome in loop.py::main gets.",
    "verdict": "same-format",
    "vetted_writers": [
     "skills/sigma-loop/scripts/loop.py::begin_run",
@@ -635,7 +644,8 @@
     "skills/sigma-loop/scripts/state.py::record_phase_end",
     "skills/sigma-loop/scripts/state.py::set_label_checked",
     "skills/sigma-loop/scripts/state.py::start_run",
-    "skills/sigma-scope/scripts/assign.py::_start_drain"
+    "skills/sigma-scope/scripts/assign.py::_start_drain",
+    "skills/sigma-loop/scripts/loop.py::_record_awaiting_merge"
    ]
   },
   {
@@ -849,7 +859,7 @@
   {
    "compatible": true,
    "pattern": ".sdlc/state/log",
-   "reason": "Directory creation only; the files inside carry their own entries.",
+   "reason": "Directory creation only; the files inside carry their own entries. Vetted #2267: loop.py::_record_awaiting_merge writes nothing itself; it calls the already vetted work.mark_awaiting_merge, state.advance_cursor, ledger.safe_append, actionlog.safe_append and the agent/phase/session markers, the same per-goal bookkeeping a terminal outcome in loop.py::main gets.",
    "verdict": "directory",
    "vetted_writers": [
     "skills/sigma-loop/scripts/actionlog.py::append",
@@ -860,13 +870,14 @@
     "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/phase_gate.py::record_verdict",
     "skills/sigma-loop/scripts/phase_gate.py::waive",
-    "skills/sigma-loop/scripts/loop.py::_main_body"
+    "skills/sigma-loop/scripts/loop.py::_main_body",
+    "skills/sigma-loop/scripts/loop.py::_record_awaiting_merge"
    ]
   },
   {
    "compatible": true,
    "pattern": ".sdlc/state/log/*.jsonl",
-   "reason": "Same schema; one side writes extra keys the other lacks (sample, one fixed command list). Whether the other side keeps an unknown key on rewrite is not probed for this path.",
+   "reason": "Same schema; one side writes extra keys the other lacks (sample, one fixed command list). Whether the other side keeps an unknown key on rewrite is not probed for this path. Vetted #2267: loop.py::_record_awaiting_merge writes nothing itself; it calls the already vetted work.mark_awaiting_merge, state.advance_cursor, ledger.safe_append, actionlog.safe_append and the agent/phase/session markers, the same per-goal bookkeeping a terminal outcome in loop.py::main gets.",
    "verdict": "additive",
    "vetted_writers": [
     "skills/sigma-loop/scripts/actionlog.py::append",
@@ -877,7 +888,8 @@
     "skills/sigma-loop/scripts/loop.py::_verify_goal_body",
     "skills/sigma-loop/scripts/phase_gate.py::record_verdict",
     "skills/sigma-loop/scripts/phase_gate.py::waive",
-    "skills/sigma-loop/scripts/loop.py::_main_body"
+    "skills/sigma-loop/scripts/loop.py::_main_body",
+    "skills/sigma-loop/scripts/loop.py::_record_awaiting_merge"
    ]
   },
   {
@@ -1109,11 +1121,12 @@
   {
    "compatible": true,
    "pattern": ".sdlc/state/setup-wizard-cache.json",
-   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared).",
+   "reason": "Equal key sets and schema in a file each side's own CLI wrote (one fixed command list; values and other command paths not compared). Vetted #2267: setup_wizard.py::_wizard_status is the body the already vetted wizard_status now wraps (#2152); its only write is the already vetted _write_cache.",
    "verdict": "same-format",
    "vetted_writers": [
     "skills/sigma-init/scripts/setup_wizard.py::_write_cache",
-    "skills/sigma-init/scripts/setup_wizard.py::wizard_status"
+    "skills/sigma-init/scripts/setup_wizard.py::wizard_status",
+    "skills/sigma-init/scripts/setup_wizard.py::_wizard_status"
    ]
   },
   {
@@ -1395,7 +1408,7 @@
   {
    "compatible": true,
    "pattern": ".sdlc/state/work",
-   "reason": "Directory creation only; the files inside carry their own entries.",
+   "reason": "Directory creation only; the files inside carry their own entries. Vetted #2267: loop.py::_record_awaiting_merge writes nothing itself; it calls the already vetted work.mark_awaiting_merge, state.advance_cursor, ledger.safe_append, actionlog.safe_append and the agent/phase/session markers, the same per-goal bookkeeping a terminal outcome in loop.py::main gets. Vetted #2267: work.py::checkpoint writes the goal's work record only through the already vetted work.py::_save (one checkpoint key added to the same record).",
    "verdict": "directory",
    "vetted_writers": [
     "skills/sigma-loop/scripts/work.py::_hard_plan_gate_refusal",
@@ -1411,14 +1424,16 @@
     "skills/sigma-loop/scripts/work.py::pr",
     "skills/sigma-loop/scripts/work.py::reconcile_review_post",
     "skills/sigma-loop/scripts/work.py::stamp_merge_check",
-    "skills/sigma-loop/scripts/work.py::start"
+    "skills/sigma-loop/scripts/work.py::start",
+    "skills/sigma-loop/scripts/loop.py::_record_awaiting_merge",
+    "skills/sigma-loop/scripts/work.py::checkpoint"
    ]
   },
   {
    "compatible": false,
    "issue": "#515",
    "pattern": ".sdlc/state/work/*.json",
-   "reason": "No sample reached this path and the writers differ; compatibility is unverified.",
+   "reason": "No sample reached this path and the writers differ; compatibility is unverified. Vetted #2267: loop.py::_record_awaiting_merge writes nothing itself; it calls the already vetted work.mark_awaiting_merge, state.advance_cursor, ledger.safe_append, actionlog.safe_append and the agent/phase/session markers, the same per-goal bookkeeping a terminal outcome in loop.py::main gets. Vetted #2267: work.py::checkpoint writes the goal's work record only through the already vetted work.py::_save (one checkpoint key added to the same record).",
    "verdict": "unsampled",
    "vetted_writers": [
     "skills/sigma-loop/scripts/work.py::_hard_plan_gate_refusal",
@@ -1434,7 +1449,9 @@
     "skills/sigma-loop/scripts/work.py::pr",
     "skills/sigma-loop/scripts/work.py::reconcile_review_post",
     "skills/sigma-loop/scripts/work.py::stamp_merge_check",
-    "skills/sigma-loop/scripts/work.py::start"
+    "skills/sigma-loop/scripts/work.py::start",
+    "skills/sigma-loop/scripts/loop.py::_record_awaiting_merge",
+    "skills/sigma-loop/scripts/work.py::checkpoint"
    ]
   }
  ]
