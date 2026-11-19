@@ -4,6 +4,7 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- The full CI tier finishes and names its failures (#2255): the whole suite runs as 6 shards per leg (`tools/ci_shard.py`, weights in `tools/ci_shard_weights.json`), every test has a 300 s limit that fails a hang by name (`pytest-timeout`), a summary step lists failed tests even on cancel, a JUnit artifact is kept, and known reds are listed once in `tests/quarantine.txt`.
 - **Host pages state support plainly (#2265).** The site, README and the `/sigma-init --antigravity` message say Sigma works with Claude Code, Codex, Cursor and Antigravity, with the install and init flag for each, and no longer show run evidence; `docs/platform-support.md` stays the engineering record.
 - **Docs and template mismatches fixed (#2259).** `/sigma-setup` no longer documented as turning the ledger on (GitHub mode asks `--ledger yes|no`, `--yes` writes `false`); the config template now puts `chain.max_members` and `gh_quota.rest_reserve_percent` at the top level where the code reads them; managed settings lock a review level, not a branch; the decision store path, `project.enabled`, `archive_done`, priority-source notes, the `config.json` commit advice, the GitHub-only unpark note and the site update page's stop files now match the code.
 - The nightly `onboarding-control` job passes again: its fake `origin` is now a bare repository whose path ends in the configured `acme/onboarding-demo`, so the `work.py pr` repository check no longer refuses the control's own github legs (#2260).
@@ -1600,7 +1601,7 @@ The detailed development log of everything folded into this release follows; it 
   does not exist. Acceptance record 218 is amended.
 - **The solution is named Sigma Loop; the plugin and marketplace are `sigmaloop`** (#524, epic #522). Install with
   `claude plugin install sigmaloop@sigmaloop` (or the Codex and in-session forms) after adding the public repository,
-  `https://github.com/Agrim-Intelligence/sigmaloop`; the README Quickstart, `docs/uninstall.md`, `SECURITY.md`,
+  `https://github.com/Agrim-Intelligence/sigmaloop`; the README Quickstart, `docs/uninstall.md`, `SECURITY.md`, <!-- leak-scan: allow origin-owner-url the former repository name, quoted as history (#2255) -->
   `SUPPORT.md` and `CONTRIBUTING.md` carry the new name and install id, `docs/launch/definition.json` records the new
   `public_repo`, and the doctor's fallback marketplace repository, its tests and the leftovers checker follow. The
   README's `<SIGMA_REPO>` placeholder is gone: the install lines carry the real URL, and the onboarding control reads it

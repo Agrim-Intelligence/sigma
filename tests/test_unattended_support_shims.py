@@ -6,6 +6,7 @@ tests run each seam against a case where the naive approach is known to fail on 
 import os
 import subprocess
 import sys
+import time
 
 import unattended_support as support
 
@@ -48,8 +49,17 @@ def _unreaped_zombie():
     (`os.waitid(..., WEXITED | WNOWAIT)`), so it stays a zombie until the `p.wait()` in the caller's `finally`.
     Deterministic on any POSIX host, with no `/proc` polling and no dependence on how fast PID 1 reaps."""
     p = subprocess.Popen(["true"])
-    os.waitid(os.P_PID, p.pid, os.WEXITED | os.WNOWAIT)
-    return p
+    if hasattr(os, "waitid"):
+        os.waitid(os.P_PID, p.pid, os.WEXITED | os.WNOWAIT)
+        return p
+    # macOS builds of Python have no os.waitid (#2255): poll `ps` until the child reads as a zombie (bounded).
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        stat = subprocess.run(["ps", "-o", "stat=", "-p", str(p.pid)], capture_output=True, text=True).stdout
+        if stat.strip().startswith("Z"):
+            return p
+        time.sleep(0.05)
+    raise AssertionError("the exited child never read as a zombie")
 
 
 def _assert_zombie_reads_gone(p):

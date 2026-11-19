@@ -44,7 +44,7 @@ Rules for page content: version numbers appear only on the Releases page; every 
 named must be a skill under `skills/`; no private names, home paths or other emails; no path to an internal script, except a line clearly labelled as the command or fallback path the reader types (as on Get started). The checks are
 `tests/test_site_checks.py` (leak scan, commands and skill count, links and anchors, SVG well-formedness,
 versions, external URLs, nav, host flags), each with a control that breaks one thing and expects red.
-Design: the site is monochrome, matching the company's insights pages. Black, white and greys carry everything; the one
+Design: the site is monochrome, matching the company's published pages. Black, white and greys carry everything; the one
 hue is the link colour (links and focus ring), with a lightened pair in the dark scheme. State is carried by form, not
 colour: core is a solid outline, optional a dashed one, a gate or emphasis a solid black fill with white text, and
 warnings a heavy left rule with a bold label. Use the CSS variables in `site/assets/style.css`, never an inline colour;

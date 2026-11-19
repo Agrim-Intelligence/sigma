@@ -187,6 +187,11 @@ if not os.environ.get("SIGMA_RESOURCE_DIR"):
 def pytest_configure(config):
     config.addinivalue_line(
         "markers",
+        "timeout(seconds): per-test limit from pytest-timeout (installed in the full CI tier, #2255); declared here "
+        "so a run without the plugin still knows the marker.",
+    )
+    config.addinivalue_line(
+        "markers",
         "shared_scripts: for tests/test_script_cache.py only -- turns the collection-time script cache "
         "on for this test so the cache itself can be tested.",
     )

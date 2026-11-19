@@ -15,6 +15,13 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "skills" / "sigma-doctor" / "scripts" / "host_config_scan.py"
 
 
+# #2255: Python 3.10 has no `tomllib`, so the scanner names ~/.codex/config.toml "toml reader unavailable" (its
+# documented refusal, proved on every Python by the monkeypatched test below); the tests that need a readable
+# Codex config skip there, with this reason, and run on 3.11 and later.
+NEEDS_TOMLLIB = pytest.mark.skipif(sys.version_info < (3, 11),
+                                   reason="Python 3.10 has no tomllib: the Codex config reads 'toml reader unavailable' (#2255)")
+
+
 def _mod():
     spec = importlib.util.spec_from_file_location("host_config_scan_under_test", SCRIPT)
     m = importlib.util.module_from_spec(spec)
@@ -68,7 +75,7 @@ def _clean(home, proj):
     (home / ".codex" / "config.toml").write_text('approval_policy = "on-request"\nsandbox_mode = "workspace-write"\n')
 
 
-@pytest.mark.parametrize("rule", ["R1", "R2", "R3", "R4", "R5"])
+@pytest.mark.parametrize("rule", ["R1", "R2", "R3", "R4", pytest.param("R5", marks=NEEDS_TOMLLIB)])
 def test_each_rule_fires_alone(tmp_path, rule):
     home, proj = _dirs(tmp_path)
     _plant(rule, home, proj)
@@ -76,6 +83,7 @@ def test_each_rule_fires_alone(tmp_path, rule):
     assert _rules(result) == [rule], result
 
 
+@NEEDS_TOMLLIB
 def test_clean_fixture_reports_nothing(tmp_path):
     home, proj = _dirs(tmp_path)
     _clean(home, proj)
@@ -262,6 +270,7 @@ def test_wrong_typed_value_is_not_scanned_and_keeps_other_findings(tmp_path, nam
     assert result["findings"], "other files' findings must survive"
 
 
+@NEEDS_TOMLLIB
 def test_wrong_typed_toml_tables_are_not_scanned(tmp_path):
     home, proj = _dirs(tmp_path)
     (home / ".codex").mkdir()

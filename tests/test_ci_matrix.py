@@ -24,14 +24,19 @@ def validate_supported_matrix(text):
     assert "fail-fast: false" in text
     assert "runs-on: ${{ matrix.os }}" in text
     assert "python-version: ${{ matrix.python }}" in text
-    assert "timeout-minutes: 90" in text
+    full = text.split("\n  full:", 1)[1].split("\n  regression-control:", 1)[0]
+    # #2255: the full tier is sharded, each test has a timeout, a failure summary prints even on cancel
+    assert "timeout-minutes: 120" in full
+    assert "tools/ci_shard.py ${{ matrix.shard }}" in full
+    assert "--timeout=300 --timeout-method=thread" in full and "-rfEsxX" in full and "--maxfail" not in full
+    assert "pytest-timeout" in full and "if: ${{ always() }}" in full
     assert "python-version:" not in text.split("matrix:", 1)[1].split("steps:", 1)[0]
     for os_name, python in EXPECTED_CELLS:
         expected = "- os: " + os_name + "\n            python: \"" + python + "\""
         assert expected in text, "missing supported CI cell: " + os_name + " / " + python
     assert text.count("- os: ") == len(EXPECTED_CELLS)
     for gate in (
-        "python -m pytest tests/ -rs -q",
+        "python -m pytest $(python3 tools/ci_shard.py",
         "python3 evals/run.py",
         "python3 evals/safety/check.py",
         "python3 tools/rename_check.py",
