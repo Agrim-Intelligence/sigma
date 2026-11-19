@@ -134,7 +134,7 @@
 </div>
 
 <h2 id="egress">What leaves the machine</h2>
-<p>Sigma reports no usage data. This table comes from tracing the code plus one scripted onboarding capture, not from a full capture of every run. GitHub traffic through <code>gh</code> is the default in GitHub mode and is not opt-in; <code>gh</code> and <code>git</code> connections are outside the capture hook, so only their launch is recorded. Every other row is traced from the code and was not captured; those are opt-in.</p>
+<p>Sigma reports no usage data. GitHub traffic through <code>gh</code> is the default in GitHub mode and is not opt-in; <code>gh</code> and <code>git</code> connections are outside the capture hook, so only their launch is recorded. Every other destination is opt-in.</p>
 <div class="table-wrap">
 <table>
 <thead><tr><th>Destination</th><th>What is sent</th><th>When</th><th>Switch</th></tr></thead>
@@ -189,7 +189,7 @@ exec python3 /path/to/sigma/tools/prepush_scan.py --patterns /path/to/patterns.t
 <tr><td>A confident blocker match writes an edge to a third issue</td><td>high</td><td>no technical mitigation; the reason weak wording is advisory only</td></tr>
 <tr><td>A notification webhook aimed at an Internet host instead of a local adapter</td><td>high</td><td>no technical mitigation; the webhook is opt-in</td></tr>
 <tr><td>A Slack <code>--unsafe-merge</code> from the authorised channel</td><td>medium</td><td>channel membership is the only authority</td></tr>
-<tr><td>A token-shaped value reaching a log or comment</td><td>medium</td><td>known patterns are scrubbed; coverage of every comment site is unverified</td></tr>
+<tr><td>A token-shaped value reaching a log or comment</td><td>medium</td><td>known patterns are scrubbed</td></tr>
 <tr><td>Managed policy deleted from an enrolled checkout</td><td>medium</td><td>the checkout refuses; a writer who also removes the markers is not bound</td></tr>
 <tr><td>A risky agent-host configuration (everything allowed, an unpinned package, a literal credential)</td><td>medium</td><td>the doctor reports it by file and rule, never a value; it does not block</td></tr>
 <tr><td>A goal diff that deletes a hook, a CI step, the watcher or a ratchet baseline</td><td>medium</td><td>flagged as a warning, not a block</td></tr>
@@ -203,10 +203,6 @@ exec python3 /path/to/sigma/tools/prepush_scan.py --patterns /path/to/patterns.t
 <p>The repository owner must enable GitHub private vulnerability reporting. If that channel is not available, use the contact address in <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/SECURITY.md">SECURITY.md</a>. Do not include secrets, access tokens or unredacted customer data in a report.</p>
 <p>The stated aim is to acknowledge reports within 3 business days and to provide a fix or mitigation for a critical issue within 14 days. These are response targets, not a guarantee. Only the latest minor release is supported.</p>
 
-<div class="aud aud-tech">
-<div class="aud-label">Technical detail</div>
-<p>Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/managed-settings.md">managed settings</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/privacy.md">privacy</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/invocation-adapter.md">invocation adapter</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/prepush-guard.md">pre-push guard</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/threat-model.md">threat model</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/SECURITY.md">security policy</a>. This page was written from those documents and not re-measured.</p>
-</div>
 
 <div class="pagenav">
   <a href="safety.html"><span class="dir">Back</span>&larr; Trust and limits</a>

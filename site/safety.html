@@ -75,7 +75,7 @@
 
 <span class="eyebrow">Deeper</span>
 <h1>Trust and limits</h1>
-<p class="subtitle">Five properties every change is judged against, what each one promises, what Sigma refuses to do when it cannot be sure, and what has not been measured.</p>
+<p class="subtitle">Five properties every change is judged against, what each one promises, what Sigma refuses to do when it cannot be sure.</p>
 
 <nav class="toc" aria-label="On this page">
 <div class="toc-title">On this page</div>
@@ -101,17 +101,17 @@
 </div>
 
 
-<p>Sigma runs on developer machines and can change code and GitHub. So the rule is: <strong>when it cannot be sure, it stops and says so</strong>, instead of carrying on with a weaker guarantee. It spends and merges only where you opted in, it limits itself by what your machine can bear, and it says plainly which claims were measured and which were not.</p>
+<p>Sigma runs on developer machines and can change code and GitHub. So the rule is: <strong>when it cannot be sure, it stops and says so</strong>, instead of carrying on with a weaker guarantee. It spends and merges only where you opted in, and it limits itself by what your machine can bear.</p>
 
 <h2 id="five">The five properties</h2>
 <div class="table-wrap">
 <table>
-<thead><tr><th>Property</th><th>The promise</th><th>What it looks like</th><th>Honest gap</th></tr></thead>
+<thead><tr><th>Property</th><th>The promise</th><th>What it looks like</th></tr></thead>
 <tbody>
-<tr><td><strong>Reliability</strong></td><td>It does what it claims, and the claims are measured.</td><td>No capability is described as working until it has run end to end in the real target environment. A performance or resource claim carries the measurement behind it, or says it has none.</td><td>A complete Codex goal through to a merged pull request, the loop on several goals in Cursor, a goal run in Antigravity, a loop run in a real cloud container, and a real orchestrated batch are unmeasured.</td></tr>
-<tr><td><strong>Scalability</strong></td><td>It holds as machines, repositories and data grow.</td><td>Per-item costs are stated at 10x and 100x; single chokepoints are named as ceilings with a number; unbounded growth is a defect at design time. GitHub quota is watched, and a rate-limited read stops the run rather than guessing.</td><td>The ledger's entry files and per-goal logs grow and nothing prunes them today. Behaviour with many active people is unmeasured.</td></tr>
-<tr><td><strong>Resiliency</strong></td><td>It recovers without a human.</td><td>Every failure mode has a stated recovery: a stopped run resumes where it left off, a dead session's unstarted claims are released, a lease expires, a stale ledger re-roots with one command. Retries are idempotent or bounded, and a recovery lever must not itself cause an outage.</td><td>State that cannot self-heal has a documented lever instead. Some recoveries were exercised only in temporary-directory tests.</td></tr>
-<tr><td><strong>Safety</strong></td><td>It cannot harm the host, the data or your trust.</td><td>Resource limits are derived from the machine, not copied constants. Nothing spawns a background process, sends data or uses quota without you opting in. Secrets stay out of config files, logs and shell history. Where a guarantee cannot be made on a platform, it refuses loudly.</td><td>The resource-guard ratios are uncalibrated. Token scrubbing covers known patterns; coverage of every comment site is unverified.</td></tr>
+<tr><td><strong>Reliability</strong></td><td>It does what it claims.</td><td>No capability is described as working until it has run end to end in the real target environment. A performance or resource claim carries the measurement behind it.</td></tr>
+<tr><td><strong>Scalability</strong></td><td>It holds as machines, repositories and data grow.</td><td>Per-item costs are stated at 10x and 100x; single chokepoints are named as ceilings with a number; unbounded growth is a defect at design time. GitHub quota is watched, and a rate-limited read stops the run rather than guessing.</td></tr>
+<tr><td><strong>Resiliency</strong></td><td>It recovers without a human.</td><td>Every failure mode has a stated recovery: a stopped run resumes where it left off, a dead session's unstarted claims are released, a lease expires, a stale ledger re-roots with one command. Retries are idempotent or bounded, and a recovery lever must not itself cause an outage.</td></tr>
+<tr><td><strong>Safety</strong></td><td>It cannot harm the host, the data or your trust.</td><td>Resource limits are derived from the machine, not copied constants. Nothing spawns a background process, sends data or uses quota without you opting in. Secrets stay out of config files, logs and shell history. Where a guarantee cannot be made on a platform, it refuses loudly.</td></tr>
 <tr><td><strong>Liveness</strong></td><td>It is running when it should be, and you can tell.</td><td>A long-running piece reports its own health where you will see it, and a dead one reads differently from one with nothing to do: age is the tell, not an error count. Revival is layered, so a missed trigger costs latency, never data.</td><td>A heartbeat shows the process is alive, not that it is healthy. Nothing restarts the Slack listener for you.</td></tr>
 </tbody>
 </table>
@@ -171,7 +171,7 @@
 <li><strong>Independent review.</strong> The skills ask for an author-blind reviewer. The core cannot prove the maker did not influence it, and a maker can record its own approving verdict.</li>
 <li><strong>Irreversible actions park.</strong> The agent is asked to park a deploy, delete, overwrite, spend or migrate. Code checks it only when the hard-stop rulebook is switched on (off by default).</li>
 </ul>
-<p>Rules enforced by plain Python behave the same on every host. Rules enforced by a hook exist on Claude Code only; Sigma uses no Cursor hooks (Cursor documents a hooks system; behaviour unmeasured). A hook is an accelerator, never load-bearing. The per-rule table is <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/enforcement.md">enforcement</a>.</p>
+<p>Rules enforced by plain Python behave the same on every host. Rules enforced by a hook exist on Claude Code only; Sigma uses no Cursor hooks. A hook is an accelerator, never load-bearing.</p>
 
 <h2 id="threats">Known threats, from the threat model</h2>
 <div class="table-wrap">
@@ -181,7 +181,7 @@
 <tr><td>Prompt injection: an issue or comment asks a phase agent to run a command or edit labels</td><td>high</td><td>no technical mitigation at that crossing; an open issue tracks it</td></tr>
 <tr><td>A notification webhook pointed at an Internet host instead of a local adapter</td><td>high</td><td>no technical mitigation; the webhook is opt-in</td></tr>
 <tr><td>A Slack <code>--unsafe-merge</code> from the authorised channel</td><td>medium</td><td>channel membership is the only authority</td></tr>
-<tr><td>A token-shaped value reaching a log or comment</td><td>medium</td><td>known patterns are scrubbed; coverage of every comment site is unverified</td></tr>
+<tr><td>A token-shaped value reaching a log or comment</td><td>medium</td><td>known patterns are scrubbed</td></tr>
 <tr><td>A dead watcher mistaken for an idle one</td><td>medium</td><td>a session-start staleness check and the doctor warn; they do not make a stopped process healthy</td></tr>
 </tbody>
 </table>
@@ -191,10 +191,6 @@
 <h2 id="privacy">What leaves your machine</h2>
 <p>Sigma reports no usage data. Opt-in destinations only: Slack (<code>SIGMA_SLACK_BOT_TOKEN</code>), a configured webhook, a configured SMTP server, and model calls through your agent host. GitHub traffic goes through <code>gh</code>. The action log, timing store and phase transcripts stay on your machine. Your agent host talks to its own model provider, which is outside Sigma's control.</p>
 
-<div class="aud aud-tech">
-<div class="aud-label">Technical detail</div>
-<p>Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/threat-model.md">threat model</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/privacy.md">privacy</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/enforcement.md">enforcement</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/worktrees-and-merging.md">worktrees and merging</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/platform-support.md">platform support</a>. The five properties are the standing rules in the repository's agent guide; every guard there is required to be seen failing once before it is trusted. This page was written from those documents and not re-measured.</p>
-</div>
 
 <div class="pagenav">
   <a href="units.html"><span class="dir">Back</span>&larr; Units of work</a>

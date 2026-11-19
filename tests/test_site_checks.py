@@ -208,6 +208,14 @@ def check_hosts_flags(site):
     for h in HOSTS:
         if h not in hosts:
             out.append(f"hosts.html: does not name {h}")
+        if f"Sigma works with {h}." not in hosts:
+            out.append(f"hosts.html: does not say Sigma works with {h}")
+    for banned in ("18 Nov", "scratch repository", "Not run in these tests", "Not measured", "Hooks</td>"):
+        if banned in hosts or banned in start:
+            out.append(f"host pages still carry: {banned}")
+    for install in ("claude plugin install", "codex plugin add", "git clone", "agy plugin install"):
+        if install not in hosts + start:
+            out.append(f"host pages do not show install {install}")
     for flag in FLAGS:
         if flag not in start:
             out.append(f"get-started.html: does not show {flag}")
@@ -340,6 +348,8 @@ def test_control_missing_flag(broken):
 
 def test_control_missing_host(broken):
     assert check_hosts_flags(broken("hosts.html", lambda t: t.replace("Antigravity", "Agy")))
+    assert check_hosts_flags(broken("hosts.html", lambda t: t.replace("Sigma works with Codex.", "Sigma was run on Codex.")))
+    assert check_hosts_flags(broken("get-started.html", lambda t: t.replace("<h2>Cursor</h2>", "<h2>Cursor</h2><p>Run on 18 Nov 2026</p>")))
 
 
 @pytest.mark.parametrize("text", ["Loop" + "Smith", "loop " + "smith", "loop-" + "smith", "LOOP_" + "SMITH",

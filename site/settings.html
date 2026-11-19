@@ -394,7 +394,7 @@
 <tr><td><code id="k-resource-shed-after">resource.shed_after</code></td><td>3</td><td>Consecutive critical samples (two seconds apart) before the shed stops the verify group.</td></tr>
 <tr><td><code id="k-resource-max-goals">resource.max_goals</code></td><td>no extra cap</td><td>Hard cap on concurrent goals.</td></tr>
 <tr><td><code id="k-resource-max-verify-workers">resource.max_verify_workers</code></td><td>no extra cap</td><td>Hard cap on concurrent verify workers.</td></tr>
-<tr><td><code id="k-resource-verify-cold-mb">resource.verify_cold_mb</code></td><td>one eighth of memory per worker</td><td>Megabytes one verify worker is assumed to need before any run has been measured. Unmeasured on any real machine.</td></tr>
+<tr><td><code id="k-resource-verify-cold-mb">resource.verify_cold_mb</code></td><td>one eighth of memory per worker</td><td>Megabytes one verify worker is assumed to need before any run has measured it.</td></tr>
 <tr><td><code id="k-resource-hold-alert-minutes">resource.hold_alert_minutes</code></td><td>no alert</td><td>Minutes a hold may last before it is reported.</td></tr>
 </tbody>
 </table>
@@ -419,7 +419,7 @@
 <tr><td><code id="k-ledger-lease-ttl-hours">ledger.lease.ttl_hours</code></td><td>12</td><td>A claim by a crashed session expires after this. <code>0</code> never expires. Advisory.</td></tr>
 <tr><td><code id="k-ledger-host-alias">ledger.host_alias</code></td><td>null</td><td>A label (letters and digits, at most 12) used in entry file names instead of the host-name hash.</td></tr>
 <tr><td><code id="k-ledger-salt-host-token">ledger.salt_host_token</code></td><td>false</td><td>Salts the host-name hash with the repository name.</td></tr>
-<tr><td><code id="k-ledger-receipt-sharing">ledger.receipt_sharing</code></td><td>false</td><td>Not yet supported: <code>true</code> is refused with a warning and runs as <code>false</code>.</td></tr>
+<tr><td><code id="k-ledger-receipt-sharing">ledger.receipt_sharing</code></td><td>false</td><td>Reserved: <code>true</code> is refused with a warning and runs as <code>false</code>.</td></tr>
 <tr><td><code id="k-ledger-receipt-authority-trusted-signers">ledger.receipt_authority.trusted_signers</code></td><td>[]</td><td>Signing fingerprints for receipt objects; empty is unusable when sharing is on.</td></tr>
 <tr><td><code id="k-ledger-autowatch-enabled">ledger.autowatch.enabled</code></td><td>off (opt-in)</td><td>On a new unacknowledged ledger hit addressed to you, drives the loop scoped to that one flagged issue. Needs the ledger.</td></tr>
 <tr><td><code id="k-ledger-autowatch-scope">ledger.autowatch.scope</code></td><td>mentions, assignments, blockers</td><td>Which hits trigger a run.</td></tr>
@@ -559,7 +559,6 @@
 
 <div class="aud aud-tech">
 <div class="aud-label">Technical detail</div>
-<p>This page is written from the scaffold template and the configuration reference in the repository: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/configuration.md">configuration</a>. The rulebook keys are described further in <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/decision-rulebook.md">the decision rulebook guide</a>, the dependency keys in <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/dependency-map-and-chain.md">the dependency map guide</a>. What enforces each setting, and on which host, is in <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/enforcement.md">enforcement</a>.</p>
 </div>
 
 <div class="pagenav">

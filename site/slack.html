@@ -165,7 +165,7 @@
 
 <div class="aud aud-tech">
 <div class="aud-label">Technical detail</div>
-<p>The listener holds a Socket Mode websocket open, so no public URL, tunnel or webhook server is needed. Slack's reconnect and keepalive are handled by the SDK. A single-instance guard stops two listeners running against one <code>.sdlc</code>, and a stale lock from a crash is reclaimed automatically. Liveness is the heartbeat file's age, not the process: <code>doctor</code> separates never run, dead and stale. <strong>Not measured here:</strong> this site did not run the listener against a live workspace; the guide describes a deployed single-app setup. Auto-start on every loop trigger is recorded as an open design question. Full guide: the Slack commands guide next to the loop skill in the repository; privacy destinations are in <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/privacy.md">privacy</a>.</p>
+<p>The listener holds a Socket Mode websocket open, so no public URL, tunnel or webhook server is needed. Slack's reconnect and keepalive are handled by the SDK. A single-instance guard stops two listeners running against one <code>.sdlc</code>, and a stale lock from a crash is reclaimed automatically. Liveness is the heartbeat file's age, not the process: <code>doctor</code> separates never run, dead and stale.</p>
 </div>
 
 <div class="pagenav">

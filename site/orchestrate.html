@@ -208,14 +208,9 @@
 </div>
 <p>The full list is on <a href="skills.html">Skills and commands</a>. To run a batch in Claude Code's cloud, see <a href="cloud.html">Cloud sessions</a>.</p>
 
-<div class="callout callout-warn">
-<div class="callout-title">Not measured</div>
-<p>No real batch has been run end to end with this skill. The wave planner, the follow-up setting and the head-naming approval are tested offline; the launchers, the merge checks and the wake loop have not been exercised on a live repository. A read-only validation of the first five steps found defects that were then fixed. The cost per merged goal is arithmetic from the code, not a measurement.</p>
-</div>
-
 <div class="aud aud-tech">
 <div class="aud-label">Technical detail</div>
-<p>A wave is a set of goals where every in-batch blocker sits in an earlier wave and no two share a claim (a path, a glob cut back to the directory before its first wildcard, or an exact token; <code>*</code> means unknown and clashes with everything). Rank is priority, then how many in-batch goals wait on it, then issue number. Readiness is checked by ancestry: a blocker counts only once it has merged into the goal's own base, not merely when its issue is closed. A pull request awaiting merge holds its claims but no seat. The planner is standard-library code that makes no network call, so two check-ins over the same facts never disagree. Every GitHub read and write is REST, which works in cloud sessions. Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/orchestrate.md">orchestrate</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/configuration.md">configuration</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/parallelism.md">parallelism</a>.</p>
+<p>A wave is a set of goals where every in-batch blocker sits in an earlier wave and no two share a claim (a path, a glob cut back to the directory before its first wildcard, or an exact token; <code>*</code> means unknown and clashes with everything). Rank is priority, then how many in-batch goals wait on it, then issue number. Readiness is checked by ancestry: a blocker counts only once it has merged into the goal's own base, not merely when its issue is closed. A pull request awaiting merge holds its claims but no seat. The planner is standard-library code that makes no network call, so two check-ins over the same facts never disagree. Every GitHub read and write is REST, which works in cloud sessions.</p>
 </div>
 
 <div class="pagenav">

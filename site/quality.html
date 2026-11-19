@@ -98,7 +98,6 @@
 <li>Nothing here is required. The loop runs without any of it.</li>
 <li>The three reviews for risky changes run when the normal review notices a matching change; you can also run them by hand.</li>
 <li>Start with <code>/sigma-audit</code> if you want one look at the health of a whole repository.</li>
-<li>Where a measurement has not been made, the section says so.</li>
 </ul>
 </div>
 
@@ -145,7 +144,7 @@
 <p><strong>What it is.</strong> A project memory that accumulates what Sigma learns, so research compounds instead of evaporating. Web searches are captured as short scrubbed summaries, never the raw page; analysis notes and retrospective lessons are written to <code>.sdlc/knowledge/</code>, which is gitignored so captures stay local. The graph is built by an external tool (graphify by default); if it is not installed, <code>/sigma-kg</code> says so and nothing else changes.</p>
 <p><strong>Gesture.</strong> <code>/sigma-kg</code> to build, refresh or query. <code>/sigma-context</code> reads it back as a cited brief at the start of a goal.</p>
 <p><strong>Config.</strong> <code>knowledge_graph.enabled</code> is <code>false</code> by default; <code>scope</code> is <code>full</code> (code and notes) or <code>research</code> (notes only); <code>auto_refresh</code> is <code>false</code>; <code>web_retention_enabled</code> is <code>false</code>.</p>
-<p><strong>Cost.</strong> Building needs a language-model backend for the builder, and Sigma never picks one, because that would bill you silently. The first build extracts the whole corpus; later refreshes re-bill only what changed. The dollar cost is not measured. With <code>auto_refresh</code> on, a refresh runs at the end of each retrospective without being asked.</p>
+<p><strong>Cost.</strong> Building needs a language-model backend for the builder, and Sigma never picks one, because that would bill you silently. The first build extracts the whole corpus; later refreshes re-bill only what changed. With <code>auto_refresh</code> on, a refresh runs at the end of each retrospective without being asked.</p>
 
 <h2 id="sysgraph">System graph fragments</h2>
 <p><strong>What it is.</strong> A contract for one JSON file saying what a repository's services, endpoints, topics and owners are and how they connect, where every edge carries evidence: its source, a file and line or a URL, a commit, and a confidence. A model-sourced edge is never treated as proof.</p>
@@ -155,7 +154,7 @@
 <h2 id="audit">Whole-repo audit</h2>
 <p><strong>What it is.</strong> A read-only audit of the artifact rather than a single diff: does the tree still obey its own stated rules, what has decayed by accumulation, what debt is measurable, and does the repository still serve its objective. Per-diff review cannot see a smell that took forty small changes to form.</p>
 <p><strong>Gesture.</strong> <code>/sigma-audit</code>. It reports and files nothing; <code>/sigma-audit --file</code> files at most 8 issues, deduplicated against the open backlog. The report goes to <code>.sdlc/knowledge/audit/</code> and has at most 12 findings, and it says how many it dropped.</p>
-<p><strong>Config.</strong> No key. <strong>Cost.</strong> A script ranks files by size and recent change with no model call; the model then reads only the ranked files, and the report states that read set. Model spend per audit is not measured.</p>
+<p><strong>Config.</strong> No key. <strong>Cost.</strong> A collector script ranks files by size and recent change with no model call; the model then reads only the ranked files, and the report states that read set.</p>
 
 <h2 id="risk">Reviews for risky changes</h2>
 <p>Three reviews that sit beside the normal code review. When the review phase runs a read-only detector (a shell script, no model call) and it matches a category, it also runs the matching review. You can run any of them by hand. None has a config key of its own.</p>
@@ -169,12 +168,8 @@
 
 <h2 id="companions">Companion plugins</h2>
 <p><strong>What it is.</strong> Sigma has no plugin dependencies; every phase runs on its own skills. One optional companion, the <code>code-review</code> plugin from Anthropic's official marketplace, adds an extra pass over the diff in the review phase. It never replaces Sigma's own review.</p>
-<p><strong>Gesture.</strong> None: <code>/sigma-doctor</code> reports it as present or absent, and absent is never an error. <strong>Config.</strong> <code>companions</code> is <code>"auto"</code> by default; set it to <code>"off"</code> to skip the probe. <strong>Cost.</strong> The extra review pass is model time; not measured.</p>
+<p><strong>Gesture.</strong> None: <code>/sigma-doctor</code> reports it as present or absent, and absent is never an error. <strong>Config.</strong> <code>companions</code> is <code>"auto"</code> by default; set it to <code>"off"</code> to skip the probe. <strong>Cost.</strong> The extra review pass is model time.</p>
 
-<div class="aud aud-tech">
-<div class="aud-label">Technical detail</div>
-<p>Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/quality-delta.md">quality metrics</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/change-zones.md">change zones</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/architecture-doc.md">architecture document</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/knowledge-graph.md">knowledge graph</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/system-graph.md">system graph</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/companions.md">companions</a>, and the skills for each command. This page was written from those and not re-measured.</p>
-</div>
 
 <div class="pagenav">
   <a href="autonomy.html"><span class="dir">Back</span>&larr; Autonomy and the rulebook</a>

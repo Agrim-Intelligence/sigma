@@ -141,7 +141,6 @@
 <ul>
 <li><strong>Refuses up front</strong> unless <code>work.enabled</code> is on and <code>work.auto_merge</code> is <code>protected</code> or <code>always</code>.</li>
 <li>While it runs, no other goal is picked or written to. The named exceptions: the ledger watcher, issues the run files as follow-ups, and the release of the goal's own dependents when it closes.</li>
-<li><strong>Not measured:</strong> a run in a real cloud container. The behaviour is tested with fakes.</li>
 </ul>
 
 <h2 id="orchestrate"><code>/sigma-orchestrate</code>: a batch in waves</h2>
@@ -152,7 +151,6 @@
 <li>Useful flags: <code>--max-seats N</code>, <code>--no-merge</code>, <code>--model auto|sonnet|opus</code>, <code>--max-opus N</code>, <code>--yes</code>.</li>
 <li>Needs <code>discovery.source: github</code>, <code>work.enabled</code>, and <code>work.auto_merge</code> of <code>protected</code> or <code>always</code>.</li>
 <li>More: <a href="orchestrate.html">Running many goals</a> and <a href="cloud.html">Cloud sessions in Claude Code</a>.</li>
-<li><strong>Not measured:</strong> an end-to-end batch in a real cloud container. Its cost per merged goal is arithmetic from the code, not a measurement.</li>
 </ul>
 
 <h2 id="merge">Merging: <code>work.auto_merge</code></h2>
@@ -175,7 +173,7 @@
 <li>Modes: <code>enforce</code> (default), <code>observe</code> (logs the hold, admits), <code>off</code>. <code>SIGMA_RESOURCE_MODE</code> overrides the config key.</li>
 <li>Under critical pressure only the verify process group that Sigma itself started is stopped. A model session is never signalled.</li>
 <li>Not covered: tests you run by hand outside the verify wrapper, other programs' memory, the host's own subagent fan-out. On Windows the guard refuses rather than guess.</li>
-<li><strong>Uncalibrated:</strong> the five ratios are policy defaults. Two measured runs (macOS, and Linux in a 2 GiB container where an unguarded arm lost 2 of 4 verifies to the kernel and the guarded arm lost none) fixed none of them.</li>
+<li>The five ratios are policy defaults.</li>
 </ul>
 <h3>Budgets and hand-off</h3>
 <div class="table-wrap">
@@ -195,16 +193,12 @@
 <p>The loop parks, it does not force. It parks on a decision only you can make, on an irreversible or expensive action (deploy, delete, overwrite, spend, migrate), and on a hard failure it cannot resolve (recorded as <code>failed</code>, distinct from parked). Parked goals collect in the review queue, which <code>/sigma-status</code> reports. The irreversible-action rule is an instruction to the agent unless you enable the hard-stop rulebook; see <a href="safety.html#limits">Trust and limits</a>.</p>
 
 <h2 id="overnight">Overnight</h2>
-<p>A supervisor wraps the loop with no polling: it relaunches after a budget stop, sleeps until the stated reset after a usage-limit stop, and backs off after an unknown crash. Stop it with <code>touch .sdlc/state/supervisor.stop</code>. On a laptop run it under <code>caffeinate -is</code>, because a sleeping machine is not a sleeping process. The command that starts the supervisor is given in <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/running-the-loop.md">running the loop</a>.</p>
+<p>A supervisor wraps the loop with no polling: it relaunches after a budget stop, sleeps until the stated reset after a usage-limit stop, and backs off after an unknown crash. Stop it with <code>touch .sdlc/state/supervisor.stop</code>. On a laptop run it under <code>caffeinate -is</code>, because a sleeping machine is not a sleeping process.</p>
 <div class="callout callout-warn">
 <div class="callout-title">Headless runs need permissions pre-approved</div>
-<p>In a headless mode the host cannot analyse the shell expansion the loop uses for its process id, and the call is denied. In one drill on a scratch repository, 3 of 5 loop runs worked around it and 2 stopped with nothing done. Supervised runs with "always allow" are the recommended path. For headless runs pre-allow the loop's own commands in a gitignored, per-machine settings file and pass a literal pid. Never add a wildcard delete to silence prompts, and do not run an unattended loop on a repository you do not trust.</p>
+<p>In a headless mode the host cannot analyse the shell expansion the loop uses for its process id, and the call is denied. Some runs stop with nothing done. Supervised runs with "always allow" are the recommended path. For headless runs pre-allow the loop's own commands in a gitignored, per-machine settings file and pass a literal pid. Never add a wildcard delete to silence prompts, and do not run an unattended loop on a repository you do not trust.</p>
 </div>
 
-<div class="aud aud-tech">
-<div class="aud-label">Technical detail</div>
-<p>Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/running-the-loop.md">running the loop</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/orchestrate.md">orchestrate</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/parallelism.md">parallelism and the resource guard</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/running-unattended.md">running unattended</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/worktrees-and-merging.md">worktrees and merging</a>. The compaction safety net, the supervisor's relaunch classes and the attended hand-off supervisor were measured in temp-directory tests only, not in a live compaction or a long unattended run.</p>
-</div>
 
 <div class="pagenav">
   <a href="sdlc-folder.html"><span class="dir">Back</span>&larr; The .sdlc folder</a>

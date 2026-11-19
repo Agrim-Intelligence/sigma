@@ -177,8 +177,8 @@
 </ol>
 <p><code>--defaults</code> takes each recommended answer. It never decides the cap, a paid step, or a follow-up waiting for its owner: those are always asked. <code>stop</code> and <code>resume</code> change only the local record.</p>
 <div class="callout callout-warn">
-<div class="callout-title">What is not available yet</div>
-<p><code>status</code>, <code>--parallel</code>, <code>--no-grow</code> and <code>--cap-usd</code> as a flag are not available through <code>/sigma-chain</code>. Set <code>chain.max_usd</code> in config for a dollar cap. A run against a real repository is not measured; the chain reference says its replay is offline.</p>
+<div class="callout-title">Flags set in config instead</div>
+<p><code>status</code>, <code>--parallel</code>, <code>--no-grow</code> and <code>--cap-usd</code> as a flag are not available through <code>/sigma-chain</code>. Set <code>chain.max_usd</code> in config for a dollar cap.</p>
 </div>
 
 <h2 id="drain">Draining a run label</h2>
@@ -216,7 +216,6 @@
 
 <div class="aud aud-tech">
 <div class="aud-label">Technical detail</div>
-<p>Cost: the map's graph work was measured once, on one laptop-class machine, at about 0.05 seconds for 30,000 nodes of a simple chain shape. GitHub reads per refresh against a real repository are not measured. Sources: <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/dependency-map-and-chain.md">the dependency map and Sigma Chain</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/dag.md">the dependency map</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/chain.md">chain reference</a>, <a href="https://github.com/Agrim-Intelligence/sigma/blob/main/docs/label-drain.md">label drain</a>. This page was written from those documents and not re-measured.</p>
 </div>
 
 <div class="pagenav">

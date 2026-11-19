@@ -135,14 +135,14 @@
 <tr><td>See what is on and what is not</td><td><code>/sigma-doctor</code> prints the feature dashboard from your config.</td></tr>
 <tr><td>Resume a parked local goal</td><td>Edit its file under <code>.sdlc/goals/</code>: change <code>status: parked</code> to <code>status: pending</code>. Then delete its entry from <code>.sdlc/state/review-queue.md</code> by hand.</td></tr>
 <tr><td>Stop a background watcher</td><td><code>touch .sdlc/state/watch.stop</code>. Other loops have their own stop files: <code>supervisor.stop</code>, <code>slack-commands.stop</code>.</td></tr>
-<tr><td>Remove Sigma</td><td>Follow the <a href='https://github.com/Agrim-Intelligence/sigma/blob/main/docs/uninstall.md'>uninstall guide</a>. It stops daemons first, removes worktrees before deleting <code>.sdlc</code>, and lists the branches to review before you delete any.</td></tr>
+<tr><td>Remove Sigma</td><td>Follow the steps on <a href='upgrading.html#uninstall'>Upgrading and uninstalling</a>. It stops daemons first, removes worktrees before deleting <code>.sdlc</code>, and lists the branches to review before you delete any.</td></tr>
 </tbody>
 </table>
 </div>
 
 <div class="aud aud-tech">
 <div class="aud-label">Technical detail</div>
-<p>The runtime ignore list is <code>.sdlc/state/</code>, <code>.sdlc/ledger/</code>, <code>.sdlc/work/</code>, <code>.sdlc/knowledge/</code>, <code>.sdlc/events/</code> and a knowledge-graph output folder. Growth worth knowing, with no pruning today: the ledger holds one entry file per writing process (175 were counted for a single actor on one machine after two and a half weeks, a measured audit, not a limit), and the per-goal action logs grow for the life of a goal. A hard plan gate can be bypassed locally by creating <code>.sdlc/.allow-direct-edits</code> unless an organisation has locked the key on in managed settings.</p>
+<p>The runtime ignore list is <code>.sdlc/state/</code>, <code>.sdlc/ledger/</code>, <code>.sdlc/work/</code>, <code>.sdlc/knowledge/</code>, <code>.sdlc/events/</code> and a knowledge-graph output folder. Growth worth knowing, with no pruning today: the ledger holds one entry file per writing process, and the per-goal action logs grow for the life of a goal. A hard plan gate can be bypassed locally by creating <code>.sdlc/.allow-direct-edits</code> unless an organisation has locked the key on in managed settings.</p>
 </div>
 
 <div class="pagenav">
