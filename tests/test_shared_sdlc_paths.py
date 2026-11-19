@@ -313,12 +313,10 @@ def test_the_scan_still_sees_the_known_shared_writers():
     assert ".sdlc/features/index.json" in writers
 
 
-@pytest.mark.xfail(strict=False, reason="QUARANTINED 2026-11-18 #2267: five new .sdlc writers are not yet vetted in the predecessor-paths fixture (tests/quarantine.txt)")
 def test_guard_passes_on_this_repository():
     assert _tool().check(REPO, _fixture(), writers=_real_writers()) == []
 
 
-@pytest.mark.xfail(strict=False, reason="QUARANTINED 2026-11-18 #2267: five new .sdlc writers are not yet vetted in the predecessor-paths fixture (tests/quarantine.txt)")
 def test_guard_refuses_a_path_with_no_entry():
     data = _fixture()
     data["entries"] = [e for e in data["entries"] if e["pattern"] != WIZARD_PATH]
@@ -326,7 +324,6 @@ def test_guard_refuses_a_path_with_no_entry():
     assert problems and all(WIZARD_PATH in p and "no entry" in p for p in problems)
 
 
-@pytest.mark.xfail(strict=False, reason="QUARANTINED 2026-11-18 #2267: five new .sdlc writers are not yet vetted in the predecessor-paths fixture (tests/quarantine.txt)")
 def test_guard_refuses_a_compatible_entry_without_a_reason_or_issue():
     tool, data = _tool(), copy.deepcopy(_fixture())
     entry = next(e for e in data["entries"] if e["pattern"] == WIZARD_PATH)
@@ -347,7 +344,6 @@ def test_guard_refuses_a_new_writer_site_on_an_already_vetted_path():
     assert any(WIZARD_SITE in p and "not in the vetted_writers" in p for p in problems)
 
 
-@pytest.mark.xfail(strict=False, reason="QUARANTINED 2026-11-18 #2267: five new .sdlc writers are not yet vetted in the predecessor-paths fixture (tests/quarantine.txt)")
 def test_a_new_path_the_predecessor_does_not_write_is_not_refused(tmp_path):
     tool, data = _tool(), _fixture()
     writers = dict(_real_writers())
@@ -372,7 +368,6 @@ def _doc_gesture(scratch):
                           capture_output=True, text=True, cwd=REPO)
 
 
-@pytest.mark.xfail(strict=False, reason="QUARANTINED 2026-11-18 #2267: five new .sdlc writers are not yet vetted in the predecessor-paths fixture (tests/quarantine.txt)")
 def test_control_a_new_writer_on_the_wizard_path_turns_the_documented_gesture_red(tmp_path):
     scratch = _scratch_copy(tmp_path)
     clean = _doc_gesture(scratch)
@@ -396,7 +391,6 @@ VARIANTS = {
 }
 
 
-@pytest.mark.xfail(strict=False, reason="QUARANTINED 2026-11-18 #2267: five new .sdlc writers are not yet vetted in the predecessor-paths fixture (tests/quarantine.txt)")
 def test_control_write_methods_the_destination_resolver_misses_are_caught_by_the_literal_backstop(tmp_path):
     tool, data = _tool(), _fixture()
     scratch = _scratch_copy(tmp_path)
