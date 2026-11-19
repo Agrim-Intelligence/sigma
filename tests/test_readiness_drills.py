@@ -270,6 +270,8 @@ def test_public_b6_disposition_persists_dedup_without_github_write(tmp_path):
     assert result["disposition"] == "no-github-write"
 
 
+# 20 real drill runs (D1-D4 x 5 seeds): 220-286s on passing CI runners, so the 300s default killed the worker on slower ones.
+@pytest.mark.timeout(900)
 def test_public_frozen_all_seed_evidence_run_builds_validated_schema(tmp_path):
     """The documented evidence gesture must produce the complete frozen run."""
     sha = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"],
