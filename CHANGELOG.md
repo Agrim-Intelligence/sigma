@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+## 1.0.37 — 2026-11-19 — the full CI tier passes, host pages say plainly that Sigma works with all four hosts, and docs match the code
+
 - The six shared-paths tests quarantined by #2255 run again (#2267): four new `.sdlc` writers (`loop.py::_record_awaiting_merge`, `work.py::checkpoint`, `release_dependents.py::write_state`, `setup_wizard.py::_wizard_status`) are vetted in `tests/fixtures/predecessor_written_paths.json`; each only calls writers already vetted or writes a file the predecessor never writes. The quarantine list is empty.
 - The full CI tier finishes and names its failures (#2255): the whole suite runs as 6 shards per leg (`tools/ci_shard.py`, weights in `tools/ci_shard_weights.json`), every test has a 300 s limit that fails a hang by name (`pytest-timeout`), a summary step lists failed tests even on cancel, a JUnit artifact is kept, and known reds are listed once in `tests/quarantine.txt`.
 - **Host pages state support plainly (#2265).** The site, README and the `/sigma-init --antigravity` message say Sigma works with Claude Code, Codex, Cursor and Antigravity, with the install and init flag for each, and no longer show run evidence; `docs/platform-support.md` stays the engineering record.

@@ -2486,7 +2486,7 @@ NO_LIMIT_SENTENCE = ("With no spend key set the agent level runs with no spend l
 
 def test_unreleased_changelog_has_no_duplicate_lines_1735():
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    block = "\n".join(text.split("## Unreleased", 1)[1].split("\n## ", 5)[:5])
+    block = "\n".join(text.split("## Unreleased", 1)[1].split("\n## ", 6)[:6])
     lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
     dupes = sorted({ln[:80] for ln in lines if lines.count(ln) > 1})
     assert not dupes, dupes
