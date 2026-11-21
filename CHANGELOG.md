@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- The nightly CI job runs as 3 shards with the 300 s per-test limit (#2272): unsharded it took 108 minutes and was cancelled at its 120-minute limit the day before. `tools/ci_shard.py` takes `--ignore=PATH` so the heavy files are dropped before the deal. `docs/platform-support.md` now says the sharded full suite runs weekly (Sundays), not nightly.
+
 ## 1.0.37 — 2026-11-19 — the full CI tier passes, host pages say plainly that Sigma works with all four hosts, and docs match the code
 
 - The full CI tier is green on main: three doc tests pinned sentences the host-page rewrite had moved (the Codex model resolver line, the coverage figure, one site word), and the 20-run readiness drill test gets a 900 s limit because it takes 220-286 s and the 300 s default killed its worker on slower runners.
