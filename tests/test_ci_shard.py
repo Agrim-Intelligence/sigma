@@ -40,3 +40,14 @@ def test_bad_index_is_refused():
         except ValueError:
             continue
         raise AssertionError((i, n))
+
+
+def test_ignored_files_are_dropped_before_the_deal(capsys):
+    """#2272: the nightly tier passes its $SLOW list; an ignored file is in no shard, everything else in one."""
+    real = sorted(p.name for p in (ROOT / "tests").glob("test_*.py"))
+    skip = ["--ignore=tests/test_readiness_drills.py", "--ignore=tests/test_b6_463.py"]
+    got = []
+    for i in (1, 2, 3):
+        assert ci_shard.main(["ci_shard.py", str(i), "3", str(ROOT / "tests"), *skip]) == 0
+        got += [Path(l).name for l in capsys.readouterr().out.split()]
+    assert sorted(got) == [n for n in real if n not in ("test_readiness_drills.py", "test_b6_463.py")]

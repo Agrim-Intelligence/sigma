@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Print the test files of one shard of the full CI tier, one path per line (#2255).
 
-    python3 tools/ci_shard.py <index> <count> [tests-dir]     # index is 1-based
+    python3 tools/ci_shard.py <index> <count> [tests-dir] [--ignore=PATH ...]     # index is 1-based
+
+`--ignore=PATH` drops a file before the deal (the nightly tier passes its $SLOW list, #2272), so the
+remaining files are still balanced across the shards; pytest's own --ignore does not apply to a path
+named on its command line.
 
 Deterministic and balanced: each `test_*.py` under the tests directory has a weight (measured test
 seconds, tools/ci_shard_weights.json; a file with no entry gets the median weight), and the files are
@@ -48,12 +52,14 @@ def main(argv):
     if len(argv) < 2 or argv[1] in ("-h", "--help"):
         print(__doc__)
         return 0 if argv[1:2] in (["-h"], ["--help"]) else 2
-    if len(argv) < 3:
+    ignored = {Path(a.split("=", 1)[1]).name for a in argv[1:] if a.startswith("--ignore=")}
+    args = [a for a in argv[1:] if not a.startswith("--ignore=")]
+    if len(args) < 2:
         print(__doc__)
         return 2
-    index, count = int(argv[1]), int(argv[2])
-    root = Path(argv[3] if len(argv) > 3 else "tests")
-    files = [str(p) for p in root.glob("test_*.py")]
+    index, count = int(args[0]), int(args[1])
+    root = Path(args[2] if len(args) > 2 else "tests")
+    files = [str(p) for p in root.glob("test_*.py") if p.name not in ignored]
     for f in shard(files, index, count):
         print(f)
     return 0

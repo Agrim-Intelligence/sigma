@@ -247,7 +247,15 @@ jobs:
 
   nightly:
     if: ${{ (github.event_name == 'schedule' && github.event.schedule == '17 5 * * *') || (github.event_name == 'workflow_dispatch' && inputs.tier == 'nightly') }}
+    name: nightly (shard ${{ matrix.shard }}/3)
     runs-on: macos-latest
+    # #2272: unsharded, this job took 108 minutes on 2026-11-21 and was cancelled at 120 the day before.
+    # Now 3 shards (tools/ci_shard.py, $SLOW dropped before the deal) and the full tier's 300s per-test
+    # timeout, so a hang fails fast and names itself. The one-off gates run on shard 1 only.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     # 90, not 60: measured macos-latest runs of this job took 15 to 48 minutes on main, and one
     # 1.0.15 release run reached only 54% of pytest in 60 minutes with no single slow test (#1538)
     # 120: the 90-minute run on #1538 was cancelled at the limit (about 91 minutes) before pytest finished
@@ -269,26 +277,34 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
-      - run: python -m pip install --upgrade pip pytest pytest-xdist
+      - run: python -m pip install --upgrade pip pytest pytest-xdist pytest-timeout
       - name: per-skill smoke runner (prints its own wall time against evals/skills/budget.json, #1047)
+        if: ${{ matrix.shard == 1 }}
         run: python3 evals/skills/smoke.py
-      - name: pytest (suite minus the heaviest files)
-        run: python -m pytest tests/ $SLOW -rs -q -n auto --durations=30
+      - name: pytest (suite minus the heaviest files, shard ${{ matrix.shard }} of 3)
+        timeout-minutes: 75
+        run: |
+          python -m pytest $(python3 tools/ci_shard.py ${{ matrix.shard }} 3 tests $SLOW) -rfEsxX -q -n auto \
+            --timeout=300 --timeout-method=thread --durations=30
       - name: no retired skill prefix left in any tracked path or file (#523)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.shard == 1 }}
         run: python3 tools/rename_check.py
       - name: write-surface inventory ratchet
+        if: ${{ matrix.shard == 1 }}
         run: python3 tools/readiness/write_surface.py check . docs/launch/write-surface.json
       - name: quality gate (Tier-1 behavioral drift vs baseline)
+        if: ${{ matrix.shard == 1 }}
         run: python3 evals/run.py
       - name: safety check (secret shapes, sinks, hostile fixtures)
+        if: ${{ matrix.shard == 1 }}
         run: python3 evals/safety/check.py
       - name: decision gate
+        if: ${{ matrix.shard == 1 }}
         run: |
           python3 hooks/decision_gate.py validate .
           python3 hooks/decision_gate.py check .
       - name: SKILL.md frontmatter reads exactly as written (needs PyYAML)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && matrix.shard == 1 }}
         run: |
           python -m pip install pyyaml
           python -m pytest tests/test_skill_frontmatter_yaml.py -q
