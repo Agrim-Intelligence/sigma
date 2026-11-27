@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`reuse.py check-research <sdlc_dir> <goal> [--at-research]` checks the `## Reuse` section of a goal's research dossier**: the `**Searched at:**` commit (40 or 64 lowercase hexadecimal characters, passed to `git rev-parse` only then and only after `--end-of-options`; missing from this machine is a warning, or an error with `--at-research`), 1 to 25 recorded queries with safe paths, and the RU table, whose six decisions each have an evidence rule. A dossier with no section, or a bare `## Reuse` heading without a `**Source:**` or `**Searched at:**` line, is legacy and only warned about. Evidence over 4,096 characters is no file; the command line prints the first 50 errors and a count of the rest. Reads files, writes none (#2278)
+
 - **`kg.py freshness <sdlc_dir> [repo_root]` reports the commit the knowledge graph was built from and how far HEAD has moved since**: one JSON line with `enabled`, `built`, `holds_code`, `built_at_commit`, `ancestor`, `commits_behind` and `changed_files`, exit 0, every unknown as null. It reads only the last 64 KiB of `graph.json` for the commit and the first 1 MiB for a code node, never the whole file; the commit reaches git only when it is 40 or 64 hex characters and only after `--end-of-options` (#2277)
 
 - The nightly CI job runs as 3 shards with the 300 s per-test limit (#2272): unsharded it took 108 minutes and was cancelled at its 120-minute limit the day before. `tools/ci_shard.py` takes `--ignore=PATH` so the heavy files are dropped before the deal. `docs/platform-support.md` now says the sharded full suite runs weekly (Sundays), not nightly.
