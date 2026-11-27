@@ -638,6 +638,10 @@
       "role": "gesture"
     },
     {
+      "path": "skills/sigma-loop/scripts/reuse.py",
+      "role": "gesture"
+    },
+    {
       "path": "skills/sigma-loop/scripts/review_context.py",
       "role": "gesture"
     },
