@@ -4,6 +4,8 @@ All notable changes to Sigma are recorded here, newest first.
 
 ## Unreleased
 
+- **`kg.py freshness <sdlc_dir> [repo_root]` reports the commit the knowledge graph was built from and how far HEAD has moved since**: one JSON line with `enabled`, `built`, `holds_code`, `built_at_commit`, `ancestor`, `commits_behind` and `changed_files`, exit 0, every unknown as null. It reads only the last 64 KiB of `graph.json` for the commit and the first 1 MiB for a code node, never the whole file; the commit reaches git only when it is 40 or 64 hex characters and only after `--end-of-options` (#2277)
+
 - The nightly CI job runs as 3 shards with the 300 s per-test limit (#2272): unsharded it took 108 minutes and was cancelled at its 120-minute limit the day before. `tools/ci_shard.py` takes `--ignore=PATH` so the heavy files are dropped before the deal. `docs/platform-support.md` now says the sharded full suite runs weekly (Sundays), not nightly.
 
 ## 1.0.37 — 2026-11-19 — the full CI tier passes, host pages say plainly that Sigma works with all four hosts, and docs match the code

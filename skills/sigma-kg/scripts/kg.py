@@ -8,7 +8,7 @@ The /sigma-kg SKILL drives the builder for an INTERACTIVE build. `refresh()` (is
 non-interactive counterpart: the one code path that invokes the builder unattended, called from
 `loop.py::_record()` when `knowledge_graph.auto_refresh` is true, so the "rebuilds at the end of
 each Retrospective" the docs have always promised is a mechanism rather than a sentence."""
-import sys, json, pathlib, hashlib, re, subprocess, shlex, shutil, time, math
+import sys, os, json, pathlib, hashlib, re, subprocess, shlex, shutil, time, math
 
 _DEFAULTS = {"enabled": False, "scope": "full", "builder": "graphify", "auto_refresh": False}
 
@@ -641,6 +641,98 @@ def warn(sdlc_dir):
         return ""
 
 
+# graph.json can exceed 100 MB and the builder writes built_at_commit as its LAST top-level key, so only the tail is read.
+_TAIL_BYTES = 65536
+# The pattern IS the trust boundary (FR-58): a graph file can arrive with a clone, so only full hex ever reaches git.
+_BUILT_AT_RE = re.compile(r'"built_at_commit"\s*:\s*"([0-9a-f]{40}(?:[0-9a-f]{24})?)"')
+# The code-node search window: the head of the file, where the builder writes "nodes".
+_HEAD_BYTES = 1048576
+# The builder writes one node per object with no nesting; [^{}] spans newlines, and indent=2 splits a node over lines.
+_NODE_RE = re.compile(r"\{[^{}]*\}")
+_LINE_LOC_RE = re.compile(r"L\d+")
+# Variables that would point git at another repository than `-C <root>` names (the set work.py strips, #589).
+_GIT_LOCATION_ENV = frozenset((
+    "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX"))
+
+
+def _graph_path(sdlc_dir, kg):
+    # the builder writes <builder>-out/ at the repo root (parent of .sdlc); graphify -> graphify-out
+    return pathlib.Path(sdlc_dir).resolve().parent / f"{kg.get('builder', 'graphify')}-out" / "graph.json"
+
+
+def _is_code_node(text):
+    """The shape the builder's parser writes for real source code. file_type alone is not enough: the
+    builder's LLM extraction can label a node taken from a document as code."""
+    if "file_type" not in text:
+        return False
+    try:
+        node = json.loads(text)
+    except ValueError:
+        return False
+    loc, src = node.get("source_location"), node.get("source_file")
+    return (node.get("file_type") == "code"
+            and isinstance(loc, str) and _LINE_LOC_RE.fullmatch(loc) is not None
+            and isinstance(src, str) and not src.startswith(".sdlc/knowledge/") and not src.endswith(".md"))
+
+
+def _run_git(argv):
+    # errors="replace": a path that is not UTF-8 (core.quotePath=false) must not turn a count into a traceback
+    env = {k: v for k, v in os.environ.items() if k not in _GIT_LOCATION_ENV}
+    return subprocess.run(argv, capture_output=True, text=True, errors="replace", timeout=30, env=env)
+
+
+def freshness(sdlc_dir, repo_root=None, run=None):
+    """Which commit the graph was built from and how far HEAD has moved since (#2277). Read-only; every
+    field it cannot establish is None, never a guess, and it never raises."""
+    kg = load_config(sdlc_dir)
+    graph = _graph_path(sdlc_dir, kg)
+    result = {"enabled": kg["enabled"], "built": None, "holds_code": None, "built_at_commit": None,
+              "ancestor": None, "commits_behind": None, "changed_files": None}
+    try:
+        result["built"] = graph.exists()
+        regular = graph.is_file()                # a FIFO blocks open() forever; a directory cannot be read
+    except OSError:                              # an unreadable parent directory: unknown, not a traceback
+        return result
+    if not (result["enabled"] and result["built"] and regular):
+        return result
+    try:
+        with open(graph, "rb") as f:             # never json.load: the file can exceed 100 MB
+            head = f.read(_HEAD_BYTES).decode("utf-8", errors="ignore")   # a cut can split a multibyte char
+            size = f.seek(0, 2)
+            f.seek(max(0, size - _TAIL_BYTES))
+            tail = f.read().decode("utf-8", errors="ignore")
+    except OSError:                              # vanished, or replaced, since is_file()
+        return result
+    if any(_is_code_node(m.group(0)) for m in _NODE_RE.finditer(head)):
+        result["holds_code"] = True              # else stays None: a miss in the head is unknown, not "no code"
+    found = _BUILT_AT_RE.findall(tail)
+    if not found:
+        return result
+    commit = result["built_at_commit"] = found[-1]
+    root = str(repo_root) if repo_root else str(pathlib.Path(sdlc_dir).resolve().parent)
+    run = run or _run_git
+
+    def git(*args):
+        try:
+            return run(["git", "-C", root, *args])
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+    # The commit is full hex already (the pattern above), not a ref, and it always follows --end-of-options.
+    proc = git("merge-base", "--is-ancestor", "--end-of-options", commit, "HEAD")
+    result["ancestor"] = {0: True, 1: False}.get(proc.returncode) if proc is not None else None
+    if result["ancestor"] is not True:
+        return result
+    proc = git("rev-list", "--count", "--end-of-options", f"{commit}..HEAD")
+    if proc is not None and proc.returncode == 0 and proc.stdout.strip().isdecimal():
+        result["commits_behind"] = int(proc.stdout.strip())
+    proc = git("diff", "--name-only", "--end-of-options", f"{commit}..HEAD")
+    if proc is not None and proc.returncode == 0:
+        result["changed_files"] = len(proc.stdout.splitlines())
+    return result
+
+
 def status(sdlc_dir):
     kg = load_config(sdlc_dir)
     corpus = corpus_dir(sdlc_dir)
@@ -652,13 +744,11 @@ def status(sdlc_dir):
         "analysis_files": _count_md(corpus / "analysis"),
         "corpus_docs": docs,
         "corpus_bytes": size,
-        # the builder writes <builder>-out/ at the repo root (parent of .sdlc); graphify -> graphify-out
-        "graph_built": (pathlib.Path(sdlc_dir).resolve().parent
-                        / f"{kg.get('builder', 'graphify')}-out" / "graph.json").exists(),
+        "graph_built": _graph_path(sdlc_dir, kg).exists(),
     }
 
 
-USAGE = ("usage: kg.py status <sdlc_dir> | plan <sdlc_dir> [repo_root] | "
+USAGE = ("usage: kg.py status <sdlc_dir> | freshness <sdlc_dir> [repo_root] | plan <sdlc_dir> [repo_root] | "
          "refresh <sdlc_dir> [repo_root] | retain <sdlc_dir> | warn <sdlc_dir> | maintain <sdlc_dir> [repo_root] | "
          'gap log "<q>" [sdlc_dir] | gap list [sdlc_dir] | gap resolve "<q>" [sdlc_dir] | '
          "<content on stdin> | note <sdlc_dir> <ref> | note-check <sdlc_dir> <ref>")
@@ -802,6 +892,10 @@ def main(argv):
         print(f"knowledge note missing for {ref}: expected {path} — sigma-retro step 4 writes it "
               "(kg.py note)", file=sys.stderr)
         return 1
+    if len(argv) >= 2 and argv[1] == "freshness":
+        # #2277: read-only; every unknown is null, so exit 0 whatever the graph or git could tell
+        print(json.dumps(freshness(sdlc, argv[3] if len(argv) > 3 else None), sort_keys=True))
+        return 0
     print(USAGE, file=sys.stderr)
     return 2
 
