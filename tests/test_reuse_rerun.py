@@ -205,6 +205,21 @@ def test_a_file_name_with_a_colon_is_parsed_correctly(tmp_path):
     assert w.m.git_grep(w.proj, "needle", ["x:y.txt"]) == ("ok", [("x:y.txt", 1, "one needle")])
 
 
+def test_a_file_name_with_a_newline_is_kept(tmp_path):
+    """-z records are NUL-separated name, line, text and end at a newline AFTER the text, so a newline inside the
+    name must not split the record."""
+    w = _world(tmp_path)
+    (w.proj / "a\nb.txt").write_text("one needle\n")
+    (w.proj / "plain.txt").write_text("two needle\n")
+    _git(w.proj, "add", "a\nb.txt", "plain.txt")
+    _git(w.proj, "commit", "-qm", "newline")
+    commit = _git(w.proj, "rev-parse", "HEAD")
+    for ref in (commit, None):
+        status, hits = w.m.git_grep(w.proj, "needle", ["a\nb.txt", "plain.txt"], ref=ref)
+        assert status == "ok"
+        assert sorted(hits) == [("a\nb.txt", 1, "one needle"), ("plain.txt", 1, "two needle")]
+
+
 def test_rerun_at_a_ref_strips_the_ref_prefix(tmp_path):
     w = _world(tmp_path)
     lines = w.m.rerun(w.sdlc, "1", ref="sdlc/1")
@@ -500,6 +515,24 @@ def test_rerun_stops_after_the_total_time_limit_and_says_so(tmp_path):
         "rerun: stopped after 120 seconds; 1 of 3 queries run"]
 
 
+def test_the_deadline_expiring_between_the_two_searches_of_a_query_says_stopped_after(tmp_path):
+    """New-since runs two greps per query; the 120 s deadline can pass between them. That is the total limit, so
+    the line is the 'stopped after' one, not `TIMEOUT Q1` (which means that query alone took over 30 s)."""
+    w = _world(tmp_path)
+    _write_dossier(w, queries=[("needle", "."), ("def ", ".")])
+    now = [0.0]
+    seen = []
+
+    def jump(argv, timeout):
+        if _is_grep(argv):
+            seen.append(argv)
+            now[0] = 121.0 if len(seen) == 1 else now[0]
+
+    run, _ = _spy(w.m, jump)
+    lines = w.m.rerun(w.sdlc, "1", new_since_research=True, run=run, clock=lambda: now[0])
+    assert lines == ["rerun: stopped after 120 seconds; 0 of 2 queries run"]
+
+
 def test_the_remaining_time_bounds_a_running_query(tmp_path):
     w = _world(tmp_path)
     now = [0.0]
@@ -620,6 +653,20 @@ def test_new_since_research_ignores_code_that_only_moved_lines(tmp_path):
     _write_dossier(w, queries=[("old_helper|return 'needle'", "old_helper.py")])
     lines = w.m.rerun(w.sdlc, "1", new_since_research=True)
     assert len(lines) == 1 and lines[0].startswith(_summary(w, 0, FETCHED))
+
+
+def test_new_since_research_reports_a_new_line_in_a_file_that_already_matched(tmp_path):
+    """The identity is (file, text), not the file alone: a different matching line in a file that matched at the
+    searched-at commit is still new. Breaking the set difference to compare file names only turns this red."""
+    w = _world(tmp_path)
+    (w.proj / "old_helper.py").write_text("# moved\n" + OLD_A + "def other():\n    return 'needle two'\n",
+                                          encoding="utf-8")
+    _git(w.proj, "commit", "-qam", "C")
+    _git(w.proj, "push", "-q", "origin", "main")
+    _git(w.proj, "fetch", "-q", "origin")
+    lines = w.m.rerun(w.sdlc, "1", new_since_research=True)
+    assert "NEW Q1 old_helper.py:5:     return 'needle two'" in lines
+    assert NEW_LINE in lines and sum(1 for l in lines if l.startswith("NEW ")) == 2
 
 
 def test_new_since_research_still_reports_after_the_branch_is_rebased(tmp_path):

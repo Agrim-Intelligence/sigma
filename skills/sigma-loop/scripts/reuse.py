@@ -692,16 +692,23 @@ def git_grep(root, pattern, paths, ref=None, run=None, timeout=QUERY_TIMEOUT):
         first = (_decode(proc.stderr).strip().splitlines() or ["git grep failed"])[0]
         return "error: " + _shown(first, 200), []
     prefix = (ref + ":").encode() if ref else b""
-    hits = []
-    for record in proc.stdout.split(b"\n"):
-        parts = record.split(b"\x00", 2)
-        if len(parts) != 3 or not parts[1].isdigit():
+    hits, data, at = [], proc.stdout, 0
+    while at < len(data):                           # name NUL line NUL text LF: a name may hold a newline
+        end_name = data.find(b"\x00", at)
+        end_line = data.find(b"\x00", end_name + 1) if end_name >= 0 else -1
+        if end_line < 0:
+            break
+        end_text = data.find(b"\n", end_line + 1)
+        end_text = len(data) if end_text < 0 else end_text
+        raw_name, number, raw_text = data[at:end_name], data[end_name + 1:end_line], data[end_line + 1:end_text]
+        at = end_text + 1
+        if not number.isdigit():
             continue
-        name = parts[0][len(prefix):] if prefix and parts[0].startswith(prefix) else parts[0]
-        text = _decode(parts[2])
+        name = raw_name[len(prefix):] if prefix and raw_name.startswith(prefix) else raw_name
+        text = _decode(raw_text)
         if len(text) > MAX_LINE_CHARS:
             text = text[:MAX_LINE_CHARS] + "…"
-        hits.append((_decode(name), int(parts[1]), text))
+        hits.append((_decode(name), int(number), text))
     return "ok", hits
 
 
@@ -863,14 +870,14 @@ def rerun(sdlc_dir, goal, ref=None, new_since_research=False, base=None, run=Non
             body.append("ERROR Q%d: %s" % (i, problem))
             done += 1
             continue
-        if deadline - clock() <= 0:
-            body.append("rerun: stopped after %d seconds; %d of %d queries run" % (MAX_SECONDS, done, count))
-            return _capped(body)
         done += 1
         found = {}
         for where in ([commit] + ([before] if before else [])):
             budget = min(QUERY_TIMEOUT, deadline - clock())
-            status, hits = ("timeout", []) if budget <= 0 else git_grep(root, pattern, paths, where, run, budget)
+            if budget <= 0:                         # the total limit passed between this query's two searches
+                body.append("rerun: stopped after %d seconds; %d of %d queries run" % (MAX_SECONDS, done - 1, count))
+                return _capped(body)
+            status, hits = git_grep(root, pattern, paths, where, run, budget)
             if status != "ok":
                 found = status
                 break
