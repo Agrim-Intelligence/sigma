@@ -27,10 +27,14 @@ and skips the map rules when it is off. A corrupt config.json reads as no runner
 bullet then gives the warning) while `verify.enforce` still reads it as on. Nothing here is called from a gate.
 Ceilings: one `check_research` call plus two section scans of at most 1 MiB of plan and one criteria read, linear
 in plan size and rows; the dossier is read twice (here and inside `check_research`, each may fall back to a
-`git show`) and the plan file is read before the 1 MiB cap. Measured once each on one machine (Linux, Python 3.13,
-a small project, not the Apple M4 Pro of the figures below): a 1 MiB plan of bullets took 0.12 s, a 1 MiB plan of
-`|` rows (1,571,999 errors) took 1.58 s and peaked at 303 MB of Python allocations (tracemalloc), above the 0.47 s
-`check_research` figure (different machines, so not a ratio). Nothing was timed on a real large plan.
+`git show`) and the plan file is read before the 1 MiB cap. Measured once each on one machine (Linux, Python 3.13, a small project, not the Apple M4 Pro of the figures
+below; `reuse.py` read as written, `review_tests` loaded once per run): a 1 MiB plan of bullets cut at the cap
+took 0.12 s; a 1 MiB plan of `|` rows (1,571,999 errors) took 1.58 s and peaked at 303 MB of Python allocations
+(tracemalloc), above the 0.47 s `check_research` figure (different machines, so not a ratio); a 1 MiB `## Test map`
+of 80,645 `- AC-1: NONE` bullets took 0.15 s (it took 7.4 s when `review_tests` was loaded per bullet), 32,762
+duplicate valid bullets 0.07 s, and 20,000 duplicate bullets 0.05 s. Not measured: a real large plan, memory for the
+bullet shapes, a plan with many `## Tests` entries, and any run on another machine. With no acceptance record and
+`verify.enforce` off the result holds two warnings, `check_research`'s and this check's own.
 
 `source` prints one JSON line (`mode`, `graph_commit`, `reason`, `delta_files`) saying whether the reuse search
 uses the knowledge graph or `git grep`. The graph is usable only when `kg.py freshness` (run as a subprocess of
@@ -650,9 +654,10 @@ def _runners(sdlc_dir):
 
 
 def _coverage(plan, runners):
-    """(covered(test) -> bool, None), or (None, the first line of why `## Tests` cannot be read). A `## Tests` that
-    is the docs-only line covers nothing. A file entry (no `::`) covers `entry::<name>`; every other entry, a
-    runner bullet included, covers only itself."""
+    """(covered(test, exact_only=False) -> bool, None), or (None, the first line of why `## Tests` cannot be read).
+    A `## Tests` that is the docs-only line covers nothing. A file entry (no `::`) covers `entry::<name>`; every
+    other entry, a runner bullet included, covers only itself. `exact_only` drops the file-entry rule: it is for a
+    whole comma-list value, which only a runner test name holding a comma can match."""
     rg = _load("red_green")
     try:
         entries = [] if rg.none_reason(plan) is not None else rg.selectors(plan, runners)
@@ -660,12 +665,14 @@ def _coverage(plan, runners):
         return None, (str(exc).splitlines() or [type(exc).__name__])[0]
     exact = set(entries)
     files = [entry + "::" for entry in entries if "::" not in entry and not rg.parse_runner(entry)]
-    return (lambda test: test in exact or any(test.startswith(prefix) for prefix in files)), None
+    def covered(test, exact_only=False):
+        return test in exact or (not exact_only and any(test.startswith(prefix) for prefix in files))
+    return covered, None
 
 
-def _value_errors(cid, value, covered):
-    """The errors of one `## Test map` value, in `review_tests.check`'s order: NONE, then UNTESTABLE, else tests."""
-    tests = _load("review_tests")
+def _value_errors(cid, value, covered, tests):
+    """The errors of one `## Test map` value, in `review_tests.check`'s order: NONE, then UNTESTABLE, else tests.
+    `tests` is the `review_tests` module, loaded once by the caller (loading it per bullet cost 7.4 s on 1 MiB)."""
     if not value:
         return ["%s: value is empty; map a test or write UNTESTABLE: <why>" % cid]
     if tests._NONE.match(value):
@@ -673,7 +680,7 @@ def _value_errors(cid, value, covered):
     untestable = tests._UNTESTABLE.match(value)
     if untestable:
         return [] if untestable.group(1).strip() else ["%s: UNTESTABLE needs a reason" % cid]
-    if covered is None or covered(value):          # the whole value first: a runner test name may hold a comma
+    if covered is None or covered(value, exact_only=True):   # whole value, exact: a runner name may hold a comma
         return []
     errors = []
     for part in (part.strip() for part in value.split(",")):
@@ -684,7 +691,7 @@ def _value_errors(cid, value, covered):
     return errors
 
 
-def _test_map_errors(lines, ids, goal, covered):
+def _test_map_errors(lines, ids, goal, covered, tests):
     """Rules 6 and 7 for the bullets of `## Test map`: one per criterion id, none for another id, each value valid."""
     bullets = _bullets(lines, _AC_BULLET)
     count = {}
@@ -696,10 +703,11 @@ def _test_map_errors(lines, ids, goal, covered):
             errors.append("%s: no bullet in ## Test map" % cid)
         elif count[cid] > 1:
             errors.append("%s: more than one bullet" % cid)
-    errors += ["%s: not an acceptance criterion of goal %s" % (cid, goal) for cid in count if cid not in ids]
+    known = set(ids)
+    errors += ["%s: not an acceptance criterion of goal %s" % (cid, goal) for cid in count if cid not in known]
     for cid, value in bullets:
-        if cid in ids:
-            errors += _value_errors(cid, value, covered)
+        if cid in known:
+            errors += _value_errors(cid, value, covered, tests)
     return errors
 
 
@@ -748,7 +756,7 @@ def _plan_check(sdlc_dir, goal, plan=None):
         covered, why_not = _coverage(path, _runners(sdlc_dir))
         if why_not:
             warnings.append("## Test map: coverage not judged (%s)" % why_not)
-        errors += _test_map_errors(map_lines, ids, goal, covered)
+        errors += _test_map_errors(map_lines, ids, goal, covered, tests)
         k = len(ids)
     return errors, warnings, path, cited, k
 

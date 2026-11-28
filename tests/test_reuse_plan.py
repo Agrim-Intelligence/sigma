@@ -8,8 +8,6 @@ This file never prints: a captured-output section would stop `red_green` attribu
 import pathlib
 import sys
 
-import pytest
-
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from test_reuse import (_project, _dossier, _cli, _reuse, ACCEPTANCE, ROWS, HEADER, SEPARATOR, _row,  # noqa: E402
                         NO_DOSSIER, NO_SECTION, OLD_SECTION)
@@ -236,6 +234,9 @@ def test_a_mapped_test_must_be_under_tests(tmp_path):
     assert _result(tmp_path / "c", test_map=_map("tests/test_x.py::test_a, tests/other.py::t")) == (
         [UNCOVERED % "tests/other.py::t"], [])
     assert _result(tmp_path / "d", test_map=_map("tests/test_x.py::test_a,tests/test_y.py::q")) == ([], [])
+    # The whole-value match is exact only: a file entry must not cover a list through its first test.
+    assert _result(tmp_path / "e", test_map=_map("tests/test_y.py::test_one, tests/test_nowhere.py::test_z")) == (
+        [UNCOVERED % "tests/test_nowhere.py::test_z"], [])
 
 
 def test_a_file_entry_covers_its_tests(tmp_path):
