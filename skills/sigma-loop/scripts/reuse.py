@@ -1,11 +1,26 @@
 #!/usr/bin/env python3
 """usage: reuse.py check-research <sdlc_dir> <goal> [--at-research]
+       reuse.py source <sdlc_dir>
 
-This script reads files and writes none. `check-research` checks the `## Reuse` section of a goal's research
+This script writes no files and starts no background process: it reads files and runs short git and Python
+subprocesses, each bounded by a timeout. `check-research` checks the `## Reuse` section of a goal's research
 dossier (`.sdlc/research/<goal>.md`, else the copy on the goal's branch): the `**Searched at:**` commit, the
 recorded queries, and the RU table or its `none: <reason>` line. Exit 2 on any error, 0 otherwise. A dossier
 with no section, or a section with neither a `**Source:**` nor a `**Searched at:**` line, is legacy: a warning,
 never a refusal. Without `--at-research` a Searched-at commit missing from this machine is a warning too.
+
+`source` prints one JSON line (`mode`, `graph_commit`, `reason`, `delta_files`) saying whether the reuse search
+uses the knowledge graph or `git grep`. The graph is usable only when `kg.py freshness` (run as a subprocess of
+`sys.executable`, never imported) says it is enabled, built, holds code, has a build commit that is an ancestor of
+HEAD, and is at most MAX_DELTA_FILES files behind; the first failing condition is the reason. A helper that is
+missing, times out, exits non-zero or prints anything but a JSON object also gives grep. With `--at-research`,
+`check-research` also checks the dossier's `**Source:**` line: a `graph@<commit>` must be an ancestor of the
+searched-at commit (never of HEAD), and the line must agree with the live `source()`. The form of the line is
+checked on every run. Limit: `source()` asks about the repository at the parent of `sdlc_dir`, the ancestor rule
+about the goal's worktree; they differ when Research runs against the root checkout's `.sdlc`.
+Cost: one extra Python subprocess per `check-research --at-research` (0.043 s measured for `kg.py freshness` on
+one repository with the graph disabled; the graph path has not been timed) and one `git diff` bounded by the
+500-file gate.
 
 Ceilings: the 1 MiB cap bounds parsing, not reading (the dossier lookup reads the whole file first). A numeric
 goal with no `<goal>.md` reads the newest `<goal>-*.md` (review_context's lookup, unchanged here), so a sibling
@@ -26,6 +41,7 @@ tried, the worst being 1 MiB of `|` rows (1,048,544 errors), which peaks at 244 
 (tracemalloc) and 336 MB resident for the whole command; each error string is kept until the command prints.
 """
 import importlib.util
+import json
 import os
 import pathlib
 import re
@@ -40,8 +56,15 @@ MAX_PATTERN = 200
 #: Linux's PATH_MAX, above macOS's 1024: neither can stat a longer path as written, so it names no honest evidence.
 MAX_EVIDENCE_PATH = 4096
 MAX_SHOWN_ERRORS = 50
+#: A judgement, not a measurement: past this many files changed since the build the graph is treated as too stale
+#: to trust, and the pull request for #2280 records the timing that justifies or changes it.
+MAX_DELTA_FILES = 500
+KG_TIMEOUT = 60
+_KG = pathlib.Path(__file__).resolve().parent.parent.parent / "sigma-kg" / "scripts" / "kg.py"
 #: The pattern IS the trust boundary (FR-57): a dossier can arrive with a clone, so only full hex reaches git.
 SEARCHED_AT = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
+#: The dossier's `**Source:**` line: the graph at a commit prefix, or grep with an optional reason.
+SOURCE_FORM = re.compile(r"graph@[0-9a-f]{7,64}|grep(?: \(.+\))?")
 HEADER = "| ID | Capability | Decision | Evidence | Reason |"
 REGISTRIES = ("pypi", "npm", "crates", "gem", "go", "maven", "nuget", "other")
 #: decision -> (what its evidence must be, what its reason must be or None). Refusals are worded from this.
@@ -328,13 +351,17 @@ def table_errors(parsed, root):
 
 
 def reuse_errors(parsed, root):
-    """One string per broken rule, each starting with what it is about: `Searched at:`, `none:`, `queries:`,
+    """One string per broken rule, each starting with what it is about: `Searched at:`, `Source:`, `none:`, `queries:`,
     `query <n>:`, `table:`, a row id, or `row <k>` when the id itself is malformed."""
     errors = []
     if parsed["searched_at"] is None:
         errors.append("Searched at: missing; write **Searched at:** <the full commit id Research ran at>")
     elif not SEARCHED_AT.fullmatch(parsed["searched_at"]):
         errors.append("Searched at: not a full commit id (40 or 64 lowercase hexadecimal characters)")
+    if not parsed["source"]:
+        errors.append("Source: missing; write **Source:** graph@<commit> or grep (<why>)")
+    elif not SOURCE_FORM.fullmatch(parsed["source"]):
+        errors.append("Source: not graph@<7 to 64 hexadecimal characters> or grep, optionally followed by (<text>)")
     if parsed["none"] is not None:
         if len(parsed["none"].split()) < 3:
             errors.append("none: needs a reason of three words or more")
@@ -383,6 +410,110 @@ def commit_exists(root, commit):
     return proc.returncode == 0
 
 
+def _run_text(argv):
+    """`argv` as text, with `_run_git`'s environment, bounded by KG_TIMEOUT: the runner `source` uses for both
+    the helper and `git diff`. `_run_git` is bytes and waits GIT_TIMEOUT, so it cannot serve here."""
+    location = _load("bounded_run").LOCATION_VARS
+    env = {k: v for k, v in os.environ.items() if k not in location}
+    env["GIT_NO_LAZY_FETCH"] = "1"
+    return subprocess.run(argv, capture_output=True, text=True, timeout=KG_TIMEOUT, env=env)
+
+
+def _grep(reason):
+    return {"mode": "grep", "graph_commit": None, "reason": reason, "delta_files": []}
+
+
+def _number(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def source(sdlc_dir, run=None):
+    """Where the reuse search looks: `{"mode", "graph_commit", "reason", "delta_files"}`. Mode `graph` only when
+    `kg.py freshness` says the graph is usable (module docstring); the first failing condition is the reason.
+    Every test is strict on type, so a missing key or null reads as not usable. In graph mode `delta_files` are
+    the sorted files changed since the build, which the search must also cover. Never raises."""
+    run = run or _run_text
+    try:
+        proc = run([sys.executable, str(_KG), "freshness", str(sdlc_dir)])
+        if proc.returncode != 0:
+            raise ValueError("helper exited %d" % proc.returncode)
+        fresh = json.loads(proc.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError, RecursionError):
+        return _grep("knowledge graph helper unavailable")
+    if not isinstance(fresh, dict):
+        return _grep("knowledge graph helper unavailable")
+    commit = fresh.get("built_at_commit")
+    changed = fresh.get("changed_files")
+    for ok, reason in (
+            (fresh.get("enabled") is True, "knowledge graph disabled"),
+            (fresh.get("built") is True, "graph not built"),
+            (fresh.get("holds_code") is True, "cannot confirm the graph holds code"),
+            (isinstance(commit, str) and SEARCHED_AT.fullmatch(commit), "graph has no build commit"),
+            (fresh.get("ancestor") is True, "graph commit is not in this history"),
+            (_number(changed) and changed <= MAX_DELTA_FILES,
+             "graph is %s files behind (limit %d)" % (changed if _number(changed) else "an unknown number of",
+                                                      MAX_DELTA_FILES))):
+        if not ok:
+            return _grep(reason)
+    root = pathlib.Path(sdlc_dir).resolve().parent
+    try:
+        diff = run(["git", "-C", str(root), "diff", "--name-only", "--end-of-options", commit + "..HEAD"])
+        if diff.returncode != 0:
+            raise ValueError("git diff exited %d" % diff.returncode)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return _grep("cannot list the files changed since the graph build")   # never graph with a hidden delta
+    files = sorted({line for line in diff.stdout.splitlines() if line})
+    return {"mode": "graph", "graph_commit": commit, "reason": "", "delta_files": files}
+
+
+def source_line(result):
+    """The canonical `**Source:**` text for a `source()` result."""
+    if result["mode"] == "graph":
+        return "graph@" + result["graph_commit"][:12]
+    return "grep (%s)" % result["reason"]
+
+
+def _ancestor_error(prefix, searched_at, root):
+    """The error when graph commit `prefix` is not an ancestor of `searched_at` (never of HEAD), else None.
+    The prefix is resolved first and the resolved id is hex-checked before it reaches merge-base."""
+    refused = "Source: graph commit %s is not an ancestor of the searched-at commit" % prefix
+    try:
+        resolved = _run_git(["git", "-C", str(root), "rev-parse", "--verify", "--end-of-options", prefix + "^{commit}"])
+        full = resolved.stdout.decode("ascii", "replace").strip()
+        if resolved.returncode != 0 or not SEARCHED_AT.fullmatch(full):
+            return refused
+        done = _run_git(["git", "-C", str(root), "merge-base", "--is-ancestor", "--end-of-options", full,
+                         searched_at])
+    except OSError:
+        return refused
+    except subprocess.TimeoutExpired:
+        return "Source: graph commit %s could not be checked: git did not answer in %d seconds" % (prefix, GIT_TIMEOUT)
+    return None if done.returncode == 0 else refused      # 1 is no, 128 is an unknown commit: never success
+
+
+def source_errors(parsed, sdlc_dir, root):
+    """The `--at-research` rules for a Source line that already passed the form rule: the ancestor rule, then
+    agreement with the live `source()` (called once)."""
+    written = parsed["source"]
+    errors = []
+    if written.startswith("graph@") and SEARCHED_AT.fullmatch(parsed["searched_at"] or ""):
+        problem = _ancestor_error(written[len("graph@"):], parsed["searched_at"], root)
+        if problem:
+            errors.append(problem)
+    live = source(sdlc_dir)
+    if written.startswith("graph@"):
+        prefix = written[len("graph@"):]
+        if live["mode"] == "grep":
+            errors.append("Source: the dossier says graph but " + live["reason"])
+        elif not live["graph_commit"].startswith(prefix):
+            errors.append("Source: the dossier names graph@%s but the usable graph was built at %s"
+                          % (prefix, live["graph_commit"][:12]))
+    elif live["mode"] == "graph":
+        errors.append("Source: the dossier says grep but the knowledge graph is usable (%s): search the graph, then "
+                      "the %d changed files" % (source_line(live), len(live["delta_files"])))
+    return errors
+
+
 def _check(sdlc_dir, goal, at_research):
     """(errors, warnings, parsed, k): parsed is None when nothing was checked, and k is how many acceptance
     criteria the Test design rows were checked against (0 when there is no record)."""
@@ -406,6 +537,8 @@ def _check(sdlc_dir, goal, at_research):
     if problem:
         # Research checks the commit it just ran at; elsewhere a goal researched on another machine is fine.
         (errors if at_research else warnings).append("Searched at: commit %s %s" % (commit[:7], problem))
+    if at_research and parsed["source"] and SOURCE_FORM.fullmatch(parsed["source"]):
+        errors += source_errors(parsed, sdlc_dir, root)
     try:
         ids = dict.fromkeys(cid for cid, _ in tests.criteria(sdlc_dir, goal))      # ordered, O(1) lookup
     except (OSError, ValueError):
@@ -438,6 +571,12 @@ def check_research(sdlc_dir, goal, at_research=False):
 def main(argv):
     if argv in (["-h"], ["--help"]):
         print(__doc__)
+        return 0
+    if argv[:1] == ["source"]:
+        if len(argv) != 2 or argv[1] == "--at-research":
+            print(USAGE, file=sys.stderr)
+            return 2
+        print(json.dumps(source(argv[1]), sort_keys=True))
         return 0
     at_research = argv[-1:] == ["--at-research"]
     args = argv[:-1] if at_research else argv

@@ -232,6 +232,7 @@ def test_only_a_line_that_is_exactly_the_heading_opens_the_section(tmp_path, hea
 
 MISSING = "Searched at: missing; write **Searched at:** <the full commit id Research ran at>"
 NOT_FULL = "Searched at: not a full commit id (40 or 64 lowercase hexadecimal characters)"
+SOURCE_MISSING = "Source: missing; write **Source:** graph@<commit> or grep (<why>)"
 
 
 def _spy(monkeypatch, m):
@@ -252,16 +253,16 @@ def test_a_reuse_section_with_only_a_source_line_is_new_format_and_needs_searche
 
 def test_a_reuse_section_with_only_a_searched_at_line_is_new_format(tmp_path):
     errors, _ = _run(tmp_path, _dossier(source=None, searched_at="not-hex"))
-    assert errors == [NOT_FULL]
+    assert errors == [NOT_FULL, SOURCE_MISSING]
 
 
 def test_an_empty_source_line_still_marks_the_new_format(tmp_path):
     """Legacy is the ABSENCE of both marker lines: `**Source:**` with nothing after it is still a marker."""
-    assert _run(tmp_path, _dossier(source="", searched_at=None)) == ([MISSING], [])
+    assert _run(tmp_path, _dossier(source="", searched_at=None)) == ([MISSING, SOURCE_MISSING], [])
 
 
 def test_an_empty_searched_at_line_marks_the_new_format_and_is_refused(tmp_path):
-    assert _run(tmp_path, _dossier(source=None, searched_at="")) == ([NOT_FULL], [])
+    assert _run(tmp_path, _dossier(source=None, searched_at="")) == ([NOT_FULL, SOURCE_MISSING], [])
 
 
 def test_a_missing_searched_at_line_is_refused(tmp_path):
@@ -660,7 +661,7 @@ def test_a_large_malformed_reuse_section_is_checked_in_linear_time(tmp_path):
     """A membership scan of a list per query line made a just-under-1-MiB section of `- x` lines take
     114.5 s of CPU (review B1); 100,000 such lines (about 16 s that way) must check well inside 5 s."""
     n = 100000
-    text = "# Research: x\n" + RISK + "\n## Reuse\n**Searched at:** %s\n" % SHA + "- x\n" * n + "\n" + DESIGN
+    text = "# Research: x\n" + RISK + "\n## Reuse\n**Source:** grep\n**Searched at:** %s\n" % SHA + "- x\n" * n + "\n" + DESIGN
     start = time.monotonic()
     errors, _ = _run(tmp_path, text)
     elapsed = time.monotonic() - start
@@ -671,7 +672,7 @@ def test_a_large_malformed_reuse_section_is_checked_in_linear_time(tmp_path):
 def test_a_one_mebibyte_evidence_path_is_checked_in_linear_time(tmp_path):
     """Resolving a path and testing `root in path.parents` are each quadratic in its depth: one row whose
     evidence was 524,000 one-letter directories took 685.6 s (review B2). It must check well inside 5 s."""
-    head = "# Research: x\n%s\n## Reuse\n**Searched at:** %s\n%s\n\n%s\n%s\n| RU-1 | c | reuse | " % (
+    head = "# Research: x\n%s\n## Reuse\n**Source:** grep\n**Searched at:** %s\n%s\n\n%s\n%s\n| RU-1 | c | reuse | " % (
         RISK, SHA, QUERIES[1], HEADER, SEPARATOR)
     tail = "f.py:1 | a reason |\n\n" + DESIGN
     text = head + "d/" * ((1048576 - len(head) - len(tail)) // 2) + tail
