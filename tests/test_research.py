@@ -187,3 +187,26 @@ def test_the_prose_says_why_the_delimiter_rows_are_there():
     after = section.split("```markdown", 1)[1].split("```", 1)[1]
     assert "not decoration" in after, "the delimiter rows' rationale is gone from the page"
     assert "line range" in after, "the range rule is gone from the page"
+
+
+def test_research_directs_the_agent_to_the_reuse_brief(tmp_path):
+    """The `**Reuse, test design:**` line must name a command that really runs. The command is taken
+    from the backtick span on that line (not any stray python3 match), `${CLAUDE_SKILL_DIR}` is
+    replaced by the real skill directory, and it is run as a list argv (no shell) against a temp
+    `.sdlc`: exit 0 and the brief heading on stdout."""
+    import subprocess
+    import sys
+    t = _t()
+    assert 'sigma-loop/scripts/reuse.py" brief .sdlc "<goal>"' in t
+    line = next(l for l in t.splitlines() if l.startswith("**Reuse, test design:**"))
+    cmd = re.search(r"`([^`]+)`", line).group(1)
+    assert cmd.startswith("python3 ")
+    cmd = cmd.replace("${CLAUDE_SKILL_DIR}", str(RESEARCH.parent))
+    argv = [sys.executable] + [a.strip('"') for a in re.findall(r'"[^"]*"|\S+', cmd)[1:]]
+    sdlc = tmp_path / ".sdlc"
+    sdlc.mkdir()
+    argv[argv.index(".sdlc")] = str(sdlc)
+    argv[-1] = "demo goal"
+    r = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+    assert "# Reuse and test design" in r.stdout
