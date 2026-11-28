@@ -3,11 +3,16 @@
        reuse.py check-plan <sdlc_dir> <goal>
        reuse.py source <sdlc_dir>
        reuse.py rerun <sdlc_dir> <goal> [--ref R | --new-since-research] [--base B]
+       reuse.py inflight <sdlc_dir> <goal> [--remote N] [--base R]
 
 This script writes no files and starts no background process: it reads files and runs short git and Python
 subprocesses, each bounded by a timeout. `check-research` checks the `## Reuse` section of a goal's research
 dossier (`.sdlc/research/<goal>.md`, else the copy on the goal's branch): the `**Searched at:**` commit, the
-recorded queries, and the RU table or its `none: <reason>` line. Exit 2 on any error, 0 otherwise. A dossier
+recorded queries, and the RU table or its `none: <reason>` line. Exit 2 on any error, 0 otherwise. With
+`--at-research` it then also prints `In-flight work:` and the lines `inflight` returns (below) on stdout, whatever
+the exit code, and an unexpected error in that part becomes one line and never changes the exit code; that part
+reads git only and is bounded by the 120 second limit below, so the gesture that was near-instant can now take
+up to about 120 seconds (a ceiling, not a measurement). A dossier
 with no section, or a section with neither a `**Source:**` nor a `**Searched at:**` line, is legacy: a warning,
 never a refusal. Without `--at-research` a Searched-at commit missing from this machine is a warning too.
 
@@ -83,6 +88,32 @@ seconds for the whole run (the time left also bounds a running query, so the run
 200 hits per query, 1,000 output lines and 300 characters per line, and 8 MiB read per `git grep` (it is killed
 past that): the caps are judgements, not measured, and `git grep` cost at a commit on a large repository is
 unmeasured, so at 10x or 100x the 120 seconds is the ceiling and the run says so by stopping.
+
+`inflight` searches the changed files of the other goals' unmerged remote branches (the remote-tracking refs
+`refs/remotes/<remote>/<work.branch_prefix>*`, newest commit first, the goal's own branch left out) for the goal's
+recorded queries, and lists what those branches' research dossiers and plans declare as `extend`, `dependency-new`
+or `new`. A hit prints `INFLIGHT <branch> Q<i> <file>:<line>: <text>`, a declaration `DECLARED <branch> <id>
+<decision>: <capability>`, both on one line of at most 200 characters of quoted text; the last line is always
+`inflight: searched <k> of <n> goal branch(es) (cap 50); <h> hit(s); <d> declared addition(s); remote refs last
+fetched <age>`: `n` is the other-goal branches found, `k` those whose ref resolved and whose diff succeeded before
+a cap or the time limit, `h` the printed INFLIGHT lines, `d` the printed DECLARED lines. With no other goal branch
+it prints exactly one line, `inflight: no remote goal branches under <remote>/<prefix>`; with branches and no
+recorded queries it prints `inflight: no recorded queries for goal <goal>` and still lists declared additions
+(the issue's two "print only" rules conflict there). Only files a branch changed since its merge base with the
+base ref are searched (`<base>...<branch>`, deleted files left out); everything under `.sdlc/` is not searched,
+because it holds the other goal's own records, which are read only for their `## Reuse` table, and only when they
+are `.md` files under `.sdlc/research/` or `.sdlc/plans/` of at most 1 MiB. The base is `rerun`'s (`base_ref`);
+`--remote` names a remote other than the configured one. It never fetches (the last line says how long ago a
+fetch was), never writes, and exits 0 for every informational case and 2 for a usage error. Blind spots: branches
+under `work.checkpoint_prefix` are not searched (a line says so when it is set), and a branch not fetched on this
+machine does not exist to it.
+Ceilings, stated counts and not timings: 50 branches, 200 changed files and 10 research or plan files per branch,
+25 recorded queries, 25 DECLARED lines per file, 200 hits per query, 1,000 output lines and 120 seconds for the
+whole run, whichever comes first (the run says `inflight: stopped after 120 seconds`). That is at most 1
+`rev-parse`, 1 `diff`, 25 `git grep`s and 20 `cat-file` or `show` calls per branch, 47 in all, 2,350 over 50
+branches, one process at a time; the 120 seconds is the serialised ceiling at 10x or 100x branches, files or
+queries. The cost at the cap is NOT measured: no remote goal branches existed where this was written, and the
+pull request records the measurement step.
 """
 import importlib.util
 import json
@@ -1149,6 +1180,360 @@ def _rerun_main(args):
     return 0
 
 
+# ---------------------------------------------------------------------------------------------------- inflight
+# New in #2283, a block of its own after `rerun`. Same seam as `rerun`: every git call is `_run_git`-shaped
+# `run(argv, timeout=...)`, and a branch or file name only reaches git as a full refname or inside `<commit>:<path>`.
+
+#: Stated ceilings, not measurements: each bounds work whatever the repository holds. `MAX_SECONDS` is shared with
+#: `rerun`; the pull request records the timing that justifies or changes the three below.
+MAX_BRANCHES = 50
+MAX_CHANGED_FILES = 200
+MAX_PLAN_FILES_PER_BRANCH = 10
+MAX_DECLARED_PER_FILE = 25
+#: The byte count `git cat-file -s` reports for a research or plan file; equal to MAX_CHARS, its own name because it
+#: is read from git, not counted in text.
+MAX_BLOB_BYTES = 1048576
+#: The `## Reuse` decisions that mean "this branch adds something". A test keeps it inside DECISIONS.
+DECLARED_DECISIONS = ("extend", "dependency-new", "new")
+_SDLC_DIR = ".sdlc/"
+_RECORD_DIRS = (".sdlc/research/", ".sdlc/plans/")
+#: Everything that must not survive into one line of output: control characters, the Unicode line and paragraph
+#: separators, and the bidirectional overrides and isolates (they reorder what a terminal shows).
+_UNSAFE_TEXT = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029\u202a-\u202e\u2066-\u2069]")
+
+
+def _one_line(text, limit=200):
+    """`text` on one line: every unsafe character becomes one space, then cut to `limit` characters, no ellipsis.
+    `_shown` stays as it is for the existing lines; this one is for text quoted from another goal's branch."""
+    return _UNSAFE_TEXT.sub(" ", str(text))[:limit]
+
+
+def _fetch_age_text(seconds):
+    """`never`, else `<n> minute(s) ago` under an hour, `<n> hour(s) ago` under a day, else `<n> day(s) ago`."""
+    if seconds is None:
+        return "never"
+    seconds = max(0, int(seconds))
+    if seconds < 3600:
+        return "%d minute(s) ago" % (seconds // 60)
+    return "%d hour(s) ago" % (seconds // 3600) if seconds < 86400 else "%d day(s) ago" % (seconds // 86400)
+
+
+def _goal_stem(sdlc_dir, goal):
+    """The goal's file stem the way `work.record_path` makes it (a `.md` goal loses its suffix), or None for a goal
+    that would be an unsafe path component. Rebuilt here, with `state.unsafe_goal_reason`, so the own-branch lookup
+    does not load work.py; a test keeps the two in agreement."""
+    path = pathlib.Path(str(goal))
+    stem = path.stem if path.suffix == ".md" else str(goal)
+    return None if _load("state").unsafe_goal_reason(stem) else stem
+
+
+def _work_config(sdlc_dir):
+    """The `work` block of config.json, {} when there is none (a goal worktree's `.sdlc` has no config.json)."""
+    try:
+        config = _load("state").load_config(sdlc_dir)
+        block = config.get("work") if isinstance(config, dict) else None
+    except Exception:                               # noqa: BLE001 - missing or unreadable means defaults
+        return {}
+    return block if isinstance(block, dict) else {}
+
+
+def _record_branch(sdlc_dir, stem):
+    """The `branch` field of the goal's work record, or None. Read directly: the record is the one place the
+    branch name is written, including a retry name."""
+    if stem is None:
+        return None
+    try:
+        record = json.loads((pathlib.Path(sdlc_dir) / "state" / "work" / (stem + ".json")).read_text())
+    except Exception:                               # noqa: BLE001 - absent or unreadable both mean no record
+        return None
+    branch = record.get("branch") if isinstance(record, dict) else None
+    return branch if isinstance(branch, str) and branch else None
+
+
+def _own_branch_test(sdlc_dir, goal, prefix, root, run):
+    """A predicate on a display name (the ref minus `refs/remotes/<remote>/`): True for this goal's own branch.
+    With a work record that is its `branch`. Without one, HEAD's name AND `<prefix><stem>` with its retry names
+    `<prefix><stem>-<n>` (work.py names a retry that way), so a pushed branch of this goal is never reported as
+    another goal's; `<stem>-notes` is another branch."""
+    stem = _goal_stem(sdlc_dir, goal)
+    recorded = _record_branch(sdlc_dir, stem)
+    if recorded:
+        return lambda name: name == recorded
+    head = ""
+    try:
+        proc = (run or _run_git)(["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"], timeout=GIT_TIMEOUT)
+        head = _decode(proc.stdout).strip() if proc.returncode == 0 else ""
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        pass
+    stem_name = prefix + stem if stem is not None else None
+    retry = re.compile(re.escape(stem_name) + r"-[0-9]+") if stem_name else None
+    return lambda name: (bool(head) and head != "HEAD" and name == head) or (
+        stem_name is not None and (name == stem_name or bool(retry.fullmatch(name))))
+
+
+def _usable(label, value, default):
+    """(value, refused): `value` (or `default` when absent) after `state.safe_ref`; refused when it changes it or
+    is empty. safe_ref prints its own refusal on stderr; the verb adds one `... is not usable` line on stdout."""
+    if value is None:
+        value = default
+    if not isinstance(value, str) or not value:
+        return value, True
+    return value, _load("state").safe_ref(label, value) != value
+
+
+class _Body:
+    """The output lines before the summary, appended through one gate: at MAX_OUTPUT_LINES nothing more goes in and
+    one `inflight: output stopped at <n> lines` line (not counted) takes the next place."""
+
+    def __init__(self):
+        self.lines, self.stopped = [], False
+
+    def add(self, line):
+        if self.stopped:
+            return False
+        if len(self.lines) >= MAX_OUTPUT_LINES:
+            self.stopped = True
+            self.lines.append("inflight: output stopped at %d lines" % MAX_OUTPUT_LINES)
+            return False
+        self.lines.append(line)
+        return True
+
+
+def _git_lines(run, argv, budget):
+    """(stdout bytes or None, why): one git call through `run`, never raising for a git failure or a bad argument."""
+    try:
+        proc = (run or _run_git)(argv, timeout=max(0.001, min(GIT_TIMEOUT, budget)))
+    except subprocess.TimeoutExpired:
+        return None, "timeout"
+    except (ValueError, OSError) as exc:
+        return None, type(exc).__name__
+    if proc.returncode != 0:
+        return None, _one_line((_decode(proc.stderr).strip().splitlines() or ["git failed"])[0], 100)
+    return proc.stdout, None
+
+
+def _declared(root, name, commit, path, run, budget, body):
+    """The `DECLARED` lines of one research or plan file on a branch; returns how many were printed."""
+    out, why = _git_lines(run, ["git", "-C", str(root), "cat-file", "-s", commit + ":" + path], budget)
+    label = "inflight: %s %s " % (_one_line(name), _one_line(path))
+    size = _decode(out).strip() if out is not None else ""
+    if not size.isdigit():
+        body.add(label + "could not be sized")
+        return 0
+    if int(size) > MAX_BLOB_BYTES:
+        body.add(label + "is too large to read")
+        return 0
+    out, why = _git_lines(run, ["git", "-C", str(root), "show", commit + ":" + path], budget)
+    if out is None:
+        body.add(label + "could not be read (%s)" % why)
+        return 0
+    rows = [r for r in parse_reuse(_decode(out))["rows"] if r.get("decision", "").strip() in DECLARED_DECISIONS]
+    printed = 0
+    for row in rows[:MAX_DECLARED_PER_FILE]:
+        if not body.add("DECLARED %s %s %s: %s" % (_one_line(name), _one_line(row["id"]), _one_line(row["decision"].strip()),
+                                                   _one_line(row["capability"]))):
+            break
+        printed += 1
+    if len(rows) > MAX_DECLARED_PER_FILE:
+        body.add("inflight: %s %s declares %d additions; printed the first %d" % (
+            _one_line(name), _one_line(path), len(rows), MAX_DECLARED_PER_FILE))
+    return printed
+
+
+def _inflight_queries(parsed):
+    """([(i, pattern, paths)], skipped lines, note): each query numbered by POSITION over the good and the bad
+    ones together, as `rerun` numbers them, at most MAX_QUERIES; a bad one gives one `skipped` line."""
+    bad = set(parsed["bad_queries"])
+    good = iter(parsed["queries"])
+    count = len(parsed["queries"]) + len(bad)
+    note = ["inflight: only the first %d of %d queries run" % (MAX_QUERIES, count)] if count > MAX_QUERIES else []
+    runnable, skipped = [], []
+    for i in range(1, min(count, MAX_QUERIES) + 1):
+        if i in bad:
+            skipped.append("inflight: Q%d skipped: not of the form - pattern: `<regex>` paths: `<path> [<path> ...]`" % i)
+            continue
+        pattern, _paths = next(good)
+        problem = _query_problem(pattern, [])     # the pattern rules only: the query's own paths are not used here
+        if problem:
+            skipped.append("inflight: Q%d skipped: %s" % (i, problem))
+        else:
+            runnable.append((i, pattern))
+    return runnable, skipped, note
+
+
+def _clocks(now, clock):
+    """(age clock, deadline clock): `now` is a callable or a plain number. With only `now` injected both come from
+    it, so one injected clock drives a test; `clock`, when given, drives the deadline alone."""
+    if now is None:
+        age = time.time
+    else:
+        age = now if callable(now) else (lambda: now)
+    return age, clock or (age if now is not None else time.monotonic)
+
+
+def _inflight_base(sdlc_dir, goal, root, remote, configured, base, run):
+    """(commit, label, notes): the base the branches are diffed against; commit None when it does not resolve.
+    D4: `--base` with a `--remote` other than the configured one is prefixed with `--remote` here, never through
+    `base_ref` (which would build `<configured>/<remote>/<base>`); without `--base` the base is `base_ref`'s, on
+    the configured remote, and a note says so."""
+    notes = []
+    if base and remote != configured:
+        label = base if base.startswith(remote + "/") else remote + "/" + base
+    else:
+        label, note = base_ref(sdlc_dir, goal, base, run)
+        if note:
+            notes.append("inflight:" + note[len("rerun:"):] if note.startswith("rerun:") else note)
+        if label and remote != configured and not base:
+            notes.append("inflight: base %s is not on remote %s" % (_one_line(label), _one_line(remote)))
+    commit = resolve_commit(root, label, run)[0] if label else None
+    return commit, label, notes
+
+
+def inflight(sdlc_dir, goal, remote=None, base=None, run=None, now=None, clock=None):
+    """The lines `reuse.py inflight` prints (see the module docstring). Reads, never writes, never fetches."""
+    age_clock, tick = _clocks(now, clock)
+    deadline = tick() + MAX_SECONDS                 # taken before the first git call
+    work = _work_config(sdlc_dir)
+    configured, bad_remote = _usable("work.remote", work.get("remote") or None, "origin")
+    prefix, bad_prefix = _usable("work.branch_prefix", work.get("branch_prefix"), "sdlc/")
+    remote_name, bad_option = _usable("--remote", remote or None, configured)
+    if bad_remote or bad_option:
+        return ["inflight: remote is not usable"]
+    if bad_prefix:
+        return ["inflight: branch_prefix is not usable"]
+    root = _project_root(sdlc_dir)
+    is_own = _own_branch_test(sdlc_dir, goal, prefix, root, run)
+    lead = "refs/remotes/%s/" % remote_name
+    out, why = _git_lines(run, ["git", "-C", str(root), "for-each-ref", "--sort=-committerdate",
+                                "--format=%(refname)", lead], deadline - tick())
+    listing_failed = out is None
+    names = [] if listing_failed else [
+        line[len(lead):] for line in _decode(out).splitlines()
+        if line.startswith(lead) and line[len(lead):].startswith(prefix) and len(line) > len(lead) + len(prefix)]
+    others = [name for name in names if not is_own(name)]
+    if not others and not listing_failed:
+        return ["inflight: no remote goal branches under %s/%s" % (_one_line(remote_name), _one_line(prefix))]
+    body = _Body()
+    if listing_failed:
+        body.add("inflight: could not list remote goal branches (%s)" % why)
+    n, k, hits, declared = len(others), 0, 0, 0
+    parsed = parse_reuse(dossier_text(sdlc_dir, goal))
+    runnable, skipped, cap_note = _inflight_queries(parsed)
+    no_queries = not parsed["queries"] and not parsed["bad_queries"]
+    base_commit = None
+    if others:
+        base_commit, label, notes = _inflight_base(sdlc_dir, goal, root, remote_name, configured, base, run)
+        for line in notes:
+            body.add(line)
+        if base_commit is None:
+            body.add("inflight: base %s does not resolve; no branch was searched" % (_one_line(label) if label else "(none)"))
+    if base_commit is not None:
+        for line in cap_note + skipped:
+            body.add(line)
+        if no_queries:
+            body.add("inflight: no recorded queries for goal %s" % _one_line(goal))
+        stopped_for_time = False
+        for name in others[:MAX_BRANCHES]:
+            if body.stopped:
+                break
+            if tick() >= deadline:
+                stopped_for_time = True
+                break
+            shown = _one_line(name)
+            commit, error = resolve_commit(root, lead + name, run)
+            if commit is None:
+                body.add("inflight: %s does not resolve" % shown)
+                continue
+            out, why = _git_lines(run, ["git", "-C", str(root), "diff", "--name-only", "-z", "--diff-filter=d",
+                                        "%s...%s" % (base_commit, commit), "--"], deadline - tick())
+            if out is None:
+                body.add("inflight: %s diff failed (%s)" % (shown, why))
+                continue
+            k += 1
+            files = sorted({_decode(raw) for raw in out.split(b"\x00") if raw})
+            if len(files) > MAX_CHANGED_FILES:
+                body.add("inflight: %s changed %d files; searched the first %d" % (shown, len(files), MAX_CHANGED_FILES))
+                files = files[:MAX_CHANGED_FILES]
+            safe = [f for f in files if not _CONTROL.search(f)]
+            if len(safe) < len(files):
+                body.add("inflight: %s skipped %d file name(s) with control characters" % (shown, len(files) - len(safe)))
+            paths = [f for f in safe if not f.startswith(_SDLC_DIR)]   # the other goal's own records are not product code
+            for i, pattern in (runnable if paths else ()):
+                if body.stopped:
+                    break
+                if tick() >= deadline:
+                    stopped_for_time = True
+                    break
+                try:
+                    status, found = git_grep(root, pattern, paths, commit, run, min(QUERY_TIMEOUT, deadline - tick()))
+                except (ValueError, OSError) as exc:
+                    body.add("inflight: %s Q%d grep failed (%s)" % (shown, i, type(exc).__name__))
+                    continue
+                if status != "ok":
+                    body.add("inflight: %s Q%d %s" % (shown, i, "TIMEOUT" if status == "timeout" else
+                                                      "ERROR: " + _one_line(status[len("error: "):])))
+                    continue
+                for path, line, text in found[:MAX_HITS_PER_QUERY]:
+                    if body.add("INFLIGHT %s Q%d %s:%d: %s" % (shown, i, _one_line(path, 500), line, _one_line(text))):
+                        hits += 1
+                if len(found) > MAX_HITS_PER_QUERY:
+                    body.add("inflight: %s Q%d truncated at %d hits" % (shown, i, MAX_HITS_PER_QUERY))
+            records = [f for f in safe if f.endswith(".md") and f.startswith(_RECORD_DIRS)]
+            if len(records) > MAX_PLAN_FILES_PER_BRANCH:
+                body.add("inflight: %s carries %d research or plan files; read the first %d" % (
+                    shown, len(records), MAX_PLAN_FILES_PER_BRANCH))
+            for path in records[:MAX_PLAN_FILES_PER_BRANCH]:
+                if body.stopped:
+                    break
+                if stopped_for_time or tick() >= deadline:
+                    stopped_for_time = True
+                    break
+                declared += _declared(root, name, commit, path, run, deadline - tick(), body)
+            if stopped_for_time:
+                break
+        if stopped_for_time:
+            body.add("inflight: stopped after %d seconds" % MAX_SECONDS)
+    lines = list(body.lines)
+    checkpoint = work.get("checkpoint_prefix")
+    if isinstance(checkpoint, str) and checkpoint:
+        lines.append("inflight: work.checkpoint_prefix %s is set; branches under it are not searched" % _one_line(checkpoint))
+    age = _fetch_age_text(fetch_age(root, run, age_clock))
+    return lines + ["inflight: searched %d of %d goal branch(es) (cap %d); %d hit(s); %d declared addition(s); "
+                    "remote refs last fetched %s" % (k, n, MAX_BRANCHES, hits, declared, age)]
+
+
+def _inflight_main(args):
+    """`inflight <sdlc_dir> <goal> [--remote N] [--base R]`, options parsed by hand like `rerun`'s: a value is taken
+    as given, a bad one is refused later by `resolve_commit` or `safe_ref`, not by the parser."""
+    positional, options, i = [], {}, 0
+    while i < len(args):
+        arg = args[i]
+        if arg in ("--remote", "--base"):
+            if arg in options or i + 1 >= len(args):
+                return _usage_error("%s needs one value, given once" % arg)
+            options[arg] = args[i + 1]
+            i += 2
+            continue
+        if arg.startswith("-"):
+            return _usage_error("unknown option %s" % _shown(arg))
+        positional.append(arg)
+        i += 1
+    if len(positional) != 2:
+        return _usage_error()
+    print("\n".join(inflight(positional[0], positional[1], remote=options.get("--remote"), base=options.get("--base"))))
+    return 0
+
+
+def _print_inflight(sdlc_dir, goal):
+    """The `--at-research` block. An unexpected error becomes one line, never an exit code: it must not change
+    what `check-research` returns."""
+    print("In-flight work:")
+    try:
+        print("\n".join(inflight(sdlc_dir, goal)))
+    except Exception as exc:                        # noqa: BLE001 - see the docstring
+        print("inflight: could not run (%s)" % type(exc).__name__)
+
+
 def main(argv):
     if argv in (["-h"], ["--help"]):
         print(__doc__)
@@ -1173,6 +1558,8 @@ def main(argv):
         return 0
     if argv[:1] == ["rerun"]:
         return _rerun_main(argv[1:])
+    if argv[:1] == ["inflight"]:
+        return _inflight_main(argv[1:])
     at_research = argv[-1:] == ["--at-research"]
     args = argv[:-1] if at_research else argv
     if len(args) != 3 or args[0] != "check-research":
@@ -1180,12 +1567,12 @@ def main(argv):
         return 2
     errors, warnings, parsed, k = _check(args[1], args[2], at_research)
     _print_findings(errors, warnings)
-    if errors:
-        return 2
-    if parsed is not None:
+    if parsed is not None and not errors:
         print("reuse.py: ## Reuse and ## Test design for goal %s are well formed (%d rows, %d queries, %d criteria)"
               % (args[2], len(parsed["rows"]), len(parsed["queries"]), k))
-    return 0
+    if at_research:
+        _print_inflight(args[1], args[2])
+    return 2 if errors else 0
 
 
 if __name__ == "__main__":

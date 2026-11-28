@@ -714,8 +714,10 @@ def test_cli_exit_codes_and_streams(tmp_path):
         0, "reuse.py: ## Reuse and ## Test design for goal 7 are well formed (7 rows, 2 queries, 3 criteria)\n",
         "reuse.py: Searched at: commit aaaaaaa is not on this machine\n")
     proc = _cli(tmp_path, "check-research", sdlc, "7", "--at-research")
+    # #2283: `--at-research` also prints the in-flight block on stdout; the exit code and stderr are unchanged.
     assert (proc.returncode, proc.stdout, proc.stderr) == (
-        2, "", "reuse.py: Searched at: commit aaaaaaa is not on this machine\n")
+        2, "In-flight work:\ninflight: no remote goal branches under origin/sdlc/\n",
+        "reuse.py: Searched at: commit aaaaaaa is not on this machine\n")
 
     for args in (("check-research", sdlc), ("bogus", sdlc, "7")):
         proc = _cli(tmp_path, *args)
