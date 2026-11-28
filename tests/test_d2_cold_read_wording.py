@@ -147,6 +147,10 @@ def _flat(path):
     return " ".join((SKILLS / path).read_text(encoding="utf-8").split())
 
 
+def test_review_classifies_a_duplicate_new_since_research_as_a_concern():
+    assert "A `reuse.py rerun` hit new since Research that this diff duplicates is a Concern." in _flat("sigma-review/SKILL.md")
+
+
 def test_failing_case_rule_states_the_risk_review_exception():              # F03
     review = _flat("sigma-review/SKILL.md")
     assert "The failing-case rule binds this general review's findings; a dedicated risk review's `critical`/`high` blocks without one" in review

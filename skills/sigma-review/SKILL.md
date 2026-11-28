@@ -64,7 +64,7 @@ A non-zero `check` or `run` (the brief names a scratch path the maker can write,
 read) blocks dispatch on every mechanism, `subagent` included: fix the brief first.
 
 **A diff-only review misses blast radius:** the diff is the *change*, the codebase is
-the *impact surface*. Before judging any change, read the code around it and grep every caller.
+the *impact surface*. Before judging any change, read the code around it and grep every caller. A `reuse.py rerun` hit new since Research that this diff duplicates is a Concern.
 
 **Executor:** this skill is the review; the optional `/code-review` plugin pass never replaces it
 or satisfies its gates.
