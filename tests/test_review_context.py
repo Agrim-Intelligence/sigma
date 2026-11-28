@@ -1458,3 +1458,158 @@ def test_no_documents_named_is_its_own_state():
     with tempfile.TemporaryDirectory() as d:
         out = _doc_brief(d, documents=[])
         assert "no reference documents named" in out.lower()
+
+
+# --- #2284: the brief names the `reuse.py rerun` command when the dossier is in the new Reuse format --
+# The builder only PRINTS the command; it never runs it. Gate: a dossier phase AND `reuse.is_new_format`.
+
+_REUSE_BODY = ("\n## Reuse\n**Source:** git grep\n**Searched at:** " + "a" * 40 + "\n"
+               "- pattern: `def charge` paths: `src`\n")
+_RERUN_PLAN = "Re-run the reuse queries: `reuse.py rerun .sdlc 2284`."
+_RERUN_CODE = ("Re-run the reuse queries against the base: "
+               "`reuse.py rerun .sdlc 2284 --new-since-research`.")
+_FIX_FIRST = "A `new` decision under `## Reuse`, in the dossier or the plan, that a hit contradicts is FIX-FIRST."
+_DUPLICATE = "Code merged since Research that the diff duplicates is a finding."
+_ADDED = (_RERUN_PLAN, _RERUN_CODE, _FIX_FIRST, _DUPLICATE)
+
+
+def _reuse_brief(phase, with_reuse=True, goal="2284", body=None, rc=None):
+    """One brief from a fresh repo whose dossier for `goal` has (or lacks) the new-format Reuse section."""
+    with tempfile.TemporaryDirectory() as d:
+        base, root = _repo(d)
+        _dossier_at(base, goal, (_REUSE_BODY if with_reuse else "") if body is None else body)
+        rc = rc or _rc()
+        artifact = "99" if phase == "pr-review" else ""
+        return rc.brief(base, goal, phase, artifact=artifact, repo_root=root), rc
+
+
+def test_plan_review_brief_adds_the_rerun_command_when_the_dossier_has_reuse():
+    out, _ = _reuse_brief("plan-review")
+    assert _RERUN_PLAN in out.splitlines()
+    assert "--new-since-research" not in out
+
+
+def test_plan_review_brief_states_the_fix_first_rule():
+    out, _ = _reuse_brief("plan-review")
+    assert _FIX_FIRST in out
+
+
+def test_code_review_brief_adds_the_new_since_research_command():
+    out, _ = _reuse_brief("code-review")
+    assert _RERUN_CODE in out.splitlines()
+    assert _DUPLICATE in out
+    assert "FIX-FIRST" not in out
+
+
+def test_pr_review_brief_adds_the_new_since_research_command():
+    out, _ = _reuse_brief("pr-review")
+    assert _RERUN_CODE in out.splitlines()
+    assert _DUPLICATE in out
+    assert "FIX-FIRST" not in out
+
+
+def test_brief_is_unchanged_when_the_dossier_has_no_reuse():
+    for phase in ("plan-review", "code-review", "pr-review"):
+        plain, _ = _reuse_brief(phase, with_reuse=False)
+        assert "reuse.py rerun" not in plain and "FIX-FIRST" not in plain
+        assert _DUPLICATE not in plain
+        with_reuse, _ = _reuse_brief(phase)
+        stripped = with_reuse.replace(_REUSE_BODY.strip(), "")
+        for line in _ADDED:
+            stripped = stripped.replace(line, "")
+        norm = lambda t: re.sub(r"\s+", " ", t).strip()
+        assert norm(stripped) == norm(plain), phase
+
+
+def test_brief_is_unchanged_for_other_review_kinds():
+    """`retro` and `goal-review` render a brief (both are in PHASES) but are outside the dossier gate."""
+    for phase in ("retro", "goal-review"):
+        out, _ = _reuse_brief(phase)
+        assert out and "reuse.py rerun" not in out, phase
+        assert "FIX-FIRST" not in out and _DUPLICATE not in out, phase
+
+
+@pytest.mark.parametrize("phase", ["plan-review", "code-review", "pr-review"])
+def test_brief_is_unchanged_for_an_old_dossier_with_its_own_reuse_heading(phase):
+    """A bare `## Reuse` heading, no Source or Searched-at line, is a legacy dossier (one case per kind)."""
+    out, _ = _reuse_brief(phase, body="\n## Reuse\nnothing recorded\n")
+    assert "reuse.py rerun" not in out and "FIX-FIRST" not in out
+    assert _DUPLICATE not in out
+
+
+def test_the_brief_with_reuse_passes_the_reviewer_check(tmp_path):
+    """Run with `--scratch <scratch-style sdlc_dir>`: a brief that printed the scratch `sdlc_dir`
+    instead of `.sdlc` is refused here (also covered directly by the next test)."""
+    scratch = tmp_path / "work" / "2284" / ".sdlc"
+    scratch.mkdir(parents=True)
+    with tempfile.TemporaryDirectory() as d:
+        base, root = _repo(d)
+        _dossier_at(str(scratch), "2284", _REUSE_BODY)
+        for phase in ("plan-review", "code-review"):
+            out = _rc().brief(str(scratch), "2284", phase, repo_root=root)
+            assert "reuse.py rerun" in out
+            b = tmp_path / (phase + ".md"); b.write_text(out, encoding="utf-8")
+            p = subprocess.run([sys.executable, str(S / "reviewer.py"), "check", str(b),
+                                "--scratch", str(scratch)], capture_output=True, text=True)
+            assert p.returncode == 0, p.stdout + p.stderr
+
+
+def test_a_goal_path_under_the_scratch_dir_would_be_refused_by_check(tmp_path):
+    """Why the command prints `.sdlc` and never the sdlc_dir argument."""
+    scratch = tmp_path / "work" / "2284" / ".sdlc"
+    b = tmp_path / "b.md"; b.write_text("reuse.py rerun %s 2284\n" % scratch, encoding="utf-8")
+    p = subprocess.run([sys.executable, str(S / "reviewer.py"), "check", str(b),
+                        "--scratch", str(scratch)], capture_output=True, text=True)
+    assert p.returncode == 1
+
+
+def test_rerun_command_never_names_the_sdlc_dir_argument(tmp_path):
+    scratch = tmp_path / "work" / "2284" / ".sdlc"
+    scratch.mkdir(parents=True)
+    with tempfile.TemporaryDirectory() as d:
+        base, root = _repo(d)
+        _dossier_at(str(scratch), "2284", _REUSE_BODY)
+        out = _rc().brief(str(scratch), "2284", "plan-review", repo_root=root)
+        assert _RERUN_PLAN in out.splitlines()
+        assert not [l for l in out.splitlines() if "reuse.py rerun" in l and str(scratch) in l]
+
+
+def test_rerun_command_quotes_a_goal_with_a_space():
+    goal = "fix the retry"
+    out, _ = _reuse_brief("plan-review", goal=goal)
+    assert "reuse.py rerun .sdlc " + shlex.quote(goal) + "`." in out
+    assert "'fix the retry'" in out
+
+
+def test_a_reuse_failure_leaves_the_brief_unchanged():
+    """`rc._load` raising for `reuse` only (everything else loads) must drop the lines, not the brief."""
+    rc = _rc()
+    real = rc._load
+
+    def broken(name):
+        if name == "reuse":
+            raise RuntimeError("reuse.py is broken")
+        return real(name)
+
+    rc._load = broken
+    failed, _ = _reuse_brief("plan-review", rc=rc)
+    rc._load = real
+    assert "reuse.py rerun" not in failed and "FIX-FIRST" not in failed
+    plain, _ = _reuse_brief("plan-review", rc=rc)
+    with_reuse_plain = plain.replace(_RERUN_PLAN, "").replace(_FIX_FIRST, "")
+    norm = lambda t: re.sub(r"\s+", " ", t).strip()
+    assert norm(failed) == norm(with_reuse_plain)
+
+
+def test_worktree_style_empty_sdlc_reads_the_dossier_from_the_goal_branch():
+    """The documented gesture runs from a tree whose `.sdlc/research` is empty; the dossier is on the
+    goal branch only. The brief and `reuse.dossier_text` must agree about it."""
+    with tempfile.TemporaryDirectory() as d:
+        base, root = _goal_branch_repo(d, dossier="# Research\n" + _REUSE_BODY)
+        assert not (pathlib.Path(base) / "research" / "0007-blue-button.md").exists()
+        rc = _rc()
+        out = rc.brief(base, "0007-blue-button", "pr-review", artifact="99", repo_root=root)
+        text = rc._load("reuse").dossier_text(base, "0007-blue-button")
+        assert rc._load("reuse").is_new_format(text)
+        assert "Re-run the reuse queries against the base: " \
+               "`reuse.py rerun .sdlc 0007-blue-button --new-since-research`." in out
