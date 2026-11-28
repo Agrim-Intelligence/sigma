@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """usage: reuse.py check-research <sdlc_dir> <goal> [--at-research]
+       reuse.py check-plan <sdlc_dir> <goal>
        reuse.py source <sdlc_dir>
 
 This script writes no files and starts no background process: it reads files and runs short git and Python
@@ -8,6 +9,32 @@ dossier (`.sdlc/research/<goal>.md`, else the copy on the goal's branch): the `*
 recorded queries, and the RU table or its `none: <reason>` line. Exit 2 on any error, 0 otherwise. A dossier
 with no section, or a section with neither a `**Source:**` nor a `**Searched at:**` line, is legacy: a warning,
 never a refusal. Without `--at-research` a Searched-at commit missing from this machine is a warning too.
+
+`check-plan` checks the goal's plan (`.sdlc/plans/<goal>.md`, or the path `check_plan(..., plan=)` is given) against
+the dossier: first every error `check_research` returns, unchanged (when `verify.enforce` is on and there is no
+acceptance record that line and the plan check's own `no recorded acceptance criteria` line both appear); then a
+`## Reuse` section with one `- RU-<n>: <text>` bullet for every dossier row id (an optional table in the dossier's
+format is judged by `table_errors`, and may not reuse a dossier id; a plan `none: <reason>` line never excuses a
+missing bullet); then a `## Test map` section with exactly one `- AC-<n>: <value>` bullet for every criterion id of
+`review_tests.criteria`, each value a list of tests all covered by the plan's `## Tests` (an entry equal to the
+test, or a file entry, which has no `::`, followed by `::`; a runner bullet only exactly), or `UNTESTABLE: <why>`;
+`NONE` is refused. A docs-only `## Tests` (`none: <reason>`) lets the map be one `none: <reason>` line. A goal with
+no dossier, or a dossier that is not in the new format, is legacy whether or not it has a plan: a warning, exit 0.
+A dossier over 1 MiB is not parsed for that decision: `check_research`'s own over-size error is returned alone. A
+broken `## Tests` is not this check's error (the existing `## Tests` check speaks): coverage is skipped with one
+`coverage not judged` warning. With no acceptance record the check refuses when `verify.enforce` is on, and warns
+and skips the map rules when it is off. A corrupt config.json reads as no runners for the coverage rule (a runner
+bullet then gives the warning) while `verify.enforce` still reads it as on. Nothing here is called from a gate.
+Ceilings: one `check_research` call plus two section scans of at most 1 MiB of plan and one criteria read, linear
+in plan size and rows; the dossier is read twice (here and inside `check_research`, each may fall back to a
+`git show`) and the plan file is read before the 1 MiB cap. Measured once each on one machine (Linux, Python 3.13, a small project, not the Apple M4 Pro of the figures
+below; `reuse.py` read as written, `review_tests` loaded once per run): a 1 MiB plan of bullets cut at the cap
+took 0.12 s; a 1 MiB plan of `|` rows (1,571,999 errors) took 1.58 s and peaked at 303 MB of Python allocations
+(tracemalloc), above the 0.47 s `check_research` figure (different machines, so not a ratio); a 1 MiB `## Test map`
+of 80,645 `- AC-1: NONE` bullets took 0.15 s (it took 7.4 s when `review_tests` was loaded per bullet), 32,762
+duplicate valid bullets 0.07 s, and 20,000 duplicate bullets 0.05 s. Not measured: a real large plan, memory for the
+bullet shapes, a plan with many `## Tests` entries, and any run on another machine. With no acceptance record and
+`verify.enforce` off the result holds two warnings, `check_research`'s and this check's own.
 
 `source` prints one JSON line (`mode`, `graph_commit`, `reason`, `delta_files`) saying whether the reuse search
 uses the knowledge graph or `git grep`. The graph is usable only when `kg.py freshness` (run as a subprocess of
@@ -77,9 +104,12 @@ DECISIONS = {
                        "'verified:' then three words or more"),
     "new": ("the dash \u2014 or -", "three words or more"),
 }
-LEGACY_NO_DOSSIER = "legacy goal (no research dossier); nothing checked"
-LEGACY_NO_SECTION = "legacy goal (the research dossier has no ## Reuse section); nothing checked"
-LEGACY_OLD_SECTION = "legacy goal (## Reuse was not written from reuse.py brief); nothing checked"
+LEGACY_WHY_NO_DOSSIER = "no research dossier"
+LEGACY_WHY_NO_SECTION = "the research dossier has no ## Reuse section"
+LEGACY_WHY_OLD_SECTION = "## Reuse was not written from reuse.py brief"
+LEGACY_NO_DOSSIER = "legacy goal (%s); nothing checked" % LEGACY_WHY_NO_DOSSIER
+LEGACY_NO_SECTION = "legacy goal (%s); nothing checked" % LEGACY_WHY_NO_SECTION
+LEGACY_OLD_SECTION = "legacy goal (%s); nothing checked" % LEGACY_WHY_OLD_SECTION
 _FENCE = re.compile(r"\s*(`{3,}|~{3,})")
 _QUERY = re.compile(r"- pattern: `([^`]*)` paths: `([^`]*)`")
 #: C0, DEL and C1 (U+0080-U+009F, which a terminal can read as escape sequences, U+009B being CSI).
@@ -98,6 +128,9 @@ _DESIGN_FIELDS = ("criterion", "behaviour", "failure", "hostile", "helpers")
 #: Every id `review_tests.criteria` can return has this shape, so a row naming one is named by it.
 _CRITERION = re.compile(r"AC-[0-9]+")
 _DASHES = ("\u2014", "-")
+#: A plan's own bullets. The remainder may be empty (`- RU-1:`), which `parse_reuse` would count as a query.
+_RU_BULLET = re.compile(r"- (RU-[0-9]+):(?:[ \t](.*))?")
+_AC_BULLET = re.compile(r"- (AC-[0-9]+):(?:[ \t](.*))?")
 
 
 def _load(name):
@@ -568,6 +601,180 @@ def check_research(sdlc_dir, goal, at_research=False):
     return _check(sdlc_dir, goal, at_research)[:2]
 
 
+def _legacy_why(text):
+    """Why the goal is legacy for the plan check, or None when its dossier is in the new format. Decided by
+    `is_new_format`, never by the heading."""
+    if not text:
+        return LEGACY_WHY_NO_DOSSIER
+    if is_new_format(text):
+        return None
+    return LEGACY_WHY_OLD_SECTION if parse_reuse(text)["present"] else LEGACY_WHY_NO_SECTION
+
+
+def _bullets(lines, pattern):
+    """[(id, text)] of a section's bullets, in order, the text stripped (empty when the line has none)."""
+    found = (pattern.fullmatch(line) for line in lines)
+    return [(match.group(1), (match.group(2) or "").strip()) for match in found if match]
+
+
+def _plan_reuse_errors(lines, dossier, root):
+    """(errors, bullets read) for the plan's `## Reuse` lines. Bullets are read here, not by `parse_reuse`, which
+    counts every `- ` line as a query and so cannot see an empty one; only the `|` lines and the `none:` line go
+    to it, so `table_errors` stays the one table reader."""
+    dossier_ids = [row["id"] for row in dossier["rows"]]
+    cited = {}
+    for rid, text in _bullets(lines, _RU_BULLET):
+        cited.setdefault(rid, []).append(text)
+    block = [line for line in lines if line.strip().startswith(("|", "none:"))]
+    parsed = parse_reuse("## Reuse\n" + "\n".join(block))
+    errors = []
+    if parsed["none"] == "":
+        errors.append("## Reuse: none: needs a reason")
+    for rid in dict.fromkeys(i for i in dossier_ids if _ID.fullmatch(i)):
+        if rid not in cited:
+            errors.append("%s: no bullet in the plan's ## Reuse for this research row" % rid)
+        elif "" in cited[rid]:
+            errors.append("%s: bullet text is empty" % rid)
+    errors += table_errors(parsed, root)
+    taken = set(dossier_ids)
+    errors += ["%s: id collides with a row of the research dossier" % row["id"]
+               for row in parsed["rows"] if row["id"] in taken]
+    return errors, sum(len(texts) for texts in cited.values())
+
+
+def _runners(sdlc_dir):
+    """`tests.runners` as `red_green.main` reads it. A goal worktree's `.sdlc` has no config.json (ConfigMissing),
+    and a config that cannot be read gives no runners too: a runner bullet then fails `selectors`, which is the
+    visible `coverage not judged` warning, never an error here."""
+    state = _load("state")
+    try:
+        return state.test_runners(state.load_config(sdlc_dir))
+    except Exception:                              # noqa: BLE001 - missing, invalid or malformed: no runners
+        return {}
+
+
+def _coverage(plan, runners):
+    """(covered(test, exact_only=False) -> bool, None), or (None, the first line of why `## Tests` cannot be read).
+    A `## Tests` that is the docs-only line covers nothing. A file entry (no `::`) covers `entry::<name>`; every
+    other entry, a runner bullet included, covers only itself. `exact_only` drops the file-entry rule: it is for a
+    whole comma-list value, which only a runner test name holding a comma can match."""
+    rg = _load("red_green")
+    try:
+        entries = [] if rg.none_reason(plan) is not None else rg.selectors(plan, runners)
+    except ValueError as exc:
+        return None, (str(exc).splitlines() or [type(exc).__name__])[0]
+    exact = set(entries)
+    files = [entry + "::" for entry in entries if "::" not in entry and not rg.parse_runner(entry)]
+    def covered(test, exact_only=False):
+        return test in exact or (not exact_only and any(test.startswith(prefix) for prefix in files))
+    return covered, None
+
+
+def _value_errors(cid, value, covered, tests):
+    """The errors of one `## Test map` value, in `review_tests.check`'s order: NONE, then UNTESTABLE, else tests.
+    `tests` is the `review_tests` module, loaded once by the caller (loading it per bullet cost 7.4 s on 1 MiB)."""
+    if not value:
+        return ["%s: value is empty; map a test or write UNTESTABLE: <why>" % cid]
+    if tests._NONE.match(value):
+        return ["%s: NONE is refused; map a test or write UNTESTABLE: <why>" % cid]
+    untestable = tests._UNTESTABLE.match(value)
+    if untestable:
+        return [] if untestable.group(1).strip() else ["%s: UNTESTABLE needs a reason" % cid]
+    if covered is None or covered(value, exact_only=True):   # whole value, exact: a runner name may hold a comma
+        return []
+    errors = []
+    for part in (part.strip() for part in value.split(",")):
+        if not part:
+            errors.append("%s: an empty test name in the list" % cid)
+        elif not covered(part):
+            errors.append("%s: %s is not covered by a ## Tests entry" % (cid, part))
+    return errors
+
+
+def _test_map_errors(lines, ids, goal, covered, tests):
+    """Rules 6 and 7 for the bullets of `## Test map`: one per criterion id, none for another id, each value valid."""
+    bullets = _bullets(lines, _AC_BULLET)
+    count = {}
+    for cid, _ in bullets:
+        count[cid] = count.get(cid, 0) + 1
+    errors = []
+    for cid in ids:
+        if not count.get(cid):
+            errors.append("%s: no bullet in ## Test map" % cid)
+        elif count[cid] > 1:
+            errors.append("%s: more than one bullet" % cid)
+    known = set(ids)
+    errors += ["%s: not an acceptance criterion of goal %s" % (cid, goal) for cid in count if cid not in known]
+    for cid, value in bullets:
+        if cid in known:
+            errors += _value_errors(cid, value, covered, tests)
+    return errors
+
+
+def _plan_check(sdlc_dir, goal, plan=None):
+    """(errors, warnings, plan path or None, RU bullets read, criteria mapped); the path is None when no plan was
+    checked."""
+    text = dossier_text(sdlc_dir, goal)
+    if len(text) > MAX_CHARS:                      # not parsed: a 1 MiB dossier would pass as legacy otherwise
+        return list(check_research(sdlc_dir, goal)[0]), [], None, 0, 0
+    why = _legacy_why(text)
+    if why:
+        return [], ["legacy goal (%s); plan inputs not checked" % why], None, 0, 0
+    path = plan or _load("review_context").phase_doc_file(sdlc_dir, goal, "plans")
+    if path is None:
+        return ["no plan for goal %s" % goal], [], None, 0, 0
+    try:
+        plan_text = pathlib.Path(path).read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return ["no plan for goal %s" % goal], [], None, 0, 0
+    if len(plan_text) > MAX_CHARS:
+        return ["plan: over %d characters; nothing checked" % MAX_CHARS], [], path, 0, 0
+    errors, warnings = (list(found) for found in check_research(sdlc_dir, goal))
+    tests = _load("review_tests")
+    root = tests._root(sdlc_dir, goal)
+    cited, k = 0, 0
+    lines = _section_lines(plan_text, "Reuse")
+    if lines is None:
+        errors.append("## Reuse: section missing")
+    else:
+        found, cited = _plan_reuse_errors(lines, parse_reuse(text), root)
+        errors += found
+    map_lines = _section_lines(plan_text, "Test map")
+    if map_lines is None:
+        return errors + ["## Test map: section missing"], warnings, path, cited, k
+    try:
+        ids = [cid for cid, _ in tests.criteria(sdlc_dir, goal)]
+    except (OSError, ValueError):
+        ids = None
+        (errors if _enforced(sdlc_dir) else warnings).append("no recorded acceptance criteria for goal %s" % goal)
+    lone = [line.strip() for line in map_lines if line.strip()]
+    docs_only = _load("red_green").none_reason(path) is not None and len(lone) == 1 and lone[0].startswith("none:")
+    if docs_only:
+        if not lone[0][len("none:"):].strip():
+            errors.append("## Test map: none: needs a reason")
+    elif ids is not None:
+        covered, why_not = _coverage(path, _runners(sdlc_dir))
+        if why_not:
+            warnings.append("## Test map: coverage not judged (%s)" % why_not)
+        errors += _test_map_errors(map_lines, ids, goal, covered, tests)
+        k = len(ids)
+    return errors, warnings, path, cited, k
+
+
+def check_plan(sdlc_dir, goal, plan=None):
+    """(errors, warnings) for the goal's plan inputs; the order and the rules are in the module docstring. `plan`
+    is a path, resolved with `review_context.phase_doc_file` when None, so a caller that holds the reviewed copy
+    passes it in."""
+    return _plan_check(sdlc_dir, goal, plan)[:2]
+
+
+def _print_findings(errors, warnings):
+    for line in warnings + errors[:MAX_SHOWN_ERRORS]:
+        print("reuse.py: " + line, file=sys.stderr)
+    if len(errors) > MAX_SHOWN_ERRORS:
+        print("reuse.py: \u2026 and %d more errors" % (len(errors) - MAX_SHOWN_ERRORS), file=sys.stderr)
+
+
 def main(argv):
     if argv in (["-h"], ["--help"]):
         print(__doc__)
@@ -578,16 +785,25 @@ def main(argv):
             return 2
         print(json.dumps(source(argv[1]), sort_keys=True))
         return 0
+    if argv[:1] == ["check-plan"]:
+        if len(argv) != 3:
+            print(USAGE, file=sys.stderr)
+            return 2
+        errors, warnings, plan, cited, mapped = _plan_check(argv[1], argv[2])
+        _print_findings(errors, warnings)
+        if errors:
+            return 2
+        if plan is not None:
+            print("reuse.py: ## Reuse and ## Test map in %s are complete (%d rows cited, %d criteria mapped)"
+                  % (plan, cited, mapped))
+        return 0
     at_research = argv[-1:] == ["--at-research"]
     args = argv[:-1] if at_research else argv
     if len(args) != 3 or args[0] != "check-research":
         print(USAGE, file=sys.stderr)
         return 2
     errors, warnings, parsed, k = _check(args[1], args[2], at_research)
-    for line in warnings + errors[:MAX_SHOWN_ERRORS]:
-        print("reuse.py: " + line, file=sys.stderr)
-    if len(errors) > MAX_SHOWN_ERRORS:
-        print("reuse.py: \u2026 and %d more errors" % (len(errors) - MAX_SHOWN_ERRORS), file=sys.stderr)
+    _print_findings(errors, warnings)
     if errors:
         return 2
     if parsed is not None:
