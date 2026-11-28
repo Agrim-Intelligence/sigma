@@ -177,10 +177,12 @@ Each phase runs via one of Sigma's own `sigma-*` skills, on every host.
    → *executor:* `sigma-brainstorm`.
 2. **Research** — map the blast radius: affected files, existing patterns, constraints, prior art —
    then size the goal into a lane (`small`/`medium`/`large`) from what was actually measured, so small
-   goals skip the ceremony they don't earn.
+   goals skip the ceremony they don't earn. Research also records what the goal can reuse and how each
+   criterion will be tested: see [reuse and test design](reuse-and-test-design.md).
    → *executor:* **`sigma-research`** (Sigma's own).
 3. **Plan** — write the plan: steps, files, tests, and a definition-of-done. Size it against real
-   throughput with **`/sigma-velocity`** (measured git pace), not "this feels like weeks."
+   throughput with **`/sigma-velocity`** (measured git pace), not "this feels like weeks." The plan must
+   cite every reuse decision and map every criterion to a test: see [reuse and test design](reuse-and-test-design.md).
    → *executor:* `sigma-plan`.
 4. **Plan-Review** — adversarially review the plan **before** any edit: verify each claim against the
    real code, stress-test what breaks after it ships, check scope/fit, and (vision-first) check it
