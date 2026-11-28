@@ -2,6 +2,7 @@
 """usage: reuse.py check-research <sdlc_dir> <goal> [--at-research]
        reuse.py check-plan <sdlc_dir> <goal>
        reuse.py source <sdlc_dir>
+       reuse.py rerun <sdlc_dir> <goal> [--ref R | --new-since-research] [--base B]
 
 This script writes no files and starts no background process: it reads files and runs short git and Python
 subprocesses, each bounded by a timeout. `check-research` checks the `## Reuse` section of a goal's research
@@ -66,6 +67,22 @@ no config.json (it is gitignored), always warns, and `load_config` calls a non-o
 Cost (Apple M4 Pro, Python 3.12, measured): the two parsers and the rules take at most 0.47 s on any 1 MiB shape
 tried, the worst being 1 MiB of `|` rows (1,048,544 errors), which peaks at 244 MB of Python allocations
 (tracemalloc) and 336 MB resident for the whole command; each error string is kept until the command prints.
+
+`rerun` runs the goal's recorded queries again with `git grep` at a commit, never a shell and never the working
+tree, and prints `Q<i> <file>:<line>: <text>` per hit. With no `--ref` it searches the tip of the remote-tracking
+base ref (the work record's remote and base, else `work.base`, else the remote's default branch as the local clone
+knows it, `--base` overriding), never HEAD. `--new-since-research` prints only the hits at that tip that were not
+at the dossier's `**Searched at:**` commit, compared by file and text, never by line number, and names both
+commits and how long ago the remote refs were fetched (the newer of the two FETCH_HEAD files a fetch can write; a
+linked worktree writes its own). It never fetches, never reads HEAD, never writes and never calls `merge-base`.
+Every ref is resolved to a commit id first (`rev-parse --verify --end-of-options <ref>^{commit}`) and an
+unresolvable one is refused in one line. It exits 0 for every informational case (no queries, no base, no
+Searched-at, a ref that does not resolve, hits) and 2 only for a usage error.
+Ceilings: each query is two `git grep`s at most (one per commit), 25 queries at most, 30 seconds per query and 120
+seconds for the whole run (the time left also bounds a running query, so the run stops at 120 seconds, never later),
+200 hits per query, 1,000 output lines and 300 characters per line, and 8 MiB read per `git grep` (it is killed
+past that): the caps are judgements, not measured, and `git grep` cost at a commit on a large repository is
+unmeasured, so at 10x or 100x the 120 seconds is the ceiling and the run says so by stopping.
 """
 import importlib.util
 import json
@@ -74,11 +91,20 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
+import threading
+import time
 
 USAGE = __doc__.split("\n\n", 1)[0]
 MAX_CHARS = 1048576
 GIT_TIMEOUT = 10
 MAX_QUERIES = 25
+QUERY_TIMEOUT = 30
+MAX_SECONDS = 120
+MAX_HITS_PER_QUERY = 200
+MAX_OUTPUT_LINES = 1000
+MAX_LINE_CHARS = 300
+MAX_GREP_BYTES = 8 * 1024 * 1024
 MAX_PATTERN = 200
 #: Linux's PATH_MAX, above macOS's 1024: neither can stat a longer path as written, so it names no honest evidence.
 MAX_EVIDENCE_PATH = 4096
@@ -420,13 +446,56 @@ def reuse_errors(parsed, root):
     return errors + table_errors(parsed, root)
 
 
-def _run_git(argv):
-    """`argv` with the variables that would point git at another repository than `-C` names removed, and with
-    lazy fetching off, so a partial clone answers from what it has instead of asking its remote."""
+def _git_env():
+    """The environment git runs in: the variables that would point it at another repository than `-C` names
+    removed, and lazy fetching off, so a partial clone answers from what it has instead of asking its remote."""
     location = _load("bounded_run").LOCATION_VARS
     env = {k: v for k, v in os.environ.items() if k not in location}
     env["GIT_NO_LAZY_FETCH"] = "1"
-    return subprocess.run(argv, capture_output=True, timeout=GIT_TIMEOUT, env=env)
+    return env
+
+
+def _run_git(argv, timeout=GIT_TIMEOUT):
+    return subprocess.run(argv, capture_output=True, timeout=timeout, env=_git_env())
+
+
+def _run_bounded(argv, timeout, max_bytes=None):
+    """Run `argv` like `_run_git` but keep at most `max_bytes` (default MAX_GREP_BYTES) + 1 bytes of stdout in
+    memory: a reader thread stops there and the process is killed, so a flood costs the cap, not its size.
+    Raises subprocess.TimeoutExpired after `timeout` seconds, the process killed first. `subprocess.run(
+    capture_output=True)` would hold the whole output, which is why it is not used for `git grep`."""
+    cap = (MAX_GREP_BYTES if max_bytes is None else max_bytes) + 1
+    with tempfile.TemporaryFile() as err:
+        proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=err, env=_git_env())
+        chunks = []
+
+        def read():
+            size = 0
+            while size < cap:
+                chunk = proc.stdout.read(min(65536, cap - size))
+                if not chunk:
+                    return
+                chunks.append(chunk)
+                size += len(chunk)
+            proc.kill()                            # over the cap: nothing more is wanted
+
+        reader = threading.Thread(target=read, daemon=True)
+        reader.start()
+        reader.join(timeout)
+        if reader.is_alive():
+            proc.kill()
+            reader.join()
+            proc.wait()
+            proc.stdout.close()
+            raise subprocess.TimeoutExpired(argv, timeout)
+        try:
+            proc.wait(timeout=max(1.0, timeout))
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+        proc.stdout.close()
+        err.seek(0)
+        return subprocess.CompletedProcess(argv, proc.returncode, b"".join(chunks), err.read(4096))
 
 
 def commit_exists(root, commit):
@@ -775,6 +844,311 @@ def _print_findings(errors, warnings):
         print("reuse.py: \u2026 and %d more errors" % (len(errors) - MAX_SHOWN_ERRORS), file=sys.stderr)
 
 
+# ---------------------------------------------------------------------------------------------------- rerun
+# New in #2281, and a block of its own so that `check-research` above stays byte-identical. Every function that
+# runs git takes `run(argv, timeout=...)`, the one seam a test injects; the default is `_run_git`, or
+# `_run_bounded` for `git grep`. A ref reaches any git command only as a full commit id from `resolve_commit`.
+
+def _shown(text, limit=80):
+    """`text` safe to print: control characters (a terminal reads U+009B as CSI) become `?`, cut to `limit`."""
+    text = _CONTROL.sub("?", str(text))
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def _decode(raw):
+    return raw.decode("utf-8", "replace")
+
+
+def resolve_commit(root, ref, run=None):
+    """(commit, error): the full commit id `ref` names, or (None, why). A ref is untrusted text: one with a NUL or
+    a newline never reaches git, and git reads it behind `--end-of-options`, so `--output=x` is a name, not an
+    option. Only 40 or 64 hex characters come back. It never fetches."""
+    refused = "ref %s does not resolve to a commit" % _shown(ref)
+    if not isinstance(ref, str) or not ref or "\x00" in ref or "\n" in ref:
+        return None, refused
+    try:
+        proc = (run or _run_git)(["git", "-C", str(root), "rev-parse", "--verify", "--end-of-options",
+                                  ref + "^{commit}"], timeout=GIT_TIMEOUT)
+    except OSError:
+        return None, "git could not run"
+    except subprocess.TimeoutExpired:
+        return None, "git did not answer in %d seconds" % GIT_TIMEOUT
+    out = _decode(proc.stdout).strip() if proc.returncode == 0 else ""
+    return (out, None) if SEARCHED_AT.fullmatch(out) else (None, refused)
+
+
+def git_grep(root, pattern, paths, ref=None, run=None, timeout=QUERY_TIMEOUT):
+    """(status, hits): `git grep` of one recorded query, as an argument list, never through a shell. `status` is
+    "ok" (exit 0 or 1), "timeout", or "error: <first line of stderr>"; `hits` is [(file, line, text)]. A `ref`
+    must already be a full commit id (ValueError otherwise), and only that exact `<commit>:` prefix is removed
+    from a file name, so a name holding a colon survives. `--literal-pathspecs` makes every path a plain path,
+    `--` ends options, `-z` separates name, line and text with NULs, and `-I` skips binary files."""
+    if ref is not None and not (isinstance(ref, str) and SEARCHED_AT.fullmatch(ref)):
+        raise ValueError("git_grep needs a resolved commit id, not %r" % _shown(ref))
+    argv = ["git", "--literal-pathspecs", "-C", str(root), "grep", "-n", "-I", "-E", "-z", "-e", pattern]
+    argv += ([ref] if ref else []) + ["--"] + list(paths)
+    try:
+        proc = (run or _run_bounded)(argv, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return "timeout", []
+    except OSError:
+        return "error: git could not run", []
+    if len(proc.stdout) > MAX_GREP_BYTES:
+        return "error: output over the %d byte cap" % MAX_GREP_BYTES, []
+    if proc.returncode not in (0, 1):
+        first = (_decode(proc.stderr).strip().splitlines() or ["git grep failed"])[0]
+        return "error: " + _shown(first, 200), []
+    prefix = (ref + ":").encode() if ref else b""
+    hits, data, at = [], proc.stdout, 0
+    while at < len(data):                           # name NUL line NUL text LF: a name may hold a newline
+        end_name = data.find(b"\x00", at)
+        end_line = data.find(b"\x00", end_name + 1) if end_name >= 0 else -1
+        if end_line < 0:
+            break
+        end_text = data.find(b"\n", end_line + 1)
+        end_text = len(data) if end_text < 0 else end_text
+        raw_name, number, raw_text = data[at:end_name], data[end_name + 1:end_line], data[end_line + 1:end_text]
+        at = end_text + 1
+        if not number.isdigit():
+            continue
+        name = raw_name[len(prefix):] if prefix and raw_name.startswith(prefix) else raw_name
+        text = _decode(raw_text)
+        if len(text) > MAX_LINE_CHARS:
+            text = text[:MAX_LINE_CHARS] + "…"
+        hits.append((_decode(name), int(number), text))
+    return "ok", hits
+
+
+def queries_for(sdlc_dir, goal):
+    """The goal's well-formed recorded queries, [(pattern, [paths])]; [] for a legacy goal or no dossier."""
+    return parse_reuse(dossier_text(sdlc_dir, goal))["queries"]
+
+
+def _project_root(sdlc_dir):
+    return pathlib.Path(sdlc_dir).resolve().parent
+
+
+def base_ref(sdlc_dir, goal, base=None, run=None):
+    """(ref, note): the remote-tracking ref whose tip a goal is compared with, never HEAD and never a local branch
+    unless `base` names one. In order: `base` (prefixed with the remote when it lacks it), the goal's work record
+    (`<remote>/<base>`, the way review_context builds it), `work.base` from config.json (a goal worktree has none:
+    defaults), the remote's default branch as the local clone knows it (`refs/remotes/<remote>/HEAD`, no
+    network). With none of them the ref is `<remote>/`, which resolves to nothing; `note` says the work record
+    was absent (None when it was not, or `base` was given). Callers read the commit with `resolve_commit`.
+    The pair is the contract the in-flight verb reuses."""
+    work = _load("work")
+    state = _load("state")
+    try:
+        config = state.load_config(sdlc_dir)
+    except Exception:                               # noqa: BLE001 - missing or unreadable means defaults
+        config = {}
+    try:
+        settings = work.settings(config)
+        remote, configured = settings["remote"], settings["base"]
+    except Exception:                               # noqa: BLE001 - an option-like config value
+        return "", None
+    record = work._record(sdlc_dir, goal)
+    if base:
+        return (base if base.startswith(remote + "/") else remote + "/" + base), None
+    if isinstance(record, dict) and isinstance(record.get("remote"), str) and record["remote"] \
+            and isinstance(record.get("base"), str) and record["base"]:
+        return record["remote"] + "/" + record["base"], None
+    ref = remote + "/" + configured if configured else None
+    if ref is None:
+        try:
+            proc = (run or _run_git)(["git", "-C", str(_project_root(sdlc_dir)), "symbolic-ref", "--short",
+                                      "refs/remotes/%s/HEAD" % remote], timeout=GIT_TIMEOUT)
+            head = _decode(proc.stdout).strip() if proc.returncode == 0 else ""
+        except (OSError, subprocess.TimeoutExpired):
+            head = ""
+        ref = head if head.startswith(remote + "/") and len(head) > len(remote) + 1 else remote + "/"
+    return ref, "rerun: no work record for goal %s; using %s" % (goal, ref)
+
+
+def fetch_age(root, run=None, now=time.time):
+    """Seconds since the last fetch, from FETCH_HEAD's mtime, or None when none can be read. MEASURED (git 2.56): a
+    fetch in the main checkout writes `<common>/FETCH_HEAD`, one in a linked worktree writes
+    `<common>/worktrees/<name>/FETCH_HEAD`, and remote-tracking refs are shared, so the newer of the two is the
+    age. Never contacts the remote."""
+    try:
+        proc = (run or _run_git)(["git", "-C", str(root), "rev-parse", "--git-path", "FETCH_HEAD",
+                                  "--git-common-dir"], timeout=GIT_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    lines = _decode(proc.stdout).splitlines() if proc.returncode == 0 else []
+    if len(lines) != 2:
+        return None
+    times = []
+    for path in (pathlib.Path(root) / lines[0], pathlib.Path(root) / lines[1] / "FETCH_HEAD"):
+        try:
+            times.append(path.stat().st_mtime)
+        except OSError:
+            pass
+    return max(0.0, now() - max(times)) if times else None
+
+
+def _age(seconds):
+    """`<m>m` under an hour, `<h>h` under a day, else `<d>d`, each floored; clock skew reads `0m`."""
+    seconds = max(0, int(seconds))
+    if seconds < 3600:
+        return "%dm" % (seconds // 60)
+    return "%dh" % (seconds // 3600) if seconds < 86400 else "%dd" % (seconds // 86400)
+
+
+def _query_problem(pattern, paths):
+    """Why a recorded query must not run, or None. A dossier is text an agent wrote and a legacy one is never
+    checked, so `rerun` applies the checker's own rules to each query itself."""
+    if not 1 <= len(pattern) <= MAX_PATTERN:
+        return "pattern is empty" if not pattern else \
+            "pattern is %d characters; 1 to %d allowed" % (len(pattern), MAX_PATTERN)
+    if _CONTROL.search(pattern):
+        return "pattern contains a control character"
+    for path in paths:
+        if _path_error(path):
+            return "path %r %s" % (path, _path_error(path))
+    return None
+
+
+def _usage_error(message=None):
+    print(USAGE, file=sys.stderr)
+    if message:
+        print("reuse.py: " + message, file=sys.stderr)
+    return 2
+
+
+def _source(sdlc_dir, goal, ref, base, new_since, run):
+    """(commit, label, searched_at_commit, note, refusal, parsed): every ref resolved before any search.
+    `refusal` is the one line to print, in the fixed order: no queries, no Searched-at, base, searched-at."""
+    parsed = parse_reuse(dossier_text(sdlc_dir, goal))
+    root = _project_root(sdlc_dir)
+    if not parsed["queries"] and not parsed["bad_queries"]:
+        return None, None, None, None, "rerun: no recorded queries for goal %s" % goal, parsed
+    searched = parsed["searched_at"]
+    if new_since and not (isinstance(searched, str) and SEARCHED_AT.fullmatch(searched)):
+        return None, None, None, None, "rerun: the dossier records no searched-at commit", parsed
+    note = None
+    if ref is not None:
+        label = ref
+        commit, error = resolve_commit(root, ref, run)
+        if commit is None:
+            return None, None, None, None, "rerun: " + error, parsed
+    else:
+        label, note = base_ref(sdlc_dir, goal, base, run)
+        commit, error = resolve_commit(root, label, run) if label else (None, None)
+        if commit is None and base:
+            commit, error = resolve_commit(root, base, run)            # as given: a name the person chose
+            label = base if commit else label
+        if commit is None:
+            return None, None, None, None, "rerun: base ref %s not found; fetch it and run again" % (
+                _shown(label.rstrip("/")) or "(unknown)"), parsed
+    before = None
+    if new_since:
+        before, error = resolve_commit(root, searched, run)
+        if before is None:
+            return None, None, None, None, ("rerun: searched-at commit %s is not on this machine; fetch the "
+                                                  "goal branch and run again" % searched[:7]), parsed
+    return commit, label, before, note, None, parsed
+
+
+def rerun(sdlc_dir, goal, ref=None, new_since_research=False, base=None, run=None, clock=time.monotonic,
+          now=time.time):
+    """The lines `reuse.py rerun` prints (see the module docstring). Reads, never writes, never fetches."""
+    deadline = clock() + MAX_SECONDS                # the clock starts before any ref is resolved
+    commit, label, before, note, refusal, parsed = _source(sdlc_dir, goal, ref, base, new_since_research, run)
+    if refusal:
+        return [refusal]
+    root = _project_root(sdlc_dir)
+    bad = set(parsed["bad_queries"])
+    good = iter(parsed["queries"])
+    count = len(parsed["queries"]) + len(bad)
+    body = ["rerun: only the first %d of %d queries run" % (MAX_QUERIES, count)] if count > MAX_QUERIES else []
+    count = min(count, MAX_QUERIES)
+    if note:
+        body.insert(0, note)
+    shown, done = 0, 0
+    for i in range(1, count + 1):
+        if i in bad:
+            body.append("ERROR Q%d: not of the form - pattern: `<regex>` paths: `<path> [<path> ...]`" % i)
+            done += 1
+            continue
+        pattern, paths = next(good)
+        problem = _query_problem(pattern, paths)
+        if problem:
+            body.append("ERROR Q%d: %s" % (i, problem))
+            done += 1
+            continue
+        done += 1
+        found = {}
+        for where in ([commit] + ([before] if before else [])):
+            budget = min(QUERY_TIMEOUT, deadline - clock())
+            if budget <= 0:                         # the total limit passed between this query's two searches
+                body.append("rerun: stopped after %d seconds; %d of %d queries run" % (MAX_SECONDS, done - 1, count))
+                return _capped(body)
+            status, hits = git_grep(root, pattern, paths, where, run, budget)
+            if status != "ok":
+                found = status
+                break
+            found[where] = hits
+        if isinstance(found, str):
+            body.append("TIMEOUT Q%d" % i if found == "timeout" else "ERROR Q%d: %s" % (i, found[len("error: "):]))
+            continue
+        hits = found[commit]
+        if before:
+            seen = {(name, text) for name, _, text in found[before]}
+            hits = [hit for hit in hits if (hit[0], hit[2]) not in seen]     # file and text, never the line number
+        for name, line, text in hits[:MAX_HITS_PER_QUERY]:
+            body.append("%sQ%d %s:%d: %s" % ("NEW " if before else "", i, _shown(name, 500), line,
+                                              _shown(text, MAX_LINE_CHARS + 1)))
+        shown += min(len(hits), MAX_HITS_PER_QUERY)
+        if len(hits) > MAX_HITS_PER_QUERY:
+            body.append("rerun: Q%d truncated at %d hits" % (i, MAX_HITS_PER_QUERY))
+    if before:
+        age = fetch_age(root, run, now)
+        tail = "; remote refs never fetched" if age is None else "; remote refs last fetched " + _age(age)
+        summary = "rerun: %d hit(s) new since Research (%s) on %s (%s)%s" % (
+            shown, before[:7], _shown(label), commit[:7], tail)
+    else:
+        summary = "rerun: %d hit(s) for %d query(ies) at %s (%s)" % (shown, count, _shown(label), commit[:7])
+    return _capped(body) + [summary]
+
+
+def _capped(body):
+    return body if len(body) <= MAX_OUTPUT_LINES else body[:MAX_OUTPUT_LINES] + [
+        "rerun: output stopped at %d lines" % MAX_OUTPUT_LINES]
+
+
+def _rerun_main(args):
+    """`rerun <sdlc_dir> <goal> [--ref R] [--new-since-research] [--base B]`, options parsed by hand so that
+    `check-research`'s own argument handling is untouched. A value is taken as given, even one starting with a
+    dash: that ref is then refused by `resolve_commit`, not by the parser."""
+    positional, options, i = [], {}, 0
+    while i < len(args):
+        arg = args[i]
+        if arg in ("--ref", "--base"):
+            if arg in options or i + 1 >= len(args):
+                return _usage_error("%s needs one value, given once" % arg)
+            options[arg] = args[i + 1]
+            i += 2
+            continue
+        if arg == "--new-since-research":
+            if arg in options:
+                return _usage_error("--new-since-research given twice")
+            options[arg] = True
+        elif arg.startswith("-"):
+            return _usage_error("unknown option %s" % _shown(arg))
+        else:
+            positional.append(arg)
+        i += 1
+    if len(positional) != 2:
+        return _usage_error()
+    if "--ref" in options and "--new-since-research" in options:
+        return _usage_error("--ref and --new-since-research cannot be combined")
+    lines = rerun(positional[0], positional[1], ref=options.get("--ref"),
+                  new_since_research="--new-since-research" in options, base=options.get("--base"))
+    print("\n".join(lines))
+    return 0
+
+
 def main(argv):
     if argv in (["-h"], ["--help"]):
         print(__doc__)
@@ -797,6 +1171,8 @@ def main(argv):
             print("reuse.py: ## Reuse and ## Test map in %s are complete (%d rows cited, %d criteria mapped)"
                   % (plan, cited, mapped))
         return 0
+    if argv[:1] == ["rerun"]:
+        return _rerun_main(argv[1:])
     at_research = argv[-1:] == ["--at-research"]
     args = argv[:-1] if at_research else argv
     if len(args) != 3 or args[0] != "check-research":
