@@ -686,7 +686,10 @@ def _sibling(name):
 
 def main(argv):
     """`red_green.py check-tests <sdlc_dir> <goal>` (#2116): the end-of-Plan check. Exit 0 and one line when the
-    goal's plan `## Tests` parses; exit 2 and the parser's message on stderr when it does not or there is no plan."""
+    goal's plan `## Tests` parses and (#2286) `reuse.check_plan` finds its `## Reuse` and `## Test map` complete;
+    exit 2 and the message on stderr when either does not, when the check cannot run, or there is no plan. The
+    plan input check runs whatever `verify.enforce` is (like the `## Tests` check); only `work.py
+    record-plan-review` refuses on it solely with `verify.enforce` on. A legacy goal's warning goes to stderr."""
     if argv in (['-h'], ['--help']):
         print('usage: red_green.py check-tests <sdlc_dir> <goal>')
         return 0
@@ -708,7 +711,16 @@ def main(argv):
     if message:
         print('red_green.py: ' + message, file=sys.stderr)
         return 2
-    print('red_green.py: ## Tests in %s is usable by `work.py pr`' % plan)
+    try:
+        errors, warnings = _sibling('reuse').check_plan(sdlc_dir, goal, plan)
+    except Exception as exc:                        # noqa: BLE001 - a crashed check is stated, never a pass
+        print('red_green.py: cannot check the plan inputs (%s: %s)' % (type(exc).__name__, exc), file=sys.stderr)
+        return 2
+    for line in warnings + errors:
+        print('red_green.py: ' + line, file=sys.stderr)
+    if errors:
+        return 2
+    print('red_green.py: ## Tests and plan inputs in %s are usable by `work.py pr`' % plan)
     return 0
 
 

@@ -317,6 +317,14 @@ ENFORCEMENT_GATES = (
                   "Python, so it is the one plan gate that holds on every host",
      "condition": "an organisation can lock it on through managed settings",
      "readme": "Hard plan-gate (opt-in)"},
+    {"control": "Plan inputs are complete before Plan-Review passes", "function": "_plan_inputs_refusal",
+     "kind": "python-gate", "hosts": "all", "enabled_by": ("verify.enforce",), "settings": (),
+     "mechanism": "`work.py record-plan-review` refuses an approving verdict (exit 2, nothing written) when the "
+                  "reviewed plan does not cite every research reuse decision in `## Reuse` or does not map every "
+                  "acceptance criterion to a planned test in `## Test map` (`reuse.check_plan`); "
+                  "`red_green.py check-tests` runs the same check at the end of Plan and exits 2",
+     "condition": "legacy goals (no research dossier, or one not written from the reuse brief) pass with a "
+                  "warning on stderr; `check-tests` always runs it, whatever `verify.enforce` is"},
     {"control": "Test-first implementation", "function": "_test_first_refusal",
      "kind": "python-gate", "hosts": "all", "enabled_by": ("work.enabled", "verify.enforce"),
      "settings": (), "mechanism": "refuses `work.py pr` (exit 4) unless the published plan's "
@@ -1811,6 +1819,21 @@ def _runners_or_none(config):
         return {}
 
 
+def _plan_inputs_refusal(sdlc_dir, goal, reviewed):
+    """#2286: "" or why an approving plan-review verdict may not stand: `reuse.check_plan` finds the reviewed plan's
+    `## Reuse` or `## Test map` incomplete. `reviewed` is the plan copy the verdict binds to. A legacy goal passes
+    (its warnings are dropped here); a crash in the check is a refusal naming it, never a pass. Loaded inside the
+    function because `reuse.py` loads `work.py`."""
+    try:
+        errors, _ = _load("reuse").check_plan(sdlc_dir, goal, reviewed)
+    except Exception as exc:                        # noqa: BLE001 - an unrunnable check is stated, never a pass
+        errors = [f"the plan input check could not run ({type(exc).__name__}: {exc})"]
+    if not errors:
+        return ""
+    return ("the plan's inputs are incomplete, so Plan-Review cannot pass it: " + "; ".join(errors)
+            + f" (fix {pathlib.Path(reviewed).as_posix()}, then run a fresh plan-review)")
+
+
 def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", run=None, agent_id=""):
     """Record a plan-review verdict against the exact plan bytes the reviewer was briefed on (#258).
 
@@ -1870,6 +1893,9 @@ def record_plan_review(sdlc_dir, config, goal, verdict, plan_sha256, reason="", 
         if problem:
             raise ValueError(f"the plan's ## Tests is one `work.py pr` would reject, so Plan-Review cannot pass it: "
                              f"{problem} (fix ## Tests in {reviewed.as_posix()}, then run a fresh plan-review)")
+        problem = _plan_inputs_refusal(sdlc_dir, goal, reviewed)    # #2286
+        if problem:
+            raise ValueError(problem)
     if mapped in _PLAN_REVIEW_APPROVING:     # F02: also with the action log off, where record_verdict is skipped
         refusal = _load("reviewer").independent_run_refusal(sdlc_dir, goal, "plan_review", sha)
         if refusal:
