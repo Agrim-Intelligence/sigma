@@ -14,6 +14,16 @@ stat. Resolving costs the square of a path's depth, so evidence over 4,096 chara
 before it resolves: a 1 MiB dossier of rows at that bound takes 0.9 s, where one 1 MiB evidence path used to take
 685.6 s (both measured on one Apple M4 Pro, Python 3.12). The command line prints the first 50 errors and a count
 of the rest; check_research returns every one.
+
+A new-format dossier must also carry a `**Risk**:` line above its first `## ` heading (none, or any of sensitive,
+contract, migration) and a `## Test design` table with one row per criterion id `review_tests.criteria` reads from
+the goal's acceptance record; a legacy dossier is not checked for either. With no valid record the check refuses
+when `verify.enforce` is on and otherwise warns and skips the one-row-per-criterion rule. A config.json that exists
+but cannot be read counts as on (fail closed); a missing one counts as off, so a goal worktree's `.sdlc`, which has
+no config.json (it is gitignored), always warns, and `load_config` calls a non-object config.json missing too.
+Cost (Apple M4 Pro, Python 3.12, measured): the two parsers and the rules take at most 0.47 s on any 1 MiB shape
+tried, the worst being 1 MiB of `|` rows (1,048,544 errors), which peaks at 244 MB of Python allocations
+(tracemalloc) and 336 MB resident for the whole command; each error string is kept until the command prints.
 """
 import importlib.util
 import os
@@ -59,6 +69,12 @@ _ID = re.compile(r"RU-[0-9]+")
 _FILE_LINE = re.compile(r"(.+):([0-9]+)(?:-([0-9]+))?")
 _MODULE = re.compile(r"[A-Za-z0-9_.]+")
 _PINNED = re.compile(r"(?:%s):[^\s=]+==\S+" % "|".join(REGISTRIES))
+RISKS = ("none", "sensitive", "contract", "migration")
+TEST_DESIGN_HEADER = "| Criterion | Behaviour | Failure path | Hostile input | Helpers |"
+_DESIGN_FIELDS = ("criterion", "behaviour", "failure", "hostile", "helpers")
+#: Every id `review_tests.criteria` can return has this shape, so a row naming one is named by it.
+_CRITERION = re.compile(r"AC-[0-9]+")
+_DASHES = ("\u2014", "-")
 
 
 def _load(name):
@@ -77,10 +93,11 @@ def dossier_text(sdlc_dir, goal):
 
 def _section_lines(text, heading):
     """The lines of the first section whose heading line is exactly `## <heading>`, up to the next `## `
-    line, or None when there is none. Fenced lines never count, the heading included: a fence opens on
+    line, or None when there is none; with `heading` None, the lines above the first `## ` line (the
+    dossier's header). Fenced lines never count, the heading included: a fence opens on
     ``` or ~~~ and closes only on the same character, `acceptance._section`'s rule (that function itself
     returns checklist items only and raises on any other line, so it cannot read this section)."""
-    fenced, lines = None, None
+    fenced, lines = None, ([] if heading is None else None)
     for line in text.splitlines():
         fence = _FENCE.match(line)
         if fence:
@@ -125,13 +142,98 @@ def parse_reuse(text):
                 parsed["bad_queries"].append(position)
         elif line.startswith("|"):
             table.append(line)
-    if table:
-        parsed["header"] = table[0]
-        parsed["separator"] = len(table) > 1 and bool(_SEPARATOR.fullmatch(table[1]))
-        for line in table[1 + parsed["separator"]:]:
-            cells = [cell.strip() for cell in _CELL.split(line)[1:-1]]
-            parsed["rows"].append(dict(zip(_FIELDS, cells + [""] * len(_FIELDS)), cells=len(cells)))
+    parsed["header"], parsed["separator"], parsed["rows"] = _table(table, _FIELDS)
     return parsed
+
+
+def _table(lines, fields):
+    """(header, separator, rows) of a table's `|` lines: the first line is the header, a separator row may
+    follow, and each other line is a row of `fields` ("" when missing) plus `cells`, how many it had."""
+    if not lines:
+        return None, False, []
+    separator = len(lines) > 1 and bool(_SEPARATOR.fullmatch(lines[1]))
+    rows = []
+    for line in lines[1 + separator:]:
+        cells = [cell.strip() for cell in _CELL.split(line)[1:-1]]
+        rows.append(dict(zip(fields, cells + [""] * len(fields)), cells=len(cells)))
+    return lines[0], separator, rows
+
+
+def parse_risk(text):
+    """The values of every `**Risk**:` line above the first `## ` heading, in order, each stripped, or None
+    when there is none. Every such line counts, so a second line cannot hide a value behind the first."""
+    values = None
+    for line in _section_lines(text, None):
+        line = line.strip()
+        if line.startswith("**Risk**:"):
+            if values is None:
+                values = []
+            values += [value.strip() for value in line[len("**Risk**:"):].split(",")]
+    return values
+
+
+def parse_test_design(text):
+    """The `## Test design` section as data; it reports no errors. Only its stripped `|` lines are the table;
+    each row carries the five named cells and `cells`, as `parse_reuse` does."""
+    lines = _section_lines(text, "Test design")
+    table = [line.strip() for line in lines or () if line.strip().startswith("|")]
+    header, separator, rows = _table(table, _DESIGN_FIELDS)
+    return {"present": lines is not None, "header": header, "separator": separator, "rows": rows}
+
+
+def _is_case(cell):
+    """A cell that names a case: not empty, not a dash, not n/a, and not a `none:` line (any case)."""
+    cell = cell.lower()
+    return cell not in ("", "n/a") + _DASHES and not cell.startswith("none:")
+
+
+def test_design_errors(parsed, risk, criterion_ids):
+    """One string per broken rule, each starting with `Risk:`, `Test design:`, a criterion id, or `row <k>` when
+    the row's criterion is not `AC-<number>`. `criterion_ids` None means unknown: no coverage rule runs."""
+    errors = []
+    if risk is None:
+        errors.append("Risk: missing; write **Risk**: none, or any of sensitive, contract, migration, above the "
+                      "first ## heading")
+    else:
+        bad = [value for value in risk if value not in RISKS]
+        if bad:
+            errors.append("Risk: %d value(s) not one of %s; the first is %r" % (len(bad), " ".join(RISKS), bad[0][:40]))
+        if "none" in risk and len(risk) > 1:
+            errors.append("Risk: none cannot be combined with another value")
+    if not parsed["present"]:
+        return errors + ["Test design: missing; write ## Test design with one row per acceptance criterion"]
+    if parsed["header"] != TEST_DESIGN_HEADER:
+        errors.append("Test design: the header row must be exactly " + TEST_DESIGN_HEADER)
+    elif not parsed["separator"]:
+        errors.append("Test design: the header row must be followed by a separator row")
+    seen, hostile = set(), False
+    for k, row in enumerate(parsed["rows"], 1):
+        criterion = row["criterion"]
+        who = criterion if _CRITERION.fullmatch(criterion) else "row %d" % k
+        if criterion_ids is not None:
+            if criterion not in criterion_ids:
+                errors.append("%s: %r is not one of this goal's criterion ids" % (who, criterion))
+            elif criterion in seen:
+                errors.append("%s: more than one row for this criterion" % who)
+            seen.add(criterion)            # before the cell count: a shifted row is one error, not a second "no row"
+        if row["cells"] != len(_DESIGN_FIELDS):
+            errors.append("%s: %d cells; a row has %d" % (who, row["cells"], len(_DESIGN_FIELDS)))
+            continue                       # its cells are not known to be the ones they would be judged as
+        if row["behaviour"] in ("",) + _DASHES:
+            errors.append("%s: behaviour is empty or a dash" % who)
+        failure = row["failure"]
+        if failure.lower().startswith("none:"):
+            if len(failure[len("none:"):].split()) < 3:
+                errors.append("%s: failure path none: needs a reason of three words or more" % who)
+        elif not _is_case(failure):
+            errors.append("%s: failure path %r is not a case; write the case, or none: and a reason of three words "
+                          "or more" % (who, failure))
+        hostile = hostile or _is_case(row["hostile"])
+    if criterion_ids is not None:
+        errors += ["%s: no row in ## Test design" % criterion for criterion in criterion_ids if criterion not in seen]
+    if risk is not None and "sensitive" in risk and not hostile:
+        errors.append("Risk: sensitive needs a ## Test design row whose Hostile input is a case")
+    return errors
 
 
 def is_new_format(text):
@@ -180,7 +282,7 @@ def _evidence_ok(decision, evidence, root):
         return bool(_MODULE.fullmatch(evidence))
     if decision == "dependency-new":
         return bool(_PINNED.fullmatch(evidence))
-    return evidence in ("\u2014", "-")
+    return evidence in _DASHES
 
 
 def _reason_ok(decision, reason):
@@ -282,18 +384,20 @@ def commit_exists(root, commit):
 
 
 def _check(sdlc_dir, goal, at_research):
-    """(errors, warnings, parsed); parsed is None when nothing was checked."""
+    """(errors, warnings, parsed, k): parsed is None when nothing was checked, and k is how many acceptance
+    criteria the Test design rows were checked against (0 when there is no record)."""
     text = dossier_text(sdlc_dir, goal)
     if not text:
-        return [], [LEGACY_NO_DOSSIER], None
+        return [], [LEGACY_NO_DOSSIER], None, 0
     if len(text) > MAX_CHARS:
-        return ["research dossier is over %d characters; nothing checked" % MAX_CHARS], [], None
+        return ["research dossier is over %d characters; nothing checked" % MAX_CHARS], [], None, 0
     parsed = parse_reuse(text)
     if not parsed["present"]:
-        return [], [LEGACY_NO_SECTION], None
+        return [], [LEGACY_NO_SECTION], None, 0
     if not is_new_format(text):
-        return [], [LEGACY_OLD_SECTION], None
-    root = _load("review_tests")._root(sdlc_dir, goal)
+        return [], [LEGACY_OLD_SECTION], None, 0
+    tests = _load("review_tests")
+    root = tests._root(sdlc_dir, goal)
     errors, warnings, commit = reuse_errors(parsed, root), [], parsed["searched_at"]
     try:
         problem = "is not on this machine" if commit_exists(root, commit) is False else None
@@ -302,7 +406,28 @@ def _check(sdlc_dir, goal, at_research):
     if problem:
         # Research checks the commit it just ran at; elsewhere a goal researched on another machine is fine.
         (errors if at_research else warnings).append("Searched at: commit %s %s" % (commit[:7], problem))
-    return errors, warnings, parsed
+    try:
+        ids = dict.fromkeys(cid for cid, _ in tests.criteria(sdlc_dir, goal))      # ordered, O(1) lookup
+    except (OSError, ValueError):
+        ids, missing = None, "no recorded acceptance criteria for goal %s" % goal
+        if _enforced(sdlc_dir):
+            errors.append(missing + "; record them before Research")
+        else:
+            warnings.append(missing + "; one row per criterion was not checked")
+    errors += test_design_errors(parse_test_design(text), parse_risk(text), ids)
+    return errors, warnings, parsed, len(ids or ())
+
+
+def _enforced(sdlc_dir):
+    """`verify.enforce`, failing closed: no config.json at all is off (`phase_gate`'s rule), but a config that
+    exists and cannot be read is on, since a corrupt config must never silently become the defaults."""
+    state = _load("state")
+    try:
+        return state.enforce_enabled(state.load_config(sdlc_dir).get("verify"))
+    except state.ConfigMissing:
+        return False
+    except Exception:                              # noqa: BLE001 - unreadable, invalid or a non-object verify
+        return True
 
 
 def check_research(sdlc_dir, goal, at_research=False):
@@ -319,7 +444,7 @@ def main(argv):
     if len(args) != 3 or args[0] != "check-research":
         print(USAGE, file=sys.stderr)
         return 2
-    errors, warnings, parsed = _check(args[1], args[2], at_research)
+    errors, warnings, parsed, k = _check(args[1], args[2], at_research)
     for line in warnings + errors[:MAX_SHOWN_ERRORS]:
         print("reuse.py: " + line, file=sys.stderr)
     if len(errors) > MAX_SHOWN_ERRORS:
@@ -327,8 +452,8 @@ def main(argv):
     if errors:
         return 2
     if parsed is not None:
-        print("reuse.py: ## Reuse for goal %s is well formed (%d rows, %d queries)"
-              % (args[2], len(parsed["rows"]), len(parsed["queries"])))
+        print("reuse.py: ## Reuse and ## Test design for goal %s are well formed (%d rows, %d queries, %d criteria)"
+              % (args[2], len(parsed["rows"]), len(parsed["queries"]), k))
     return 0
 
 
