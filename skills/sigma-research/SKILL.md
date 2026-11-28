@@ -168,6 +168,8 @@ renders on GitHub as a run of literal pipes, not a table. And a cited location i
 **or a line range** (`models.py:8-13`); most real ones are ranges, in every column that asks for
 one.
 
+**Reuse, test design:** run `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/reuse.py" brief .sdlc "<goal>"` and write what it prints.
+
 Then record the phase note, which is what puts research in the audit trail:
 Run `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/loop.py" note .sdlc "<goal>" - <<'SIGMA_NOTE'` with body `research: <summary>` (stdin, quoted heredoc; #713).
 
@@ -183,12 +185,10 @@ and a research note is not a plan.
 ## Constraints (non-negotiable)
 - **No fabrication.** Every row cites a real `file:line`. If you can't cite it, drop it. A
   confident-but-wrong dossier is worse than a thin one.
-- **Store the queries verbatim.** The coverage guarantee is the re-scan; without the query there is
-  no re-scan.
 - **Surface, don't resolve.** Tensions and blocking questions go to the user. Don't pick a
   reconciliation direction yourself.
 - **Exhaustive over neat.** A site you were unsure about belongs in the table marked `verify`, not
-  left out for tidiness. Missing a site here is the one failure later phases cannot catch.
+  left out. Missing a site here is the one failure later phases cannot catch.
 
 ## Snapshot
 ```
