@@ -249,6 +249,13 @@ def test_check_tests_cli_is_the_gesture_plan_runs(case):
     assert good.returncode == 0, good
 
 
+def test_plan_says_exit_2_fails_plan_for_whatever_the_check_names():
+    """check-tests also runs the plan input check, so the Plan skill must not say it only names `## Tests`."""
+    skill = (S.parents[2] / 'skills/sigma-plan/SKILL.md').read_text()
+    assert 'exit 2 fails Plan; fix what it names.' in skill
+    assert 'fix `## Tests`.' not in skill
+
+
 # ---- AC-4: a pytest goal has a red record before Review starts ---------------------------------------------
 
 def witness_red(sdlc, node=NODE, goal='42'):
