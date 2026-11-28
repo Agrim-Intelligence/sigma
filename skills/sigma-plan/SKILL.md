@@ -53,7 +53,7 @@ Write `## Tests`: 1–25 backticked pytest selectors (or `runner: path > suite >
 
 A file selector covers every collected test. Else `work.py pr --no-tests <reason>`.
 
-After step 5, run `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/red_green.py" check-tests .sdlc "<goal>"`: exit 2 (`work.py pr`'s parser) fails Plan; fix `## Tests`.
+After step 5, run `python3 "${CLAUDE_SKILL_DIR}/../sigma-loop/scripts/red_green.py" check-tests .sdlc "<goal>"`: exit 2 fails Plan; fix what it names.
 
 ## 5. Write it to disk — `.sdlc/plans/<goal-stem>.md`
 The plan is an **artifact**, not a message. Save it under `.sdlc/plans/`, named for the goal. Four things downstream read the file, not the
