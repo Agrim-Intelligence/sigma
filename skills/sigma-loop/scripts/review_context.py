@@ -35,6 +35,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -183,6 +184,14 @@ _NORTH_STAR_REL = _PROJECT_DOCS[0][0]
 #: research_note_seen gate and `_missing()`'s gap check so the two can never desync about which
 #: phases this covers.
 _DOSSIER_PHASES = ("plan-review", "code-review", "pr-review")
+
+
+def _has_reuse(text):
+    """#2284: True iff the dossier is in the new Reuse format. Fail-open: a broken `reuse.py` is False."""
+    try:
+        return bool(_load("reuse").is_new_format(text))
+    except Exception:               # noqa: BLE001 - the brief is fail-open; the lines are simply dropped
+        return False
 
 
 #: #993: `context.inline_max_bytes` default; a configured document larger than this is a pointer.
@@ -944,6 +953,18 @@ def brief(sdlc_dir, goal, phase, artifact="", repo_root=".", source=None):
         parts.append("## Blast radius already measured (Research phase)\nThis is the project's own "
                      "survey, not the author's argument. Re-run its stored queries: a site that landed "
                      "AFTER research is exactly what a diff-only review misses.\n%s" % dossier)
+    if dossier and phase in _DOSSIER_PHASES and _has_reuse(dossier):
+        # #2284: only NAMES the command, never runs it. `.sdlc` is printed literally, not `sdlc_dir`:
+        # a goal worktree's `.sdlc` is a scratch path that `reviewer.py check` refuses in a brief.
+        quoted = shlex.quote(str(goal))
+        if phase == "plan-review":
+            parts.append("Re-run the reuse queries: `reuse.py rerun .sdlc %s`.\n"
+                         "A `new` decision under `## Reuse`, in the dossier or the plan, that a hit "
+                         "contradicts is FIX-FIRST." % quoted)
+        else:
+            parts.append("Re-run the reuse queries against the base: "
+                         "`reuse.py rerun .sdlc %s --new-since-research`.\n"
+                         "Code merged since Research that the diff duplicates is a finding." % quoted)
 
     # The plan grounds a DIFF review, not plan-review — which already has the plan as its artifact and
     # would just be handed it twice. Only the OUTLINE is inlined: the headings are the contract (what
