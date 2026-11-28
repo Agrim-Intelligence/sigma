@@ -30,6 +30,22 @@ NO_DOSSIER = "legacy goal (no research dossier); nothing checked"
 NO_SECTION = "legacy goal (the research dossier has no ## Reuse section); nothing checked"
 OLD_SECTION = "legacy goal (## Reuse was not written from reuse.py brief); nothing checked"
 
+#: #2279: a new-format dossier also carries a Risk line above its first `## ` heading and a `## Test design`
+#: table with one row per acceptance criterion, so every fixture below writes both and a record of three.
+RISK = "**Risk**: none\n"
+TD_HEADER = "| Criterion | Behaviour | Failure path | Hostile input | Helpers |"
+TD_SEPARATOR = "| --- | --- | --- | --- | --- |"
+DESIGN = "\n".join([
+    "## Test design", TD_HEADER, TD_SEPARATOR,
+    "| AC-1 | a well-formed dossier exits 0 | a missing file prints one line and exits 2 "
+    "| a 1 MiB dossier of malformed rows | tests/test_reuse.py helper `_dossier` |",
+    "| AC-2 | every refusal names its row | a bad row exits 2 naming it | n/a | \u2014 |",
+    "| AC-3 | the success line counts the rows | none: pure formatting with no failure mode | n/a | \u2014 |",
+]) + "\n"
+ACCEPTANCE = ('---\nkind: "acceptance"\ngoal: "7"\nverify_command: null\ndrafted: false\n---\n## Done when\n'
+              "- [ ] A well-formed dossier exits 0.\n- [ ] Every refusal names its row.\n"
+              "- [ ] The success line counts the rows.\n")
+
 
 def _reuse():
     spec = importlib.util.spec_from_file_location("reuse", REUSE)
@@ -43,10 +59,12 @@ def _git(cwd, *args):
 
 
 def _project(base, git=False):
-    """(sdlc, root, head): `<base>/repo` with an empty `.sdlc/research/` and two evidence files, and with
-    `git=True` a repository on `main` whose one commit is `head`."""
+    """(sdlc, root, head): `<base>/repo` with an empty `.sdlc/research/`, goal 7's acceptance record (three
+    criteria) and two evidence files, and with `git=True` a repository on `main` whose one commit is `head`."""
     root = base / "repo"
     (root / ".sdlc" / "research").mkdir(parents=True, exist_ok=True)
+    (root / ".sdlc" / "acceptance").mkdir(exist_ok=True)
+    (root / ".sdlc" / "acceptance" / "7.md").write_text(ACCEPTANCE, encoding="utf-8")
     (root / "src").mkdir(exist_ok=True)
     (root / "src" / "app.py").write_text("".join("line %d\n" % n for n in range(1, 11)), encoding="utf-8")
     (root / "pyproject.toml").write_text('[project]\nname = "x"\ndependencies = ["tomli"]\n', encoding="utf-8")
@@ -90,8 +108,9 @@ def _body(source="grep (knowledge graph disabled)", searched_at=SHA, none=None, 
     return "\n".join(lines) + "\n"
 
 
-def _dossier(extra="", **over):
-    return "# Research: x\n\n## Goal in one paragraph\nWhat it does.\n\n## Reuse\n" + _body(**over) + "\n" + extra
+def _dossier(extra="", risk=RISK, design=DESIGN, **over):
+    return ("# Research: x\n" + risk + "\n## Goal in one paragraph\nWhat it does.\n\n## Reuse\n" + _body(**over) + "\n"
+            + extra + design)
 
 
 def _run(base, text, goal="7", m=None, **kw):
@@ -192,14 +211,14 @@ def test_the_reuse_section_ends_at_the_next_heading(tmp_path):
 def test_whitespace_around_a_section_line_is_ignored(tmp_path):
     spaced = "".join(" %s  \n" % line for line in _body().splitlines())
     # Read as the new format (the commit warning), not as legacy: the indented marker lines still count.
-    assert _run(tmp_path, "# Research: x\n\n## Reuse\n" + spaced) == (
+    assert _run(tmp_path, "# Research: x\n" + RISK + "\n## Reuse\n" + spaced + "\n" + DESIGN) == (
         [], ["Searched at: commit 0123456 is not on this machine"])
 
 
 def test_a_sub_heading_inside_the_section_does_not_end_it(tmp_path):
     """Only a `## ` line ends the section: the table under a `### ` sub-heading is still read."""
     table = "\n".join([HEADER, SEPARATOR] + ROWS)
-    text = "# Research: x\n\n## Reuse\n" + _body(rows=None) + "\n### The table\n" + table + "\n"
+    text = "# Research: x\n" + RISK + "\n## Reuse\n" + _body(rows=None) + "\n### The table\n" + table + "\n\n" + DESIGN
     assert _run(tmp_path, text) == ([], ["Searched at: commit 0123456 is not on this machine"])
 
 
@@ -641,7 +660,7 @@ def test_a_large_malformed_reuse_section_is_checked_in_linear_time(tmp_path):
     """A membership scan of a list per query line made a just-under-1-MiB section of `- x` lines take
     114.5 s of CPU (review B1); 100,000 such lines (about 16 s that way) must check well inside 5 s."""
     n = 100000
-    text = "# Research: x\n\n## Reuse\n**Searched at:** %s\n" % SHA + "- x\n" * n
+    text = "# Research: x\n" + RISK + "\n## Reuse\n**Searched at:** %s\n" % SHA + "- x\n" * n + "\n" + DESIGN
     start = time.monotonic()
     errors, _ = _run(tmp_path, text)
     elapsed = time.monotonic() - start
@@ -652,9 +671,9 @@ def test_a_large_malformed_reuse_section_is_checked_in_linear_time(tmp_path):
 def test_a_one_mebibyte_evidence_path_is_checked_in_linear_time(tmp_path):
     """Resolving a path and testing `root in path.parents` are each quadratic in its depth: one row whose
     evidence was 524,000 one-letter directories took 685.6 s (review B2). It must check well inside 5 s."""
-    head = "# Research: x\n\n## Reuse\n**Searched at:** %s\n%s\n\n%s\n%s\n| RU-1 | c | reuse | " % (
-        SHA, QUERIES[1], HEADER, SEPARATOR)
-    tail = "f.py:1 | a reason |\n"
+    head = "# Research: x\n%s\n## Reuse\n**Searched at:** %s\n%s\n\n%s\n%s\n| RU-1 | c | reuse | " % (
+        RISK, SHA, QUERIES[1], HEADER, SEPARATOR)
+    tail = "f.py:1 | a reason |\n\n" + DESIGN
     text = head + "d/" * ((1048576 - len(head) - len(tail)) // 2) + tail
     start = time.monotonic()
     result = _run(tmp_path, text)
@@ -676,7 +695,7 @@ def test_cli_exit_codes_and_streams(tmp_path):
     dossier.write_text(_dossier(searched_at=head), encoding="utf-8")
     proc = _cli(tmp_path, "check-research", sdlc, "7")
     assert (proc.returncode, proc.stdout, proc.stderr) == (
-        0, "reuse.py: ## Reuse for goal 7 is well formed (7 rows, 2 queries)\n", "")
+        0, "reuse.py: ## Reuse and ## Test design for goal 7 are well formed (7 rows, 2 queries, 3 criteria)\n", "")
 
     dossier.write_text(_dossier(searched_at=head, rows=ROWS[:5] + [_row("RU-6", decision="new", evidence="—", reason="no hit")]),
                        encoding="utf-8")
@@ -691,7 +710,7 @@ def test_cli_exit_codes_and_streams(tmp_path):
     dossier.write_text(_dossier(searched_at="a" * 40), encoding="utf-8")
     proc = _cli(tmp_path, "check-research", sdlc, "7")
     assert (proc.returncode, proc.stdout, proc.stderr) == (
-        0, "reuse.py: ## Reuse for goal 7 is well formed (7 rows, 2 queries)\n",
+        0, "reuse.py: ## Reuse and ## Test design for goal 7 are well formed (7 rows, 2 queries, 3 criteria)\n",
         "reuse.py: Searched at: commit aaaaaaa is not on this machine\n")
     proc = _cli(tmp_path, "check-research", sdlc, "7", "--at-research")
     assert (proc.returncode, proc.stdout, proc.stderr) == (
